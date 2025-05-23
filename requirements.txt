@@ -1,0 +1,34 @@
+# Core for venv functionality 
+wheel
+setuptools
+dotenv
+
+# Core ML Libraries
+torch --index-url https://download.pytorch.org/whl/cu128
+torchvision --index-url https://download.pytorch.org/whl/cu128
+torchaudio --index-url https://download.pytorch.org/whl/cu128
+openai-whisper
+pyannote.audio>=3.1.1
+
+# UI
+PySide6 # UI Framework
+markdown2 # For markdown formatting
+
+# Audio
+ffmpeg # ffmpeg must be installed and in PATH for audio conversion 
+soundcard # For recording
+pydub # Useful for audio manipulation/snippeting
+soundfile # For reading audio files
+pyaudio # For audio playback
+just-playback # For audio playback
+silero-vad # For audio processing
+
+# Misc
+requests # For API requests
+rapidfuzz # For fuzzy string matching
+tzlocal # For local timezone detection
+
+# LLM APIs
+openai
+anthropic
+google-genai

@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+/__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller
+#  Usually these files are written by a python script from a template before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Environment
+/.venv
+
+# Recordings and transcripts directory
+/recordings/
+/transcripts/
+
+# Debug log
+/nojoin/nojoin.log
+
+# Database file, should be regenerated on first run
+/nojoin/nojoin_data.db
+
+# Config file
+/config.json
+
+# Cursor
+/.cursor
+
+# Project documentation
+/PRD.md
+/Task_List.md
