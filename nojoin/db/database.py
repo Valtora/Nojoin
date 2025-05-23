@@ -247,26 +247,62 @@ def get_or_create_speaker(name: str):
         logger.error(f"Database error in get_or_create_speaker for '{name}': {e}", exc_info=True)
         return None
 
-def update_speaker_name(speaker_id: int, new_name: str):
+def get_or_create_unknown_speaker(recording_id: str):
     """
-    Updates a speaker's name. Names are not unique.
-    Args:
-        speaker_id: The ID of the speaker to update.
-        new_name: The new name for the speaker.
-    Returns:
-        True if successful, False otherwise.
+    Ensures there is an 'Unknown' speaker for the given recording. Returns its speaker_id and name.
+    """
+    unknown_name = "Unknown"
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Check if 'Unknown' speaker exists globally
+            cursor.execute("SELECT id FROM speakers WHERE name = ?", (unknown_name,))
+            row = cursor.fetchone()
+            if row:
+                speaker_id = row['id']
+            else:
+                cursor.execute("INSERT INTO speakers (name) VALUES (?)", (unknown_name,))
+                speaker_id = cursor.lastrowid
+            # Check if associated with this recording
+            cursor.execute("SELECT 1 FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
+            if not cursor.fetchone():
+                # Use a unique diarization_label for 'Unknown' in this recording
+                unknown_label = "Unknown"
+                cursor.execute(
+                    "INSERT INTO recording_speakers (recording_id, speaker_id, diarization_label) VALUES (?, ?, ?)",
+                    (recording_id, speaker_id, unknown_label)
+                )
+            conn.commit()
+            return speaker_id, unknown_name
+    except Exception as e:
+        logger.error(f"Error ensuring Unknown speaker for recording {recording_id}: {e}", exc_info=True)
+        return None, unknown_name
+
+def update_speaker_name(speaker_id: int, new_name: str, recording_id: str = None):
+    """
+    Updates a speaker's name and updates the transcript to use the new name for all associated diarization labels in the given recording.
+    If recording_id is None, updates all recordings for this speaker.
     """
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE speakers SET name = ? WHERE id = ?", (new_name, speaker_id))
-            conn.commit()
-            if cursor.rowcount == 0:
-                logger.warning(f"Attempted to update non-existent speaker ID: {speaker_id}")
-                return False
+            # Update transcript(s)
+            if recording_id:
+                cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
+                rows = cursor.fetchall()
+                for row in rows:
+                    old_label = row['diarization_label']
+                    replace_speaker_in_transcript(recording_id, old_label, new_name)
             else:
-                logger.info(f"Updated name for speaker ID {speaker_id} to '{new_name}'")
-                return True
+                # Update all recordings for this speaker
+                cursor.execute("SELECT recording_id, diarization_label FROM recording_speakers WHERE speaker_id = ?", (speaker_id,))
+                rows = cursor.fetchall()
+                for row in rows:
+                    replace_speaker_in_transcript(row['recording_id'], row['diarization_label'], new_name)
+            conn.commit()
+            logger.info(f"Updated name for speaker ID {speaker_id} to '{new_name}' and updated transcript(s)")
+            return True
     except sqlite3.Error as e:
         logger.error(f"Database error updating speaker {speaker_id} to '{new_name}': {e}", exc_info=True)
         return False
@@ -366,24 +402,26 @@ def get_speaker_by_id(speaker_id: int):
 
 def delete_speaker_from_recording(recording_id: str, speaker_id: int) -> bool:
     """
-    Removes a speaker from a specific recording. If the speaker is not used in any other recording, also deletes from speakers table.
-    Args:
-        recording_id: The ID of the recording.
-        speaker_id: The ID of the speaker to remove.
-    Returns:
-        True if successful, False otherwise.
+    Removes a speaker from a specific recording. Reassigns transcript lines to 'Unknown'.
     """
     recording_id = str(recording_id)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            # Get diarization_label(s) for this speaker in this recording
+            cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
+            rows = cursor.fetchall()
+            # Ensure 'Unknown' speaker exists for this recording
+            unknown_id, unknown_name = get_or_create_unknown_speaker(recording_id)
+            for row in rows:
+                old_label = row['diarization_label']
+                replace_speaker_in_transcript(recording_id, old_label, unknown_name)
             # Remove from recording_speakers
             cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
-            # Check if this speaker is used in any other recording
+            # If speaker not used elsewhere, delete from speakers
             cursor.execute("SELECT COUNT(*) as cnt FROM recording_speakers WHERE speaker_id = ?", (speaker_id,))
             row = cursor.fetchone()
             if row and row['cnt'] == 0:
-                # Safe to delete from speakers
                 cursor.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
             conn.commit()
             return True
@@ -684,7 +722,7 @@ def migrate_tags_to_normalized_schema():
 
 def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: str = None) -> bool:
     """
-    In the diarized transcript for the recording, replace all occurrences of old_label with new_label.
+    In the diarized transcript for the recording, replace all occurrences of old_label with new_label (user-defined name or 'Unknown').
     If new_label is None, remove lines for old_label.
     Returns True on success, False on error.
     """
@@ -718,25 +756,19 @@ def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: 
 
 def merge_speakers_in_recording(recording_id: str, speaker_ids: list, target_speaker_id: int) -> bool:
     """
-    Merge multiple speakers into one in a recording. Updates diarization labels and transcript, removes redundant speakers.
-    Args:
-        recording_id: The ID of the recording.
-        speaker_ids: List of speaker IDs to merge (must include target_speaker_id).
-        target_speaker_id: The ID of the speaker to merge into.
-    Returns:
-        True on success, False on error.
+    Merge multiple speakers into one in a recording. Updates transcript lines to the user-defined name of the target speaker, removes redundant speakers.
     """
     recording_id = str(recording_id)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # Get target diarization label
-            cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, target_speaker_id))
+            # Get target speaker's current name
+            cursor.execute("SELECT name FROM speakers WHERE id = ?", (target_speaker_id,))
             row = cursor.fetchone()
             if not row:
                 return False
-            target_label = row['diarization_label']
-            # For each other speaker, update diarization_label in transcript and DB
+            target_name = row['name']
+            # For each other speaker, update transcript and DB
             for sid in speaker_ids:
                 if sid == target_speaker_id:
                     continue
@@ -745,8 +777,8 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list, target_spe
                 if not r:
                     continue
                 old_label = r['diarization_label']
-                # Update transcript
-                replace_speaker_in_transcript(recording_id, old_label, target_label)
+                # Update transcript to use target_name
+                replace_speaker_in_transcript(recording_id, old_label, target_name)
                 # Remove from recording_speakers
                 cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, sid))
                 # If speaker not used elsewhere, delete from speakers

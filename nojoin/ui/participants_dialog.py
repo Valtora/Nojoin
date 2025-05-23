@@ -96,28 +96,34 @@ class ParticipantsDialog(QDialog):
             diarization_label = speaker['diarization_label']
             speaker_id = speaker['id']
             name = speaker.get('name') or f"Speaker {idx+1}"
+            # If this is the 'Unknown' speaker, style it differently
+            is_unknown = (name == "Unknown")
             # Play
             play_btn = QPushButton()
             play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             play_btn.setToolTip("Play snippet")
             play_btn.setFixedSize(22, 22)
+            play_btn.setEnabled(not is_unknown)
             play_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.play_speaker_snippet(s_id))
             # Delete
             del_btn = QPushButton()
             del_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
             del_btn.setToolTip("Delete speaker")
             del_btn.setFixedSize(22, 22)
+            del_btn.setEnabled(not is_unknown)
             del_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.delete_speaker(s_id))
             # Name edit
             name_edit = QLineEdit(name)
             name_edit.setMinimumWidth(120)
             name_edit.setProperty("speaker_id", speaker_id)
             name_edit.setProperty("diarization_label", diarization_label)
+            name_edit.setEnabled(not is_unknown)
             name_edit.editingFinished.connect(lambda ne=name_edit: self.save_speaker_name(ne))
             # Merge checkbox
             merge_checkbox = QPushButton("Select")
             merge_checkbox.setCheckable(True)
-            merge_checkbox.setVisible(self._merge_mode)
+            merge_checkbox.setVisible(self._merge_mode and not is_unknown)
+            merge_checkbox.setEnabled(not is_unknown)
             merge_checkbox.toggled.connect(lambda checked, s_id=speaker_id: self.handle_merge_checkbox(s_id, checked))
             # Add to grid
             self.grid.addWidget(play_btn, idx, 0)
@@ -198,13 +204,10 @@ class ParticipantsDialog(QDialog):
         speaker = db_ops.get_speaker_by_id(speaker_id)
         old_name = speaker.get('name') if speaker else None
         if new_name == old_name:
-            # Remove from pending if it was previously changed but now matches DB
             if speaker_id in self._pending_name_changes:
                 del self._pending_name_changes[speaker_id]
             return
-        # Store pending change
         self._pending_name_changes[speaker_id] = (diarization_label, new_name)
-        # Do NOT update DB or emit participants_updated here
 
     def delete_speaker(self, speaker_id):
         reply = QMessageBox.question(self, "Delete Speaker", "Are you sure you want to delete this speaker?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -247,8 +250,7 @@ class ParticipantsDialog(QDialog):
     def _on_accept(self):
         # Apply all pending name changes
         for speaker_id, (diarization_label, new_name) in self._pending_name_changes.items():
-            db_ops.update_speaker_name(speaker_id, new_name)
-            db_ops.replace_speaker_in_transcript(self.recording_id, diarization_label, new_name)
+            db_ops.update_speaker_name(speaker_id, new_name, self.recording_id)
         self._pending_name_changes.clear()
         self.participants_updated.emit(self.recording_id)
         self.accept()

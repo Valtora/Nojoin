@@ -23,6 +23,7 @@
 
 # Config file
 /config.json
+nojoin/config.json
 
 # Cursor
 /.cursor
