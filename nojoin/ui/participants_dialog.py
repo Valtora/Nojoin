@@ -96,8 +96,13 @@ class ParticipantsDialog(QDialog):
             diarization_label = speaker['diarization_label']
             speaker_id = speaker['id']
             name = speaker.get('name') or f"Speaker {idx+1}"
-            # If this is the 'Unknown' speaker, style it differently
             is_unknown = (name == "Unknown")
+            # Only show 'Unknown' if it actually exists in the DB for this recording
+            if is_unknown:
+                # Check if there are any transcript lines for 'Unknown' (i.e., if the speaker is present in DB)
+                # If not, skip rendering this row
+                # (We rely on the DB query to only return 'Unknown' if it exists, so this is just for clarity)
+                pass
             # Play
             play_btn = QPushButton()
             play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
@@ -108,10 +113,14 @@ class ParticipantsDialog(QDialog):
             # Delete
             del_btn = QPushButton()
             del_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
-            del_btn.setToolTip("Delete speaker")
+            del_btn.setToolTip("Delete speaker" if not is_unknown else "Delete all 'Unknown' transcript lines")
             del_btn.setFixedSize(22, 22)
-            del_btn.setEnabled(not is_unknown)
-            del_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.delete_speaker(s_id))
+            if is_unknown:
+                del_btn.setEnabled(True)
+                del_btn.clicked.connect(lambda checked=False: self.delete_unknown_speaker())
+            else:
+                del_btn.setEnabled(True)
+                del_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.delete_speaker(s_id))
             # Name edit
             name_edit = QLineEdit(name)
             name_edit.setMinimumWidth(120)
@@ -264,4 +273,17 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         # Clear pending changes on close
         self._pending_name_changes.clear()
-        super().closeEvent(event) 
+        super().closeEvent(event)
+
+    def delete_unknown_speaker(self):
+        from nojoin.db import database as db_ops
+        reply = QMessageBox.question(self, "Delete 'Unknown' Speaker", "Are you sure you want to delete all transcript lines attributed to 'Unknown'?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        success = db_ops.delete_unknown_speaker_from_recording(self.recording_id)
+        if not success:
+            QMessageBox.critical(self, "Delete 'Unknown' Speaker", "Failed to delete 'Unknown' speaker from recording.")
+            return
+        self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
+        self._populate_speakers()
+        self.participants_updated.emit(self.recording_id) 

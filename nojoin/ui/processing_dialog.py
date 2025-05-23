@@ -16,13 +16,13 @@ class ProcessingProgressDialog(QDialog):
         self.layout = QVBoxLayout(self)
         self.layout.setSpacing(10)
 
-        self.message_label = QLabel(f"Starting processing for:\n<b>{recording_name}</b>")
-        self.message_label.setAlignment(Qt.AlignCenter)
-        self.message_label.setWordWrap(True)
-        self.layout.addWidget(self.message_label)
+        # Recording name label (plain text, not HTML)
+        self.recording_label = QLabel(f"Processing: {recording_name}")
+        self.recording_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.recording_label)
 
         # Initialising spinner and label
-        self.init_label = QLabel("Initialising...")
+        self.init_label = QLabel("Audio is being pre-processed...")
         self.init_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.init_label)
         self.init_spinner = QProgressBar()
@@ -30,13 +30,15 @@ class ProcessingProgressDialog(QDialog):
         self.init_spinner.setTextVisible(False)
         self.layout.addWidget(self.init_spinner)
 
-        # Unified Progress Bar (hidden until progress starts)
+        # Single unified progress bar
         self.main_progress_bar = QProgressBar()
         self.main_progress_bar.setRange(0, 100)
         self.main_progress_bar.setValue(0)
         self.main_progress_bar.setTextVisible(True)
         self.main_progress_bar.setVisible(False)
         self.layout.addWidget(self.main_progress_bar)
+        self._stage = None  # Track current stage for unified progress
+        self._seen_progress = False
 
         self.button_box = QDialogButtonBox()
         self.cancel_button = self.button_box.addButton("Cancel", QDialogButtonBox.RejectRole)
@@ -46,19 +48,18 @@ class ProcessingProgressDialog(QDialog):
 
         self._was_cancelled = False
         self._processing_complete = False
-        self._stage = None  # Track current stage for unified progress
-        self._seen_progress = False
+        self._diarization_started = False  # Track when real diarization progress begins
 
     def cancel_clicked(self):
         logger.info("Cancel button clicked in progress dialog.")
         self._was_cancelled = True
         self.cancel_button.setEnabled(False)
-        self.message_label.setText("Cancellation requested...")
+        self.init_label.setText("Cancellation requested...")
         self.rejected.emit()
 
     @Slot(str)
     def update_message(self, message):
-        self.message_label.setText(message)
+        self.init_label.setText(message)
         # Optionally update stage for progress mapping
         if "transcrib" in message.lower():
             self._stage = "transcription"
@@ -97,6 +98,12 @@ class ProcessingProgressDialog(QDialog):
 
     def mark_processing_complete(self):
         self._processing_complete = True
+
+    def set_vad_stage(self):
+        """
+        Call this method from the processing pipeline when VAD starts.
+        """
+        self.init_label.setText("Detecting voice activity...")
 
 class GeminiNotesSpinnerDialog(QDialog):
     def __init__(self, parent=None, message="Generating meeting notes with Gemini..."):

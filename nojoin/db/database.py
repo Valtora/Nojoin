@@ -400,22 +400,52 @@ def get_speaker_by_id(speaker_id: int):
         logger.error(f"Database error retrieving speaker by ID {speaker_id}: {e}", exc_info=True)
         return None
 
+def _remove_speaker_lines_from_transcripts(recording_id: str, labels_or_names: list):
+    """
+    Remove all lines from both the diarized and raw transcript files for any of the given labels/names.
+    Handles lines like '[timestamp] - LABEL - ...', '[timestamp] - LABEL. ...', '[timestamp] - LABEL: ...'.
+    """
+    rec = get_recording_by_id(recording_id)
+    paths = [rec.get('diarized_transcript_path'), rec.get('raw_transcript_path')]
+    import re
+    for path in paths:
+        if not path or not os.path.exists(path):
+            continue
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        # Build regex patterns for all labels/names
+        patterns = [
+            re.compile(rf"(\[.*?\]\s*-\s*){re.escape(label)}(\s*-\s|[.:])", re.IGNORECASE)
+            for label in labels_or_names
+        ]
+        def should_delete(line):
+            return any(p.search(line) for p in patterns)
+        new_lines = [line for line in lines if not should_delete(line)]
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+
+
 def delete_speaker_from_recording(recording_id: str, speaker_id: int) -> bool:
     """
-    Removes a speaker from a specific recording. Reassigns transcript lines to 'Unknown'.
+    Removes a speaker from a specific recording. Deletes all transcript lines attributed to that speaker by any diarization label or name (including user renames) in both diarized and raw transcript files.
     """
     recording_id = str(recording_id)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # Get diarization_label(s) for this speaker in this recording
+            # Get all diarization labels for this speaker in this recording
             cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
-            rows = cursor.fetchall()
-            # Ensure 'Unknown' speaker exists for this recording
-            unknown_id, unknown_name = get_or_create_unknown_speaker(recording_id)
-            for row in rows:
-                old_label = row['diarization_label']
-                replace_speaker_in_transcript(recording_id, old_label, unknown_name)
+            diarization_labels = [row['diarization_label'] for row in cursor.fetchall()]
+            # Get all names ever associated with this speaker in this recording (including user renames)
+            cursor.execute("SELECT name FROM speakers WHERE id = ?", (speaker_id,))
+            name_row = cursor.fetchone()
+            names = set()
+            if name_row and name_row['name']:
+                names.add(name_row['name'])
+            # Optionally, scan transcript for any other variants (future-proofing)
+            # Remove all lines for all labels and names
+            all_labels = set(diarization_labels) | names
+            _remove_speaker_lines_from_transcripts(recording_id, list(all_labels))
             # Remove from recording_speakers
             cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
             # If speaker not used elsewhere, delete from speakers
@@ -723,7 +753,7 @@ def migrate_tags_to_normalized_schema():
 def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: str = None) -> bool:
     """
     In the diarized transcript for the recording, replace all occurrences of old_label with new_label (user-defined name or 'Unknown').
-    If new_label is None, remove lines for old_label.
+    If new_label is None, remove lines for old_label. If old_label is 'Unknown', also remove common variants (e.g., 'Unkown', 'UNKNOWN').
     Returns True on success, False on error.
     """
     recording_id = str(recording_id)
@@ -736,14 +766,24 @@ def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: 
         with open(path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         import re
-        label_pattern = re.compile(rf"(\[.*?\]\s*-\s*){re.escape(old_label)}([.:])", re.IGNORECASE)
+        # If deleting 'Unknown', match all common variants
+        if new_label is None and old_label.lower() in {"unknown", "unkown"}:
+            unknown_variants = ["Unknown", "Unkown", "UNKNOWN", "unknown"]
+            patterns = [re.compile(rf"(\[.*?\]\s*-\s*){re.escape(variant)}([.:])", re.IGNORECASE) for variant in unknown_variants]
+            def should_delete(line):
+                return any(p.search(line) for p in patterns)
+        else:
+            label_pattern = re.compile(rf"(\[.*?\]\s*-\s*){re.escape(old_label)}([.:])", re.IGNORECASE)
+            def should_delete(line):
+                return label_pattern.search(line)
         new_lines = []
         for line in lines:
-            if label_pattern.search(line):
+            if should_delete(line):
                 if new_label:
                     # Replace label
-                    new_line = label_pattern.sub(rf"\1{new_label}\2", line)
-                    new_lines.append(new_line)
+                    if 'label_pattern' in locals():
+                        new_line = label_pattern.sub(rf"\1{new_label}\2", line)
+                        new_lines.append(new_line)
                 # else: skip line (delete)
             else:
                 new_lines.append(line)
@@ -935,3 +975,38 @@ def ensure_chat_history_column():
                 logger.info("Added chat_history column to recordings table.")
     except Exception as e:
         logger.error(f"Error ensuring chat_history column: {e}", exc_info=True)
+
+def delete_unknown_speaker_from_recording(recording_id: str) -> bool:
+    """
+    Removes the 'Unknown' speaker bin from a specific recording. Deletes all transcript lines attributed to 'Unknown'.
+    """
+    recording_id = str(recording_id)
+    unknown_name = "Unknown"
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Find the 'Unknown' speaker_id for this recording
+            cursor.execute("""
+                SELECT s.id, rs.diarization_label FROM speakers s
+                JOIN recording_speakers rs ON s.id = rs.speaker_id
+                WHERE rs.recording_id = ? AND s.name = ?
+            """, (recording_id, unknown_name))
+            row = cursor.fetchone()
+            if not row:
+                return False  # No unknown speaker for this recording
+            unknown_id = row['id']
+            unknown_label = row['diarization_label']
+            # Remove all transcript lines for 'Unknown'
+            replace_speaker_in_transcript(recording_id, unknown_label, None)
+            # Remove from recording_speakers
+            cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, unknown_id))
+            # If 'Unknown' speaker not used elsewhere, delete from speakers
+            cursor.execute("SELECT COUNT(*) as cnt FROM recording_speakers WHERE speaker_id = ?", (unknown_id,))
+            rc = cursor.fetchone()
+            if rc and rc['cnt'] == 0:
+                cursor.execute("DELETE FROM speakers WHERE id = ?", (unknown_id,))
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error deleting 'Unknown' speaker from recording {recording_id}: {e}", exc_info=True)
+        return False

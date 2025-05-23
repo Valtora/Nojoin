@@ -112,8 +112,8 @@ def diarize_audio(audio_path: str) -> Annotation | None:
                 torch.cuda.empty_cache()
         return None
 
-def diarize_audio_with_progress(audio_path: str, progress_callback=None) -> Annotation | None:
-    """Performs speaker diarization with progress callback (0-100%) using a subprocess to capture progress from stdout."""
+def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_check=None) -> Annotation | None:
+    """Performs speaker diarization with progress callback (0-100%) using a subprocess to capture progress from stdout. Supports cancellation."""
     import subprocess
     import tempfile
     import sys
@@ -128,30 +128,44 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None) -> Anno
     pipeline_config_path = OFFLINE_DIARIZATION_CONFIG
     logger.info(f"Starting diarization for {audio_path} using offline config: {pipeline_config_path}, device: {device_str} (subprocess mode)")
 
-    # Prepare output file for result
-    with tempfile.NamedTemporaryFile(suffix="_diarization.pkl", delete=False) as tmp:
-        output_path = tmp.name
-    script_path = os.path.join(os.path.dirname(__file__), "diarize_subprocess_entry.py")
-    cmd = [sys.executable, script_path, audio_path, output_path, pipeline_config_path, device_str]
-
-    # Regex to match custom progress lines (e.g., PROGRESS: 42)
-    progress_re = re.compile(r"PROGRESS: (\d+)")
+    # Regex to match custom progress lines (e.g., PROGRESS: step_name:percent)
+    progress_re = re.compile(r"PROGRESS: ([^:]+):(\d+)")
     try:
+        with tempfile.NamedTemporaryFile(suffix="_diarization.pkl", delete=False) as tmp:
+            output_path = tmp.name
+        script_path = os.path.join(os.path.dirname(__file__), "diarize_subprocess_entry.py")
+        cmd = [sys.executable, script_path, audio_path, output_path, pipeline_config_path, device_str]
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         last_percent = -1
         all_output = []
         for line in process.stdout:
             all_output.append(line)
-            # Look for progress percentage in the line
+            # Check for cancellation during output
+            if cancel_check and cancel_check():
+                logger.info("Diarization cancelled during subprocess output read.")
+                process.terminate()
+                process.wait()
+                return None
+            # Look for progress percentage and step_name in the line
             match = progress_re.search(line)
             if match:
-                percent = int(match.group(1))
-                if percent != last_percent and progress_callback:
-                    progress_callback(min(percent, 100))
-                    last_percent = percent
+                step_name = match.group(1)
+                percent = int(match.group(2))
+                # Only update progress for the main diarization step
+                if step_name.lower() in ("diarization", "segmentation", "pipeline", "main", "inference"):  # Adjust as needed
+                    if percent != last_percent and progress_callback:
+                        progress_callback(min(percent, 100))
+                        last_percent = percent
+                else:
+                    # For other steps, optionally show a spinner or message
+                    if progress_callback and percent == 0:
+                        progress_callback(0)  # Keep spinner or show 'Initialising...'
             # Optionally, print or log the line for debugging
             logger.debug(f"[diarization-subprocess] {line.strip()}")
         process.wait()
+        if cancel_check and cancel_check():
+            logger.info("Diarization cancelled after subprocess wait.")
+            return None
         if progress_callback:
             progress_callback(100)
         if process.returncode != 0:

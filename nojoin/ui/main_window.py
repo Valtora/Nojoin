@@ -166,13 +166,13 @@ class ProcessingWorker(QThread):
                 elapsed = time.monotonic() - start_time
                 eta = (elapsed / percent * (100 - percent)) if percent > 0 else float('inf')
                 self.progress_update.emit(percent, elapsed, eta)
-            self.stage_update.emit("Transcribing and Diarizing...")
             success = processing_pipeline.process_recording(
                 self.recording_id,
                 self.audio_path,
                 whisper_progress_callback=whisper_progress_callback,
                 diarization_progress_callback=diarization_progress_callback,
-                stage_update_callback=self.stage_update.emit
+                stage_update_callback=self.stage_update.emit,
+                cancel_check=lambda: self._cancel_requested
             )
             if self._cancel_requested:
                 logger.info(f"ProcessingWorker cancelled after process_recording for ID: {self.recording_id}")

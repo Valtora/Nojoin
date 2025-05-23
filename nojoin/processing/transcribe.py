@@ -126,8 +126,8 @@ def transcribe_audio(audio_path: str) -> dict | None:
                  torch.cuda.empty_cache()
         return None
 
-def transcribe_audio_with_progress(audio_path: str, progress_callback=None) -> dict | None:
-    """Transcribes the given audio file using OpenAI Whisper, emitting progress via callback."""
+def transcribe_audio_with_progress(audio_path: str, progress_callback=None, cancel_check=None) -> dict | None:
+    """Transcribes the given audio file using OpenAI Whisper, emitting progress via callback. Supports cancellation."""
     if not os.path.exists(audio_path):
         logger.error(f"Audio file not found for transcription: {audio_path}")
         return None
@@ -153,7 +153,15 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None) -> d
             listener = ProgressListener(progress_callback)
             with create_progress_listener_handle(listener):
                 use_fp16 = device == "cuda"
+                # Check for cancellation before starting
+                if cancel_check and cancel_check():
+                    logger.info("Transcription cancelled before starting model.transcribe.")
+                    return None
                 result = model.transcribe(audio_path, fp16=use_fp16, verbose=None)
+                # Check for cancellation after transcribe
+                if cancel_check and cancel_check():
+                    logger.info("Transcription cancelled after model.transcribe.")
+                    return None
             if progress_callback:
                 progress_callback(100)
             logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")

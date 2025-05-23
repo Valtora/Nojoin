@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-def process_recording(recording_id: str, audio_path: str, whisper_progress_callback=None, diarization_progress_callback=None, stage_update_callback=None):
-    """Runs the full transcription and diarization pipeline for a recording, with optional progress callbacks."""
+def process_recording(recording_id: str, audio_path: str, whisper_progress_callback=None, diarization_progress_callback=None, stage_update_callback=None, cancel_check=None):
+    """Runs the full transcription and diarization pipeline for a recording, with optional progress callbacks and cancellation."""
     # Local imports for performance: only load heavy dependencies when actually processing
     import os
     import json
@@ -44,12 +44,18 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     temp_files = []
     try:
         # Step 1: Preprocess for VAD (MP3 to mono, 16kHz WAV)
+        if cancel_check and cancel_check():
+            logger.info(f"Processing cancelled before VAD preprocessing for recording_id={recording_id}")
+            return False
         vad_wav_path = preprocess_audio_for_vad(abs_audio_path)
         if not vad_wav_path:
             raise RuntimeError("Audio preprocessing for VAD failed.")
         temp_files.append(vad_wav_path)
 
         # Step 2: Run Silero VAD (mute non-speech, output new WAV)
+        if cancel_check and cancel_check():
+            logger.info(f"Processing cancelled before VAD for recording_id={recording_id}")
+            return False
         vad_processed_wav = vad_wav_path.replace("_vad.wav", "_vad_processed.wav")
         vad_success = mute_non_speech_segments(vad_wav_path, vad_processed_wav)
         if not vad_success:
@@ -57,6 +63,9 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         temp_files.append(vad_processed_wav)
 
         # Step 3: Convert VAD-processed WAV to MP3
+        if cancel_check and cancel_check():
+            logger.info(f"Processing cancelled before VAD->MP3 for recording_id={recording_id}")
+            return False
         vad_processed_mp3 = vad_processed_wav.replace(".wav", ".mp3")
         mp3_success = convert_wav_to_mp3(vad_processed_wav, vad_processed_mp3)
         if not mp3_success:
@@ -69,9 +78,12 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         # 1. Transcription
         transcription_result = None
         try:
+            if cancel_check and cancel_check():
+                logger.info(f"Processing cancelled before transcription for recording_id={recording_id}")
+                return False
             if stage_update_callback:
                 stage_update_callback("Transcribing...")
-            transcription_result = transcribe_audio_with_progress(processed_audio_path, whisper_progress_callback)
+            transcription_result = transcribe_audio_with_progress(processed_audio_path, whisper_progress_callback, cancel_check=cancel_check)
             if transcription_result is None:
                 raise ValueError("Transcription failed.")
             logger.info(f"Transcription successful for recording ID: {recording_id}")
@@ -106,9 +118,12 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         # 2. Diarization
         diarization_result = None
         try:
+            if cancel_check and cancel_check():
+                logger.info(f"Processing cancelled before diarization for recording_id={recording_id}")
+                return False
             if stage_update_callback:
                 stage_update_callback("Diarizing...")
-            diarization_result = diarize_audio_with_progress(processed_audio_path, diarization_progress_callback)
+            diarization_result = diarize_audio_with_progress(processed_audio_path, diarization_progress_callback, cancel_check=cancel_check)
             if diarization_result is None:
                 raise ValueError("Diarization failed.")
             logger.info(f"Diarization successful for recording ID: {recording_id}")
@@ -153,6 +168,9 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
 
         # 3. Combine Results and Save Diarized Transcript
         try:
+            if cancel_check and cancel_check():
+                logger.info(f"Processing cancelled before combining/saving for recording_id={recording_id}")
+                return False
             # --- Diagnostics: Log transcription and diarization results ---
             logger.info(f"Transcription result type: {type(transcription_result)}, keys: {list(transcription_result.keys()) if isinstance(transcription_result, dict) else 'N/A'}")
             if isinstance(transcription_result, dict):
@@ -278,6 +296,9 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
 
         # 4. Final DB Update
         try:
+            if cancel_check and cancel_check():
+                logger.info(f"Processing cancelled before final DB update for recording_id={recording_id}")
+                return False
             processed_at = database.get_current_timestamp_str() # Need a utility in database.py
             database.update_recording_status(recording_id, 'Processed')
             logger.info(f"Set status to 'Processed' for recording_id={recording_id}")
