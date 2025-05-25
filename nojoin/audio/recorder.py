@@ -28,6 +28,11 @@ class AudioRecorder:
         self.output_filename = None
         self._sample_rate = DEFAULT_SAMPLE_RATE
         self._channels = DEFAULT_CHANNELS
+        
+        # Audio level tracking
+        self._current_input_level = 0.0
+        self._current_output_level = 0.0
+        self._level_lock = threading.Lock()
 
         # Ensure output directory exists
         if not os.path.exists(self.output_dir):
@@ -117,6 +122,15 @@ class AudioRecorder:
         logger.debug(f"Found output loopback devices: {[d[0] for d in output_loopback_devices]}")
         return input_devices, output_loopback_devices
 
+    def get_current_levels(self):
+        """Get current audio input and output levels.
+        
+        Returns:
+            tuple: (input_level, output_level) - RMS levels between 0.0 and 1.0
+        """
+        with self._level_lock:
+            return self._current_input_level, self._current_output_level
+
     def _record_audio(self, input_device, output_device_loopback, sample_rate, channels):
         """Internal method run in a separate thread to capture audio."""
         self.frames = [] # Reset frames
@@ -137,6 +151,12 @@ class AudioRecorder:
                     mic_data = mic_rec.record(numframes=blocksize)
                     spk_data = spk_rec.record(numframes=blocksize)
 
+                    # Calculate audio levels
+                    with self._level_lock:
+                        # Calculate RMS (root mean square) for level indication
+                        self._current_input_level = float(np.sqrt(np.mean(mic_data**2)))
+                        self._current_output_level = float(np.sqrt(np.mean(spk_data**2)))
+
                     # Simple mixing: average the signals
                     # Ensure data is float for averaging
                     mixed_data = (mic_data.astype(np.float32) + spk_data.astype(np.float32)) / 2.0
@@ -152,6 +172,10 @@ class AudioRecorder:
             error_occurred = True
             self.is_recording = False # Stop recording on error
         finally:
+            # Reset audio levels when recording stops
+            with self._level_lock:
+                self._current_input_level = 0.0
+                self._current_output_level = 0.0
             logger.info(f"Recording thread finished. Frames captured: {len(self.frames)}. Error occurred: {error_occurred}")
             # Ensure is_recording is false if loop finishes cleanly
             self.is_recording = False 

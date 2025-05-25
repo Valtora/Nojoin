@@ -484,6 +484,9 @@ class MainWindow(QMainWindow):
             from nojoin.utils.theme_utils import get_border_color
             border_color = get_border_color(theme_name)
             self.search_bar_widget.set_theme(border_color)
+        # --- Apply theme to audio warning banner ---
+        if hasattr(self, 'audio_warning_banner'):
+            apply_theme_to_widget(self.audio_warning_banner, theme_name)
 
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
@@ -631,6 +634,55 @@ class MainWindow(QMainWindow):
         top_controls_layout.addWidget(self.import_audio_button)
         top_controls_layout.addWidget(self.settings_button) # Move settings button to the end
         central_layout.addLayout(top_controls_layout)
+
+        # --- Audio Detection Warning Banner ---
+        self.audio_warning_banner = QFrame()
+        self.audio_warning_banner.setObjectName("AudioWarningBanner")
+        self.audio_warning_banner.setVisible(False)  # Hidden by default
+        self.audio_warning_banner.setMaximumHeight(40)
+        self.audio_warning_banner.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        warning_layout = QHBoxLayout(self.audio_warning_banner)
+        warning_layout.setContentsMargins(self.BASE_SPACING, 4, self.BASE_SPACING, 4)
+        
+        # Warning icon
+        warning_icon_label = QLabel()
+        warning_icon_label.setPixmap(self.style().standardIcon(QStyle.SP_MessageBoxWarning).pixmap(20, 20))
+        warning_layout.addWidget(warning_icon_label)
+        
+        # Warning message (centered with stretch on both sides)
+        warning_layout.addStretch()
+        self.audio_warning_label = QLabel("No audio detected")
+        self.audio_warning_label.setObjectName("AudioWarningLabel")
+        self.audio_warning_label.setAlignment(Qt.AlignCenter)
+        warning_layout.addWidget(self.audio_warning_label)
+        warning_layout.addStretch()
+        
+        # Close button (smaller)
+        close_warning_btn = QPushButton("✕")
+        close_warning_btn.setObjectName("CloseWarningButton")
+        close_warning_btn.setFixedSize(15, 15)
+        close_warning_btn.setFlat(True)
+        close_warning_btn.clicked.connect(lambda: self.audio_warning_banner.setVisible(False))
+        close_warning_btn.setVisible(False)  # Hide the dismiss button
+        warning_layout.addWidget(close_warning_btn)
+        
+        
+        central_layout.addWidget(self.audio_warning_banner)
+
+        # --- Audio Level Monitoring ---
+        self.audio_level_timer = QTimer(self)
+        self.audio_level_timer.setInterval(100)  # Check every 100ms
+        self.audio_level_timer.timeout.connect(self._check_audio_levels)
+        
+        self.no_audio_timer = QTimer(self)
+        self.no_audio_timer.setSingleShot(True)
+        self.no_audio_timer.setInterval(10000)  # 10 seconds
+        self.no_audio_timer.timeout.connect(self._show_audio_warning)
+        
+        self.last_input_level = 0.0
+        self.last_output_level = 0.0
+        self.audio_detected_recently = False
 
         # --- Separator Line ---
         # Spacing handled by central_layout.setSpacing
@@ -844,6 +896,8 @@ class MainWindow(QMainWindow):
             self.status_indicator.setText("Status: Stopping...")
             self.record_button.setEnabled(False)
             self.recording_timer.stop()
+            # Dismiss audio warning banner when ending recording
+            self.audio_warning_banner.setVisible(False)
             self.recording_pipeline.stop()
 
     def handle_recording_started(self):
@@ -856,6 +910,12 @@ class MainWindow(QMainWindow):
         self.update_recording_timer_display()
         self.recording_timer.start()
         logger.info("UI: Recording started signal received.")
+        
+        # Start audio level monitoring
+        self.audio_level_timer.start()
+        self.no_audio_timer.start()
+        self.audio_warning_banner.setVisible(False)
+        self.audio_detected_recently = False
 
     def handle_recording_finished(self, filename, duration, size):
         self.is_recording = False
@@ -867,6 +927,12 @@ class MainWindow(QMainWindow):
         base_filename = os.path.basename(filename)
         self.status_bar.showMessage(f"Recording saved: {base_filename} ({duration:.1f}s)")
         logger.info(f"UI: Recording finished: {filename}, Duration: {duration}, Size: {size}")
+        
+        # Stop audio level monitoring
+        self.audio_level_timer.stop()
+        self.no_audio_timer.stop()
+        self.audio_warning_banner.setVisible(False)
+        
         # No DB update needed here; pipeline handles it
         self.load_recordings()
 
@@ -896,6 +962,12 @@ class MainWindow(QMainWindow):
         self.timer_label.setText("00:00:00")
         self.record_button.setEnabled(True)
         self.status_bar.showMessage(f"Error: {error_message}")
+        
+        # Stop audio level monitoring
+        self.audio_level_timer.stop()
+        self.no_audio_timer.stop()
+        self.audio_warning_banner.setVisible(False)
+        
         QMessageBox.warning(self, "Recording Error", error_message)
         print(f"UI: Recording error: {error_message}")
 
@@ -2337,6 +2409,70 @@ class MainWindow(QMainWindow):
             cursor.createList(QTextListFormat.ListDecimal)
             cursor.endEditBlock()
         self.meeting_notes_edit.setTextCursor(cursor)
+
+    def _check_audio_levels(self):
+        """Check current audio levels from the recorder."""
+        if not self.is_recording:
+            return
+            
+        # Get audio levels from the recorder
+        input_level, output_level = self._get_current_audio_levels()
+        
+        # Consider audio detected if either input or output has signal
+        threshold = 0.01  # Adjust this threshold as needed
+        audio_detected = input_level > threshold or output_level > threshold
+        
+        if audio_detected:
+            self.audio_detected_recently = True
+            self.no_audio_timer.stop()
+            self.no_audio_timer.start()  # Restart the 10-second timer
+            if self.audio_warning_banner.isVisible():
+                self.audio_warning_banner.setVisible(False)
+        
+        self.last_input_level = input_level
+        self.last_output_level = output_level
+    
+    def _get_current_audio_levels(self):
+        """Get current audio levels from the recording pipeline."""
+        try:
+            if hasattr(self, 'recording_pipeline') and hasattr(self.recording_pipeline, 'recorder'):
+                # Access the current audio levels from the recorder
+                if hasattr(self.recording_pipeline.recorder, 'get_current_levels'):
+                    return self.recording_pipeline.recorder.get_current_levels()
+                else:
+                    # Fallback: estimate from recent frames if available
+                    if hasattr(self.recording_pipeline.recorder, 'frames') and self.recording_pipeline.recorder.frames:
+                        recent_frames = self.recording_pipeline.recorder.frames[-10:]  # Last 10 frames
+                        if recent_frames:
+                            import numpy as np
+                            combined = np.concatenate(recent_frames, axis=0)
+                            # Calculate RMS (root mean square) as a simple level indicator
+                            rms = np.sqrt(np.mean(combined**2))
+                            # Assume mixed signal, so same level for both
+                            return float(rms), float(rms)
+            return 0.0, 0.0
+        except Exception as e:
+            logger.debug(f"Error getting audio levels: {e}")
+            return 0.0, 0.0
+    
+    def _show_audio_warning(self):
+        """Show the audio warning banner."""
+        if not self.is_recording:
+            return
+            
+        # Determine which type of audio is missing
+        if self.last_input_level <= 0.01 and self.last_output_level <= 0.01:
+            message = "No audio detected from microphone or speakers"
+        elif self.last_input_level <= 0.01:
+            message = "No audio detected from microphone"
+        elif self.last_output_level <= 0.01:
+            message = "No audio detected from speakers"
+        else:
+            return  # Audio is actually being detected
+            
+        self.audio_warning_label.setText(message)
+        self.audio_warning_banner.setVisible(True)
+        logger.info(f"Audio warning shown: {message}")
 
 # --- Tag Chip Widget ---
 class TagChip(QLabel):

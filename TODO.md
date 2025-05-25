@@ -1,6 +1,6 @@
 ### Playback & Audio Controls
-- Implement sound detection banner warning if a meeting is started but no audio is being detected.
-- Remove the volume control and playback control from speaker snippet.
+- Implement a silent/quiet sound detection warning banner in the main window below the main controls bar if a meeting is started but no audio is being detected. Differentiate between no audio being received and no audio being sent. This doesn't need to be a LOUD warning or notification, as sometimes meetings will start quietly or have quiet periods. The banner shouldn't pop up for every quiet period but if no audio is detected for over 10 seconds then the banner should appear.
+
 
 ### UI Feedback & Dialogs
 - Add a spinner progress dialog to indicate when meeting notes are being generated. Currently app looks like its hanging. See Meeting Notes dialog.

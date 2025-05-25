@@ -277,6 +277,29 @@ theme_qss = {
             border: none;
             background: {palette['panel_bg']};
         }
+        /* Audio Warning Banner */
+        QFrame#AudioWarningBanner {
+            background: #ff6f00;
+            border-radius: 4px;
+            margin: 2px 0;
+        }
+        QLabel#AudioWarningLabel {
+            color: #181818;
+            font-weight: bold;
+            background: transparent;
+        }
+        QPushButton#CloseWarningButton {
+            background: transparent;
+            color: #181818;
+            border: none;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 0px;
+        }
+        QPushButton#CloseWarningButton:hover {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
     """,
     "light": """
         QMainWindow, QDialog {
@@ -498,7 +521,7 @@ theme_qss = {
         QLabel#ChatTimestampLabel {
             font-size: 11px;
             color: #888;
-            margin-top: 2px;
+            margin-left: 8px;
         }
         /* User bubble */
         ChatMessageWidget[is_user="true"] QTextEdit {
@@ -541,6 +564,29 @@ theme_qss = {
         QTextEdit#MeetingNotesEdit {
             border: none;
             background: {palette['panel_bg']};
+        }
+        /* Audio Warning Banner */
+        QFrame#AudioWarningBanner {
+            background: #ffa726;
+            border-radius: 4px;
+            margin: 2px 0;
+        }
+        QLabel#AudioWarningLabel {
+            color: #181818;
+            font-weight: bold;
+            background: transparent;
+        }
+        QPushButton#CloseWarningButton {
+            background: transparent;
+            color: #181818;
+            border: none;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 0px;
+        }
+        QPushButton#CloseWarningButton:hover {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
         }
     """
 }
