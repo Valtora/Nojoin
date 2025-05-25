@@ -128,8 +128,8 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
     pipeline_config_path = OFFLINE_DIARIZATION_CONFIG
     logger.info(f"Starting diarization for {audio_path} using offline config: {pipeline_config_path}, device: {device_str} (subprocess mode)")
 
-    # Regex to match custom progress lines (e.g., PROGRESS: step_name:percent)
-    progress_re = re.compile(r"PROGRESS: ([^:]+):(\d+)")
+    # Regex to match progress lines from subprocess (e.g., "PROGRESS: 50")
+    progress_re = re.compile(r"PROGRESS:\s*(\d+)")
     try:
         with tempfile.NamedTemporaryFile(suffix="_diarization.pkl", delete=False) as tmp:
             output_path = tmp.name
@@ -146,22 +146,16 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
                 process.terminate()
                 process.wait()
                 return None
-            # Look for progress percentage and step_name in the line
+            # Look for progress percentage in the line
             match = progress_re.search(line)
             if match:
-                step_name = match.group(1)
-                percent = int(match.group(2))
-                # Only update progress for the main diarization step
-                if step_name.lower() in ("diarization", "segmentation", "pipeline", "main", "inference"):  # Adjust as needed
-                    if percent != last_percent and progress_callback:
-                        progress_callback(min(percent, 100))
-                        last_percent = percent
-                else:
-                    # For other steps, optionally show a spinner or message
-                    if progress_callback and percent == 0:
-                        progress_callback(0)  # Keep spinner or show 'Initialising...'
-            # Optionally, print or log the line for debugging
-            logger.debug(f"[diarization-subprocess] {line.strip()}")
+                percent = int(match.group(1))
+                if percent != last_percent and progress_callback:
+                    progress_callback(min(percent, 100))
+                    last_percent = percent
+            # Log the line for debugging
+            if line.strip():
+                logger.debug(f"[diarization-subprocess] {line.strip()}")
         process.wait()
         if cancel_check and cancel_check():
             logger.info("Diarization cancelled after subprocess wait.")

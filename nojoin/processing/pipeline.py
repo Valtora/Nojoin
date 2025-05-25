@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-def process_recording(recording_id: str, audio_path: str, whisper_progress_callback=None, diarization_progress_callback=None, stage_update_callback=None, cancel_check=None):
+def process_recording(recording_id: str, audio_path: str, whisper_progress_callback=None, diarization_progress_callback=None, stage_update_callback=None, stage_callback=None, cancel_check=None):
     """Runs the full transcription and diarization pipeline for a recording, with optional progress callbacks and cancellation."""
     # Local imports for performance: only load heavy dependencies when actually processing
     import os
@@ -43,24 +43,41 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
 
     temp_files = []
     try:
+        # VAD Stage
+        if stage_callback:
+            stage_callback('vad')
+        if stage_update_callback:
+            stage_update_callback("Pre-processing audio...")
+            
+        # Simple VAD progress callback
+        def vad_progress_callback(percent):
+            if whisper_progress_callback:
+                whisper_progress_callback(percent)
+            
         # Step 1: Preprocess for VAD (MP3 to mono, 16kHz WAV)
         if cancel_check and cancel_check():
             logger.info(f"Processing cancelled before VAD preprocessing for recording_id={recording_id}")
             return False
+        vad_progress_callback(20)  # 20% - starting preprocessing
         vad_wav_path = preprocess_audio_for_vad(abs_audio_path)
         if not vad_wav_path:
             raise RuntimeError("Audio preprocessing for VAD failed.")
         temp_files.append(vad_wav_path)
+        vad_progress_callback(40)  # 40% - preprocessing done
 
         # Step 2: Run Silero VAD (mute non-speech, output new WAV)
         if cancel_check and cancel_check():
             logger.info(f"Processing cancelled before VAD for recording_id={recording_id}")
             return False
+        if stage_update_callback:
+            stage_update_callback("Detecting voice activity...")
+        vad_progress_callback(60)  # 60% - starting VAD
         vad_processed_wav = vad_wav_path.replace("_vad.wav", "_vad_processed.wav")
         vad_success = mute_non_speech_segments(vad_wav_path, vad_processed_wav)
         if not vad_success:
             raise RuntimeError("Silero VAD processing failed.")
         temp_files.append(vad_processed_wav)
+        vad_progress_callback(80)  # 80% - VAD done
 
         # Step 3: Convert VAD-processed WAV to MP3
         if cancel_check and cancel_check():
@@ -71,11 +88,14 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         if not mp3_success:
             raise RuntimeError("Failed to convert VAD-processed WAV to MP3.")
         temp_files.append(vad_processed_mp3)
+        vad_progress_callback(100)  # 100% - VAD stage complete
 
         processed_audio_path = vad_processed_mp3
         logger.info(f"Using VAD-processed audio for pipeline: {processed_audio_path}")
 
         # 1. Transcription
+        if stage_callback:
+            stage_callback('transcription')
         transcription_result = None
         try:
             if cancel_check and cancel_check():
@@ -116,6 +136,8 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
             model = config_manager.get(f"{llm_provider}_model")
             backend = get_llm_backend(llm_provider, api_key=api_key, model=model)
         # 2. Diarization
+        if stage_callback:
+            stage_callback('diarization')
         diarization_result = None
         try:
             if cancel_check and cancel_check():

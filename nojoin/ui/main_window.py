@@ -170,6 +170,7 @@ class ProcessingWorker(QThread):
     finished = Signal(str) # recording_id
     error = Signal(str, str) # recording_id, error_message
     stage_update = Signal(str) # e.g., "Transcribing...", "Diarizing..."
+    stage_changed = Signal(str) # Stage name: 'vad', 'transcription', 'diarization'
     progress_update = Signal(int, float, float) # percent, elapsed, eta
 
     def __init__(self, recording_id, audio_path):
@@ -177,6 +178,7 @@ class ProcessingWorker(QThread):
         self.recording_id = str(recording_id)
         self.audio_path = audio_path
         self._cancel_requested = False
+        self._current_stage = None
 
     def request_cancel(self):
         logger.info(f"ProcessingWorker cancel requested for ID: {self.recording_id}")
@@ -191,20 +193,29 @@ class ProcessingWorker(QThread):
         self.started.emit(self.recording_id)
         try:
             start_time = time.monotonic()
+            
+            def stage_callback(stage_name):
+                """Callback for stage transitions"""
+                self._current_stage = stage_name
+                self.stage_changed.emit(stage_name)
+                
             def whisper_progress_callback(percent):
                 elapsed = time.monotonic() - start_time
                 eta = (elapsed / percent * (100 - percent)) if percent > 0 else float('inf')
                 self.progress_update.emit(percent, elapsed, eta)
+                
             def diarization_progress_callback(percent):
                 elapsed = time.monotonic() - start_time
                 eta = (elapsed / percent * (100 - percent)) if percent > 0 else float('inf')
                 self.progress_update.emit(percent, elapsed, eta)
+                
             success = processing_pipeline.process_recording(
                 self.recording_id,
                 self.audio_path,
                 whisper_progress_callback=whisper_progress_callback,
                 diarization_progress_callback=diarization_progress_callback,
                 stage_update_callback=self.stage_update.emit,
+                stage_callback=stage_callback,
                 cancel_check=lambda: self._cancel_requested
             )
             if self._cancel_requested:
@@ -1886,10 +1897,14 @@ class MainWindow(QMainWindow):
 
         # Connect worker signals to dialog and main window slots
         worker.started.connect(lambda rec_id: self.update_table_status(rec_id, "Processing"))
+        
+        # Connect stage updates to dialog's set_stage method
+        worker.stage_changed.connect(progress_dialog.set_stage)
         worker.stage_update.connect(progress_dialog.update_message)
-        # Connect unified progress bar
-        worker.progress_update.connect(progress_dialog.update_progress)
-        # Remove old logic for switching progress bars
+        
+        # Connect progress updates to dialog's stage progress method
+        worker.progress_update.connect(lambda percent, elapsed, eta: progress_dialog.update_stage_progress(percent))
+        
         worker.finished.connect(lambda rec_id: self._handle_processing_completion(rec_id, progress_dialog))
         worker.error.connect(lambda rec_id, msg: self._handle_processing_completion(rec_id, progress_dialog, msg))
 
