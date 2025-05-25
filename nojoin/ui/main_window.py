@@ -92,6 +92,39 @@ from nojoin.processing.LLM_Services import get_llm_backend
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
+# --- Custom Click-to-Seek Slider ---
+class ClickToSeekSlider(QSlider):
+    """Custom QSlider that allows click-to-seek functionality."""
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Calculate position from click
+            if self.orientation() == Qt.Horizontal:
+                value = QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(),
+                    event.x(), self.width())
+            else:
+                value = QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(),
+                    event.y(), self.height())
+            
+            # Set the value and emit signals
+            self.setValue(value)
+            self.sliderMoved.emit(value)
+            self.sliderPressed.emit()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+            
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.sliderReleased.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
 # --- Worker Thread for Recording ---
 class RecordingWorker(QThread):
     started = Signal()
@@ -540,13 +573,15 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.stop_button.setFixedSize(self.BASE_SPACING * 5, self.BASE_SPACING * 5)
         self.stop_button.clicked.connect(self.on_stop_clicked)
-        # Audio seeker slider
-        self.seek_slider = QSlider(Qt.Horizontal)
+        # Audio seeker slider (with click-to-seek functionality)
+        self.seek_slider = ClickToSeekSlider(Qt.Horizontal)
         self.seek_slider.setMinimum(0)
         self.seek_slider.setMaximum(100)
         self.seek_slider.setValue(0)
         self.seek_slider.setEnabled(False)
         self.seek_slider.setFixedWidth(300)  # Wider for visibility
+        self.seek_slider.setCursor(Qt.PointingHandCursor)  # Show hand cursor to indicate clickability
+        self.seek_slider.setToolTip("Click to seek or drag to navigate through audio")
         self.seek_slider.sliderMoved.connect(self.handle_seek_slider_moved)
         self.seek_slider.sliderPressed.connect(self.handle_seek_slider_pressed)
         self.seek_slider.sliderReleased.connect(self.handle_seek_slider_released)
@@ -577,6 +612,12 @@ class MainWindow(QMainWindow):
         playback_group.addSpacing(self.BASE_SPACING * 1.5) # Space before slider
         playback_group.addWidget(self.seek_slider)
         playback_group.addWidget(self.seek_time_label)
+        # Add separator between timestamp and volume controls
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFixedHeight(20)
+        playback_group.addWidget(separator)
         playback_group.addWidget(QLabel("Vol:"))
         playback_group.addWidget(self.volume_slider)
         playback_group.addWidget(self.volume_label)
@@ -1177,6 +1218,9 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.seek_slider.setEnabled(True)
+        # Reset the seeker bar to the beginning
+        self.seek_slider.setValue(0)
+        self.update_seek_time_label(0, getattr(self, '_playback_duration', 0.0))
     def _on_playback_finished(self):
         self._on_playback_stopped()
     def _on_playback_error(self, msg):

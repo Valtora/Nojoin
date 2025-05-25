@@ -1,9 +1,6 @@
 ### Playback & Audio Controls
-- Add a separator between playback controller timestamp and volume controller.
-- Pressing 'STOP' on the playback controller does not reset the seeker bar visually, even though playback resets.
-- Remove the volume control and playback control from speaker snippet.
-- Renable click to seek to point under cursor for audio playback.
 - Implement sound detection banner warning if a meeting is started but no audio is being detected.
+- Remove the volume control and playback control from speaker snippet.
 
 ### UI Feedback & Dialogs
 - Add a spinner progress dialog to indicate when meeting notes are being generated. Currently app looks like its hanging. See Meeting Notes dialog.
