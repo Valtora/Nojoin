@@ -25,6 +25,7 @@ class ParticipantsDialog(QDialog):
         self._merge_selected = set()
         self.snippet_player = PlaybackController()
         self._pending_name_changes = {}  # speaker_id -> (diarization_label, new_name)
+        self._playing_speaker_id = None  # Track which speaker is currently playing
         self._init_ui()
 
     def _init_ui(self):
@@ -58,31 +59,6 @@ class ParticipantsDialog(QDialog):
         btn_box.accepted.connect(self._on_accept)
         btn_box.rejected.connect(self.reject)
         self.layout.addWidget(btn_box)
-        # Add snippet playback bar at the bottom
-        playback_bar = QHBoxLayout()
-        self.snippet_play_btn = QPushButton()
-        self.snippet_play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-        self.snippet_play_btn.setToolTip("Play Snippet")
-        self.snippet_play_btn.setEnabled(False)
-        self.snippet_play_btn.clicked.connect(self._play_current_snippet)
-        self.snippet_stop_btn = QPushButton()
-        self.snippet_stop_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
-        self.snippet_stop_btn.setToolTip("Stop Snippet")
-        self.snippet_stop_btn.setEnabled(False)
-        self.snippet_stop_btn.clicked.connect(self._stop_current_snippet)
-        self.snippet_volume_slider = QSlider(Qt.Horizontal)
-        self.snippet_volume_slider.setMinimum(0)
-        self.snippet_volume_slider.setMaximum(100)
-        self.snippet_volume_slider.setValue(75)
-        self.snippet_volume_slider.setFixedWidth(100)
-        self.snippet_volume_slider.valueChanged.connect(self._set_snippet_volume)
-        playback_bar.addWidget(self.snippet_play_btn)
-        playback_bar.addWidget(self.snippet_stop_btn)
-        playback_bar.addWidget(QLabel("Volume:"))
-        playback_bar.addWidget(self.snippet_volume_slider)
-        playback_bar.addStretch(1)
-        self.layout.addLayout(playback_bar)
-        self._current_snippet = None
 
     def _populate_speakers(self):
         # Remove old widgets
@@ -103,13 +79,15 @@ class ParticipantsDialog(QDialog):
                 # If not, skip rendering this row
                 # (We rely on the DB query to only return 'Unknown' if it exists, so this is just for clarity)
                 pass
-            # Play
+            # Play/Stop
             play_btn = QPushButton()
             play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             play_btn.setToolTip("Play snippet")
             play_btn.setFixedSize(22, 22)
             play_btn.setEnabled(not is_unknown)
-            play_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.play_speaker_snippet(s_id))
+            play_btn.setCheckable(True)
+            play_btn.setProperty("speaker_id", speaker_id)
+            play_btn.clicked.connect(lambda checked, s_id=speaker_id, btn=play_btn: self.toggle_speaker_snippet(s_id, btn))
             # Delete
             del_btn = QPushButton()
             del_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
@@ -161,12 +139,33 @@ class ParticipantsDialog(QDialog):
             self._merge_selected.discard(speaker_id)
         self.merge_btn.setEnabled(len(self._merge_selected) >= 2)
 
-    def play_speaker_snippet(self, speaker_id):
+    def toggle_speaker_snippet(self, speaker_id, button):
         try:
+            # If this speaker is already playing, stop it
+            if self._playing_speaker_id == speaker_id:
+                self.snippet_player.stop()
+                self._playing_speaker_id = None
+                button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+                button.setToolTip("Play snippet")
+                button.setChecked(False)
+                return
+            
+            # Stop any other playing snippet
+            if self._playing_speaker_id is not None:
+                # Find and reset the previous playing button
+                if self._playing_speaker_id in self.speaker_widgets:
+                    prev_btn = self.speaker_widgets[self._playing_speaker_id]['play_btn']
+                    prev_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+                    prev_btn.setToolTip("Play snippet")
+                    prev_btn.setChecked(False)
+                self.snippet_player.stop()
+            
+            # Play the new snippet
             speaker_data = db_ops.get_speaker_by_id(speaker_id)
             rec = db_ops.get_recording_by_id(self.recording_id)
             if not rec or not rec.get('audio_path') or not os.path.exists(rec['audio_path']):
                 QMessageBox.warning(self, "Audio Missing", "Audio file for this recording is missing.")
+                button.setChecked(False)
                 return
             audio_path = rec['audio_path']
             with db_ops.get_db_connection() as conn:
@@ -175,34 +174,41 @@ class ParticipantsDialog(QDialog):
                 row = cursor.fetchone()
                 if not row or row['snippet_start'] is None or row['snippet_end'] is None:
                     QMessageBox.warning(self, "Snippet Missing", "No snippet segment available for this speaker. Please re-process the recording.")
+                    button.setChecked(False)
                     return
                 snippet_start = row['snippet_start']
                 snippet_end = row['snippet_end']
             duration = snippet_end - snippet_start
             if duration <= 0:
                 QMessageBox.warning(self, "Snippet Error", "Invalid snippet segment duration.")
+                button.setChecked(False)
                 return
             max_duration = 10.0
             if duration > max_duration:
                 duration = max_duration
-            # Prepare snippet for playback bar
-            self._current_snippet = (audio_path, snippet_start, duration)
-            self.snippet_play_btn.setEnabled(True)
-            self.snippet_stop_btn.setEnabled(True)
-            self._play_current_snippet()
+            
+            # Play the snippet and update button state
+            self.snippet_player.play(audio_path, start_time=snippet_start, duration=duration)
+            self._playing_speaker_id = speaker_id
+            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+            button.setToolTip("Stop snippet")
+            
+            # Connect to playback finished signal to reset button when snippet ends
+            self.snippet_player.playback_finished.connect(lambda: self._on_snippet_finished(speaker_id))
         except Exception as e:
             QMessageBox.warning(self, "Playback Error", f"Failed to play speaker snippet: {str(e)}")
+            button.setChecked(False)
+    
+    def _on_snippet_finished(self, speaker_id):
+        """Reset the button state when snippet finishes playing"""
+        if self._playing_speaker_id == speaker_id and speaker_id in self.speaker_widgets:
+            play_btn = self.speaker_widgets[speaker_id]['play_btn']
+            play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            play_btn.setToolTip("Play snippet")
+            play_btn.setChecked(False)
+            self._playing_speaker_id = None
 
-    def _play_current_snippet(self):
-        if self._current_snippet:
-            audio_path, start, duration = self._current_snippet
-            self.snippet_player.play(audio_path, start_time=start, duration=duration)
 
-    def _stop_current_snippet(self):
-        self.snippet_player.stop()
-
-    def _set_snippet_volume(self, value):
-        self.snippet_player.set_volume(value / 100.0)
 
     def save_speaker_name(self, name_edit):
         new_name = name_edit.text().strip()
@@ -257,6 +263,9 @@ class ParticipantsDialog(QDialog):
         self.participants_updated.emit(self.recording_id)
 
     def _on_accept(self):
+        # Stop any playing snippet
+        self.snippet_player.stop()
+        self._playing_speaker_id = None
         # Apply all pending name changes
         for speaker_id, (diarization_label, new_name) in self._pending_name_changes.items():
             db_ops.update_speaker_name(speaker_id, new_name, self.recording_id)
@@ -265,12 +274,16 @@ class ParticipantsDialog(QDialog):
         self.accept()
 
     def reject(self):
+        # Stop any playing snippet
+        self.snippet_player.stop()
+        self._playing_speaker_id = None
         # Clear pending changes on cancel
         self._pending_name_changes.clear()
         super().reject()
 
     def closeEvent(self, event):
         self.snippet_player.stop()
+        self._playing_speaker_id = None
         # Clear pending changes on close
         self._pending_name_changes.clear()
         super().closeEvent(event)
