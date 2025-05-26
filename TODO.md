@@ -1,3 +1,6 @@
+### Meting Participant Management
+- Only regenerate notes after all pressing 'Save' following merge mode. Right now speaker notes are regenerated after each speaker merge.
+
 ### UI Feedback & Dialogs
 - Add a spinner progress dialog to indicate when meeting notes are being generated. Currently app looks like its hanging. See Meeting Notes dialog.
 
