@@ -7,48 +7,48 @@ from PySide6.QtWidgets import QWidget
 # --- THEME PALETTE AND FONT HIERARCHY ---
 THEME_PALETTE = {
     "dark": {
-        "primary_bg": "#232323",
-        "secondary_bg": "#181818",
-        "panel_bg": "#232323",
-        "panel_border": "#444",
+        "primary_bg": "#000000",
+        "secondary_bg": "#000000",
+        "panel_bg": "#000000",
+        "panel_border": "#ff9800",
         "accent": "#ff9800",
-        "accent2": "#ff6f00",
-        "primary_text": "#f5f5f5",
-        "secondary_text": "#aaa",
-        "muted_text": "#888",
-        "html_bg": "#232323",
-        "html_text": "#eaeaea",
-        "chip_bg": "#232323",
+        "accent2": "#ff9800",
+        "primary_text": "#ff9800",
+        "secondary_text": "#ff9800",
+        "muted_text": "#888888",
+        "html_bg": "#000000",
+        "html_text": "#ff9800",
+        "chip_bg": "#000000",
         "chip_border": "#ff9800",
         "chip_text": "#ff9800",
-        "speaker_chip_border": "#2196f3",
-        "speaker_chip_text": "#2196f3",
-        "status_bar_bg": "#181818",
+        "speaker_chip_border": "#ff9800",
+        "speaker_chip_text": "#ff9800",
+        "status_bar_bg": "#000000",
         "status_bar_text": "#ff9800",
-        "disabled_bg": "#555",
-        "disabled_text": "#bbb",
+        "disabled_bg": "#222222",
+        "disabled_text": "#888888",
     },
     "light": {
         "primary_bg": "#ffffff",
-        "secondary_bg": "#f0f0f0",
+        "secondary_bg": "#ffffff",
         "panel_bg": "#ffffff",
-        "panel_border": "#cccccc",
-        "accent": "#007acc",
-        "accent2": "#005f9e",
-        "primary_text": "#181818",
-        "secondary_text": "#555",
-        "muted_text": "#888",
+        "panel_border": "#007aff",
+        "accent": "#007aff",
+        "accent2": "#007aff",
+        "primary_text": "#007aff",
+        "secondary_text": "#007aff",
+        "muted_text": "#888888",
         "html_bg": "#ffffff",
-        "html_text": "#181818",
+        "html_text": "#007aff",
         "chip_bg": "#ffffff",
-        "chip_border": "#007acc",
-        "chip_text": "#007acc",
-        "speaker_chip_border": "#2196f3",
-        "speaker_chip_text": "#2196f3",
-        "status_bar_bg": "#e0e0e0",
-        "status_bar_text": "#007acc",
-        "disabled_bg": "#bbb",
-        "disabled_text": "#666",
+        "chip_border": "#007aff",
+        "chip_text": "#007aff",
+        "speaker_chip_border": "#007aff",
+        "speaker_chip_text": "#007aff",
+        "status_bar_bg": "#ffffff",
+        "status_bar_text": "#007aff",
+        "disabled_bg": "#dddddd",
+        "disabled_text": "#888888",
     }
 }
 FONT_HIERARCHY = {
@@ -76,8 +76,8 @@ theme_qss = {
             border-top: 1px solid #333;
         }
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ff9800, stop:1 #ff6f00);
-            color: #181818;
+            background: {palette['accent']};
+            color: {palette['secondary_bg']};
             border: none;
             border-radius: 6px;
             padding: 6px 16px;
@@ -87,14 +87,24 @@ theme_qss = {
             min-height: 28px;
         }
         QPushButton:disabled {
-            background: #555;
-            color: #bbb;
+            background: {palette['disabled_bg']};
+            color: {palette['disabled_text']};
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ffa726, stop:1 #ff9800);
+            background: {hover_color};
+            color: {palette['secondary_bg']};
         }
         QPushButton:pressed {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ff6f00, stop:1 #ff9800);
+            background: {palette['accent2']};
+            color: {palette['secondary_bg']};
+        }
+        QPushButton#AddLabelButton {
+            background: {palette['accent']};
+            color: {palette['secondary_bg']};
+            border-radius: 8px;
+            padding: 2px 12px;
+            font-weight: bold;
+            font-size: {font['caption']['size']}px;
         }
         QTableView {
             background: #181818;
@@ -137,14 +147,14 @@ theme_qss = {
             min-height: 2px;
         }
         QSlider::groove:horizontal {
-            border: 1px solid #444;
+            border: 1px solid {slider_groove};
             height: 4px;
-            background: #444;
+            background: {slider_groove};
             border-radius: 2px;
         }
         QSlider::handle:horizontal {
-            background: #ff9800;
-            border: 1px solid #ff9800;
+            background: {slider_handle};
+            border: 1px solid {slider_handle};
             width: 14px;
             border-radius: 7px;
         }
@@ -274,8 +284,9 @@ theme_qss = {
             padding: 6px 10px;
         }
         QTextEdit#MeetingNotesEdit {
-            border: none;
             background: {palette['panel_bg']};
+            border: none;
+            color: {palette['primary_text']};
         }
         /* Audio Warning Banner */
         QFrame#AudioWarningBanner {
@@ -317,8 +328,8 @@ theme_qss = {
             border-top: 1px solid #ccc;
         }
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007acc, stop:1 #005f9e);
-            color: #ffffff;
+            background: {palette['accent']};
+            color: {palette['secondary_bg']};
             border: none;
             border-radius: 6px;
             padding: 6px 16px;
@@ -328,14 +339,24 @@ theme_qss = {
             min-height: 28px;
         }
         QPushButton:disabled {
-            background: #bbb;
-            color: #666;
+            background: {palette['disabled_bg']};
+            color: {palette['disabled_text']};
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #008ae6, stop:1 #007acc);
+            background: {hover_color};
+            color: {palette['secondary_bg']};
         }
         QPushButton:pressed {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #005f9e, stop:1 #007acc);
+            background: {palette['accent2']};
+            color: {palette['secondary_bg']};
+        }
+        QPushButton#AddLabelButton {
+            background: {palette['accent']};
+            color: {palette['secondary_bg']};
+            border-radius: 8px;
+            padding: 2px 12px;
+            font-weight: bold;
+            font-size: {font['caption']['size']}px;
         }
         QTableView {
             background: #ffffff;
@@ -378,14 +399,14 @@ theme_qss = {
             min-height: 1px;
         }
         QSlider::groove:horizontal {
-            border: 1px solid #ccc;
+            border: 1px solid {slider_groove};
             height: 4px;
-            background: #ccc;
+            background: {slider_groove};
             border-radius: 2px;
         }
         QSlider::handle:horizontal {
-            background: #007acc;
-            border: 1px solid #007acc;
+            background: {slider_handle};
+            border: 1px solid {slider_handle};
             width: 14px;
             border-radius: 7px;
         }
@@ -562,8 +583,9 @@ theme_qss = {
             padding: 6px 10px;
         }
         QTextEdit#MeetingNotesEdit {
-            border: none;
             background: {palette['panel_bg']};
+            border: none;
+            color: {palette['primary_text']};
         }
         /* Audio Warning Banner */
         QFrame#AudioWarningBanner {
@@ -597,6 +619,15 @@ def get_theme_qss(theme_name: str) -> str:
     """
     palette = THEME_PALETTE[theme_name]
     font = FONT_HIERARCHY
+    # Set hover color for each theme
+    if theme_name == "dark":
+        hover_color = "#ffb74d"  # lighter orange
+        slider_groove = "#444444"
+        slider_handle = "#ffb74d"
+    else:
+        hover_color = "#0051a8"  # darker blue
+        slider_groove = "#cccccc"
+        slider_handle = "#007aff"
     return f"""
     QMainWindow, QDialog {{
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {palette['secondary_bg']}, stop:1 {palette['primary_bg']});
@@ -613,7 +644,7 @@ def get_theme_qss(theme_name: str) -> str:
         border-top: 1px solid {palette['panel_border']};
     }}
     QPushButton {{
-        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {palette['accent']}, stop:1 {palette['accent2']});
+        background: {palette['accent']};
         color: {palette['secondary_bg']};
         border: none;
         border-radius: 6px;
@@ -653,28 +684,39 @@ def get_theme_qss(theme_name: str) -> str:
         color: {palette['disabled_text']};
     }}
     QPushButton:hover {{
-        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {palette['accent']}AA, stop:1 {palette['accent']});
+        background: {hover_color};
+        color: {palette['secondary_bg']};
     }}
     QPushButton:pressed {{
-        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {palette['accent2']}, stop:1 {palette['accent']});
+        background: {palette['accent2']};
+        color: {palette['secondary_bg']};
     }}
-    QFrame[objectName="MainPanelLeft"], QFrame[objectName="MainPanelCenter"], QFrame[objectName="MainPanelRight"], QFrame#ChatPanel {{
+    QFrame[objectName="MainPanelLeft"], QFrame[objectName="MainPanelRight"], QFrame#ChatPanel {{
         background: {palette['panel_bg']};
-        border: 2px solid transparent;
-        border-radius: 10px;
+        border: 2.5px solid {palette['panel_border']};
+        border-radius: 18px;
         padding: 12px;
     }}
-    QFrame#ChatPanel {{
+    QFrame[objectName="MainPanelCenter"] {{
+        background: {palette['panel_bg']};
         border: none;
         border-radius: 0px;
-        padding: 0px 0px 8px 0px;
+        padding: 12px;
+    }}
+    QTextEdit#MeetingNotesEdit {{
         background: {palette['panel_bg']};
+        border: none;
+        color: {palette['primary_text']};
     }}
     QLabel#MeetingContextInfo {{
         font-size: {font['h1']['size']}px;
         font-weight: {font['h1']['weight']};
         color: {palette['accent']};
         margin-bottom: 6px;
+        border-radius: 12px;
+        border: 2px solid {palette['panel_border']};
+        padding: 8px 12px;
+        background: {palette['panel_bg']};
     }}
     QLabel {{
         color: {palette['accent']};
@@ -683,14 +725,15 @@ def get_theme_qss(theme_name: str) -> str:
     QLineEdit, QTextEdit {{
         background: {palette['panel_bg']};
         color: {palette['primary_text']};
-        border: 1px solid {palette['panel_border']};
-        border-radius: 4px;
+        border: 1.5px solid {palette['panel_border']};
+        border-radius: 8px;
         padding: 4px;
         font-size: {font['body']['size']}px;
     }}
     QTextEdit[readOnly="true"] {{
         border: none;
         background: {palette['panel_bg']};
+        color: {palette['primary_text']};
     }}
     QFrame[frameShape="4"] {{ /* QFrame.HLine */
         background: {palette['panel_border']};

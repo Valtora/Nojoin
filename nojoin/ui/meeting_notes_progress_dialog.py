@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
 from PySide6.QtCore import Qt
+from nojoin.utils.theme_utils import apply_theme_to_widget
+from nojoin.utils.config_manager import config_manager
 
 class MeetingNotesProgressDialog(QDialog):
     def __init__(self, parent=None, message="Generating meeting notes..."):
@@ -9,6 +11,7 @@ class MeetingNotesProgressDialog(QDialog):
         self.setMinimumHeight(120)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        apply_theme_to_widget(self, config_manager.get("theme", "dark"))
 
         layout = QVBoxLayout(self)
         layout.setSpacing(16)

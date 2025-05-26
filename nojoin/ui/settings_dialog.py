@@ -26,7 +26,7 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self._init_ui()
         self._load_config()
-        # Apply theme on construction
+        # Apply theme on construction (ensure after UI setup)
         apply_theme_to_widget(self, config_manager.get("theme", "dark"))
 
     def _init_ui(self):

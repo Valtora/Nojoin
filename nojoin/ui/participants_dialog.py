@@ -6,6 +6,7 @@ from nojoin.db import database as db_ops
 from nojoin.utils.config_manager import config_manager, from_project_relative_path
 import logging
 from .playback_controller import PlaybackController
+from nojoin.utils.theme_utils import apply_theme_to_widget
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,8 @@ class ParticipantsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Manage Participants - {recording_data.get('name', 'Meeting')}")
         self.setMinimumWidth(500)
+        from nojoin.utils.config_manager import config_manager
+        apply_theme_to_widget(self, config_manager.get("theme", "dark"))
         self.recording_id = recording_id
         self.recording_data = recording_data
         self.layout = QVBoxLayout(self)

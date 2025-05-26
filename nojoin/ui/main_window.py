@@ -396,7 +396,12 @@ class MainWindow(QMainWindow):
         # Meeting Notes
         if hasattr(self, 'meeting_notes_edit'):
             # Remove setStyleSheet for border or margin
-            pass
+            # Re-apply content to force theme update
+            current_html = self.meeting_notes_edit.toHtml()
+            self.meeting_notes_edit.clear()
+            self.meeting_notes_edit.setHtml(current_html)
+            # Set background fully transparent so parent panel color always shows through
+            self.meeting_notes_edit.setStyleSheet("background: transparent;")
         # Meeting Context Display (update on theme change)
         if hasattr(self, 'meeting_context_display'):
             selected_items = self.meetings_list_widget.selectedItems() if hasattr(self, 'meetings_list_widget') else []
@@ -503,6 +508,30 @@ class MainWindow(QMainWindow):
         # --- Apply theme to audio warning banner ---
         if hasattr(self, 'audio_warning_banner'):
             apply_theme_to_widget(self.audio_warning_banner, theme_name)
+        # Update slider style for theme
+        if hasattr(self, 'seek_slider') and hasattr(self, 'volume_slider'):
+            if theme_name == "dark":
+                slider_groove = "#444444"
+                slider_handle = "#ffb74d"
+            else:
+                slider_groove = "#cccccc"
+                slider_handle = "#007aff"
+            slider_qss = f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {slider_groove};
+                height: 4px;
+                background: {slider_groove};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {slider_handle};
+                border: 1px solid {slider_handle};
+                width: 14px;
+                border-radius: 7px;
+            }}
+            """
+            self.seek_slider.setStyleSheet(slider_qss)
+            self.volume_slider.setStyleSheet(slider_qss)
 
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
@@ -554,6 +583,7 @@ class MainWindow(QMainWindow):
         self.transcribe_button.setMinimumWidth(self.BASE_SPACING * 14) # Give text some space
         self.transcribe_button.setFixedHeight(self.BASE_SPACING * 5)
         self.transcribe_button.clicked.connect(self.on_transcribe_clicked)
+        self.transcribe_button.setVisible(False)
         # Recording controls
         self.record_button = QPushButton("Start Meeting")
         record_pixmap = QPixmap(20, 20)
@@ -614,6 +644,31 @@ class MainWindow(QMainWindow):
         self.volume_slider.setFixedWidth(80)
         self.volume_slider.valueChanged.connect(self._handle_volume_changed)
         self.volume_label = QLabel("75%")
+        # --- Explicitly set slider style for theme awareness ---
+        from nojoin.utils.config_manager import config_manager
+        theme = config_manager.get("theme", "dark")
+        if theme == "dark":
+            slider_groove = "#444444"
+            slider_handle = "#ffb74d"
+        else:
+            slider_groove = "#cccccc"
+            slider_handle = "#007aff"
+        slider_qss = f"""
+        QSlider::groove:horizontal {{
+            border: 1px solid {slider_groove};
+            height: 4px;
+            background: {slider_groove};
+            border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {slider_handle};
+            border: 1px solid {slider_handle};
+            width: 14px;
+            border-radius: 7px;
+        }}
+        """
+        self.seek_slider.setStyleSheet(slider_qss)
+        self.volume_slider.setStyleSheet(slider_qss)
         # Add widgets to top bar
         top_controls_layout.addWidget(self.transcribe_button)
         top_controls_layout.addWidget(self.record_button)
@@ -1091,12 +1146,14 @@ class MainWindow(QMainWindow):
             try:
                 import markdown2  # Local import for performance
                 html_notes = markdown2.markdown(notes_entry['notes'])
-                self.meeting_notes_edit.setHtml(wrap_html_body(html_notes, config_manager.get("theme", "dark")))
+                # Strip <html> and <body> tags if present
+                import re
+                html_notes = re.sub(r'<\/?(html|body)[^>]*>', '', html_notes, flags=re.IGNORECASE)
+                self.meeting_notes_edit.setHtml(html_notes)
             except Exception as e:
-                self.meeting_notes_edit.setHtml(wrap_html_body(f"<p>Error displaying notes: {e}</p><pre>{notes_entry['notes']}</pre>", config_manager.get("theme", "dark")))
+                self.meeting_notes_edit.setPlainText(f"Error displaying notes: {e}\n{notes_entry['notes']}")
         else:
-            self.meeting_notes_edit.setHtml(wrap_html_body("<p>No meeting notes available. Right-click the recording to generate notes.</p>", config_manager.get("theme", "dark")))
-        
+            self.meeting_notes_edit.setPlainText("No meeting notes available. Right-click the recording to generate notes.")
         self.meeting_notes_edit.setVisible(True)
         self.notes_have_been_edited = False
 
@@ -1150,10 +1207,11 @@ class MainWindow(QMainWindow):
             try:
                 import markdown2
                 html = markdown2.markdown(notes)
+                import re
+                html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
+                self.meeting_notes_edit.setHtml(html)
             except Exception:
-                html = f"<pre>{notes}</pre>"
-            html = wrap_html_body(html, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(html)
+                self.meeting_notes_edit.setPlainText(notes)
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Meeting notes generated.", 3000)
@@ -1162,10 +1220,8 @@ class MainWindow(QMainWindow):
                 spinner.close()
         def on_error(error):
             logger.error(f"Failed to generate meeting notes: {error}")
-            placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
-                           f"Please check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
-            themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(themed_html)
+            placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
+            self.meeting_notes_edit.setPlainText(placeholder)
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
@@ -1217,10 +1273,11 @@ class MainWindow(QMainWindow):
             try:
                 import markdown2
                 html = markdown2.markdown(notes)
+                import re
+                html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
+                self.meeting_notes_edit.setHtml(html)
             except Exception:
-                html = f"<pre>{notes}</pre>"
-            html = wrap_html_body(html, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(html)
+                self.meeting_notes_edit.setPlainText(notes)
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Meeting notes generated.", 3000)
@@ -1229,10 +1286,8 @@ class MainWindow(QMainWindow):
                 spinner.close()
         def on_error(error):
             logger.error(f"Failed to regenerate meeting notes: {error}")
-            placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
-                           f"Please check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
-            themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(themed_html)
+            placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
+            self.meeting_notes_edit.setPlainText(placeholder)
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
@@ -1446,10 +1501,7 @@ class MainWindow(QMainWindow):
                     return lambda e: self._remove_tag_from_recording(recording_id, tag_name)
                 chip.mousePressEvent = make_remove_tag(tag['name'])
                 self.meeting_tags_layout.addWidget(chip)
-        else:
-            no_tag = QLabel("No tags")
-            self.meeting_tags_layout.addWidget(no_tag)
-        add_label_btn = QPushButton("Add Label")
+        add_label_btn = QPushButton("+ Label")
         add_label_btn.setObjectName("AddLabelButton")
         add_label_btn.setCursor(Qt.PointingHandCursor)
         def open_tag_editor():
@@ -2299,10 +2351,11 @@ class MainWindow(QMainWindow):
                 try:
                     import markdown2
                     html = markdown2.markdown(notes)
+                    import re
+                    html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
+                    self.meeting_notes_edit.setHtml(html)
                 except Exception:
-                    html = f"<pre>{notes}</pre>"
-                html = wrap_html_body(html, config_manager.get("theme", "dark"))
-                self.meeting_notes_edit.setHtml(html)
+                    self.meeting_notes_edit.setPlainText(notes)
                 self.meeting_notes_edit.setVisible(True)
                 self.notes_have_been_edited = False
                 self.status_bar.showMessage("Meeting notes generated.", 3000)
@@ -2311,10 +2364,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Meeting Notes", "Meeting notes have been generated.")
             def on_error(error):
                 logger.error(f"Failed to generate meeting notes: {error}")
-                placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
-                               f"Please check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
-                themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
-                self.meeting_notes_edit.setHtml(themed_html)
+                placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
+                self.meeting_notes_edit.setPlainText(placeholder)
                 self.meeting_notes_edit.setVisible(True)
                 self.notes_have_been_edited = False
                 self.status_bar.showMessage("Failed to generate meeting notes.", 3000)

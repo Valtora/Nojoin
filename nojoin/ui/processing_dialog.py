@@ -4,6 +4,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton, QDialogButtonBox, QMessageBox, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Slot, QTimer
+from nojoin.utils.theme_utils import apply_theme_to_widget, THEME_PALETTE
+from nojoin.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,8 @@ class ProcessingProgressDialog(QDialog):
         self.setMinimumWidth(400)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        # Apply theme
+        apply_theme_to_widget(self, config_manager.get("theme", "dark"))
         
         # Initialize state
         self._current_stage = None
