@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QWidget, QGridLayout, QMessageBox, QInputDialog, QDialogButtonBox, QSizePolicy, QStyle, QSlider
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QWidget, QGridLayout, QMessageBox, QInputDialog, QDialogButtonBox, QSizePolicy, QStyle, QSlider, QCheckBox
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon
 import os
@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class ParticipantsDialog(QDialog):
     participants_updated = Signal(int)  # recording_id
+    regenerate_notes_requested = Signal(int)  # recording_id when notes should be regenerated
 
     def __init__(self, recording_id, recording_data, parent=None):
         super().__init__(parent)
@@ -26,6 +27,7 @@ class ParticipantsDialog(QDialog):
         self.snippet_player = PlaybackController()
         self._pending_name_changes = {}  # speaker_id -> (diarization_label, new_name)
         self._playing_speaker_id = None  # Track which speaker is currently playing
+        self._speakers_modified = False  # Track if any changes were made
         self._init_ui()
 
     def _init_ui(self):
@@ -54,6 +56,12 @@ class ParticipantsDialog(QDialog):
         merge_row.addWidget(self.merge_btn)
         merge_row.addStretch(1)
         self.layout.addLayout(merge_row)
+        
+        # Regenerate notes checkbox
+        self.regenerate_notes_checkbox = QCheckBox("Regenerate meeting notes after saving")
+        self.regenerate_notes_checkbox.setChecked(True)  # Default to regenerating notes
+        self.layout.addWidget(self.regenerate_notes_checkbox)
+        
         # Save/Cancel
         btn_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         btn_box.accepted.connect(self._on_accept)
@@ -208,8 +216,6 @@ class ParticipantsDialog(QDialog):
             play_btn.setChecked(False)
             self._playing_speaker_id = None
 
-
-
     def save_speaker_name(self, name_edit):
         new_name = name_edit.text().strip()
         speaker_id = name_edit.property("speaker_id")
@@ -223,6 +229,7 @@ class ParticipantsDialog(QDialog):
                 del self._pending_name_changes[speaker_id]
             return
         self._pending_name_changes[speaker_id] = (diarization_label, new_name)
+        self._speakers_modified = True
 
     def delete_speaker(self, speaker_id):
         reply = QMessageBox.question(self, "Delete Speaker", "Are you sure you want to delete this speaker?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -232,6 +239,7 @@ class ParticipantsDialog(QDialog):
         if not success:
             QMessageBox.critical(self, "Delete Speaker", "Failed to delete speaker from recording.")
             return
+        self._speakers_modified = True
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id)
@@ -258,6 +266,7 @@ class ParticipantsDialog(QDialog):
         if not success:
             QMessageBox.critical(self, "Merge Speakers", "Failed to merge speakers.")
             return
+        self._speakers_modified = True
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id)
@@ -271,6 +280,8 @@ class ParticipantsDialog(QDialog):
             db_ops.update_speaker_name(speaker_id, new_name, self.recording_id)
         self._pending_name_changes.clear()
         self.participants_updated.emit(self.recording_id)
+        if self._speakers_modified and self.regenerate_notes_checkbox.isChecked():
+            self.regenerate_notes_requested.emit(self.recording_id)
         self.accept()
 
     def reject(self):
@@ -297,6 +308,7 @@ class ParticipantsDialog(QDialog):
         if not success:
             QMessageBox.critical(self, "Delete 'Unknown' Speaker", "Failed to delete 'Unknown' speaker from recording.")
             return
+        self._speakers_modified = True
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id) 

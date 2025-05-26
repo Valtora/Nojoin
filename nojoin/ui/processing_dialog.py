@@ -206,28 +206,4 @@ class ProcessingProgressDialog(QDialog):
                 return
                 
         self._elapsed_timer.stop()
-        event.accept()
-
-class GeminiNotesSpinnerDialog(QDialog):
-    def __init__(self, parent=None, message="Generating meeting notes with Gemini..."):
-        super().__init__(parent)
-        self.setWindowTitle("Generating Meeting Notes")
-        self.setMinimumWidth(320)
-        self.setModal(True)
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        self.spinner_label = QLabel()
-        self.spinner_label.setAlignment(Qt.AlignCenter)
-        self.spinner = QProgressBar()
-        self.spinner.setRange(0, 0)
-        self.spinner.setTextVisible(False)
-        layout.addWidget(self.spinner_label)
-        layout.addWidget(self.spinner)
-        self.message_label = QLabel(message)
-        self.message_label.setAlignment(Qt.AlignCenter)
-        self.message_label.setWordWrap(True)
-        layout.addWidget(self.message_label)
-        self.setLayout(layout)
-
-    def set_message(self, message):
-        self.message_label.setText(message) 
+        event.accept() 

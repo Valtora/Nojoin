@@ -81,7 +81,8 @@ from nojoin.utils.theme_utils import apply_theme_to_widget, get_theme_qss, get_m
 from .playback_controller import PlaybackController
 from nojoin.processing.recording_pipeline import RecordingPipeline
 from .settings_dialog import SettingsDialog
-from .processing_dialog import ProcessingProgressDialog, GeminiNotesSpinnerDialog # Import progress dialog and spinner dialog
+from .processing_dialog import ProcessingProgressDialog
+from .meeting_notes_progress_dialog import MeetingNotesProgressDialog
 from nojoin.audio.importer import import_multiple_audio_files
 from nojoin.utils.speaker_label_manager import SpeakerLabelManager
 from .transcript_dialog import TranscriptViewDialog # Import the new dialog
@@ -89,6 +90,7 @@ from nojoin.search.search_logic import SearchEngine
 from .participants_dialog import ParticipantsDialog
 from .search_bar_widget import SearchBarWidget
 from nojoin.processing.LLM_Services import get_llm_backend
+from .meeting_notes_worker import MeetingNotesWorker
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
@@ -377,6 +379,9 @@ class MainWindow(QMainWindow):
 
         self.chat_response_signal.connect(self._on_chat_response)
         self.chat_error_signal.connect(self._on_chat_error)
+
+        # In MainWindow.__init__ (or as a class attribute):
+        self._meeting_notes_worker = None
 
     def apply_theme(self, theme_name):
         self.current_theme = theme_name  # Track the current theme for context menus
@@ -1137,15 +1142,13 @@ class MainWindow(QMainWindow):
             return
         with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
             transcript = f.read()
-        spinner = GeminiNotesSpinnerDialog(self)
+        spinner = MeetingNotesProgressDialog(self)
         spinner.show()
-        QApplication.processEvents()  # Ensure spinner is shown
-        try:
-            backend = get_llm_backend(provider, api_key=api_key, model=model)
-            mapping, notes = backend.infer_speakers_and_generate_notes(transcript)
-            db_ops.add_meeting_notes(recording_id, provider, model, notes)
+        backend = get_llm_backend(provider, api_key=api_key, model=model)
+        worker = MeetingNotesWorker(backend, transcript)
+        def on_success(notes):
             try:
-                import markdown2  # Local import for performance
+                import markdown2
                 html = markdown2.markdown(notes)
             except Exception:
                 html = f"<pre>{notes}</pre>"
@@ -1154,8 +1157,11 @@ class MainWindow(QMainWindow):
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Meeting notes generated.", 3000)
-        except Exception as e:
-            logger.error(f"Failed to generate meeting notes: {e}")
+            db_ops.add_meeting_notes(recording_id, provider, model, notes)
+            if spinner.isVisible():
+                spinner.close()
+        def on_error(error):
+            logger.error(f"Failed to generate meeting notes: {error}")
             placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
                            f"Please check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
             themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
@@ -1163,8 +1169,17 @@ class MainWindow(QMainWindow):
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
-        finally:
-            spinner.close()
+            if spinner.isVisible():
+                spinner.close()
+        def cleanup_worker():
+            self._meeting_notes_worker = None
+            if spinner.isVisible():
+                spinner.close()
+        worker.success.connect(on_success)
+        worker.error.connect(on_error)
+        worker.finished.connect(cleanup_worker)
+        worker.start()
+        self._meeting_notes_worker = worker
 
     def on_regenerate_meeting_notes_clicked(self, recording_id=None, recording_data=None):
         if recording_id is None or recording_data is None:
@@ -1194,15 +1209,13 @@ class MainWindow(QMainWindow):
             return
         with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
             transcript = f.read()
-        spinner = GeminiNotesSpinnerDialog(self)
+        spinner = MeetingNotesProgressDialog(self)
         spinner.show()
-        QApplication.processEvents()  # Ensure spinner is shown
-        try:
-            backend = get_llm_backend(provider, api_key=api_key, model=model)
-            mapping, notes = backend.infer_speakers_and_generate_notes(transcript)
-            db_ops.add_meeting_notes(recording_id, provider, model, notes)
+        backend = get_llm_backend(provider, api_key=api_key, model=model)
+        worker = MeetingNotesWorker(backend, transcript)
+        def on_success(notes):
             try:
-                import markdown2  # Local import for performance
+                import markdown2
                 html = markdown2.markdown(notes)
             except Exception:
                 html = f"<pre>{notes}</pre>"
@@ -1211,8 +1224,11 @@ class MainWindow(QMainWindow):
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Meeting notes generated.", 3000)
-        except Exception as e:
-            logger.error(f"Failed to regenerate meeting notes: {e}")
+            db_ops.add_meeting_notes(recording_id, provider, model, notes)
+            if spinner.isVisible():
+                spinner.close()
+        def on_error(error):
+            logger.error(f"Failed to regenerate meeting notes: {error}")
             placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
                            f"Please check your {provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
             themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
@@ -1220,8 +1236,17 @@ class MainWindow(QMainWindow):
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
-        finally:
-            spinner.close()
+            if spinner.isVisible():
+                spinner.close()
+        def cleanup_worker():
+            self._meeting_notes_worker = None
+            if spinner.isVisible():
+                spinner.close()
+        worker.success.connect(on_success)
+        worker.error.connect(on_error)
+        worker.finished.connect(cleanup_worker)
+        worker.start()
+        self._meeting_notes_worker = worker
 
     def on_notes_edited(self):
         self.notes_have_been_edited = True
@@ -1652,33 +1677,8 @@ class MainWindow(QMainWindow):
             transcript_ok = db_ops.replace_speaker_in_transcript(recording_id, diarization_label, None)
             if not transcript_ok:
                 QMessageBox.warning(self, "Transcript Update", "Speaker deleted, but failed to update transcript.")
-        # Regenerate meeting notes using Gemini
-        try:
-            rec = db_ops.get_recording_by_id(recording_id)
-            diarized_transcript_path = rec.get("diarized_transcript_path")
-            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-            if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
-                with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-                    transcript_text = f.read()
-                api_key = config_manager.get("gemini_api_key")
-                model = config_manager.get("gemini_model", "gemini-2.5-flash-preview-05-20")
-                backend = get_llm_backend("gemini", api_key=api_key, model=model)
-                mapping, notes = backend.infer_speakers_and_generate_notes(transcript_text)
-                notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-                if notes_entry:
-                    db_ops.update_meeting_notes(notes_entry['id'], notes)
-                else:
-                    db_ops.add_meeting_notes(recording_id, 'gemini', model, notes)
-                logger.info("Meeting notes regenerated after speaker deletion.")
-                self.status_bar.showMessage("Speaker deleted, transcript and meeting notes updated", 3000)
-                self.load_recordings()
-                self.load_transcript(recording_id)
-                self.handle_meeting_selection_changed()
-            else:
-                self.status_bar.showMessage("Speaker deleted and transcript updated, but transcript file missing for notes regeneration", 3000)
-        except Exception as e:
-            logger.error(f"Error regenerating meeting notes after speaker deletion: {e}")
-            self.status_bar.showMessage("Speaker deleted and transcript updated, but failed to regenerate meeting notes", 3000)
+        # Don't regenerate meeting notes here - will be done when user explicitly requests it
+        self.status_bar.showMessage("Speaker deleted and transcript updated", 3000)
         QMessageBox.information(self, "Delete Speaker", "Speaker deleted from recording.")
         # Reload panel and table
         rec = db_ops.get_recording_by_id(recording_id)
@@ -1712,33 +1712,10 @@ class MainWindow(QMainWindow):
         if not success:
             QMessageBox.critical(self, "Merge Speakers", "Failed to merge speakers.")
             return
-        # Regenerate meeting notes using Gemini
-        try:
-            rec = db_ops.get_recording_by_id(recording_id)
-            diarized_transcript_path = rec.get("diarized_transcript_path")
-            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-            if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
-                with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-                    transcript_text = f.read()
-                api_key = config_manager.get("gemini_api_key")
-                model = config_manager.get("gemini_model", "gemini-2.5-flash-preview-05-20")
-                backend = get_llm_backend("gemini", api_key=api_key, model=model)
-                mapping, notes = backend.infer_speakers_and_generate_notes(transcript_text)
-                notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-                if notes_entry:
-                    db_ops.update_meeting_notes(notes_entry['id'], notes)
-                else:
-                    db_ops.add_meeting_notes(recording_id, 'gemini', model, notes)
-                logger.info("Meeting notes regenerated after speaker merge.")
-                self.status_bar.showMessage("Speakers merged, transcript and meeting notes updated", 3000)
-                self.load_recordings()
-                self.load_transcript(recording_id)
-                self.handle_meeting_selection_changed()
-            else:
-                self.status_bar.showMessage("Speakers merged and transcript updated, but transcript file missing for notes regeneration", 3000)
-        except Exception as e:
-            logger.error(f"Error regenerating meeting notes after speaker merge: {e}")
-            self.status_bar.showMessage("Speakers merged and transcript updated, but failed to regenerate meeting notes", 3000)
+        # Don't regenerate meeting notes here - will be done when user explicitly requests it
+        self.status_bar.showMessage("Speakers merged and transcript updated", 3000)
+        self.load_recordings()
+        self.load_transcript(recording_id)
         QMessageBox.information(self, "Merge Speakers", "Speakers merged successfully.")
 
     def load_transcript(self, recording_id):
@@ -1949,7 +1926,15 @@ class MainWindow(QMainWindow):
             return
         self.update_table_status(recording_id, "Processed")
         # Prompt user to review/relabel speakers, then generate meeting notes
-        self._prompt_relabel_speakers(recording_id)
+        # Show meeting notes progress dialog here
+        from .meeting_notes_progress_dialog import MeetingNotesProgressDialog
+        notes_dialog = MeetingNotesProgressDialog(self)
+        notes_dialog.show()
+        QApplication.processEvents()
+        try:
+            self._prompt_relabel_speakers(recording_id)
+        finally:
+            notes_dialog.close()
 
     def get_meetings_list_qss(self):
         return """
@@ -2185,11 +2170,12 @@ class MainWindow(QMainWindow):
     def _open_participants_dialog(self, recording_id, recording_data):
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
         dlg.participants_updated.connect(self._on_participants_changed)
+        dlg.regenerate_notes_requested.connect(lambda rec_id: self.on_regenerate_meeting_notes_clicked(rec_id, db_ops.get_recording_by_id(rec_id)))
         dlg.exec()
 
     def _on_participants_changed(self, recording_id):
         self.handle_meeting_selection_changed()
-        self.on_regenerate_meeting_notes_clicked(recording_id, db_ops.get_recording_by_id(recording_id))
+        # Don't automatically regenerate notes here - this will be done only when user explicitly requests it
 
     @staticmethod
     def format_time(seconds):
@@ -2263,9 +2249,29 @@ class MainWindow(QMainWindow):
         if not recording_data:
             QMessageBox.warning(self, "Relabel Speakers", "Recording not found in database. Cannot relabel speakers.")
             return
+        
+        # Track if notes were regenerated
+        notes_regenerated = [False]  # Use list to allow mutation in lambda
+        
+        def on_regenerate_requested(rec_id):
+            notes_regenerated[0] = True
+            self._generate_meeting_notes_after_relabel(rec_id)
+        
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
-        dlg.exec()
-        self._generate_meeting_notes_after_relabel(recording_id)
+        dlg.regenerate_notes_requested.connect(on_regenerate_requested)
+        result = dlg.exec()
+        
+        # If dialog was accepted and notes weren't regenerated through the dialog, ask if they want to generate notes
+        if result == QDialog.Accepted and not notes_regenerated[0]:
+            reply = QMessageBox.question(
+                self, 
+                "Generate Meeting Notes",
+                "Would you like to generate meeting notes for this recording?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self._generate_meeting_notes_after_relabel(recording_id)
 
     def _generate_meeting_notes_after_relabel(self, recording_id):
         # Generate meeting notes using the latest speaker mapping
@@ -2286,13 +2292,43 @@ class MainWindow(QMainWindow):
             # Get latest speaker mapping
             speakers = db_ops.get_speakers_for_recording(recording_id)
             label_to_name = {s['diarization_label']: s['name'] for s in speakers}
-            try:
-                notes = backend.generate_meeting_notes(transcript_text, label_to_name)
+            notes_dialog = MeetingNotesProgressDialog(self)
+            notes_dialog.show()
+            worker = MeetingNotesWorker(backend, transcript_text, label_to_name)
+            def on_success(notes):
+                try:
+                    import markdown2
+                    html = markdown2.markdown(notes)
+                except Exception:
+                    html = f"<pre>{notes}</pre>"
+                html = wrap_html_body(html, config_manager.get("theme", "dark"))
+                self.meeting_notes_edit.setHtml(html)
+                self.meeting_notes_edit.setVisible(True)
+                self.notes_have_been_edited = False
+                self.status_bar.showMessage("Meeting notes generated.", 3000)
                 db_ops.add_meeting_notes(recording_id, llm_provider, model, notes)
+                notes_dialog.close()
                 QMessageBox.information(self, "Meeting Notes", "Meeting notes have been generated.")
-            except Exception as e:
-                logger.error(f"Failed to generate meeting notes: {e}")
-                QMessageBox.warning(self, "Meeting Notes", f"Failed to generate meeting notes: {e}")
+            def on_error(error):
+                logger.error(f"Failed to generate meeting notes: {error}")
+                placeholder = (f"<p><b>Meeting notes cannot be generated right now.</b><br>"
+                               f"Please check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
+                themed_html = wrap_html_body(placeholder, config_manager.get("theme", "dark"))
+                self.meeting_notes_edit.setHtml(themed_html)
+                self.meeting_notes_edit.setVisible(True)
+                self.notes_have_been_edited = False
+                self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
+                notes_dialog.close()
+                QMessageBox.warning(self, "Meeting Notes", f"Failed to generate meeting notes: {error}")
+            def cleanup_worker():
+                self._meeting_notes_worker = None
+                if notes_dialog.isVisible():
+                    notes_dialog.close()
+            worker.success.connect(on_success)
+            worker.error.connect(on_error)
+            worker.finished.connect(cleanup_worker)
+            worker.start()
+            self._meeting_notes_worker = worker
         else:
             QMessageBox.warning(self, "Meeting Notes", "Diarized transcript file missing. Cannot generate meeting notes.")
         # Always refresh the UI to show the latest notes
