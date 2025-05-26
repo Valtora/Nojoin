@@ -30,7 +30,8 @@ class SettingsDialog(QDialog):
         apply_theme_to_widget(self, config_manager.get("theme", "dark"))
 
     def _init_ui(self):
-        layout = QFormLayout(self)
+        layout = QFormLayout()
+        self.setLayout(layout)
         layout.setLabelAlignment(Qt.AlignRight)
         layout.setFormAlignment(Qt.AlignHCenter | Qt.AlignTop)
         layout.setSpacing(14)
@@ -65,7 +66,6 @@ class SettingsDialog(QDialog):
         self.advanced_layout.addRow("Log Verbosity:", self.log_verbosity_combo)
 
         self.advanced_container.setVisible(False)
-        self.advanced_layout.addRow("", self.advanced_container)
 
         # Theme selection
         self.theme_combo = QComboBox()
@@ -152,12 +152,6 @@ class SettingsDialog(QDialog):
         for idx, name in self.output_devices:
             self.output_device_combo.addItem(name, idx)
 
-        # Save raw transcript
-        self.save_raw_checkbox = QCheckBox("Save raw transcript file")
-
-        # Save diarized transcript
-        self.save_diarized_checkbox = QCheckBox("Save diarized transcript file")
-
         # Auto-transcribe on recording finish
         self.auto_transcribe_checkbox = QCheckBox("Automatically transcribe new recordings when finished")
 
@@ -175,13 +169,12 @@ class SettingsDialog(QDialog):
         layout.addRow("Theme:", self.theme_combo)
         layout.addRow("Default Input Device:", self.input_device_combo)
         layout.addRow("Default Output Device:", self.output_device_combo)
-        layout.addRow("Raw Transcript:", self.save_raw_checkbox)
-        layout.addRow("Diarized Transcript:", self.save_diarized_checkbox)
         layout.addRow("Auto Transcribe:", self.auto_transcribe_checkbox)
 
         # --- Minimum Meeting Length Setting ---
         self.min_meeting_length_combo = QComboBox()
         self.min_meeting_length_options = [
+            ("1 second", 1),
             ("1 minute", 60),
             ("2 minutes", 120),
             ("5 minutes", 300),
@@ -269,12 +262,10 @@ class SettingsDialog(QDialog):
                 if self.output_device_combo.itemData(i) == output_idx:
                     self.output_device_combo.setCurrentIndex(i)
                     break
-        self.save_raw_checkbox.setChecked(cfg.get("save_raw_transcript", True))
-        self.save_diarized_checkbox.setChecked(cfg.get("save_diarized_transcript", True))
         self.auto_transcribe_checkbox.setChecked(cfg.get("auto_transcribe_on_recording_finish", False))
         # Set minimum meeting length
-        min_length = cfg.get("min_meeting_length_seconds", 120)
-        idx = 1  # Default to 2 minutes
+        min_length = cfg.get("min_meeting_length_seconds", 1)
+        idx = 0  # Default to '1 second'
         for i in range(self.min_meeting_length_combo.count()):
             if self.min_meeting_length_combo.itemData(i) == min_length:
                 idx = i
@@ -287,8 +278,6 @@ class SettingsDialog(QDialog):
         device = self.device_combo.currentText()
         input_idx = self.input_device_combo.currentData()
         output_idx = self.output_device_combo.currentData()
-        save_raw = self.save_raw_checkbox.isChecked()
-        save_diarized = self.save_diarized_checkbox.isChecked()
         auto_transcribe = self.auto_transcribe_checkbox.isChecked()
         selected_theme = self.theme_combo.currentText()
         log_verbosity = self.log_verbosity_combo.currentText().upper()
@@ -373,8 +362,6 @@ class SettingsDialog(QDialog):
         config_manager.set("processing_device", device)
         config_manager.set("default_input_device_index", input_idx)
         config_manager.set("default_output_device_index", output_idx)
-        config_manager.set("save_raw_transcript", save_raw)
-        config_manager.set("save_diarized_transcript", save_diarized)
         config_manager.set("auto_transcribe_on_recording_finish", auto_transcribe)
         config_manager.set("theme", selected_theme)
         config_manager.set("gemini_model", gemini_model)

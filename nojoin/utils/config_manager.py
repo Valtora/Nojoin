@@ -17,8 +17,6 @@ DEFAULT_CONFIG = {
     "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
     "recordings_directory": "recordings",
     "transcripts_directory": "transcripts",
-    "save_raw_transcript": True,
-    "save_diarized_transcript": True,
     # Add other settings as needed, e.g., default input/output devices
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
@@ -30,7 +28,8 @@ DEFAULT_CONFIG = {
     "anthropic_api_key": None,  # Anthropic API key
     "advanced": {
         "log_verbosity": "INFO"
-    }
+    },
+    "min_meeting_length_seconds": 1 # Always at least 1 second
 }
 
 WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large"]
@@ -98,6 +97,9 @@ class ConfigManager:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     loaded_config = json.load(f)
+                    # Remove deprecated keys if present
+                    loaded_config.pop("save_raw_transcript", None)
+                    loaded_config.pop("save_diarized_transcript", None)
                     # Update default config with loaded values, preserving defaults for missing keys
                     config.update(loaded_config) 
                     logger.info(f"Configuration loaded from {self.config_path}")
@@ -108,6 +110,12 @@ class ConfigManager:
 
             # Ensure necessary directories exist
             self._ensure_dirs_exist(config)
+
+            # --- Ensure min_meeting_length_seconds is always an int >= 1 ---
+            min_length = config.get("min_meeting_length_seconds", 1)
+            if not isinstance(min_length, int) or min_length < 1:
+                min_length = 1
+            config["min_meeting_length_seconds"] = min_length
 
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from {self.config_path}: {e}. Using default settings.", exc_info=True)
