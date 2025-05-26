@@ -395,12 +395,15 @@ class MainWindow(QMainWindow):
         # Remove direct border styling from child widgets; rely on panel QSS
         # Meeting Notes
         if hasattr(self, 'meeting_notes_edit'):
-            # Remove setStyleSheet for border or margin
             # Re-apply content to force theme update
+            import re
+            from nojoin.utils.theme_utils import wrap_html_body
             current_html = self.meeting_notes_edit.toHtml()
+            # Remove old <html> and <body> tags if present
+            body_content = re.sub(r'<\/?(html|body)[^>]*>', '', current_html, flags=re.IGNORECASE)
+            themed_html = wrap_html_body(body_content, theme_name)
             self.meeting_notes_edit.clear()
-            self.meeting_notes_edit.setHtml(current_html)
-            # Set background fully transparent so parent panel color always shows through
+            self.meeting_notes_edit.setHtml(themed_html)
             self.meeting_notes_edit.setStyleSheet("background: transparent;")
         # Meeting Context Display (update on theme change)
         if hasattr(self, 'meeting_context_display'):
@@ -431,22 +434,22 @@ class MainWindow(QMainWindow):
                                         dt = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                                     except Exception:
                                         logger.warning(f"Could not parse created_at: {created_at}")
-                            if dt and dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=datetime.timezone.utc)
-                            local_tz = None
+                        if dt and dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=datetime.timezone.utc)
+                        local_tz = None
+                        try:
+                            local_tz = tzlocal.get_localzone()
+                        except Exception:
                             try:
-                                local_tz = tzlocal.get_localzone()
+                                local_tz = ZoneInfo(os.environ.get('TZ', 'Europe/London'))
                             except Exception:
-                                try:
-                                    local_tz = ZoneInfo(os.environ.get('TZ', 'Europe/London'))
-                                except Exception:
-                                    local_tz = datetime.timezone.utc
-                            if dt:
-                                dt_local = dt.astimezone(local_tz)
-                                day_str = dt_local.strftime("%A")
-                                date_str = dt_local.strftime("%d %B %Y")
-                                time_str = dt_local.strftime("%H:%M")
-                                tz_str = dt_local.strftime("%Z")
+                                local_tz = datetime.timezone.utc
+                        if dt:
+                            dt_local = dt.astimezone(local_tz)
+                            day_str = dt_local.strftime("%A")
+                            date_str = dt_local.strftime("%d %B %Y")
+                            time_str = dt_local.strftime("%H:%M")
+                            tz_str = dt_local.strftime("%Z")
                     except Exception as e:
                         logger.warning(f"Error parsing created_at: {created_at} ({e})")
                         date_str = "Unknown date"
@@ -824,6 +827,33 @@ class MainWindow(QMainWindow):
         self.meeting_tags_layout.setSpacing(6)
         self.meeting_tags_widget.setStyleSheet("")
         meeting_notes_layout.addWidget(self.meeting_tags_widget)
+        # --- Meeting Notes Toolbar ---
+        self.meeting_notes_toolbar = QWidget()
+        toolbar_layout = QHBoxLayout(self.meeting_notes_toolbar)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(4)
+        toolbar_layout.addStretch(1)  # Align buttons to the right
+        # Undo
+        undo_btn = QPushButton("Undo")
+        undo_btn.setToolTip("Undo")
+        undo_btn.clicked.connect(lambda: self.meeting_notes_edit.undo())
+        toolbar_layout.addWidget(undo_btn)
+        # Redo
+        redo_btn = QPushButton("Redo")
+        redo_btn.setToolTip("Redo")
+        redo_btn.clicked.connect(lambda: self.meeting_notes_edit.redo())
+        toolbar_layout.addWidget(redo_btn)
+        # Copy to Clipboard
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.setToolTip("Copy meeting notes to clipboard")
+        def copy_notes_to_clipboard():
+            from PySide6.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self.meeting_notes_edit.toPlainText())
+        copy_btn.clicked.connect(copy_notes_to_clipboard)
+        toolbar_layout.addWidget(copy_btn)
+        meeting_notes_layout.addWidget(self.meeting_notes_toolbar)
+        # --- Meeting Notes Edit ---
         self.meeting_notes_edit = QTextEdit()
         self.meeting_notes_edit.setObjectName("MeetingNotesEdit")
         self.meeting_notes_edit.setPlaceholderText("Meeting notes will appear here. Right-click a recording to generate or view notes.")
@@ -1142,6 +1172,8 @@ class MainWindow(QMainWindow):
 
     def _context_view_edit_meeting_notes(self, recording_id, recording_data):
         notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+        from nojoin.utils.theme_utils import wrap_html_body
+        theme = config_manager.get("theme", "dark")
         if notes_entry:
             try:
                 import markdown2  # Local import for performance
@@ -1149,7 +1181,8 @@ class MainWindow(QMainWindow):
                 # Strip <html> and <body> tags if present
                 import re
                 html_notes = re.sub(r'<\/?(html|body)[^>]*>', '', html_notes, flags=re.IGNORECASE)
-                self.meeting_notes_edit.setHtml(html_notes)
+                themed_html = wrap_html_body(html_notes, theme)
+                self.meeting_notes_edit.setHtml(themed_html)
             except Exception as e:
                 self.meeting_notes_edit.setPlainText(f"Error displaying notes: {e}\n{notes_entry['notes']}")
         else:
@@ -1209,7 +1242,10 @@ class MainWindow(QMainWindow):
                 html = markdown2.markdown(notes)
                 import re
                 html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
-                self.meeting_notes_edit.setHtml(html)
+                from nojoin.utils.theme_utils import wrap_html_body
+                theme = config_manager.get("theme", "dark")
+                themed_html = wrap_html_body(html, theme)
+                self.meeting_notes_edit.setHtml(themed_html)
             except Exception:
                 self.meeting_notes_edit.setPlainText(notes)
             self.meeting_notes_edit.setVisible(True)
@@ -1275,7 +1311,10 @@ class MainWindow(QMainWindow):
                 html = markdown2.markdown(notes)
                 import re
                 html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
-                self.meeting_notes_edit.setHtml(html)
+                from nojoin.utils.theme_utils import wrap_html_body
+                theme = config_manager.get("theme", "dark")
+                themed_html = wrap_html_body(html, theme)
+                self.meeting_notes_edit.setHtml(themed_html)
             except Exception:
                 self.meeting_notes_edit.setPlainText(notes)
             self.meeting_notes_edit.setVisible(True)
@@ -1581,7 +1620,7 @@ class MainWindow(QMainWindow):
                     self.chat_display_area.append(ai_html)
                 else:
                     sys_html = f'<div class="chat-message system">{html}</div>'
-                    self.chat_display_area.append(sys_html)
+                    self.chat_display_area.clear()
 
         if hasattr(self, 'clear_chat_button'):
             self.clear_chat_button.setEnabled(True)
@@ -2353,7 +2392,10 @@ class MainWindow(QMainWindow):
                     html = markdown2.markdown(notes)
                     import re
                     html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
-                    self.meeting_notes_edit.setHtml(html)
+                    from nojoin.utils.theme_utils import wrap_html_body
+                    theme = config_manager.get("theme", "dark")
+                    themed_html = wrap_html_body(html, theme)
+                    self.meeting_notes_edit.setHtml(themed_html)
                 except Exception:
                     self.meeting_notes_edit.setPlainText(notes)
                 self.meeting_notes_edit.setVisible(True)
