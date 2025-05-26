@@ -1034,7 +1034,27 @@ class MainWindow(QMainWindow):
         self.no_audio_timer.stop()
         self.audio_warning_banner.setVisible(False)
         
-        # No DB update needed here; pipeline handles it
+        # Add to DB with start_time and end_time
+        import datetime
+        from nojoin.db import database as db_ops
+        start_time = None
+        end_time = None
+        if self.recording_start_time is not None:
+            start_dt = datetime.datetime.fromtimestamp(self.recording_start_time)
+            end_dt = datetime.datetime.now()
+            start_time = start_dt.isoformat(sep=" ", timespec="seconds")
+            end_time = end_dt.isoformat(sep=" ", timespec="seconds")
+        recording_name = f"Meeting - {base_filename}"
+        db_ops.add_recording(
+            name=recording_name,
+            audio_path=filename,
+            duration=duration,
+            size_bytes=size,
+            format="MP3",
+            start_time=start_time,
+            end_time=end_time
+        )
+
         self.load_recordings()
 
         # --- Auto-transcribe if enabled ---
@@ -1620,10 +1640,39 @@ class MainWindow(QMainWindow):
                     self.chat_display_area.append(ai_html)
                 else:
                     sys_html = f'<div class="chat-message system">{html}</div>'
-                    self.chat_display_area.clear()
-
-        if hasattr(self, 'clear_chat_button'):
-            self.clear_chat_button.setEnabled(True)
+                    self.chat_display_area.append(sys_html)
+        # --- New: Apply theme to search bar widget ---
+        if hasattr(self, 'search_bar_widget'):
+            from nojoin.utils.theme_utils import get_border_color
+            border_color = get_border_color(self.current_theme)
+            self.search_bar_widget.set_theme(border_color)
+        # --- Apply theme to audio warning banner ---
+        if hasattr(self, 'audio_warning_banner'):
+            apply_theme_to_widget(self.audio_warning_banner, self.current_theme)
+        # Update slider style for theme
+        if hasattr(self, 'seek_slider') and hasattr(self, 'volume_slider'):
+            if self.current_theme == "dark":
+                slider_groove = "#444444"
+                slider_handle = "#ffb74d"
+            else:
+                slider_groove = "#cccccc"
+                slider_handle = "#007aff"
+            slider_qss = f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {slider_groove};
+                height: 4px;
+                background: {slider_groove};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {slider_handle};
+                border: 1px solid {slider_handle};
+                width: 14px;
+                border-radius: 7px;
+            }}
+            """
+            self.seek_slider.setStyleSheet(slider_qss)
+            self.volume_slider.setStyleSheet(slider_qss)
 
     def open_settings_dialog(self):
         if not hasattr(self, 'settings_dialog') or not self.settings_dialog:
@@ -1887,9 +1936,6 @@ class MainWindow(QMainWindow):
     def on_import_audio_clicked(self):
         """
         Handler for Import Audio button. Opens file dialog, imports, and adds to DB.
-        Note: On Windows, you may see 'Failed to initialize COM library (Cannot change thread mode after it is set.)' in the logs.
-        This is a benign warning from Qt/PySide6 when using QFileDialog and can be safely ignored as long as dialogs work.
-        See: https://github.com/qt/qtbase/blob/dev/src/plugins/platforms/windows/qwindowsdialoghelpers.cpp
         """
         logger.info("Import Audio button clicked. Preparing to show file dialog.")
         file_dialog = QFileDialog(self)
@@ -1912,18 +1958,19 @@ class MainWindow(QMainWindow):
             # Import files
             results = import_multiple_audio_files(selected_files)
             imported_count = 0
-            for result in results:
+            for idx, result in enumerate(results):
                 if result.success:
-                    # Add to DB
-                    dt = datetime.now()
-                    orig_name = os.path.splitext(os.path.basename(result.rel_path))[0]
-                    recording_name = f"Imported - {orig_name} - {dt.strftime('%A %d %B %Y, %H:%M')}"
+                    # Use the original file path for the name
+                    orig_name = os.path.splitext(os.path.basename(selected_files[idx]))[0]
+                    recording_name = orig_name
                     new_id = db_ops.add_recording(
                         name=recording_name,
                         audio_path=result.rel_path,
                         duration=result.duration,
                         size_bytes=result.size,
-                        format=result.format or "MP3"
+                        format=result.format or "MP3",
+                        start_time=None,
+                        end_time=None
                     )
                     if new_id:
                         imported_count += 1
@@ -2089,6 +2136,22 @@ class MainWindow(QMainWindow):
             self.handle_meeting_selection_changed()
         self.meetings_list_widget.setTextElideMode(Qt.ElideNone)
         self.meetings_list_widget.setWordWrap(True)
+        # Set selected property for QSS
+        for i in range(self.meetings_list_widget.count()):
+            item = self.meetings_list_widget.item(i)
+            widget = self.meetings_list_widget.itemWidget(item)
+            is_selected = item.isSelected()
+            if widget:
+                MeetingListItemWidget.set_selected_state(widget, is_selected)
+        self.meetings_list_widget.itemSelectionChanged.connect(self._update_meeting_card_selection_states)
+
+    def _update_meeting_card_selection_states(self):
+        for i in range(self.meetings_list_widget.count()):
+            item = self.meetings_list_widget.item(i)
+            widget = self.meetings_list_widget.itemWidget(item)
+            is_selected = item.isSelected()
+            if widget:
+                MeetingListItemWidget.set_selected_state(widget, is_selected)
 
     def _handle_send_chat_message(self):
         if self._chat_request_in_progress:
@@ -2880,24 +2943,32 @@ class SpeakerNameSaveSpinnerDialog(QDialog):
         spinner.setRange(0, 0)  # Indeterminate
         layout.addWidget(spinner)
 
-class MeetingListItemWidget(QWidget):
+class MeetingListItemWidget(QFrame):
     def __init__(self, recording_data: dict, theme_name: str, parent=None):
         super().__init__(parent)
         self.recording_data = recording_data
         self.theme_name = theme_name
+        self.setObjectName("MeetingListItemCard")
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setLineWidth(2)
         self._init_ui()
 
     def _init_ui(self):
         self.title_label = QLabel()
         self.title_label.setObjectName("MeetingListItemTitleLabel")
         self.title_label.setWordWrap(True)
-        self.datetime_label = QLabel()
-        self.datetime_label.setObjectName("MeetingListItemDateTimeLabel")
+        self.meta_label = QLabel()
+        self.meta_label.setObjectName("MeetingListItemMetaLabel")
+        self.participants_label = QLabel()
+        self.participants_label.setObjectName("MeetingListItemParticipantsLabel")
+        self.participants_label.setWordWrap(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(2)
         layout.addWidget(self.title_label)
-        layout.addWidget(self.datetime_label)
+        layout.addWidget(self.meta_label)
+        layout.addWidget(self.participants_label)
+        self.setLayout(layout)
         self.update_content(self.recording_data, self.theme_name)
 
     def update_content(self, recording_data: dict, theme_name: str):
@@ -2905,17 +2976,30 @@ class MeetingListItemWidget(QWidget):
         self.theme_name = theme_name
         meeting_title = self.recording_data.get("name", "Untitled Meeting")
         self.title_label.setText(meeting_title)
-        created_at = self.recording_data.get("created_at")
+        # --- Meta row: Date | Start - End | Duration ---
         import datetime
-        date_str_f = "Unknown date"
-        time_str_f = ""
-        day_str_f = ""
-        formatted_datetime_string = "Date/Time N/A"
-        dt = None
-        if created_at:
-            if isinstance(created_at, datetime.datetime):
-                dt = created_at
-            elif isinstance(created_at, str):
+        start_time_str = self.recording_data.get("start_time")
+        end_time_str = self.recording_data.get("end_time")
+        duration_seconds = self.recording_data.get("duration_seconds") or self.recording_data.get("duration", 0)
+        date_str = "?"
+        start_hm = "00:00"
+        end_hm = "00:00"
+        duration_min = 0
+        try:
+            if start_time_str:
+                start_dt = datetime.datetime.fromisoformat(start_time_str)
+                date_str = start_dt.strftime("%d %b")
+                start_hm = start_dt.strftime("%H:%M")
+            if end_time_str:
+                end_dt = datetime.datetime.fromisoformat(end_time_str)
+                end_hm = end_dt.strftime("%H:%M")
+                duration_min = int((end_dt - start_dt).total_seconds() // 60)
+            else:
+                duration_min = int(duration_seconds // 60)
+        except Exception:
+            created_at = self.recording_data.get("created_at")
+            dt = None
+            if created_at:
                 try:
                     dt = datetime.datetime.fromisoformat(created_at)
                 except Exception:
@@ -2923,33 +3007,29 @@ class MeetingListItemWidget(QWidget):
                         dt = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                     except Exception:
                         dt = None
-            if dt and dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
-            local_tz = None
-            try:
-                from zoneinfo import ZoneInfo
-                import tzlocal
-                import os
-                local_tz = tzlocal.get_localzone()
-            except Exception:
-                try:
-                    local_tz = ZoneInfo(os.environ.get('TZ', 'Europe/London'))
-                except Exception:
-                    local_tz = datetime.timezone.utc
             if dt:
-                dt_local = dt.astimezone(local_tz)
-                day_str_f = dt_local.strftime("%a")
-                date_str_f = dt_local.strftime("%d %b")
-                time_str_f = dt_local.strftime("%H:%M")
-                formatted_datetime_string = f"{day_str_f} {date_str_f} - {time_str_f}"
-            else:
-                formatted_datetime_string = "Date/Time N/A"
-        else:
-            formatted_datetime_string = "Date/Time N/A"
-        self.datetime_label.setText(formatted_datetime_string)
+                date_str = dt.strftime("%d %b")
+                start_hm = dt.strftime("%H:%M")
+            duration_min = int(duration_seconds // 60)
+        meta_text = f"{date_str} | {start_hm} - {end_hm} | {duration_min} min"
+        self.meta_label.setText(meta_text)
+        participants = self.recording_data.get("participants")
+        if participants is None:
+            try:
+                from nojoin.db import database as db_ops
+                speakers = db_ops.get_speakers_for_recording(self.recording_data.get("id"))
+                participants = [s.get("name") or s.get("diarization_label") for s in speakers if s.get("name") or s.get("diarization_label")]
+            except Exception:
+                participants = []
+        participants_text = ", ".join(participants) if participants else ""
+        self.participants_label.setText(participants_text)
 
-    def sizeHint(self):
-        return QSize(280, 48)
+    @staticmethod
+    def set_selected_state(widget, selected):
+        # Set a property for QSS to style selected state
+        widget.setProperty("selected", selected)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
 
 # --- Chat Message Widget ---
 class ChatMessageWidget(QWidget):

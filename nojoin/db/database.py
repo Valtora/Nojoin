@@ -52,17 +52,17 @@ def init_db():
 # We will add functions for Recordings, Speakers, and RecordingSpeakers here later.
 
 # Example: Function to add a new recording (will be expanded)
-def add_recording(name: str, audio_path: str, duration: float, size_bytes: int, format: str = "MP3", chat_history: str = None):
-    """Adds a new recording entry to the database, optionally with chat_history."""
+def add_recording(name: str, audio_path: str, duration: float, size_bytes: int, format: str = "MP3", chat_history: str = None, start_time: str = None, end_time: str = None):
+    """Adds a new recording entry to the database, optionally with chat_history, start_time, and end_time."""
     audio_path = to_project_relative_path(from_project_relative_path(audio_path))
-    sql = '''INSERT INTO recordings(id, name, audio_path, duration_seconds, file_size_bytes, status, format, chat_history)
-             VALUES(?, ?, ?, ?, ?, ?, ?, ?)'''
+    sql = '''INSERT INTO recordings(id, name, audio_path, duration_seconds, file_size_bytes, status, format, chat_history, start_time, end_time)
+             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     status = 'Recorded'
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             recording_id = datetime.now().strftime('%Y%m%d%H%M%S')
-            cursor.execute(sql, (recording_id, name, audio_path, duration, size_bytes, status, format, chat_history))
+            cursor.execute(sql, (recording_id, name, audio_path, duration, size_bytes, status, format, chat_history, start_time, end_time))
             conn.commit()
             logger.info(f"Added recording '{name}' with path '{audio_path}'. ID: {recording_id}")
             return recording_id

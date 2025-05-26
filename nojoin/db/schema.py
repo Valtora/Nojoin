@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS recordings (
     name TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     processed_at DATETIME,
+    start_time DATETIME, -- Meeting start time (optional, for future use)
+    end_time DATETIME,   -- Meeting end time (optional, for future use)
     audio_path TEXT NOT NULL UNIQUE,
     raw_transcript_path TEXT,
     diarized_transcript_path TEXT,

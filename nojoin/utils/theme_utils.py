@@ -311,6 +311,24 @@ theme_qss = {
             background: rgba(0, 0, 0, 0.1);
             border-radius: 8px;
         }
+        QFrame#MeetingListItemCard[selected="false"] {
+            background: #000000;
+            border: 2px solid #ff9800;
+            border-radius: 10px;
+        }
+        QFrame#MeetingListItemCard[selected="true"] {
+            background: #ff9800;
+            border: 2px solid #ff9800;
+            border-radius: 10px;
+        }
+        QFrame#MeetingListItemCard[selected="false"] QLabel {
+            color: #ff9800;
+            background: transparent;
+        }
+        QFrame#MeetingListItemCard[selected="true"] QLabel {
+            color: #000000;
+            background: transparent;
+        }
     """,
     "light": """
         QMainWindow, QDialog {
@@ -609,6 +627,24 @@ theme_qss = {
         QPushButton#CloseWarningButton:hover {
             background: rgba(0, 0, 0, 0.1);
             border-radius: 8px;
+        }
+        QFrame#MeetingListItemCard[selected="false"] {
+            background: #ffffff;
+            border: 2px solid #007aff;
+            border-radius: 10px;
+        }
+        QFrame#MeetingListItemCard[selected="true"] {
+            background: #007aff;
+            border: 2px solid #007aff;
+            border-radius: 10px;
+        }
+        QFrame#MeetingListItemCard[selected="false"] QLabel {
+            color: #007aff;
+            background: transparent;
+        }
+        QFrame#MeetingListItemCard[selected="true"] QLabel {
+            color: #ffffff;
+            background: transparent;
         }
     """
 }
