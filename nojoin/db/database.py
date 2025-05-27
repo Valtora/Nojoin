@@ -130,7 +130,6 @@ def delete_recording(recording_id: str):
             else:
                 logger.info(f"Deleted recording ID {recording_id} from database.")
                 # Remove associated files
-                import os
                 for path in [raw_path, diarized_path, audio_path]:
                     if path:
                         abs_path = from_project_relative_path(path)
@@ -148,6 +147,7 @@ def delete_recording(recording_id: str):
 def update_recording_paths(recording_id: str, raw_transcript_path: str | None = None, diarized_transcript_path: str | None = None):
     """Updates the file paths associated with a recording."""
     recording_id = str(recording_id)
+    logger.info(f"Attempting to update paths for recording_id: {recording_id}. Raw path: {raw_transcript_path}, Diarized path: {diarized_transcript_path}")
     updates = []
     params = []
     if raw_transcript_path:
@@ -169,13 +169,14 @@ def update_recording_paths(recording_id: str, raw_transcript_path: str | None = 
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            logger.debug(f"Executing SQL for update_recording_paths: {sql} with params: {params}")
             cursor.execute(sql, tuple(params))
             conn.commit()
             if cursor.rowcount == 0:
                 logger.warning(f"Attempted to update paths for non-existent recording ID: {recording_id}")
                 return False
             else:
-                logger.info(f"Updated paths for recording ID {recording_id}.")
+                logger.info(f"Successfully updated paths for recording ID {recording_id}. Rowcount: {cursor.rowcount}")
                 return True
     except sqlite3.Error as e:
         logger.error(f"Database error updating paths for recording ID {recording_id}: {e}", exc_info=True)
@@ -488,20 +489,24 @@ def get_speaker_diarization_segments(recording_id: str, speaker_id: int):
             cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
             row = cursor.fetchone()
             if not row:
+                logger.warning(f"No diarization label found for speaker {speaker_id} in recording {recording_id} within get_speaker_diarization_segments.")
                 return {'segments': []}
             diarization_label = row['diarization_label']
             # Find diarized transcript path
             cursor.execute("SELECT diarized_transcript_path FROM recordings WHERE id = ?", (recording_id,))
             rec_row = cursor.fetchone()
             if not rec_row or not rec_row['diarized_transcript_path']:
+                logger.warning(f"Diarized transcript path not found in DB for recording {recording_id} within get_speaker_diarization_segments. Record data: {rec_row}")
                 return {'segments': []}
             transcript_path = rec_row['diarized_transcript_path']
-            if not os.path.exists(transcript_path):
+            abs_transcript_path = from_project_relative_path(transcript_path) # Convert to absolute path
+            if not os.path.exists(abs_transcript_path):
+                logger.error(f"Transcript file NOT FOUND at {abs_transcript_path} (relative: {transcript_path}) for recording {recording_id} in get_speaker_diarization_segments.")
                 return {'segments': []}
             # Parse transcript for segments
             segments = []
             import re
-            with open(transcript_path, 'r', encoding='utf-8') as f:
+            with open(abs_transcript_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     # Example line: [00.00.00 - 00.00.05] - SPEAKER_00. text
                     m = re.match(r"\[(\d+)\.(\d+)\.(\d+\.\d+) - (\d+)\.(\d+)\.(\d+\.\d+)\] - (\w+)[.:]", line)
@@ -565,6 +570,7 @@ def get_recording_by_id(recording_id: str):
     recording_id = str(recording_id)
     sql = '''SELECT id, name, created_at, duration_seconds, status, audio_path, raw_transcript_path, diarized_transcript_path, tags, format, file_size_bytes, processed_at, chat_history
              FROM recordings WHERE id = ?'''
+    logger.debug(f"Attempting to fetch recording by ID: {recording_id}")
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -572,11 +578,19 @@ def get_recording_by_id(recording_id: str):
             row = cursor.fetchone()
             if row:
                 result = dict(row)
+                logger.info(f"Successfully fetched recording ID {recording_id}. Data: {result}")
+                # Ensure paths are consistently relative for the application logic
                 for key in ["audio_path", "raw_transcript_path", "diarized_transcript_path"]:
                     if result.get(key):
-                        result[key] = to_project_relative_path(from_project_relative_path(result[key]))
+                        # Paths are stored relative, ensure from_project_relative_path is used if an absolute one was somehow stored
+                        # and to_project_relative_path to ensure it remains consistently relative for internal use.
+                        # This double conversion handles cases where an absolute path might have been stored previously by mistake.
+                        # The goal is for the application logic to primarily deal with relative paths, converting to absolute only when accessing files.
+                        absolute_path_check = from_project_relative_path(result[key])
+                        result[key] = to_project_relative_path(absolute_path_check) 
                 return result
             else:
+                logger.warning(f"No recording found for ID: {recording_id}")
                 return None
     except sqlite3.Error as e:
         logger.error(f"Database error retrieving recording by ID {recording_id}: {e}", exc_info=True)
@@ -759,11 +773,18 @@ def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: 
     recording_id = str(recording_id)
     try:
         rec = get_recording_by_id(recording_id)
-        path = rec.get('diarized_transcript_path')
-        if not path or not os.path.exists(path):
-            logger.error(f"Transcript file not found for recording {recording_id}")
+        path = rec.get('diarized_transcript_path') if rec else None
+
+        if not path:
+            logger.error(f"Diarized transcript path is missing for recording {recording_id} in replace_speaker_in_transcript. Record data: {rec}")
             return False
-        with open(path, 'r', encoding='utf-8') as f:
+        
+        abs_path = from_project_relative_path(path)
+        if not os.path.exists(abs_path):
+            logger.error(f"Transcript file NOT FOUND at {abs_path} (relative: {path}) for recording {recording_id} in replace_speaker_in_transcript.")
+            return False
+            
+        with open(abs_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         import re
         # If deleting 'Unknown', match all common variants
@@ -787,7 +808,7 @@ def replace_speaker_in_transcript(recording_id: str, old_label: str, new_label: 
                 # else: skip line (delete)
             else:
                 new_lines.append(line)
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(abs_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
         return True
     except Exception as e:

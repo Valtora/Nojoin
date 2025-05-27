@@ -3,6 +3,8 @@
 
 - Speakers are listed but not separated by commas.
 
+- Change default name suffix from 'Recording' to 'Meeting', for example: "Tuesday 27th May, Afternoon Meeting".
+
 ### Meeting Notes & Transcript
 - In settings, allow toggling of meeting note auto save, otherwise it should be manual via a button or CTRL S.
 
@@ -14,6 +16,7 @@
 
 ### Backend & Data Handling
 - Enable parallel processing and recording of meetings.
+- Check CUDA support, it looks like CPU is being used even when settings say CUDA.
 
 ### Meeting Chat
 - Add datestamp alongside timestamp  

@@ -4,7 +4,7 @@ import threading
 from PySide6.QtCore import QObject, Signal
 from nojoin.audio.recorder import AudioRecorder, DEFAULT_SAMPLE_RATE, DEFAULT_CHANNELS
 from nojoin.db import database as db_ops
-from datetime import datetime
+from datetime import datetime, timedelta
 from nojoin.utils.config_manager import to_project_relative_path, from_project_relative_path, get_recordings_dir, config_manager
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class RecordingPipeline(QObject):
     # Signals for UI or downstream logic
     recording_started = Signal()
-    recording_finished = Signal(str, float, int)  # filename, duration, size
+    recording_finished = Signal(str, str, float, int)  # recording_id (str), filename, duration, size
     recording_error = Signal(str)
     recording_status = Signal(str)  # status message for UI
     recording_discarded = Signal(str)  # message for UI when a recording is discarded
@@ -110,14 +110,28 @@ class RecordingPipeline(QObject):
             dt = datetime.now()
             recording_name = self.get_human_friendly_recording_name(dt)
             rel_filename = to_project_relative_path(from_project_relative_path(filename))  # Ensure relative
-            new_id = db_ops.add_recording(name=recording_name, audio_path=rel_filename, duration=duration, size_bytes=size, format="MP3")
+
+            # Calculate start_time and end_time
+            start_datetime_obj = dt - timedelta(seconds=duration)
+            start_time_iso = start_datetime_obj.isoformat(sep=" ", timespec="seconds")
+            end_time_iso = dt.isoformat(sep=" ", timespec="seconds")
+
+            new_id = db_ops.add_recording(
+                name=recording_name,
+                audio_path=rel_filename,
+                duration=duration,
+                size_bytes=size,
+                format="MP3", # Or determine dynamically if possible
+                start_time=start_time_iso,
+                end_time=end_time_iso
+            )
             if not new_id:
                 self.recording_error.emit(f"Failed to save recording details for '{recording_name}' to the database.")
                 self._is_recording = False
                 return
             logger.info(f"RecordingPipeline: Added recording '{recording_name}' (ID: {new_id}) to database.")
             self.recording_status.emit(f"Recording saved: {os.path.basename(filename)} ({duration:.1f}s)")
-            self.recording_finished.emit(filename, duration, size)
+            self.recording_finished.emit(new_id, filename, duration, size)
             self._is_recording = False
             # Optionally trigger processing pipeline
             if self.auto_process:

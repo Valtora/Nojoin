@@ -1032,7 +1032,7 @@ class MainWindow(QMainWindow):
         self.audio_warning_banner.setVisible(False)
         self.audio_detected_recently = False
 
-    def handle_recording_finished(self, filename, duration, size):
+    def handle_recording_finished(self, recording_id: str, filename: str, duration: float, size: int):
         self.is_recording = False
         self.recording_timer.stop()
         self.record_button.setText("Start Meeting")
@@ -1041,53 +1041,55 @@ class MainWindow(QMainWindow):
         self.record_button.setEnabled(True)
         base_filename = os.path.basename(filename)
         self.status_bar.showMessage(f"Recording saved: {base_filename} ({duration:.1f}s)")
-        logger.info(f"UI: Recording finished: {filename}, Duration: {duration}, Size: {size}")
+        logger.info(f"UI: Recording finished: {filename}, Duration: {duration}, Size: {size}, ID: {recording_id}")
         
         # Stop audio level monitoring
         self.audio_level_timer.stop()
         self.no_audio_timer.stop()
         self.audio_warning_banner.setVisible(False)
         
-        # Add to DB with start_time and end_time
-        import datetime
-        from nojoin.db import database as db_ops
-        start_time = None
-        end_time = None
-        if self.recording_start_time is not None:
-            start_dt = datetime.datetime.fromtimestamp(self.recording_start_time)
-            end_dt = datetime.datetime.now()
-            start_time = start_dt.isoformat(sep=" ", timespec="seconds")
-            end_time = end_dt.isoformat(sep=" ", timespec="seconds")
-        recording_name = f"Meeting - {base_filename}"
-        db_ops.add_recording(
-            name=recording_name,
-            audio_path=filename,
-            duration=duration,
-            size_bytes=size,
-            format="MP3",
-            start_time=start_time,
-            end_time=end_time
-        )
+        # Database entry is now handled by RecordingPipeline
+        # Remove the following block:
+        # import datetime
+        # from nojoin.db import database as db_ops
+        # start_time = None
+        # end_time = None
+        # if self.recording_start_time is not None:
+        #     start_dt = datetime.datetime.fromtimestamp(self.recording_start_time)
+        #     end_dt = datetime.datetime.now()
+        #     start_time = start_dt.isoformat(sep=" ", timespec="seconds")
+        #     end_time = end_dt.isoformat(sep=" ", timespec="seconds")
+        # recording_name = f"Meeting - {base_filename}"
+        # db_ops.add_recording(
+        #     name=recording_name,
+        #     audio_path=filename,
+        #     duration=duration,
+        #     size_bytes=size,
+        #     format="MP3",
+        #     start_time=start_time,
+        #     end_time=end_time
+        # )
 
-        self.load_recordings()
+        self.load_recordings() # Refresh the list to show the new recording
 
-        # --- Auto-transcribe if enabled ---
+        # --- Auto-transcribe if enabled --- 
+        # This now uses the recording_id passed from RecordingPipeline
         if config_manager.get("auto_transcribe_on_recording_finish", False):
-            # Find the most recent recording (should be the one just added)
-            from nojoin.db import database as db_ops
-            recordings = db_ops.get_all_recordings()
-            if recordings:
-                latest = recordings[0]  # get_all_recordings returns newest first
-                # Convert to dict if needed
-                if not isinstance(latest, dict):
-                    latest = dict(latest)
-                recording_id = latest['id']
-                audio_path = latest.get('audio_path')
-                if audio_path and os.path.exists(from_project_relative_path(audio_path)):
-                    logger.info(f"Auto-transcribe enabled: starting processing for recording ID {recording_id}")
-                    self.process_selected_recording(recording_id, latest)
+            from nojoin.db import database as db_ops # Keep import for get_recording_by_id
+            # Fetch the specific recording data using the provided recording_id
+            recording_data_for_processing = db_ops.get_recording_by_id(recording_id)
+            if recording_data_for_processing:
+                # Convert Row to dict if necessary, and ensure audio_path is correct
+                recording_dict = dict(recording_data_for_processing)
+                audio_path_from_db = recording_dict.get('audio_path')
+                # Ensure the path from DB is used and is valid
+                if audio_path_from_db and os.path.exists(from_project_relative_path(audio_path_from_db)):
+                    logger.info(f"Auto-transcribe enabled: starting processing for recording ID {recording_id} (Name: {recording_dict.get('name')})")
+                    self.process_selected_recording(recording_id, recording_dict)
                 else:
-                    logger.warning(f"Auto-transcribe: audio file not found for recording ID {recording_id}")
+                    logger.warning(f"Auto-transcribe: audio file not found or path missing in DB for recording ID {recording_id}. Path from DB: {audio_path_from_db}")
+            else:
+                logger.warning(f"Auto-transcribe: recording data not found in DB for ID {recording_id}")
 
     def handle_recording_error(self, error_message):
         self.is_recording = False
@@ -2052,6 +2054,11 @@ class MainWindow(QMainWindow):
         # Worker might still be finishing up if cancelled, cleanup handled in _handle_processing_completion
 
     def _handle_processing_completion(self, recording_id, dialog, error_message=None):
+        logger.info(f"_handle_processing_completion called for ID: {recording_id}. Error: {error_message}")
+        recording_data_check = db_ops.get_recording_by_id(recording_id)
+        logger.info(f"Data for {recording_id} in _handle_processing_completion (before dialog close): {dict(recording_data_check) if recording_data_check else 'None'}")
+        logger.info(f"Diarized path for {recording_id} in _handle_processing_completion: {recording_data_check.get('diarized_transcript_path') if recording_data_check else 'N/A'}")
+
         dialog.mark_processing_complete()  # Mark as complete so dialog can close
         dialog.close()
         # Remove worker from processing_workers
@@ -2341,7 +2348,7 @@ class MainWindow(QMainWindow):
         dlg.regenerate_notes_requested.connect(lambda rec_id: self.on_regenerate_meeting_notes_clicked(rec_id, db_ops.get_recording_by_id(rec_id)))
         dlg.exec()
 
-    def _on_participants_changed(self, recording_id):
+    def _on_participants_changed(self, recording_id: str):
         self.handle_meeting_selection_changed()
         # Don't automatically regenerate notes here - this will be done only when user explicitly requests it
 
@@ -2413,7 +2420,11 @@ class MainWindow(QMainWindow):
         self._chat_request_in_progress = False
 
     def _prompt_relabel_speakers(self, recording_id):
+        logger.info(f"_prompt_relabel_speakers called for ID: {recording_id}")
         recording_data = db_ops.get_recording_by_id(recording_id)
+        logger.info(f"Data for {recording_id} in _prompt_relabel_speakers: {dict(recording_data) if recording_data else 'None'}")
+        logger.info(f"Diarized path for {recording_id} in _prompt_relabel_speakers: {recording_data.get('diarized_transcript_path') if recording_data else 'N/A'}")
+
         if not recording_data:
             QMessageBox.warning(self, "Relabel Speakers", "Recording not found in database. Cannot relabel speakers.")
             return
@@ -2421,9 +2432,10 @@ class MainWindow(QMainWindow):
         # Track if notes were regenerated
         notes_regenerated = [False]  # Use list to allow mutation in lambda
         
-        def on_regenerate_requested(rec_id):
+        def on_regenerate_requested(rec_id: str): # Ensure rec_id type hint is str
             notes_regenerated[0] = True
-            self._generate_meeting_notes_after_relabel(rec_id)
+            # Ensure rec_id is passed, not a potentially stale recording_data
+            self._generate_meeting_notes_after_relabel(rec_id) 
         
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
         dlg.regenerate_notes_requested.connect(on_regenerate_requested)
@@ -2442,65 +2454,86 @@ class MainWindow(QMainWindow):
                 self._generate_meeting_notes_after_relabel(recording_id)
 
     def _generate_meeting_notes_after_relabel(self, recording_id):
-        # Generate meeting notes using the latest speaker mapping
+        logger.info(f"Attempting to generate notes for recording_id: {recording_id}")
         rec = db_ops.get_recording_by_id(recording_id)
+
+        if rec is None:
+            logger.error(f"CRITICAL: Recording with ID {recording_id} not found in database within _generate_meeting_notes_after_relabel. Cannot generate notes.")
+            QMessageBox.critical(self, "Notes Generation Error", f"Failed to retrieve data for recording ID {recording_id}. Meeting notes cannot be generated.")
+            return
+        
+        logger.info(f"Found recording data for ID {recording_id}: {dict(rec) if rec else 'None'}")
+
         diarized_transcript_path = rec.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-        if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
-            with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-                transcript_text = f.read()
-            llm_provider = config_manager.get("llm_provider", "gemini")
-            api_key = config_manager.get(f"{llm_provider}_api_key")
-            model = config_manager.get(f"{llm_provider}_model", "gpt-4.1-mini-2025-04-14")
+        if not diarized_transcript_path:
+            logger.error(f"CRITICAL: Diarized transcript path not found in DB for recording ID {recording_id} (Name: {rec.get('name')}) in _generate_meeting_notes_after_relabel.")
+            QMessageBox.critical(self, "Notes Generation Error", f"Diarized transcript path is missing for recording '{rec.get('name')}'. Meeting notes cannot be generated.")
+            return
+        
+        logger.info(f"Diarized transcript path from DB for ID {recording_id}: {diarized_transcript_path}")
+        
+        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path)
+        logger.info(f"Absolute diarized transcript path for ID {recording_id}: {abs_diarized_transcript_path}")
+
+        if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+            logger.error(f"CRITICAL: Diarized transcript file does not exist at {abs_diarized_transcript_path} for recording ID {recording_id} (Name: {rec.get('name')}). Path from DB was '{diarized_transcript_path}'.")
+            QMessageBox.critical(self, "Notes Generation Error", f"Diarized transcript file is missing for recording '{rec.get('name')}' (expected at {abs_diarized_transcript_path}). Meeting notes cannot be generated.")
+            return
+
+        logger.info(f"Proceeding with notes generation for ID {recording_id}. File exists: {abs_diarized_transcript_path}")
+
+        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
+            transcript_text = f.read()
+        llm_provider = config_manager.get("llm_provider", "gemini")
+        api_key = config_manager.get(f"{llm_provider}_api_key")
+        model = config_manager.get(f"{llm_provider}_model", "gpt-4.1-mini-2025-04-14")
+        try:
+            backend = get_llm_backend(llm_provider, api_key=api_key, model=model)
+        except Exception as e:
+            QMessageBox.warning(self, "Meeting Notes", f"Unknown LLM provider: {llm_provider}\n{e}")
+            return
+        # Get latest speaker mapping
+        speakers = db_ops.get_speakers_for_recording(recording_id)
+        label_to_name = {s['diarization_label']: s['name'] for s in speakers}
+        notes_dialog = MeetingNotesProgressDialog(self)
+        notes_dialog.show()
+        worker = MeetingNotesWorker(backend, transcript_text, label_to_name)
+        def on_success(notes):
             try:
-                backend = get_llm_backend(llm_provider, api_key=api_key, model=model)
-            except Exception as e:
-                QMessageBox.warning(self, "Meeting Notes", f"Unknown LLM provider: {llm_provider}\n{e}")
-                return
-            # Get latest speaker mapping
-            speakers = db_ops.get_speakers_for_recording(recording_id)
-            label_to_name = {s['diarization_label']: s['name'] for s in speakers}
-            notes_dialog = MeetingNotesProgressDialog(self)
-            notes_dialog.show()
-            worker = MeetingNotesWorker(backend, transcript_text, label_to_name)
-            def on_success(notes):
-                try:
-                    import markdown2
-                    html = markdown2.markdown(notes)
-                    import re
-                    html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
-                    from nojoin.utils.theme_utils import wrap_html_body
-                    theme = config_manager.get("theme", "dark")
-                    themed_html = wrap_html_body(html, theme)
-                    self.meeting_notes_edit.setHtml(themed_html)
-                except Exception:
-                    self.meeting_notes_edit.setPlainText(notes)
-                self.meeting_notes_edit.setVisible(True)
-                self.notes_have_been_edited = False
-                self.status_bar.showMessage("Meeting notes generated.", 3000)
-                db_ops.add_meeting_notes(recording_id, llm_provider, model, notes)
+                import markdown2
+                html = markdown2.markdown(notes)
+                import re
+                html = re.sub(r'<\/?(html|body)[^>]*>', '', html, flags=re.IGNORECASE)
+                from nojoin.utils.theme_utils import wrap_html_body
+                theme = config_manager.get("theme", "dark")
+                themed_html = wrap_html_body(html, theme)
+                self.meeting_notes_edit.setHtml(themed_html)
+            except Exception:
+                self.meeting_notes_edit.setPlainText(notes)
+            self.meeting_notes_edit.setVisible(True)
+            self.notes_have_been_edited = False
+            self.status_bar.showMessage("Meeting notes generated.", 3000)
+            db_ops.add_meeting_notes(recording_id, llm_provider, model, notes)
+            notes_dialog.close()
+            QMessageBox.information(self, "Meeting Notes", "Meeting notes have been generated.")
+        def on_error(error):
+            logger.error(f"Failed to generate meeting notes: {error}")
+            placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
+            self.meeting_notes_edit.setPlainText(placeholder)
+            self.meeting_notes_edit.setVisible(True)
+            self.notes_have_been_edited = False
+            self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
+            notes_dialog.close()
+            QMessageBox.warning(self, "Meeting Notes", f"Failed to generate meeting notes: {error}")
+        def cleanup_worker():
+            self._meeting_notes_worker = None
+            if notes_dialog.isVisible():
                 notes_dialog.close()
-                QMessageBox.information(self, "Meeting Notes", "Meeting notes have been generated.")
-            def on_error(error):
-                logger.error(f"Failed to generate meeting notes: {error}")
-                placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
-                self.meeting_notes_edit.setPlainText(placeholder)
-                self.meeting_notes_edit.setVisible(True)
-                self.notes_have_been_edited = False
-                self.status_bar.showMessage("Failed to generate meeting notes.", 3000)
-                notes_dialog.close()
-                QMessageBox.warning(self, "Meeting Notes", f"Failed to generate meeting notes: {error}")
-            def cleanup_worker():
-                self._meeting_notes_worker = None
-                if notes_dialog.isVisible():
-                    notes_dialog.close()
-            worker.success.connect(on_success)
-            worker.error.connect(on_error)
-            worker.finished.connect(cleanup_worker)
-            worker.start()
-            self._meeting_notes_worker = worker
-        else:
-            QMessageBox.warning(self, "Meeting Notes", "Diarized transcript file missing. Cannot generate meeting notes.")
+        worker.success.connect(on_success)
+        worker.error.connect(on_error)
+        worker.finished.connect(cleanup_worker)
+        worker.start()
+        self._meeting_notes_worker = worker
         # Always refresh the UI to show the latest notes
         self.handle_meeting_selection_changed()
 

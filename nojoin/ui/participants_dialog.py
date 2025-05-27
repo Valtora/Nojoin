@@ -11,8 +11,8 @@ from nojoin.utils.theme_utils import apply_theme_to_widget
 logger = logging.getLogger(__name__)
 
 class ParticipantsDialog(QDialog):
-    participants_updated = Signal(int)  # recording_id
-    regenerate_notes_requested = Signal(int)  # recording_id when notes should be regenerated
+    participants_updated = Signal(str)  # recording_id (str)
+    regenerate_notes_requested = Signal(str)  # recording_id (str) when notes should be regenerated
 
     def __init__(self, recording_id, recording_data, parent=None):
         super().__init__(parent)
