@@ -536,6 +536,21 @@ class MainWindow(QMainWindow):
             self.seek_slider.setStyleSheet(slider_qss)
             self.volume_slider.setStyleSheet(slider_qss)
 
+        # --- Refresh Meeting List Item Widgets with new theme ---
+        if hasattr(self, 'meetings_list_widget'):
+            for i in range(self.meetings_list_widget.count()):
+                item = self.meetings_list_widget.item(i)
+                widget = self.meetings_list_widget.itemWidget(item)
+                if isinstance(widget, MeetingListItemWidget): # Check instance type
+                    # Assuming widget.recording_data holds the necessary data to refresh
+                    if hasattr(widget, 'recording_data') and widget.recording_data is not None:
+                         widget.update_content(widget.recording_data, theme_name)
+                    else:
+                        # Fallback: if recording_data is not directly on widget, try to get from item
+                        # This might be necessary if the widget's state isn't self-contained
+                        # For now, log a warning if this happens, as it implies a design detail
+                        logger.warning(f"MeetingListItemWidget at index {i} does not have recording_data attribute for theme refresh.")
+
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
         if theme == "dark":
@@ -768,26 +783,25 @@ class MainWindow(QMainWindow):
         # --- Main Display Area: Static Panes (Meeting List | Meeting Notes | Meeting Chat) ---
         main_display_layout = QHBoxLayout()
         main_display_layout.setContentsMargins(5, 5, 5, 5)
-        main_display_layout.setSpacing(0)  # No horizontal spacing between panes
+        main_display_layout.setSpacing(2)  # No horizontal spacing between panes
 
         # --- Left: Meetings List (Card Style) ---
         left_panel = QFrame()
         left_panel.setObjectName("MainPanelLeft")
-        left_panel.setStyleSheet("padding: 0px;")
-        left_panel.setMinimumWidth(360)
+        left_panel.setStyleSheet("padding: 10px;")
+        left_panel.setMinimumWidth(400)
         left_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
+        left_layout.setSpacing(10)
         left_panel.setContentsMargins(0, 0, 0, 0)
-        # Remove setMaximumWidth and setFixedWidth
 
         # --- Search Bar Area (now a separate widget) ---
         self.search_bar_widget = SearchBarWidget()
         self.search_bar_widget.setMinimumWidth(360)
         self.search_bar_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         if hasattr(self.search_bar_widget, 'layout') and self.search_bar_widget.layout() is not None:
-            self.search_bar_widget.layout().setContentsMargins(0, 2, 0, 2)
+            self.search_bar_widget.layout().setContentsMargins(0, 4, 0, 4)
         self.search_bar_widget.text_changed.connect(self._on_search_text_changed)
         self.search_bar_widget.cleared.connect(self._clear_search)
         left_layout.addWidget(self.search_bar_widget)
@@ -2080,7 +2094,7 @@ class MainWindow(QMainWindow):
             background: transparent;
             border: 2px;
             margin: 1px 0px;
-            padding: 2px;
+            padding: 0px;
         }
         """
 
@@ -2948,58 +2962,71 @@ class MeetingListItemWidget(QFrame):
         super().__init__(parent)
         self.recording_data = recording_data
         self.theme_name = theme_name
-        self.setObjectName("MeetingListItemCard")
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setLineWidth(2)
+        self.setObjectName("MeetingListItemCard") 
         self._init_ui()
 
     def _init_ui(self):
-        self.title_label = QLabel()
-        self.title_label.setObjectName("MeetingListItemTitleLabel")
-        self.title_label.setWordWrap(True)
-        self.meta_label = QLabel()
-        self.meta_label.setObjectName("MeetingListItemMetaLabel")
-        self.participants_label = QLabel()
-        self.participants_label.setObjectName("MeetingListItemParticipantsLabel")
-        self.participants_label.setWordWrap(True)
+        self.card_label = QLabel()
+        self.card_label.setTextFormat(Qt.RichText)
+        self.card_label.setWordWrap(True)
+        self.card_label.setObjectName("MeetingCardContentLabel") # Specific name for the label
+        self.card_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.card_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(2)
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.meta_label)
-        layout.addWidget(self.participants_label)
+        layout.setContentsMargins(14, 14, 14, 14) 
+        layout.setSpacing(0)
+        layout.addWidget(self.card_label)
         self.setLayout(layout)
         self.update_content(self.recording_data, self.theme_name)
 
     def update_content(self, recording_data: dict, theme_name: str):
+        import datetime
+        import html
+        from nojoin.utils.config_manager import config_manager
+        from nojoin.utils.theme_utils import THEME_PALETTE # Import THEME_PALETTE
         self.recording_data = recording_data
         self.theme_name = theme_name
-        meeting_title = self.recording_data.get("name", "Untitled Meeting")
-        self.title_label.setText(meeting_title)
-        # --- Meta row: Date | Start - End | Duration ---
-        import datetime
+        # --- Get Theme Specific Palette ---
+        current_theme_name = config_manager.get("theme", "dark")
+        palette = THEME_PALETTE[current_theme_name]
+        accent_color = palette['accent'] # Already used for border
+        card_background_color = palette['panel_bg']
+        title_color = palette['accent'] # Title uses accent color
+        metadata_color = palette['muted_text']
+        chip_text_color = palette['chip_text']
+        chip_border_color = palette['chip_border']
+        # --- Apply QSS to the QFrame (self) for border, background, margin ---
+        qss = f"""
+            QFrame#MeetingListItemCard {{
+                border-radius: 18px;
+                border: 2.5px solid {accent_color};
+                background-color: {card_background_color};
+                margin-bottom: 5px;
+            }}
+            QLabel#MeetingCardContentLabel {{
+                background-color: transparent; 
+                border: none; 
+                padding: 0px;
+                margin: 0px;
+            }}
+        """
+        self.setStyleSheet(qss)
+        # --- Title ---
+        meeting_title = html.escape(self.recording_data.get("name", "Untitled Meeting"))
+        # --- Date/Time/Duration ---
         start_time_str = self.recording_data.get("start_time")
         end_time_str = self.recording_data.get("end_time")
         duration_seconds = self.recording_data.get("duration_seconds") or self.recording_data.get("duration", 0)
+        created_at = self.recording_data.get("created_at")
         date_str = "?"
-        start_hm = "00:00"
-        end_hm = "00:00"
+        time_str = "--:--"
         duration_min = 0
+        tooltip_date_time = ""
         try:
-            if start_time_str:
-                start_dt = datetime.datetime.fromisoformat(start_time_str)
-                date_str = start_dt.strftime("%d %b")
-                start_hm = start_dt.strftime("%H:%M")
-            if end_time_str:
-                end_dt = datetime.datetime.fromisoformat(end_time_str)
-                end_hm = end_dt.strftime("%H:%M")
-                duration_min = int((end_dt - start_dt).total_seconds() // 60)
-            else:
-                duration_min = int(duration_seconds // 60)
-        except Exception:
-            created_at = self.recording_data.get("created_at")
             dt = None
-            if created_at:
+            if start_time_str:
+                dt = datetime.datetime.fromisoformat(start_time_str)
+            elif created_at:
                 try:
                     dt = datetime.datetime.fromisoformat(created_at)
                 except Exception:
@@ -3008,11 +3035,19 @@ class MeetingListItemWidget(QFrame):
                     except Exception:
                         dt = None
             if dt:
-                date_str = dt.strftime("%d %b")
-                start_hm = dt.strftime("%H:%M")
+                date_str = dt.strftime("%d %b %Y")
+                time_str = dt.strftime("%H:%M")
+                tooltip_date_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+            if start_time_str and end_time_str:
+                start_dt = datetime.datetime.fromisoformat(start_time_str)
+                end_dt = datetime.datetime.fromisoformat(end_time_str)
+                duration_min = int((end_dt - start_dt).total_seconds() // 60)
+            else:
+                duration_min = int(duration_seconds // 60)
+        except Exception:
             duration_min = int(duration_seconds // 60)
-        meta_text = f"{date_str} | {start_hm} - {end_hm} | {duration_min} min"
-        self.meta_label.setText(meta_text)
+        duration_str = f"{duration_min}mins"
+        # --- Participants ---
         participants = self.recording_data.get("participants")
         if participants is None:
             try:
@@ -3021,12 +3056,34 @@ class MeetingListItemWidget(QFrame):
                 participants = [s.get("name") or s.get("diarization_label") for s in speakers if s.get("name") or s.get("diarization_label")]
             except Exception:
                 participants = []
-        participants_text = ", ".join(participants) if participants else ""
-        self.participants_label.setText(participants_text)
+        chip_style = f"background:transparent; color:{chip_text_color}; border-radius:8px; padding:2px 8px; margin-right:4px; font-size:12px; display:inline-block; border:1px solid {chip_border_color};"
+        participants_html = "".join([f'<span style=\"{chip_style}\">{html.escape(p)}</span>' for p in participants])
+        # --- Status as colored text ---
+        status = self.recording_data.get("status", "").capitalize()
+        # Status specific colors remain, as they are semantic (green for processed, red for error etc)
+        status_semantic_color = {
+            "Processing": "#ff9800", # Orange
+            "Processed": "#4caf50",  # Green
+            "Error": "#f44336",     # Red
+            "Cancelled": "#bdbdbd"  # Grey
+        }.get(status, palette['muted_text']) # Default to muted if status is unknown
+        status_html = f'<span style="color:{status_semantic_color}; font-weight:bold; margin-left:6px; background:transparent;">{status}</span>' if status else ""
+        # --- Card HTML (for QLabel content, no outer div with border/bg) ---
+        card_content_html = f'''
+          <div style="font-size:1.15em; font-weight:bold; color:{title_color}; background:transparent;">{meeting_title}</div>
+          <div style="color:{metadata_color}; margin-top:4px; font-size:13px; background:transparent;">
+            <span title="{tooltip_date_time}" style="background:transparent;">🗓 {date_str}</span> &nbsp;|&nbsp;
+            <span style="background:transparent;">⏰ {time_str}</span> &nbsp;|&nbsp;
+            <span style="background:transparent;">{duration_str}</span> &nbsp;|&nbsp;
+            {status_html} 
+          </div>
+          <div style="margin-top:7px; background:transparent;">{participants_html}</div>
+        '''
+        self.card_label.setText(card_content_html)
+        self.setToolTip(f"{meeting_title}\nDate: {date_str} {time_str}\nDuration: {duration_str}\nStatus: {status}") # Set tooltip on the QFrame itself
 
     @staticmethod
     def set_selected_state(widget, selected):
-        # Set a property for QSS to style selected state
         widget.setProperty("selected", selected)
         widget.style().unpolish(widget)
         widget.style().polish(widget)

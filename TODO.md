@@ -1,11 +1,19 @@
 ### Meeting List & Context
 - Allow for the renaming of meetings via the Meeting Context Display.
-- Refactor how the UI is constructed to be more robust.
+
+- Speakers are listed but not separated by commas.
 
 ### Meeting Notes & Transcript
 - In settings, allow toggling of meeting note auto save, otherwise it should be manual via a button or CTRL S.
-- In general, minimise control via the context menu because most people are stupid and don't realise they can right-click things. For example, have a toggle between Meeting Notes and Meeting Transcript.
+
+- Have a toggle between Meeting Notes and Meeting Transcript.
+
+- Meeting Notes display area background is now finally theme aware but the text is not. The meeting list card widget text colour also needs to be theme-aware and update on theme change.
+
 - Meeting notes are not generated on first finish of transcription and diarization, particularly when speakers are merged or changed. - Investigate.
 
 ### Backend & Data Handling
 - Enable parallel processing and recording of meetings.
+
+### Meeting Chat
+- Add datestamp alongside timestamp  

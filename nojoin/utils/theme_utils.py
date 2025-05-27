@@ -536,7 +536,7 @@ theme_qss = {
         }
         QListWidget#ChatHistoryList::item {
             background: transparent;
-            border: none;
+            border: 1px;
             margin: 0;
             padding: 0;
         }
