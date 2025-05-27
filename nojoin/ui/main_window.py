@@ -837,7 +837,7 @@ class MainWindow(QMainWindow):
         meeting_notes_layout.addWidget(self.meeting_context_display)
         self.meeting_tags_widget = QWidget()
         self.meeting_tags_layout = QHBoxLayout(self.meeting_tags_widget)
-        self.meeting_tags_layout.setContentsMargins(0, 0, 0, 0)
+        self.meeting_tags_layout.setContentsMargins(2, 5, 2, 5)
         self.meeting_tags_layout.setSpacing(6)
         self.meeting_tags_widget.setStyleSheet("")
         meeting_notes_layout.addWidget(self.meeting_tags_widget)
@@ -2349,6 +2349,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_participants_changed(self, recording_id: str):
+        self.load_recordings() # Refresh the entire list to reflect participant changes on cards
         self.handle_meeting_selection_changed()
         # Don't automatically regenerate notes here - this will be done only when user explicitly requests it
 
@@ -3006,7 +3007,7 @@ class MeetingListItemWidget(QFrame):
         self.card_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.card_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14) 
+        layout.setContentsMargins(10, 1, 1, 10)
         layout.setSpacing(0)
         layout.addWidget(self.card_label)
         self.setLayout(layout)
@@ -3089,8 +3090,18 @@ class MeetingListItemWidget(QFrame):
                 participants = [s.get("name") or s.get("diarization_label") for s in speakers if s.get("name") or s.get("diarization_label")]
             except Exception:
                 participants = []
-        chip_style = f"background:transparent; color:{chip_text_color}; border-radius:8px; padding:2px 8px; margin-right:4px; font-size:12px; display:inline-block; border:1px solid {chip_border_color};"
-        participants_html = "".join([f'<span style=\"{chip_style}\">{html.escape(p)}</span>' for p in participants])
+        # chip_style = f"background:transparent; color:{chip_text_color}; border-radius:8px; padding:2px 8px; margin-right:4px; font-size:12px; display:inline-block; border:1px solid {chip_border_color};"
+        
+        # Join participant names with a comma and space for display on the card
+        escaped_participants = [html.escape(p) for p in participants if p] # Ensure p is not None or empty
+        if escaped_participants:
+            # participants_html = "".join([f'<span style="{chip_style}">{p}</span>' for p in escaped_participants]) # Old chip display
+            participants_display_string = ", ".join(escaped_participants)
+            # Display as plain text, styled like other metadata
+            participants_html = f'<span style="color:{metadata_color}; font-size:13px;">{participants_display_string}</span>'
+        else:
+            participants_html = "" # No participants to display
+
         # --- Status as colored text ---
         status = self.recording_data.get("status", "").capitalize()
         # Status specific colors remain, as they are semantic (green for processed, red for error etc)
@@ -3113,7 +3124,7 @@ class MeetingListItemWidget(QFrame):
           <div style="margin-top:7px; background:transparent;">{participants_html}</div>
         '''
         self.card_label.setText(card_content_html)
-        self.setToolTip(f"{meeting_title}\nDate: {date_str} {time_str}\nDuration: {duration_str}\nStatus: {status}") # Set tooltip on the QFrame itself
+        self.setToolTip(f"{meeting_title}\\nDate: {date_str} {time_str}\\nDuration: {duration_str}\\nStatus: {status}\\nParticipants: {', '.join(participants)}") # Set tooltip on the QFrame itself
 
     @staticmethod
     def set_selected_state(widget, selected):

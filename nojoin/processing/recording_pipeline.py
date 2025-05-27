@@ -69,7 +69,7 @@ class RecordingPipeline(QObject):
             tod = 'Evening'
         else:
             tod = 'Night'
-        return f"{day_of_week} {day_str} {month}, {tod} Recording"
+        return f"{day_of_week} {day_str} {month}, {tod} Meeting"
 
     def _run_recording(self, input_device, output_device_loopback, sample_rate, channels):
         try:
