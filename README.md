@@ -9,7 +9,7 @@ I know there are similar free solutions out there which are all great and quirky
 ## Manual Setup (Release Package Coming Soon)
 
 1.  **Prerequisites:**
-    *   Python 3.11.9 (IMPORTANT: This version specifically because of some compatabiliy issues with PyTorch)
+    *   Python 3.11.9 (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch)
     *   `ffmpeg` installed and added to system PATH ([https://ffmpeg.org/](https://ffmpeg.org/))
     *   OPTIONAL: NVIDIA GPU with CUDA toolkit installed (for GPU acceleration, see notes below)
 
@@ -27,6 +27,7 @@ I know there are similar free solutions out there which are all great and quirky
     .venv\Scripts\Activate
 
 4.  **Install dependencies:**
+     
      Install the correct torch, torchaudio, and torchvision for your system. I've tested on Windows 11 amd64 architecture with CUDA 12.8.x and Python 3.11.9. I've also tested without CUDA and it should work fine, albeit with inferior performance in terms of transcription and diarization times.
      
      The current requirements.txt file assumes you have an NVIDIA GPU and attempts to install a suitable whl for CUDA 12.8. If you do not then install a suitable version of torch, torchaudio, and torchvision separately in your venv. See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for the correct pip install command for your setup.
