@@ -4,9 +4,10 @@ setuptools
 dotenv
 
 # Core ML Libraries
-torch --index-url https://download.pytorch.org/whl/cu128
-torchvision --index-url https://download.pytorch.org/whl/cu128
-torchaudio --index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch
+torchvision
+torchaudio
 openai-whisper
 pyannote.audio>=3.1.1
 
