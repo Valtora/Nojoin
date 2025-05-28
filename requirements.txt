@@ -5,9 +5,11 @@ dotenv
 
 # Core ML Libraries
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch
-torchvision
-torchaudio
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
+torchaudio==2.7.0+cu128
+
+# Speech Recognition
 openai-whisper
 pyannote.audio>=3.1.1
 

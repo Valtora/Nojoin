@@ -27,7 +27,9 @@ I know there are similar free solutions out there which are all great and quirky
     .venv\Scripts\Activate
 
 4.  **Install dependencies:**
-     Install the correct torch, torchaudio, and torchvision. I've tested on Windows 11 amd64 architecture with CUDA 12.8.x and Python 3.11.9. The current requirements.txt file does this but it's highlighted again here just in case.
+     Install the correct torch, torchaudio, and torchvision for your system. I've tested on Windows 11 amd64 architecture with CUDA 12.8.x and Python 3.11.9. I've also tested without CUDA and it should work fine, albeit with inferior performance in terms of transcription and diarization times.
+     
+     The current requirements.txt file assumes you have an NVIDIA GPU and attempts to install a suitable whl for CUDA 12.8. If you do not then install a suitable version of torch, torchaudio, and torchvision separately in your venv. See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for the correct pip install command for your setup.
 
      Intall the requirements
     ```bash
@@ -44,4 +46,4 @@ Nojoin supports GPU acceleration for transcription and diarization using CUDA. T
 - CUDA availability is automatically detected by Nojoin. If available, you can select "cuda" as the processing device in the Settings dialog.
 - If CUDA is not detected, only CPU processing will be available.
 
-**Note:** CUDA 12.8.x is the only supported version. Other versions may not work correctly. See this URL to troubleshoot if you have CUDA issues: https://saturncloud.io/blog/how-to-troubleshoot-pytorchs-torchcudaisavailable-returning-false-in-windows-10/
+**Note:** CUDA 12.8.x is the only supported version for now. Other versions may not work correctly. Saturn Cloud wrote a [helpful troubleshooting guide](https://saturncloud.io/blog/how-to-troubleshoot-pytorchs-torchcudaisavailable-returning-false-in-windows-10/) if you have CUDA issues.
