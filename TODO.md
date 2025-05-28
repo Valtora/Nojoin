@@ -1,11 +1,6 @@
 ### Meeting List & Context
 - Allow for the renaming of meetings via the Meeting Context Display.
 
-- Rename 'Process (transcribe and diarize) in the context menu into just 'Re-transcribe'.
-
-### Meeting Chat
-- Add datestamp alongside timestamp  
-
 ### UI Styling & Refactoring
 - Refactor UI styling for a single source of truth:
     - Goal: Centralize all QSS definitions and styling logic within `theme_utils.py`.

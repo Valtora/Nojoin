@@ -2433,7 +2433,7 @@ class MainWindow(QMainWindow):
         context_menu.addAction(manage_participants_action)
         context_menu.addSeparator()
         # Processing Actions
-        process_action = QAction("Process (Transcribe and Diarize)", self)
+        process_action = QAction("Re-transcribe", self)
         process_action.triggered.connect(lambda: self.process_selected_recording(recording_id, recording_data))
         current_status = recording_data.get('status', 'Unknown').lower()
         process_action.setEnabled(current_status != 'processing')
@@ -2495,11 +2495,15 @@ class MainWindow(QMainWindow):
         import markdown2  # Local import for performance
         from datetime import datetime
         import json
+
+        iso_timestamp_now = datetime.now().isoformat()
+        display_timestamp = datetime.fromisoformat(iso_timestamp_now).strftime("%d %b %H:%M")
+        
         html = markdown2.markdown(response)
-        timestamp = datetime.now().strftime("%H:%M")
-        ai_html = f'<div class="chat-message assistant"><b>Assistant</b> <span class="timestamp">{timestamp}</span><div class="content">{html}</div></div>'
+        ai_html = f'<div class="chat-message assistant"><b>Assistant</b> <span class="timestamp">{display_timestamp}</span><div class="content">{html}</div></div>'
         self.chat_display_area.append(ai_html)
-        self.current_chat_history.append({"role": "model", "parts": [{"text": response}]})
+        
+        self.current_chat_history.append({"role": "model", "parts": [{"text": response}], "timestamp": iso_timestamp_now})
         # --- Save chat history to DB ---
         selected_items = self.meetings_list_widget.selectedItems()
         if selected_items:
