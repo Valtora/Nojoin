@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect, QListWidget, QListWidgetItem, QGridLayout, QToolButton
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QTime, QAbstractTableModel, QModelIndex, Slot, QPoint, QSize, QStringListModel, QRect, QItemSelectionModel, QItemSelection, QPropertyAnimation, QEasingCurve, Property, QMetaObject
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap, QPainter, QBrush, QColor, QFont, QTextListFormat, QKeySequence, QShortcut
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap, QPainter, QBrush, QColor, QFont, QTextListFormat, QKeySequence, QShortcut, QTextDocument # Added QTextDocument
 from PySide6 import QtWidgets
+from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY # Added this import
 # Attempt to import Recorder, handle potential errors
 try:
     from ..audio.recorder import AudioRecorder # Relative import
@@ -392,19 +393,47 @@ class MainWindow(QMainWindow):
         # Update settings button accent color
         if hasattr(self, 'settings_button'):
             self._set_settings_button_accent()
-        # Remove direct border styling from child widgets; rely on panel QSS
-        # Meeting Notes
+        
+        # --- Meeting Notes: Apply theme using QTextDocument's defaultStyleSheet ---
         if hasattr(self, 'meeting_notes_edit'):
-            # Re-apply content to force theme update
-            import re
-            from nojoin.utils.theme_utils import wrap_html_body
-            current_html = self.meeting_notes_edit.toHtml()
-            # Remove old <html> and <body> tags if present
-            body_content = re.sub(r'<\/?(html|body)[^>]*>', '', current_html, flags=re.IGNORECASE)
-            themed_html = wrap_html_body(body_content, theme_name)
-            self.meeting_notes_edit.clear()
-            self.meeting_notes_edit.setHtml(themed_html)
+            doc = self.meeting_notes_edit.document()
+            current_markdown_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub)
+
+            theme_palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
+            text_color = theme_palette['html_text']
+            # background_color = theme_palette['panel_bg'] # QTextEdit background is handled by QSS
+
+            # Basic CSS for QTextDocument. It's a subset of CSS 2.1.
+            # Important: background-color on body here might not be visible if QTextEdit's own background isn't transparent.
+            # We ensure QTextEdit is transparent via its specific QSS entry or direct setStyleSheet.
+            css = f"""
+                body {{ 
+                    color: {text_color}; 
+                    background-color: transparent; /* Ensure body itself is transparent */
+                }}
+                p {{ color: {text_color}; }}
+                h1, h2, h3, h4, h5, h6 {{ color: {text_color}; }}
+                li {{ color: {text_color}; }}
+                span, div, strong, em, u, s, sub, sup, font, blockquote, code, pre {{ 
+                    color: {text_color} !important;  /* Use !important for common inline elements */
+                    background-color: transparent !important;
+                }}
+                a {{ color: {theme_palette['accent']}; }}
+                a:visited {{ color: {theme_palette['accent2']}; }}
+            """
+            doc.setDefaultStyleSheet(css)
+            # Set the base font for the document - this helps with consistency
+            base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"]) # Or your preferred default
+            doc.setDefaultFont(base_font)
+            
+            # Re-apply markdown to ensure the new stylesheet and font take effect
+            # This will reset undo history, which is a known trade-off for this approach.
+            doc.setMarkdown(current_markdown_content, QTextDocument.MarkdownDialectGitHub)
+            
+            # Ensure the QTextEdit widget itself has a transparent background
+            # This allows the panel's themed background to show through.
             self.meeting_notes_edit.setStyleSheet("background: transparent;")
+
         # Meeting Context Display (update on theme change)
         if hasattr(self, 'meeting_context_display'):
             selected_items = self.meetings_list_widget.selectedItems() if hasattr(self, 'meetings_list_widget') else []
@@ -1238,24 +1267,50 @@ class MainWindow(QMainWindow):
             logger.info(f"Deletion cancelled for recording ID: {recording_id}")
 
     def _context_view_edit_meeting_notes(self, recording_id, recording_data):
-        notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-        from nojoin.utils.theme_utils import wrap_html_body
-        theme = config_manager.get("theme", "dark")
-        if notes_entry:
-            try:
-                import markdown2  # Local import for performance
-                html_notes = markdown2.markdown(notes_entry['notes'])
-                # Strip <html> and <body> tags if present
-                import re
-                html_notes = re.sub(r'<\/?(html|body)[^>]*>', '', html_notes, flags=re.IGNORECASE)
-                themed_html = wrap_html_body(html_notes, theme)
-                self.meeting_notes_edit.setHtml(themed_html)
-            except Exception as e:
-                self.meeting_notes_edit.setPlainText(f"Error displaying notes: {e}\n{notes_entry['notes']}")
+        # This function is primarily for when user right-clicks and wants to ensure notes are visible.
+        # The actual loading and styling is handled by handle_meeting_selection_changed.
+        # We just need to make sure the selection triggers that if not already selected.
+        
+        # Check if the item is already selected
+        current_selection = self.meetings_list_widget.selectedItems()
+        is_already_selected = False
+        if current_selection:
+            if current_selection[0].data(Qt.UserRole) == recording_id:
+                is_already_selected = True
+
+        if not is_already_selected:
+            # Find and select the item to trigger handle_meeting_selection_changed
+            for i in range(self.meetings_list_widget.count()):
+                item = self.meetings_list_widget.item(i)
+                if item.data(Qt.UserRole) == recording_id:
+                    # item.setSelected(True) # This might trigger selectionChanged if not blocked
+                    self.meetings_list_widget.setCurrentItem(item, QItemSelectionModel.ClearAndSelect)
+                    break
         else:
-            self.meeting_notes_edit.setPlainText("No meeting notes available. Right-click the recording to generate notes.")
-        self.meeting_notes_edit.setVisible(True)
-        self.notes_have_been_edited = False
+            # If already selected, ensure notes are visible (handle_meeting_selection_changed should have loaded them)
+             pass
+
+
+        # The old logic for manually setting HTML is removed, as handle_meeting_selection_changed now does it with setMarkdown
+        # notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+        # from nojoin.utils.theme_utils import wrap_html_body # No longer needed here
+        # theme = config_manager.get("theme", "dark") # No longer needed here
+        # if notes_entry:
+        #     try:
+        #         import markdown2  # Local import for performance
+        #         html_notes = markdown2.markdown(notes_entry['notes'])
+        #         # Strip <html> and <body> tags if present
+        #         import re
+        #         html_notes = re.sub(r'<\/?(html|body)[^>]*>', '', html_notes, flags=re.IGNORECASE)
+        #         themed_html = wrap_html_body(html_notes, theme) # No longer needed
+        #         self.meeting_notes_edit.setHtml(themed_html) # No longer needed
+        #     except Exception as e:
+        #         self.meeting_notes_edit.setPlainText(f"Error displaying notes: {e}\n{notes_entry['notes']}")
+        # else:
+        #    self.meeting_notes_edit.setPlainText("No meeting notes available. Right-click the recording to generate notes.")
+        
+        self.meeting_notes_edit.setVisible(True) # Ensure it's visible
+        # self.notes_have_been_edited = False # This is reset by handle_meeting_selection_changed
 
     def _context_show_diarized_transcript_dialog(self, recording_id, recording_data):
         """Shows the diarized transcript in a new dialog window."""
@@ -1289,10 +1344,29 @@ class MainWindow(QMainWindow):
         api_key = config_manager.get(f"{provider}_api_key")
         model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
         if not api_key or not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-            transcript_html = self.load_transcript(recording_id)
-            msg = (f"<b>No API key provided for {provider.title()}.</b> Displaying diarized transcript instead of meeting notes.")
-            themed_html = wrap_html_body(f"<p>{msg}</p>" + transcript_html, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(themed_html)
+            # Display transcript if API key missing, using setMarkdown
+            transcript_html_content = self.load_transcript(recording_id) # This returns HTML
+            # We need to convert this HTML to Markdown for setMarkdown, or find a way to display HTML directly
+            # For now, let's try to set the HTML directly and see if defaultStyleSheet handles it.
+            # This part is tricky as load_transcript returns themed HTML.
+            # A better approach would be for load_transcript to return raw content or Markdown.
+            # For now, show a simple message as Markdown.
+            
+            # Fallback message in Markdown
+            error_markdown = (f"**Meeting notes generation failed.**\n\n"
+                              f"No API key provided for {provider.title()} or transcript is missing.\n\n"
+                              f"You can try viewing the raw diarized transcript via the context menu if available.")
+            if hasattr(self, 'meeting_notes_edit'):
+                doc = self.meeting_notes_edit.document()
+                # Apply theme stylesheet before setting content
+                theme_palette = THEME_PALETTE.get(self.current_theme, THEME_PALETTE["dark"])
+                text_color = theme_palette['html_text']
+                css = f"body {{ color: {text_color}; background-color: transparent; }}" # Simplified for this case
+                doc.setDefaultStyleSheet(css)
+                base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+                doc.setDefaultFont(base_font)
+                doc.setMarkdown(error_markdown, QTextDocument.MarkdownDialectGitHub)
+
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage(f"Meeting notes not generated. No API key for {provider.title()}.", 3000)
@@ -1355,10 +1429,20 @@ class MainWindow(QMainWindow):
         api_key = config_manager.get(f"{provider}_api_key")
         model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
         if not api_key or not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-            transcript_html = self.load_transcript(recording_id)
-            msg = (f"<b>No API key provided for {provider.title()}.</b> Displaying diarized transcript instead of meeting notes.")
-            themed_html = wrap_html_body(f"<p>{msg}</p>" + transcript_html, config_manager.get("theme", "dark"))
-            self.meeting_notes_edit.setHtml(themed_html)
+            # Fallback message in Markdown
+            error_markdown = (f"**Meeting notes regeneration failed.**\n\n"
+                              f"No API key provided for {provider.title()} or transcript is missing.\n\n"
+                              f"You can try viewing the raw diarized transcript via the context menu if available.")
+            if hasattr(self, 'meeting_notes_edit'):
+                doc = self.meeting_notes_edit.document()
+                theme_palette = THEME_PALETTE.get(self.current_theme, THEME_PALETTE["dark"])
+                text_color = theme_palette['html_text']
+                css = f"body {{ color: {text_color}; background-color: transparent; }}"
+                doc.setDefaultStyleSheet(css)
+                base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+                doc.setDefaultFont(base_font)
+                doc.setMarkdown(error_markdown, QTextDocument.MarkdownDialectGitHub)
+            
             self.meeting_notes_edit.setVisible(True)
             self.notes_have_been_edited = False
             self.status_bar.showMessage(f"Meeting notes not generated. No API key for {provider.title()}.", 3000)
@@ -1508,7 +1592,9 @@ class MainWindow(QMainWindow):
         selected_items = self.meetings_list_widget.selectedItems()
         if not selected_items:
             self.meeting_context_display.clear()
-            self.meeting_notes_edit.clear()
+            if hasattr(self, 'meeting_notes_edit'): # Check if it exists
+                doc = self.meeting_notes_edit.document()
+                doc.clear() # Clears content and undo stack
             # --- Clear chat display and history on no selection ---
             self.current_chat_history = []
             if hasattr(self, 'chat_display_area'):
@@ -1522,7 +1608,9 @@ class MainWindow(QMainWindow):
         recording_data = db_ops.get_recording_by_id(recording_id)
         if not recording_data:
             self.meeting_context_display.clear()
-            self.meeting_notes_edit.clear()
+            if hasattr(self, 'meeting_notes_edit'): # Check if it exists
+                doc = self.meeting_notes_edit.document()
+                doc.clear()
             # --- Clear chat display and history on invalid selection ---
             self.current_chat_history = []
             if hasattr(self, 'chat_display_area'):
@@ -1577,21 +1665,43 @@ class MainWindow(QMainWindow):
         <div class='meta'>{time_str if time_str else ''} <span class='meta'>{tz_str if tz_str else ''}</span></div>
         """
         self._set_meeting_context_html_with_dynamic_font(context_html, theme)
-        # --- Meeting Notes ---
-        notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-        if notes_entry:
-            try:
-                import markdown2  # Local import for performance
-                html_notes = markdown2.markdown(notes_entry['notes'])
-            except Exception as e:
-                logger.error(f"Error converting notes to HTML: {e}")
-                html_notes = f"<pre>{notes_entry['notes']}</pre>"
-        else:
-            html_notes = "<p>No meeting notes available. Right-click the recording to generate notes or view transcript.</p>"
-        self.meeting_notes_edit.setHtml(wrap_html_body(html_notes, theme))
-        # Remove any setStyleSheet calls here
-        # self.meeting_notes_edit.setStyleSheet("")
-        # self.meeting_notes_edit.setStyleSheet("margin-bottom: 6px;")
+        
+        # --- Meeting Notes: Load using setMarkdown and apply theme ---
+        if hasattr(self, 'meeting_notes_edit'):
+            doc = self.meeting_notes_edit.document()
+            
+            # Apply current theme's stylesheet to the document
+            theme_palette = THEME_PALETTE.get(self.current_theme, THEME_PALETTE["dark"])
+            text_color = theme_palette['html_text']
+            css = f"""
+                body {{ color: {text_color}; background-color: transparent; }}
+                p {{ color: {text_color}; }}
+                h1, h2, h3, h4, h5, h6 {{ color: {text_color}; }}
+                li {{ color: {text_color}; }}
+                span, div, strong, em, u, s, sub, sup, font, blockquote, code, pre {{ 
+                    color: {text_color} !important; 
+                    background-color: transparent !important;
+                }}
+                a {{ color: {theme_palette['accent']}; }}
+                a:visited {{ color: {theme_palette['accent2']}; }}
+            """
+            doc.setDefaultStyleSheet(css)
+            base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+            doc.setDefaultFont(base_font)
+
+            notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+            if notes_entry and notes_entry['notes']:
+                # Assuming notes are stored as Markdown
+                doc.setMarkdown(notes_entry['notes'], QTextDocument.MarkdownDialectGitHub)
+            else:
+                # Set placeholder or clear if no notes.
+                # Using setMarkdown with placeholder text that is valid Markdown.
+                placeholder_markdown = "_No meeting notes available. Right-click the recording to generate notes or view transcript._"
+                doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            
+            self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave comparison
+            self.notes_have_been_edited = False # Reset edit flag
+
         # --- Tag/Label Widget ---
         while self.meeting_tags_layout.count():
             item = self.meeting_tags_layout.takeAt(0)
@@ -2619,19 +2729,32 @@ class MainWindow(QMainWindow):
         if not selected_items:
             return
         recording_id = selected_items[0].data(Qt.UserRole)
-        html_content = self.meeting_notes_edit.toHtml()
+        
+        if not hasattr(self, 'meeting_notes_edit'):
+            return
+
+        doc = self.meeting_notes_edit.document()
+        # Get content as Markdown for saving
+        markdown_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub)
+        
         # Only save if changed
-        if html_content != self._notes_last_saved_content:
+        if markdown_content != self._notes_last_saved_content:
             try:
                 notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+                # Assuming notes are stored as raw markdown text.
+                # The 'provider' and 'model' fields for manual edits might need specific handling.
+                # For now, we'll focus on updating existing or adding new with a generic provider.
                 if notes_entry:
-                    db_ops.update_meeting_notes(notes_entry['id'], html_content)
+                    db_ops.update_meeting_notes(notes_entry['id'], markdown_content)
                 else:
-                    db_ops.add_meeting_notes(recording_id, 'manual', '', html_content)
-                self._notes_last_saved_content = html_content
+                    # If adding new, decide on appropriate provider/model, e.g., "manual_edit_markdown"
+                    db_ops.add_meeting_notes(recording_id, 'manual_markdown', '', markdown_content)
+                
+                self._notes_last_saved_content = markdown_content
                 self.status_bar.showMessage("Meeting notes autosaved.", 1500)
                 self.notes_have_been_edited = False
             except Exception as e:
+                self.logger.error(f"Failed to autosave notes: {e}", exc_info=True)
                 self.status_bar.showMessage(f"Failed to autosave notes: {e}", 3000)
 
     # Connect timer timeout to autosave
