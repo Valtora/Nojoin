@@ -895,29 +895,87 @@ def get_border_color(theme_name: str) -> str:
 
 def get_html_body_style(theme_name: str) -> str:
     """
-    Returns a CSS style string for the <body> tag based on the theme.
+    Generates a CSS style string for the HTML body based on the theme.
     """
-    if theme_name == "dark":
-        return "background:#232323; color:#eaeaea;"
-    else:
-        return "background:#ffffff; color:#181818;"
+    palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
+    font_details = FONT_HIERARCHY["body"]
+    # Ensure the text color is applied with !important
+    return (
+        f"background-color: {palette['html_bg']}; "
+        f"color: {palette['html_text']} !important; "
+        f"font-family: 'Segoe UI', Arial, sans-serif; "
+        f"font-size: {font_details['size']}pt; "
+        f"font-weight: {font_details['weight']};"
+    )
 
 def wrap_html_body(content: str, theme_name: str) -> str:
     """
-    Wraps the given HTML content in a <html><head>...</head><body style=...>...</body></html> with theme-based style and font hierarchy.
+    Wraps HTML content with a <body> tag styled according to the theme.
+    Ensures basic document structure.
     """
-    palette = THEME_PALETTE[theme_name]
-    font = FONT_HIERARCHY
-    style = f"background:{palette['html_bg']}; color:{palette['html_text']}; font-family:'Segoe UI',Arial,sans-serif; font-size:{font['body']['size']}px;"
-    # Add CSS for h1, h2, p, meta, etc.
-    extra_css = f"""
-    h1 {{ font-size: {font['h1']['size']}px; font-weight: {font['h1']['weight']}; color: {palette['accent']}; margin-bottom: 0.2em; }}
-    h2 {{ font-size: {font['h2']['size']}px; font-weight: {font['h2']['weight']}; color: {palette['accent']}; margin-bottom: 0.2em; }}
-    p {{ font-size: {font['body']['size']}px; color: {palette['primary_text']}; margin-bottom: 0.7em; }}
-    .meta, .timestamp {{ font-size: {font['meta']['size']}px; color: {palette['muted_text']}; }}
-    ul{{margin-left:1.5em;}} li{{margin-bottom:0.5em;}}
+    body_style = get_html_body_style(theme_name)
+    palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
+    
+    # Check if content already has <html> or <body> tags
+    has_html_tag = "<html" in content.lower()
+    has_body_tag = "<body" in content.lower()
+
+    # If content is a full HTML document, try to inject style into existing body or head
+    if has_html_tag and has_body_tag:
+        import re
+        try:
+            # Try to add style to existing body tag
+            content = re.sub(r"<body([^>]*)>", f'''<body\1 style="{body_style}">''', content, count=1, flags=re.IGNORECASE)
+            # Additionally, inject a style block into the head for more general overrides
+            style_block = f"""
+            <style>
+                body {{ {body_style} }}
+                p, div, span, li, th, td, caption, label, legend, summary, article, aside, footer, header, main, nav, section, dl, dt, dd, figcaption, figure, mark, data, time, abbr, address, b, bdi, bdo, cite, code, del, dfn, em, i, ins, kbd, pre, q, rp, rt, ruby, s, samp, small, strong, sub, sup, u, var, wbr, font {{
+                    color: {palette['html_text']} !important;
+                    background-color: transparent !important; /* Prevent unwanted backgrounds */
+                }}
+                h1, h2, h3, h4, h5, h6 {{
+                    color: {palette['html_text']} !important;
+                }}
+                a {{ color: {palette['accent']} !important; }}
+                a:visited {{ color: {palette['accent2']} !important; }}
+            </style>
+            """
+            if "<head>" in content.lower():
+                content = re.sub(r"(<head[^>]*>)", r"\1" + style_block, content, count=1, flags=re.IGNORECASE)
+            elif "<html>" in content.lower(): # if no head, but html tag exists, add a head with style
+                content = re.sub(r"(<html[^>]*>)", r"\1<head>" + style_block + "</head>", content, count=1, flags=re.IGNORECASE)
+
+        except re.error: 
+            pass 
+        return content 
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{
+                {body_style}
+            }}
+            /* General override for common text-containing elements */
+            p, div, span, li, th, td, caption, label, legend, summary, article, aside, footer, header, main, nav, section, dl, dt, dd, figcaption, figure, mark, data, time, abbr, address, b, bdi, bdo, cite, code, del, dfn, em, i, ins, kbd, pre, q, rp, rt, ruby, s, samp, small, strong, sub, sup, u, var, wbr, font {{
+                color: {palette['html_text']} !important;
+                background-color: transparent !important; /* Prevent unwanted backgrounds */
+            }}
+            h1, h2, h3, h4, h5, h6 {{
+                color: {palette['html_text']} !important;
+            }}
+            a {{ color: {palette['accent']} !important; }}
+            a:visited {{ color: {palette['accent2']} !important; }}
+        </style>
+    </head>
+    <body style="{body_style}">
+        {content}
+    </body>
+    </html>
     """
-    return f"<html><head><style>body{{{style}}}{extra_css}</style></head><body>{content}</body></html>"
 
 QSS_MEETING_CONTEXT_INFO = """
 #MeetingContextInfo {

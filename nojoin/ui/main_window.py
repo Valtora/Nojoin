@@ -554,14 +554,45 @@ class MainWindow(QMainWindow):
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
         if theme == "dark":
-            accent = "#ff9800"
-            accent2 = "#ff6f00"
-            text = "#181818"
+            accent_val = "#ff9800"
+            accent2_val = "#ff6f00"
+            hover_accent_val = "#ffac33"  # Lighter orange for hover
+            text_val = "#181818"
         else:
-            accent = "#007acc"
-            accent2 = "#005f9e"
-            text = "#ffffff"
-        self.settings_button.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {accent}, stop:1 {accent2}); color: {text}; border: none; border-radius: 6px; font-weight: bold;")
+            accent_val = "#007acc"
+            accent2_val = "#005f9e"
+            hover_accent_val = "#3394cc"  # Lighter blue for hover
+            text_val = "#ffffff"
+
+        # Corrected QSS template:
+        # - QSS blocks use {{ and }}
+        # - .format() placeholders use {key}
+        qss_template = """
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p_accent_stop0}, stop:1 {p_accent_stop1});
+                color: {p_text_color};
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p_hover_accent_stop0}, stop:1 {p_hover_accent_stop1});
+            }}
+            QPushButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p_pressed_accent_stop0}, stop:1 {p_pressed_accent_stop1});
+            }}
+        """
+        
+        final_qss = qss_template.format(
+            p_accent_stop0=accent_val,
+            p_accent_stop1=accent2_val,
+            p_text_color=text_val,
+            p_hover_accent_stop0=hover_accent_val,
+            p_hover_accent_stop1=accent_val,
+            p_pressed_accent_stop0=accent2_val,
+            p_pressed_accent_stop1=accent_val
+        )
+        self.settings_button.setStyleSheet(final_qss)
 
     def setup_ui(self):
         # --- Menu Bar Navigation ---
@@ -927,7 +958,7 @@ class MainWindow(QMainWindow):
         chat_buttons_layout.setSpacing(8)
         self.chat_send_button = QPushButton()
         self.chat_send_button.setToolTip("Send/Ask")
-        self.chat_send_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowUp))
+        self.chat_send_button.setText("Send") # Changed from icon to text
         self.chat_send_button.setObjectName("ChatSendButton")
         self.chat_send_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.clear_chat_button = QPushButton("Clear Chat")
