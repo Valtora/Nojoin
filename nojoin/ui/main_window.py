@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QTime, QAbstractTableModel, QModelIndex, Slot, QPoint, QSize, QStringListModel, QRect, QItemSelectionModel, QItemSelection, QPropertyAnimation, QEasingCurve, Property, QMetaObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap, QPainter, QBrush, QColor, QFont, QTextListFormat, QKeySequence, QShortcut, QTextDocument # Added QTextDocument
 from PySide6 import QtWidgets
-from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY # Added this import
+from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY, wrap_html_body # Added wrap_html_body
 # Attempt to import Recorder, handle potential errors
 try:
     from ..audio.recorder import AudioRecorder # Relative import
@@ -86,7 +86,6 @@ from .processing_dialog import ProcessingProgressDialog
 from .meeting_notes_progress_dialog import MeetingNotesProgressDialog
 from nojoin.audio.importer import import_multiple_audio_files
 from nojoin.utils.speaker_label_manager import SpeakerLabelManager
-from .transcript_dialog import TranscriptViewDialog # Import the new dialog
 from nojoin.search.search_logic import SearchEngine
 from .participants_dialog import ParticipantsDialog
 from .search_bar_widget import SearchBarWidget
@@ -283,6 +282,10 @@ class MainWindow(QMainWindow):
         self._chat_threads = []
         self._chat_request_in_progress = False
         self.logger = logging.getLogger(__name__)
+        self.center_panel_view_mode = "notes"  # "notes" or "transcript"
+        self.view_toggle_button = None
+        self.notes_undo_button = None
+        self.notes_redo_button = None
         # --- End robust early attribute init ---
         self.setWindowTitle("Nojoin")
         self.setGeometry(100, 100, 1200, 800)
@@ -394,45 +397,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'settings_button'):
             self._set_settings_button_accent()
         
-        # --- Meeting Notes: Apply theme using QTextDocument's defaultStyleSheet ---
+        # --- Meeting Notes/Transcript Area: Apply theme ---
         if hasattr(self, 'meeting_notes_edit'):
-            doc = self.meeting_notes_edit.document()
-            current_markdown_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub)
-
-            theme_palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
-            text_color = theme_palette['html_text']
-            # background_color = theme_palette['panel_bg'] # QTextEdit background is handled by QSS
-
-            # Basic CSS for QTextDocument. It's a subset of CSS 2.1.
-            # Important: background-color on body here might not be visible if QTextEdit's own background isn't transparent.
-            # We ensure QTextEdit is transparent via its specific QSS entry or direct setStyleSheet.
-            css = f"""
-                body {{ 
-                    color: {text_color}; 
-                    background-color: transparent; /* Ensure body itself is transparent */
-                }}
-                p {{ color: {text_color}; }}
-                h1, h2, h3, h4, h5, h6 {{ color: {text_color}; }}
-                li {{ color: {text_color}; }}
-                span, div, strong, em, u, s, sub, sup, font, blockquote, code, pre {{ 
-                    color: {text_color} !important;  /* Use !important for common inline elements */
-                    background-color: transparent !important;
-                }}
-                a {{ color: {theme_palette['accent']}; }}
-                a:visited {{ color: {theme_palette['accent2']}; }}
-            """
-            doc.setDefaultStyleSheet(css)
-            # Set the base font for the document - this helps with consistency
-            base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"]) # Or your preferred default
-            doc.setDefaultFont(base_font)
-            
-            # Re-apply markdown to ensure the new stylesheet and font take effect
-            # This will reset undo history, which is a known trade-off for this approach.
-            doc.setMarkdown(current_markdown_content, QTextDocument.MarkdownDialectGitHub)
-            
-            # Ensure the QTextEdit widget itself has a transparent background
-            # This allows the panel's themed background to show through.
-            self.meeting_notes_edit.setStyleSheet("background: transparent;")
+            self._update_center_panel_content() # This ensures notes/transcript is re-rendered with new theme
 
         # Meeting Context Display (update on theme change)
         if hasattr(self, 'meeting_context_display'):
@@ -906,17 +873,24 @@ class MainWindow(QMainWindow):
         toolbar_layout = QHBoxLayout(self.meeting_notes_toolbar)
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
         toolbar_layout.setSpacing(4)
+
+        # --- New Toggle Button for Notes/Transcript ---
+        self.view_toggle_button = QPushButton("View Transcript")
+        self.view_toggle_button.setToolTip("Toggle between meeting notes and transcript view")
+        # self.view_toggle_button.clicked.connect(self._toggle_center_panel_view) # Connection will be added later
+        toolbar_layout.addWidget(self.view_toggle_button)
+
         toolbar_layout.addStretch(1)  # Align buttons to the right
         # Undo
-        undo_btn = QPushButton("Undo")
-        undo_btn.setToolTip("Undo")
-        undo_btn.clicked.connect(lambda: self.meeting_notes_edit.undo())
-        toolbar_layout.addWidget(undo_btn)
+        self.notes_undo_button = QPushButton("Undo")
+        self.notes_undo_button.setToolTip("Undo")
+        self.notes_undo_button.clicked.connect(lambda: self.meeting_notes_edit.undo())
+        toolbar_layout.addWidget(self.notes_undo_button)
         # Redo
-        redo_btn = QPushButton("Redo")
-        redo_btn.setToolTip("Redo")
-        redo_btn.clicked.connect(lambda: self.meeting_notes_edit.redo())
-        toolbar_layout.addWidget(redo_btn)
+        self.notes_redo_button = QPushButton("Redo")
+        self.notes_redo_button.setToolTip("Redo")
+        self.notes_redo_button.clicked.connect(lambda: self.meeting_notes_edit.redo())
+        toolbar_layout.addWidget(self.notes_redo_button)
         # Copy to Clipboard
         copy_btn = QPushButton("Copy to Clipboard")
         copy_btn.setToolTip("Copy meeting notes to clipboard")
@@ -1029,6 +1003,11 @@ class MainWindow(QMainWindow):
         self.chat_input.returnPressed.connect(self._handle_send_chat_message)
 
         self._setup_notes_autosave()
+        self._update_center_panel_content() # Call at end of setup_ui for initial state
+
+        # Connect the toggle button after all UI elements it might affect are initialized
+        if self.view_toggle_button: # Ensure it was created
+            self.view_toggle_button.clicked.connect(self._toggle_center_panel_view)
 
     def _set_meeting_context_html_with_dynamic_font(self, context_html, theme):
         """
@@ -1316,18 +1295,18 @@ class MainWindow(QMainWindow):
         """Shows the diarized transcript in a new dialog window."""
         logger.info(f"Showing diarized transcript dialog for recording ID: {recording_id}")
         
-        diarized_transcript_path = recording_data.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-
-        if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-            QMessageBox.warning(self, "Transcript Missing", "Diarized transcript file not found for this recording.")
-            return
-
-        dialog_title = f"Diarized Transcript - {recording_data.get('name', f'ID {recording_id}')}"
-        # Pass recording_id to ensure latest speaker names are fetched
-        from .transcript_dialog import TranscriptViewDialog
-        dialog = TranscriptViewDialog(window_title=dialog_title, parent=self, recording_id=recording_id)
-        dialog.exec()
+        # This method is no longer used as transcript is shown in main panel.
+        # Kept for reference during refactor, can be removed.
+        # diarized_transcript_path = recording_data.get("diarized_transcript_path")
+        # abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+        # if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+        #     QMessageBox.warning(self, "Transcript Missing", "Diarized transcript file not found for this recording.")
+        #     return
+        # dialog_title = f"Diarized Transcript - {recording_data.get('name', f'ID {recording_id}')}"
+        # from .transcript_dialog import TranscriptViewDialog # Import removed
+        # dialog = TranscriptViewDialog(window_title=dialog_title, parent=self, recording_id=recording_id)
+        # dialog.exec()
+        pass # Method no longer used
 
     def on_generate_meeting_notes_clicked(self, recording_id=None, recording_data=None):
         if recording_id is None or recording_data is None:
@@ -1592,9 +1571,7 @@ class MainWindow(QMainWindow):
         selected_items = self.meetings_list_widget.selectedItems()
         if not selected_items:
             self.meeting_context_display.clear()
-            if hasattr(self, 'meeting_notes_edit'): # Check if it exists
-                doc = self.meeting_notes_edit.document()
-                doc.clear() # Clears content and undo stack
+            self._update_center_panel_content() # Handles notes/transcript area
             # --- Clear chat display and history on no selection ---
             self.current_chat_history = []
             if hasattr(self, 'chat_display_area'):
@@ -1608,9 +1585,7 @@ class MainWindow(QMainWindow):
         recording_data = db_ops.get_recording_by_id(recording_id)
         if not recording_data:
             self.meeting_context_display.clear()
-            if hasattr(self, 'meeting_notes_edit'): # Check if it exists
-                doc = self.meeting_notes_edit.document()
-                doc.clear()
+            self._update_center_panel_content() # Handles notes/transcript area
             # --- Clear chat display and history on invalid selection ---
             self.current_chat_history = []
             if hasattr(self, 'chat_display_area'):
@@ -2440,12 +2415,10 @@ class MainWindow(QMainWindow):
         global_pos = self.meetings_list_widget.viewport().mapToGlobal(pos)
         context_menu = AnimatedMenu(self, start_pos=global_pos, theme_name=theme_name)
         # Content Actions
-        view_diarized_transcript_action = QAction("View Diarized Transcript", self)
-        view_diarized_transcript_action.triggered.connect(lambda: self._context_show_diarized_transcript_dialog(recording_id, recording_data))
-        diarized_transcript_path = recording_data.get("diarized_transcript_path")
+        # The "View Diarized Transcript" action is removed as per new design.
+        # User can toggle via the button in the notes/transcript panel.
+        diarized_transcript_path = recording_data.get("diarized_transcript_path") # Still needed for other actions
         abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-        view_diarized_transcript_action.setEnabled(bool(abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path)))
-        context_menu.addAction(view_diarized_transcript_action)
         # Regenerate Meeting Notes
         regenerate_notes_action = QAction("Regenerate Meeting Notes", self)
         regenerate_notes_action.triggered.connect(lambda checked, rid=recording_id, rdata=recording_data: self.on_regenerate_meeting_notes_clicked(rid, rdata))
@@ -2725,6 +2698,10 @@ class MainWindow(QMainWindow):
         # Optionally, update UI to show unsaved changes
 
     def _autosave_meeting_notes(self):
+        if self.center_panel_view_mode != "notes":
+            self.logger.debug(f"_autosave_meeting_notes called but view mode is '{self.center_panel_view_mode}'. Skipping save.")
+            return
+
         selected_items = self.meetings_list_widget.selectedItems()
         if not selected_items:
             return
@@ -2758,6 +2735,270 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"Failed to autosave notes: {e}", 3000)
 
     # Connect timer timeout to autosave
+    def _setup_notes_autosave(self):
+        self._notes_autosave_timer.timeout.connect(self._autosave_meeting_notes)
+
+    def _show_notes_context_menu(self, pos):
+        menu = QMenu(self.meeting_notes_edit)
+        cursor = self.meeting_notes_edit.textCursor()
+        has_selection = cursor.hasSelection()
+        # Formatting actions
+        bold_action = QAction("Bold", self)
+        bold_action.setShortcut("Ctrl+B")
+        bold_action.triggered.connect(lambda: self._format_notes_selection("bold"))
+        italic_action = QAction("Italic", self)
+        italic_action.setShortcut("Ctrl+I")
+        italic_action.triggered.connect(lambda: self._format_notes_selection("italic"))
+        underline_action = QAction("Underline", self)
+        underline_action.setShortcut("Ctrl+U")
+        underline_action.triggered.connect(lambda: self._format_notes_selection("underline"))
+        bullet_action = QAction("Bullet List", self)
+        bullet_action.triggered.connect(lambda: self._format_notes_selection("bullet"))
+        numbered_action = QAction("Numbered List", self)
+        numbered_action.triggered.connect(lambda: self._format_notes_selection("numbered"))
+        # Only enable if text is selected (except lists)
+        bold_action.setEnabled(has_selection)
+        italic_action.setEnabled(has_selection)
+        underline_action.setEnabled(has_selection)
+        # Add actions
+        menu.addAction(bold_action)
+        menu.addAction(italic_action)
+        menu.addAction(underline_action)
+        menu.addSeparator()
+        menu.addAction(bullet_action)
+        menu.addAction(numbered_action)
+        menu.addSeparator()
+        # Add default actions (copy/paste/etc.)
+        menu.addActions(self.meeting_notes_edit.createStandardContextMenu().actions())
+        menu.exec(self.meeting_notes_edit.mapToGlobal(pos))
+
+    def _format_notes_selection(self, fmt):
+        cursor = self.meeting_notes_edit.textCursor()
+        if fmt == "bold":
+            fmt_obj = cursor.charFormat()
+            fmt_obj.setFontWeight(QFont.Bold if fmt_obj.fontWeight() != QFont.Bold else QFont.Normal)
+            cursor.mergeCharFormat(fmt_obj)
+        elif fmt == "italic":
+            fmt_obj = cursor.charFormat()
+            fmt_obj.setFontItalic(not fmt_obj.fontItalic())
+            cursor.mergeCharFormat(fmt_obj)
+        elif fmt == "underline":
+            fmt_obj = cursor.charFormat()
+            fmt_obj.setFontUnderline(not fmt_obj.fontUnderline())
+            cursor.mergeCharFormat(fmt_obj)
+        elif fmt == "bullet":
+            cursor.beginEditBlock()
+            cursor.createList(QTextListFormat.ListDisc)
+            cursor.endEditBlock()
+        elif fmt == "numbered":
+            cursor.beginEditBlock()
+            cursor.createList(QTextListFormat.ListDecimal)
+            cursor.endEditBlock()
+        self.meeting_notes_edit.setTextCursor(cursor)
+
+    def _check_audio_levels(self):
+        """Check current audio levels from the recorder."""
+        if not self.is_recording:
+            return
+            
+        # Get audio levels from the recorder
+        input_level, output_level = self._get_current_audio_levels()
+        
+        # Consider audio detected if either input or output has signal
+        threshold = 0.01  # Adjust this threshold as needed
+        audio_detected = input_level > threshold or output_level > threshold
+        
+        if audio_detected:
+            self.audio_detected_recently = True
+            self.no_audio_timer.stop()
+            self.no_audio_timer.start()  # Restart the 10-second timer
+            if self.audio_warning_banner.isVisible():
+                self.audio_warning_banner.setVisible(False)
+        
+        self.last_input_level = input_level
+        self.last_output_level = output_level
+    
+    def _get_current_audio_levels(self):
+        """Get current audio levels from the recording pipeline."""
+        try:
+            if hasattr(self, 'recording_pipeline') and hasattr(self.recording_pipeline, 'recorder'):
+                # Access the current audio levels from the recorder
+                if hasattr(self.recording_pipeline.recorder, 'get_current_levels'):
+                    return self.recording_pipeline.recorder.get_current_levels()
+                else:
+                    # Fallback: estimate from recent frames if available
+                    if hasattr(self.recording_pipeline.recorder, 'frames') and self.recording_pipeline.recorder.frames:
+                        recent_frames = self.recording_pipeline.recorder.frames[-10:]  # Last 10 frames
+                        if recent_frames:
+                            import numpy as np
+                            combined = np.concatenate(recent_frames, axis=0)
+                            # Calculate RMS (root mean square) as a simple level indicator
+                            rms = np.sqrt(np.mean(combined**2))
+                            # Assume mixed signal, so same level for both
+                            return float(rms), float(rms)
+            return 0.0, 0.0
+        except Exception as e:
+            logger.debug(f"Error getting audio levels: {e}")
+            return 0.0, 0.0
+    
+    def _show_audio_warning(self):
+        """Show the audio warning banner."""
+        if not self.is_recording:
+            return
+            
+        # Determine which type of audio is missing
+        if self.last_input_level <= 0.01 and self.last_output_level <= 0.01:
+            message = "No audio detected from microphone or speakers"
+        elif self.last_input_level <= 0.01:
+            message = "No audio detected from microphone"
+        elif self.last_output_level <= 0.01:
+            message = "No audio detected from speakers"
+        else:
+            return  # Audio is actually being detected
+            
+        self.audio_warning_label.setText(message)
+        self.audio_warning_banner.setVisible(True)
+        logger.info(f"Audio warning shown: {message}")
+
+    # --- New methods for toggling view and updating content ---
+    def _update_center_panel_content(self):
+        # self.logger.info(f"_update_center_panel_content called. Current mode: {self.center_panel_view_mode}") # Log mode # REMOVED DEBUG_PRINT
+        selected_items = self.meetings_list_widget.selectedItems()
+        
+        if not hasattr(self, 'meeting_notes_edit'): # Should always exist if UI is setup
+            self.logger.error("_update_center_panel_content called but meeting_notes_edit does not exist.")
+            return
+
+        doc = self.meeting_notes_edit.document()
+        theme_name = self.current_theme 
+        
+        if not hasattr(self, 'current_theme') or not self.current_theme:
+             self.logger.warning("current_theme not set in _update_center_panel_content. Defaulting to dark.")
+             theme_name = "dark" 
+
+        theme_palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
+        text_color = theme_palette['html_text']
+        
+        css = f"""
+            body {{ color: {text_color}; background-color: transparent; }}
+            p {{ color: {text_color}; }}
+            h1, h2, h3, h4, h5, h6 {{ color: {text_color}; }}
+            li {{ color: {text_color}; }}
+            span, div, strong, em, u, s, sub, sup, font, blockquote, code, pre {{ 
+                color: {text_color} !important; 
+                background-color: transparent !important;
+            }}
+            a {{ color: {theme_palette['accent']}; }}
+            a:visited {{ color: {theme_palette['accent2']}; }}
+        """
+        doc.setDefaultStyleSheet(css)
+        base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+        doc.setDefaultFont(base_font)
+
+        if not selected_items:
+            doc.clear() # Clear content
+            if self.view_toggle_button:
+                self.view_toggle_button.setText("View Transcript")
+            if self.notes_undo_button: self.notes_undo_button.setVisible(True)
+            if self.notes_redo_button: self.notes_redo_button.setVisible(True)
+            self.meeting_notes_edit.setReadOnly(False) 
+            # Set a generic placeholder if nothing is selected
+            placeholder_markdown = "_Select a meeting to view notes or transcript._"
+            doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            return
+
+        item = selected_items[0]
+        recording_id = item.data(Qt.UserRole)
+        recording_data = db_ops.get_recording_by_id(recording_id)
+
+        if not recording_data:
+            doc.clear()
+            # Set a specific placeholder if recording data is missing
+            placeholder_markdown = "_Error loading meeting data._"
+            doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            return
+        
+        if self.center_panel_view_mode == "notes":
+            # print("[DEBUG_PRINT] _update_center_panel_content: In notes mode branch") # DEBUG PRINT # REMOVED
+            if self.view_toggle_button:
+                self.view_toggle_button.setText("View Transcript")
+            self.meeting_notes_edit.setReadOnly(False)
+            if self.notes_undo_button: self.notes_undo_button.setVisible(True)
+            if self.notes_redo_button: self.notes_redo_button.setVisible(True)
+            
+            doc.clear() # Explicitly clear the document before setting new markdown content
+            notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+            if notes_entry and notes_entry['notes']:
+                # print("[DEBUG_PRINT] _update_center_panel_content: Setting notes from DB") # DEBUG PRINT # REMOVED
+                doc.setMarkdown(notes_entry['notes'], QTextDocument.MarkdownDialectGitHub)
+            else:
+                # print("[DEBUG_PRINT] _update_center_panel_content: Setting notes placeholder") # DEBUG PRINT # REMOVED
+                placeholder_markdown = "_No meeting notes available. Right-click the recording to generate notes, or switch to transcript view._"
+                doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave
+            self.notes_have_been_edited = False # Reset edit flag
+        
+        elif self.center_panel_view_mode == "transcript":
+            # print("[DEBUG_PRINT] _update_center_panel_content: In transcript mode branch") # DEBUG PRINT # REMOVED
+            self.logger.info(f"Loading transcript for recording_id: {recording_id}") # Log transcript load
+            if self.view_toggle_button:
+                self.view_toggle_button.setText("View Meeting Notes")
+            self.meeting_notes_edit.setReadOnly(True)
+            if self.notes_undo_button: self.notes_undo_button.setVisible(False)
+            if self.notes_redo_button: self.notes_redo_button.setVisible(False)
+            
+            # load_transcript is expected to return HTML string already wrapped by wrap_html_body
+            transcript_html_content = self.load_transcript(recording_id) 
+            doc.setHtml(transcript_html_content) 
+            # No autosave or edit flag for transcripts
+
+        self.meeting_notes_edit.setVisible(True)
+        # print("[DEBUG_PRINT] _update_center_panel_content finished. Mode:", self.center_panel_view_mode, "Button text:", self.view_toggle_button.text() if self.view_toggle_button else 'N/A') # DEBUG PRINT # REMOVED
+        self.logger.info(f"_update_center_panel_content finished. Mode: {self.center_panel_view_mode}, Button text: {self.view_toggle_button.text() if self.view_toggle_button else 'N/A'}")
+
+    def _toggle_center_panel_view(self):
+        # print("[DEBUG_PRINT] _toggle_center_panel_view: CALLED. Current mode before toggle:", self.center_panel_view_mode) # DEBUG PRINT # REMOVED
+        self.logger.info(f"_toggle_center_panel_view: CALLED. Current mode before toggle: {self.center_panel_view_mode}")
+        if self.center_panel_view_mode == "notes":
+            self.center_panel_view_mode = "transcript"
+        else:
+            self.center_panel_view_mode = "notes"
+        # print("[DEBUG_PRINT] _toggle_center_panel_view: Mode AFTER toggle:", self.center_panel_view_mode) # DEBUG PRINT # REMOVED
+        self.logger.info(f"_toggle_center_panel_view: Mode AFTER toggle: {self.center_panel_view_mode}")
+        self._update_center_panel_content() # This will refresh the view
+        
+    # --- Playback Controller Slots ---
+    def _on_playback_started(self):
+        self.play_button.setEnabled(False)
+        self.pause_button.setEnabled(True)
+        self.stop_button.setEnabled(True)
+        self.seek_slider.setEnabled(True)
+    def _on_playback_paused(self):
+        self.play_button.setEnabled(True)
+        self.pause_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+    def _on_playback_resumed(self):
+        self.play_button.setEnabled(False)
+        self.pause_button.setEnabled(True)
+        self.stop_button.setEnabled(True)
+    def _on_playback_stopped(self):
+        self.play_button.setEnabled(bool(self.selected_audio_path))
+        self.pause_button.setEnabled(False)
+        self.stop_button.setEnabled(False)
+        self.seek_slider.setEnabled(True)
+        # Reset the seeker bar to the beginning
+        self.seek_slider.setValue(0)
+        self.update_seek_time_label(0, getattr(self, '_playback_duration', 0.0))
+    def _on_playback_finished(self):
+        self._on_playback_stopped()
+    def _on_playback_error(self, msg):
+        QMessageBox.warning(self, "Playback Error", msg)
+        self._on_playback_stopped()
+    def _on_playback_position_changed(self, seconds):
+        if not self.seeker_user_is_dragging:
+            self.seek_slider.setValue(int(seconds * 1000))
+            self.update_seek_time_label(seconds, self.seek_slider.maximum() / 1000.0)
+
     def _setup_notes_autosave(self):
         self._notes_autosave_timer.timeout.connect(self._autosave_meeting_notes)
 
@@ -3171,7 +3412,7 @@ class MeetingListItemWidget(QFrame):
         import datetime
         import html
         from nojoin.utils.config_manager import config_manager
-        from nojoin.utils.theme_utils import THEME_PALETTE # Import THEME_PALETTE
+        from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY # Import THEME_PALETTE & FONT_HIERARCHY
         self.recording_data = recording_data
         self.theme_name = theme_name
         # --- Get Theme Specific Palette ---
