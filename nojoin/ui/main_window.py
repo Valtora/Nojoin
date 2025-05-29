@@ -591,10 +591,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setStyleSheet(final_qss)
 
     def setup_ui(self):
-        # --- Menu Bar Navigation ---
-        menubar = self.menuBar()
 
-        
         # --- Central Widget and Main Layout ---
         central_widget = QWidget()
         central_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
@@ -623,7 +620,7 @@ class MainWindow(QMainWindow):
         self.import_audio_button.clicked.connect(self.on_import_audio_clicked)
         # Transcribe button
         self.transcribe_button = QPushButton("Transcribe")
-        self.transcribe_button.setToolTip("Transcribe and diarize the selected recording")
+        self.transcribe_button.setToolTip("Transcribe the selected recording")
         self.transcribe_button.setEnabled(False)
         self.transcribe_button.setMinimumWidth(self.BASE_SPACING * 14) # Give text some space
         self.transcribe_button.setFixedHeight(self.BASE_SPACING * 5)
@@ -747,6 +744,16 @@ class MainWindow(QMainWindow):
 
         top_controls_layout.addWidget(playback_widget)
         top_controls_layout.addStretch() # Add stretch *before* settings button
+        
+        # --- New Global Speakers Button ---
+        self.global_speakers_button = QPushButton("Global Speakers")
+        self.global_speakers_button.setMinimumWidth(self.BASE_SPACING * 18) # Match record button width
+        self.global_speakers_button.setFixedHeight(self.BASE_SPACING * 5)
+        self.global_speakers_button.setToolTip("Manage the Global Speaker Library")
+        self.global_speakers_button.clicked.connect(self._open_global_speakers_dialog)
+        top_controls_layout.addWidget(self.global_speakers_button)
+        # --- End New Global Speakers Button ---
+        
         top_controls_layout.addWidget(self.import_audio_button)
         top_controls_layout.addWidget(self.settings_button) # Move settings button to the end
         central_layout.addLayout(top_controls_layout)
@@ -960,7 +967,7 @@ class MainWindow(QMainWindow):
         chat_buttons_layout.setContentsMargins(0, 0, 0, 0)
         chat_buttons_layout.setSpacing(8)
         self.chat_send_button = QPushButton()
-        self.chat_send_button.setToolTip("Send/Ask")
+        self.chat_send_button.setToolTip("Send a message to the AI")
         self.chat_send_button.setText("Send") # Changed from icon to text
         self.chat_send_button.setObjectName("ChatSendButton")
         self.chat_send_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -1714,13 +1721,13 @@ class MainWindow(QMainWindow):
         audio_exists = os.path.exists(recording_data.get("audio_path", ""))
         if status == "processing":
             self.transcribe_button.setEnabled(False)
-            self.transcribe_button.setToolTip("This recording is currently being processed.")
+            self.transcribe_button.setToolTip("This meeting is currently being processed.")
         elif not audio_exists:
             self.transcribe_button.setEnabled(False)
-            self.transcribe_button.setToolTip("Audio file for this recording is missing.")
+            self.transcribe_button.setToolTip("Audio file for this meeting is missing.")
         else:
             self.transcribe_button.setEnabled(True)
-            self.transcribe_button.setToolTip("Transcribe and diarize the selected recording (re-processing is allowed)")
+            self.transcribe_button.setToolTip("Re-transcribe the selected meeting")
         # Enable playback controls if audio path exists
         audio_path = recording_data.get("audio_path")
         abs_audio_path = from_project_relative_path(audio_path) if audio_path else None
@@ -3128,6 +3135,41 @@ class MainWindow(QMainWindow):
         self.audio_warning_banner.setVisible(True)
         logger.info(f"Audio warning shown: {message}")
 
+    def _open_global_speakers_dialog(self):
+        from .global_speakers_dialog import GlobalSpeakersManagementDialog # Lazy import
+        # Check if an instance already exists and is visible (optional, good for non-modal)
+        # For a modal dialog, creating a new one each time is fine.
+        dialog = GlobalSpeakersManagementDialog(self)
+        dialog.global_speakers_updated.connect(self._handle_global_speakers_updated)
+        dialog.exec() # Modal execution
+
+    def _handle_global_speakers_updated(self):
+        # This is where we would ideally notify any open ParticipantsDialog instances.
+        # For now, this signal exists. If ParticipantsDialog is made aware of this signal
+        # or MainWindow tracks ParticipantsDialog instances, it can refresh its cache.
+        logger.info("Global speakers library was updated. ParticipantsDialog instances (if open and connected) should refresh their caches.")
+        # A simple way to achieve this if ParticipantsDialog is always a child of MainWindow:
+        for child_widget in self.findChildren(QDialog): # Potentially too broad
+            if hasattr(child_widget, '_load_global_speakers_cache') and callable(getattr(child_widget, '_load_global_speakers_cache')):
+                if child_widget.isVisible(): # Only if it's an active dialog
+                    try:
+                        # Verify it is indeed a ParticipantsDialog to be safer
+                        from .participants_dialog import ParticipantsDialog
+                        if isinstance(child_widget, ParticipantsDialog):
+                            logger.info(f"Found open ParticipantsDialog, requesting cache reload: {child_widget}")
+                            child_widget._load_global_speakers_cache()                            
+                            # Also need to update the completers in that dialog
+                            if hasattr(child_widget, 'speaker_widgets') and child_widget.speaker_widgets:
+                                for sp_id, widgets_dict in child_widget.speaker_widgets.items():
+                                    name_edit_widget = widgets_dict.get('name_edit')
+                                    if name_edit_widget and name_edit_widget.completer():
+                                        name_edit_widget.completer().model().setStringList(child_widget._global_speakers_cache)
+                                        logger.debug(f"Refreshed completer for speaker_id {sp_id} in ParticipantsDialog.")
+                    except ImportError:
+                        logger.warning("Could not import ParticipantsDialog for type checking in _handle_global_speakers_updated.")
+                    except Exception as e:
+                        logger.error(f"Error trying to refresh ParticipantsDialog cache: {e}")
+
 # --- Tag Chip Widget ---
 class TagChip(QLabel):
     """A label styled as a tag chip, optionally removable."""
@@ -3523,7 +3565,6 @@ class MeetingListItemWidget(QFrame):
           <div style="margin-top:7px; background:transparent;">{participants_html}</div>
         '''
         self.card_label.setText(card_content_html)
-        self.setToolTip(f"{meeting_title}\\nDate: {date_str} {time_str}\\nDuration: {duration_str}\\nStatus: {status}\\nParticipants: {', '.join(participants)}") # Set tooltip on the QFrame itself
 
     @staticmethod
     def set_selected_state(widget, selected):

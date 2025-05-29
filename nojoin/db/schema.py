@@ -24,7 +24,9 @@ CREATE_SPEAKERS_TABLE = """
 CREATE TABLE IF NOT EXISTS speakers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    voice_snippet_path TEXT -- Optional path to a reference snippet
+    voice_snippet_path TEXT, -- Optional path to a reference snippet
+    global_speaker_id INTEGER, -- Optional link to a global speaker profile
+    FOREIGN KEY (global_speaker_id) REFERENCES global_speakers (id) ON DELETE SET NULL
 );
 """
 
@@ -71,14 +73,26 @@ CREATE TABLE IF NOT EXISTS meeting_notes (
 );
 """
 
+# --- New Global Speakers Table ---
+CREATE_GLOBAL_SPEAKERS_TABLE = """
+CREATE TABLE IF NOT EXISTS global_speakers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE COLLATE NOCASE NOT NULL
+);
+"""
+
 # Indexes for potentially queried columns
 CREATE_RECORDINGS_NAME_INDEX = "CREATE INDEX IF NOT EXISTS idx_recordings_name ON recordings (name);"
 CREATE_RECORDINGS_CREATED_AT_INDEX = "CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings (created_at);"
 CREATE_RECORDING_SPEAKERS_SPEAKER_ID_INDEX = "CREATE INDEX IF NOT EXISTS idx_recording_speakers_speaker_id ON recording_speakers (speaker_id);"
+# --- New Indexes for Global Speakers and linking ---
+CREATE_GLOBAL_SPEAKERS_NAME_INDEX = "CREATE INDEX IF NOT EXISTS idx_global_speakers_name ON global_speakers (name);"
+CREATE_SPEAKERS_GLOBAL_SPEAKER_ID_INDEX = "CREATE INDEX IF NOT EXISTS idx_speakers_global_speaker_id ON speakers (global_speaker_id);"
 
 
 SCHEMA_STATEMENTS = [
     CREATE_RECORDINGS_TABLE,
+    CREATE_GLOBAL_SPEAKERS_TABLE, # Add before speakers table due to FK
     CREATE_SPEAKERS_TABLE,
     CREATE_RECORDING_SPEAKERS_TABLE,
     CREATE_TAGS_TABLE,
@@ -86,5 +100,7 @@ SCHEMA_STATEMENTS = [
     CREATE_MEETING_NOTES_TABLE,
     CREATE_RECORDINGS_NAME_INDEX,
     CREATE_RECORDINGS_CREATED_AT_INDEX,
-    CREATE_RECORDING_SPEAKERS_SPEAKER_ID_INDEX
+    CREATE_RECORDING_SPEAKERS_SPEAKER_ID_INDEX,
+    CREATE_GLOBAL_SPEAKERS_NAME_INDEX, # Add new index
+    CREATE_SPEAKERS_GLOBAL_SPEAKER_ID_INDEX # Add new index
 ] 
