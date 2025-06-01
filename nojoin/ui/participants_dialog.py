@@ -16,7 +16,8 @@ class ParticipantsDialog(QDialog):
 
     def __init__(self, recording_id, recording_data, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Manage Participants - {recording_data.get('name', 'Meeting')}")
+        self.original_window_title = f"Manage Participants - {recording_data.get('name', 'Meeting')}"
+        self.setWindowTitle(self.original_window_title)
         self.setMinimumWidth(500)
         from nojoin.utils.config_manager import config_manager
         self.current_theme = config_manager.get("theme", "dark") # Store theme
@@ -35,6 +36,12 @@ class ParticipantsDialog(QDialog):
         self._global_speakers_cache = [] # Cache for global speaker names for completer
         self._load_global_speakers_cache() # Load once on init
         self._init_ui()
+
+    def _update_window_title(self):
+        title = self.original_window_title
+        if self._speakers_modified:
+            title += " *"
+        self.setWindowTitle(title)
 
     def _load_global_speakers_cache(self):
         self._global_speakers_cache = [gs['name'] for gs in db_ops.get_all_global_speakers()]
@@ -88,8 +95,13 @@ class ParticipantsDialog(QDialog):
         for idx, speaker in enumerate(self.speakers):
             diarization_label = speaker['diarization_label']
             speaker_id = speaker['id']
-            name = speaker.get('name') or f"Speaker {idx+1}"
+            
+            # Fetch full speaker info including global link status
+            speaker_full_info = db_ops.get_speaker_with_global_info(speaker_id)
+            name = speaker_full_info.get('name') if speaker_full_info else f"Speaker {idx+1}"
             is_unknown = (name == "Unknown")
+            global_speaker_name = speaker_full_info.get('global_speaker_name') if speaker_full_info else None
+
             # Only show 'Unknown' if it actually exists in the DB for this recording
             if is_unknown:
                 # Check if there are any transcript lines for 'Unknown' (i.e., if the speaker is present in DB)
@@ -159,13 +171,32 @@ class ParticipantsDialog(QDialog):
             # Add to grid
             self.grid.addWidget(play_btn, idx, 0)
             self.grid.addWidget(del_btn, idx, 1)
-            self.grid.addWidget(name_edit, idx, 2)
+
+            name_label_text = name
+            if global_speaker_name:
+                name_label_text += f" (Linked: {global_speaker_name})"
+            
+            # Instead of directly adding name_edit, create a layout for name and potential global indicator
+            name_layout = QHBoxLayout()
+            name_edit_widget = name_edit # Keep ref to the QLineEdit
+            name_layout.addWidget(name_edit_widget)
+
+            if global_speaker_name:
+                global_indicator = QLabel("<small>🔗</small>") # Simple link emoji as icon
+                global_indicator.setToolTip(f"Linked to Global Speaker: {global_speaker_name}")
+                name_layout.addWidget(global_indicator)
+            else:
+                # Add a stretch or empty label to keep alignment if some have icon and others don't
+                name_layout.addStretch(1)
+
+            self.grid.addLayout(name_layout, idx, 2)
             self.grid.addWidget(merge_checkbox, idx, 3)
             self.speaker_widgets[speaker_id] = {
                 'play_btn': play_btn,
                 'del_btn': del_btn,
-                'name_edit': name_edit,
+                'name_edit': name_edit_widget, # Use the actual QLineEdit widget here
                 'merge_checkbox': merge_checkbox,
+                'global_indicator': global_indicator if global_speaker_name else None # Store for potential updates
             }
 
     def toggle_merge_mode(self, checked):
@@ -277,6 +308,7 @@ class ParticipantsDialog(QDialog):
         # Name has changed from original, stage it for saving
         self._pending_name_changes[speaker_id] = (diarization_label, new_name)
         self._speakers_modified = True
+        self._update_window_title()
 
         # Now, handle global speaker linking/creation logic
         # Check if new_name matches an existing global speaker
@@ -316,11 +348,25 @@ class ParticipantsDialog(QDialog):
         reply = QMessageBox.question(self, "Delete Speaker", "Are you sure you want to delete this speaker?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
+        # Check for global link before deleting for enhanced confirmation (Step 3)
+        speaker_info = db_ops.get_speaker_with_global_info(speaker_id)
+        if speaker_info and speaker_info.get('global_speaker_id'):
+            global_name = speaker_info.get('global_speaker_name', 'this global speaker')
+            reply = QMessageBox.question(self, "Confirm Delete Linked Speaker",
+                                         f"This speaker ('{speaker_info.get('name', 'Unknown')}') is linked to the global speaker '{global_name}'.\\n\\n"
+                                         f"Deleting it here will only remove it from this recording and unlink it. "
+                                         f"The global speaker entry '{global_name}' will remain in your library.\\n\\n"
+                                         f"Do you want to proceed with deleting from this recording?",
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+
         success = db_ops.delete_speaker_from_recording(self.recording_id, speaker_id)
         if not success:
             QMessageBox.critical(self, "Delete Speaker", "Failed to delete speaker from recording.")
             return
         self._speakers_modified = True
+        self._update_window_title()
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id)
@@ -348,8 +394,13 @@ class ParticipantsDialog(QDialog):
             QMessageBox.critical(self, "Merge Speakers", "Failed to merge speakers.")
             return
         self._speakers_modified = True
+        self._update_window_title()
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
-        self._populate_speakers()
+        
+        # Reset the internal state for selecting speakers to merge for the next operation.
+        self._merge_selected.clear()
+        self.merge_btn.setEnabled(False) # No speakers are selected for merge anymore.
+        
         self.participants_updated.emit(self.recording_id)
 
     def _on_accept(self):
@@ -375,6 +426,7 @@ class ParticipantsDialog(QDialog):
                         logger.info(f"Auto-added '{new_name}' to Global Library (ID: {global_id}) and linked local speaker {speaker_id}.")
                         names_added_to_global.add(new_name)
                         self._speakers_modified = True # Ensure flag is set if global add happened
+                        self._update_window_title()
                     else:
                         logger.warning(f"Failed to auto-add '{new_name}' to Global Library from ParticipantsDialog.")
                 elif existing_global: # Global speaker with this name already exists, link if not already
@@ -384,6 +436,7 @@ class ParticipantsDialog(QDialog):
                         db_ops.link_speaker_to_global(speaker_id, existing_global['id'])
                         logger.info(f"Auto-linked local speaker {speaker_id} to existing Global Speaker '{new_name}' (ID: {existing_global['id']}).")
                         self._speakers_modified = True # Ensure flag is set if linking happened
+                        self._update_window_title()
 
         self._pending_name_changes.clear()
         
@@ -392,6 +445,8 @@ class ParticipantsDialog(QDialog):
             if self.regenerate_notes_checkbox.isChecked():
                 self.regenerate_notes_requested.emit(self.recording_id)
         
+        self._speakers_modified = False # Reset on save
+        self._update_window_title() # Update title to remove asterisk
         self.accept()
 
     def reject(self):
@@ -400,14 +455,35 @@ class ParticipantsDialog(QDialog):
         self._playing_speaker_id = None
         # Clear pending changes on cancel
         self._pending_name_changes.clear()
+        self._speakers_modified = False # Reset on cancel
+        self._update_window_title() # Update title to remove asterisk
         super().reject()
 
     def closeEvent(self, event):
         self.snippet_player.stop()
         self._playing_speaker_id = None
+        if self._speakers_modified:
+            reply = QMessageBox.question(self, "Unsaved Changes", 
+                                         "You have unsaved changes. Do you want to save them before closing?",
+                                         QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, 
+                                         QMessageBox.Save)
+            if reply == QMessageBox.Save:
+                self._on_accept() # Calls accept which also handles title update
+                event.accept()
+            elif reply == QMessageBox.Discard:
+                self._speakers_modified = False # Ensure it's reset
+                self._update_window_title() # Remove asterisk
+                event.accept()
+            else: # Cancel
+                event.ignore()
+                return
+        else:
+            event.accept()
         # Clear pending changes on close
         self._pending_name_changes.clear()
-        super().closeEvent(event)
+        # self._speakers_modified = False # Already handled by save/discard/no changes logic
+        # self._update_window_title() # Already handled
+        super().closeEvent(event) # Call super only if event is accepted
 
     def delete_unknown_speaker(self):
         from nojoin.db import database as db_ops
@@ -419,6 +495,7 @@ class ParticipantsDialog(QDialog):
             QMessageBox.critical(self, "Delete 'Unknown' Speaker", "Failed to delete 'Unknown' speaker from recording.")
             return
         self._speakers_modified = True
+        self._update_window_title()
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id) 

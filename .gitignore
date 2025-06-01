@@ -24,10 +24,3 @@
 # Config file
 /config.json
 nojoin/config.json
-
-# Cursor
-/.cursor
-
-# Project documentation
-/PRD.md
-/Task_List.md

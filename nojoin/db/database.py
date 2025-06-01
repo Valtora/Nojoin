@@ -289,29 +289,22 @@ def update_speaker_name(speaker_id: int, new_name: str, recording_id: str = None
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE speakers SET name = ? WHERE id = ?", (new_name, speaker_id))
-            # Update transcript(s)
-            if recording_id:
-                cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
-                rows = cursor.fetchall()
-                old_labels_for_this_recording = [row['diarization_label'] for row in rows]
-                # Also need the speaker's current name before this update, if it was different from diarization_label
-                # However, the goal is to replace based on diarization_label primarily, and update to new_name.
-                # The most robust is to replace *all* known old identifiers for THIS speaker in THIS recording.
-                # For a simple name update, we typically want to find by the original diarization label and replace with new_name.
-                # If the speaker had a custom name already, that old custom name isn't usually what we search for in the transcript to update.
-                # The transcript usually contains SPEAKER_XX, not custom names, unless a previous replace operation ran.
-                # Let's assume for `update_speaker_name`, the `old_labels_to_find` should primarily be the diarization labels associated with this speaker_id in this recording.
-                if old_labels_for_this_recording:
-                    replace_speaker_in_transcript(recording_id, old_labels_for_this_recording, new_name)
-            else:
-                # Update all recordings for this speaker
-                cursor.execute("SELECT recording_id, diarization_label FROM recording_speakers WHERE speaker_id = ?", (speaker_id,))
-                all_speaker_associations = cursor.fetchall()
-                for assoc in all_speaker_associations:
-                    # Here, old_labels_to_find is just the specific diarization_label for that recording-speaker pair.
-                    replace_speaker_in_transcript(assoc['recording_id'], [assoc['diarization_label']], new_name)
+            # Update transcript(s) - REMOVED. Transcript file should only contain diarization labels.
+            # The name change is a DB/display layer change.
+            # if recording_id:
+            #     cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
+            #     rows = cursor.fetchall()
+            #     old_labels_for_this_recording = [row['diarization_label'] for row in rows]
+            #     if old_labels_for_this_recording:
+            #         replace_speaker_in_transcript(recording_id, old_labels_for_this_recording, new_name)
+            # else:
+            #     # Update all recordings for this speaker
+            #     cursor.execute("SELECT recording_id, diarization_label FROM recording_speakers WHERE speaker_id = ?", (speaker_id,))
+            #     all_speaker_associations = cursor.fetchall()
+            #     for assoc in all_speaker_associations:
+            #         replace_speaker_in_transcript(assoc['recording_id'], [assoc['diarization_label']], new_name)
             conn.commit()
-            logger.info(f"Updated name for speaker ID {speaker_id} to '{new_name}' and updated transcript(s)")
+            logger.info(f"Updated name for speaker ID {speaker_id} to '{new_name}'. Transcript file NOT modified by this operation.")
             return True
     except sqlite3.Error as e:
         logger.error(f"Database error updating speaker {speaker_id} to '{new_name}': {e}", exc_info=True)
@@ -426,12 +419,12 @@ def delete_speaker_from_recording(recording_id: str, speaker_id: int) -> bool:
             # Get current name of the speaker from the 'speakers' table
             cursor.execute("SELECT name FROM speakers WHERE id = ?", (speaker_id,))
             speaker_name_row = cursor.fetchone()
-            current_speaker_name = speaker_name_row['name'] if speaker_name_row else None
+            # current_speaker_name = speaker_name_row['name'] if speaker_name_row else None # No longer needed for transcript replacement
 
-            # Combine all known identifiers for this speaker in this recording
+            # Identifiers for this speaker in this recording are their diarization labels.
             labels_to_delete_from_transcript = set(diarization_labels)
-            if current_speaker_name and current_speaker_name not in diarization_labels: # Avoid duplicates if name is same as a label
-                labels_to_delete_from_transcript.add(current_speaker_name)
+            # if current_speaker_name and current_speaker_name not in diarization_labels: # Removed: transcript should only contain diarization labels
+            #     labels_to_delete_from_transcript.add(current_speaker_name)
             
             if not labels_to_delete_from_transcript:
                 logger.warning(f"No labels found to delete for speaker {speaker_id} in recording {recording_id}. Proceeding with DB deletion only.")
@@ -807,6 +800,9 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
         with open(diarized_path, 'r', encoding='utf-8') as infile, \
              open(temp_diarized_path, 'w', encoding='utf-8') as outfile:
             
+            logger.debug(f"[replace_speaker_in_transcript] Processing file: {diarized_path}")
+            logger.debug(f"[replace_speaker_in_transcript] Old labels to find: {old_labels_to_find}, New name: {new_name_for_transcript}")
+
             for line_number, line in enumerate(infile):
                 processed_lines_count += 1
                 original_line = line
@@ -818,7 +814,7 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                 # Group 2 (speaker_part): "SPEAKER_01 and SPEAKER_02 (Overlap)"
                 # Group 3 (suffix_separator): " - "
                 # Group 4 (text): "Hello"
-                match = re.match(r"^(\[\d\.\:s\s\-]+\]\s*-\s*)(.+?)(\s*-\s*)(.*)$", line)
+                match = re.match(r"^(\[.+?\]\s*-\s*)(.+?)(\s*-\s*)(.*)$", line)
 
                 if match:
                     timestamp_prefix = match.group(1)
@@ -826,6 +822,10 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                     separator = match.group(3)
                     text_content = match.group(4)
                     
+                    logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Parsed. Raw Speaker Part: '{match.group(2)}', Stripped: '{current_speaker_part}'")
+
+                    original_speaker_part_for_log = current_speaker_part
+
                     # Handle each old_label to see if it's in the current_speaker_part
                     for old_label in old_labels_to_find:
                         # Escape old_label for regex. Special care for labels that might BE regex patterns.
@@ -834,8 +834,8 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                         # Assuming old_label is simple, e.g., "SPEAKER_01", "John Doe".
                         escaped_old_label = re.escape(old_label)
 
-                        # Check if the old_label is part of the current_speaker_part
-                        if re.search(r"\b" + escaped_old_label + r"\b", current_speaker_part):
+                        # Check if the old_label is part of the current_speaker_part (case-insensitive)
+                        if re.search(r"\b" + escaped_old_label + r"\b", current_speaker_part, re.IGNORECASE):
                             if new_name_for_transcript: # Renaming/Merging
                                 # Scenario 1: old_label is part of an "and" construct
                                 # Try to replace robustly, handling cases like "A and B", "B and A"
@@ -852,7 +852,7 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                                     has_overlap_suffix = comp.endswith(" (Overlap)")
                                     clean_comp = comp.removesuffix(" (Overlap)").strip() if has_overlap_suffix else comp
                                     
-                                    if clean_comp == old_label:
+                                    if clean_comp.lower() == old_label.lower():
                                         new_comp = new_name_for_transcript
                                         if has_overlap_suffix:
                                             new_comp += " (Overlap)"
@@ -903,12 +903,14 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                                             
                                     current_speaker_part = " and ".join(sorted(list(set(final_parts)))) # Sort for consistency
                                     modified_line_this_iteration = True
+                                    logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Complex replace. Original speaker part: '{original_speaker_part_for_log}', New speaker part: '{current_speaker_part}' (old_label: {old_label}, new_name: {new_name_for_transcript})")
                                 else: 
                                     # Direct match and replace if not part of 'and' or if split logic failed
                                     # This also covers the case where current_speaker_part was just old_label
-                                    if current_speaker_part == old_label:
+                                    if current_speaker_part.lower() == old_label.lower():
                                         current_speaker_part = new_name_for_transcript
                                         modified_line_this_iteration = True
+                                        logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Direct replace. Original speaker part: '{original_speaker_part_for_log}', New speaker part: '{current_speaker_part}' (old_label: {old_label}, new_name: {new_name_for_transcript})")
 
                             else: # Deleting speaker (new_name_for_transcript is None)
                                 components = [c.strip() for c in re.split(r'\s+and\s+', current_speaker_part)]
@@ -918,7 +920,7 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                                 for comp in components:
                                     # Preserve (Overlap) if it was on a component *not* being removed
                                     clean_comp = comp.removesuffix(" (Overlap)").strip()
-                                    if clean_comp != old_label:
+                                    if clean_comp.lower() != old_label.lower():
                                         remaining_components.append(comp) # Add original component back
                                 
                                 if len(remaining_components) < len(components): # old_label was found and removed
@@ -931,9 +933,10 @@ def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[st
                                             current_speaker_part += " (Overlap)"
                                     modified_line_this_iteration = True
                                 else: # old_label was not part of this structure (e.g. direct match)
-                                    if current_speaker_part == old_label:
+                                    if current_speaker_part.lower() == old_label.lower():
                                         line = "" # Remove line
                                         modified_line_this_iteration = True
+                                        logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Deleted speaker part. Original speaker part: '{original_speaker_part_for_log}' (old_label: {old_label})")
                             # Reconstruct line if it wasn't blanked out
                             if line:
                                 line = f"{timestamp_prefix}{current_speaker_part}{separator}{text_content}\n"
@@ -976,12 +979,17 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], targe
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # Get target speaker's current name
-            cursor.execute("SELECT name FROM speakers WHERE id = ?", (target_speaker_id,))
-            row = cursor.fetchone()
-            if not row:
+            # Get target speaker's current name AND diarization label for this recording
+            cursor.execute("SELECT s.name, rs.diarization_label FROM speakers s JOIN recording_speakers rs ON s.id = rs.speaker_id WHERE s.id = ? AND rs.recording_id = ?", 
+                           (target_speaker_id, recording_id))
+            target_speaker_info = cursor.fetchone()
+            if not target_speaker_info:
+                logger.error(f"[merge_speakers] Target speaker {target_speaker_id} not found or not associated with recording {recording_id} for merge.")
                 return False
-            target_name = row['name']
+            # target_name = target_speaker_info['name'] # We still need this for logging or other purposes if any
+            target_diarization_label = target_speaker_info['diarization_label']
+            logger.info(f"[merge_speakers] Target for merge: ID={target_speaker_id}, Name={target_speaker_info['name']}, Label={target_diarization_label}")
+
             # For each other speaker, update transcript and DB
             for sid in speaker_ids:
                 if sid == target_speaker_id:
@@ -991,8 +999,15 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], targe
                 if not r:
                     continue
                 old_label = r['diarization_label']
-                # Update transcript to use target_name
-                replace_speaker_in_transcript(recording_id, [old_label], target_name)
+                logger.info(f"[merge_speakers] Merging SID={sid} (Old Label: {old_label}) into Target Label: {target_diarization_label}")
+                # Update transcript to use target_diarization_label
+                if not replace_speaker_in_transcript(recording_id, [old_label], target_diarization_label):
+                    logger.error(f"[merge_speakers] Failed to update transcript while merging {old_label} to {target_diarization_label} for recording {recording_id}. Aborting merge for this speaker.")
+                    # Decide on error handling: continue with other speakers or rollback/return False?
+                    # For now, let's be strict and abort if any transcript update fails.
+                    conn.rollback() # Rollback any DB changes made in this transaction for this merge
+                    return False
+                
                 # Remove from recording_speakers
                 cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, sid))
                 # If speaker not used elsewhere, delete from speakers
@@ -1004,6 +1019,8 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], targe
         return True
     except Exception as e:
         logger.error(f"Error merging speakers {speaker_ids} in recording {recording_id}: {e}", exc_info=True)
+        # Attempt to rollback if an exception occurs mid-transaction
+        # However, get_db_connection() context manager handles commit/rollback on exit based on exception.
         return False
 
 # --- Meeting Notes Management Functions ---

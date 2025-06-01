@@ -848,6 +848,28 @@ def get_theme_qss(theme_name: str) -> str:
         background: transparent;
         padding: 6px 10px;
     }}
+    /* Specific styling for buttons within MeetingNotesToolbar */
+    #MeetingNotesToolbar QPushButton {{
+        padding: 2px 8px;  /* Reduced padding */
+        min-height: 0;     /* Override general min-height */
+        margin: 1px;       /* Minimal margin to prevent overlap if needed */
+    }}
+    #MeetingNotesToolbar QPushButton:hover {{
+        /* Keep consistent hover or define specific if needed */
+        background: {hover_color}; 
+        color: {palette['secondary_bg']};
+    }}
+    #MeetingNotesToolbar QPushButton:pressed {{
+        /* Keep consistent pressed or define specific if needed */
+        background: {palette['accent2']};
+        color: {palette['secondary_bg']};
+    }}
+    #MeetingNotesToolbar QPushButton:disabled {{
+        /* Keep consistent disabled or define specific if needed */
+        background: {palette['disabled_bg']};
+        color: {palette['disabled_text']};
+    }}
+    /* End of MeetingNotesToolbar specific styling */
     """
 
 def apply_theme_to_widget(widget: QWidget, theme_name: str):

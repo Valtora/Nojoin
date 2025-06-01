@@ -1,9 +1,9 @@
 import sys
 import os
-import logging # Import logging
-from datetime import datetime, timedelta # Import timedelta
-import time # Import time for timer start
-import threading # Add threading for playback
+import logging
+from datetime import datetime, timedelta
+import time
+import threading
 import re
 import markdown2
 import json
@@ -17,25 +17,20 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QTime, QAbstractTableModel, QModelIndex, Slot, QPoint, QSize, QStringListModel, QRect, QItemSelectionModel, QItemSelection, QPropertyAnimation, QEasingCurve, Property, QMetaObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap, QPainter, QBrush, QColor, QFont, QTextListFormat, QKeySequence, QShortcut, QTextDocument # Added QTextDocument
 from PySide6 import QtWidgets
-from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY, wrap_html_body # Added wrap_html_body
+from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY, wrap_html_body
 # Attempt to import Recorder, handle potential errors
 try:
-    from ..audio.recorder import AudioRecorder # Relative import
+    from ..audio.recorder import AudioRecorder
 except ImportError:
-    # Fallback for running directly or packaging issues?
     try:
         from nojoin.audio.recorder import AudioRecorder
     except ImportError as e:
         print(f"FATAL: Could not import AudioRecorder: {e}")
-        # Optionally show a message box before exiting if QApplication is available
-        # app = QApplication.instance()
-        # if app:
-        #     QMessageBox.critical(None, "Import Error", "Failed to load audio recording module. The application cannot continue.")
-        sys.exit(1) # Exit if recorder can't be imported
+        sys.exit(1)
 
 # Import database functions
 try:
-    from ..db import database as db_ops # Relative import
+    from ..db import database as db_ops
 except ImportError:
     try:
         from nojoin.db import database as db_ops
@@ -45,7 +40,7 @@ except ImportError:
 
 # Import Processing Pipeline function
 try:
-    from ..processing import pipeline as processing_pipeline # Relative import
+    from ..processing import pipeline as processing_pipeline
 except ImportError:
     try:
         from nojoin.processing import pipeline as processing_pipeline
@@ -290,7 +285,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Nojoin")
         self.setGeometry(100, 100, 1200, 800)
         # Set minimum width for the main window
-        self.setMinimumSize(1550, 500) # Increased minimum width for new right panel and to prevent cut-off
+        self.setMinimumSize(1700, 800)
 
         # --- Base Spacing Unit ---
         self.BASE_SPACING = 8
@@ -386,6 +381,33 @@ class MainWindow(QMainWindow):
 
         # In MainWindow.__init__ (or as a class attribute):
         self._meeting_notes_worker = None
+
+        # Ensure theme is applied as the very last step of __init__ to catch all UI elements
+        if hasattr(self, 'current_theme') and self.current_theme:
+            self.apply_theme(self.current_theme)
+        else:
+            # Fallback if current_theme isn't set yet (should be by setup_ui)
+            self.apply_theme(config_manager.get("theme", "dark"))
+
+    def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str):
+        """Configures a notes toolbar button with a theme-aware icon and style."""
+        # Corrected path to include 'icons' subdirectory and match new naming convention
+        file_name = f"{icon_file_prefix}{theme_name.capitalize()}Mode.png"
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "icons", file_name)
+        
+        if os.path.exists(icon_path):
+            button.setIcon(QIcon(icon_path))
+            # Revert to 26x26 icon for a 32x32 button (if BASE_SPACING is 8)
+            button.setIconSize(QSize(26, 26))
+        else:
+            button.setIcon(QIcon()) # Clear icon if not found
+            self.logger.warning(f"Icon not found for {tooltip_text} ({theme_name}): {icon_path}")
+        
+        button.setText("") # No text label
+        # Set button size to BASE_SPACING * 4 (e.g., 32x32)
+        button.setFixedSize(int(self.BASE_SPACING * 4), int(self.BASE_SPACING * 4))
+        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) # Explicitly set size policy
+        button.setToolTip(tooltip_text)
 
     def apply_theme(self, theme_name):
         self.current_theme = theme_name  # Track the current theme for context menus
@@ -546,6 +568,14 @@ class MainWindow(QMainWindow):
                         # This might be necessary if the widget's state isn't self-contained
                         # For now, log a warning if this happens, as it implies a design detail
                         logger.warning(f"MeetingListItemWidget at index {i} does not have recording_data attribute for theme refresh.")
+
+        # --- Update notes toolbar button icons on theme change ---
+        if hasattr(self, 'notes_undo_button') and self.notes_undo_button is not None:
+            self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", theme_name)
+        if hasattr(self, 'notes_redo_button') and self.notes_redo_button is not None:
+            self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", theme_name)
+        if hasattr(self, 'copy_notes_button') and self.copy_notes_button is not None: # Ensure this attribute name matches setup_ui
+            self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "CopyToClip", theme_name)
 
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
@@ -817,13 +847,13 @@ class MainWindow(QMainWindow):
         # --- Main Display Area: Static Panes (Meeting List | Meeting Notes | Meeting Chat) ---
         main_display_layout = QHBoxLayout()
         main_display_layout.setContentsMargins(5, 5, 5, 5)
-        main_display_layout.setSpacing(2)  # No horizontal spacing between panes
+        main_display_layout.setSpacing(1)  # No horizontal spacing between panes
 
         # --- Left: Meetings List (Card Style) ---
         left_panel = QFrame()
         left_panel.setObjectName("MainPanelLeft")
-        left_panel.setStyleSheet("padding: 10px;")
-        left_panel.setMinimumWidth(400)
+        left_panel.setStyleSheet("padding: 5px;")
+        left_panel.setMinimumWidth(330)
         left_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -832,7 +862,7 @@ class MainWindow(QMainWindow):
 
         # --- Search Bar Area (now a separate widget) ---
         self.search_bar_widget = SearchBarWidget()
-        self.search_bar_widget.setMinimumWidth(360)
+        self.search_bar_widget.setMinimumWidth(330)
         self.search_bar_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         if hasattr(self.search_bar_widget, 'layout') and self.search_bar_widget.layout() is not None:
             self.search_bar_widget.layout().setContentsMargins(0, 4, 0, 4)
@@ -843,7 +873,7 @@ class MainWindow(QMainWindow):
         self.meetings_list_widget = QListWidget()
         self.meetings_list_widget.setSelectionMode(QListWidget.SingleSelection)
         self.meetings_list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.meetings_list_widget.setMinimumWidth(360)
+        self.meetings_list_widget.setMinimumWidth(330)
         self.meetings_list_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.meetings_list_widget.itemSelectionChanged.connect(self.handle_meeting_selection_changed)
         # Remove direct border styling from meetings_list_widget (QListWidget)
@@ -859,7 +889,7 @@ class MainWindow(QMainWindow):
         center_panel.setMinimumWidth(500)
         center_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         meeting_notes_layout = QVBoxLayout(center_panel)
-        meeting_notes_layout.setContentsMargins(0, 0, 0, 0)
+        meeting_notes_layout.setContentsMargins(0, 0, 0, 0) # Reverted to 0 margins
         meeting_notes_layout.setSpacing(0)
         self.meeting_context_display = QTextEdit()
         self.meeting_context_display.setReadOnly(True)
@@ -877,36 +907,40 @@ class MainWindow(QMainWindow):
         meeting_notes_layout.addWidget(self.meeting_tags_widget)
         # --- Meeting Notes Toolbar ---
         self.meeting_notes_toolbar = QWidget()
+        self.meeting_notes_toolbar.setObjectName("MeetingNotesToolbar") # Added object name
+        self.meeting_notes_toolbar.setFixedHeight(int(self.BASE_SPACING * 5 * 1.1)) # Increased height by 10%
+        # self.meeting_notes_toolbar.setStyleSheet("border: 2px solid yellow;") # DEBUG: Visual bound check REMOVED
         toolbar_layout = QHBoxLayout(self.meeting_notes_toolbar)
-        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setContentsMargins(3, 3, 3, 3) # Adjusted internal padding
         toolbar_layout.setSpacing(4)
+        toolbar_layout.setAlignment(Qt.AlignVCenter) # Align widgets vertically centered
 
         # --- New Toggle Button for Notes/Transcript ---
         self.view_toggle_button = QPushButton("View Transcript")
+        self.view_toggle_button.setFixedHeight(int(self.BASE_SPACING * 4)) # Set height to BASE_SPACING * 4
+        self.view_toggle_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.view_toggle_button.setToolTip("Toggle between meeting notes and transcript view")
         # self.view_toggle_button.clicked.connect(self._toggle_center_panel_view) # Connection will be added later
         toolbar_layout.addWidget(self.view_toggle_button)
 
         toolbar_layout.addStretch(1)  # Align buttons to the right
         # Undo
-        self.notes_undo_button = QPushButton("Undo")
-        self.notes_undo_button.setToolTip("Undo")
+        self.notes_undo_button = QPushButton() # Initialize without text
         self.notes_undo_button.clicked.connect(lambda: self.meeting_notes_edit.undo())
         toolbar_layout.addWidget(self.notes_undo_button)
         # Redo
-        self.notes_redo_button = QPushButton("Redo")
-        self.notes_redo_button.setToolTip("Redo")
+        self.notes_redo_button = QPushButton() # Initialize without text
         self.notes_redo_button.clicked.connect(lambda: self.meeting_notes_edit.redo())
         toolbar_layout.addWidget(self.notes_redo_button)
         # Copy to Clipboard
-        copy_btn = QPushButton("Copy to Clipboard")
-        copy_btn.setToolTip("Copy meeting notes to clipboard")
+        self.copy_notes_button = QPushButton() # Initialize without text
+        # self.copy_notes_button.setStyleSheet("background-color: green;") # DEBUG: Visual bound check REMOVED
         def copy_notes_to_clipboard():
             from PySide6.QtWidgets import QApplication
             clipboard = QApplication.clipboard()
             clipboard.setText(self.meeting_notes_edit.toPlainText())
-        copy_btn.clicked.connect(copy_notes_to_clipboard)
-        toolbar_layout.addWidget(copy_btn)
+        self.copy_notes_button.clicked.connect(copy_notes_to_clipboard)
+        toolbar_layout.addWidget(self.copy_notes_button)
         meeting_notes_layout.addWidget(self.meeting_notes_toolbar)
         # --- Meeting Notes Edit ---
         self.meeting_notes_edit = QTextEdit()
@@ -1011,6 +1045,12 @@ class MainWindow(QMainWindow):
 
         self._setup_notes_autosave()
         self._update_center_panel_content() # Call at end of setup_ui for initial state
+
+        # --- Configure notes toolbar buttons with initial theme ---
+        current_theme = config_manager.get("theme", "dark")
+        self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", current_theme)
+        self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", current_theme)
+        self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "Copy to Clipboard", current_theme)
 
         # Connect the toggle button after all UI elements it might affect are initialized
         if self.view_toggle_button: # Ensure it was created
@@ -1678,7 +1718,7 @@ class MainWindow(QMainWindow):
             else:
                 # Set placeholder or clear if no notes.
                 # Using setMarkdown with placeholder text that is valid Markdown.
-                placeholder_markdown = "_No meeting notes available. Right-click the recording to generate notes or view transcript._"
+                placeholder_markdown = "No meeting notes available. Right-click the recording to re-transcribe or generate notes."
                 doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
             
             self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave comparison
@@ -2003,8 +2043,6 @@ class MainWindow(QMainWindow):
         import re
         recording_data = db_ops.get_recording_by_id(recording_id)
         if not recording_data:
-            # self.transcript_text_edit.clear() # transcript_text_edit is being removed
-            # self.transcript_text_edit.setPlaceholderText("Select a recording to view transcript...") # transcript_text_edit is being removed
             return "" # Return empty string or handle appropriately if transcript content is needed elsewhere
         
         raw_transcript_path = recording_data.get("raw_transcript_path")
@@ -2914,7 +2952,7 @@ class MainWindow(QMainWindow):
             if self.notes_redo_button: self.notes_redo_button.setVisible(True)
             self.meeting_notes_edit.setReadOnly(False) 
             # Set a generic placeholder if nothing is selected
-            placeholder_markdown = "_Select a meeting to view notes or transcript._"
+            placeholder_markdown = "Select a meeting to view notes or transcript."
             doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
             return
 
@@ -2930,7 +2968,6 @@ class MainWindow(QMainWindow):
             return
         
         if self.center_panel_view_mode == "notes":
-            # print("[DEBUG_PRINT] _update_center_panel_content: In notes mode branch") # DEBUG PRINT # REMOVED
             if self.view_toggle_button:
                 self.view_toggle_button.setText("View Transcript")
             self.meeting_notes_edit.setReadOnly(False)
@@ -2940,17 +2977,14 @@ class MainWindow(QMainWindow):
             doc.clear() # Explicitly clear the document before setting new markdown content
             notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
             if notes_entry and notes_entry['notes']:
-                # print("[DEBUG_PRINT] _update_center_panel_content: Setting notes from DB") # DEBUG PRINT # REMOVED
                 doc.setMarkdown(notes_entry['notes'], QTextDocument.MarkdownDialectGitHub)
             else:
-                # print("[DEBUG_PRINT] _update_center_panel_content: Setting notes placeholder") # DEBUG PRINT # REMOVED
                 placeholder_markdown = "_No meeting notes available. Right-click the recording to generate notes, or switch to transcript view._"
                 doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
             self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave
             self.notes_have_been_edited = False # Reset edit flag
         
         elif self.center_panel_view_mode == "transcript":
-            # print("[DEBUG_PRINT] _update_center_panel_content: In transcript mode branch") # DEBUG PRINT # REMOVED
             self.logger.info(f"Loading transcript for recording_id: {recording_id}") # Log transcript load
             if self.view_toggle_button:
                 self.view_toggle_button.setText("View Meeting Notes")
@@ -2964,17 +2998,14 @@ class MainWindow(QMainWindow):
             # No autosave or edit flag for transcripts
 
         self.meeting_notes_edit.setVisible(True)
-        # print("[DEBUG_PRINT] _update_center_panel_content finished. Mode:", self.center_panel_view_mode, "Button text:", self.view_toggle_button.text() if self.view_toggle_button else 'N/A') # DEBUG PRINT # REMOVED
         self.logger.info(f"_update_center_panel_content finished. Mode: {self.center_panel_view_mode}, Button text: {self.view_toggle_button.text() if self.view_toggle_button else 'N/A'}")
 
     def _toggle_center_panel_view(self):
-        # print("[DEBUG_PRINT] _toggle_center_panel_view: CALLED. Current mode before toggle:", self.center_panel_view_mode) # DEBUG PRINT # REMOVED
         self.logger.info(f"_toggle_center_panel_view: CALLED. Current mode before toggle: {self.center_panel_view_mode}")
         if self.center_panel_view_mode == "notes":
             self.center_panel_view_mode = "transcript"
         else:
             self.center_panel_view_mode = "notes"
-        # print("[DEBUG_PRINT] _toggle_center_panel_view: Mode AFTER toggle:", self.center_panel_view_mode) # DEBUG PRINT # REMOVED
         self.logger.info(f"_toggle_center_panel_view: Mode AFTER toggle: {self.center_panel_view_mode}")
         self._update_center_panel_content() # This will refresh the view
         
@@ -3528,10 +3559,13 @@ class MeetingListItemWidget(QFrame):
             try:
                 from nojoin.db import database as db_ops
                 speakers = db_ops.get_speakers_for_recording(self.recording_data.get("id"))
+                logger.debug(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Fetched speakers from DB: {speakers}") # ADDED LOGGING
                 participants = [s.get("name") or s.get("diarization_label") for s in speakers if s.get("name") or s.get("diarization_label")]
-            except Exception:
+            except Exception as e: # ADDED EXCEPTION LOGGING
+                logger.error(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Error fetching speakers: {e}", exc_info=True)
                 participants = []
-        # chip_style = f"background:transparent; color:{chip_text_color}; border-radius:8px; padding:2px 8px; margin-right:4px; font-size:12px; display:inline-block; border:1px solid {chip_border_color};"
+        else: # ADDED LOGGING FOR CACHED PARTICIPANTS
+            logger.debug(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Using pre-loaded participants: {participants}")
         
         # Join participant names with a comma and space for display on the card
         escaped_participants = [html.escape(p) for p in participants if p] # Ensure p is not None or empty
