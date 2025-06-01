@@ -54,7 +54,7 @@ from nojoin.ui.splash import SplashScreen
 
 # TODO: Add configuration loading here later
 
-def main():
+def Nojoin():
     """Application entry point."""
     app = QApplication(sys.argv)
 
@@ -95,4 +95,4 @@ def main():
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main() 
+    Nojoin()
