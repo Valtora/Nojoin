@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QTime, QAbstractTableModel, QModelIndex, Slot, QPoint, QSize, QStringListModel, QRect, QItemSelectionModel, QItemSelection, QPropertyAnimation, QEasingCurve, Property, QMetaObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap, QPainter, QBrush, QColor, QFont, QTextListFormat, QKeySequence, QShortcut, QTextDocument # Added QTextDocument
 from PySide6 import QtWidgets
-from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY, wrap_html_body
+from nojoin.utils.theme_utils import THEME_PALETTE, FONT_HIERARCHY, wrap_html_body, get_notes_font_size
 # Attempt to import Recorder, handle potential errors
 try:
     from ..audio.recorder import AudioRecorder
@@ -72,7 +72,7 @@ from nojoin.utils.config_manager import (
     get_available_themes, # Import theme getter
 )
 
-from nojoin.utils.theme_utils import apply_theme_to_widget, get_theme_qss, get_menu_qss, get_border_color, wrap_html_body
+from nojoin.utils.theme_utils import apply_theme_to_widget, get_theme_qss, get_menu_qss, get_border_color, wrap_html_body, get_notes_font_size
 
 from .playback_controller import PlaybackController
 from nojoin.processing.recording_pipeline import RecordingPipeline
@@ -1389,7 +1389,7 @@ class MainWindow(QMainWindow):
                 text_color = theme_palette['html_text']
                 css = f"body {{ color: {text_color}; background-color: transparent; }}" # Simplified for this case
                 doc.setDefaultStyleSheet(css)
-                base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+                base_font = QFont("Segoe UI", get_notes_font_size())
                 doc.setDefaultFont(base_font)
                 doc.setMarkdown(error_markdown, QTextDocument.MarkdownDialectGitHub)
 
@@ -1465,7 +1465,7 @@ class MainWindow(QMainWindow):
                 text_color = theme_palette['html_text']
                 css = f"body {{ color: {text_color}; background-color: transparent; }}"
                 doc.setDefaultStyleSheet(css)
-                base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+                base_font = QFont("Segoe UI", get_notes_font_size())
                 doc.setDefaultFont(base_font)
                 doc.setMarkdown(error_markdown, QTextDocument.MarkdownDialectGitHub)
             
@@ -1708,7 +1708,7 @@ class MainWindow(QMainWindow):
                 a:visited {{ color: {theme_palette['accent2']}; }}
             """
             doc.setDefaultStyleSheet(css)
-            base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+            base_font = QFont("Segoe UI", get_notes_font_size())
             doc.setDefaultFont(base_font)
 
             notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
@@ -1866,6 +1866,7 @@ class MainWindow(QMainWindow):
         # Reload theme from config and apply it
         new_theme = config_manager.get("theme", "dark")
         self.apply_theme(new_theme)
+        # Update center panel content to apply new font size
         # Optional: Show confirmation or perform other updates if needed
         self.status_bar.showMessage("Settings saved successfully.", 3000)
 
@@ -2941,7 +2942,7 @@ class MainWindow(QMainWindow):
             a:visited {{ color: {theme_palette['accent2']}; }}
         """
         doc.setDefaultStyleSheet(css)
-        base_font = QFont("Segoe UI", FONT_HIERARCHY["body"]["size"])
+        base_font = QFont("Segoe UI", get_notes_font_size())
         doc.setDefaultFont(base_font)
 
         if not selected_items:

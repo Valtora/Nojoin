@@ -10,7 +10,8 @@ from nojoin.utils.config_manager import (
     get_available_processing_devices,
     get_available_input_devices,
     get_available_output_devices,
-    get_available_themes
+    get_available_themes,
+    get_available_notes_font_sizes
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
 import logging
@@ -71,6 +72,12 @@ class SettingsDialog(QDialog):
         self.theme_combo = QComboBox()
         self.available_themes = get_available_themes()
         self.theme_combo.addItems(self.available_themes)
+
+        # Notes font size selection
+        self.notes_font_size_combo = QComboBox()
+        self.available_notes_font_sizes = get_available_notes_font_sizes()
+        self.notes_font_size_combo.addItems(self.available_notes_font_sizes)
+        self.notes_font_size_combo.setToolTip("Font size for meeting notes display area only")
 
         # LLM Provider selection
         self.llm_provider_combo = QComboBox()
@@ -167,6 +174,7 @@ class SettingsDialog(QDialog):
 
         # Add all main settings first (theme, devices, transcript, etc.)
         layout.addRow("Theme:", self.theme_combo)
+        layout.addRow("Notes Font Size:", self.notes_font_size_combo)
         layout.addRow("Default Input Device:", self.input_device_combo)
         layout.addRow("Default Output Device:", self.output_device_combo)
         layout.addRow("Auto Transcribe:", self.auto_transcribe_checkbox)
@@ -244,6 +252,8 @@ class SettingsDialog(QDialog):
         self.log_verbosity_combo.setCurrentText(log_verbosity.upper())
         # Set theme
         self.theme_combo.setCurrentText(cfg.get("theme", "dark"))
+        # Set notes font size
+        self.notes_font_size_combo.setCurrentText(cfg.get("notes_font_size", "Medium"))
         # Set input device
         input_idx = cfg.get("default_input_device_index", None)
         if input_idx is None:
@@ -280,6 +290,7 @@ class SettingsDialog(QDialog):
         output_idx = self.output_device_combo.currentData()
         auto_transcribe = self.auto_transcribe_checkbox.isChecked()
         selected_theme = self.theme_combo.currentText()
+        notes_font_size = self.notes_font_size_combo.currentText()
         log_verbosity = self.log_verbosity_combo.currentText().upper()
         llm_provider = self.llm_provider_combo.currentText()
         gemini_api_key = self.gemini_api_key_edit.text().strip()
@@ -364,6 +375,7 @@ class SettingsDialog(QDialog):
         config_manager.set("default_output_device_index", output_idx)
         config_manager.set("auto_transcribe_on_recording_finish", auto_transcribe)
         config_manager.set("theme", selected_theme)
+        config_manager.set("notes_font_size", notes_font_size)
         config_manager.set("gemini_model", gemini_model)
         config_manager.set("openai_model", openai_model)
         config_manager.set("anthropic_model", anthropic_model)

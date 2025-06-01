@@ -1042,3 +1042,14 @@ def get_modern_menu_qss(theme_name: str) -> str:
         margin: 6px 16px;
     }}
     ''' 
+
+def get_notes_font_size() -> int:
+    """
+    Get the font size for meeting notes based on the current configuration.
+    
+    Returns:
+        int: Font size in pixels for meeting notes
+    """
+    from nojoin.utils.config_manager import config_manager, get_notes_font_size_pixels
+    font_size_setting = config_manager.get("notes_font_size", "Medium")
+    return get_notes_font_size_pixels(font_size_setting) 

@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     "gemini_api_key": None,     # Google Gemini API key
     "openai_api_key": None,     # OpenAI API key
     "anthropic_api_key": None,  # Anthropic API key
+    "notes_font_size": "Medium",  # Font size for meeting notes display
     "advanced": {
         "log_verbosity": "INFO"
     },
@@ -79,6 +80,32 @@ def get_available_output_devices():
     except Exception as e:
         logger.error(f"Error listing output devices: {e}", exc_info=True)
     return devices
+
+def get_available_notes_font_sizes():
+    """
+    Returns available font size options for meeting notes.
+    
+    Returns:
+        list: List of available font size options
+    """
+    return ["Small", "Medium", "Large"]
+
+def get_notes_font_size_pixels(size_setting):
+    """
+    Maps font size setting to actual pixel size for meeting notes.
+    
+    Args:
+        size_setting (str): Font size setting ("Small", "Medium", "Large")
+        
+    Returns:
+        int: Font size in pixels
+    """
+    font_size_map = {
+        "Small": 9,
+        "Medium": 12,
+        "Large": 15
+    }
+    return font_size_map.get(size_setting, 12)  # Default to Medium (12px)
 
 class ConfigManager:
     def __init__(self, config_path=None):

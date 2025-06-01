@@ -20,5 +20,3 @@ Take into account how any changes, new features, functions, and implementations 
 Once I confirm I am happy with the plan, you will then execute it and leave all testing to me which I will do manually.
 
 Once we have completed our work I will confirm that I am happy with the changes made, at which point you will update the [PRD.md](mdc:PRD.md) with the changes we have made and suggest a suitably descriptive GIT commit description.
-
-I want to continue the development of 'Nojoin':
