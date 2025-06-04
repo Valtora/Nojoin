@@ -88,15 +88,6 @@ from nojoin.processing.LLM_Services import get_llm_backend
 from .meeting_notes_worker import MeetingNotesWorker
 from .find_replace_dialog import FindReplaceDialog
 
-# Import for auto-updates (add this with other imports)
-try:
-    from ..utils.version_manager import UpdateChecker, get_version_info
-    from .update_dialog import UpdateDialog
-    update_available = True
-except ImportError as e:
-    logger.warning(f"Update system not available: {e}")
-    update_available = False
-
 logger = logging.getLogger(__name__) # Setup logger for this module
 
 # --- Custom Click-to-Seek Slider ---
@@ -399,14 +390,6 @@ class MainWindow(QMainWindow):
         else:
             # Fallback if current_theme isn't set yet (should be by setup_ui)
             self.apply_theme(config_manager.get("theme", "dark"))
-
-        # --- Initialize update checker (add this after other initialization) ---
-        if update_available:
-            self.update_checker = UpdateChecker(self._on_update_available)
-            # Check for updates 30 seconds after startup
-            QTimer.singleShot(30000, self.update_checker.check_for_updates_async)
-        else:
-            self.update_checker = None
 
     def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str):
         """Configures a notes toolbar button with a theme-aware icon and style."""
@@ -1086,31 +1069,6 @@ class MainWindow(QMainWindow):
         # Connect the toggle button after all UI elements it might affect are initialized
         if self.view_toggle_button: # Ensure it was created
             self.view_toggle_button.clicked.connect(self._toggle_center_panel_view)
-
-        # Add to the menu bar creation section (find where self.menubar is created)
-        
-        # Help menu (add this after other menus)
-        help_menu = self.menuBar().addMenu("&Help")
-        
-        # About action
-        about_action = QAction("&About Nojoin", self)
-        about_action.triggered.connect(self._show_about_dialog)
-        help_menu.addAction(about_action)
-        
-        # Update actions (only if update system is available)
-        if update_available:
-            help_menu.addSeparator()
-            
-            check_updates_action = QAction("Check for &Updates", self)
-            check_updates_action.triggered.connect(self._check_for_updates_manual)
-            help_menu.addAction(check_updates_action)
-            
-            # Show pending installer option if available
-            pending_installer = config_manager.get("pending_installer")
-            if pending_installer and os.path.exists(pending_installer):
-                install_pending_action = QAction("Install Pending Update", self)
-                install_pending_action.triggered.connect(lambda: self._install_pending_update(pending_installer))
-                help_menu.addAction(install_pending_action)
 
     def _set_meeting_context_html_with_dynamic_font(self, context_html, theme):
         """
@@ -3408,140 +3366,6 @@ class MainWindow(QMainWindow):
                 doc.setMarkdown(notes_entry['notes'])
                 self._notes_last_saved_content = notes_entry['notes']
                 self.notes_have_been_edited = False
-
-    def _on_update_available(self, update_info):
-        """Called when an update is available"""
-        # Check if user has skipped this version
-        skipped_version = config_manager.get("skipped_version")
-        if skipped_version == update_info['version']:
-            logger.info(f"Skipping update {update_info['version']} - user previously skipped")
-            return
-            
-        logger.info(f"Update available: {update_info['version']}")
-        
-        # Show update dialog on main thread
-        if hasattr(self, 'isVisible') and self.isVisible():
-            self._show_update_dialog(update_info)
-    
-    def _show_update_dialog(self, update_info):
-        """Show the update dialog"""
-        try:
-            dialog = UpdateDialog(update_info, self)
-            dialog.update_installed.connect(self._on_update_installed)
-            dialog.exec()
-        except Exception as e:
-            logger.error(f"Error showing update dialog: {e}", exc_info=True)
-    
-    def _on_update_installed(self):
-        """Called when update is being installed"""
-        logger.info("Update installation initiated, application will close")
-        # Application will exit from the update dialog
-    
-    def _check_for_updates_manual(self):
-        """Manual update check from menu"""
-        if not self.update_checker:
-            QMessageBox.information(self, "Updates", "Update system not available")
-            return
-            
-        # Show checking message
-        checking_msg = QMessageBox(self)
-        checking_msg.setWindowTitle("Checking for Updates")
-        checking_msg.setText("Checking for updates...")
-        checking_msg.setStandardButtons(QMessageBox.NoButton)
-        checking_msg.show()
-        
-        def check_complete():
-            checking_msg.close()
-            
-        def on_update_found(update_info):
-            check_complete()
-            self._show_update_dialog(update_info)
-            
-        def on_no_update():
-            check_complete()
-            QMessageBox.information(self, "No Updates", 
-                                  f"You have the latest version of Nojoin ({self.update_checker.version_manager.current_version})")
-        
-        def on_no_releases():
-            check_complete()
-            QMessageBox.information(self, "No Releases Available", 
-                                  "This appears to be a development version of Nojoin.\n\n"
-                                  "No official releases have been published yet.\n"
-                                  "Check back later for updates.")
-        
-        def on_connection_error(error_msg):
-            check_complete()
-            QMessageBox.warning(self, "Connection Error", 
-                              f"Unable to check for updates:\n{error_msg}\n\n"
-                              "Please check your internet connection and try again.")
-        
-        # Check in background
-        def background_check():
-            try:
-                update_info = self.update_checker.version_manager.check_for_updates()
-                if update_info:
-                    QTimer.singleShot(0, lambda: on_update_found(update_info))
-                else:
-                    QTimer.singleShot(0, on_no_update)
-            except Exception as e:
-                error_msg = str(e)
-                if "no releases" in error_msg.lower() or "development version" in error_msg.lower():
-                    QTimer.singleShot(0, on_no_releases)
-                elif "timeout" in error_msg.lower() or "connection" in error_msg.lower() or "unreachable" in error_msg.lower():
-                    QTimer.singleShot(0, lambda: on_connection_error(error_msg))
-                else:
-                    QTimer.singleShot(0, lambda: self._show_update_error(error_msg))
-                
-        thread = threading.Thread(target=background_check, daemon=True)
-        thread.start()
-    
-    def _show_update_error(self, error_msg):
-        """Show update check error"""
-        QMessageBox.warning(self, "Update Check Failed", 
-                          f"Failed to check for updates:\n{error_msg}")
-    
-    def _install_pending_update(self, installer_path):
-        """Install a pending update"""
-        reply = QMessageBox.question(self, "Install Update",
-                                   "Install the pending update now?\n"
-                                   "Nojoin will close and restart.",
-                                   QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            try:
-                version_manager = VersionManager()
-                if version_manager.install_update(Path(installer_path)):
-                    QTimer.singleShot(1000, lambda: sys.exit(0))
-                else:
-                    QMessageBox.critical(self, "Installation Failed",
-                                       f"Failed to launch installer:\n{installer_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Installation Failed", str(e))
-    
-    def _show_about_dialog(self):
-        """Show about dialog"""
-        version_info = get_version_info() if update_available else {'version': '1.0.0'}
-        
-        about_text = f"""
-<h2>Nojoin {version_info['version']}</h2>
-<p>Meeting Recording and Transcription with AI</p>
-<p>
-<b>Features:</b><br>
-• Record system audio (input/output)<br>
-• Transcribe with OpenAI Whisper<br>
-• Speaker diarization with Pyannote<br>
-• AI-powered meeting notes<br>
-• Fully offline processing
-</p>
-<p>
-<b>System Information:</b><br>
-Version: {version_info['version']}<br>
-Python: {version_info.get('python_version', 'Unknown')}<br>
-Platform: {version_info.get('platform', 'Unknown')}
-</p>
-<p>Copyright © 2025 Nojoin</p>
-"""
-        
-        QMessageBox.about(self, "About Nojoin", about_text)
 
 # --- Tag Chip Widget ---
 class TagChip(QLabel):
