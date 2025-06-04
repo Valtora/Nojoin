@@ -86,6 +86,7 @@ from .participants_dialog import ParticipantsDialog
 from .search_bar_widget import SearchBarWidget
 from nojoin.processing.LLM_Services import get_llm_backend
 from .meeting_notes_worker import MeetingNotesWorker
+from .find_replace_dialog import FindReplaceDialog
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
@@ -577,6 +578,8 @@ class MainWindow(QMainWindow):
             self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", theme_name)
         if hasattr(self, 'copy_notes_button') and self.copy_notes_button is not None: # Ensure this attribute name matches setup_ui
             self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "CopyToClip", theme_name)
+        if hasattr(self, 'find_replace_button') and self.find_replace_button is not None:
+            self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", theme_name)
 
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
@@ -942,6 +945,13 @@ class MainWindow(QMainWindow):
             clipboard.setText(self.meeting_notes_edit.toPlainText())
         self.copy_notes_button.clicked.connect(copy_notes_to_clipboard)
         toolbar_layout.addWidget(self.copy_notes_button)
+        
+        # Find/Replace
+        self.find_replace_button = QPushButton() # Initialize without text
+        self.find_replace_button.setToolTip("Find and Replace")
+        self.find_replace_button.clicked.connect(self._open_find_replace_dialog)
+        toolbar_layout.addWidget(self.find_replace_button)
+        
         meeting_notes_layout.addWidget(self.meeting_notes_toolbar)
         # --- Meeting Notes Edit ---
         self.meeting_notes_edit = QTextEdit()
@@ -960,6 +970,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+U"), self.meeting_notes_edit, activated=lambda: self._format_notes_selection("underline"))
         QShortcut(QKeySequence("Ctrl+Shift+B"), self.meeting_notes_edit, activated=lambda: self._format_notes_selection("bullet"))
         QShortcut(QKeySequence("Ctrl+Shift+N"), self.meeting_notes_edit, activated=lambda: self._format_notes_selection("numbered"))
+        # Find/Replace shortcut
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_find_replace_dialog)
         # --- Debounced autosave setup ---
         self._notes_autosave_timer = QTimer(self)
         self._notes_autosave_timer.setSingleShot(True)
@@ -1052,6 +1064,7 @@ class MainWindow(QMainWindow):
         self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", current_theme)
         self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", current_theme)
         self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "Copy to Clipboard", current_theme)
+        self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", current_theme)
 
         # Connect the toggle button after all UI elements it might affect are initialized
         if self.view_toggle_button: # Ensure it was created
@@ -2772,11 +2785,8 @@ class MainWindow(QMainWindow):
         self.notes_have_been_edited = True
         # Optionally, update UI to show unsaved changes
 
-    def _autosave_meeting_notes(self):
-        if self.center_panel_view_mode != "notes":
-            self.logger.debug(f"_autosave_meeting_notes called but view mode is '{self.center_panel_view_mode}'. Skipping save.")
-            return
-
+    def _autosave_content(self):
+        """Autosave meeting notes or transcript content based on current view mode."""
         selected_items = self.meetings_list_widget.selectedItems()
         if not selected_items:
             return
@@ -2786,32 +2796,61 @@ class MainWindow(QMainWindow):
             return
 
         doc = self.meeting_notes_edit.document()
-        # Get content as Markdown for saving
-        markdown_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub)
-        
-        # Only save if changed
-        if markdown_content != self._notes_last_saved_content:
-            try:
-                notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-                # Assuming notes are stored as raw markdown text.
-                # The 'provider' and 'model' fields for manual edits might need specific handling.
-                # For now, we'll focus on updating existing or adding new with a generic provider.
-                if notes_entry:
-                    db_ops.update_meeting_notes(notes_entry['id'], markdown_content)
-                else:
-                    # If adding new, decide on appropriate provider/model, e.g., "manual_edit_markdown"
-                    db_ops.add_meeting_notes(recording_id, 'manual_markdown', '', markdown_content)
-                
-                self._notes_last_saved_content = markdown_content
-                self.status_bar.showMessage("Meeting notes autosaved.", 1500)
-                self.notes_have_been_edited = False
-            except Exception as e:
-                self.logger.error(f"Failed to autosave notes: {e}", exc_info=True)
-                self.status_bar.showMessage(f"Failed to autosave notes: {e}", 3000)
+
+        if self.center_panel_view_mode == "notes":
+            # Save meeting notes as Markdown
+            markdown_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub)
+            
+            # Only save if changed
+            if markdown_content != self._notes_last_saved_content:
+                try:
+                    notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+                    if notes_entry:
+                        db_ops.update_meeting_notes(notes_entry['id'], markdown_content)
+                    else:
+                        db_ops.add_meeting_notes(recording_id, 'manual_markdown', '', markdown_content)
+                    
+                    self._notes_last_saved_content = markdown_content
+                    self.status_bar.showMessage("Meeting notes autosaved.", 1500)
+                    self.notes_have_been_edited = False
+                except Exception as e:
+                    self.logger.error(f"Failed to autosave notes: {e}", exc_info=True)
+                    self.status_bar.showMessage(f"Failed to autosave notes: {e}", 3000)
+                    
+        elif self.center_panel_view_mode == "transcript":
+            # Save transcript as plain text to the transcript file
+            # Convert HTML back to plain text format suitable for transcript files
+            plain_content = doc.toPlainText()
+            
+            # Only save if changed
+            if hasattr(self, '_transcript_last_saved_content') and plain_content != self._transcript_last_saved_content:
+                try:
+                    # Get the transcript file path
+                    recording_data = db_ops.get_recording_by_id(recording_id)
+                    if recording_data:
+                        diarized_transcript_path = recording_data.get('diarized_transcript_path')
+                        if diarized_transcript_path:
+                            from nojoin.utils.config_manager import from_project_relative_path
+                            abs_path = from_project_relative_path(diarized_transcript_path)
+                            
+                            # Save the plain text content back to the transcript file
+                            with open(abs_path, 'w', encoding='utf-8') as f:
+                                f.write(plain_content)
+                            
+                            self._transcript_last_saved_content = plain_content
+                            self.status_bar.showMessage("Transcript autosaved.", 1500)
+                            self.logger.info(f"Transcript autosaved to {abs_path}")
+                        else:
+                            self.logger.warning("No transcript path found for autosave")
+                    else:
+                        self.logger.warning("No recording data found for transcript autosave")
+                except Exception as e:
+                    self.logger.error(f"Failed to autosave transcript: {e}", exc_info=True)
+                    self.status_bar.showMessage(f"Failed to autosave transcript: {e}", 3000)
 
     # Connect timer timeout to autosave
     def _setup_notes_autosave(self):
-        self._notes_autosave_timer.timeout.connect(self._autosave_meeting_notes)
+        self._notes_autosave_timer.timeout.connect(self._autosave_content)
 
     def _show_notes_context_menu(self, pos):
         menu = QMenu(self.meeting_notes_edit)
@@ -3014,14 +3053,18 @@ class MainWindow(QMainWindow):
             self.logger.info(f"Loading transcript for recording_id: {recording_id}") # Log transcript load
             if self.view_toggle_button:
                 self.view_toggle_button.setText("View Meeting Notes")
-            self.meeting_notes_edit.setReadOnly(True)
+            # Remove setReadOnly(True) to allow find/replace operations in transcript view
+            # self.meeting_notes_edit.setReadOnly(True)  # Commented out to enable editing
             if self.notes_undo_button: self.notes_undo_button.setVisible(False)
             if self.notes_redo_button: self.notes_redo_button.setVisible(False)
             
             # load_transcript is expected to return HTML string already wrapped by wrap_html_body
             transcript_html_content = self.load_transcript(recording_id) 
             doc.setHtml(transcript_html_content) 
-            # No autosave or edit flag for transcripts
+            
+            # Enable autosave for transcript changes
+            self._transcript_last_saved_content = doc.toPlainText()  # Track content for autosave
+            self.notes_have_been_edited = False  # Reset edit flag
 
         self.meeting_notes_edit.setVisible(True)
         self.logger.info(f"_update_center_panel_content finished. Mode: {self.center_panel_view_mode}, Button text: {self.view_toggle_button.text() if self.view_toggle_button else 'N/A'}")
@@ -3068,7 +3111,7 @@ class MainWindow(QMainWindow):
             self.update_seek_time_label(seconds, self.seek_slider.maximum() / 1000.0)
 
     def _setup_notes_autosave(self):
-        self._notes_autosave_timer.timeout.connect(self._autosave_meeting_notes)
+        self._notes_autosave_timer.timeout.connect(self._autosave_content)
 
     def _show_notes_context_menu(self, pos):
         menu = QMenu(self.meeting_notes_edit)
@@ -3281,6 +3324,48 @@ class MainWindow(QMainWindow):
             self.transcribe_button.setToolTip("Select a recording to transcribe")
 
         logger.info("_clear_meeting_details finished")
+
+    def _open_find_replace_dialog(self):
+        """Open the find and replace dialog."""
+        current_theme = config_manager.get("theme", "dark")
+        
+        # Use meeting_notes_edit for both notes and transcript views since it's the same widget
+        text_edit = None
+        if hasattr(self, 'meeting_notes_edit'):
+            text_edit = self.meeting_notes_edit
+        
+        dialog = FindReplaceDialog(
+            parent=self,
+            text_edit=text_edit,
+            theme_name=current_theme
+        )
+        
+        # Connect to bulk operation completion signal to refresh current view
+        dialog.bulk_operation_completed.connect(self._refresh_current_meeting_view)
+        
+        # Pre-populate search text if there's a selection
+        if text_edit and text_edit.textCursor().hasSelection():
+            selected_text = text_edit.textCursor().selectedText()
+            if selected_text and len(selected_text) < 100:  # Only for reasonable selections
+                dialog.set_search_text(selected_text)
+        
+        # Show the dialog
+        dialog.exec()
+        
+    def _refresh_current_meeting_view(self):
+        """Refresh the currently displayed meeting notes/transcript after bulk operations."""
+        # If a meeting is selected and we're viewing notes, reload them from database
+        selected_items = self.meetings_list_widget.selectedItems()
+        if selected_items and self.center_panel_view_mode == "notes":
+            recording_id = selected_items[0].data(Qt.UserRole)
+            
+            # Reload meeting notes from database
+            notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
+            if notes_entry and hasattr(self, 'meeting_notes_edit'):
+                doc = self.meeting_notes_edit.document()
+                doc.setMarkdown(notes_entry['notes'])
+                self._notes_last_saved_content = notes_entry['notes']
+                self.notes_have_been_edited = False
 
 # --- Tag Chip Widget ---
 class TagChip(QLabel):

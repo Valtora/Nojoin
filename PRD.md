@@ -97,6 +97,20 @@
 - UI shows user questions and LLM responses, with a typing indicator for LLM activity.
 - Requires API keys to be configured.
 
+### 2.12 Find and Replace
+- Comprehensive find and replace functionality accessible via toolbar button (magnifying glass icon) or Ctrl+F keyboard shortcut.
+- **Notepad++-inspired dialog** with grouped sections for Find/Replace fields, Search Options, and Search Scope.
+- **Search Options:** Case-sensitive matching, whole word only matching.
+- **Search Scope:** Current document (meeting notes or transcript) or all transcripts across all recordings.
+- **Operations:** Find Next, Find All (with occurrence counting), Replace, and Replace All.
+- **Formatting Preservation:** Uses QTextDocument.find() for precise replacements that maintain rich text formatting in meeting notes.
+- **Bulk Operations:** Replace All across all transcripts with progress tracking, user confirmation, and threaded processing.
+- **Theme Integration:** Fully theme-aware dialog that adapts to dark/light themes.
+- **Auto-refresh:** Automatically refreshes current view after bulk operations to show changes.
+- **Pre-population:** Automatically populates search field with selected text when dialog is opened.
+- **Transcript Autosave:** Enables autosave functionality for transcript edits, saving changes back to transcript files on disk.
+- **Meeting Notes Autosave:** Maintains existing autosave functionality for meeting notes with Markdown preservation.
+
 ---
 
 ## 3. Technical Requirements

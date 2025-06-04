@@ -18,7 +18,7 @@ class ParticipantsDialog(QDialog):
         super().__init__(parent)
         self.original_window_title = f"Manage Participants - {recording_data.get('name', 'Meeting')}"
         self.setWindowTitle(self.original_window_title)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(650)
         from nojoin.utils.config_manager import config_manager
         self.current_theme = config_manager.get("theme", "dark") # Store theme
         apply_theme_to_widget(self, self.current_theme)
@@ -69,7 +69,7 @@ class ParticipantsDialog(QDialog):
         panel = QWidget()
         self.grid = QGridLayout(panel)
         self.grid.setHorizontalSpacing(8)
-        self.grid.setVerticalSpacing(4)
+        self.grid.setVerticalSpacing(6)
         self._populate_speakers()
         scroll.setWidget(panel)
         self.layout.addWidget(scroll, 1)
@@ -127,7 +127,7 @@ class ParticipantsDialog(QDialog):
             play_btn = QPushButton()
             play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             play_btn.setToolTip("Play snippet")
-            play_btn.setFixedSize(22, 22)
+            play_btn.setFixedSize(18, 18)
             play_btn.setEnabled(not is_unknown)
             play_btn.setCheckable(True)
             play_btn.setProperty("speaker_id", speaker_id)
@@ -136,7 +136,7 @@ class ParticipantsDialog(QDialog):
             del_btn = QPushButton()
             del_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
             del_btn.setToolTip("Delete speaker" if not is_unknown else "Delete all 'Unknown' transcript lines")
-            del_btn.setFixedSize(22, 22)
+            del_btn.setFixedSize(18, 18)
             if is_unknown:
                 del_btn.setEnabled(True)
                 del_btn.clicked.connect(lambda checked=False: self.delete_unknown_speaker())
@@ -150,6 +150,7 @@ class ParticipantsDialog(QDialog):
             name_edit.setProperty("diarization_label", diarization_label)
             name_edit.setEnabled(not is_unknown)
             name_edit.editingFinished.connect(lambda ne=name_edit: self.handle_speaker_name_editing_finished(ne))
+            name_edit.setMinimumHeight(18)
             
             # Setup QCompleter for speaker name suggestions
             completer = QCompleter(self._global_speakers_cache, name_edit)
@@ -186,8 +187,8 @@ class ParticipantsDialog(QDialog):
             merge_checkbox.setEnabled(not is_unknown)
             merge_checkbox.toggled.connect(lambda checked, s_id=speaker_id: self.handle_merge_checkbox(s_id, checked))
             # Add to grid
-            self.grid.addWidget(play_btn, idx, 0)
-            self.grid.addWidget(del_btn, idx, 1)
+            self.grid.addWidget(play_btn, idx, 0, alignment=Qt.AlignmentFlag.AlignCenter)
+            self.grid.addWidget(del_btn, idx, 1, alignment=Qt.AlignmentFlag.AlignCenter)
 
             name_label_text = name
             if global_speaker_name:
@@ -206,8 +207,8 @@ class ParticipantsDialog(QDialog):
                 # Add a stretch or empty label to keep alignment if some have icon and others don't
                 name_layout.addStretch(1)
 
-            self.grid.addLayout(name_layout, idx, 2)
-            self.grid.addWidget(merge_checkbox, idx, 3)
+            self.grid.addLayout(name_layout, idx, 2, alignment=Qt.AlignmentFlag.AlignCenter)
+            self.grid.addWidget(merge_checkbox, idx, 3, alignment=Qt.AlignmentFlag.AlignCenter)
             self.speaker_widgets[speaker_id] = {
                 'play_btn': play_btn,
                 'del_btn': del_btn,
