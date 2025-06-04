@@ -114,35 +114,59 @@ def update_recording_status(recording_id: str, status: str):
 def delete_recording(recording_id: str):
     """Deletes a recording entry from the database by its ID and removes associated transcript files."""
     recording_id = str(recording_id)
+    logger.info(f"db_ops.delete_recording called for ID: {recording_id}")
     sql = 'DELETE FROM recordings WHERE id = ?'
     try:
         # Get file paths before deleting from DB
         rec = get_recording_by_id(recording_id)
-        raw_path = rec.get('raw_transcript_path') if rec else None
-        diarized_path = rec.get('diarized_transcript_path') if rec else None
-        audio_path = rec.get('audio_path') if rec else None
+        if not rec:
+            logger.warning(f"db_ops.delete_recording: Recording ID {recording_id} not found in database.")
+            return False
+
+        raw_path = rec.get('raw_transcript_path')
+        diarized_path = rec.get('diarized_transcript_path')
+        audio_path = rec.get('audio_path')
+        
+        logger.info(f"db_ops.delete_recording: For ID {recording_id}, found audio_path: {audio_path}, raw_transcript_path: {raw_path}, diarized_transcript_path: {diarized_path}")
+
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(sql, (recording_id,))
             conn.commit()
             if cursor.rowcount == 0:
-                logger.warning(f"Attempted to delete non-existent recording ID: {recording_id}")
-                return False
+                logger.warning(f"db_ops.delete_recording: Attempted to delete non-existent recording ID: {recording_id} from DB (was present moments before?).")
+                # Even if DB delete fails unexpectedly, try to remove files if paths were fetched
             else:
-                logger.info(f"Deleted recording ID {recording_id} from database.")
-                # Remove associated files
-                for path in [raw_path, diarized_path, audio_path]:
-                    if path:
-                        abs_path = from_project_relative_path(path)
-                        if os.path.exists(abs_path):
-                            try:
-                                os.remove(abs_path)
-                                logger.info(f"Deleted file: {abs_path}")
-                            except Exception as e:
-                                logger.warning(f"Failed to delete file {abs_path}: {e}")
-                return True
+                logger.info(f"db_ops.delete_recording: Successfully deleted recording ID {recording_id} from database.")
+
+            # Remove associated files
+            files_to_delete = {"audio file": audio_path, "raw transcript": raw_path, "diarized transcript": diarized_path}
+            all_files_deleted_successfully = True
+
+            for file_type, path in files_to_delete.items():
+                if path:
+                    abs_path = from_project_relative_path(path)
+                    logger.info(f"db_ops.delete_recording: Attempting to delete {file_type}: {abs_path} for recording ID {recording_id}")
+                    if os.path.exists(abs_path):
+                        try:
+                            logger.debug(f"db_ops.delete_recording: Calling os.remove() for {abs_path}")
+                            os.remove(abs_path)
+                            logger.info(f"db_ops.delete_recording: Successfully deleted {file_type}: {abs_path}")
+                        except Exception as e:
+                            logger.error(f"db_ops.delete_recording: Failed to delete {file_type} {abs_path}: {e}", exc_info=True)
+                            all_files_deleted_successfully = False
+                    else:
+                        logger.warning(f"db_ops.delete_recording: {file_type} path {abs_path} does not exist, cannot delete.")
+                else:
+                    logger.debug(f"db_ops.delete_recording: No path for {file_type} for recording ID {recording_id}, skipping deletion.")
+            
+            return cursor.rowcount > 0 and all_files_deleted_successfully
+
     except sqlite3.Error as e:
-        logger.error(f"Database error deleting recording ID {recording_id}: {e}", exc_info=True)
+        logger.error(f"db_ops.delete_recording: Database error for recording ID {recording_id}: {e}", exc_info=True)
+        return False
+    except Exception as e:
+        logger.error(f"db_ops.delete_recording: Unexpected error for recording ID {recording_id}: {e}", exc_info=True)
         return False
 
 def update_recording_paths(recording_id: str, raw_transcript_path: str | None = None, diarized_transcript_path: str | None = None):

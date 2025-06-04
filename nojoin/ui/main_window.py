@@ -281,6 +281,7 @@ class MainWindow(QMainWindow):
         self.view_toggle_button = None
         self.notes_undo_button = None
         self.notes_redo_button = None
+        self.currently_selected_recording_id = None # Initialize the attribute
         # --- End robust early attribute init ---
         self.setWindowTitle("Nojoin")
         self.setGeometry(100, 100, 1200, 800)
@@ -1252,47 +1253,66 @@ class MainWindow(QMainWindow):
              QMessageBox.warning(self, "Invalid Name", "Recording name cannot be empty.")
 
     def delete_selected_recording(self, recording_id, recording_data):
-        """Handles deletion of the selected recording."""
-        str_recording_id = str(recording_id) # Ensure string ID
-        # Always allow deletion, but warn if processing
-        status = recording_data.get('status', '').lower()
-        is_processing = status == 'processing'
-        worker = self.processing_workers.get(str_recording_id)
-        warning_msg = f"Are you sure you want to permanently delete recording '{recording_data.get('name', f'ID {recording_id}')}'?\nThis will also delete the associated audio file and cannot be undone."
-        if is_processing:
-            warning_msg = ("This recording is currently being processed. Deleting it will stop processing and remove all associated data.\n\n" + warning_msg)
-        reply = QMessageBox.question(self,
-                                   "Confirm Delete",
-                                   warning_msg,
-                                   QMessageBox.Yes | QMessageBox.No,
-                                   QMessageBox.No)
-
+        logger.info(f"delete_selected_recording called for ID: {recording_id}, Data: {recording_data}")
+        reply = QMessageBox.question(self, "Delete Recording", 
+                                     f"Are you sure you want to delete the recording: '{recording_data.get('name', recording_id)}'?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
-            logger.info(f"Confirmed deletion for recording ID: {recording_id}")
-            # Cancel processing worker if running
-            if worker:
-                logger.info(f"Cancelling processing worker for recording ID: {recording_id}")
-                worker.request_cancel()
-                self.processing_workers.pop(str_recording_id, None)
-            audio_path = recording_data.get('audio_path')
-            abs_audio_path = from_project_relative_path(audio_path) if audio_path else None
-            if db_ops.delete_recording(recording_id):
-                logger.info(f"Successfully deleted recording ID {recording_id} from database.")
-                if abs_audio_path and os.path.exists(abs_audio_path):
-                    try:
-                        os.remove(abs_audio_path)
-                        logger.info(f"Successfully deleted audio file: {abs_audio_path}")
-                    except OSError as e:
-                        logger.error(f"Error deleting audio file {abs_audio_path}: {e}")
-                        QMessageBox.warning(self, "File Deletion Error", f"Could not delete the audio file:\n{abs_audio_path}\n\nPlease remove it manually.")
-                self.load_recordings()
-                self.meetings_list_widget.clearSelection()
-                self.meeting_notes_edit.clear()
+            # Stop playback if this recording is currently playing or loaded
+            current_audio_path = self.playback_controller.audio_path
+            db_audio_path_relative = recording_data.get('audio_path')
+            
+            logger.info(f"Current playback audio path: {current_audio_path}")
+            logger.info(f"Recording to delete audio path (relative): {db_audio_path_relative}")
+
+            if db_audio_path_relative:
+                db_audio_path_abs = from_project_relative_path(db_audio_path_relative)
+                logger.info(f"Recording to delete audio path (absolute): {db_audio_path_abs}")
+                if current_audio_path and os.path.normpath(current_audio_path) == os.path.normpath(db_audio_path_abs):
+                    logger.info(f"Recording {recording_id} is currently loaded in playback_controller. Stopping playback.")
+                    self.playback_controller.stop() # Ensure playback is stopped
+                    logger.info(f"Playback_controller stopped for {recording_id}.")
             else:
-                logger.error(f"Failed to delete recording ID {recording_id} from database.")
-                QMessageBox.critical(self, "Database Error", "Failed to delete the recording from the database.")
+                    logger.info(f"Recording {recording_id} is NOT currently loaded in playback_controller. No stop needed for main player.")
         else:
-            logger.info(f"Deletion cancelled for recording ID: {recording_id}")
+                logger.warning(f"No audio_path found in recording_data for {recording_id} during delete operation.")
+
+        logger.info(f"Attempting to delete recording {recording_id} from database and file system.")
+        success = db_ops.delete_recording(recording_id)
+        if success:
+                logger.info(f"Successfully deleted recording {recording_id}.")
+                QMessageBox.information(self, "Success", "Recording deleted successfully.")
+                self.load_recordings()  # Refresh the list
+                
+                # Check if the deleted recording was the one displayed
+                if self.currently_selected_recording_id == recording_id:
+                    self._clear_meeting_details() # Clear details panel
+                    self.currently_selected_recording_id = None # No recording is selected now
+                
+                # If meetings list is now empty, ensure no selection state
+                if self.meetings_list_widget.count() == 0:
+                    self._clear_meeting_details() # Clear details panel
+                    self.currently_selected_recording_id = None
+                    # Explicitly disable playback controls and other relevant UI elements
+                    self.play_button.setEnabled(False)
+                    self.pause_button.setEnabled(False)
+                    self.stop_button.setEnabled(False)
+                    self.seek_slider.setEnabled(False)
+                    self.seek_slider.setValue(0)
+                    self.update_seek_time_label(0, 0)
+                    self.selected_audio_path = None # Clear selected audio path
+                    self.chat_input.setEnabled(False)
+                    self.chat_send_button.setEnabled(False)
+                    self.clear_chat_button.setEnabled(False)
+                elif not self.meetings_list_widget.selectedItems():
+                    # If list is not empty, but nothing is selected (e.g. after deleting the only item)
+                    # The handle_meeting_selection_changed should take care of resetting UI
+                    # but explicitly setting currently_selected_recording_id is good practice.
+                    self.currently_selected_recording_id = None
+
+        else:
+                logger.error(f"Failed to delete recording {recording_id}.")
+                QMessageBox.critical(self, "Error", "Failed to delete recording. Check logs for details.")
 
     def _context_view_edit_meeting_notes(self, recording_id, recording_data):
         # This function is primarily for when user right-clicks and wants to ensure notes are visible.
@@ -1619,26 +1639,28 @@ class MainWindow(QMainWindow):
     def handle_meeting_selection_changed(self):
         selected_items = self.meetings_list_widget.selectedItems()
         if not selected_items:
-            self.meeting_context_display.clear()
-            self._update_center_panel_content() # Handles notes/transcript area
-            # --- Clear chat display and history on no selection ---
-            self.current_chat_history = []
-            if hasattr(self, 'chat_display_area'):
-                self.chat_display_area.clear()
-            # --- Disable Clear Chat button when no meeting selected ---
-            if hasattr(self, 'clear_chat_button'):
-                self.clear_chat_button.setEnabled(False)
+            self._clear_meeting_details() # Use the centralized clearing method
+            # self.currently_selected_recording_id = None # Already set in _clear_meeting_details
+            # self.meeting_context_display.clear() # Handled by _clear_meeting_details
+            # self._update_center_panel_content() # Handled by _clear_meeting_details
+            # # --- Clear chat display and history on no selection --- # Handled by _clear_meeting_details
+            # self.current_chat_history = [] # Handled by _clear_meeting_details
+            # if hasattr(self, 'chat_display_area'): # Handled by _clear_meeting_details
+            #     self.chat_display_area.clear() # Handled by _clear_meeting_details
+            # # --- Disable Clear Chat button when no meeting selected --- # Handled by _clear_meeting_details
+            # if hasattr(self, 'clear_chat_button'): # Handled by _clear_meeting_details
+            #     self.clear_chat_button.setEnabled(False) # Handled by _clear_meeting_details
             return
         item = selected_items[0]
         recording_id = item.data(Qt.UserRole)
+        self.currently_selected_recording_id = recording_id # Set the new selected ID
         recording_data = db_ops.get_recording_by_id(recording_id)
         if not recording_data:
-            self.meeting_context_display.clear()
-            self._update_center_panel_content() # Handles notes/transcript area
-            # --- Clear chat display and history on invalid selection ---
-            self.current_chat_history = []
-            if hasattr(self, 'chat_display_area'):
-                self.chat_display_area.clear()
+            self._clear_meeting_details() # Use the centralized clearing method if data fetch fails
+            # self.currently_selected_recording_id = None # Reset if data fetch fails - handled by _clear_meeting_details
+            # self.meeting_context_display.clear() # Handled by _clear_meeting_details
+            # self._update_center_panel_content() # Handles notes/transcript area - Handled by _clear_meeting_details
+            # # --- Clear chat display and history on invalid selection --- # Handled by _clear_meeting_details
             return
         # --- Context Info ---
         created_at = recording_data.get("created_at")
@@ -3204,6 +3226,61 @@ class MainWindow(QMainWindow):
                         logger.warning("Could not import ParticipantsDialog for type checking in _handle_global_speakers_updated.")
                     except Exception as e:
                         logger.error(f"Error trying to refresh ParticipantsDialog cache: {e}")
+
+    def _clear_meeting_details(self):
+        """Clears all UI elements related to a selected meeting."""
+        logger.info("_clear_meeting_details called")
+        self.currently_selected_recording_id = None
+
+        # Clear context display
+        if hasattr(self, 'meeting_context_display'):
+            self.meeting_context_display.clear()
+
+        # Clear tags display
+        if hasattr(self, 'meeting_tags_layout'):
+            while self.meeting_tags_layout.count():
+                item = self.meeting_tags_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+        
+        # Clear/Reset notes/transcript panel (this will show placeholders)
+        # _update_center_panel_content handles this based on currently_selected_recording_id being None
+        self._update_center_panel_content()
+
+        # Clear chat history and display
+        self.current_chat_history = []
+        if hasattr(self, 'chat_display_area'):
+            self.chat_display_area.clear()
+        if hasattr(self, 'chat_input'): # Ensure chat_input exists
+            self.chat_input.clear()
+            self.chat_input.setEnabled(False)
+        if hasattr(self, 'chat_send_button'):
+            self.chat_send_button.setEnabled(False)
+        if hasattr(self, 'clear_chat_button'):
+            self.clear_chat_button.setEnabled(False)
+
+        # Stop playback and reset playback controls
+        if hasattr(self, 'playback_controller'):
+            self.playback_controller.stop() # This should emit signals that reset buttons
+        
+        # Explicitly reset playback UI elements for robustness
+        self.selected_audio_path = None
+        self._playback_duration = 0.0
+        if hasattr(self, 'play_button'): self.play_button.setEnabled(False)
+        if hasattr(self, 'pause_button'): self.pause_button.setEnabled(False)
+        if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
+        if hasattr(self, 'seek_slider'): 
+            self.seek_slider.setEnabled(False)
+            self.seek_slider.setValue(0)
+        if hasattr(self, 'seek_time_label'): self.update_seek_time_label(0,0)
+        
+        # Disable transcribe button
+        if hasattr(self, 'transcribe_button'):
+            self.transcribe_button.setEnabled(False)
+            self.transcribe_button.setToolTip("Select a recording to transcribe")
+
+        logger.info("_clear_meeting_details finished")
 
 # --- Tag Chip Widget ---
 class TagChip(QLabel):

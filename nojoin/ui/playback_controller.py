@@ -74,6 +74,16 @@ class PlaybackController(QObject):
                 self.playback.stop()
             self._timer.stop()
             self._snippet_end_time = None  # Reset snippet end time
+            
+            # Re-initialize Playback to ensure file release
+            self.playback = Playback()
+            # Reset audio path and duration as the file is no longer loaded
+            self.audio_path = None
+            self.duration = 0.0
+            # Reconnect volume if it was set previously
+            if hasattr(self, '_volume'):
+                self.playback.set_volume(self._volume)
+
             self.playback_stopped.emit()
         except Exception as e:
             logger.error(f"PlaybackController error in stop: {e}", exc_info=True)
@@ -96,7 +106,7 @@ class PlaybackController(QObject):
                 self.playback.set_volume(volume_float)
             except Exception as e:
                 logger.error(f"PlaybackController error in set_volume: {e}", exc_info=True)
-        self._volume = volume_float
+        self._volume = volume_float # Store volume so it can be reapplied if playback is re-initialized
 
     @property
     def is_playing(self):

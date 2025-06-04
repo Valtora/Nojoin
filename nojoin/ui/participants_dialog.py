@@ -30,10 +30,10 @@ class ParticipantsDialog(QDialog):
         self._merge_mode = False
         self._merge_selected = set()
         self.snippet_player = PlaybackController()
-        self._pending_name_changes = {}  # speaker_id -> (diarization_label, new_name)
         self._playing_speaker_id = None  # Track which speaker is currently playing
         self._speakers_modified = False  # Track if any changes were made
         self._global_speakers_cache = [] # Cache for global speaker names for completer
+        self._just_linked_via_completer = None # Speaker_id that was just auto-linked
         self._load_global_speakers_cache() # Load once on init
         self._init_ui()
 
@@ -155,6 +155,8 @@ class ParticipantsDialog(QDialog):
             completer = QCompleter(self._global_speakers_cache, name_edit)
             completer.setCaseSensitivity(Qt.CaseInsensitive)
             completer.setFilterMode(Qt.MatchContains)
+            # Connect completer activated signal for auto-linking
+            completer.activated[str].connect(lambda text, sid=speaker_id, ne=name_edit: self._handle_completer_activated(text, sid, ne))
             name_edit.setCompleter(completer)
             
             # Merge checkbox
@@ -211,8 +213,100 @@ class ParticipantsDialog(QDialog):
                 'del_btn': del_btn,
                 'name_edit': name_edit_widget, # Use the actual QLineEdit widget here
                 'merge_checkbox': merge_checkbox,
-                'global_indicator': global_indicator if global_speaker_name else None # Store for potential updates
+                'global_indicator': global_indicator if global_speaker_name else None, # Store for potential updates
+                'name_layout': name_layout # Store the layout itself
             }
+
+    def _refresh_speaker_row_ui(self, speaker_id):
+        logger.debug(f"Refreshing UI for speaker_id: {speaker_id}")
+        if speaker_id not in self.speaker_widgets:
+            logger.warning(f"_refresh_speaker_row_ui: speaker_id {speaker_id} not in self.speaker_widgets.")
+            return
+
+        widgets = self.speaker_widgets[speaker_id]
+        name_edit_widget = widgets['name_edit']
+        name_layout = widgets['name_layout'] # Get the QHBoxLayout for the name and indicator
+
+        speaker_full_info = db_ops.get_speaker_with_global_info(speaker_id)
+        if not speaker_full_info:
+            logger.warning(f"_refresh_speaker_row_ui: Could not get full info for speaker_id {speaker_id}.")
+            # Clear global indicator if speaker info is gone
+            if widgets.get('global_indicator'):
+                widgets['global_indicator'].setVisible(False)
+                widgets['global_indicator'].setToolTip("")
+            return
+
+        # Update name in QLineEdit (though it should be current from edit/completer)
+        current_name_in_db = speaker_full_info.get('name', '')
+        if name_edit_widget.text() != current_name_in_db:
+            name_edit_widget.setText(current_name_in_db)
+
+        global_speaker_name = speaker_full_info.get('global_speaker_name')
+
+        # Remove old indicator if it exists
+        if widgets.get('global_indicator'):
+            widgets['global_indicator'].deleteLater()
+            widgets['global_indicator'] = None
+            # Remove it from layout if it was there - by finding it
+            for i in range(name_layout.count()):
+                item = name_layout.itemAt(i)
+                if isinstance(item.widget(), QLabel) and "Linked to Global Speaker" in item.widget().toolTip():
+                    name_layout.takeAt(i) # Remove item from layout
+                    break # Assuming only one such indicator
+
+        if global_speaker_name:
+            if not widgets.get('global_indicator'): # Create new one if needed
+                global_indicator = QLabel("<small>🔗</small>")
+                global_indicator.setToolTip(f"Linked to Global Speaker: {global_speaker_name}")
+                name_layout.addWidget(global_indicator) # Add to the existing name_layout
+                widgets['global_indicator'] = global_indicator
+            else: # Update existing one
+                widgets['global_indicator'].setToolTip(f"Linked to Global Speaker: {global_speaker_name}")
+                widgets['global_indicator'].setVisible(True)
+        else: # No global link
+            # Ensure any stretch is at the end or manage spacing
+            # If indicator was removed, a stretch might be needed if not already last
+            if name_layout.itemAt(name_layout.count() -1).spacerItem() is None : # if last item is not a spacer
+                name_layout.addStretch(1)
+
+
+        logger.debug(f"UI refreshed for speaker_id: {speaker_id}. Global name: {global_speaker_name}")
+
+
+    def _handle_completer_activated(self, selected_text, speaker_id, name_edit_widget):
+        logger.info(f"Completer activated for speaker_id {speaker_id} with text: '{selected_text}'")
+
+        # Ensure the line edit displays the selected text
+        name_edit_widget.setText(selected_text)
+
+        global_speaker_match = db_ops.get_global_speaker_by_name(selected_text)
+
+        if global_speaker_match:
+            # Link the local speaker to the global one
+            db_ops.link_speaker_to_global(speaker_id, global_speaker_match['id'])
+            # Update the local speaker's name to match the global one, and save to DB
+            db_ops.update_speaker_name(speaker_id, selected_text, self.recording_id)
+            
+            logger.info(f"Auto-linked speaker ID {speaker_id} to global '{selected_text}' (ID: {global_speaker_match['id']}) and updated local name via completer.")
+            
+            self._just_linked_via_completer = speaker_id  # Flag that completer handled linking
+            self._speakers_modified = True
+            self._update_window_title()
+            self._refresh_speaker_row_ui(speaker_id)
+            self.participants_updated.emit(self.recording_id) # Notify main window of change
+
+            # Refresh global speaker cache and all completer models
+            # This is important if linking might implicitly create/change global speaker list,
+            # or just to ensure all other completers are up-to-date.
+            self._load_global_speakers_cache()
+            for sp_id_key, sp_widgets_val in self.speaker_widgets.items():
+                if 'name_edit' in sp_widgets_val and sp_widgets_val['name_edit'].completer():
+                    sp_widgets_val['name_edit'].completer().model().setStringList(self._global_speakers_cache)
+        else:
+            logger.warning(f"Completer selected text '{selected_text}' but no matching global speaker found. This should not happen if cache is correct.")
+            # If this case occurs, it might mean the cache is stale or there's an issue.
+            # For now, we'll let handle_speaker_name_editing_finished deal with it as a new name.
+            self._just_linked_via_completer = None # Ensure it's not flagged as completer-linked
 
     def toggle_merge_mode(self, checked):
         self._merge_mode = checked
@@ -299,65 +393,86 @@ class ParticipantsDialog(QDialog):
             self._playing_speaker_id = None
 
     def handle_speaker_name_editing_finished(self, name_edit_widget: QLineEdit):
-        """Handles logic when a speaker name QLineEdit finishes editing."""
+        """Handles logic when a speaker name QLineEdit finishes editing. Auto-saves changes."""
         new_name = name_edit_widget.text().strip()
         speaker_id = name_edit_widget.property("speaker_id")
-        diarization_label = name_edit_widget.property("diarization_label")
+        # diarization_label = name_edit_widget.property("diarization_label") # No longer needed for pending
+
+        logger.debug(f"handle_speaker_name_editing_finished for SID: {speaker_id}, new_name: '{new_name}'")
 
         if not new_name or not speaker_id:
-            # If name cleared, or invalid speaker_id, revert to original or do nothing
-            # For now, let's fetch original name and revert if new_name is empty
-            # This needs robust handling of what "original" means (from DB at dialog load)
+            logger.debug("Name is empty or speaker_id missing, reverting/doing nothing.")
+            # Optionally, revert to original name if new_name is empty
+            # For now, if user clears the name, it might become an empty name.
+            # Consider if this should revert to original diarization label or previous name.
             return
 
-        # Check against existing local name for this speaker_id to see if it actually changed
+        # Get original name from DB to see if it actually changed
         original_speaker_data = db_ops.get_speaker_by_id(speaker_id)
-        original_name = original_speaker_data['name'] if original_speaker_data else diarization_label
+        original_name_from_db = original_speaker_data['name'] if original_speaker_data else ""
 
-        if new_name == original_name:
-            # If name hasn't changed from what's in DB, clear from pending and do nothing further
-            if speaker_id in self._pending_name_changes:
-                del self._pending_name_changes[speaker_id]
+        # If name hasn't changed from what's in DB, do nothing further unless completer just acted
+        if new_name == original_name_from_db and self._just_linked_via_completer != speaker_id:
+            logger.debug(f"Name '{new_name}' for SID {speaker_id} is same as in DB. No change.")
             return
 
-        # Name has changed from original, stage it for saving
-        self._pending_name_changes[speaker_id] = (diarization_label, new_name)
+        # --- Auto-save name to DB --- (Moved from _on_accept)
+        db_ops.update_speaker_name(speaker_id, new_name, self.recording_id)
+        logger.info(f"Auto-saved name for speaker ID {speaker_id} to '{new_name}'. Recording ID: {self.recording_id}")
         self._speakers_modified = True
         self._update_window_title()
+        self.participants_updated.emit(self.recording_id) # Notify main window of name change
 
-        # Now, handle global speaker linking/creation logic
-        # Check if new_name matches an existing global speaker
+        # --- Global Speaker Linking/Creation Logic --- 
+        # Skip if completer just handled linking for this speaker_id and the name matches the linked global name
+        if self._just_linked_via_completer == speaker_id:
+            global_info_after_completer = db_ops.get_speaker_with_global_info(speaker_id)
+            if global_info_after_completer and global_info_after_completer.get('global_speaker_name') == new_name:
+                logger.debug(f"Global linking for SID {speaker_id} was handled by completer. Skipping prompts.")
+                self._just_linked_via_completer = None # Reset flag
+                self._refresh_speaker_row_ui(speaker_id) # Ensure UI is up-to-date
+                return 
+        self._just_linked_via_completer = None # Reset flag if not returned above
+
         global_speaker_match = db_ops.get_global_speaker_by_name(new_name)
+        current_link_info = db_ops.get_speaker_with_global_info(speaker_id)
+        is_already_linked_to_this_global = False
+        if global_speaker_match and current_link_info:
+            is_already_linked_to_this_global = current_link_info.get('global_speaker_id') == global_speaker_match['id']
 
-        if global_speaker_match:
-            # Exact match found in global library
+        if global_speaker_match and not is_already_linked_to_this_global:
             reply = QMessageBox.question(self, "Link to Global Speaker?", 
                                          f"The name '{new_name}' exists in the Global Speaker Library. Would you like to link this participant to '{global_speaker_match['name']}'?",
                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
             if reply == QMessageBox.Yes:
                 db_ops.link_speaker_to_global(speaker_id, global_speaker_match['id'])
-                logger.info(f"Linked local speaker ID {speaker_id} to global speaker ID {global_speaker_match['id']} ('{global_speaker_match['name']}')")
-                # Refresh completer cache in case this was a new global name added via another dialog instance (unlikely here but good practice)
+                logger.info(f"Linked local speaker ID {speaker_id} to global '{new_name}' (ID: {global_speaker_match['id']}).")
                 self._load_global_speakers_cache()
-                for _, widgets in self.speaker_widgets.items():
-                    if widgets['name_edit'].completer():
-                        widgets['name_edit'].completer().model().setStringList(self._global_speakers_cache)
-        else:
-            # No exact match in global library
-            reply = QMessageBox.question(self, "Add to Global Speakers?",
-                                         f"The name '{new_name}' is not in the Global Speaker Library. Would you like to add it and link this participant?",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-            if reply == QMessageBox.Yes:
-                global_id = db_ops.add_global_speaker(new_name)
-                if global_id:
-                    db_ops.link_speaker_to_global(speaker_id, global_id)
-                    logger.info(f"Added '{new_name}' to Global Speaker Library (ID: {global_id}) and linked local speaker ID {speaker_id}.")
-                    self._load_global_speakers_cache() # Refresh cache
-                    for _, widgets in self.speaker_widgets.items():
-                         if widgets['name_edit'].completer():
-                            widgets['name_edit'].completer().model().setStringList(self._global_speakers_cache)
-                else:
-                    QMessageBox.warning(self, "Error", f"Could not add '{new_name}' to the Global Speaker Library.")
+                for _, widgets_dict in self.speaker_widgets.items(): # Use a different var name
+                    if widgets_dict['name_edit'].completer():
+                        widgets_dict['name_edit'].completer().model().setStringList(self._global_speakers_cache)
+        elif not global_speaker_match:
+            # Do not prompt to add to global library if name is like "Speaker X" or "SPEAKER_XX"
+            import re
+            if not re.match(r"^(SPEAKER|Speaker)[_ ]?\d+$", new_name):
+                reply = QMessageBox.question(self, "Add to Global Speakers?",
+                                            f"The name '{new_name}' is not in the Global Speaker Library. Would you like to add it and link this participant?",
+                                            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                if reply == QMessageBox.Yes:
+                    global_id = db_ops.add_global_speaker(new_name)
+                    if global_id:
+                        db_ops.link_speaker_to_global(speaker_id, global_id)
+                        logger.info(f"Added '{new_name}' to Global Speaker Library (ID: {global_id}) and linked local speaker ID {speaker_id}.")
+                        self._load_global_speakers_cache()
+                        for _, widgets_dict in self.speaker_widgets.items(): # Use a different var name
+                            if widgets_dict['name_edit'].completer():
+                                widgets_dict['name_edit'].completer().model().setStringList(self._global_speakers_cache)
+                    else:
+                        QMessageBox.warning(self, "Error", f"Could not add '{new_name}' to the Global Speaker Library.")
+            else:
+                logger.debug(f"New name '{new_name}' matches generic pattern. Skipping 'Add to Global' prompt.")
+        
+        self._refresh_speaker_row_ui(speaker_id) # Refresh UI after potential linking changes
 
     def delete_speaker(self, speaker_id):
         reply = QMessageBox.question(self, "Delete Speaker", "Are you sure you want to delete this speaker?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -443,9 +558,10 @@ class ParticipantsDialog(QDialog):
         
         ids_merged_away = [sid for sid in selected_ids if sid != target_speaker_id]
         for merged_id in ids_merged_away:
-            if merged_id in self._pending_name_changes:
-                del self._pending_name_changes[merged_id]
-                logger.info(f"Removed pending name change for speaker ID {merged_id} as it was merged away.")
+            # if merged_id in self._pending_name_changes: # _pending_name_changes is removed for names
+            #     del self._pending_name_changes[merged_id]
+            #     logger.info(f"Removed pending name change for speaker ID {merged_id} as it was merged away.")
+            pass # No action needed for pending name changes as they are auto-saved
         
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers() 
@@ -469,7 +585,7 @@ class ParticipantsDialog(QDialog):
             # Add to global library if it's not a generic label (like SPEAKER_XX)
             # and not already processed (to avoid multiple popups for the same new name if it's used for multiple local speakers)
             import re
-            if not re.match(r"^(SPEAKER|Speaker)[_ ]?\\d+$", new_name) and new_name not in names_added_to_global:
+            if not re.match(r"^(SPEAKER|Speaker)[_ ]?\d+$", new_name) and new_name not in names_added_to_global:
                 existing_global = db_ops.get_global_speaker_by_name(new_name)
                 if not existing_global:
                     global_id = db_ops.add_global_speaker(new_name)
@@ -492,7 +608,7 @@ class ParticipantsDialog(QDialog):
 
         self._pending_name_changes.clear()
         
-        if self._speakers_modified: # Check if any modifications were made (local or global)
+        if self._speakers_modified: # Check if any modifications were made (local or global names, merges, deletes)
             self.participants_updated.emit(self.recording_id)
             if self.regenerate_notes_checkbox.isChecked():
                 self.regenerate_notes_requested.emit(self.recording_id)
@@ -506,7 +622,7 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         self._playing_speaker_id = None
         # Clear pending changes on cancel
-        self._pending_name_changes.clear()
+        # self._pending_name_changes.clear() # No longer used for names, and attribute removed
         self._speakers_modified = False # Reset on cancel
         self._update_window_title() # Update title to remove asterisk
         super().reject()
@@ -532,7 +648,7 @@ class ParticipantsDialog(QDialog):
         else:
             event.accept()
         # Clear pending changes on close
-        self._pending_name_changes.clear()
+        # self._pending_name_changes.clear() # No longer used for names, and attribute removed
         # self._speakers_modified = False # Already handled by save/discard/no changes logic
         # self._update_window_title() # Already handled
         super().closeEvent(event) # Call super only if event is accepted
