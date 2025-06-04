@@ -37,6 +37,19 @@ class ParticipantsDialog(QDialog):
         self._load_global_speakers_cache() # Load once on init
         self._init_ui()
 
+    def _clear_layout(self, layout):
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0) # Take item from layout
+            widget = item.widget()
+            if widget:
+                widget.deleteLater() # Delete widget
+            else:
+                sub_layout = item.layout()
+                if sub_layout:
+                    self._clear_layout(sub_layout) # Recursively clear sub-layout
+
     def _update_window_title(self):
         title = self.original_window_title
         if self._speakers_modified:
@@ -85,13 +98,15 @@ class ParticipantsDialog(QDialog):
         self.layout.addWidget(btn_box)
 
     def _populate_speakers(self):
-        # Remove old widgets
-        while self.grid.count():
-            item = self.grid.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        self.speaker_widgets = {}
+        # Clear existing items from the grid
+        if hasattr(self, 'grid') and self.grid is not None: # Ensure grid exists
+            self._clear_layout(self.grid) # Clear all items from the grid layout
+
+        self.speaker_widgets.clear() # Clear the dictionary tracking widgets
+
+        # Re-fetch speakers as they might have changed due to merge/delete operations
+        self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
+
         for idx, speaker in enumerate(self.speakers):
             diarization_label = speaker['diarization_label']
             speaker_id = speaker['id']
@@ -376,30 +391,67 @@ class ParticipantsDialog(QDialog):
         if len(selected_ids) < 2:
             QMessageBox.warning(self, "Merge Speakers", "Select at least two speakers to merge.")
             return
-        speaker_map = {s['id']: s for s in self.speakers if s['id'] in selected_ids}
-        items = [f"{s['name'] or s['diarization_label']} (ID {sid})" for sid, s in speaker_map.items()]
-        target_idx, ok = QInputDialog.getItem(self, "Select Target Speaker", "Merge into:", items, 0, False)
-        if not ok:
+
+        # Create a list of display items and a mapping from the display item back to speaker_id
+        prospective_targets = [] 
+
+        for speaker_id_to_display in selected_ids:
+            base_speaker_data = next((s for s in self.speakers if s['id'] == speaker_id_to_display), None)
+            
+            if not base_speaker_data:
+                logger.warning(f"Could not find base data for selected speaker ID {speaker_id_to_display} during merge prep.")
+                continue
+
+            current_name_from_speakers_list = base_speaker_data.get('name') or base_speaker_data.get('diarization_label')
+
+            if speaker_id_to_display in self._pending_name_changes:
+                _original_diarization_label, new_display_name = self._pending_name_changes[speaker_id_to_display]
+            else:
+                new_display_name = current_name_from_speakers_list
+            
+            display_item_string = f"{new_display_name} (ID {speaker_id_to_display})"
+            prospective_targets.append({'text': display_item_string, 'id': speaker_id_to_display})
+
+        if not prospective_targets:
+            QMessageBox.critical(self, "Merge Speakers", "Could not prepare list of speakers for merging.")
             return
-        for sid, s in speaker_map.items():
-            label = f"{s['name'] or s['diarization_label']} (ID {sid})"
-            if label == target_idx:
-                target_speaker_id = sid
+
+        item_texts_for_dialog = [pt['text'] for pt in prospective_targets]
+
+        selected_item_text, ok = QInputDialog.getItem(self, "Select Target Speaker", 
+                                                      "Merge into:", item_texts_for_dialog, 0, False)
+        if not ok or not selected_item_text:
+            return 
+
+        target_speaker_id = None
+        for pt in prospective_targets:
+            if pt['text'] == selected_item_text:
+                target_speaker_id = pt['id']
                 break
-        else:
-            QMessageBox.warning(self, "Merge Speakers", "Could not determine target speaker.")
+        
+        if target_speaker_id is None:
+            QMessageBox.critical(self, "Merge Speakers", "Could not determine target speaker from selection.")
             return
+        
         success = db_ops.merge_speakers_in_recording(self.recording_id, selected_ids, target_speaker_id)
         if not success:
             QMessageBox.critical(self, "Merge Speakers", "Failed to merge speakers.")
             return
+
         self._speakers_modified = True
         self._update_window_title()
-        self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         
-        # Reset the internal state for selecting speakers to merge for the next operation.
+        ids_merged_away = [sid for sid in selected_ids if sid != target_speaker_id]
+        for merged_id in ids_merged_away:
+            if merged_id in self._pending_name_changes:
+                del self._pending_name_changes[merged_id]
+                logger.info(f"Removed pending name change for speaker ID {merged_id} as it was merged away.")
+        
+        self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
+        self._populate_speakers() 
+        
         self._merge_selected.clear()
-        self.merge_btn.setEnabled(False) # No speakers are selected for merge anymore.
+        self.merge_btn.setEnabled(False) 
         
         self.participants_updated.emit(self.recording_id)
 

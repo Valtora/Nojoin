@@ -1198,7 +1198,9 @@ class MainWindow(QMainWindow):
         if self.is_recording and self.recording_start_time is not None:
             elapsed_seconds = int(time.monotonic() - self.recording_start_time)
             # Format as HH:MM:SS
-            elapsed_time_str = str(timedelta(seconds=elapsed_seconds))
+            hours, remainder = divmod(elapsed_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            elapsed_time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             self.timer_label.setText(elapsed_time_str)
         else:
             # Should not happen if timer is stopped correctly, but reset just in case
@@ -2603,6 +2605,7 @@ class MainWindow(QMainWindow):
             self._generate_meeting_notes_after_relabel(rec_id) 
         
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
+        dlg.participants_updated.connect(self._on_participants_changed)
         dlg.regenerate_notes_requested.connect(on_regenerate_requested)
         result = dlg.exec()
         

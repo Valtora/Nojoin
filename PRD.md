@@ -110,4 +110,4 @@
 - **Audio Preprocessing:** pydub (mono, 16kHz conversion; MP3 input, WAV intermediate)
 - **Processing:** All transcription/diarization is local (no cloud for audio/diarization)
 - **Compute Backend:** CPU and GPU (CUDA via PyTorch) supported
-- **Database:** SQLite (normalized schema for recordings, speakers, `
+- **Database:** SQLite (normalized schema for recordings, speakers)
