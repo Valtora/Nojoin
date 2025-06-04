@@ -24,3 +24,7 @@
 # Config file
 /config.json
 nojoin/config.json
+
+# Packaging files
+packaging/*
+build_installer.bat
