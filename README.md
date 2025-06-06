@@ -28,8 +28,6 @@ I know there are similar free solutions out there which are all great and quirky
     # Windows (Terminal/PowerShell)
     .venv\Scripts\Activate
 
-    # Mac
-    source .venv/bin/activate
 
 4.  **Install dependencies:**
      
