@@ -13,6 +13,8 @@ jobs:
   sync-wiki-job:
     runs-on: ubuntu-latest
     name: Sync Documentation to Wiki
+    permissions:
+      contents: write
     steps:
       # Step 1: Check out the main repository to access the 'docs' folder
       - name: Checkout main repository
