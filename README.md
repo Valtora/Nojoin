@@ -24,7 +24,6 @@ Nojoin is a Python based desktop application for recording meeting audio (system
     # Windows (Terminal/PowerShell)
     .venv\Scripts\Activate
 
-
 4.  **Install dependencies:**
      
      Install the correct torch, torchaudio, and torchvision for your system. I've tested on Windows 11 amd64 architecture with CUDA 12.8.x and Python 3.11.9. I've also tested without CUDA and it should work fine, albeit with inferior performance in terms of transcription and diarization times.
