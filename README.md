@@ -6,6 +6,22 @@ This project was created initially for personal use only but I wanted to offer i
 
 I know there are similar free solutions out there which are all great and quirky in their own ways, Nojoin is no different. My goal was to have something relatively simple that can be deployed fairly quickly without too complicated of an initial, basic setup.
 
+## ✨ Features
+
+*   **System Audio Recording:** Simultaneously record what you hear (system output) and what you say (microphone input).
+*   **Local-First Transcription:** Uses OpenAI's Whisper to generate accurate transcripts of your recordings, running entirely on your machine.
+*   **Offline Speaker Diarization:** Automatically identifies who spoke when using Pyannote for offline speaker diarization. No cloud connection required for core processing.
+*   **Comprehensive Speaker Management:** Relabel, merge, and manage speakers per recording. Build a global speaker library for consistent naming across all your meetings.
+*   **LLM-Powered Insights:**
+    *   Generate concise, actionable meeting notes and summaries.
+    *   Ask questions about your meeting transcript in a chat-style Q&A interface.
+    *   Supports OpenAI, Google Gemini, and Anthropic models (requires your own API key).
+*   **Powerful Search and Organization:**
+    *   Full-text search across all meeting transcripts.
+    *   Find and replace text within a single transcript or across all of them.
+    *   Organize recordings with custom tags.
+*   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
+
 ## Legal Disclaimer
 
 **Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
