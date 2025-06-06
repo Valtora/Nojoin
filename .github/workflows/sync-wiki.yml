@@ -1,0 +1,30 @@
+name: Sync Docs to Wiki
+
+# This action triggers on pushes to the 'main' branch, but only if
+# changes were made in the 'docs' directory.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+
+jobs:
+  sync-wiki-job:
+    runs-on: ubuntu-latest
+    name: Sync Documentation to Wiki
+    steps:
+      # Step 1: Check out the main repository to access the 'docs' folder
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+
+      # Step 2: Use a specialized action to sync the 'docs' folder to the wiki
+      # This action handles cloning the wiki, copying files, committing, and pushing.
+      - name: Sync docs folder to Wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        with:
+          # The GITHUB_TOKEN is automatically provided by GitHub Actions
+          # and has the necessary permissions to write to your repository's wiki.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # The path in your main repository that contains the wiki's markdown files.
+          path: docs 
