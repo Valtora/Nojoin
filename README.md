@@ -6,6 +6,10 @@ This project was created initially for personal use only but I wanted to offer i
 
 I know there are similar free solutions out there which are all great and quirky in their own ways, Nojoin is no different. My goal was to have something relatively simple that can be deployed fairly quickly without too complicated of an initial, basic setup.
 
+## Legal Disclaimer
+
+**Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
+
 ## Setup
 
 1.  **Prerequisites:**
