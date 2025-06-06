@@ -20,9 +20,11 @@ I know there are similar free solutions out there which are all great and quirky
 
 3.  **Create a virtual environment (Recommended):**
     ```bash
+    # Create virtual environment '.venv'
     py -m venv .venv
     
     # Activate the environment
+
     # Windows (Terminal/PowerShell)
     .venv\Scripts\Activate
 
