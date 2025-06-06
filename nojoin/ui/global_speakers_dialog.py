@@ -119,6 +119,13 @@ class GlobalSpeakersManagementDialog(QDialog):
 
         self._all_speakers_cache = [] # For fuzzy searching
 
+    def _reset_ui_after_operation(self):
+        """Resets the UI to a neutral state after a successful operation."""
+        self._load_speakers()
+        self.name_input_edit.clear()
+        # self.speakers_list_widget.clearSelection() is implicitly handled by _load_speakers -> clear()
+        # _update_button_states() is called by _load_speakers(), ensuring a clean state.
+
     def _load_speakers(self):
         self.speakers_list_widget.clear()
         # self.name_input_edit.clear() # Clearing input handled by selection logic
@@ -228,13 +235,7 @@ class GlobalSpeakersManagementDialog(QDialog):
 
         new_id = db_ops.add_global_speaker(name_to_add)
         if new_id:
-            self._load_speakers()
-            # Select the newly added speaker
-            for i in range(self.speakers_list_widget.count()):
-                item = self.speakers_list_widget.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == new_id:
-                    self.speakers_list_widget.setCurrentItem(item)
-                    break
+            self._reset_ui_after_operation()
             self.global_speakers_updated.emit()
             logger.info(f"Added global speaker: '{name_to_add}' (ID: {new_id})")
         else:
@@ -265,13 +266,7 @@ class GlobalSpeakersManagementDialog(QDialog):
             return
 
         if db_ops.update_global_speaker_name(speaker_id, new_name):
-            self._load_speakers()
-            # Reselect the renamed speaker
-            for i in range(self.speakers_list_widget.count()):
-                item = self.speakers_list_widget.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == speaker_id:
-                    self.speakers_list_widget.setCurrentItem(item)
-                    break
+            self._reset_ui_after_operation()
             self.global_speakers_updated.emit()
             logger.info(f"Renamed global speaker ID {speaker_id} from '{original_name}' to '{new_name}'.")
         else:
@@ -296,7 +291,7 @@ class GlobalSpeakersManagementDialog(QDialog):
 
         if reply == QMessageBox.StandardButton.Yes:
             if db_ops.delete_global_speaker(speaker_id):
-                self._load_speakers() # Reload list, selection will be cleared
+                self._reset_ui_after_operation()
                 self.global_speakers_updated.emit()
                 logger.info(f"Deleted global speaker: '{speaker_name}' (ID: {speaker_id})")
             else:
