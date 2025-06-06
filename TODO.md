@@ -1,3 +1,0 @@
-Improve diarization by automatically deleting speaker segments of less than 1 second.
-
-Improve Global Speaker Management dialog to correctly reset UI elements after operations to prevent subsequent operations from taking place on unintended speakers. Currently after performing an operation on a selected speaker it looks like the selected speaker is not 'unselected' and remains the target for any subsequent operations which could result in a user making unintended changes to speakers if they attempt consecuate operations. 
