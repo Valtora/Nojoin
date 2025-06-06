@@ -61,10 +61,10 @@ I know there are similar free solutions out there which are all great and quirky
     ```
 
 5.  **Run Nojoin:**
-    Run while your virtual environment is active:
-    ```bash
-    python nojoin.py
-    ```
+     Run while your virtual environment is active:
+     ```bash
+     python nojoin.py
+     ```
 
 ## GPU Acceleration (CUDA Support)
 
