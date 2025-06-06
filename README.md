@@ -60,6 +60,12 @@ I know there are similar free solutions out there which are all great and quirky
     pip install -r requirements.txt
     ```
 
+5. ** Run Nojoin:**
+    # Windows
+    ```bash
+    python nojoin.py
+    ```
+
 ## GPU Acceleration (CUDA Support)
 
 Nojoin supports GPU acceleration for transcription and diarization using CUDA. To enable GPU support:
