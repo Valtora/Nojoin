@@ -1,5 +1,3 @@
-# Using the Global Speaker Library
-
 The Global Speaker Library is a powerful feature that helps you maintain a consistent list of known speakers across all your recordings. By creating a global profile for a person (e.g., "Jane Smith"), you can easily link them in different meetings, ensuring their name is always consistent.
 
 #### How to Open the Dialog

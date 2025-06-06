@@ -1,5 +1,3 @@
-# Managing Meeting Participants
-
 This guide explains how to use the "Manage Participants" dialog to correct, merge, and manage the speakers identified in a meeting recording. Accurate speaker labels are key to generating useful meeting notes and a clean transcript.
 
 #### How to Open the Dialog

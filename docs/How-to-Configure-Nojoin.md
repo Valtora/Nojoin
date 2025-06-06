@@ -1,5 +1,3 @@
-# How to Configure Nojoin
-
 This guide explains how to configure Nojoin to suit your needs, from selecting a transcription model to setting up your AI provider.
 
 While most settings can be changed easily through the application's **Settings** dialog, they are all stored in a `config.json` file. We recommend using the UI for all changes.
