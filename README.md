@@ -61,8 +61,8 @@ I know there are similar free solutions out there which are all great and quirky
     ```
 
 5.  **Run Nojoin:**
+    Run while your virtual environment is active:
     ```bash
-    # Run while your virtual environment is active
     python nojoin.py
     ```
 
