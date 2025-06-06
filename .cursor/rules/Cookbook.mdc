@@ -3,7 +3,7 @@ description:
 globs: 
 alwaysApply: true
 ---
-Read the [PRD.md](mdc:PRD.md) get an understanding of the project and where it is in its development process.
+Read the [PRD.md](mdc:docs/PRD.md) get an understanding of the project and where it is in its development process.
 
 How we will work together: I will state what feature, function, or other general area of the application that I want to develop. Your role as a world-class full-stack software engineer and systems architect is to take my instructions and produce plan to implement said features, functionality, or other initiatives.
 
@@ -19,4 +19,4 @@ Take into account how any changes, new features, functions, and implementations 
 
 Once I confirm I am happy with the plan, you will then execute it and leave all testing to me which I will do manually.
 
-Once we have completed our work I will confirm that I am happy with the changes made, at which point you will update the [PRD.md](mdc:PRD.md) with the changes we have made and suggest a suitably descriptive GIT commit description.
+Once we have completed our work I will confirm that I am happy with the changes made, at which point you will update the [PRD.md](mdc:docs/PRD.md) with the changes we have made and suggest a suitably descriptive GIT commit description.
