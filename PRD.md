@@ -25,6 +25,7 @@
 ### 2.3 Speaker Diarization
 - Fully offline diarization using Pyannote with local models/config (no Hugging Face token required).
 - Audio is preprocessed to mono, 16kHz WAV, VAD-processed (using Silero VAD), and converted back to MP3 for diarization.
+- Short or ambiguous speaker segments (under 1 second) are filtered out to improve transcript clarity and reduce noise from overlapping speech.
 - Diarization progress is reported in the UI by parsing subprocess output (tqdm).
 - Clearest segment for each speaker is identified and stored for playback.
 - Speaker snippet playback is clamped to 10 seconds.

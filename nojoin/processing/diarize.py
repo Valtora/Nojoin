@@ -23,6 +23,36 @@ _pipeline_cache = {}
 # Path to offline diarization config
 OFFLINE_DIARIZATION_CONFIG = os.path.join(os.path.dirname(__file__), '../../models/pyannote_diarization_config.yaml')
 
+def _filter_short_segments(annotation: Annotation, min_duration_s: float = 1.0) -> Annotation:
+    """
+    Filters out segments shorter than a minimum duration from a pyannote Annotation.
+
+    Args:
+        annotation: The input annotation object.
+        min_duration_s: The minimum duration in seconds for a segment to be kept.
+
+    Returns:
+        A new annotation object with short segments removed.
+    """
+    if not isinstance(annotation, Annotation):
+        logger.warning(f"Cannot filter segments, input is not a pyannote.core.Annotation: {type(annotation)}")
+        return annotation
+
+    filtered_annotation = Annotation(uri=annotation.uri)
+    for segment, track, label in annotation.itertracks(yield_label=True):
+        if (segment.end - segment.start) >= min_duration_s:
+            filtered_annotation[segment, track] = label
+
+    original_segments_count = len(list(annotation.itersegments()))
+    filtered_segments_count = len(list(filtered_annotation.itersegments()))
+    if original_segments_count > filtered_segments_count:
+        logger.info(
+            f"Filtered {original_segments_count - filtered_segments_count} segments shorter than {min_duration_s:.2f}s. "
+            f"({filtered_segments_count} of {original_segments_count} segments remain)."
+        )
+
+    return filtered_annotation
+
 def load_offline_diarization_pipeline(config_path: str, device_str: str):
     """Load pyannote diarization pipeline from local config and move to device."""
     import pathlib
@@ -96,7 +126,7 @@ def diarize_audio(audio_path: str) -> Annotation | None:
         if not diarization_result.labels():
             logger.warning(f"Diarization result has no speaker labels for {audio_path}.")
 
-        return diarization_result
+        return _filter_short_segments(diarization_result, min_duration_s=1.0)
 
     except RuntimeError as e:
         logger.error(f"User-facing error: {e}")
@@ -170,7 +200,7 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
         with open(output_path, "rb") as f:
             diarization_result = pickle.load(f)
         logger.info(f"Diarization completed for {audio_path} (subprocess mode).")
-        return diarization_result
+        return _filter_short_segments(diarization_result, min_duration_s=1.0)
     except Exception as e:
         logger.error(f"Error during diarization subprocess for {audio_path}: {e}", exc_info=True)
         return None

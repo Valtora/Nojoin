@@ -6,12 +6,12 @@ This project was created initially for personal use only but I wanted to offer i
 
 I know there are similar free solutions out there which are all great and quirky in their own ways, Nojoin is no different. My goal was to have something relatively simple that can be deployed fairly quickly without too complicated of an initial, basic setup.
 
-## Manual Setup (Release Package Coming Soon)
+## Setup
 
 1.  **Prerequisites:**
-    *   Python 3.11.9 (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch)
-    *   `ffmpeg` installed and added to system PATH ([https://ffmpeg.org/](https://ffmpeg.org/))
-    *   OPTIONAL: NVIDIA GPU with CUDA toolkit installed (for GPU acceleration, see notes below)
+    *   [Python 3.11.9](https://www.python.org/downloads/release/python-3119/) (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch)
+    *   `ffmpeg` installed and added to system PATH, easily done via winget install in Terminal/Powershell: `winget install ffmpeg`
+    *   OPTIONAL but recommended: NVIDIA GPU with CUDA [**12.8.x**](https://developer.nvidia.com/cuda-12-8-1-download-archive) toolkit installed for GPU acceleration, see notes at the end.
 
 2.  **Clone the repository:**
     ```bash
@@ -21,10 +21,13 @@ I know there are similar free solutions out there which are all great and quirky
 3.  **Create a virtual environment (Recommended):**
     ```bash
     py -m venv .venv
+    
     # Activate the environment
-	
-    # Windows (PowerShell)
+    # Windows (Terminal/PowerShell)
     .venv\Scripts\Activate
+
+    # Mac
+    source .venv/bin/activate
 
 4.  **Install dependencies:**
      

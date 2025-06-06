@@ -376,6 +376,10 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
         segments = transcription['segments']
         speaker_turns = diarization
         combined = []
+        # Keep track of the last known speaker to attribute short, unassigned segments
+        last_known_speaker = "UNKNOWN"
+        last_segment_end_time = 0.0
+
         for segment in segments:
             start_time = segment['start']
             end_time = segment['end']
@@ -397,10 +401,22 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
                         if speaker_overlap[label] > max_overlap:
                             max_overlap = speaker_overlap[label]
                             active_speaker = label
+
                 if max_overlap == 0.0:
-                    logger.warning(
-                        f"No speaker turn found overlapping with segment [{start_time:.2f}s - {end_time:.2f}s]. Assigning UNKNOWN."
-                    )
+                    time_since_last_segment = start_time - last_segment_end_time
+                    # If no overlap, try to assign to the last known speaker if the gap is small
+                    if last_known_speaker != "UNKNOWN" and time_since_last_segment < 2.0:
+                        active_speaker = last_known_speaker
+                        logger.info(
+                            f"Segment [{start_time:.2f}s - {end_time:.2f}s] had no direct overlap. "
+                            f"Attributed to recent speaker '{active_speaker}' (gap: {time_since_last_segment:.2f}s)."
+                        )
+                    else:
+                        logger.warning(
+                            f"No speaker turn found overlapping with segment [{start_time:.2f}s - {end_time:.2f}s]. "
+                            f"Assigning UNKNOWN. (Time since last speaker: {time_since_last_segment:.2f}s)"
+                        )
+
             except Exception as e:
                 logger.error(f"Error assigning speaker for segment [{start_time:.2f}s - {end_time:.2f}s]: {e}", exc_info=True)
             
@@ -411,16 +427,22 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
                     "speaker": active_speaker,
                     "text": text
                 })
+                # Update the last known speaker if we found one
+                if active_speaker != "UNKNOWN":
+                    last_known_speaker = active_speaker
+                last_segment_end_time = end_time
+
         logger.info(f"Successfully combined {len(segments)} transcription segments with speaker turns.")
         return combined
     except Exception as e:
         logger.error(f"Error combining transcription and diarization: {e}", exc_info=True)
         return None 
 
-def consolidate_diarized_transcript(segments):
+def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
+    Filters out final consolidated segments that are shorter than min_duration_s.
     """
     if not segments:
         return []
@@ -456,11 +478,19 @@ def consolidate_diarized_transcript(segments):
             speaker_label = ' and '.join(sorted(overlap_speakers)) + ' (Overlap)'
         else:
             speaker_label = curr_speaker
-        consolidated.append({
-            'start': curr_start,
-            'end': curr_end,
-            'speaker': speaker_label,
-            'text': curr_text.strip()
-        })
+
+        # Add the consolidated segment only if its duration is long enough
+        if (curr_end - curr_start) >= min_duration_s:
+            consolidated.append({
+                'start': curr_start,
+                'end': curr_end,
+                'speaker': speaker_label,
+                'text': curr_text.strip()
+            })
+        else:
+            logger.info(f"Filtering out short consolidated segment: "
+                        f"[{curr_start:.2f}s - {curr_end:.2f}s] Speaker {speaker_label} "
+                        f"duration {(curr_end - curr_start):.2f}s < {min_duration_s}s")
+            
         i = j
     return consolidated 

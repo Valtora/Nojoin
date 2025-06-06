@@ -5,12 +5,10 @@ pipeline:
   name: pyannote.audio.pipelines.SpeakerDiarization
   params:
     clustering: AgglomerativeClustering
-    # embedding: pyannote/wespeaker-voxceleb-resnet34-LM  # if you want to use the HF model
-    embedding: models/pyannote_model_wespeaker-voxceleb-resnet34-LM.bin  # if you want to use the local model
+    embedding: models/pyannote_model_wespeaker-voxceleb-resnet34-LM.bin
     embedding_batch_size: 32
     embedding_exclude_overlap: true
-    # segmentation: pyannote/segmentation-3.0  # if you want to use the HF model
-    segmentation: models/pyannote_model_segmentation-3.0.bin  # if you want to use the local model
+    segmentation: models/pyannote_model_segmentation-3.0.bin
     segmentation_batch_size: 32
 
 params:

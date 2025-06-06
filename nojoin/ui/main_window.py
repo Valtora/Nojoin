@@ -3330,14 +3330,17 @@ class MainWindow(QMainWindow):
         current_theme = config_manager.get("theme", "dark")
         
         # Use meeting_notes_edit for both notes and transcript views since it's the same widget
-        text_edit = None
-        if hasattr(self, 'meeting_notes_edit'):
-            text_edit = self.meeting_notes_edit
+        text_edit = self.meeting_notes_edit if hasattr(self, 'meeting_notes_edit') else None
         
+        # Get current recording ID
+        selected_items = self.meetings_list_widget.selectedItems()
+        recording_id = selected_items[0].data(Qt.UserRole) if selected_items else None
+
         dialog = FindReplaceDialog(
             parent=self,
             text_edit=text_edit,
-            theme_name=current_theme
+            theme_name=current_theme,
+            recording_id=recording_id
         )
         
         # Connect to bulk operation completion signal to refresh current view

@@ -512,19 +512,20 @@ class ParticipantsDialog(QDialog):
         prospective_targets = [] 
 
         for speaker_id_to_display in selected_ids:
-            base_speaker_data = next((s for s in self.speakers if s['id'] == speaker_id_to_display), None)
+            # base_speaker_data = next((s for s in self.speakers if s['id'] == speaker_id_to_display), None)
             
-            if not base_speaker_data:
-                logger.warning(f"Could not find base data for selected speaker ID {speaker_id_to_display} during merge prep.")
-                continue
+            # if not base_speaker_data:
+            #     logger.warning(f"Could not find base data for selected speaker ID {speaker_id_to_display} during merge prep.")
+            #     continue
 
-            current_name_from_speakers_list = base_speaker_data.get('name') or base_speaker_data.get('diarization_label')
+            # Get the current, potentially un-saved, name directly from the QLineEdit widget
+            if speaker_id_to_display in self.speaker_widgets:
+                name_edit_widget = self.speaker_widgets[speaker_id_to_display]['name_edit']
+                new_display_name = name_edit_widget.text().strip()
+            else: # Fallback logic in case widget not found
+                base_speaker_data = next((s for s in self.speakers if s['id'] == speaker_id_to_display), None)
+                new_display_name = base_speaker_data.get('name') or base_speaker_data.get('diarization_label') if base_speaker_data else "Unknown"
 
-            if speaker_id_to_display in self._pending_name_changes:
-                _original_diarization_label, new_display_name = self._pending_name_changes[speaker_id_to_display]
-            else:
-                new_display_name = current_name_from_speakers_list
-            
             display_item_string = f"{new_display_name} (ID {speaker_id_to_display})"
             prospective_targets.append({'text': display_item_string, 'id': speaker_id_to_display})
 
@@ -577,37 +578,8 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         self._playing_speaker_id = None
         
-        # Apply all pending name changes and add to global library if appropriate
-        names_added_to_global = set()
-        for speaker_id, (diarization_label, new_name) in self._pending_name_changes.items():
-            # Update the local speaker name and transcript
-            db_ops.update_speaker_name(speaker_id, new_name, self.recording_id)
-            
-            # Add to global library if it's not a generic label (like SPEAKER_XX)
-            # and not already processed (to avoid multiple popups for the same new name if it's used for multiple local speakers)
-            import re
-            if not re.match(r"^(SPEAKER|Speaker)[_ ]?\d+$", new_name) and new_name not in names_added_to_global:
-                existing_global = db_ops.get_global_speaker_by_name(new_name)
-                if not existing_global:
-                    global_id = db_ops.add_global_speaker(new_name)
-                    if global_id:
-                        db_ops.link_speaker_to_global(speaker_id, global_id) # Link this specific instance
-                        logger.info(f"Auto-added '{new_name}' to Global Library (ID: {global_id}) and linked local speaker {speaker_id}.")
-                        names_added_to_global.add(new_name)
-                        self._speakers_modified = True # Ensure flag is set if global add happened
-                        self._update_window_title()
-                    else:
-                        logger.warning(f"Failed to auto-add '{new_name}' to Global Library from ParticipantsDialog.")
-                elif existing_global: # Global speaker with this name already exists, link if not already
-                    # Check if this specific local speaker_id is already linked to this global_id or any global_id
-                    current_link = db_ops.get_speaker_with_global_info(speaker_id)
-                    if not current_link or current_link.get('global_speaker_id') != existing_global['id']:
-                        db_ops.link_speaker_to_global(speaker_id, existing_global['id'])
-                        logger.info(f"Auto-linked local speaker {speaker_id} to existing Global Speaker '{new_name}' (ID: {existing_global['id']}).")
-                        self._speakers_modified = True # Ensure flag is set if linking happened
-                        self._update_window_title()
-
-        self._pending_name_changes.clear()
+        # The logic to apply pending name changes has been removed, as names are now auto-saved
+        # upon editing finishing. This method now just handles the final "OK" action.
         
         if self._speakers_modified: # Check if any modifications were made (local or global names, merges, deletes)
             self.participants_updated.emit(self.recording_id)

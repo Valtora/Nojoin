@@ -57,7 +57,9 @@ class FindReplaceWorker(QThread):
                 notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
                 if notes_entry and notes_entry.get('notes'):
                     notes_text = notes_entry['notes']
-                    new_notes, replacements = self._replace_in_text(notes_text)
+                    new_notes, replacements = FindReplaceWorker._replace_in_text(
+                        notes_text, self.search_text, self.replace_text, self.case_sensitive, self.whole_word
+                    )
                     if replacements > 0:
                         # Update notes in database
                         db_ops.add_meeting_notes(
@@ -84,7 +86,9 @@ class FindReplaceWorker(QThread):
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            new_content, replacements = self._replace_in_text(content)
+            new_content, replacements = FindReplaceWorker._replace_in_text(
+                content, self.search_text, self.replace_text, self.case_sensitive, self.whole_word
+            )
             
             if replacements > 0:
                 with open(file_path, 'w', encoding='utf-8') as f:
@@ -96,19 +100,20 @@ class FindReplaceWorker(QThread):
             logger.error(f"Error processing file {file_path}: {e}")
             return 0
     
-    def _replace_in_text(self, text: str) -> Tuple[str, int]:
+    @staticmethod
+    def _replace_in_text(text: str, search_text: str, replace_text: str, case_sensitive: bool, whole_word: bool) -> Tuple[str, int]:
         """Replace text and return (new_text, replacement_count)."""
-        if not self.search_text:
+        if not search_text:
             return text, 0
             
-        flags = 0 if self.case_sensitive else re.IGNORECASE
+        flags = 0 if case_sensitive else re.IGNORECASE
         
-        if self.whole_word:
-            pattern = r'\b' + re.escape(self.search_text) + r'\b'
+        if whole_word:
+            pattern = r'\b' + re.escape(search_text) + r'\b'
         else:
-            pattern = re.escape(self.search_text)
+            pattern = re.escape(search_text)
         
-        new_text, replacements = re.subn(pattern, self.replace_text, text, flags=flags)
+        new_text, replacements = re.subn(pattern, replace_text, text, flags=flags)
         return new_text, replacements
 
 
@@ -118,10 +123,11 @@ class FindReplaceDialog(QDialog):
     # Signal emitted when bulk operations complete that might affect current view
     bulk_operation_completed = Signal()
     
-    def __init__(self, parent=None, text_edit: QTextEdit = None, theme_name: str = "dark"):
+    def __init__(self, parent=None, text_edit: QTextEdit = None, theme_name: str = "dark", recording_id: Optional[int] = None):
         super().__init__(parent)
         self.text_edit = text_edit
         self.theme_name = theme_name
+        self.recording_id = recording_id
         self.worker = None
         
         self.setWindowTitle("Find and Replace")
@@ -173,12 +179,12 @@ class FindReplaceDialog(QDialog):
         layout.addWidget(options_group)
         
         # --- Search Scope ---
-        scope_group = QGroupBox("Search In")
+        scope_group = QGroupBox("Search Scope")
         scope_layout = QVBoxLayout(scope_group)
         
         self.scope_combo = QComboBox()
-        self.scope_combo.addItem("Current Document", "current")
-        self.scope_combo.addItem("All Transcripts", "all_transcripts")
+        self.scope_combo.addItem("Current Notes/Transcript", "current")
+        self.scope_combo.addItem("All Notes/Transcripts", "all")
         scope_layout.addWidget(self.scope_combo)
         
         layout.addWidget(scope_group)
@@ -451,61 +457,83 @@ class FindReplaceDialog(QDialog):
             
     def _replace_all(self):
         """Replace all occurrences based on the selected scope."""
-        search_text = self.find_line_edit.text().strip()
-        if not search_text:
-            return
-            
-        replace_text = self.replace_line_edit.text()
         scope = self.scope_combo.currentData()
         
-        if scope == "current" and self.text_edit:
+        if scope == "current":
             self._replace_all_current()
-        elif scope == "all_transcripts":
+        elif scope == "all":
             self._replace_all_transcripts()
             
     def _replace_all_current(self):
-        """Replace all occurrences in the current document while preserving formatting."""
-        if not self.text_edit:
+        """Replace all occurrences in the current recording's notes and transcript."""
+        if self.recording_id is None:
+            QMessageBox.warning(self, "No Recording Selected", "No recording is currently selected to perform this operation.")
             return
-            
+
         search_text = self.find_line_edit.text()
+        if not search_text:
+            return
+
         replace_text = self.replace_line_edit.text()
+        case_sensitive = self.case_sensitive_checkbox.isChecked()
+        whole_word = self.whole_word_checkbox.isChecked()
         
-        # Set up search flags
-        flags = QTextDocument.FindFlag(0)
-        if self.case_sensitive_checkbox.isChecked():
-            flags |= QTextDocument.FindCaseSensitively
-        if self.whole_word_checkbox.isChecked():
-            flags |= QTextDocument.FindWholeWords
+        total_replacements = 0
         
-        doc = self.text_edit.document()
-        replacements = 0
-        
-        # Start from the beginning of the document
-        search_cursor = QTextCursor(doc)
-        
-        # Use QTextDocument.find() to preserve formatting
-        while True:
-            found_cursor = doc.find(search_text, search_cursor, flags)
-            if found_cursor.isNull():
-                break
-                
-            # Replace the found text
-            found_cursor.insertText(replace_text)
-            replacements += 1
+        try:
+            # Get recording data
+            recording = db_ops.get_recording_by_id(self.recording_id)
+            if not recording:
+                QMessageBox.critical(self, "Error", f"Could not find recording with ID: {self.recording_id}")
+                return
             
-            # Continue searching from the position after the replacement
-            # Note: found_cursor position is automatically updated after insertText
-            search_cursor = found_cursor
-        
-        if replacements > 0:
-            QMessageBox.information(self, "Replace All", f"Replaced {replacements} occurrence(s).")
-        else:
-            QMessageBox.information(self, "Replace All", f"'{search_text}' not found.")
+            recording_dict = dict(recording)
             
+            # 1. Process transcript file
+            diarized_path = recording_dict.get('diarized_transcript_path')
+            if diarized_path:
+                abs_path = from_project_relative_path(diarized_path)
+                if os.path.exists(abs_path):
+                    with open(abs_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    new_content, replacements = FindReplaceWorker._replace_in_text(
+                        content, search_text, replace_text, case_sensitive, whole_word
+                    )
+                    
+                    if replacements > 0:
+                        with open(abs_path, 'w', encoding='utf-8') as f:
+                            f.write(new_content)
+                        total_replacements += replacements
+                        logger.info(f"Made {replacements} replacements in {abs_path}")
+
+            # 2. Process meeting notes
+            notes_entry = db_ops.get_meeting_notes_for_recording(self.recording_id)
+            if notes_entry and notes_entry.get('notes'):
+                notes_text = notes_entry['notes']
+                new_notes, replacements = FindReplaceWorker._replace_in_text(
+                    notes_text, search_text, replace_text, case_sensitive, whole_word
+                )
+                if replacements > 0:
+                    db_ops.add_meeting_notes(
+                        self.recording_id, 
+                        notes_entry.get('provider', 'unknown'),
+                        notes_entry.get('model', 'unknown'), 
+                        new_notes
+                    )
+                    total_replacements += replacements
+                    logger.info(f"Made {replacements} replacements in notes for {self.recording_id}")
+
+            QMessageBox.information(self, "Replace All Complete", f"Made {total_replacements} replacements in the current notes and transcript.")
+            self.bulk_operation_completed.emit()
+
+        except Exception as e:
+            logger.error(f"Error during 'replace all current': {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred: {e}")
+
     def _replace_all_transcripts(self):
-        """Replace all occurrences across all transcripts."""
-        search_text = self.find_line_edit.text().strip()
+        """Replace all occurrences in all transcripts using a worker thread."""
+        search_text = self.find_line_edit.text()
         replace_text = self.replace_line_edit.text()
         
         reply = QMessageBox.question(
