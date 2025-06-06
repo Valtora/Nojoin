@@ -51,6 +51,6 @@ Nojoin supports GPU acceleration for transcription and diarization using CUDA. T
 
 **Note:** CUDA 12.8.x is the only supported version for now. Other versions may not work correctly. Saturn Cloud wrote a [helpful troubleshooting guide](https://saturncloud.io/blog/how-to-troubleshoot-pytorchs-torchcudaisavailable-returning-false-in-windows-10/) if you have CUDA issues.
 
-## Buy Me a Coffee
+## ☕ Buy Me a Coffee
 
 If Nojoin is useful to you please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support me.
