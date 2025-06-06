@@ -3,11 +3,6 @@
 *.py[cod]
 *$py.class
 
-# PyInstaller
-#  Usually these files are written by a python script from a template before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
 # Environment
 /.venv
 
@@ -21,6 +16,12 @@
 # Database file, should be regenerated on first run
 /nojoin/nojoin_data.db
 
-# Config file
-/config.json
+# Config file, generated on first run
 nojoin/config.json
+
+# Cursor files
+/.cursor/
+
+#PRD and Todo files
+/PRD.md
+/TODO.md
