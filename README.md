@@ -53,4 +53,4 @@ Nojoin supports GPU acceleration for transcription and diarization using CUDA. T
 
 ## ☕ Buy Me a Coffee
 
-If Nojoin is useful to you please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support me.
+If Nojoin is useful to you please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support the project.
