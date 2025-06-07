@@ -29,11 +29,11 @@ I know there are similar free solutions out there which are all great and quirky
 ## Setup
 
 1.  **Prerequisites:**
-    *   [Python 3.11.9](https://www.python.org/downloads/release/python-3119/) (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch) You can also install via winget which should grab 3.11.9:
+    *   [Python 3.11.9](https://www.python.org/downloads/release/python-3119/) (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch) You can also install via `winget` which should grab 3.11.9:
         ```
         winget install Python.Python.3.11
         ```
-    *   FFMpeg installed and added to system PATH, easily done via winget install in Terminal/Powershell:
+    *   `ffmpeg` installed and added to system PATH, easily done via `winget install` in Terminal/Powershell:
         ```
         winget install ffmpeg
         ```
