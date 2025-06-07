@@ -65,6 +65,15 @@ def Nojoin():
     theme = config_manager.get("theme", "dark")
     app.setStyleSheet(get_theme_qss(theme))
 
+    # --- Set Application Icon ---
+    # This is the most reliable way to set the taskbar icon.
+    icon_path = os.path.join(script_dir, "assets", "NojoinLogo.png")
+    if os.path.exists(icon_path):
+        app_icon = QIcon(icon_path)
+        app.setWindowIcon(app_icon)
+    else:
+        print(f"Warning: Icon file not found at {icon_path}")
+
     # Show Splash Screen as early as possible
     splash_image_path = os.path.join(script_dir, "assets", "Banner_Image1.png")
     splash = None
@@ -76,16 +85,9 @@ def Nojoin():
         print(f"Warning: Splash image not found at {splash_image_path}")
 
     # Now import and initialize the rest of the app
-    # Set Application Icon
-    icon_path = os.path.join(script_dir, "assets", "NojoinLogo.png")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
-    else:
-        print(f"Warning: Icon file not found at {icon_path}")
-
     window = MainWindow()
-    if os.path.exists(icon_path):
-        window.setWindowIcon(QIcon(icon_path))
+    # The app.setWindowIcon from earlier handles this. If it were still needed,
+    # you would pass app_icon to window.setWindowIcon() here.
 
     if splash:
         splash.finish_splash(window)
