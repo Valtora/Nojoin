@@ -37,7 +37,7 @@ I know there are similar free solutions out there which are all great and quirky
         ```
         winget install ffmpeg
         ```
-    *   OPTIONAL but recommended: NVIDIA GPU with CUDA [**12.8.x**](https://developer.nvidia.com/cuda-12-8-1-download-archive) toolkit installed for GPU acceleration, see notes at the end.
+    *   OPTIONAL but recommended: NVIDIA GPU with CUDA [**12.8**](https://developer.nvidia.com/cuda-12-8-1-download-archive) toolkit installed for GPU acceleration, see notes at the end.
 
 2.  **Clone the repository:**
     ```bash
