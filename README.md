@@ -30,13 +30,17 @@ I know there are similar free solutions out there which are all great and quirky
 
 1.  **Prerequisites:**
     *   [Python 3.11.9](https://www.python.org/downloads/release/python-3119/) (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch) You can also install via `winget` which should grab 3.11.9:
+
         ```bash
         winget install Python.Python.3.11
         ```
+        
     *   `ffmpeg` installed and added to system PATH, easily done via `winget install` in Terminal/Powershell:
+
         ```bash
         winget install ffmpeg
         ```
+
     *   OPTIONAL but recommended: NVIDIA GPU with CUDA [**12.8**](https://developer.nvidia.com/cuda-12-8-1-download-archive) toolkit installed for GPU acceleration, see notes at the end.
 
 2.  **Clone the repository:**
