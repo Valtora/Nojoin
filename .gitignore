@@ -23,3 +23,8 @@ nojoin/config.json
 #PRD and Todo files
 /PRD.md
 /TODO.md
+
+# Powershell Scripts
+*.ps1
+*.bat
+*.lnk

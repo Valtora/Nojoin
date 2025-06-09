@@ -128,13 +128,13 @@ I know there are similar free solutions out there which are all great and quirky
 
 Nojoin supports GPU acceleration for transcription and diarization using CUDA. To enable GPU support:
 
-- You must have an NVIDIA GPU and the CUDA Toolkit version [**12.8.x**](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed.
+- You must have an NVIDIA GPU and the CUDA Toolkit version [**12.8**](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed.
 - Compatible NVIDIA drivers must be installed.
 - PyTorch must be installed with CUDA 12.8 support (see the installation steps above).
 - CUDA availability is automatically detected by Nojoin. If available, you can select "cuda" as the processing device in the Settings dialog.
 - If CUDA is not detected, only CPU processing will be available.
 
-**Note:** CUDA 12.8.x is the only supported version for now. Other versions may not work correctly. Saturn Cloud wrote a [helpful troubleshooting guide](https://saturncloud.io/blog/how-to-troubleshoot-pytorchs-torchcudaisavailable-returning-false-in-windows-10/) if you have CUDA issues.
+**Note:** CUDA 12.8 is the only supported version for now. Other versions may not work correctly. Saturn Cloud wrote a [helpful troubleshooting guide](https://saturncloud.io/blog/how-to-troubleshoot-pytorchs-torchcudaisavailable-returning-false-in-windows-10/) if you have CUDA issues.
 
 ## ☕ Buy Me a Coffee
 
