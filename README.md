@@ -29,52 +29,99 @@ I know there are similar free solutions out there which are all great and quirky
 ## Setup
 
 1.  **Prerequisites:**
-    
-    [Python 3.11.9](https://www.python.org/downloads/release/python-3119/) (IMPORTANT: This version specifically for now because of some compatabiliy issues with PyTorch) You can also install via `winget` which should grab 3.11.9:
 
-    ```bash
-    winget install Python.Python.3.11
-    ```
+    *   **Python 3.11.9:**
+        This project requires Python 3.11.9 due to PyTorch compatibility issues. You can download it directly from the [Python website](https://www.python.org/downloads/release/python-3119/).
 
-    `ffmpeg` installed and added to system PATH, easily done via `winget install` in Terminal/Powershell:
+        Alternatively, you can install it using your system's package manager:
 
-    ```bash
-    winget install ffmpeg
-    ```
+        *   **Windows (winget):**
+            ```bash
+            winget install Python.Python.3.11
+            ```
+        *   **macOS (Homebrew):**
+            ```bash
+            brew install python@3.11
+            ```
+        *   **Linux (Debian/Ubuntu):**
+            ```bash
+            sudo apt update && sudo apt install python3.11 python3.11-venv
+            ```
 
-    OPTIONAL but recommended: NVIDIA GPU with CUDA [**12.8**](https://developer.nvidia.com/cuda-12-8-1-download-archive) toolkit installed for GPU acceleration, see notes at the end.
+    *   **ffmpeg:**
+        `ffmpeg` is required for audio processing and must be available in your system's PATH.
+
+        *   **Windows (winget):**
+            ```bash
+            winget install ffmpeg
+            ```
+        *   **macOS (Homebrew):**
+            ```bash
+            brew install ffmpeg
+            ```
+        *   **Linux (Debian/Ubuntu):**
+            ```bash
+            sudo apt update && sudo apt install ffmpeg
+            ```
+    *   **Optional (for GPU Acceleration):**
+        NVIDIA GPU with the [CUDA 12.8 Toolkit](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed. See the "GPU Acceleration" section for more details.
 
 2.  **Clone the repository:**
     ```bash
     git clone https://github.com/Valtora/Nojoin
+    cd Nojoin
     ```
 
-3.  **Create a virtual environment (Recommended):**
+3.  **Create and activate a virtual environment:**
+    It is highly recommended to use a virtual environment to manage project dependencies.
+
     ```bash
-    # Create virtual environment '.venv'
-    py -m venv .venv
+    # Create the virtual environment
+    python3 -m venv .venv
     
     # Activate the environment
-
-    # Windows (Terminal/PowerShell)
-    .venv\Scripts\Activate
     ```
 
-4.  **Install dependencies:**
-     
-     Install the correct torch, torchaudio, and torchvision for your system. I've tested on Windows 11 amd64 architecture with CUDA 12.8.x and Python 3.11.9. I've also tested without CUDA and it should work fine, albeit with inferior performance in terms of transcription and diarization times.
-     
-     The current requirements.txt file assumes you have an NVIDIA GPU and attempts to install a suitable whl for CUDA 12.8. If you do not then install a suitable version of torch, torchaudio, and torchvision separately in your venv. See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for the correct pip install command for your setup.
+    *   **Windows (PowerShell/CMD):**
+        ```bash
+        .venv\Scripts\Activate
+        ```
+    *   **macOS/Linux (bash/zsh):**
+        ```bash
+        source .venv/bin/activate
+        ```
 
-     Intall the requirements
-    ```bash
-    pip install -r requirements.txt
-    ```
+4.  **Install Dependencies**
+
+    The dependencies are listed in `requirements.txt`. However, the PyTorch dependency is highly system-specific (CPU/GPU, OS, architecture). It is crucial to install the correct PyTorch version for your machine *before* installing the other packages.
+
+    *   **Step 1: Install PyTorch**
+        Visit the [PyTorch website](https://pytorch.org/get-started/locally/) to determine the correct installation command for your system configuration. For example:
+
+        *   **Windows/Linux (CPU-only):**
+            ```bash
+            pip3 install torch torchvision torchaudio
+            ```
+        *   **Windows/Linux (CUDA 12.8):**
+            ```bash
+            pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+            ```
+        *   **macOS (ARM/M-series chip):**
+            ```bash
+            pip3 install torch torchvision torchaudio
+            ```
+    
+    *   **Step 2: Install Remaining Dependencies**
+        Once PyTorch is installed, you can install the rest of the required packages. The `requirements.txt` file is configured for a CUDA-enabled setup, but `pip` will use your manually installed PyTorch version and skip reinstalling it.
+
+        ```bash
+        pip install -r requirements.txt
+        ```
 
 5.  **Run Nojoin:**
-     Run while your virtual environment is active:
+     Make sure your virtual environment is active before running the application:
      ```bash
-     python nojoin.py
+     python3 Nojoin.py
      ```
 
 ## GPU Acceleration (CUDA Support)
@@ -83,7 +130,7 @@ Nojoin supports GPU acceleration for transcription and diarization using CUDA. T
 
 - You must have an NVIDIA GPU and the CUDA Toolkit version [**12.8.x**](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed.
 - Compatible NVIDIA drivers must be installed.
-- PyTorch must be installed with CUDA 12.8 support (see [PyTorch Get Started](https://pytorch.org/get-started/locally/)).
+- PyTorch must be installed with CUDA 12.8 support (see the installation steps above).
 - CUDA availability is automatically detected by Nojoin. If available, you can select "cuda" as the processing device in the Settings dialog.
 - If CUDA is not detected, only CPU processing will be available.
 
