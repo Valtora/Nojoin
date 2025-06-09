@@ -19,14 +19,7 @@
 # Config file, generated on first run
 nojoin/config.json
 
-# Cursor files
-/.cursor/*
-*.mdc
-/.cursor/rules
 
 #PRD and Todo files
 /PRD.md
 /TODO.md
-
-#PowerShell scripts
-*.ps1
