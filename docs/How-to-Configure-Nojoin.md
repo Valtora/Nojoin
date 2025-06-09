@@ -8,8 +8,8 @@ You can access the main configuration window by clicking the **Settings** button
 
 ### Transcription & Processing
 
-*   **Whisper Model Size:** This determines the power of the transcription model. Smaller models are faster but less accurate, while larger models are more accurate but require more time and computational resources.
-    *   *Options:* `tiny`, `base`, `small`, `medium`, `large`
+*   **Whisper Model Size:** This determines the power of the transcription model. Smaller models are faster but less accurate, while larger models are more accurate but require more time and computational resources. The `turbo` model provides a great balance of speed and accuracy and is the recommended default.
+    *   *Options:* `turbo`, `tiny`, `base`, `small`, `medium`, `large`
 *   **Processing Device:** This sets whether to use your computer's CPU or a compatible NVIDIA GPU (CUDA) for transcription and diarization.
     *   *CPU:* The default option, works on all computers.
     *   *CUDA:* Significantly faster, but requires a supported NVIDIA graphics card and the CUDA toolkit to be installed.

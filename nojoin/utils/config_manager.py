@@ -13,7 +13,7 @@ CONFIG_FILENAME = 'config.json'
 CONFIG_PATH = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), CONFIG_FILENAME)
 
 DEFAULT_CONFIG = {
-    "whisper_model_size": "base", # Default model size (e.g., tiny, base, small, medium, large)
+    "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
     "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
     "recordings_directory": "recordings",
     "transcripts_directory": "transcripts",
@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     "min_meeting_length_seconds": 1 # Always at least 1 second
 }
 
-WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large"]
+WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
 APP_THEMES = ["dark", "light"] # Available UI themes
 
 def get_available_whisper_model_sizes():

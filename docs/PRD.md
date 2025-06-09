@@ -18,7 +18,7 @@
 
 ### 2.2 Transcription
 - Transcription of audio recordings using OpenAI Whisper (local, no cloud upload).
-- User-selectable model size (tiny, base, small, medium, large) and processing device (CPU/GPU).
+- User-selectable model size (turbo, tiny, base, small, medium, large) with 'turbo' as the recommended default, and processing device (CPU/GPU).
 - Progress reporting via UI callbacks.
 - Raw transcript saved as JSON if enabled in settings.
 
