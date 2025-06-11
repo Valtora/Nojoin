@@ -33,7 +33,7 @@ I know there are similar free solutions out there which are all great and quirky
 
 ## Quick Setup
 
-Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and configuration for you. No technical knowledge required!
+Nojoin includes automated setup scripts that handle all dependencies and configuration for you. No technical knowledge required!
 
 ### Windows
 1. **Download the Nojoin files:**

@@ -10,3 +10,5 @@ Implement advanced analyses for both the audio and transcript to gauge things li
 
 ## Codebase Polish - Definite TODO
 Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.
+
+## Remove creation of 'transcripts' folder on start as its redundant now.
