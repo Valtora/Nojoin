@@ -16,7 +16,6 @@ DEFAULT_CONFIG = {
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
     "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
     "recordings_directory": "recordings",
-    "transcripts_directory": "transcripts",
     # Add other settings as needed, e.g., default input/output devices
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
@@ -136,6 +135,7 @@ class ConfigManager:
                     # Remove deprecated keys if present
                     loaded_config.pop("save_raw_transcript", None)
                     loaded_config.pop("save_diarized_transcript", None)
+                    loaded_config.pop("transcripts_directory", None)  # Remove deprecated transcripts directory
                     # Update default config with loaded values, preserving defaults for missing keys
                     config.update(loaded_config) 
                     logger.info(f"Configuration loaded from {self.config_path}")
@@ -231,11 +231,7 @@ def get_recordings_dir():
     rel_dir = config_manager.get("recordings_directory", "recordings")
     return os.path.abspath(os.path.join(root, rel_dir))
 
-def get_transcripts_dir():
-    """Returns the absolute path to the transcripts directory from config."""
-    root = get_project_root()
-    rel_dir = config_manager.get("transcripts_directory", "transcripts")
-    return os.path.abspath(os.path.join(root, rel_dir))
+# Note: get_transcripts_dir() function removed - transcripts are now stored in database
 
 def to_project_relative_path(abs_path):
     """Converts an absolute path to a path relative to the project root."""
