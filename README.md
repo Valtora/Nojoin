@@ -38,9 +38,9 @@ Nojoin includes automated setup scripts that handle all dependencies and configu
 ### Windows
 1. **Download the Nojoin files:**
    - **Option A (Easiest):**
-   - Click the green **"Code"** button at the top of the page, then click **"Download ZIP"**
+   - Click the green **"<> Code"** button at the top of the page, then click **"Download ZIP"**
    - Extract the ZIP file to your desired folder (e.g., `C:\Users\YourName\Documents\Nojoin`)
-   - **Option B (If you have Git):** Open Command Prompt or PowerShell and run:
+   - **Option B (If you have Git):** Open Command Prompt or PowerShell in a directory of your choice and run:
      ```bash
      git clone https://github.com/Valtora/Nojoin
      ```
@@ -61,10 +61,10 @@ Nojoin includes automated setup scripts that handle all dependencies and configu
 ### macOS
 1. **Download the Nojoin files:**
    - **Option A (Easiest):**
-   - Click the green **"Code"** button at the top of the page, then click **"Download ZIP"**
+   - Click the green **"<> Code"** button at the top of the page, then click **"Download ZIP"**
    - Double-click the downloaded ZIP file to extract it
    - Move the extracted folder to your desired location (e.g., `~/Documents/Nojoin`)
-   - **Option B (If you have Git):** Open Terminal and run:
+   - **Option B (If you have Git):** Open Terminal in a directory of your choice and run:
      ```bash
      git clone https://github.com/Valtora/Nojoin
      ```

@@ -24,7 +24,7 @@ print_step() {
 
 # Function to print success
 print_success() {
-    printf "${GREEN}✓ ${1}${NC}\n"
+    printf "${GREEN}[✓] ${1}${NC}\n"
 }
 
 # Function to print warning
@@ -294,9 +294,9 @@ if [[ "$ARCH" == "arm64" ]]; then
     print_color $GREEN "2. MPS (Metal): GPU acceleration for Apple Silicon Macs (Recommended)"
     echo
     print_color $YELLOW "Apple Silicon Information:"
-    print_color $YELLOW "• MPS uses your Mac's GPU for faster processing"
-    print_color $YELLOW "• Your Mac appears to be Apple Silicon (recommended: MPS)"
-    print_color $YELLOW "• You can always switch later by reinstalling PyTorch"
+    print_color $YELLOW "- MPS uses your Mac's GPU for faster processing"
+    print_color $YELLOW "- Your Mac appears to be Apple Silicon (recommended: MPS)"
+    print_color $YELLOW "- You can always switch later by reinstalling PyTorch"
     echo
     read -p "Choose installation type (1=CPU-only, 2=MPS): " PYTORCH_CHOICE
     
@@ -308,7 +308,7 @@ if [[ "$ARCH" == "arm64" ]]; then
         echo
         print_color $YELLOW "Installing MPS-enabled PyTorch (this may take several minutes)..."
         if pip install torch torchvision torchaudio --quiet; then
-            print_success "✓ MPS PyTorch installed successfully!"
+            print_success "MPS PyTorch installed successfully!"
             
             # Test MPS availability
             if python3 -c "import torch; print('MPS_AVAILABLE' if torch.backends.mps.is_available() else 'MPS_NOT_AVAILABLE')" 2>/dev/null | grep -q "MPS_AVAILABLE"; then
@@ -324,7 +324,7 @@ if [[ "$ARCH" == "arm64" ]]; then
                 print_error "Please check your internet connection."
                 exit 1
             fi
-            print_success "✓ CPU PyTorch installed successfully!"
+            print_success "CPU PyTorch installed successfully!"
         fi
     else
         echo
@@ -338,7 +338,7 @@ if [[ "$ARCH" == "arm64" ]]; then
             print_error "Please check your internet connection."
             exit 1
         fi
-        print_success "✓ CPU PyTorch installed successfully!"
+        print_success "CPU PyTorch installed successfully!"
     fi
 else
     # Intel Mac
@@ -346,9 +346,9 @@ else
     print_color $GREEN "2. Custom: Advanced users only"
     echo
     print_color $YELLOW "Intel Mac Information:"
-    print_color $YELLOW "• Your Mac appears to be Intel-based"
-    print_color $YELLOW "• CPU-only mode is recommended for Intel Macs"
-    print_color $YELLOW "• GPU acceleration is not available on Intel Macs"
+    print_color $YELLOW "- Your Mac appears to be Intel-based"
+    print_color $YELLOW "- CPU-only mode is recommended for Intel Macs"
+    print_color $YELLOW "- GPU acceleration is not available on Intel Macs"
     echo
     read -p "Choose installation type (1=CPU-only, 2=Custom): " PYTORCH_CHOICE
     
@@ -360,7 +360,7 @@ else
             print_error "Please check your internet connection."
             exit 1
         fi
-        print_success "✓ PyTorch installed successfully!"
+        print_success "PyTorch installed successfully!"
     else
         echo
         print_color $CYAN "========================================"
@@ -373,9 +373,14 @@ else
             print_error "Please check your internet connection."
             exit 1
         fi
-        print_success "✓ CPU PyTorch installed successfully!"
+        print_success "CPU PyTorch installed successfully!"
     fi
 fi
+
+# Upgrade pip first
+echo
+print_color $YELLOW "Upgrading pip to latest version..."
+pip install --upgrade pip --quiet
 
 # Install remaining dependencies
 print_step "7" "Installing remaining dependencies..."
@@ -389,7 +394,7 @@ fi
 # Test the installation
 echo
 print_color $YELLOW "Testing installation..."
-if python3 -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('✓ Configuration system working')" 2>/dev/null; then
+if python3 -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('[✓] Configuration system working')" 2>/dev/null; then
     print_success "Installation test passed!"
 else
     print_warning "Installation test failed. The application may not work correctly."
@@ -491,9 +496,9 @@ print_success "Nojoin has been successfully set up on your macOS system!"
 print_success "All tools installed to user directories (no admin required)"
 echo
 print_color $BLUE "Installation locations:"
-print_color $BLUE "• Python 3.11.9: $PYTHON_DIR"
-print_color $BLUE "• ffmpeg: $FFMPEG_DIR"
-print_color $BLUE "• Virtual environment: $(pwd)/.venv"
+print_color $BLUE "- Python 3.11.9: $PYTHON_DIR"
+print_color $BLUE "- ffmpeg: $FFMPEG_DIR"
+print_color $BLUE "- Virtual environment: $(pwd)/.venv"
 echo
 print_color $GREEN "How to run Nojoin:"
 print_color $GREEN "  1. Open the 'Nojoin' app from your Applications folder"
@@ -501,9 +506,9 @@ print_color $GREEN "  2. Run './run_nojoin.sh' from this directory"
 print_color $GREEN "  3. Double-click 'run_nojoin.sh' in Finder"
 echo
 print_color $YELLOW "Additional utilities created:"
-print_color $YELLOW "  • run_nojoin.sh - Start Nojoin"
-print_color $YELLOW "  • update_nojoin.sh - Update dependencies"
-print_color $YELLOW "  • Nojoin.app - Native macOS application"
+print_color $YELLOW "  - run_nojoin.sh - Start Nojoin"
+print_color $YELLOW "  - update_nojoin.sh - Update dependencies"
+print_color $YELLOW "  - Nojoin.app - Native macOS application"
 echo
 print_color $PURPLE "Important notes:"
 print_color $PURPLE "- Your recordings will be saved in the 'recordings' folder"

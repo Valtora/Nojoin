@@ -144,7 +144,7 @@ if %errorlevel% neq 0 (
 echo Portable Python 3.11.9 installed successfully.
 
 :python_ready
-echo ✓ Python 3.11.9 ready
+echo [✓] Python 3.11.9 ready
 
 :: Check and install ffmpeg to user directory
 echo [4] Checking ffmpeg installation...
@@ -204,7 +204,7 @@ rmdir /s /q "%TEMP%\ffmpeg_extract" >nul 2>&1
 echo Portable ffmpeg installed successfully.
 
 :ffmpeg_ready
-echo ✓ ffmpeg ready
+echo [✓] ffmpeg ready
 
 :: Update PATH for this session to include our tools
 set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%PATH%"
@@ -258,10 +258,10 @@ echo 1. CPU-only: Works on all computers but slower processing
 echo 2. CUDA (GPU): Much faster but requires NVIDIA GPU with CUDA support
 echo.
 echo CUDA Information:
-echo • CUDA requires an NVIDIA graphics card (GTX/RTX series)
-echo • If you don't know what a CUDA GPU is, you likely don't have one
-echo • You can always switch later by reinstalling PyTorch
-echo • CPU-only mode works fine for most users
+echo - CUDA requires an NVIDIA graphics card (GTX/RTX series)
+echo - If you don't know what a CUDA GPU is, you likely don't have one
+echo - You can always switch later by reinstalling PyTorch
+echo - CPU-only mode works fine for most users
 echo.
 set /p PYTORCH_CHOICE="Choose installation type (1=CPU-only, 2=CUDA): "
 
@@ -305,7 +305,8 @@ if "!PYTORCH_CHOICE!" == "2" (
             exit /b 1
         )
     ) else (
-        echo ✓ CUDA PyTorch installed successfully!
+        echo [✓] CUDA PyTorch installed successfully!
+        goto pytorch_complete
     )
 ) else (
     :install_cpu_pytorch
@@ -322,9 +323,16 @@ if "!PYTORCH_CHOICE!" == "2" (
         pause
         exit /b 1
     ) else (
-        echo ✓ CPU PyTorch installed successfully!
+        echo [✓] CPU PyTorch installed successfully!
     )
 )
+
+:pytorch_complete
+
+:: Upgrade pip first
+echo.
+echo Upgrading pip to latest version...
+python -m pip install --upgrade pip --quiet
 
 :: Install remaining dependencies
 echo [7] Installing remaining dependencies...
@@ -340,13 +348,13 @@ if %errorlevel% neq 0 (
 :: Test the installation
 echo.
 echo Testing installation...
-python -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('✓ Configuration system working')" 2>nul
+python -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('[✓] Configuration system working')" 2>nul
 if %errorlevel% neq 0 (
     echo WARNING: Installation test failed. The application may not work correctly.
     echo You may need to restart your computer and try again.
     pause
 ) else (
-    echo ✓ Installation test passed!
+    echo [✓] Installation test passed!
 )
 
 :: Create convenience scripts
@@ -403,22 +411,22 @@ echo ================================================================
 echo                    Setup Complete!
 echo ================================================================
 echo.
-echo ✓ Nojoin has been successfully set up on your Windows system!
-echo ✓ All tools installed to user directories (no admin required)
+echo [✓] Nojoin has been successfully set up on your Windows system!
+echo [✓] All tools installed to user directories (no admin required)
 echo.
 echo Installation locations:
-echo • Python 3.11.9: %PYTHON_DIR%
-echo • ffmpeg: %FFMPEG_DIR%
-echo • Virtual environment: %CD%\.venv
+echo - Python 3.11.9: %PYTHON_DIR%
+echo - ffmpeg: %FFMPEG_DIR%
+echo - Virtual environment: %CD%\.venv
 echo.
 echo How to run Nojoin:
 echo   1. Double-click the "Nojoin" shortcut on your desktop
 echo   2. Double-click "run_nojoin.bat" in this folder
 echo.
 echo Additional utilities created:
-echo   • run_nojoin.bat - Start Nojoin
-echo   • update_nojoin.bat - Update dependencies
-echo   • Desktop shortcut - Quick access to Nojoin
+echo   - run_nojoin.bat - Start Nojoin
+echo   - update_nojoin.bat - Update dependencies
+echo   - Desktop shortcut - Quick access to Nojoin
 echo.
 echo Important notes:
 echo - Your recordings will be saved in the 'recordings' folder
