@@ -36,7 +36,15 @@ I know there are similar free solutions out there which are all great and quirky
 Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and configuration for you. No technical knowledge required!
 
 ### Windows
-1. **Download** the Nojoin files to your desired folder
+1. **Download the Nojoin files:**
+   - **Option A (Easiest):** Go to the [Nojoin GitHub page](https://github.com/Valtora/Nojoin)
+   - Click the green **"Code"** button, then click **"Download ZIP"**
+   - Extract the ZIP file to your desired folder (e.g., `C:\Users\YourName\Documents\Nojoin`)
+   - **Option B (If you have Git):** Open Command Prompt or PowerShell and run:
+     ```bash
+     git clone https://github.com/Valtora/Nojoin
+     cd Nojoin
+     ```
 2. **Right-click** on `setup_windows.bat` and select **"Run as administrator"**
 3. **Follow the prompts** - the script will automatically:
    - Install Python 3.11.9 if needed
@@ -49,8 +57,19 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
 4. **Launch Nojoin** by double-clicking the desktop shortcut or running `Start Nojoin.bat`
 
 ### macOS
-1. **Download** the Nojoin files to your desired folder
-2. **Open Terminal** and navigate to the Nojoin folder
+1. **Download the Nojoin files:**
+   - **Option A (Easiest):** Go to the [Nojoin GitHub page](https://github.com/Valtora/Nojoin)
+   - Click the green **"Code"** button, then click **"Download ZIP"**
+   - Double-click the downloaded ZIP file to extract it
+   - Move the extracted folder to your desired location (e.g., `~/Documents/Nojoin`)
+   - **Option B (If you have Git):** Open Terminal and run:
+     ```bash
+     git clone https://github.com/Valtora/Nojoin
+     cd Nojoin
+     ```
+2. **Open Terminal** and navigate to the Nojoin folder:
+   - If you downloaded via ZIP: `cd ~/Documents/Nojoin` (or wherever you extracted it)
+   - If you used Git: `cd Nojoin` (if not already there)
 3. **Run** `./setup_mac.sh` and follow the prompts
 4. **The script will automatically:**
    - Install Homebrew if needed
