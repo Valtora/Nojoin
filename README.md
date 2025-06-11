@@ -35,7 +35,7 @@ I know there are similar free solutions out there which are all great and quirky
 1.  **Prerequisites:**
 
     *   **Python 3.11.9:**
-        This project requires Python 3.11.9 due to PyTorch compatibility issues. You can download it directly from the [Python website](https://www.python.org/downloads/release/python-3119/).
+        This project requires Python 3.11.9 SPECIFICALLY due to PyTorch compatibility issues. You can download it directly from the [Python website](https://www.python.org/downloads/release/python-3119/). The typical caveats of running multiple Python versions/installations apply.
 
         Alternatively, you can install it using your system's package manager:
 
