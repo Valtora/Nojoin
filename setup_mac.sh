@@ -1,309 +1,368 @@
 #!/bin/bash
 
-# Nojoin Setup Script for macOS
-# This script provides a fully automated setup experience for macOS users
-# It assumes minimal technical knowledge and handles dependency installation automatically
+# Nojoin Setup Script for macOS (User Mode - No Admin Required)
+# This script installs everything to user directories for maximum security
 
-set -e  # Exit on any error
-
-# Colors for output
+# Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-BOLD='\033[1m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
+print_color() {
+    printf "${1}${2}${NC}\n"
+}
+
+# Function to print step headers
 print_step() {
-    echo -e "${BLUE}[$1/7]${NC} ${BOLD}$2${NC}"
+    printf "\n${BLUE}[${1}] ${2}${NC}\n"
 }
 
+# Function to print success
 print_success() {
-    echo -e "${GREEN}✓${NC} $1"
+    printf "${GREEN}✓ ${1}${NC}\n"
 }
 
+# Function to print warning
 print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
+    printf "${YELLOW}⚠ ${1}${NC}\n"
 }
 
+# Function to print error
 print_error() {
-    echo -e "${RED}✗${NC} $1"
+    printf "${RED}✗ ${1}${NC}\n"
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
+# Set up user directories
+USER_TOOLS_DIR="$HOME/Library/Application Support/NojoinTools"
+PYTHON_DIR="$USER_TOOLS_DIR/Python311"
+FFMPEG_DIR="$USER_TOOLS_DIR/ffmpeg"
 
-# Check if running on macOS
-if [[ "$OSTYPE" != "darwin"* ]]; then
-    print_error "This script is designed for macOS only."
-    echo "For Linux users: You likely have the technical knowledge to set this up manually."
-    echo "Please refer to the README.md for manual installation instructions."
-    exit 1
-fi
+# Create tools directory
+mkdir -p "$USER_TOOLS_DIR"
 
-clear
+print_color $CYAN "================================================================"
+print_color $CYAN "                 Nojoin v0.5.2 Setup for macOS"
+print_color $CYAN "                        (User Mode - No Admin)"
+print_color $CYAN "================================================================"
 echo
-echo "================================================================"
-echo "               Nojoin v0.5.2 Setup for macOS"
-echo "================================================================"
+print_color $PURPLE "This script will set up Nojoin in your user directories."
+print_color $PURPLE "No administrator privileges required for maximum security."
 echo
-echo "This script will automatically set up Nojoin on your Mac."
-echo "It will check for and install missing dependencies as needed."
+print_color $YELLOW "Prerequisites that will be installed if missing:"
+print_color $YELLOW "- Python 3.11.9 (portable, user directory)"
+print_color $YELLOW "- ffmpeg (portable, user directory)"
+print_color $YELLOW "- Virtual environment and dependencies"
+print_color $YELLOW "- Metal Performance Shaders support (if Apple Silicon detected)"
 echo
-echo "Prerequisites that will be checked and installed if missing:"
-echo "• Homebrew package manager"
-echo "• Python 3.11.9 (specifically required for PyTorch compatibility)"
-echo "• ffmpeg"
-echo "• Virtual environment and dependencies"
-echo "• Metal Performance Shaders (MPS) support for Apple Silicon"
-echo
-read -p "Press Enter to begin automatic setup..."
+
+read -p "Press Enter to continue with the setup..."
 
 # Check if we're in the correct directory
-print_step 1 "Checking project directory"
-if [[ ! -f "Nojoin.py" ]]; then
+print_step "1/8" "Checking project directory..."
+if [ ! -f "Nojoin.py" ]; then
     print_error "This script must be run from the Nojoin project directory."
-    echo "Please navigate to the directory containing Nojoin.py and run this script again."
+    print_error "Please navigate to the directory containing Nojoin.py and run this script again."
+    echo
     exit 1
 fi
-print_success "Project directory verified"
+print_success "Project directory verified."
 
-# Check and install Homebrew
-print_step 2 "Checking Homebrew package manager"
-if ! command -v brew &> /dev/null; then
-    print_warning "Homebrew is not installed. Installing Homebrew..."
-    echo "Homebrew is required for automatic dependency installation on macOS."
-    echo
-    read -p "Install Homebrew now? (Y/n): " INSTALL_HOMEBREW
-    if [[ ! "$INSTALL_HOMEBREW" =~ ^[Nn]$ ]]; then
-        echo "Installing Homebrew (this may take several minutes)..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Check for required tools
+print_step "2/8" "Checking download capabilities..."
+if ! command -v curl &> /dev/null; then
+    print_error "curl is required for downloading dependencies but is not installed."
+    print_error "Please install curl and try again."
+    exit 1
+fi
+print_success "Download capabilities verified."
+
+# Check and install Python 3.11.9 to user directory
+print_step "3/8" "Checking Python 3.11.9 installation..."
+
+PYTHON_EXE="$PYTHON_DIR/bin/python3"
+
+# First check if we already have Python in our user tools directory
+if [ -f "$PYTHON_EXE" ]; then
+    if PYTHON_VERSION=$("$PYTHON_EXE" --version 2>&1 | cut -d' ' -f2); then
+        print_success "Found portable Python $PYTHON_VERSION in user directory."
+        PYTHON_READY=true
+    fi
+fi
+
+if [ -z "$PYTHON_READY" ]; then
+    # Check system Python
+    if command -v python3 &> /dev/null; then
+        PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
+        print_color $GREEN "Found system Python $PYTHON_VERSION"
         
-        # Add Homebrew to PATH for current session
-        if [[ -f "/opt/homebrew/bin/brew" ]]; then
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        elif [[ -f "/usr/local/bin/brew" ]]; then
-            eval "$(/usr/local/bin/brew shellenv)"
-        fi
-        
-        if command -v brew &> /dev/null; then
-            print_success "Homebrew installed successfully"
+        # Check if Python version is 3.11.x
+        if [[ $PYTHON_VERSION =~ ^3\.11\. ]]; then
+            print_color $GREEN "System Python 3.11.x detected. You can use this or install portable version."
+            read -p "Use system Python 3.11.x? (Y/n): " USE_SYSTEM
+            if [[ ! "$USE_SYSTEM" =~ ^[Nn]$ ]]; then
+                PYTHON_EXE="python3"
+                PYTHON_READY=true
+            fi
         else
-            print_error "Failed to install Homebrew"
-            echo "Please install Homebrew manually from: https://brew.sh"
+            print_warning "System Python $PYTHON_VERSION found, but Nojoin requires Python 3.11.9."
+            print_warning "We'll install a portable Python 3.11.9 to your user directory."
+            echo
+        fi
+    else
+        print_color $YELLOW "No system Python found. Installing portable Python 3.11.9..."
+    fi
+fi
+
+# Download and install portable Python 3.11.9 if needed
+if [ -z "$PYTHON_READY" ]; then
+    print_color $YELLOW "Installing portable Python 3.11.9 to user directory..."
+    print_color $YELLOW "This may take a few minutes..."
+    
+    # Detect architecture
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        PYTHON_URL="https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg"
+        PYTHON_PKG="/tmp/python3119.pkg"
+    else
+        PYTHON_URL="https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg"
+        PYTHON_PKG="/tmp/python3119.pkg"
+    fi
+    
+    print_color $YELLOW "Downloading Python 3.11.9..."
+    if ! curl -L -o "$PYTHON_PKG" "$PYTHON_URL"; then
+        print_error "Failed to download Python 3.11.9"
+        print_error "Please check your internet connection and try again."
+        exit 1
+    fi
+    
+    print_color $YELLOW "Extracting Python to user directory..."
+    rm -rf "$PYTHON_DIR"
+    mkdir -p "$PYTHON_DIR"
+    
+    # Extract the package contents to our user directory
+    cd /tmp
+    if ! xar -xf "$PYTHON_PKG"; then
+        print_error "Failed to extract Python package"
+        exit 1
+    fi
+    
+    # Find the Python framework and copy it to user directory
+    if [ -f "Python_Framework.pkg/Payload" ]; then
+        cd "$PYTHON_DIR"
+        if ! cat /tmp/Python_Framework.pkg/Payload | gunzip -dc | cpio -i; then
+            print_error "Failed to install Python framework"
             exit 1
         fi
+        
+        # Create symlinks for easier access
+        mkdir -p bin
+        ln -sf ../Library/Frameworks/Python.framework/Versions/3.11/bin/python3 bin/python3
+        ln -sf ../Library/Frameworks/Python.framework/Versions/3.11/bin/pip3 bin/pip3
+        
+        PYTHON_EXE="$PYTHON_DIR/bin/python3"
     else
-        print_error "Homebrew is required for automatic setup"
-        echo "Please install Homebrew from https://brew.sh and run this script again"
+        print_error "Failed to find Python framework in package"
         exit 1
     fi
-else
-    print_success "Homebrew found"
-    # Update Homebrew to latest version
-    echo "Updating Homebrew..."
-    brew update &> /dev/null || true
+    
+    # Clean up
+    rm -f "$PYTHON_PKG"
+    rm -rf /tmp/Python_Framework.pkg
+    
+    print_success "Portable Python 3.11.9 installed successfully."
 fi
 
-# Check and install Python 3.11.9 specifically
-print_step 3 "Checking Python 3.11.9 installation"
-PYTHON_CMD=""
+print_success "Python 3.11.9 ready"
 
-# Check for python3.11 first
-if command -v python3.11 &> /dev/null; then
-    PYTHON_CMD="python3.11"
-    PYTHON_VERSION=$(python3.11 --version 2>&1 | cut -d' ' -f2)
-    print_success "Found Python $PYTHON_VERSION (python3.11)"
-elif command -v python3 &> /dev/null; then
-    PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-    if [[ "$PYTHON_VERSION" =~ ^3\.11\. ]]; then
-        PYTHON_CMD="python3"
-        print_success "Found Python $PYTHON_VERSION (python3)"
-    else
-        print_warning "Found Python $PYTHON_VERSION, but Nojoin requires Python 3.11.9 specifically"
-        echo "Other versions may cause PyTorch compatibility issues."
-        echo "Installing Python 3.11..."
-        brew install python@3.11
-        PYTHON_CMD="python3.11"
+# Check and install ffmpeg to user directory
+print_step "4/8" "Checking ffmpeg installation..."
+
+FFMPEG_EXE="$FFMPEG_DIR/bin/ffmpeg"
+if [ -f "$FFMPEG_EXE" ]; then
+    if "$FFMPEG_EXE" -version &> /dev/null; then
+        print_success "Found portable ffmpeg in user directory."
+        FFMPEG_READY=true
     fi
-else
-    print_warning "Python is not installed"
-    echo "Installing Python 3.11..."
-    brew install python@3.11
-    PYTHON_CMD="python3.11"
 fi
 
-# Verify Python installation
-if ! command -v $PYTHON_CMD &> /dev/null; then
-    print_error "Failed to install Python 3.11"
-    echo "Please install Python 3.11 manually and run this script again"
-    exit 1
+if [ -z "$FFMPEG_READY" ]; then
+    # Check system ffmpeg
+    if command -v ffmpeg &> /dev/null; then
+        print_color $GREEN "Found system ffmpeg."
+        read -p "Use system ffmpeg? (Y/n): " USE_SYSTEM_FFMPEG
+        if [[ ! "$USE_SYSTEM_FFMPEG" =~ ^[Nn]$ ]]; then
+            FFMPEG_READY=true
+        fi
+    fi
 fi
 
-FINAL_PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
-print_success "Using Python $FINAL_PYTHON_VERSION ($PYTHON_CMD)"
-
-# Check and install ffmpeg
-print_step 4 "Checking ffmpeg installation"
-if ! command -v ffmpeg &> /dev/null; then
-    print_warning "ffmpeg is not installed"
-    echo "Installing ffmpeg..."
-    brew install ffmpeg
-    if ! command -v ffmpeg &> /dev/null; then
-        print_error "Failed to install ffmpeg"
-        echo "Please install ffmpeg manually and run this script again"
+# Download and install portable ffmpeg if needed
+if [ -z "$FFMPEG_READY" ]; then
+    print_color $YELLOW "Installing portable ffmpeg to user directory..."
+    
+    # Detect architecture for ffmpeg
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        FFMPEG_URL="https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip"
+    else
+        FFMPEG_URL="https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip"
+    fi
+    
+    FFMPEG_ZIP="/tmp/ffmpeg.zip"
+    
+    print_color $YELLOW "Downloading ffmpeg..."
+    if ! curl -L -o "$FFMPEG_ZIP" "$FFMPEG_URL"; then
+        print_error "Failed to download ffmpeg"
+        print_error "Please check your internet connection and try again."
         exit 1
     fi
-    print_success "ffmpeg installed successfully"
-else
-    print_success "ffmpeg found and working"
+    
+    print_color $YELLOW "Extracting ffmpeg to $FFMPEG_DIR..."
+    rm -rf "$FFMPEG_DIR"
+    mkdir -p "$FFMPEG_DIR/bin"
+    
+    cd "$FFMPEG_DIR/bin"
+    if ! unzip -q "$FFMPEG_ZIP"; then
+        print_error "Failed to extract ffmpeg"
+        exit 1
+    fi
+    
+    # Make executable
+    chmod +x ffmpeg
+    
+    # Clean up
+    rm -f "$FFMPEG_ZIP"
+    
+    print_success "Portable ffmpeg installed successfully."
 fi
+
+print_success "ffmpeg ready"
+
+# Update PATH for this session to include our tools
+export PATH="$PYTHON_DIR/bin:$FFMPEG_DIR/bin:$PATH"
 
 # Handle virtual environment
-print_step 5 "Setting up Python virtual environment"
-if [[ -d ".venv" ]]; then
-    print_warning "Virtual environment already exists"
+print_step "5/8" "Setting up Python virtual environment..."
+if [ -d ".venv" ]; then
+    print_color $GREEN "Virtual environment already exists."
     read -p "Do you want to recreate it? This will delete existing dependencies. (y/N): " RECREATE
     if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
-        echo "Removing existing virtual environment..."
+        print_color $YELLOW "Removing existing virtual environment..."
         rm -rf .venv
-        create_venv=true
+        CREATE_VENV=true
     else
-        print_success "Using existing virtual environment"
-        create_venv=false
+        print_color $GREEN "Using existing virtual environment."
+        CREATE_VENV=false
     fi
 else
-    create_venv=true
+    CREATE_VENV=true
 fi
 
-if [[ "$create_venv" == "true" ]]; then
-    echo "Creating virtual environment..."
-    $PYTHON_CMD -m venv .venv
-    if [[ $? -ne 0 ]]; then
-        print_error "Failed to create virtual environment"
-        echo "This might be due to Python installation issues"
+if [ "$CREATE_VENV" = true ]; then
+    print_color $YELLOW "Creating virtual environment..."
+    if ! "$PYTHON_EXE" -m venv .venv; then
+        print_error "Failed to create virtual environment."
+        print_error "This might be due to Python installation issues."
         exit 1
     fi
-    print_success "Virtual environment created"
 fi
 
-echo "Activating virtual environment..."
+print_color $YELLOW "Activating virtual environment..."
 source .venv/bin/activate
-if [[ $? -ne 0 ]]; then
-    print_error "Failed to activate virtual environment"
+if [ $? -ne 0 ]; then
+    print_error "Failed to activate virtual environment."
     exit 1
 fi
-print_success "Virtual environment activated"
 
 # Install basic PyTorch first for hardware detection
-print_step 6 "Installing basic PyTorch for system analysis"
-echo "This may take a few minutes..."
-pip install torch torchvision torchaudio --quiet
-if [[ $? -ne 0 ]]; then
-    print_error "Failed to install basic PyTorch"
-    echo "Please check your internet connection"
+print_step "6/8" "Installing basic PyTorch for system analysis..."
+print_color $YELLOW "This may take a few minutes..."
+if ! pip install torch torchvision torchaudio --quiet; then
+    print_error "Failed to install basic PyTorch."
+    print_error "Please check your internet connection."
     exit 1
 fi
 
 # Check for Apple Silicon and MPS support
-echo "Checking for Apple Silicon and MPS support..."
+print_step "7/8" "Checking for Apple Silicon and Metal Performance Shaders..."
 ARCH=$(uname -m)
-MPS_AVAILABLE=$(python -c "import torch; print('YES' if torch.backends.mps.is_available() else 'NO')" 2>/dev/null || echo "NO")
-
 if [[ "$ARCH" == "arm64" ]]; then
-    print_success "Apple Silicon Mac detected ($ARCH architecture)"
-    if [[ "$MPS_AVAILABLE" == "YES" ]]; then
-        print_success "Metal Performance Shaders (MPS) support available"
-        print_info "PyTorch will automatically use your GPU for faster processing"
+    print_color $GREEN ""
+    print_color $GREEN "========================================"
+    print_color $GREEN "  Apple Silicon Mac Detected!"
+    print_color $GREEN "========================================"
+    
+    # Check if MPS is available
+    if python3 -c "import torch; print('MPS_AVAILABLE' if torch.backends.mps.is_available() else 'MPS_NOT_AVAILABLE')" 2>/dev/null | grep -q "MPS_AVAILABLE"; then
+        print_color $GREEN "Metal Performance Shaders (MPS) is available for GPU acceleration!"
+        print_color $GREEN "This will provide faster transcription and processing on your Mac."
+        echo
     else
-        print_warning "MPS support not available (macOS 12.3+ required)"
-        print_info "Will use CPU-only processing"
+        print_warning "MPS support not detected. Using CPU processing."
     fi
 else
-    print_info "Intel Mac detected - using CPU processing"
+    print_color $YELLOW "Intel Mac detected. Using CPU processing."
 fi
 
 # Install remaining dependencies
-print_step 7 "Installing remaining dependencies"
-echo "This may take several minutes..."
-pip install -r requirements.txt --quiet
-if [[ $? -ne 0 ]]; then
-    print_error "Failed to install some dependencies"
-    echo "Please check your internet connection and try again"
+print_step "8/8" "Installing remaining dependencies..."
+print_color $YELLOW "This may take several minutes..."
+if ! pip install -r requirements.txt --quiet; then
+    print_error "Failed to install some dependencies."
+    print_error "Please check your internet connection and try again."
     exit 1
 fi
 
 # Test the installation
 echo
-echo "Testing installation..."
-python -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('✓ Configuration system working')" 2>/dev/null
-if [[ $? -ne 0 ]]; then
-    print_warning "Installation test failed. The application may not work correctly"
-    read -p "Press Enter to continue..."
-else
+print_color $YELLOW "Testing installation..."
+if python3 -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('✓ Configuration system working')" 2>/dev/null; then
     print_success "Installation test passed!"
-fi
-
-# Test MPS if available
-if [[ "$MPS_AVAILABLE" == "YES" ]]; then
-    echo "Testing MPS support..."
-    python -c "import torch; print('✓ MPS Available:', torch.backends.mps.is_available()); print('✓ Using device:', 'mps' if torch.backends.mps.is_available() else 'cpu')" 2>/dev/null
-    if [[ $? -eq 0 ]]; then
-        print_success "MPS support verified!"
-    else
-        print_warning "MPS support test failed"
-    fi
+else
+    print_warning "Installation test failed. The application may not work correctly."
+    print_warning "You may need to restart your computer and try again."
 fi
 
 # Create convenience scripts
 echo
-echo "Creating convenience scripts..."
+print_color $YELLOW "Creating convenience scripts..."
 
-# Create run script
+# Create run script with PATH updates
 cat > run_nojoin.sh << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
+export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:$PATH"
 source .venv/bin/activate
-python Nojoin.py
-if [[ $? -ne 0 ]]; then
-    echo
-    echo "Nojoin encountered an error. Check the logs for details."
-    read -p "Press Enter to exit..."
-fi
+python3 Nojoin.py
 EOF
-
 chmod +x run_nojoin.sh
 
 # Create update script
 cat > update_nojoin.sh << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
+export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:$PATH"
 source .venv/bin/activate
 echo "Updating Nojoin dependencies..."
 pip install --upgrade -r requirements.txt
 echo "Update complete!"
-read -p "Press Enter to exit..."
+read -p "Press Enter to continue..."
 EOF
-
 chmod +x update_nojoin.sh
 
-# Create Automator application for better macOS integration
-create_automator_app() {
-    CURRENT_DIR=$(pwd)
-    APP_NAME="Nojoin.app"
-    
-    if [[ -d "$HOME/Applications/$APP_NAME" ]]; then
-        rm -rf "$HOME/Applications/$APP_NAME"
-    fi
-    
-    # Create the app bundle structure
-    mkdir -p "$HOME/Applications/$APP_NAME/Contents/MacOS"
-    mkdir -p "$HOME/Applications/$APP_NAME/Contents/Resources"
-    
-    # Create Info.plist
-    cat > "$HOME/Applications/$APP_NAME/Contents/Info.plist" << EOF
+# Create macOS app bundle
+print_color $YELLOW "Creating macOS app bundle..."
+APP_DIR="$HOME/Applications/Nojoin.app"
+mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/Resources"
+
+# Create Info.plist
+cat > "$APP_DIR/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -311,91 +370,86 @@ create_automator_app() {
     <key>CFBundleExecutable</key>
     <string>Nojoin</string>
     <key>CFBundleIdentifier</key>
-    <string>com.nojoin.app</string>
+    <string>com.valtora.nojoin</string>
     <key>CFBundleName</key>
     <string>Nojoin</string>
-    <key>CFBundleDisplayName</key>
-    <string>Nojoin</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>0.5.2</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.14</string>
+    <string>0.5.2</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>NOJN</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
 </dict>
 </plist>
 EOF
 
-    # Create the executable
-    cat > "$HOME/Applications/$APP_NAME/Contents/MacOS/Nojoin" << EOF
+# Create launcher script
+CURRENT_DIR=$(pwd)
+cat > "$APP_DIR/Contents/MacOS/Nojoin" << EOF
 #!/bin/bash
 cd "$CURRENT_DIR"
+export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:\$PATH"
 source .venv/bin/activate
-python Nojoin.py
+python3 Nojoin.py
 EOF
+chmod +x "$APP_DIR/Contents/MacOS/Nojoin"
 
-    chmod +x "$HOME/Applications/$APP_NAME/Contents/MacOS/Nojoin"
-    
-    # Copy icon if it exists
-    if [[ -f "assets/NojoinLogo.png" ]]; then
-        cp "assets/NojoinLogo.png" "$HOME/Applications/$APP_NAME/Contents/Resources/"
-    fi
-    
-    print_success "Nojoin.app created in ~/Applications"
-}
+# Copy icon if available
+if [ -f "assets/icons/NojoinLogo.png" ]; then
+    cp "assets/icons/NojoinLogo.png" "$APP_DIR/Contents/Resources/"
+elif [ -f "assets/NojoinLogo.png" ]; then
+    cp "assets/NojoinLogo.png" "$APP_DIR/Contents/Resources/"
+fi
+
+# Clean up temporary files
+rm -f /tmp/python3119.pkg /tmp/ffmpeg.zip
 
 echo
-read -p "Would you like to create a Nojoin.app for easy access? (Y/n): " CREATE_APP
-if [[ ! "$CREATE_APP" =~ ^[Nn]$ ]]; then
-    create_automator_app
+print_color $CYAN "================================================================"
+print_color $CYAN "                    Setup Complete!"
+print_color $CYAN "================================================================"
+echo
+print_success "Nojoin has been successfully set up on your macOS system!"
+print_success "All tools installed to user directories (no admin required)"
+echo
+print_color $BLUE "Installation locations:"
+print_color $BLUE "• Python 3.11.9: $PYTHON_DIR"
+print_color $BLUE "• ffmpeg: $FFMPEG_DIR"
+print_color $BLUE "• Virtual environment: $(pwd)/.venv"
+echo
+print_color $GREEN "How to run Nojoin:"
+print_color $GREEN "  1. Open the 'Nojoin' app from your Applications folder"
+print_color $GREEN "  2. Run './run_nojoin.sh' from this directory"
+print_color $GREEN "  3. Double-click 'run_nojoin.sh' in Finder"
+echo
+print_color $YELLOW "Additional utilities created:"
+print_color $YELLOW "  • run_nojoin.sh - Start Nojoin"
+print_color $YELLOW "  • update_nojoin.sh - Update dependencies"
+print_color $YELLOW "  • Nojoin.app - Native macOS application"
+echo
+print_color $PURPLE "Important notes:"
+print_color $PURPLE "- Your recordings will be saved in the 'recordings' folder"
+print_color $PURPLE "- Settings and data are stored in the 'nojoin' folder"
+print_color $PURPLE "- All tools are in $USER_TOOLS_DIR"
+
+if [[ "$(uname -m)" == "arm64" ]]; then
+    echo
+    print_color $GREEN "🚀 Apple Silicon optimizations enabled for faster performance!"
 fi
 
 echo
-echo "================================================================"
-echo "                    Setup Complete!"
-echo "================================================================"
-echo
-print_success "Nojoin has been successfully set up on your Mac!"
-echo
-
-if [[ "$MPS_AVAILABLE" == "YES" ]]; then
-    print_success "Metal Performance Shaders (MPS) enabled for faster processing"
-else
-    print_info "CPU-only processing configured"
-fi
-
-echo
-echo "How to run Nojoin:"
-if [[ -d "$HOME/Applications/Nojoin.app" ]]; then
-    echo "  1. Open Nojoin.app from your Applications folder"
-    echo "  2. Search for 'Nojoin' in Spotlight"
-fi
-echo "  3. Run './run_nojoin.sh' from this directory"
-echo "  4. Or manually activate the virtual environment and run:"
-echo "     source .venv/bin/activate"
-echo "     python Nojoin.py"
-echo
-echo "Additional utilities created:"
-echo "  • run_nojoin.sh - Start Nojoin"
-echo "  • update_nojoin.sh - Update dependencies"
-if [[ -d "$HOME/Applications/Nojoin.app" ]]; then
-    echo "  • Nojoin.app - macOS application bundle"
-fi
-echo
-echo "Important notes:"
-echo "• Your recordings will be saved in the 'recordings' folder"
-echo "• Settings and data are stored in the 'nojoin' folder"
-echo "• Keep this folder intact - it contains your installation"
-if [[ "$ARCH" == "arm64" ]] && [[ "$MPS_AVAILABLE" == "NO" ]]; then
-    echo "• Update to macOS 12.3+ to enable Metal Performance Shaders"
-fi
-echo
-echo "For support, visit: https://github.com/Valtora/Nojoin"
+print_color $BLUE "For support, visit: https://github.com/Valtora/Nojoin"
 echo
 read -p "Press Enter to launch Nojoin now..."
 
 # Launch Nojoin
-echo "Launching Nojoin..."
+print_color $YELLOW "Launching Nojoin..."
 ./run_nojoin.sh 

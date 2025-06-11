@@ -47,10 +47,10 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
      ```bash
      cd Nojoin
      ```
-2. **Right-click** on `setup_windows.bat` and select **"Run as administrator"**
+2. **Double-click** on `setup_windows.bat` (no administrator privileges required!)
 3. **Follow the prompts** - the script will automatically:
-   - Install Python 3.11.9 if needed
-   - Install ffmpeg for audio processing
+   - Install Python 3.11.9 to your user directory if needed
+   - Install ffmpeg for audio processing to your user directory
    - Set up a virtual environment
    - Detect and configure GPU acceleration (CUDA) if available
    - Install all dependencies
@@ -76,9 +76,8 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
    - If you used Git: `cd Nojoin` (if not already there)
 3. **Run** `./setup_mac.sh` and follow the prompts
 4. **The script will automatically:**
-   - Install Homebrew if needed
-   - Install Python 3.11.9 if needed
-   - Install ffmpeg for audio processing
+   - Install Python 3.11.9 to your user directory if needed
+   - Install ffmpeg for audio processing to your user directory
    - Set up a virtual environment with optimal settings
    - Configure Metal Performance Shaders (MPS) for Apple Silicon Macs
    - Create a native macOS app bundle
@@ -87,7 +86,8 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
 5. **Launch Nojoin** from your Applications folder or run `./start_nojoin_mac.sh`
 
 ### What the Setup Scripts Do
-- **Intelligent Dependency Management:** Automatically detects and installs missing software
+- **Intelligent Dependency Management:** Automatically detects and installs missing software to user directories
+- **No Administrator Rights Required:** All installations use user-writable directories for maximum security
 - **Python Version Enforcement:** Ensures Python 3.11.9 is installed (required for PyTorch compatibility)
 - **Hardware Optimization:** Automatically configures GPU acceleration where available
 - **Error Recovery:** Comprehensive error handling with helpful guidance
