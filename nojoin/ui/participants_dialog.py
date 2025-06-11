@@ -75,6 +75,11 @@ class ParticipantsDialog(QDialog):
         self.layout.addWidget(scroll, 1)
         # Merge controls
         merge_row = QHBoxLayout()
+        # Add Participant button
+        self.add_participant_btn = QPushButton("Add Participant")
+        self.add_participant_btn.clicked.connect(self.show_add_participant_dialog)
+        merge_row.addWidget(self.add_participant_btn)
+        # Merge controls
         self.merge_mode_btn = QPushButton("Enable Merge Mode")
         self.merge_mode_btn.setCheckable(True)
         self.merge_mode_btn.toggled.connect(self.toggle_merge_mode)
@@ -637,6 +642,53 @@ class ParticipantsDialog(QDialog):
             return
         self._speakers_modified = True
         self._update_window_title()
+        self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
+        self._populate_speakers()
+        self.participants_updated.emit(self.recording_id)
+
+    # ------------------------- NEW METHODS -------------------------
+    def show_add_participant_dialog(self):
+        """Prompt user for a new participant name and create a silent participant entry."""
+        name, ok = QInputDialog.getText(self, "Add Participant", "Participant name:")
+        if not ok or not name.strip():
+            return  # Cancelled or empty
+
+        name = name.strip()
+
+        # Avoid duplicate names within this recording
+        current_names = [widgets['name_edit'].text().strip().lower() for widgets in self.speaker_widgets.values()]
+        if name.lower() in current_names:
+            QMessageBox.information(self, "Duplicate Participant", f"A participant named '{name}' already exists in this recording.")
+            return
+
+        self._add_participant(name)
+
+    def _add_participant(self, name: str):
+        """Create a new silent participant (no diarization lines) and associate with the recording."""
+        # Generate a unique synthetic diarization label (SILENT_XX)
+        existing_labels = {s['diarization_label'] for s in self.speakers}
+        idx = 0
+        while True:
+            label_candidate = f"SILENT_{idx:02d}"
+            if label_candidate not in existing_labels:
+                break
+            idx += 1
+
+        # Create or fetch the speaker row
+        speaker_info = db_ops.get_or_create_speaker(name)
+        if not speaker_info or 'id' not in speaker_info:
+            QMessageBox.critical(self, "Error", "Failed to create participant in database.")
+            return
+
+        if not db_ops.associate_speaker_with_recording(self.recording_id, speaker_info['id'], label_candidate):
+            QMessageBox.critical(self, "Error", "Failed to associate participant with recording.")
+            return
+
+        # Mark modified, refresh UI
+        self._speakers_modified = True
+        self._update_window_title()
+
+        # Refresh speaker list and UI
         self.speakers = db_ops.get_speakers_for_recording(self.recording_id)
         self._populate_speakers()
         self.participants_updated.emit(self.recording_id) 
