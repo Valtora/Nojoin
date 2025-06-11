@@ -77,9 +77,19 @@ class VersionManager:
                 logger.warning("Could not parse latest commit from GitHub")
                 return False, None
             
-            # Check if we have a newer commit than what we currently have
+            # Get current commit info
             current_commit = self._get_current_commit_sha()
-            has_update = current_commit != latest_commit_sha
+            
+            # If we have no local commit info, consider remote as an update
+            if not current_commit:
+                logger.info("No local commit info available, treating remote as update")
+                has_update = True
+            elif current_commit == latest_commit_sha:
+                logger.info("Already on latest commit")
+                return False, None
+            else:
+                # Compare commit dates to determine if remote is actually newer
+                has_update = self._is_remote_commit_newer(latest_commit_date, current_commit)
             
             if has_update:
                 # Format the date for display
@@ -103,7 +113,7 @@ class VersionManager:
                     'size': None  # Size unknown for direct ZIP download
                 }
             else:
-                logger.info("No updates available - already on latest commit")
+                logger.info("Local version is up to date or newer than remote")
                 return False, None
                 
         except requests.RequestException as e:
@@ -112,6 +122,83 @@ class VersionManager:
         except Exception as e:
             logger.error(f"Error checking for updates: {e}")
             return False, None
+    
+    def _is_remote_commit_newer(self, remote_commit_date: str, local_commit_sha: str) -> bool:
+        """
+        Compare remote commit date with local commit date to determine if remote is newer.
+        
+        Args:
+            remote_commit_date: ISO format date string from GitHub API
+            local_commit_sha: Local commit SHA to get date for
+            
+        Returns:
+            True if remote commit is newer than local commit
+        """
+        try:
+            # Parse remote commit date
+            if not remote_commit_date:
+                logger.warning("No remote commit date available")
+                return True  # Assume update available if we can't determine
+            
+            remote_date = datetime.fromisoformat(remote_commit_date.replace('Z', '+00:00'))
+            
+            # Get local commit date
+            local_commit_date = self._get_local_commit_date(local_commit_sha)
+            if not local_commit_date:
+                logger.warning("Could not get local commit date")
+                return True  # Assume update available if we can't determine
+            
+            # Compare dates
+            is_newer = remote_date > local_commit_date
+            
+            if is_newer:
+                logger.info(f"Remote commit is newer: {remote_date} > {local_commit_date}")
+            else:
+                logger.info(f"Local commit is same age or newer: {local_commit_date} >= {remote_date}")
+            
+            return is_newer
+            
+        except Exception as e:
+            logger.warning(f"Error comparing commit dates: {e}")
+            return True  # Default to assuming update available on error
+    
+    def _get_local_commit_date(self, commit_sha: str) -> Optional[datetime]:
+        """
+        Get the commit date for a local commit SHA.
+        
+        Args:
+            commit_sha: The commit SHA to get the date for
+            
+        Returns:
+            datetime object of the commit date, or None if not available
+        """
+        try:
+            # Try to get commit date from git
+            result = subprocess.run(
+                ['git', 'show', '-s', '--format=%cI', commit_sha],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                date_str = result.stdout.strip()
+                return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError, ValueError) as e:
+            logger.warning(f"Could not get local commit date via git: {e}")
+        
+        # Try to get from stored file with date
+        commit_file = os.path.join(self.project_root, '.current_commit_info')
+        if os.path.exists(commit_file):
+            try:
+                with open(commit_file, 'r') as f:
+                    data = json.loads(f.read())
+                    if data.get('sha') == commit_sha and data.get('date'):
+                        return datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+            except Exception as e:
+                logger.warning(f"Could not read commit info file: {e}")
+        
+        return None
     
     def _get_current_commit_sha(self) -> Optional[str]:
         """Get the current commit SHA if available."""
@@ -143,11 +230,56 @@ class VersionManager:
     def _store_current_commit_sha(self, commit_sha: str):
         """Store the current commit SHA for future reference."""
         try:
+            # Store just the SHA for backward compatibility
             commit_file = os.path.join(self.project_root, '.current_commit')
             with open(commit_file, 'w') as f:
                 f.write(commit_sha)
+            
+            # Also store commit info with date for enhanced tracking
+            self._store_current_commit_info(commit_sha)
         except Exception as e:
             logger.warning(f"Could not store current commit SHA: {e}")
+    
+    def _store_current_commit_info(self, commit_sha: str):
+        """Store detailed commit information including date."""
+        try:
+            commit_date = None
+            
+            # Try to get commit date from git
+            try:
+                result = subprocess.run(
+                    ['git', 'show', '-s', '--format=%cI', commit_sha],
+                    cwd=self.project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    commit_date = result.stdout.strip()
+            except Exception:
+                pass
+            
+            # If we don't have the date, try to get it from GitHub API
+            if not commit_date:
+                try:
+                    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/commits/{commit_sha}", timeout=10)
+                    if response.status_code == 200:
+                        commit_info = response.json()
+                        commit_date = commit_info.get("commit", {}).get("committer", {}).get("date", "")
+                except Exception:
+                    pass
+            
+            # Store the commit info
+            commit_info_file = os.path.join(self.project_root, '.current_commit_info')
+            with open(commit_info_file, 'w') as f:
+                json.dump({
+                    'sha': commit_sha,
+                    'date': commit_date,
+                    'stored_at': datetime.now().isoformat()
+                }, f, indent=2)
+                
+        except Exception as e:
+            logger.warning(f"Could not store commit info: {e}")
     
     def get_update_preferences(self) -> Dict:
         """Get current update preferences from config."""
