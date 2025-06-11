@@ -83,7 +83,7 @@ I know there are similar free solutions out there which are all great and quirky
     It is highly recommended to use a virtual environment to manage project dependencies.
     **Create the virtual environment:**
     ```bash
-    python3 -m venv .venv
+    python -m venv .venv
     ```
     **Activate the environment:**
     *   **Windows (PowerShell/CMD):**
@@ -104,15 +104,15 @@ I know there are similar free solutions out there which are all great and quirky
 
         *   **Windows/Linux (CPU-only):**
             ```bash
-            pip3 install torch torchvision torchaudio
+            pip install torch torchvision torchaudio
             ```
         *   **Windows/Linux (CUDA 12.8):**
             ```bash
-            pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+            pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
             ```
         *   **macOS (ARM/M-series chip):**
             ```bash
-            pip3 install torch torchvision torchaudio
+            pip install torch torchvision torchaudio
             ```
     
     *   **Step 2: Install Remaining Dependencies**
@@ -125,7 +125,7 @@ I know there are similar free solutions out there which are all great and quirky
 5.  **Run Nojoin:**
      Make sure your virtual environment is active before running the application:
      ```bash
-     python3 Nojoin.py
+     python Nojoin.py
      ```
 
 ## GPU Acceleration (CUDA Support)
