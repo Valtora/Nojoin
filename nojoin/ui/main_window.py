@@ -2671,18 +2671,7 @@ class MainWindow(QMainWindow):
                 self.chat_spinner.setParent(None)
             self._chat_request_in_progress = False
             return
-        api_key = config_manager.get("gemini_api_key")
-        if not api_key:
-            sys_html = '<div class="chat-message system"><i>Gemini API key not set.</i></div>'
-            self.chat_display_area.append(sys_html)
-            self.chat_input.setEnabled(True)
-            self.chat_send_button.setVisible(True)
-            if hasattr(self, 'chat_spinner'):
-                self.chat_panel.layout().removeWidget(self.chat_spinner)
-                self.chat_spinner.setParent(None)
-            self._chat_request_in_progress = False
-            return
-        # Use provider/model/api_key from config
+
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
         model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
@@ -2733,13 +2722,24 @@ class MainWindow(QMainWindow):
         # Content Actions
         # The "View Diarized Transcript" action is removed as per new design.
         # User can toggle via the button in the notes/transcript panel.
-        diarized_transcript_path = recording_data.get("diarized_transcript_path") # Still needed for other actions
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+        
+        # Check for transcript existence - first in database, then fallback to file
+        from nojoin.utils.transcript_store import TranscriptStore
+        transcript_exists = TranscriptStore.exists(recording_id, "diarized")
+        
+        if not transcript_exists:
+            # Fallback to file-based check for legacy recordings
+            diarized_transcript_path = recording_data.get("diarized_transcript_path")
+            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+            transcript_exists = bool(abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path))
+        
         # Regenerate Meeting Notes
         regenerate_notes_action = QAction("Regenerate Meeting Notes", self)
         regenerate_notes_action.triggered.connect(lambda checked, rid=recording_id, rdata=recording_data: self.on_regenerate_meeting_notes_clicked(rid, rdata))
-        api_key_available = bool(config_manager.get("gemini_api_key"))
-        transcript_exists = bool(abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path))
+        
+        # Check for API key availability based on the configured provider
+        provider = config_manager.get("llm_provider", "gemini")
+        api_key_available = bool(config_manager.get(f"{provider}_api_key"))
         regenerate_notes_action.setEnabled(api_key_available and transcript_exists)
         context_menu.addAction(regenerate_notes_action)
         # --- New: Manage Participants ---

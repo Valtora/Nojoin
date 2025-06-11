@@ -92,17 +92,53 @@ You are an expert meeting assistant. Using the mapping of speaker labels to real
         """
         Fetches the diarized transcript and speaker mapping for a recording, and returns the mapped transcript as plaintext.
         """
+        from ..utils.transcript_store import TranscriptStore
+        
         rec = db_ops.get_recording_by_id(recording_id)
         if not rec:
             return "Recording not found."
-        diarized_transcript_path = rec.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-        if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-            return "Diarized transcript not found."
-        speakers = db_ops.get_speakers_for_recording(recording_id)
-        label_to_name = {s['diarization_label']: s['name'] for s in speakers if s.get('diarization_label')}
-        label_to_name['Unknown'] = 'Unknown'
-        return render_transcript(abs_diarized_transcript_path, label_to_name, output_format="plain")
+        
+        # Try to get transcript from database first
+        diarized_transcript_text = TranscriptStore.get(recording_id, "diarized")
+        
+        if not diarized_transcript_text:
+            # Fallback to file-based approach for legacy recordings
+            diarized_transcript_path = rec.get("diarized_transcript_path")
+            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+            if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+                return "Diarized transcript not found."
+            
+            # Use file-based rendering for legacy transcripts
+            speakers = db_ops.get_speakers_for_recording(recording_id)
+            label_to_name = {s['diarization_label']: s['name'] for s in speakers if s.get('diarization_label')}
+            label_to_name['Unknown'] = 'Unknown'
+            return render_transcript(abs_diarized_transcript_path, label_to_name, output_format="plain")
+        else:
+            # Process database transcript text with speaker mapping
+            speakers = db_ops.get_speakers_for_recording(recording_id)
+            label_to_name = {s['diarization_label']: s['name'] for s in speakers if s.get('diarization_label')}
+            label_to_name['Unknown'] = 'Unknown'
+            
+            # Apply speaker mapping to transcript text and convert to plain text
+            mapped_lines = []
+            for line in diarized_transcript_text.split('\n'):
+                if not line.strip():
+                    continue
+                # Match lines like: [timestamp] - <speaker> - text
+                import re
+                m = re.match(r"(\[.*?\]\s*-\s*)(.+?)(\s*-\s*)(.*)", line)
+                if m:
+                    timestamp = m.group(1)
+                    diarization_label = m.group(2).strip()
+                    sep = m.group(3)
+                    text_content = m.group(4)
+                    # Map label to current name
+                    speaker_name = label_to_name.get(diarization_label, diarization_label)
+                    mapped_lines.append(f"{timestamp}{speaker_name}{sep}{text_content}")
+                else:
+                    mapped_lines.append(line)
+            
+            return "\n".join(mapped_lines)
 
 from google import genai
 
