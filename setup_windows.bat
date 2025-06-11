@@ -30,7 +30,7 @@ set "FFMPEG_DIR=%USER_TOOLS_DIR%\ffmpeg"
 if not exist "%USER_TOOLS_DIR%" mkdir "%USER_TOOLS_DIR%"
 
 :: Check if we're in the correct directory
-echo [1/8] Checking project directory...
+echo [1] Checking project directory...
 if not exist "Nojoin.py" (
     echo ERROR: This script must be run from the Nojoin project directory.
     echo Please navigate to the directory containing Nojoin.py and run this script again.
@@ -41,7 +41,7 @@ if not exist "Nojoin.py" (
 echo Project directory verified.
 
 :: Check if we have curl for downloads
-echo [2/8] Checking download capabilities...
+echo [2] Checking download capabilities...
 curl --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: curl is not available for downloading dependencies.
@@ -54,7 +54,7 @@ if %errorlevel% neq 0 (
 echo Download capabilities verified.
 
 :: Check and install Python 3.11.9 to user directory
-echo [3/8] Checking Python 3.11.9 installation...
+echo [3] Checking Python 3.11.9 installation...
 
 :: First check if we already have Python in our user tools directory
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
@@ -147,7 +147,7 @@ echo Portable Python 3.11.9 installed successfully.
 echo ✓ Python 3.11.9 ready
 
 :: Check and install ffmpeg to user directory
-echo [4/8] Checking ffmpeg installation...
+echo [4] Checking ffmpeg installation...
 
 set "FFMPEG_EXE=%FFMPEG_DIR%\bin\ffmpeg.exe"
 if exist "%FFMPEG_EXE%" (
@@ -210,7 +210,7 @@ echo ✓ ffmpeg ready
 set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%PATH%"
 
 :: Handle virtual environment
-echo [5/8] Setting up Python virtual environment...
+echo [5] Setting up Python virtual environment...
 if exist ".venv" (
     echo Virtual environment already exists.
     set /p RECREATE="Do you want to recreate it? This will delete existing dependencies. (y/N): "
@@ -245,66 +245,89 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Install basic PyTorch first for CUDA detection
-echo [6/8] Installing basic PyTorch for system analysis...
-echo This may take a few minutes...
-pip install torch torchvision torchaudio --quiet
-if %errorlevel% neq 0 (
-    echo ERROR: Failed to install basic PyTorch.
-    echo Please check your internet connection.
-    pause
-    exit /b 1
-)
+:: Choose PyTorch installation type
+echo [6] Choosing PyTorch installation...
+echo.
+echo ========================================
+echo     PyTorch Installation Options
+echo ========================================
+echo.
+echo Nojoin can use either CPU-only or GPU-accelerated processing:
+echo.
+echo 1. CPU-only: Works on all computers but slower processing
+echo 2. CUDA (GPU): Much faster but requires NVIDIA GPU with CUDA support
+echo.
+echo CUDA Information:
+echo • CUDA requires an NVIDIA graphics card (GTX/RTX series)
+echo • If you don't know what a CUDA GPU is, you likely don't have one
+echo • You can always switch later by reinstalling PyTorch
+echo • CPU-only mode works fine for most users
+echo.
+set /p PYTORCH_CHOICE="Choose installation type (1=CPU-only, 2=CUDA): "
 
-:: Check for CUDA-capable GPU
-echo [7/8] Checking for CUDA-capable hardware...
-python -c "import torch; gpu_available = torch.cuda.is_available(); gpu_count = torch.cuda.device_count() if gpu_available else 0; print(f'CUDA Available: {gpu_available}'); print(f'GPU Count: {gpu_count}'); [print(f'GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(gpu_count)]" 2>nul
-set CUDA_CHECK_RESULT=%errorlevel%
-
-if %CUDA_CHECK_RESULT% equ 0 (
-    :: Run a more detailed CUDA check
-    for /f "tokens=*" %%i in ('python -c "import torch; print('CUDA_AVAILABLE' if torch.cuda.is_available() else 'CUDA_NOT_AVAILABLE')" 2^>nul') do set CUDA_RESULT=%%i
+if "!PYTORCH_CHOICE!" == "2" (
+    echo.
+    echo ========================================
+    echo      CUDA PyTorch Installation
+    echo ========================================
+    echo.
+    echo Installing CUDA-enabled PyTorch...
+    echo This requires NVIDIA CUDA Toolkit to be installed on your system.
+    echo.
+    echo If you haven't installed CUDA Toolkit yet:
+    echo 1. Download NVIDIA CUDA Toolkit 12.8 from:
+    echo    https://developer.nvidia.com/cuda-12-8-1-download-archive
+    echo 2. Install it (may require administrator privileges)
+    echo 3. Restart your computer if prompted
+    echo.
+    set /p CONTINUE_CUDA="Continue with CUDA PyTorch installation? (Y/n): "
+    if /i "!CONTINUE_CUDA!" equ "n" (
+        echo Switching to CPU-only installation...
+        goto install_cpu_pytorch
+    )
     
-    if "!CUDA_RESULT!" == "CUDA_AVAILABLE" (
+    echo Installing CUDA PyTorch (this may take several minutes)...
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 --quiet
+    if %errorlevel% neq 0 (
         echo.
-        echo ========================================
-        echo  CUDA-Compatible GPU Detected!
-        echo ========================================
-        python -c "import torch; [print(f'  GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
+        echo WARNING: CUDA PyTorch installation failed.
+        echo This might be due to:
+        echo - Missing CUDA Toolkit
+        echo - Incompatible GPU
+        echo - Network issues
         echo.
-        echo To get significantly faster transcription and processing,
-        echo you can install NVIDIA CUDA Toolkit 12.8.
-        echo.
-        echo Note: CUDA Toolkit installation may require administrator privileges.
-        echo You can install it later if preferred.
-        echo.
-        set /p INSTALL_CUDA="Would you like guidance for CUDA installation? (Y/n): "
-        if /i "!INSTALL_CUDA!" neq "n" (
-            echo.
-            echo CUDA Installation Instructions:
-            echo 1. Download NVIDIA CUDA Toolkit 12.8 from:
-            echo    https://developer.nvidia.com/cuda-12-8-1-download-archive
-            echo 2. Run the installer (may require administrator privileges)
-            echo 3. Restart your computer if prompted
-            echo 4. Run this setup script again to configure CUDA PyTorch
-            echo.
-            set /p CONTINUE_SETUP="Continue setup with CPU-only PyTorch for now? (Y/n): "
-            if /i "!CONTINUE_SETUP!" equ "n" (
-                echo Setup paused for CUDA installation.
-                echo Run this script again after installing CUDA.
-                pause
-                exit /b 0
-            )
+        set /p FALLBACK_CPU="Install CPU-only PyTorch instead? (Y/n): "
+        if /i "!FALLBACK_CPU!" neq "n" (
+            goto install_cpu_pytorch
+        ) else (
+            echo Setup cancelled. Please install CUDA Toolkit and try again.
+            pause
+            exit /b 1
         )
     ) else (
-        echo No CUDA-capable GPU detected. Using CPU-only processing.
+        echo ✓ CUDA PyTorch installed successfully!
     )
 ) else (
-    echo Could not check CUDA status. Using CPU-only processing.
+    :install_cpu_pytorch
+    echo.
+    echo ========================================
+    echo      CPU-only PyTorch Installation
+    echo ========================================
+    echo.
+    echo Installing CPU-only PyTorch (this may take several minutes)...
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet
+    if %errorlevel% neq 0 (
+        echo ERROR: Failed to install CPU PyTorch.
+        echo Please check your internet connection.
+        pause
+        exit /b 1
+    ) else (
+        echo ✓ CPU PyTorch installed successfully!
+    )
 )
 
 :: Install remaining dependencies
-echo [8/8] Installing remaining dependencies...
+echo [7] Installing remaining dependencies...
 echo This may take several minutes...
 pip install -r requirements.txt --quiet
 if %errorlevel% neq 0 (

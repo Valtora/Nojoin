@@ -63,7 +63,7 @@ echo
 read -p "Press Enter to continue with the setup..."
 
 # Check if we're in the correct directory
-print_step "1/8" "Checking project directory..."
+print_step "1" "Checking project directory..."
 if [ ! -f "Nojoin.py" ]; then
     print_error "This script must be run from the Nojoin project directory."
     print_error "Please navigate to the directory containing Nojoin.py and run this script again."
@@ -73,7 +73,7 @@ fi
 print_success "Project directory verified."
 
 # Check for required tools
-print_step "2/8" "Checking download capabilities..."
+print_step "2" "Checking download capabilities..."
 if ! command -v curl &> /dev/null; then
     print_error "curl is required for downloading dependencies but is not installed."
     print_error "Please install curl and try again."
@@ -180,7 +180,7 @@ fi
 print_success "Python 3.11.9 ready"
 
 # Check and install ffmpeg to user directory
-print_step "4/8" "Checking ffmpeg installation..."
+print_step "4" "Checking ffmpeg installation..."
 
 FFMPEG_EXE="$FFMPEG_DIR/bin/ffmpeg"
 if [ -f "$FFMPEG_EXE" ]; then
@@ -247,7 +247,7 @@ print_success "ffmpeg ready"
 export PATH="$PYTHON_DIR/bin:$FFMPEG_DIR/bin:$PATH"
 
 # Handle virtual environment
-print_step "5/8" "Setting up Python virtual environment..."
+print_step "5" "Setting up Python virtual environment..."
 if [ -d ".venv" ]; then
     print_color $GREEN "Virtual environment already exists."
     read -p "Do you want to recreate it? This will delete existing dependencies. (y/N): " RECREATE
@@ -279,38 +279,106 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Install basic PyTorch first for hardware detection
-print_step "6/8" "Installing basic PyTorch for system analysis..."
-print_color $YELLOW "This may take a few minutes..."
-if ! pip install torch torchvision torchaudio --quiet; then
-    print_error "Failed to install basic PyTorch."
-    print_error "Please check your internet connection."
-    exit 1
-fi
-
-# Check for Apple Silicon and MPS support
-print_step "7/8" "Checking for Apple Silicon and Metal Performance Shaders..."
+# Choose PyTorch installation type
+print_step "6" "Choosing PyTorch installation..."
+echo
+print_color $CYAN "========================================"
+print_color $CYAN "    PyTorch Installation Options"
+print_color $CYAN "========================================"
+echo
+print_color $WHITE "Nojoin can use different processing modes:"
+echo
 ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
-    print_color $GREEN ""
-    print_color $GREEN "========================================"
-    print_color $GREEN "  Apple Silicon Mac Detected!"
-    print_color $GREEN "========================================"
+    print_color $GREEN "1. CPU-only: Works on all Macs but slower processing"
+    print_color $GREEN "2. MPS (Metal): GPU acceleration for Apple Silicon Macs (Recommended)"
+    echo
+    print_color $YELLOW "Apple Silicon Information:"
+    print_color $YELLOW "• MPS uses your Mac's GPU for faster processing"
+    print_color $YELLOW "• Your Mac appears to be Apple Silicon (recommended: MPS)"
+    print_color $YELLOW "• You can always switch later by reinstalling PyTorch"
+    echo
+    read -p "Choose installation type (1=CPU-only, 2=MPS): " PYTORCH_CHOICE
     
-    # Check if MPS is available
-    if python3 -c "import torch; print('MPS_AVAILABLE' if torch.backends.mps.is_available() else 'MPS_NOT_AVAILABLE')" 2>/dev/null | grep -q "MPS_AVAILABLE"; then
-        print_color $GREEN "Metal Performance Shaders (MPS) is available for GPU acceleration!"
-        print_color $GREEN "This will provide faster transcription and processing on your Mac."
+    if [[ "$PYTORCH_CHOICE" == "2" ]]; then
         echo
+        print_color $CYAN "========================================"
+        print_color $CYAN "     MPS PyTorch Installation"
+        print_color $CYAN "========================================"
+        echo
+        print_color $YELLOW "Installing MPS-enabled PyTorch (this may take several minutes)..."
+        if pip install torch torchvision torchaudio --quiet; then
+            print_success "✓ MPS PyTorch installed successfully!"
+            
+            # Test MPS availability
+            if python3 -c "import torch; print('MPS_AVAILABLE' if torch.backends.mps.is_available() else 'MPS_NOT_AVAILABLE')" 2>/dev/null | grep -q "MPS_AVAILABLE"; then
+                print_color $GREEN "🚀 Metal Performance Shaders (MPS) is available for GPU acceleration!"
+                print_color $GREEN "This will provide significantly faster transcription and processing."
+            else
+                print_warning "MPS support not detected. Will use CPU processing."
+            fi
+        else
+            print_warning "MPS PyTorch installation failed. Falling back to CPU-only..."
+            if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet; then
+                print_error "Failed to install CPU PyTorch."
+                print_error "Please check your internet connection."
+                exit 1
+            fi
+            print_success "✓ CPU PyTorch installed successfully!"
+        fi
     else
-        print_warning "MPS support not detected. Using CPU processing."
+        echo
+        print_color $CYAN "========================================"
+        print_color $CYAN "     CPU-only PyTorch Installation"
+        print_color $CYAN "========================================"
+        echo
+        print_color $YELLOW "Installing CPU-only PyTorch (this may take several minutes)..."
+        if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet; then
+            print_error "Failed to install CPU PyTorch."
+            print_error "Please check your internet connection."
+            exit 1
+        fi
+        print_success "✓ CPU PyTorch installed successfully!"
     fi
 else
-    print_color $YELLOW "Intel Mac detected. Using CPU processing."
+    # Intel Mac
+    print_color $GREEN "1. CPU-only: Standard processing for Intel Macs (Recommended)"
+    print_color $GREEN "2. Custom: Advanced users only"
+    echo
+    print_color $YELLOW "Intel Mac Information:"
+    print_color $YELLOW "• Your Mac appears to be Intel-based"
+    print_color $YELLOW "• CPU-only mode is recommended for Intel Macs"
+    print_color $YELLOW "• GPU acceleration is not available on Intel Macs"
+    echo
+    read -p "Choose installation type (1=CPU-only, 2=Custom): " PYTORCH_CHOICE
+    
+    if [[ "$PYTORCH_CHOICE" == "2" ]]; then
+        echo
+        print_color $YELLOW "Installing standard PyTorch..."
+        if ! pip install torch torchvision torchaudio --quiet; then
+            print_error "Failed to install PyTorch."
+            print_error "Please check your internet connection."
+            exit 1
+        fi
+        print_success "✓ PyTorch installed successfully!"
+    else
+        echo
+        print_color $CYAN "========================================"
+        print_color $CYAN "     CPU-only PyTorch Installation"
+        print_color $CYAN "========================================"
+        echo
+        print_color $YELLOW "Installing CPU-only PyTorch (this may take several minutes)..."
+        if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet; then
+            print_error "Failed to install CPU PyTorch."
+            print_error "Please check your internet connection."
+            exit 1
+        fi
+        print_success "✓ CPU PyTorch installed successfully!"
+    fi
 fi
 
 # Install remaining dependencies
-print_step "8/8" "Installing remaining dependencies..."
+print_step "7" "Installing remaining dependencies..."
 print_color $YELLOW "This may take several minutes..."
 if ! pip install -r requirements.txt --quiet; then
     print_error "Failed to install some dependencies."

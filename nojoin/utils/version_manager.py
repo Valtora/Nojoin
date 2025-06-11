@@ -463,59 +463,87 @@ def backup_user_data():
         # Backup database
         db_path = os.path.join(PROJECT_ROOT, "nojoin", "nojoin_data.db")
         if os.path.exists(db_path):
-            backup_db_path = os.path.join(tempfile.gettempdir(), "nojoin_data_backup.db")
-            shutil.copy2(db_path, backup_db_path)
-            user_data['database'] = backup_db_path
+            try:
+                backup_db_path = os.path.join(tempfile.gettempdir(), "nojoin_data_backup.db")
+                shutil.copy2(db_path, backup_db_path)
+                user_data['database'] = backup_db_path
+                logger.info("Database backed up")
+            except Exception as e:
+                logger.warning(f"Failed to backup database: {{e}}")
         
         # Backup config
         config_path = os.path.join(PROJECT_ROOT, "nojoin", "config.json")
         if os.path.exists(config_path):
-            backup_config_path = os.path.join(tempfile.gettempdir(), "config_backup.json")
-            shutil.copy2(config_path, backup_config_path)
-            user_data['config'] = backup_config_path
+            try:
+                backup_config_path = os.path.join(tempfile.gettempdir(), "config_backup.json")
+                shutil.copy2(config_path, backup_config_path)
+                user_data['config'] = backup_config_path
+                logger.info("Config backed up")
+            except Exception as e:
+                logger.warning(f"Failed to backup config: {{e}}")
         
         # Backup recordings directory
         recordings_dir = os.path.join(PROJECT_ROOT, "recordings")
         if os.path.exists(recordings_dir):
-            backup_recordings_dir = os.path.join(tempfile.gettempdir(), "recordings_backup")
-            if os.path.exists(backup_recordings_dir):
-                shutil.rmtree(backup_recordings_dir)
-            shutil.copytree(recordings_dir, backup_recordings_dir)
-            user_data['recordings'] = backup_recordings_dir
+            try:
+                backup_recordings_dir = os.path.join(tempfile.gettempdir(), "recordings_backup")
+                if os.path.exists(backup_recordings_dir):
+                    shutil.rmtree(backup_recordings_dir)
+                shutil.copytree(recordings_dir, backup_recordings_dir)
+                user_data['recordings'] = backup_recordings_dir
+                logger.info("Recordings backed up")
+            except Exception as e:
+                logger.warning(f"Failed to backup recordings: {{e}}")
         
-        logger.info("User data backed up")
+        logger.info(f"User data backup completed. Items backed up: {{list(user_data.keys())}}")
         return user_data
         
     except Exception as e:
         logger.error(f"Failed to backup user data: {{e}}")
-        return user_data
+        return user_data  # Return empty dict instead of None
 
 def restore_user_data(user_data_backup):
     """Restore user data after update."""
+    if not user_data_backup:
+        logger.info("No user data to restore")
+        return
+        
     try:
         # Restore database
         if 'database' in user_data_backup:
-            dest_db_path = os.path.join(PROJECT_ROOT, "nojoin", "nojoin_data.db")
-            os.makedirs(os.path.dirname(dest_db_path), exist_ok=True)
-            shutil.copy2(user_data_backup['database'], dest_db_path)
-            os.remove(user_data_backup['database'])
+            try:
+                dest_db_path = os.path.join(PROJECT_ROOT, "nojoin", "nojoin_data.db")
+                os.makedirs(os.path.dirname(dest_db_path), exist_ok=True)
+                shutil.copy2(user_data_backup['database'], dest_db_path)
+                os.remove(user_data_backup['database'])
+                logger.info("Database restored")
+            except Exception as e:
+                logger.warning(f"Failed to restore database: {{e}}")
         
         # Restore config
         if 'config' in user_data_backup:
-            dest_config_path = os.path.join(PROJECT_ROOT, "nojoin", "config.json")
-            os.makedirs(os.path.dirname(dest_config_path), exist_ok=True)
-            shutil.copy2(user_data_backup['config'], dest_config_path)
-            os.remove(user_data_backup['config'])
+            try:
+                dest_config_path = os.path.join(PROJECT_ROOT, "nojoin", "config.json")
+                os.makedirs(os.path.dirname(dest_config_path), exist_ok=True)
+                shutil.copy2(user_data_backup['config'], dest_config_path)
+                os.remove(user_data_backup['config'])
+                logger.info("Config restored")
+            except Exception as e:
+                logger.warning(f"Failed to restore config: {{e}}")
         
         # Restore recordings
         if 'recordings' in user_data_backup:
-            dest_recordings_dir = os.path.join(PROJECT_ROOT, "recordings")
-            if os.path.exists(dest_recordings_dir):
-                shutil.rmtree(dest_recordings_dir)
-            shutil.copytree(user_data_backup['recordings'], dest_recordings_dir)
-            shutil.rmtree(user_data_backup['recordings'])
+            try:
+                dest_recordings_dir = os.path.join(PROJECT_ROOT, "recordings")
+                if os.path.exists(dest_recordings_dir):
+                    shutil.rmtree(dest_recordings_dir)
+                shutil.copytree(user_data_backup['recordings'], dest_recordings_dir)
+                shutil.rmtree(user_data_backup['recordings'])
+                logger.info("Recordings restored")
+            except Exception as e:
+                logger.warning(f"Failed to restore recordings: {{e}}")
         
-        logger.info("User data restored")
+        logger.info("User data restoration completed")
         
     except Exception as e:
         logger.error(f"Failed to restore user data: {{e}}")
@@ -523,76 +551,159 @@ def restore_user_data(user_data_backup):
 def cleanup_old_installation():
     """Remove old installation files (preserving user data temporarily)."""
     try:
+        if not os.path.exists(PROJECT_ROOT):
+            logger.error(f"Project root does not exist: {{PROJECT_ROOT}}")
+            return False
+        
         preserve_items = {{'recordings', 'nojoin'}}  # These are backed up separately
         
-        for item in os.listdir(PROJECT_ROOT):
-            item_path = os.path.join(PROJECT_ROOT, item)
-            
+        try:
+            items_to_process = os.listdir(PROJECT_ROOT)
+        except (OSError, PermissionError) as e:
+            logger.error(f"Cannot access project directory: {{e}}")
+            return False
+        
+        if items_to_process is None:
+            logger.error("Failed to list project directory contents")
+            return False
+        
+        for item in items_to_process:
             if item in preserve_items:
                 continue
+                
+            item_path = os.path.join(PROJECT_ROOT, item)
             
-            if os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-            elif os.path.isfile(item_path):
-                os.remove(item_path)
+            try:
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                elif os.path.isfile(item_path):
+                    os.remove(item_path)
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Could not remove {{item}}: {{e}}")
         
         logger.info("Old installation cleaned up")
+        return True
         
     except Exception as e:
         logger.error(f"Failed to cleanup old installation: {{e}}")
+        return False
 
 def extract_update():
     """Extract the update archive."""
     logger.info("Extracting update...")
     
     try:
+        # Validate update archive exists
+        if not os.path.exists(UPDATE_ARCHIVE):
+            logger.error(f"Update archive not found: {{UPDATE_ARCHIVE}}")
+            return False
+        
         # Create temporary extraction directory
         extract_dir = os.path.join(tempfile.gettempdir(), "nojoin_update_extract")
         if os.path.exists(extract_dir):
-            shutil.rmtree(extract_dir)
-        os.makedirs(extract_dir)
+            try:
+                shutil.rmtree(extract_dir)
+            except Exception as e:
+                logger.warning(f"Could not remove existing extract directory: {{e}}")
+        
+        try:
+            os.makedirs(extract_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Could not create extraction directory: {{e}}")
+            return False
         
         # Extract update
-        with zipfile.ZipFile(UPDATE_ARCHIVE, 'r') as zipf:
-            zipf.extractall(extract_dir)
+        try:
+            logger.info("Extracting archive...")
+            with zipfile.ZipFile(UPDATE_ARCHIVE, 'r') as zipf:
+                zipf.extractall(extract_dir)
+        except Exception as e:
+            logger.error(f"Failed to extract archive: {{e}}")
+            return False
         
         # Find the extracted directory (might be nested)
-        extracted_items = os.listdir(extract_dir)
+        try:
+            extracted_items = os.listdir(extract_dir)
+        except (OSError, PermissionError) as e:
+            logger.error(f"Cannot access extracted files: {{e}}")
+            return False
+        
+        if not extracted_items:
+            logger.error("No files found in extracted archive")
+            return False
+        
         if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_dir, extracted_items[0])):
             source_dir = os.path.join(extract_dir, extracted_items[0])
+            logger.info(f"Found nested directory: {{extracted_items[0]}}")
         else:
             source_dir = extract_dir
+            logger.info("Using extraction directory as source")
+        
+        # Validate source directory
+        if not os.path.exists(source_dir):
+            logger.error(f"Source directory not found: {{source_dir}}")
+            return False
         
         # Backup user data before overwriting
+        logger.info("Backing up user data...")
         user_data_backup = backup_user_data()
+        # backup_user_data() always returns a dict, never None
         
         # Remove old installation (except user data)
-        cleanup_old_installation()
+        logger.info("Cleaning up old installation...")
+        if not cleanup_old_installation():
+            logger.error("Failed to cleanup old installation")
+            return False
         
         # Copy new files
         logger.info("Installing new version...")
-        for item in os.listdir(source_dir):
+        try:
+            source_items = os.listdir(source_dir)
+        except (OSError, PermissionError) as e:
+            logger.error(f"Cannot access source directory: {{e}}")
+            return False
+        
+        if not source_items:
+            logger.error("No files found in source directory")
+            return False
+        
+        for item in source_items:
             source_path = os.path.join(source_dir, item)
             dest_path = os.path.join(PROJECT_ROOT, item)
             
-            if os.path.isdir(source_path):
-                if os.path.exists(dest_path):
-                    shutil.rmtree(dest_path)
-                shutil.copytree(source_path, dest_path)
-            else:
-                shutil.copy2(source_path, dest_path)
+            try:
+                if os.path.isdir(source_path):
+                    if os.path.exists(dest_path):
+                        shutil.rmtree(dest_path)
+                    shutil.copytree(source_path, dest_path)
+                else:
+                    # Ensure destination directory exists
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    shutil.copy2(source_path, dest_path)
+                    
+                logger.debug(f"Copied {{item}}")
+            except Exception as e:
+                logger.error(f"Failed to copy {{item}}: {{e}}")
+                return False
         
         # Restore user data
+        logger.info("Restoring user data...")
         restore_user_data(user_data_backup)
         
-        # Cleanup
-        shutil.rmtree(extract_dir)
+        # Cleanup extraction directory
+        try:
+            shutil.rmtree(extract_dir)
+            logger.info("Cleaned up extraction directory")
+        except Exception as e:
+            logger.warning(f"Could not cleanup extraction directory: {{e}}")
         
         logger.info("Update extracted successfully")
         return True
         
     except Exception as e:
         logger.error(f"Failed to extract update: {{e}}")
+        import traceback
+        logger.error(f"Traceback: {{traceback.format_exc()}}")
         return False
 
 def restart_application():
@@ -628,33 +739,66 @@ def main():
     logger.info("Nojoin updater started")
     
     try:
+        # Validate environment
+        if not UPDATE_ARCHIVE:
+            logger.error("Update archive path not specified")
+            return False
+            
+        if not PROJECT_ROOT:
+            logger.error("Project root not specified")
+            return False
+        
         # Check if update archive exists
         if not os.path.exists(UPDATE_ARCHIVE):
             logger.error(f"Update archive not found: {{UPDATE_ARCHIVE}}")
             return False
         
+        # Validate project root exists
+        if not os.path.exists(PROJECT_ROOT):
+            logger.error(f"Project root not found: {{PROJECT_ROOT}}")
+            return False
+        
+        logger.info(f"Update archive: {{UPDATE_ARCHIVE}}")
+        logger.info(f"Project root: {{PROJECT_ROOT}}")
+        
         # Wait for main process to end
-        wait_for_process_end()
+        try:
+            wait_for_process_end()
+        except Exception as e:
+            logger.warning(f"Error waiting for process to end: {{e}}")
         
         # Create backup if needed
+        logger.info("Creating backup...")
         backup_path = backup_current_installation()
         if not backup_path:
             logger.warning("Could not create backup, continuing anyway...")
         
         # Extract and install update
+        logger.info("Starting update extraction...")
         if not extract_update():
-            logger.error("Update failed")
+            logger.error("Update extraction failed")
             return False
         
         # Restart application
-        restart_application()
+        logger.info("Restarting application...")
+        try:
+            restart_application()
+        except Exception as e:
+            logger.error(f"Failed to restart application: {{e}}")
+            # Don't return False here as the update itself succeeded
         
-        # Cleanup
-        if os.path.exists(UPDATE_ARCHIVE):
-            os.remove(UPDATE_ARCHIVE)
+        # Cleanup update archive
+        logger.info("Cleaning up...")
+        try:
+            if os.path.exists(UPDATE_ARCHIVE):
+                os.remove(UPDATE_ARCHIVE)
+                logger.info("Update archive removed")
+        except Exception as e:
+            logger.warning(f"Could not remove update archive: {{e}}")
         
         # Store the updated commit SHA (extract from archive name or metadata)
         try:
+            logger.info("Updating commit tracking...")
             # Try to get the latest commit SHA from GitHub after update
             import requests
             response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/commits/main", timeout=10)
@@ -666,6 +810,10 @@ def main():
                     with open(commit_file, 'w') as f:
                         f.write(latest_commit_sha)
                     logger.info(f"Stored current commit SHA: {{latest_commit_sha[:8]}}")
+                else:
+                    logger.warning("Could not get commit SHA from response")
+            else:
+                logger.warning(f"GitHub API request failed: {{response.status_code}}")
         except Exception as e:
             logger.warning(f"Could not store commit SHA: {{e}}")
         
@@ -674,6 +822,8 @@ def main():
         
     except Exception as e:
         logger.error(f"Update failed with error: {{e}}")
+        import traceback
+        logger.error(f"Traceback: {{traceback.format_exc()}}")
         return False
 
 if __name__ == "__main__":
