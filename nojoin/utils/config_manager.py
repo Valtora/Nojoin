@@ -30,7 +30,12 @@ DEFAULT_CONFIG = {
     "advanced": {
         "log_verbosity": "INFO"
     },
-    "min_meeting_length_seconds": 1 # Always at least 1 second
+    "min_meeting_length_seconds": 1, # Always at least 1 second
+    "ui_scale": {
+        "mode": "auto",  # "auto", "manual"
+        "scale_factor": 1.0,  # Manual scale factor override (when mode is "manual")
+        "tier": None  # Auto-detected tier (for display purposes)
+    }
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
@@ -89,6 +94,10 @@ def get_available_notes_font_sizes():
         list: List of available font size options
     """
     return ["Small", "Medium", "Large"]
+
+def get_available_ui_scale_modes():
+    """Returns available UI scale modes."""
+    return ["auto", "manual"]
 
 def get_notes_font_size_pixels(size_setting):
     """

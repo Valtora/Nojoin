@@ -286,11 +286,18 @@ class MainWindow(QMainWindow):
         # --- End robust early attribute init ---
         self.setWindowTitle("Nojoin")
         self.setGeometry(100, 100, 1200, 800)
-        # Set minimum width for the main window
-        self.setMinimumSize(1700, 800)
+        
+        # --- Initialize UI Scale Manager ---
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        self.ui_scale_manager = get_ui_scale_manager()
+        
+        # Set minimum size based on screen resolution
+        min_sizes = self.ui_scale_manager.get_scaled_minimum_sizes()
+        min_width, min_height = min_sizes['main_window']
+        self.setMinimumSize(min_width, min_height)
 
-        # --- Base Spacing Unit ---
-        self.BASE_SPACING = 8
+        # --- Base Spacing Unit (scaled) ---
+        self.BASE_SPACING = self.ui_scale_manager.get_scaled_base_spacing(8)
 
         # Set application icon
         icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "NojoinLogo.png")
@@ -300,7 +307,9 @@ class MainWindow(QMainWindow):
             logger.warning(f"Application icon not found at: {icon_path}")
 
         # --- Apply Theme (loaded from config) ---
-        self.apply_theme(config_manager.get("theme", "dark"))
+        theme = config_manager.get("theme", "dark")
+        font_scale = self.ui_scale_manager.get_font_scale_factor()
+        self.apply_theme(theme, font_scale)
 
         # --- Initialize recorder and related variables ---
         self.recordings_dir = get_recordings_dir()
@@ -381,6 +390,9 @@ class MainWindow(QMainWindow):
         self.chat_response_signal.connect(self._on_chat_response)
         self.chat_error_signal.connect(self._on_chat_error)
 
+        # Connect to UI scale changes
+        self.ui_scale_manager.scale_changed.connect(self._on_ui_scale_changed)
+
         # In MainWindow.__init__ (or as a class attribute):
         self._meeting_notes_worker = None
 
@@ -411,12 +423,12 @@ class MainWindow(QMainWindow):
         button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) # Explicitly set size policy
         button.setToolTip(tooltip_text)
 
-    def apply_theme(self, theme_name):
+    def apply_theme(self, theme_name, font_scale_factor: float = 1.0):
         self.current_theme = theme_name  # Track the current theme for context menus
-        apply_theme_to_widget(self, theme_name)
+        apply_theme_to_widget(self, theme_name, font_scale_factor)
         # Re-apply to settings dialog if open
         if hasattr(self, 'settings_dialog') and self.settings_dialog:
-            apply_theme_to_widget(self.settings_dialog, theme_name)
+            apply_theme_to_widget(self.settings_dialog, theme_name, font_scale_factor)
         # Update settings button accent color
         if hasattr(self, 'settings_button'):
             self._set_settings_button_accent()
@@ -492,19 +504,19 @@ class MainWindow(QMainWindow):
         for panel_name in ["MainPanelLeft", "MainPanelCenter", "MainPanelRight"]:
             panel = self.findChild(QFrame, panel_name)
             if panel:
-                apply_theme_to_widget(panel, theme_name)
+                apply_theme_to_widget(panel, theme_name, font_scale_factor)
                 panel.setStyleSheet("")  # Remove any direct stylesheet that could override QSS
         # 1. Theme-responsive 'Participants' title
         # if hasattr(self, 'speaker_label_title'):
         #     apply_theme_to_widget(self.speaker_label_title, theme_name)
         # 2. Theme-responsive 'Add Label' button
         if hasattr(self, 'add_label_btn'):
-            apply_theme_to_widget(self.add_label_btn, theme_name)
+            apply_theme_to_widget(self.add_label_btn, theme_name, font_scale_factor)
         # --- New: Apply theme to chat header and chat display area ---
         if hasattr(self, 'chat_header_label'):
-            apply_theme_to_widget(self.chat_header_label, theme_name)
+            apply_theme_to_widget(self.chat_header_label, theme_name, font_scale_factor)
         if hasattr(self, 'chat_display_area'):
-            apply_theme_to_widget(self.chat_display_area, theme_name)
+            apply_theme_to_widget(self.chat_display_area, theme_name, font_scale_factor)
             # Re-render chat history with new theme if needed
             self.chat_display_area.clear()
             for msg in self.current_chat_history:
@@ -530,7 +542,7 @@ class MainWindow(QMainWindow):
             self.search_bar_widget.set_theme(border_color)
         # --- Apply theme to audio warning banner ---
         if hasattr(self, 'audio_warning_banner'):
-            apply_theme_to_widget(self.audio_warning_banner, theme_name)
+            apply_theme_to_widget(self.audio_warning_banner, theme_name, font_scale_factor)
         # Update slider style for theme
         if hasattr(self, 'seek_slider') and hasattr(self, 'volume_slider'):
             if theme_name == "dark":
@@ -774,7 +786,7 @@ class MainWindow(QMainWindow):
         # Wrap in a widget to set minimum width for the group
         playback_widget = QWidget()
         playback_widget.setLayout(playback_group)
-        playback_widget.setMinimumWidth(450) # Minimum width for playback controls + slider
+        playback_widget.setMinimumWidth(self.ui_scale_manager.scale_value(450)) # Minimum width for playback controls + slider
 
         top_controls_layout.addWidget(playback_widget)
         top_controls_layout.addStretch() # Add stretch *before* settings button
@@ -857,7 +869,8 @@ class MainWindow(QMainWindow):
         left_panel = QFrame()
         left_panel.setObjectName("MainPanelLeft")
         left_panel.setStyleSheet("padding: 5px;")
-        left_panel.setMinimumWidth(330)
+        min_left_width, _ = self.ui_scale_manager.get_scaled_minimum_sizes()['left_panel']
+        left_panel.setMinimumWidth(min_left_width)
         left_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -866,7 +879,7 @@ class MainWindow(QMainWindow):
 
         # --- Search Bar Area (now a separate widget) ---
         self.search_bar_widget = SearchBarWidget()
-        self.search_bar_widget.setMinimumWidth(330)
+        self.search_bar_widget.setMinimumWidth(min_left_width)
         self.search_bar_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         if hasattr(self.search_bar_widget, 'layout') and self.search_bar_widget.layout() is not None:
             self.search_bar_widget.layout().setContentsMargins(0, 4, 0, 4)
@@ -877,7 +890,7 @@ class MainWindow(QMainWindow):
         self.meetings_list_widget = QListWidget()
         self.meetings_list_widget.setSelectionMode(QListWidget.SingleSelection)
         self.meetings_list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.meetings_list_widget.setMinimumWidth(330)
+        self.meetings_list_widget.setMinimumWidth(min_left_width)
         self.meetings_list_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.meetings_list_widget.itemSelectionChanged.connect(self.handle_meeting_selection_changed)
         # Remove direct border styling from meetings_list_widget (QListWidget)
@@ -890,7 +903,8 @@ class MainWindow(QMainWindow):
         center_panel = QFrame()
         center_panel.setObjectName("MainPanelCenter")
         center_panel.setStyleSheet("padding: 0px;")
-        center_panel.setMinimumWidth(500)
+        min_center_width, _ = self.ui_scale_manager.get_scaled_minimum_sizes()['center_panel']
+        center_panel.setMinimumWidth(min_center_width)
         center_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         meeting_notes_layout = QVBoxLayout(center_panel)
         meeting_notes_layout.setContentsMargins(0, 0, 0, 0) # Reverted to 0 margins
@@ -985,7 +999,8 @@ class MainWindow(QMainWindow):
         chat_panel = QFrame()
         chat_panel.setObjectName("MainPanelRight")
         chat_panel.setStyleSheet("padding: 4px;")
-        chat_panel.setMinimumWidth(360)
+        min_right_width, _ = self.ui_scale_manager.get_scaled_minimum_sizes()['right_panel']
+        chat_panel.setMinimumWidth(min_right_width)
         chat_panel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         chat_layout = QVBoxLayout(chat_panel)
         chat_layout.setContentsMargins(0, 0, 0, 0)
@@ -1069,6 +1084,95 @@ class MainWindow(QMainWindow):
         # Connect the toggle button after all UI elements it might affect are initialized
         if self.view_toggle_button: # Ensure it was created
             self.view_toggle_button.clicked.connect(self._toggle_center_panel_view)
+        
+        # Apply initial compact mode adaptations
+        self._apply_compact_mode_adaptations()
+
+    def _on_ui_scale_changed(self, new_scale_factor):
+        """Handle UI scale factor changes."""
+        logger.info(f"UI scale changed to: {new_scale_factor}")
+        
+        # Update BASE_SPACING
+        self.BASE_SPACING = self.ui_scale_manager.get_scaled_base_spacing(8)
+        
+        # Update minimum sizes
+        min_sizes = self.ui_scale_manager.get_scaled_minimum_sizes()
+        
+        # Update main window minimum size
+        min_width, min_height = min_sizes['main_window']
+        self.setMinimumSize(min_width, min_height)
+        
+        # Update panel minimum widths
+        if hasattr(self, 'meetings_list_widget'):
+            left_width, _ = min_sizes['left_panel']
+            self.meetings_list_widget.setMinimumWidth(left_width)
+            if hasattr(self, 'search_bar_widget'):
+                self.search_bar_widget.setMinimumWidth(left_width)
+        
+        # Find and update panels by object name
+        for panel_name, (min_w, min_h) in [
+            ('MainPanelLeft', min_sizes['left_panel']),
+            ('MainPanelCenter', min_sizes['center_panel']), 
+            ('MainPanelRight', min_sizes['right_panel'])
+        ]:
+            panel = self.findChild(QFrame, panel_name)
+            if panel and min_w > 0:
+                panel.setMinimumWidth(min_w)
+        
+        # Update playback widget if it exists
+        playback_widgets = self.findChildren(QWidget)
+        for widget in playback_widgets:
+            if hasattr(widget, 'layout') and widget.layout():
+                # Look for playback controls layout signature
+                layout = widget.layout()
+                if (isinstance(layout, QHBoxLayout) and 
+                    layout.count() > 5 and 
+                    any(isinstance(layout.itemAt(i).widget(), QSlider) for i in range(layout.count()) if layout.itemAt(i) and layout.itemAt(i).widget())):
+                    widget.setMinimumWidth(self.ui_scale_manager.scale_value(450))
+                    break
+        
+        # Apply compact mode adaptations
+        self._apply_compact_mode_adaptations()
+        
+        # Re-apply theme with new font scaling
+        if hasattr(self, 'current_theme'):
+            font_scale = self.ui_scale_manager.get_font_scale_factor()
+            self.apply_theme(self.current_theme, font_scale)
+        
+        logger.info("UI scaling update completed")
+
+    def _apply_compact_mode_adaptations(self):
+        """Apply UI adaptations for compact screen mode."""
+        is_compact = self.ui_scale_manager.is_compact_mode()
+        
+        # In compact mode, make certain UI elements more space-efficient
+        if is_compact:
+            # Reduce seek slider width in compact mode
+            if hasattr(self, 'seek_slider'):
+                self.seek_slider.setFixedWidth(self.ui_scale_manager.scale_value(200))  # Reduced from 300
+            
+            # Hide less critical buttons or text in compact mode
+            if hasattr(self, 'timer_label'):
+                self.timer_label.setVisible(True)  # Keep timer visible as it's useful
+            
+            # Reduce button text or use icons only in extreme compact cases
+            screen_width = self.ui_scale_manager.get_screen_info()['width']
+            if screen_width < 1300:  # Very narrow screens
+                # Optionally switch to icon-only buttons for some controls
+                if hasattr(self, 'global_speakers_button'):
+                    self.global_speakers_button.setText("Speakers")  # Shorter text
+                if hasattr(self, 'import_audio_button'):
+                    self.import_audio_button.setText("Import")  # Shorter text
+        else:
+            # Restore normal sizes for comfortable mode
+            if hasattr(self, 'seek_slider'):
+                self.seek_slider.setFixedWidth(300)  # Normal width
+            
+            # Restore full button text
+            if hasattr(self, 'global_speakers_button'):
+                self.global_speakers_button.setText("Global Speakers")
+            if hasattr(self, 'import_audio_button'):
+                self.import_audio_button.setText("Import Audio")
 
     def _set_meeting_context_html_with_dynamic_font(self, context_html, theme):
         """
@@ -1900,9 +2004,10 @@ class MainWindow(QMainWindow):
         self.settings_dialog.exec()
 
     def _handle_settings_saved(self):
-        # Reload theme from config and apply it
+        # Reload theme from config and apply it with current font scaling
         new_theme = config_manager.get("theme", "dark")
-        self.apply_theme(new_theme)
+        font_scale = self.ui_scale_manager.get_font_scale_factor()
+        self.apply_theme(new_theme, font_scale)
         # Update center panel content to apply new font size
         # Optional: Show confirmation or perform other updates if needed
         self.status_bar.showMessage("Settings saved successfully.", 3000)

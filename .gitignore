@@ -19,6 +19,10 @@
 # Config file, generated on first run
 nojoin/config.json
 
+# Cursor files
+*.cursorrules
+*.mdc
+/.cursor/
 
 #PRD and Todo files
 /PRD.md

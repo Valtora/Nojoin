@@ -134,7 +134,12 @@ class FindReplaceDialog(QDialog):
         self.worker = None
         
         self.setWindowTitle("Find and Replace")
-        self.setMinimumSize(500, 400)
+        
+        # Use scaled minimum size
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width, min_height = ui_scale_manager.get_scaled_minimum_sizes()['find_replace_dialog']
+        self.setMinimumSize(min_width, min_height)
         self.setModal(True)
         
         self._setup_ui()
@@ -214,8 +219,8 @@ class FindReplaceDialog(QDialog):
         button_height = 35
         for btn in [self.find_next_button, self.find_all_button, self.replace_button, 
                    self.replace_all_button, self.close_button]:
-            btn.setMinimumHeight(button_height)
-            btn.setMinimumWidth(100)
+            btn.setMinimumHeight(ui_scale_manager.scale_value(button_height))
+            btn.setMinimumWidth(ui_scale_manager.scale_value(100))
         
         buttons_layout.addWidget(self.find_next_button)
         buttons_layout.addWidget(self.find_all_button)

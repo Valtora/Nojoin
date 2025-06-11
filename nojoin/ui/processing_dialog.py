@@ -22,7 +22,12 @@ class ProcessingProgressDialog(QDialog):
     def __init__(self, recording_name, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Processing Recording")
-        self.setMinimumWidth(400)
+        
+        # Use scaled minimum width
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width = ui_scale_manager.scale_value(400)
+        self.setMinimumWidth(min_width)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         # Apply theme

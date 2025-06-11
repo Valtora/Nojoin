@@ -7,8 +7,14 @@ class MeetingNotesProgressDialog(QDialog):
     def __init__(self, parent=None, message="Generating meeting notes..."):
         super().__init__(parent)
         self.setWindowTitle("Generating Meeting Notes")
-        self.setMinimumWidth(320)
-        self.setMinimumHeight(120)
+        
+        # Use scaled minimum size
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width = ui_scale_manager.scale_value(320)
+        min_height = ui_scale_manager.scale_value(120)
+        self.setMinimumWidth(min_width)
+        self.setMinimumHeight(min_height)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         apply_theme_to_widget(self, config_manager.get("theme", "dark"))

@@ -60,10 +60,22 @@ def Nojoin():
 
     # Set Fusion style globally for QSS compliance
     app.setStyle("Fusion")
-    # Set global QSS from theme
+    
+    # Initialize UI Scale Manager early
+    from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+    ui_scale_manager = get_ui_scale_manager()
+    
+    # Configure scale manager from saved settings
+    ui_scale_config = config_manager.get("ui_scale", {})
+    if ui_scale_config.get("mode", "auto") == "manual":
+        scale_factor = ui_scale_config.get("scale_factor", 1.0)
+        ui_scale_manager.set_user_override(scale_factor)
+    
+    # Set global QSS from theme with scaling
     from nojoin.utils.theme_utils import get_theme_qss
     theme = config_manager.get("theme", "dark")
-    app.setStyleSheet(get_theme_qss(theme))
+    font_scale_factor = ui_scale_manager.get_font_scale_factor()
+    app.setStyleSheet(get_theme_qss(theme, font_scale_factor))
 
     # --- Set Application Icon ---
     # This is the most reliable way to set the taskbar icon.

@@ -19,8 +19,13 @@ class GlobalSpeakersManagementDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage Global Speaker Library")
-        self.setMinimumWidth(450)
-        self.setMinimumHeight(400)
+        
+        # Use scaled minimum size
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width, _ = ui_scale_manager.get_scaled_minimum_sizes()['global_speakers_dialog']
+        self.setMinimumWidth(min_width)
+        self.setMinimumHeight(ui_scale_manager.scale_value(400))
         
         self.current_theme = config_manager.get("theme", "dark")
         apply_theme_to_widget(self, self.current_theme)

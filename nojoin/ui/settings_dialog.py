@@ -2,6 +2,7 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog
 )
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QPalette, QColor
 from nojoin.utils.config_manager import (
@@ -11,7 +12,8 @@ from nojoin.utils.config_manager import (
     get_available_input_devices,
     get_available_output_devices,
     get_available_themes,
-    get_available_notes_font_sizes
+    get_available_notes_font_sizes,
+    get_available_ui_scale_modes
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
 from nojoin.utils.backup_restore import BackupRestoreManager, get_default_backup_filename
@@ -24,7 +26,12 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(420)
+        
+        # Use scaled minimum width
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width, _ = ui_scale_manager.get_scaled_minimum_sizes()['settings_dialog']
+        self.setMinimumWidth(min_width)
         self.setModal(True)
         self._init_ui()
         self._load_config()
@@ -173,8 +180,33 @@ class SettingsDialog(QDialog):
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
 
+        # --- UI Scaling Settings ---
+        self.ui_scale_mode_combo = QComboBox()
+        self.ui_scale_mode_combo.addItems(["Auto", "Manual"])
+        self.ui_scale_mode_combo.setToolTip("Auto: Scale based on screen resolution, Manual: Set custom scale factor")
+        self.ui_scale_mode_combo.currentTextChanged.connect(self._on_ui_scale_mode_changed)
+        
+        self.ui_scale_factor_widget = QWidget()
+        scale_factor_layout = QHBoxLayout(self.ui_scale_factor_widget)
+        scale_factor_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.ui_scale_factor_edit = QLineEdit()
+        self.ui_scale_factor_edit.setPlaceholderText("1.0")
+        self.ui_scale_factor_edit.setToolTip("Custom scale factor (0.5 - 2.0)")
+        self.ui_scale_factor_edit.setValidator(QDoubleValidator(0.5, 2.0, 2))
+        
+        self.ui_scale_info_label = QLabel()
+        self.ui_scale_info_label.setWordWrap(True)
+        self.ui_scale_info_label.setStyleSheet("color: #666; font-size: 11px;")
+        
+        scale_factor_layout.addWidget(self.ui_scale_factor_edit)
+        scale_factor_layout.addStretch()
+        
         # Add all main settings first (theme, devices, transcript, etc.)
         layout.addRow("Theme:", self.theme_combo)
+        layout.addRow("UI Scale Mode:", self.ui_scale_mode_combo)
+        layout.addRow("Scale Factor:", self.ui_scale_factor_widget)
+        layout.addRow("", self.ui_scale_info_label)
         layout.addRow("Notes Font Size:", self.notes_font_size_combo)
         layout.addRow("Default Input Device:", self.input_device_combo)
         layout.addRow("Default Output Device:", self.output_device_combo)
@@ -253,6 +285,29 @@ class SettingsDialog(QDialog):
         if anthropic_model_label: anthropic_model_label.widget().setVisible(show_anthropic)
         if anthropic_model_widget: anthropic_model_widget.widget().setVisible(show_anthropic)
 
+    def _on_ui_scale_mode_changed(self, mode):
+        """Handle UI scale mode change."""
+        is_manual = mode.lower() == "manual"
+        self.ui_scale_factor_widget.setVisible(is_manual)
+        
+        # Update info label based on mode
+        if is_manual:
+            self.ui_scale_info_label.setText("Manual mode: Enter a custom scale factor between 0.5 and 2.0")
+        else:
+            # Get current screen info and tier
+            try:
+                from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+                scale_manager = get_ui_scale_manager()
+                screen_info = scale_manager.get_screen_info()
+                tier_info = scale_manager.get_tier_info()
+                self.ui_scale_info_label.setText(
+                    f"Auto mode: Using {tier_info['name']} scale for {screen_info['width']}x{screen_info['height']} screen"
+                )
+            except Exception:
+                self.ui_scale_info_label.setText("Auto mode: Scale automatically determined by screen resolution")
+        
+        self.adjustSize()
+
     def _load_config(self):
         cfg = config_manager.get_all()
         self.model_size_combo.setCurrentText(cfg.get("whisper_model_size", "turbo"))
@@ -298,6 +353,17 @@ class SettingsDialog(QDialog):
                 idx = i
                 break
         self.min_meeting_length_combo.setCurrentIndex(idx)
+        
+        # Set UI scaling settings
+        ui_scale_config = cfg.get("ui_scale", {})
+        scale_mode = ui_scale_config.get("mode", "auto")
+        self.ui_scale_mode_combo.setCurrentText(scale_mode.capitalize())
+        
+        scale_factor = ui_scale_config.get("scale_factor", 1.0)
+        self.ui_scale_factor_edit.setText(str(scale_factor))
+        
+        # Trigger UI update
+        self._on_ui_scale_mode_changed(scale_mode.capitalize())
 
     def _on_accept(self):
         # Validate and save settings
@@ -404,6 +470,39 @@ class SettingsDialog(QDialog):
         # Save minimum meeting length
         min_length = self.min_meeting_length_combo.currentData()
         config_manager.set("min_meeting_length_seconds", min_length)
+        
+        # Save UI scaling settings
+        ui_scale_mode = self.ui_scale_mode_combo.currentText().lower()
+        ui_scale_factor = 1.0
+        
+        if ui_scale_mode == "manual":
+            try:
+                ui_scale_factor = float(self.ui_scale_factor_edit.text() or "1.0")
+                if not (0.5 <= ui_scale_factor <= 2.0):
+                    QMessageBox.critical(self, "Invalid Scale Factor", "Scale factor must be between 0.5 and 2.0")
+                    return
+            except ValueError:
+                QMessageBox.critical(self, "Invalid Scale Factor", "Please enter a valid number for scale factor")
+                return
+        
+        ui_scale_config = {
+            "mode": ui_scale_mode,
+            "scale_factor": ui_scale_factor
+        }
+        config_manager.set("ui_scale", ui_scale_config)
+        
+        # Apply UI scaling changes
+        try:
+            from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+            scale_manager = get_ui_scale_manager()
+            if ui_scale_mode == "manual":
+                scale_manager.set_user_override(ui_scale_factor)
+            else:
+                scale_manager.set_user_override(None)
+                scale_manager.refresh_screen_detection()
+        except Exception as e:
+            logger.error(f"Failed to apply UI scaling changes: {e}")
+        
         self.settings_saved.emit()
         self.accept()
     

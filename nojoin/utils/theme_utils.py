@@ -649,12 +649,23 @@ theme_qss = {
     """
 }
 
-def get_theme_qss(theme_name: str) -> str:
+def get_theme_qss(theme_name: str, scale_factor: float = 1.0) -> str:
     """
     Returns the QSS string for the given theme, using THEME_PALETTE and FONT_HIERARCHY.
+    
+    Args:
+        theme_name: Name of the theme ('dark' or 'light')
+        scale_factor: Font scaling factor to apply (default: 1.0)
     """
     palette = THEME_PALETTE[theme_name]
-    font = FONT_HIERARCHY
+    
+    # Apply font scaling to the font hierarchy
+    font = {}
+    for key, value in FONT_HIERARCHY.items():
+        font[key] = {
+            'size': max(8, int(value['size'] * scale_factor)),  # Minimum 8px font
+            'weight': value['weight']
+        }
     # Set hover color for each theme
     if theme_name == "dark":
         hover_color = "#ffb74d"  # lighter orange
@@ -872,11 +883,16 @@ def get_theme_qss(theme_name: str) -> str:
     /* End of MeetingNotesToolbar specific styling */
     """
 
-def apply_theme_to_widget(widget: QWidget, theme_name: str):
+def apply_theme_to_widget(widget: QWidget, theme_name: str, scale_factor: float = 1.0):
     """
     Apply the theme QSS and palette to the given widget (QMainWindow, QDialog, etc).
+    
+    Args:
+        widget: The widget to apply the theme to
+        theme_name: Name of the theme ('dark' or 'light')
+        scale_factor: Font scaling factor to apply (default: 1.0)
     """
-    qss = get_theme_qss(theme_name)
+    qss = get_theme_qss(theme_name, scale_factor)
     widget.setStyleSheet(qss)
     palette = QPalette()
     if theme_name == "dark":
@@ -915,12 +931,21 @@ def get_border_color(theme_name: str) -> str:
     else:
         return "#cccccc"  # Matches light theme border in QSS
 
-def get_html_body_style(theme_name: str) -> str:
+def get_html_body_style(theme_name: str, scale_factor: float = 1.0) -> str:
     """
     Generates a CSS style string for the HTML body based on the theme.
+    
+    Args:
+        theme_name: Name of the theme ('dark' or 'light')
+        scale_factor: Font scaling factor to apply (default: 1.0)
     """
     palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
-    font_details = FONT_HIERARCHY["body"]
+    base_font_size = FONT_HIERARCHY["body"]["size"]
+    scaled_font_size = max(8, int(base_font_size * scale_factor))
+    font_details = {
+        'size': scaled_font_size,
+        'weight': FONT_HIERARCHY["body"]["weight"]
+    }
     # Ensure the text color is applied with !important
     return (
         f"background-color: {palette['html_bg']}; "
@@ -930,12 +955,17 @@ def get_html_body_style(theme_name: str) -> str:
         f"font-weight: {font_details['weight']};"
     )
 
-def wrap_html_body(content: str, theme_name: str) -> str:
+def wrap_html_body(content: str, theme_name: str, scale_factor: float = 1.0) -> str:
     """
     Wraps HTML content with a <body> tag styled according to the theme.
     Ensures basic document structure.
+    
+    Args:
+        content: HTML content to wrap
+        theme_name: Name of the theme ('dark' or 'light')
+        scale_factor: Font scaling factor to apply (default: 1.0)
     """
-    body_style = get_html_body_style(theme_name)
+    body_style = get_html_body_style(theme_name, scale_factor)
     palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["dark"])
     
     # Check if content already has <html> or <body> tags

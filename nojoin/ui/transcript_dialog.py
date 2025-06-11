@@ -17,7 +17,12 @@ class TranscriptViewDialog(QDialog):
     def __init__(self, transcript_html=None, window_title="View Transcript", parent=None, recording_id=None):
         super().__init__(parent)
         self.setWindowTitle(window_title)
-        self.setMinimumSize(700, 500) # Set a reasonable minimum size
+        
+        # Use scaled minimum size
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        min_width, min_height = ui_scale_manager.get_scaled_minimum_sizes()['transcript_dialog']
+        self.setMinimumSize(min_width, min_height)
 
         self.layout = QVBoxLayout(self)
 

@@ -17,3 +17,6 @@ Implement advanced analyses for both the audio and transcript to gauge things li
 
 ## Codebase Polish - Definite TODO
 Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.
+
+## Setup Script
+Create a command line based setup script that runs through all the necessary steps in the README that can guide laypeople through the setup of Nojoin. Assume the user has very limited technical expertise. This script is ideally run by the user's system in their respective bash environment. For Windows this might be a .bat file, for Mac/Linux an .sh file perhaps. We should then update the README to direct people to use the setup script and then provide the manual steps as an alternative.

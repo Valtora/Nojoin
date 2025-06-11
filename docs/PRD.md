@@ -119,6 +119,18 @@
 - **Pre-population:** Automatically populates search field with selected text when dialog is opened.
 - **Database Autosave:** All transcript and meeting notes changes are automatically saved to the database with immediate persistence.
 
+### 2.13 Dynamic UI Scaling & Responsive Design
+- **Adaptive UI Scaling:** Dynamic screen resolution detection with automatic scaling tier assignment based on display width.
+- **Scaling Tiers:** Three predefined tiers - Compact (< 1400px), Standard (1400-1800px), and Comfortable (≥ 1800px).
+- **Component-Specific Scaling:** Independent scaling factors for UI elements, spacing, and fonts with intelligent minimum value enforcement.
+- **Responsive Layouts:** Automatic adjustment of minimum window and panel sizes based on detected screen resolution.
+- **Compact Mode Optimizations:** Reduced button text, smaller controls, and streamlined layouts for narrow screens (< 1300px width).
+- **Manual Override:** User-configurable manual scale factor (0.5-2.0x) with settings panel integration.
+- **Real-Time Adaptation:** Dynamic scaling updates when display configuration changes or user modifies settings.
+- **Settings Integration:** UI Scale Mode (Auto/Manual) and custom scale factor controls in the Settings dialog.
+- **Graceful Degradation:** All functionality remains accessible even on very small screens while maintaining usability.
+- **Production-Ready:** Singleton pattern implementation with caching, error handling, and comprehensive logging.
+
 ---
 
 ## 3. Technical Requirements
