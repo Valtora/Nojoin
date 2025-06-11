@@ -152,7 +152,7 @@ class UpdateAvailableDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
         
-        self.skip_button = QPushButton("Skip This Version")
+        self.skip_button = QPushButton("Skip This Update")
         self.skip_button.clicked.connect(self._skip_version)
         
         self.remind_button = QPushButton("Remind Me Later")
@@ -182,7 +182,9 @@ class UpdateAvailableDialog(QDialog):
     
     def _skip_version(self):
         """Skip this version."""
-        version_manager.skip_version(self.release_info['version'])
+        # Use commit SHA if available, otherwise fall back to version string
+        skip_identifier = self.release_info.get('commit_sha', self.release_info['version'])
+        version_manager.skip_version(skip_identifier)
         version_manager.set_reminder_preference(self._get_selected_preference())
         self.reject()
     

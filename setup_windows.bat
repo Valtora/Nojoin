@@ -364,7 +364,7 @@ echo $WshShell = New-Object -comObject WScript.Shell > create_shortcut.ps1
 echo $Shortcut = $WshShell.CreateShortcut("!SHORTCUT_PATH!") >> create_shortcut.ps1
 echo $Shortcut.TargetPath = "!CURRENT_DIR!\run_nojoin.bat" >> create_shortcut.ps1
 echo $Shortcut.WorkingDirectory = "!CURRENT_DIR!" >> create_shortcut.ps1
-echo $Shortcut.IconLocation = "!CURRENT_DIR!\assets\NojoinLogo.png" >> create_shortcut.ps1
+echo $Shortcut.IconLocation = "!CURRENT_DIR!\assets\favicon.ico" >> create_shortcut.ps1
 echo $Shortcut.Description = "Nojoin - Meeting Recording and Transcription" >> create_shortcut.ps1
 echo $Shortcut.Save() >> create_shortcut.ps1
 

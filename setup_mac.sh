@@ -403,7 +403,9 @@ EOF
 chmod +x "$APP_DIR/Contents/MacOS/Nojoin"
 
 # Copy icon if available
-if [ -f "assets/icons/NojoinLogo.png" ]; then
+if [ -f "assets/favicon.ico" ]; then
+    cp "assets/favicon.ico" "$APP_DIR/Contents/Resources/"
+elif [ -f "assets/icons/NojoinLogo.png" ]; then
     cp "assets/icons/NojoinLogo.png" "$APP_DIR/Contents/Resources/"
 elif [ -f "assets/NojoinLogo.png" ]; then
     cp "assets/NojoinLogo.png" "$APP_DIR/Contents/Resources/"

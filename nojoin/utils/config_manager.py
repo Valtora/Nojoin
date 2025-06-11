@@ -177,8 +177,7 @@ class ConfigManager:
     def _ensure_dirs_exist(self, config):
         """Creates directories specified in the config if they don't exist."""
         recordings_dir = config.get("recordings_directory")
-        transcripts_dir = config.get("transcripts_directory")
-        for d in [recordings_dir, transcripts_dir]:
+        for d in [recordings_dir]:
             if d and not os.path.exists(d):
                 try:
                     os.makedirs(d, exist_ok=True)
@@ -196,7 +195,7 @@ class ConfigManager:
         self.config[key] = value
         self._save_config(self.config)
         # Re-ensure directories if a path was changed
-        if key == "recordings_directory" or key == "transcripts_directory":
+        if key == "recordings_directory":
             self._ensure_dirs_exist(self.config)
 
     def get_all(self):

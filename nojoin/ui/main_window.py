@@ -68,7 +68,6 @@ from nojoin.utils.config_manager import (
     get_available_output_devices,
     from_project_relative_path,
     get_recordings_dir,
-    get_transcripts_dir,
     get_available_themes, # Import theme getter
 )
 
@@ -407,7 +406,7 @@ class MainWindow(QMainWindow):
         # Check for updates on startup (after UI is fully initialized)
         QTimer.singleShot(2000, self._check_for_updates_on_startup)  # 2 second delay
 
-    def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str):
+    def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str, scale_immune: bool = False):
         """Configures a notes toolbar button with a theme-aware icon and style."""
         # Corrected path to include 'icons' subdirectory and match new naming convention
         file_name = f"{icon_file_prefix}{theme_name.capitalize()}Mode.png"
@@ -415,15 +414,25 @@ class MainWindow(QMainWindow):
         
         if os.path.exists(icon_path):
             button.setIcon(QIcon(icon_path))
-            # Revert to 26x26 icon for a 32x32 button (if BASE_SPACING is 8)
-            button.setIconSize(QSize(26, 26))
+            # Use fixed icon size for scale-immune buttons, scaled for others
+            if scale_immune:
+                button.setIconSize(QSize(26, 26))  # Fixed size regardless of scaling
+            else:
+                button.setIconSize(QSize(26, 26))  # Currently keeping same icon size for both
         else:
             button.setIcon(QIcon()) # Clear icon if not found
             self.logger.warning(f"Icon not found for {tooltip_text} ({theme_name}): {icon_path}")
         
         button.setText("") # No text label
-        # Set button size to BASE_SPACING * 4 (e.g., 32x32)
-        button.setFixedSize(int(self.BASE_SPACING * 4), int(self.BASE_SPACING * 4))
+        
+        # Set button size - use fixed size for scale-immune buttons
+        if scale_immune:
+            # Use fixed 32x32 size regardless of UI scaling
+            button.setFixedSize(32, 32)
+        else:
+            # Use scaled size based on BASE_SPACING
+            button.setFixedSize(int(self.BASE_SPACING * 4), int(self.BASE_SPACING * 4))
+        
         button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) # Explicitly set size policy
         button.setToolTip(tooltip_text)
 
@@ -589,13 +598,13 @@ class MainWindow(QMainWindow):
 
         # --- Update notes toolbar button icons on theme change ---
         if hasattr(self, 'notes_undo_button') and self.notes_undo_button is not None:
-            self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", theme_name)
+            self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", theme_name, scale_immune=True)
         if hasattr(self, 'notes_redo_button') and self.notes_redo_button is not None:
-            self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", theme_name)
+            self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", theme_name, scale_immune=True)
         if hasattr(self, 'copy_notes_button') and self.copy_notes_button is not None: # Ensure this attribute name matches setup_ui
-            self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "CopyToClip", theme_name)
+            self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "CopyToClip", theme_name, scale_immune=True)
         if hasattr(self, 'find_replace_button') and self.find_replace_button is not None:
-            self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", theme_name)
+            self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", theme_name, scale_immune=True)
 
     def _set_settings_button_accent(self):
         theme = config_manager.get("theme", "dark")
@@ -995,7 +1004,10 @@ class MainWindow(QMainWindow):
         self._notes_autosave_timer.setSingleShot(True)
         self._notes_autosave_timer.setInterval(1500)  # 1.5 seconds debounce
         self.meeting_notes_edit.textChanged.connect(self._on_notes_edited_autosave)
+        self.meeting_notes_edit.textChanged.connect(self._on_notes_text_changed)
         self._notes_last_saved_content = ""
+        # Track if the current content is a placeholder
+        self._is_placeholder_content = False
         meeting_notes_layout.addWidget(self.meeting_notes_edit, 3)
         main_display_layout.addWidget(center_panel, 2)
 
@@ -1080,10 +1092,10 @@ class MainWindow(QMainWindow):
 
         # --- Configure notes toolbar buttons with initial theme ---
         current_theme = config_manager.get("theme", "dark")
-        self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", current_theme)
-        self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", current_theme)
-        self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "Copy to Clipboard", current_theme)
-        self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", current_theme)
+        self._configure_notes_toolbar_button(self.notes_undo_button, "Undo", "Undo", current_theme, scale_immune=True)
+        self._configure_notes_toolbar_button(self.notes_redo_button, "Redo", "Redo", current_theme, scale_immune=True)
+        self._configure_notes_toolbar_button(self.copy_notes_button, "CopyToClip", "Copy to Clipboard", current_theme, scale_immune=True)
+        self._configure_notes_toolbar_button(self.find_replace_button, "Search", "Find and Replace", current_theme, scale_immune=True)
 
         # Connect the toggle button after all UI elements it might affect are initialized
         if self.view_toggle_button: # Ensure it was created
@@ -1239,6 +1251,9 @@ class MainWindow(QMainWindow):
         self.no_audio_timer.start()
         self.audio_warning_banner.setVisible(False)
         self.audio_detected_recently = False
+        
+        # Disable UI elements during recording
+        self._disable_ui_during_recording()
 
     def handle_recording_finished(self, recording_id: str, filename: str, duration: float, size: int):
         self.is_recording = False
@@ -1255,6 +1270,9 @@ class MainWindow(QMainWindow):
         self.audio_level_timer.stop()
         self.no_audio_timer.stop()
         self.audio_warning_banner.setVisible(False)
+        
+        # Re-enable UI elements after recording
+        self._enable_ui_after_recording()
         
         # Database entry is now handled by RecordingPipeline
         # Remove the following block:
@@ -1278,11 +1296,11 @@ class MainWindow(QMainWindow):
         #     end_time=end_time
         # )
 
-        self.load_recordings() # Refresh the list to show the new recording
+        self.load_recordings()
 
         # --- Auto-transcribe if enabled --- 
         # This now uses the recording_id passed from RecordingPipeline
-        if config_manager.get("auto_transcribe_on_recording_finish", False):
+        if config_manager.get("auto_transcribe_on_recording_finish", True):  # Changed default to True
             from nojoin.db import database as db_ops # Keep import for get_recording_by_id
             # Fetch the specific recording data using the provided recording_id
             recording_data_for_processing = db_ops.get_recording_by_id(recording_id)
@@ -1313,8 +1331,99 @@ class MainWindow(QMainWindow):
         self.no_audio_timer.stop()
         self.audio_warning_banner.setVisible(False)
         
+        # Re-enable UI elements after recording error
+        self._enable_ui_after_recording()
+        
         QMessageBox.warning(self, "Recording Error", error_message)
         print(f"UI: Recording error: {error_message}")
+
+    def _disable_ui_during_recording(self):
+        """Disable UI elements that should not be accessible during recording."""
+        # Disable playback controls
+        if hasattr(self, 'play_button'):
+            self.play_button.setEnabled(False)
+        if hasattr(self, 'pause_button'):
+            self.pause_button.setEnabled(False)
+        if hasattr(self, 'stop_button'):
+            self.stop_button.setEnabled(False)
+        if hasattr(self, 'seek_slider'):
+            self.seek_slider.setEnabled(False)
+        if hasattr(self, 'volume_slider'):
+            self.volume_slider.setEnabled(False)
+        
+        # Disable transcribe button if visible
+        if hasattr(self, 'transcribe_button'):
+            self.transcribe_button.setEnabled(False)
+        
+        logger.info("UI elements disabled during recording")
+
+    def _enable_ui_after_recording(self):
+        """Re-enable UI elements after recording finishes."""
+        # Re-enable playback controls (but only if a recording is selected)
+        selected_items = self.meetings_list_widget.selectedItems()
+        has_selection = bool(selected_items)
+        
+        if hasattr(self, 'play_button'):
+            self.play_button.setEnabled(has_selection)
+        if hasattr(self, 'pause_button'):
+            self.pause_button.setEnabled(False)  # Initially disabled until playing
+        if hasattr(self, 'stop_button'):
+            self.stop_button.setEnabled(False)   # Initially disabled until playing
+        if hasattr(self, 'seek_slider'):
+            self.seek_slider.setEnabled(has_selection)
+        if hasattr(self, 'volume_slider'):
+            self.volume_slider.setEnabled(True)
+        
+        # Re-enable transcribe button if visible and recording selected
+        if hasattr(self, 'transcribe_button') and has_selection:
+            self.transcribe_button.setEnabled(True)
+        
+        logger.info("UI elements re-enabled after recording")
+
+    def _on_notes_text_changed(self):
+        """Handle text changes in meeting notes to manage placeholder read-only state."""
+        if not hasattr(self, 'meeting_notes_edit'):
+            return
+        
+        # Check if the current content is a placeholder by comparing with known placeholder texts
+        current_content = self.meeting_notes_edit.document().toPlainText().strip()
+        placeholder_texts = [
+            "Select a meeting to view notes or transcript.",
+            "No meeting notes available. Right-click the recording to generate notes, or switch to transcript view.",
+            "No meeting notes available. Right-click the recording to re-transcribe or generate notes.",
+            "Meeting notes cannot be generated right now.",
+            "Error loading meeting data."
+        ]
+        
+        # Check if current content is empty or matches a placeholder pattern
+        is_placeholder = (not current_content or 
+                         any(placeholder in current_content for placeholder in placeholder_texts) or
+                         current_content.startswith("_") and current_content.endswith("_"))
+        
+        # Update read-only state based on content
+        if is_placeholder != self._is_placeholder_content:
+            self._is_placeholder_content = is_placeholder
+            # Make read-only if showing placeholder, editable if showing real content
+            self.meeting_notes_edit.setReadOnly(is_placeholder)
+
+    def _set_placeholder_content(self, placeholder_text):
+        """Set placeholder content and make it read-only."""
+        if not hasattr(self, 'meeting_notes_edit'):
+            return
+        
+        doc = self.meeting_notes_edit.document()
+        # Apply current theme
+        theme_palette = THEME_PALETTE.get(self.current_theme, THEME_PALETTE["dark"])
+        text_color = theme_palette['html_text']
+        css = f"body {{ color: {text_color}; background-color: transparent; }}"
+        doc.setDefaultStyleSheet(css)
+        base_font = QFont("Segoe UI", get_notes_font_size())
+        doc.setDefaultFont(base_font)
+        
+        # Set the placeholder as markdown
+        doc.setMarkdown(f"_{placeholder_text}_", QTextDocument.MarkdownDialectGitHub)
+        self._is_placeholder_content = True
+        self.meeting_notes_edit.setReadOnly(True)
 
     def update_recording_timer_display(self):
         if self.is_recording and self.recording_start_time is not None:
@@ -1862,9 +1971,7 @@ class MainWindow(QMainWindow):
                 doc.setMarkdown(notes_entry['notes'], QTextDocument.MarkdownDialectGitHub)
             else:
                 # Set placeholder or clear if no notes.
-                # Using setMarkdown with placeholder text that is valid Markdown.
-                placeholder_markdown = "No meeting notes available. Right-click the recording to re-transcribe or generate notes."
-                doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+                self._set_placeholder_content("No meeting notes available. Right-click the recording to re-transcribe or generate notes.")
             
             self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave comparison
             self.notes_have_been_edited = False # Reset edit flag
@@ -2187,21 +2294,67 @@ class MainWindow(QMainWindow):
     def load_transcript(self, recording_id):
         """Load and display the transcript for the given recording ID, mapping diarization labels to current speaker names."""
         from nojoin.db import database as db_ops
+        from nojoin.utils.transcript_store import TranscriptStore
         import re
         recording_data = db_ops.get_recording_by_id(recording_id)
         if not recording_data:
             return "" # Return empty string or handle appropriately if transcript content is needed elsewhere
-        
-        raw_transcript_path = recording_data.get("raw_transcript_path")
-        diarized_transcript_path = recording_data.get("diarized_transcript_path")
-        abs_raw_transcript_path = from_project_relative_path(raw_transcript_path) if raw_transcript_path else None
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
         
         display_text_lines = [] # Changed to list of lines for easier HTML construction later
         
         # Build diarization label -> name mapping
         speakers = db_ops.get_speakers_for_recording(recording_id)
         label_to_name = {s['diarization_label']: s['name'] for s in speakers if s.get('diarization_label')}
+
+        # First try to get diarized transcript from database
+        diarized_transcript_text = TranscriptStore.get(recording_id, "diarized")
+        if diarized_transcript_text:
+            try:
+                for line in diarized_transcript_text.split('\n'):
+                    if not line.strip():
+                        continue
+                    # Match lines like: [timestamp] - <speaker> - text
+                    m = re.match(r"(\[.*?\]\s*-\s*)(.+?)(\s*-\s*)(.*)", line)
+                    if m:
+                        prefix = m.group(1)
+                        diarization_label = m.group(2).strip()
+                        sep = m.group(3)
+                        text_content = m.group(4)
+                        # Map label to current name
+                        speaker_name = label_to_name.get(diarization_label, diarization_label)
+                        import html as html_converter 
+                        escaped_text_content = html_converter.escape(text_content)
+                        html_line = (f'<span class="meta">{prefix}</span> '
+                                     f'<b>{speaker_name}</b>'
+                                     f'<span class="meta">{sep}</span>'
+                                     f'<span>{escaped_text_content}</span>')
+                        display_text_lines.append(html_line)
+                    else:
+                        import html as html_converter
+                        escaped_line = html_converter.escape(line.rstrip('\n'))
+                        display_text_lines.append(f'<span>{escaped_line}</span>')
+                full_html = "<br>".join(display_text_lines)
+                return wrap_html_body(full_html, config_manager.get("theme", "dark"))
+            except Exception as e:
+                logger.error(f"Failed to format diarized transcript from database for recording {recording_id}: {e}")
+                return wrap_html_body(f"<p>Error loading diarized transcript.</p>", config_manager.get("theme", "dark"))
+        
+        # Fallback: Try to get raw transcript from database
+        raw_transcript_text = TranscriptStore.get(recording_id, "raw")
+        if raw_transcript_text:
+            try:
+                import html as html_converter
+                escaped_content = html_converter.escape(raw_transcript_text)
+                return wrap_html_body(f"<pre>{escaped_content}</pre>", config_manager.get("theme", "dark"))
+            except Exception as e:
+                logger.error(f"Failed to format raw transcript from database for recording {recording_id}: {e}")
+                return wrap_html_body(f"<p>Error loading raw transcript.</p>", config_manager.get("theme", "dark"))
+        
+        # Legacy fallback: Try to read from files if database doesn't have transcript text
+        raw_transcript_path = recording_data.get("raw_transcript_path")
+        diarized_transcript_path = recording_data.get("diarized_transcript_path")
+        abs_raw_transcript_path = from_project_relative_path(raw_transcript_path) if raw_transcript_path else None
+        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
 
         if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
             try:
@@ -2533,9 +2686,24 @@ class MainWindow(QMainWindow):
         rec = db_ops.get_recording_by_id(recording_id)
         notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
         meeting_notes = notes_entry['notes'] if notes_entry else ""
-        diarized_transcript_path = rec.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-        if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+        
+        # Get transcript from database first, then fallback to file
+        from nojoin.utils.transcript_store import TranscriptStore
+        diarized_transcript = TranscriptStore.get(recording_id, "diarized")
+        
+        if not diarized_transcript:
+            # Fallback to file-based approach for legacy recordings
+            diarized_transcript_path = rec.get("diarized_transcript_path")
+            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+            if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
+                try:
+                    with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
+                        diarized_transcript = f.read()
+                except Exception as e:
+                    self.logger.error(f"Failed to read transcript file for chat: {e}")
+                    diarized_transcript = None
+        
+        if not diarized_transcript:
             sys_html = '<div class="chat-message system"><i>No transcript available for chat.</i></div>'
             self.chat_display_area.append(sys_html)
             self.chat_input.setEnabled(True)
@@ -2545,8 +2713,6 @@ class MainWindow(QMainWindow):
                 self.chat_spinner.setParent(None)
             self._chat_request_in_progress = False
             return
-        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-            diarized_transcript = f.read()
         api_key = config_manager.get("gemini_api_key")
         if not api_key:
             sys_html = '<div class="chat-message system"><i>Gemini API key not set.</i></div>'
@@ -2927,32 +3093,25 @@ class MainWindow(QMainWindow):
                     self.status_bar.showMessage(f"Failed to autosave notes: {e}", 3000)
                     
         elif self.center_panel_view_mode == "transcript":
-            # Save transcript as plain text to the transcript file
+            # Save transcript as plain text to the database
             # Convert HTML back to plain text format suitable for transcript files
             plain_content = doc.toPlainText()
             
             # Only save if changed
             if hasattr(self, '_transcript_last_saved_content') and plain_content != self._transcript_last_saved_content:
                 try:
-                    # Get the transcript file path
-                    recording_data = db_ops.get_recording_by_id(recording_id)
-                    if recording_data:
-                        diarized_transcript_path = recording_data.get('diarized_transcript_path')
-                        if diarized_transcript_path:
-                            from nojoin.utils.config_manager import from_project_relative_path
-                            abs_path = from_project_relative_path(diarized_transcript_path)
-                            
-                            # Save the plain text content back to the transcript file
-                            with open(abs_path, 'w', encoding='utf-8') as f:
-                                f.write(plain_content)
-                            
-                            self._transcript_last_saved_content = plain_content
-                            self.status_bar.showMessage("Transcript autosaved.", 1500)
-                            self.logger.info(f"Transcript autosaved to {abs_path}")
-                        else:
-                            self.logger.warning("No transcript path found for autosave")
+                    from nojoin.utils.transcript_store import TranscriptStore
+                    
+                    # Save the plain text content back to the database
+                    success = TranscriptStore.set(recording_id, plain_content, "diarized")
+                    if success:
+                        self._transcript_last_saved_content = plain_content
+                        self.status_bar.showMessage("Transcript autosaved.", 1500)
+                        self.logger.info(f"Transcript autosaved to database for recording {recording_id}")
                     else:
-                        self.logger.warning("No recording data found for transcript autosave")
+                        self.logger.warning(f"Failed to autosave transcript to database for recording {recording_id}")
+                        self.status_bar.showMessage("Failed to autosave transcript to database.", 3000)
+                        
                 except Exception as e:
                     self.logger.error(f"Failed to autosave transcript: {e}", exc_info=True)
                     self.status_bar.showMessage(f"Failed to autosave transcript: {e}", 3000)
@@ -3119,15 +3278,12 @@ class MainWindow(QMainWindow):
         doc.setDefaultFont(base_font)
 
         if not selected_items:
-            doc.clear() # Clear content
             if self.view_toggle_button:
                 self.view_toggle_button.setText("View Transcript")
             if self.notes_undo_button: self.notes_undo_button.setVisible(True)
             if self.notes_redo_button: self.notes_redo_button.setVisible(True)
-            self.meeting_notes_edit.setReadOnly(False) 
             # Set a generic placeholder if nothing is selected
-            placeholder_markdown = "Select a meeting to view notes or transcript."
-            doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            self._set_placeholder_content("Select a meeting to view notes or transcript.")
             return
 
         item = selected_items[0]
@@ -3135,10 +3291,8 @@ class MainWindow(QMainWindow):
         recording_data = db_ops.get_recording_by_id(recording_id)
 
         if not recording_data:
-            doc.clear()
             # Set a specific placeholder if recording data is missing
-            placeholder_markdown = "_Error loading meeting data._"
-            doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
+            self._set_placeholder_content("Error loading meeting data.")
             return
         
         if self.center_panel_view_mode == "notes":
@@ -3152,10 +3306,12 @@ class MainWindow(QMainWindow):
             notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
             if notes_entry and notes_entry['notes']:
                 doc.setMarkdown(notes_entry['notes'], QTextDocument.MarkdownDialectGitHub)
+                self._is_placeholder_content = False
+                self.meeting_notes_edit.setReadOnly(False)  # Allow editing of real content
+                self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave
             else:
-                placeholder_markdown = "_No meeting notes available. Right-click the recording to generate notes, or switch to transcript view._"
-                doc.setMarkdown(placeholder_markdown, QTextDocument.MarkdownDialectGitHub)
-            self._notes_last_saved_content = doc.toMarkdown(QTextDocument.MarkdownDialectGitHub) # For autosave
+                self._set_placeholder_content("No meeting notes available. Right-click the recording to generate notes, or switch to transcript view.")
+                self._notes_last_saved_content = ""
             self.notes_have_been_edited = False # Reset edit flag
         
         elif self.center_panel_view_mode == "transcript":

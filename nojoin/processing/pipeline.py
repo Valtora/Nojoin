@@ -17,7 +17,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     from .transcribe import transcribe_audio, transcribe_audio_with_progress
     from .diarize import diarize_audio, diarize_audio_with_progress
     from ..db import database # Assuming db functions will be added here
-    from ..utils.config_manager import config_manager, from_project_relative_path, to_project_relative_path, get_transcripts_dir, is_llm_available
+    from ..utils.config_manager import config_manager, from_project_relative_path, to_project_relative_path, is_llm_available
     from .audio_preprocessing import preprocess_audio_for_diarization, cleanup_temp_file, preprocess_audio_for_vad, convert_wav_to_mp3
     from pyannote.core import Segment
     import requests
@@ -28,8 +28,6 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     recording_id = str(recording_id)  # Defensive: always use string
     # Always resolve audio_path to absolute for file access
     abs_audio_path = from_project_relative_path(audio_path)
-    transcripts_dir = get_transcripts_dir()
-    os.makedirs(transcripts_dir, exist_ok=True)
     logger.info(f"Starting processing pipeline for recording ID: {recording_id}, path: {audio_path} (abs: {abs_audio_path})")
 
     # Update DB status to 'Processing'

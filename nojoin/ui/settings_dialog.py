@@ -34,10 +34,43 @@ class SettingsDialog(QDialog):
         min_width, _ = ui_scale_manager.get_scaled_minimum_sizes()['settings_dialog']
         self.setMinimumWidth(min_width)
         self.setModal(True)
+        self.parent_window = parent  # Store reference to check recording state
         self._init_ui()
         self._load_config()
         # Apply theme on construction (ensure after UI setup)
         apply_theme_to_widget(self, config_manager.get("theme", "dark"))
+
+    def _is_recording_in_progress(self):
+        """Check if the parent window is currently recording."""
+        if self.parent_window and hasattr(self.parent_window, 'is_recording'):
+            return self.parent_window.is_recording
+        return False
+
+    def _update_button_states(self):
+        """Update the enabled state of buttons based on recording status."""
+        recording_in_progress = self._is_recording_in_progress()
+        
+        # Disable backup, restore, and update check buttons during recording
+        if hasattr(self, 'backup_button'):
+            self.backup_button.setEnabled(not recording_in_progress)
+            if recording_in_progress:
+                self.backup_button.setToolTip("Cannot create backup while recording is in progress")
+            else:
+                self.backup_button.setToolTip("Create a complete backup of your recordings, transcripts, and settings")
+        
+        if hasattr(self, 'restore_button'):
+            self.restore_button.setEnabled(not recording_in_progress)
+            if recording_in_progress:
+                self.restore_button.setToolTip("Cannot restore backup while recording is in progress")
+            else:
+                self.restore_button.setToolTip("Restore data from a backup file (non-destructive)")
+        
+        if hasattr(self, 'check_updates_button'):
+            self.check_updates_button.setEnabled(not recording_in_progress)
+            if recording_in_progress:
+                self.check_updates_button.setToolTip("Cannot check for updates while recording is in progress")
+            else:
+                self.check_updates_button.setToolTip("Check for available updates to Nojoin")
 
     def _init_ui(self):
         layout = QFormLayout()
@@ -258,6 +291,14 @@ class SettingsDialog(QDialog):
         layout.addRow("", self.advanced_toggle)
         layout.addRow("", self.advanced_container)
         layout.addRow(self.button_box)
+        
+        # Update button states based on recording status
+        self._update_button_states()
+
+    def showEvent(self, event):
+        """Override showEvent to update button states when dialog is shown."""
+        super().showEvent(event)
+        self._update_button_states()
 
     def _toggle_advanced(self, checked):
         self.advanced_container.setVisible(checked)
@@ -357,7 +398,7 @@ class SettingsDialog(QDialog):
                 if self.output_device_combo.itemData(i) == output_idx:
                     self.output_device_combo.setCurrentIndex(i)
                     break
-        self.auto_transcribe_checkbox.setChecked(cfg.get("auto_transcribe_on_recording_finish", False))
+        self.auto_transcribe_checkbox.setChecked(cfg.get("auto_transcribe_on_recording_finish", True))
         # Set minimum meeting length
         min_length = cfg.get("min_meeting_length_seconds", 1)
         idx = 0  # Default to '1 second'

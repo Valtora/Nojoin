@@ -19,6 +19,9 @@
 # Config file, generated on first run
 nojoin/config.json
 
+# Current commit tracking file
+.current_commit
+
 # Cursor files
 *.cursorrules
 *.mdc

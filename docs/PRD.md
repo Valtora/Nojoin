@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-**Application Name:** Nojoin v0.5.2  
+**Application Name:** Nojoin v0.5.4  
 **Purpose:** Nojoin is a modern desktop application for Windows and macOS that enables individuals to record system audio (input and output) during meetings, generate accurate transcripts using OpenAI Whisper, and perform fully offline speaker diarization with Pyannote. The application is designed for personal use, focusing on privacy, robust local processing, and actionable meeting minutes with speaker attribution.
 
 ---

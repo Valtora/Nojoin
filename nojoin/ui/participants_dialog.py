@@ -7,6 +7,7 @@ from nojoin.utils.config_manager import config_manager, from_project_relative_pa
 import logging
 from .playback_controller import PlaybackController
 from nojoin.utils.theme_utils import apply_theme_to_widget
+from nojoin.utils.ui_scale_manager import get_ui_scale_manager
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +20,11 @@ class ParticipantsDialog(QDialog):
         self.original_window_title = f"Manage Participants - {recording_data.get('name', 'Meeting')}"
         self.setWindowTitle(self.original_window_title)
         
-        # Use scaled minimum width
-        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
-        ui_scale_manager = get_ui_scale_manager()
-        min_width, _ = ui_scale_manager.get_scaled_minimum_sizes()['participants_dialog']
+        # Initialize ui_scale_manager here to ensure it's in proper scope
+        self.ui_scale_manager = get_ui_scale_manager()
+        min_width, _ = self.ui_scale_manager.get_scaled_minimum_sizes()['participants_dialog']
         self.setMinimumWidth(min_width)
-        from nojoin.utils.config_manager import config_manager
-        self.current_theme = config_manager.get("theme", "dark") # Store theme
+        self.current_theme = getattr(parent, 'current_theme', 'dark') if parent else 'dark'
         apply_theme_to_widget(self, self.current_theme)
         self.recording_id = recording_id
         self.recording_data = recording_data
@@ -155,7 +154,7 @@ class ParticipantsDialog(QDialog):
                 del_btn.clicked.connect(lambda checked=False, s_id=speaker_id: self.delete_speaker(s_id))
             # Name edit
             name_edit = QLineEdit(name)
-            name_edit.setMinimumWidth(ui_scale_manager.scale_value(120))
+            name_edit.setMinimumWidth(self.ui_scale_manager.scale_value(120))
             name_edit.setProperty("speaker_id", speaker_id)
             name_edit.setProperty("diarization_label", diarization_label)
             name_edit.setEnabled(not is_unknown)

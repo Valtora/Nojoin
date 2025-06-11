@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 # GitHub repository information
 GITHUB_REPO = "Valtora/Nojoin"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_COMMITS_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/commits/main"
+GITHUB_MAIN_ZIP_URL = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip"
 CURRENT_VERSION = "0.5.2"  # This should be updated with each release
 
 class UpdatePreference:
@@ -55,7 +57,7 @@ class VersionManager:
     
     def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
         """
-        Check for available updates from GitHub releases.
+        Check for available updates from GitHub main branch.
         
         Args:
             timeout: Request timeout in seconds
@@ -64,34 +66,47 @@ class VersionManager:
             Tuple of (has_update, release_info)
         """
         try:
-            logger.info("Checking for updates...")
-            response = requests.get(GITHUB_API_URL, timeout=timeout)
+            logger.info("Checking for updates from main branch...")
+            response = requests.get(GITHUB_COMMITS_API_URL, timeout=timeout)
             response.raise_for_status()
             
-            release_data = response.json()
-            latest_version = release_data.get("tag_name", "").lstrip("v")
+            commit_data = response.json()
+            latest_commit_sha = commit_data.get("sha", "")
+            latest_commit_date = commit_data.get("commit", {}).get("committer", {}).get("date", "")
+            commit_message = commit_data.get("commit", {}).get("message", "")
+            author_name = commit_data.get("commit", {}).get("author", {}).get("name", "")
             
-            if not latest_version:
-                logger.warning("Could not parse latest version from GitHub")
+            if not latest_commit_sha:
+                logger.warning("Could not parse latest commit from GitHub")
                 return False, None
             
-            current_ver = version.parse(self.get_current_version())
-            latest_ver = version.parse(latest_version)
-            
-            has_update = latest_ver > current_ver
+            # Check if we have a newer commit than what we currently have
+            current_commit = self._get_current_commit_sha()
+            has_update = current_commit != latest_commit_sha
             
             if has_update:
-                logger.info(f"Update available: {latest_version} (current: {self.get_current_version()})")
+                # Format the date for display
+                formatted_date = latest_commit_date
+                if latest_commit_date:
+                    try:
+                        parsed_date = datetime.fromisoformat(latest_commit_date.replace('Z', '+00:00'))
+                        formatted_date = parsed_date.strftime('%B %d, %Y at %H:%M UTC')
+                    except ValueError:
+                        pass
+                
+                logger.info(f"Update available: {latest_commit_sha[:8]} (current: {current_commit[:8] if current_commit else 'unknown'})")
                 return True, {
-                    'version': latest_version,
-                    'name': release_data.get('name', f'Version {latest_version}'),
-                    'body': release_data.get('body', ''),
-                    'published_at': release_data.get('published_at'),
-                    'download_url': self._get_download_url(release_data),
-                    'size': self._get_download_size(release_data)
+                    'version': f"main-{latest_commit_sha[:8]}",
+                    'name': f'Latest from main branch ({latest_commit_sha[:8]})',
+                    'body': f"Latest commit by {author_name}:\n{commit_message}",
+                    'published_at': latest_commit_date,
+                    'commit_sha': latest_commit_sha,
+                    'commit_date_formatted': formatted_date,
+                    'download_url': GITHUB_MAIN_ZIP_URL,
+                    'size': None  # Size unknown for direct ZIP download
                 }
             else:
-                logger.info("No updates available")
+                logger.info("No updates available - already on latest commit")
                 return False, None
                 
         except requests.RequestException as e:
@@ -101,27 +116,41 @@ class VersionManager:
             logger.error(f"Error checking for updates: {e}")
             return False, None
     
-    def _get_download_url(self, release_data: Dict) -> Optional[str]:
-        """Extract download URL from release data."""
-        assets = release_data.get('assets', [])
+    def _get_current_commit_sha(self) -> Optional[str]:
+        """Get the current commit SHA if available."""
+        try:
+            # Try to get from git if available
+            result = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+            pass
         
-        # Look for zip file containing source code
-        for asset in assets:
-            if asset.get('name', '').endswith('.zip') and 'source' not in asset.get('name', '').lower():
-                return asset.get('browser_download_url')
-        
-        # Fallback to source code zip
-        return release_data.get('zipball_url')
-    
-    def _get_download_size(self, release_data: Dict) -> Optional[int]:
-        """Extract download size from release data."""
-        assets = release_data.get('assets', [])
-        
-        for asset in assets:
-            if asset.get('name', '').endswith('.zip'):
-                return asset.get('size')
+        # Try to get from stored file
+        commit_file = os.path.join(self.project_root, '.current_commit')
+        if os.path.exists(commit_file):
+            try:
+                with open(commit_file, 'r') as f:
+                    return f.read().strip()
+            except Exception:
+                pass
         
         return None
+    
+    def _store_current_commit_sha(self, commit_sha: str):
+        """Store the current commit SHA for future reference."""
+        try:
+            commit_file = os.path.join(self.project_root, '.current_commit')
+            with open(commit_file, 'w') as f:
+                f.write(commit_sha)
+        except Exception as e:
+            logger.warning(f"Could not store current commit SHA: {e}")
     
     def get_update_preferences(self) -> Dict:
         """Get current update preferences from config."""
@@ -164,9 +193,10 @@ class VersionManager:
         prefs = self.get_update_preferences()
         reminder_pref = prefs.get("reminder_preference", UpdatePreference.ONE_WEEK)
         
-        # Check if user chose to skip this version
+        # Check if user chose to skip this commit
         skip_version = prefs.get("skip_version")
-        if skip_version == release_info.get("version"):
+        commit_sha = release_info.get("commit_sha", "")
+        if skip_version == commit_sha or skip_version == release_info.get("version"):
             return False
         
         # Never remind
@@ -216,7 +246,7 @@ class VersionManager:
         self.set_update_preferences(prefs)
     
     def skip_version(self, version_string: str):
-        """Mark a version to be skipped."""
+        """Mark a version/commit to be skipped."""
         prefs = self.get_update_preferences()
         prefs["skip_version"] = version_string
         self.set_update_preferences(prefs)
@@ -347,6 +377,7 @@ UPDATE_ARCHIVE = r"{update_archive_path}"
 BACKUP_PATH = r"{backup_path or ''}"
 PROJECT_ROOT = r"{self.project_root}"
 EXECUTABLE_NAME = "Nojoin.py"
+GITHUB_REPO = "{GITHUB_REPO}"
 
 # Setup logging
 logging.basicConfig(
@@ -622,6 +653,22 @@ def main():
         if os.path.exists(UPDATE_ARCHIVE):
             os.remove(UPDATE_ARCHIVE)
         
+        # Store the updated commit SHA (extract from archive name or metadata)
+        try:
+            # Try to get the latest commit SHA from GitHub after update
+            import requests
+            response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/commits/main", timeout=10)
+            if response.status_code == 200:
+                commit_data = response.json()
+                latest_commit_sha = commit_data.get("sha", "")
+                if latest_commit_sha:
+                    commit_file = os.path.join(PROJECT_ROOT, '.current_commit')
+                    with open(commit_file, 'w') as f:
+                        f.write(latest_commit_sha)
+                    logger.info(f"Stored current commit SHA: {{latest_commit_sha[:8]}}")
+        except Exception as e:
+            logger.warning(f"Could not store commit SHA: {{e}}")
+        
         logger.info("Update completed successfully")
         return True
         
@@ -657,6 +704,19 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Failed to start update process: {e}")
             return False
+    
+    def mark_successful_update(self, commit_sha: str):
+        """Mark that an update was successful and store the new commit SHA."""
+        try:
+            self._store_current_commit_sha(commit_sha)
+            # Clear any skipped version since we successfully updated
+            prefs = self.get_update_preferences()
+            prefs["skip_version"] = None
+            prefs["last_check"] = datetime.now().isoformat()
+            self.set_update_preferences(prefs)
+            logger.info(f"Successfully updated to commit {commit_sha[:8]}")
+        except Exception as e:
+            logger.warning(f"Could not mark successful update: {e}")
 
 
 # Global instance
