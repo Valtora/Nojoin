@@ -18,8 +18,12 @@ I know there are similar free solutions out there which are all great and quirky
     *   Supports OpenAI, Google Gemini, and Anthropic models (requires your own API key).
 *   **Powerful Search and Organization:**
     *   Full-text search across all meeting transcripts.
-    *   Find and replace text within a single transcript or across all of them.
+    *   High-performance find and replace text within a single transcript or across all of them.
     *   Organize recordings with custom tags.
+*   **Data Management & Backup:**
+    *   Complete backup and restore system creating portable zip files with all your data.
+    *   Database-first architecture for faster operations and reliable data storage.
+    *   Non-destructive restore that merges with existing data.
 *   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
 
 ## Legal Disclaimer
@@ -69,6 +73,9 @@ I know there are similar free solutions out there which are all great and quirky
 2.  **Clone the repository:**
     ```bash
     git clone https://github.com/Valtora/Nojoin
+    ```
+    ### Switch to the newly cloned directoy.
+    ```bash
     cd Nojoin
     ```
 
@@ -78,7 +85,7 @@ I know there are similar free solutions out there which are all great and quirky
     ```bash
     python3 -m venv .venv
     ```
-    # Activate the environment
+    ### Activate the environment
     *   **Windows (PowerShell/CMD):**
         ```bash
         .venv\Scripts\Activate

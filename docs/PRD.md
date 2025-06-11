@@ -61,8 +61,10 @@
 - List view of all recordings with metadata, tags, and speakers (now implemented as a modern list widget, not a table).
 - View, delete, rename, and process (transcribe/diarize) recordings from the UI via list selection and context menus.
 - "Manage Participants" option in context menu to open speaker labeling dialog.
-- All files are stored in configurable directories (never hardcoded in codebase).
-- The database is the single source of truth for all processing states.
+- **Database-First Architecture:** All transcript content (raw and diarized) stored directly in SQLite database as the single source of truth.
+- **Automatic Migration:** Existing file-based transcripts automatically migrated to database storage on startup.
+- **Performance Optimized:** Database storage eliminates file I/O for transcript operations, enabling faster search, replace, and speaker management.
+- Audio files remain on disk in configurable directories (never hardcoded in codebase).
 - Deletion is always allowed, even during processing (with process cancellation and user warning).
 - Stuck/orphaned processing states are surfaced on startup for user action.
 
@@ -71,9 +73,14 @@
 - Dedicated playback controls and seeker slider in the UI.
 - Snippet playback for speakers (max 10 seconds).
 
-### 2.8 Settings
+### 2.8 Settings & Data Management
 - Modern, thematically consistent settings dialog (dark/light theme, orange accents).
 - Configurable: Whisper model, processing device, directories, input/output devices, transcript save flags, API keys.
+- **Backup & Restore System:** Integrated backup/restore functionality with progress tracking.
+  - **Complete Backup:** Creates single zip file containing database and all audio files.
+  - **Non-Destructive Restore:** Merges backup data with existing recordings without overwriting.
+  - **Progress Tracking:** Real-time progress dialogs for backup and restore operations.
+  - **Manifest Integrity:** Backup files include manifest for data validation and integrity checking.
 - All settings are persisted in `config.json` and validated.
 
 ### 2.9 LLM-Powered Meeting Notes
@@ -105,12 +112,12 @@
 - **Search Scope:** Current document (meeting notes or transcript) or all transcripts across all recordings.
 - **Operations:** Find Next, Find All (with occurrence counting), Replace, and Replace All.
 - **Formatting Preservation:** Uses QTextDocument.find() for precise replacements that maintain rich text formatting in meeting notes.
-- **Bulk Operations:** Replace All across all transcripts with progress tracking, user confirmation, and threaded processing.
+- **High-Performance Bulk Operations:** Replace All across all transcripts with database-optimized processing, progress tracking, user confirmation, and threaded operations.
+- **Database Integration:** All transcript modifications work directly with database storage for instant updates and atomic transactions.
 - **Theme Integration:** Fully theme-aware dialog that adapts to dark/light themes.
 - **Auto-refresh:** Automatically refreshes current view after bulk operations to show changes.
 - **Pre-population:** Automatically populates search field with selected text when dialog is opened.
-- **Transcript Autosave:** Enables autosave functionality for transcript edits, saving changes back to transcript files on disk.
-- **Meeting Notes Autosave:** Maintains existing autosave functionality for meeting notes with Markdown preservation.
+- **Database Autosave:** All transcript and meeting notes changes are automatically saved to the database with immediate persistence.
 
 ---
 
