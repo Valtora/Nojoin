@@ -100,16 +100,20 @@ if [ -z "$PYTHON_READY" ]; then
         PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
         print_color $GREEN "Found system Python $PYTHON_VERSION"
         
-        # Check if Python version is 3.11.x
-        if [[ $PYTHON_VERSION =~ ^3\.11\. ]]; then
-            print_color $GREEN "System Python 3.11.x detected. You can use this or install portable version."
-            read -p "Use system Python 3.11.x? (Y/n): " USE_SYSTEM
+        # Check if Python version is 3.11+ (including 3.12, 3.13, etc.)
+        MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+        MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+        
+        if [ "$MAJOR" -ge 3 ] && { [ "$MAJOR" -gt 3 ] || [ "$MINOR" -ge 11 ]; }; then
+            print_color $GREEN "System Python $PYTHON_VERSION is compatible (3.11+)."
+            read -p "Use system Python $PYTHON_VERSION? (Y/n): " USE_SYSTEM
             if [[ ! "$USE_SYSTEM" =~ ^[Nn]$ ]]; then
                 PYTHON_EXE="python3"
+                USING_SYSTEM_PYTHON=true
                 PYTHON_READY=true
             fi
         else
-            print_warning "System Python $PYTHON_VERSION found, but Nojoin requires Python 3.11.9."
+            print_warning "System Python $PYTHON_VERSION found, but Nojoin requires Python 3.11+."
             print_warning "We'll install a portable Python 3.11.9 to your user directory."
             echo
         fi
@@ -193,9 +197,11 @@ fi
 if [ -z "$FFMPEG_READY" ]; then
     # Check system ffmpeg
     if command -v ffmpeg &> /dev/null; then
-        print_color $GREEN "Found system ffmpeg."
+        FFMPEG_VERSION=$(ffmpeg -version 2>&1 | head -n1 | cut -d' ' -f3)
+        print_color $GREEN "Found system ffmpeg $FFMPEG_VERSION."
         read -p "Use system ffmpeg? (Y/n): " USE_SYSTEM_FFMPEG
         if [[ ! "$USE_SYSTEM_FFMPEG" =~ ^[Nn]$ ]]; then
+            USING_SYSTEM_FFMPEG=true
             FFMPEG_READY=true
         fi
     fi
@@ -244,7 +250,12 @@ fi
 print_success "ffmpeg ready"
 
 # Update PATH for this session to include our tools
-export PATH="$PYTHON_DIR/bin:$FFMPEG_DIR/bin:$PATH"
+if [ "$USING_SYSTEM_PYTHON" != "true" ]; then
+    export PATH="$PYTHON_DIR/bin:$PATH"
+fi
+if [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    export PATH="$FFMPEG_DIR/bin:$PATH"
+fi
 
 # Handle virtual environment
 print_step "5" "Setting up Python virtual environment..."
@@ -406,20 +417,32 @@ echo
 print_color $YELLOW "Creating convenience scripts..."
 
 # Create run script with PATH updates
-cat > run_nojoin.sh << 'EOF'
+cat > run_nojoin.sh << EOF
 #!/bin/bash
-cd "$(dirname "$0")"
-export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:$PATH"
+cd "\$(dirname "\$0")"
+$(if [ "$USING_SYSTEM_PYTHON" != "true" ] && [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:$FFMPEG_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_PYTHON" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$FFMPEG_DIR/bin:\$PATH\""
+fi)
 source .venv/bin/activate
 python3 Nojoin.py
 EOF
 chmod +x run_nojoin.sh
 
 # Create update script
-cat > update_nojoin.sh << 'EOF'
+cat > update_nojoin.sh << EOF
 #!/bin/bash
-cd "$(dirname "$0")"
-export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:$PATH"
+cd "\$(dirname "\$0")"
+$(if [ "$USING_SYSTEM_PYTHON" != "true" ] && [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:$FFMPEG_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_PYTHON" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$FFMPEG_DIR/bin:\$PATH\""
+fi)
 source .venv/bin/activate
 echo "Updating Nojoin dependencies..."
 pip install --upgrade -r requirements.txt
@@ -469,7 +492,13 @@ CURRENT_DIR=$(pwd)
 cat > "$APP_DIR/Contents/MacOS/Nojoin" << EOF
 #!/bin/bash
 cd "$CURRENT_DIR"
-export PATH="$HOME/Library/Application Support/NojoinTools/Python311/bin:$HOME/Library/Application Support/NojoinTools/ffmpeg/bin:\$PATH"
+$(if [ "$USING_SYSTEM_PYTHON" != "true" ] && [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:$FFMPEG_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_PYTHON" != "true" ]; then
+    echo "export PATH=\"$PYTHON_DIR/bin:\$PATH\""
+elif [ "$USING_SYSTEM_FFMPEG" != "true" ]; then
+    echo "export PATH=\"$FFMPEG_DIR/bin:\$PATH\""
+fi)
 source .venv/bin/activate
 python3 Nojoin.py
 EOF
@@ -495,9 +524,17 @@ echo
 print_success "Nojoin has been successfully set up on your macOS system!"
 print_success "All tools installed to user directories (no admin required)"
 echo
-print_color $BLUE "Installation locations:"
-print_color $BLUE "- Python 3.11.9: $PYTHON_DIR"
-print_color $BLUE "- ffmpeg: $FFMPEG_DIR"
+print_color $BLUE "Installation details:"
+if [ "$USING_SYSTEM_PYTHON" = "true" ]; then
+    print_color $BLUE "- Python: System installation ($PYTHON_VERSION)"
+else
+    print_color $BLUE "- Python 3.11.9: $PYTHON_DIR (portable)"
+fi
+if [ "$USING_SYSTEM_FFMPEG" = "true" ]; then
+    print_color $BLUE "- ffmpeg: System installation ($FFMPEG_VERSION)"
+else
+    print_color $BLUE "- ffmpeg: $FFMPEG_DIR (portable)"
+fi
 print_color $BLUE "- Virtual environment: $(pwd)/.venv"
 echo
 print_color $GREEN "How to run Nojoin:"

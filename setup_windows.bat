@@ -73,17 +73,33 @@ if %errorlevel% equ 0 (
     for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
     echo Found system Python !PYTHON_VERSION!
     
-    :: Check if Python version is 3.11.x
-    echo !PYTHON_VERSION! | findstr /R "^3\.11\." >nul
-    if %errorlevel% equ 0 (
-        echo System Python 3.11.x detected. You can use this or install portable version.
-        set /p USE_SYSTEM="Use system Python 3.11.x? (Y/n): "
+    :: Check if Python version is 3.11+ (including 3.12, 3.13, etc.)
+    for /f "tokens=1,2 delims=." %%a in ("!PYTHON_VERSION!") do (
+        set MAJOR=%%a
+        set MINOR=%%b
+    )
+    
+    if !MAJOR! geq 3 (
+        if !MAJOR! gtr 3 (
+            set PYTHON_OK=1
+        ) else if !MINOR! geq 11 (
+            set PYTHON_OK=1
+        ) else (
+            set PYTHON_OK=0
+        )
+    ) else (
+        set PYTHON_OK=0
+    )
+    
+    if !PYTHON_OK! equ 1 (
+        echo System Python !PYTHON_VERSION! is compatible (3.11+).
+        set /p USE_SYSTEM="Use system Python !PYTHON_VERSION!? (Y/n): "
         if /i "!USE_SYSTEM!" neq "n" (
             set "PYTHON_EXE=python"
             goto python_ready
         )
     ) else (
-        echo WARNING: System Python !PYTHON_VERSION! found, but Nojoin requires Python 3.11.9.
+        echo WARNING: System Python !PYTHON_VERSION! found, but Nojoin requires Python 3.11+.
         echo We'll install a portable Python 3.11.9 to your user directory.
         echo.
     )
@@ -161,9 +177,11 @@ if exist "%FFMPEG_EXE%" (
 :: Check system ffmpeg
 ffmpeg -version >nul 2>&1
 if %errorlevel% equ 0 (
-    echo Found system ffmpeg.
+    for /f "tokens=3" %%i in ('ffmpeg -version 2^>^&1 ^| findstr "ffmpeg version"') do set FFMPEG_VERSION=%%i
+    echo Found system ffmpeg !FFMPEG_VERSION!.
     set /p USE_SYSTEM_FFMPEG="Use system ffmpeg? (Y/n): "
     if /i "!USE_SYSTEM_FFMPEG!" neq "n" (
+        set "USING_SYSTEM_FFMPEG=1"
         goto ffmpeg_ready
     )
 )
@@ -207,7 +225,12 @@ echo Portable ffmpeg installed successfully.
 echo [✓] ffmpeg ready
 
 :: Update PATH for this session to include our tools
-set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%PATH%"
+if "!PYTHON_EXE!" neq "python" (
+    set "PATH=%PYTHON_DIR%;%PATH%"
+)
+if "!USING_SYSTEM_FFMPEG!" neq "1" (
+    set "PATH=%FFMPEG_DIR%\bin;%PATH%"
+)
 
 :: Handle virtual environment
 echo [5] Setting up Python virtual environment...
@@ -245,6 +268,16 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Detect CUDA installation
+set "CUDA_DETECTED=0"
+set "CUDA_PATH_FOUND="
+if exist "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" (
+    for /d %%i in ("C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*") do (
+        set "CUDA_PATH_FOUND=%%i"
+        set "CUDA_DETECTED=1"
+    )
+)
+
 :: Choose PyTorch installation type
 echo [6] Choosing PyTorch installation...
 echo.
@@ -257,11 +290,16 @@ echo.
 echo 1. CPU-only: Works on all computers but slower processing
 echo 2. CUDA (GPU): Much faster but requires NVIDIA GPU with CUDA support
 echo.
-echo CUDA Information:
-echo - CUDA requires an NVIDIA graphics card (GTX/RTX series)
-echo - If you don't know what a CUDA GPU is, you likely don't have one
-echo - You can always switch later by reinstalling PyTorch
-echo - CPU-only mode works fine for most users
+if !CUDA_DETECTED! equ 1 (
+    echo [✓] NVIDIA CUDA Toolkit detected at: !CUDA_PATH_FOUND!
+    echo CUDA acceleration is available for faster processing.
+) else (
+    echo CUDA Information:
+    echo - CUDA requires an NVIDIA graphics card (GTX/RTX series)
+    echo - If you don't know what a CUDA GPU is, you likely don't have one
+    echo - You can always switch later by reinstalling PyTorch
+    echo - CPU-only mode works fine for most users
+)
 echo.
 set /p PYTORCH_CHOICE="Choose installation type (1=CPU-only, 2=CUDA): "
 
@@ -365,7 +403,17 @@ echo Creating convenience scripts...
 echo @echo off > run_nojoin.bat
 echo title Nojoin - Meeting Recording and Transcription >> run_nojoin.bat
 echo cd /d "%%~dp0" >> run_nojoin.bat
-echo set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%%PATH%%" >> run_nojoin.bat
+if "!PYTHON_EXE!" neq "python" (
+    if "!USING_SYSTEM_FFMPEG!" neq "1" (
+        echo set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%%PATH%%" >> run_nojoin.bat
+    ) else (
+        echo set "PATH=%PYTHON_DIR%;%%PATH%%" >> run_nojoin.bat
+    )
+) else (
+    if "!USING_SYSTEM_FFMPEG!" neq "1" (
+        echo set "PATH=%FFMPEG_DIR%\bin;%%PATH%%" >> run_nojoin.bat
+    )
+)
 echo call .venv\Scripts\activate.bat >> run_nojoin.bat
 echo python Nojoin.py >> run_nojoin.bat
 echo if %%errorlevel%% neq 0 ( >> run_nojoin.bat
@@ -378,7 +426,17 @@ echo ^) >> run_nojoin.bat
 echo @echo off > update_nojoin.bat
 echo title Update Nojoin Dependencies >> update_nojoin.bat
 echo cd /d "%%~dp0" >> update_nojoin.bat
-echo set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%%PATH%%" >> update_nojoin.bat
+if "!PYTHON_EXE!" neq "python" (
+    if "!USING_SYSTEM_FFMPEG!" neq "1" (
+        echo set "PATH=%PYTHON_DIR%;%FFMPEG_DIR%\bin;%%PATH%%" >> update_nojoin.bat
+    ) else (
+        echo set "PATH=%PYTHON_DIR%;%%PATH%%" >> update_nojoin.bat
+    )
+) else (
+    if "!USING_SYSTEM_FFMPEG!" neq "1" (
+        echo set "PATH=%FFMPEG_DIR%\bin;%%PATH%%" >> update_nojoin.bat
+    )
+)
 echo call .venv\Scripts\activate.bat >> update_nojoin.bat
 echo echo Updating Nojoin dependencies... >> update_nojoin.bat
 echo pip install --upgrade -r requirements.txt >> update_nojoin.bat
@@ -414,9 +472,20 @@ echo.
 echo [✓] Nojoin has been successfully set up on your Windows system!
 echo [✓] All tools installed to user directories (no admin required)
 echo.
-echo Installation locations:
-echo - Python 3.11.9: %PYTHON_DIR%
-echo - ffmpeg: %FFMPEG_DIR%
+echo Installation details:
+if "!PYTHON_EXE!" equ "python" (
+    echo - Python: System installation ^(!PYTHON_VERSION!^)
+) else (
+    echo - Python 3.11.9: %PYTHON_DIR% ^(portable^)
+)
+if "!USING_SYSTEM_FFMPEG!" equ "1" (
+    echo - ffmpeg: System installation ^(!FFMPEG_VERSION!^)
+) else (
+    echo - ffmpeg: %FFMPEG_DIR% ^(portable^)
+)
+if !CUDA_DETECTED! equ 1 (
+    echo - CUDA Toolkit: !CUDA_PATH_FOUND!
+)
 echo - Virtual environment: %CD%\.venv
 echo.
 echo How to run Nojoin:
