@@ -46,7 +46,7 @@ FFMPEG_DIR="$USER_TOOLS_DIR/ffmpeg"
 mkdir -p "$USER_TOOLS_DIR"
 
 print_color $CYAN "================================================================"
-print_color $CYAN "                 Nojoin v0.5.2 Setup for macOS"
+print_color $CYAN "                        Nojoin Setup for macOS"
 print_color $CYAN "                        (User Mode - No Admin)"
 print_color $CYAN "================================================================"
 echo

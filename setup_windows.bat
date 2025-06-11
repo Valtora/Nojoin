@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ================================================================
-echo                 Nojoin v0.5.2 Setup for Windows
+echo                        Nojoin Setup for Windows
 echo                        (User Mode - No Admin)
 echo ================================================================
 echo.
