@@ -33,7 +33,7 @@ I know there are similar free solutions out there which are all great and quirky
 
 ## Quick Setup
 
-Nojoin includes automated setup scripts that handle all dependencies and configuration for you. No technical knowledge required!
+Nojoin includes automated setup scripts that handle all dependencies and configuration for you.
 
 ### Windows
 1. **Download the Nojoin files:**
@@ -47,7 +47,7 @@ Nojoin includes automated setup scripts that handle all dependencies and configu
      ```bash
      cd Nojoin
      ```
-2. **Double-click** on `setup_windows.bat` (no administrator privileges required!)
+2. **Double-click** on `setup_windows.bat` (no administrator privileges required)
 3. **Follow the prompts** - the script will automatically:
    - Install Python 3.11.9 to your user directory if needed
    - Install ffmpeg for audio processing to your user directory
