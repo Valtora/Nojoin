@@ -4,10 +4,11 @@ setuptools
 dotenv
 
 # Core ML Libraries
---extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.7.1+cu128
-torchvision==0.22.1+cu128
-torchaudio==2.7.1+cu128
+# Commented out for now as README provides instructions for installing PyTorch manually as it is very system specific.
+#--extra-index-url https://download.pytorch.org/whl/cu128
+#torch==2.7.1+cu128
+#torchvision==0.22.1+cu128
+#torchaudio==2.7.1+cu128
 
 # Speech Recognition
 openai-whisper  
