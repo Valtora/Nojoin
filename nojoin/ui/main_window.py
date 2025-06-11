@@ -87,6 +87,7 @@ from .search_bar_widget import SearchBarWidget
 from nojoin.processing.LLM_Services import get_llm_backend
 from .meeting_notes_worker import MeetingNotesWorker
 from .find_replace_dialog import FindReplaceDialog
+from .update_dialog import check_for_updates_on_startup
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
@@ -402,6 +403,9 @@ class MainWindow(QMainWindow):
         else:
             # Fallback if current_theme isn't set yet (should be by setup_ui)
             self.apply_theme(config_manager.get("theme", "dark"))
+        
+        # Check for updates on startup (after UI is fully initialized)
+        QTimer.singleShot(2000, self._check_for_updates_on_startup)  # 2 second delay
 
     def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str):
         """Configures a notes toolbar button with a theme-aware icon and style."""
@@ -3459,6 +3463,13 @@ class MainWindow(QMainWindow):
         
         # Show the dialog
         dialog.exec()
+    
+    def _check_for_updates_on_startup(self):
+        """Check for updates on application startup."""
+        try:
+            check_for_updates_on_startup(self)
+        except Exception as e:
+            logger.error(f"Error checking for updates on startup: {e}")
         
     def _refresh_current_meeting_view(self):
         """Refresh the currently displayed meeting notes/transcript after bulk operations."""

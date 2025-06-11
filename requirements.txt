@@ -31,6 +31,8 @@ silero-vad # For audio processing
 requests # For API requests
 rapidfuzz # For fuzzy string matching
 tzlocal # For local timezone detection
+packaging # For version comparison
+psutil # For process management (used by updater)
 
 # LLM APIs
 openai

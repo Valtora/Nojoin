@@ -2,8 +2,8 @@
 
 ## 1. Introduction
 
-**Application Name:** Nojoin  
-**Purpose:** Nojoin is a modern desktop application for Windows 11 that enables individuals to record system audio (input and output) during meetings, generate accurate transcripts using OpenAI Whisper, and perform fully offline speaker diarization with Pyannote. The application is designed for personal use, focusing on privacy, robust local processing, and actionable meeting minutes with speaker attribution.
+**Application Name:** Nojoin v0.5.2  
+**Purpose:** Nojoin is a modern desktop application for Windows and macOS that enables individuals to record system audio (input and output) during meetings, generate accurate transcripts using OpenAI Whisper, and perform fully offline speaker diarization with Pyannote. The application is designed for personal use, focusing on privacy, robust local processing, and actionable meeting minutes with speaker attribution.
 
 ---
 
@@ -130,6 +130,26 @@
 - **Settings Integration:** UI Scale Mode (Auto/Manual) and custom scale factor controls in the Settings dialog.
 - **Graceful Degradation:** All functionality remains accessible even on very small screens while maintaining usability.
 - **Production-Ready:** Singleton pattern implementation with caching, error handling, and comprehensive logging.
+
+### 2.14 Version Management & Automatic Updates
+- **GitHub Integration:** Automatic update checking via GitHub API with configurable frequency.
+- **User-Friendly Update Flow:** Non-intrusive update notifications with detailed release notes and version comparison.
+- **Flexible Reminder Preferences:** User-configurable update reminders (never, next run, weekly, monthly) with version skipping.
+- **Intelligent Update Process:** Automatic backup creation before updates with rollback capability.
+- **Progress Tracking:** Real-time download and installation progress with user cancellation support.
+- **Manual Update Checking:** "Check for Updates" button in Settings dialog for on-demand update checking.
+- **Version Consistency:** Centralized version management across all application components.
+- **Cross-Platform Support:** Platform-specific update mechanisms for Windows and macOS.
+
+### 2.15 Automated Setup & Installation System
+- **Zero-Knowledge Setup:** Automated setup scripts assume no technical expertise from users.
+- **Intelligent Dependency Detection:** Automatic detection and installation of Python 3.11.9, ffmpeg, and other requirements.
+- **Hardware Optimization:** Automatic GPU detection and CUDA configuration where available.
+- **Cross-Platform Scripts:** Dedicated setup scripts for Windows (`setup_windows.bat`) and macOS (`setup_mac.sh`).
+- **Error Recovery:** Comprehensive error handling with helpful guidance and troubleshooting steps.
+- **Convenience Utilities:** Automatic creation of launch scripts, desktop shortcuts, and update utilities.
+- **Virtual Environment Management:** Automatic virtual environment creation and dependency isolation.
+- **Version Enforcement:** Strict Python 3.11.9 requirement with clear warnings for compatibility issues.
 
 ---
 

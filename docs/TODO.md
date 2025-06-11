@@ -5,18 +5,8 @@ Implement a first-pass attempt at inferring a title for the meeting based on the
 ## LLM User Context - Medium Priority - Definite TODO
 Allow the user to provide the LLMs with some custom context. E.g., their name, title, role, company, and whatever else they want to provide as context to the LLMs. This might help with improving meeting note quality and or provide general quality of life increase for the user.
 
-## Updater - High Priority - Potential TODO
-Build an version management system that checks for updates to Nojoin. If an update is found the user should be prompted if they want to update. They should have the option to be reminded never, on next-run, in one week, or one month. The user should be able to manually check for an update via the settings dialog using a 'Check for Updates' button. If the user decides to update,the system should proceed with the update.
-
-This might require the creation of a standalone update script with its own process, terminal, GUI, etc. It will need to use a temp directory to copy the necessary update scripts into because the original directory will need to be deleted/overwritten. Then it will need to backup the user config and database (as above) to the same temp directory. Then the update system will need to run the update script from the temp directory, close the main Nojoin app, and update the Nojoin directory. It then needs to restore the user's database and config, merging them if necessary.
-
-The database will need to have operations to import/merge to allow for backwards compatability in for new updates. This will only be needed if we make changes to the database architecture later. Once done the Nojoin application should be restarted. Possibly a button to view commit changes/releases, etc. can be added here.
-
 ## Advanced Meeting Analysis - Potential TODO
 Implement advanced analyses for both the audio and transcript to gauge things like speaker sentiments, engagement, bias, etc. with a view to extract as much information as possible from the meetings' interactions. Look at things like time spent on topics.
 
 ## Codebase Polish - Definite TODO
 Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.
-
-## Setup Script
-Create a command line based setup script that runs through all the necessary steps in the README that can guide laypeople through the setup of Nojoin. Assume the user has very limited technical expertise. This script is ideally run by the user's system in their respective bash environment. For Windows this might be a .bat file, for Mac/Linux an .sh file perhaps. We should then update the README to direct people to use the setup script and then provide the manual steps as an alternative.

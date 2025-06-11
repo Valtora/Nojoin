@@ -24,13 +24,55 @@ I know there are similar free solutions out there which are all great and quirky
     *   Complete backup and restore system creating portable zip files with all your data.
     *   Database-first architecture for faster operations and reliable data storage.
     *   Non-destructive restore that merges with existing data.
+*   **Automatic Updates:** Built-in update checking and installation system with user-configurable preferences.
 *   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
 
 ## Legal Disclaimer
 
 **Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
 
-## Setup
+## Quick Setup
+
+Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and configuration for you. No technical knowledge required!
+
+### Windows
+1. **Download** the Nojoin files to your desired folder
+2. **Right-click** on `setup_windows.bat` and select **"Run as administrator"**
+3. **Follow the prompts** - the script will automatically:
+   - Install Python 3.11.9 if needed
+   - Install ffmpeg for audio processing
+   - Set up a virtual environment
+   - Detect and configure GPU acceleration (CUDA) if available
+   - Install all dependencies
+   - Create desktop shortcuts and launch scripts
+
+4. **Launch Nojoin** by double-clicking the desktop shortcut or running `Start Nojoin.bat`
+
+### macOS
+1. **Download** the Nojoin files to your desired folder
+2. **Open Terminal** and navigate to the Nojoin folder
+3. **Run** `./setup_mac.sh` and follow the prompts
+4. **The script will automatically:**
+   - Install Homebrew if needed
+   - Install Python 3.11.9 if needed
+   - Install ffmpeg for audio processing
+   - Set up a virtual environment with optimal settings
+   - Configure Metal Performance Shaders (MPS) for Apple Silicon Macs
+   - Create a native macOS app bundle
+   - Install all dependencies
+
+5. **Launch Nojoin** from your Applications folder or run `./start_nojoin_mac.sh`
+
+### What the Setup Scripts Do
+- **Intelligent Dependency Management:** Automatically detects and installs missing software
+- **Python Version Enforcement:** Ensures Python 3.11.9 is installed (required for PyTorch compatibility)
+- **Hardware Optimization:** Automatically configures GPU acceleration where available
+- **Error Recovery:** Comprehensive error handling with helpful guidance
+- **User-Friendly:** Assumes no technical knowledge while providing advanced optimizations
+
+## Manual Setup (Advanced Users)
+
+If you prefer manual installation or need custom configuration:
 
 1.  **Prerequisites:**
 
@@ -41,7 +83,7 @@ I know there are similar free solutions out there which are all great and quirky
 
         *   **Windows (winget):**
             ```bash
-            winget install Python.Python.3.11
+            winget install Python.Python.3.11 --version 3.11.9
             ```
         *   **macOS (Homebrew):**
             ```bash

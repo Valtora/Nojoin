@@ -17,6 +17,7 @@ from nojoin.utils.config_manager import (
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
 from nojoin.utils.backup_restore import BackupRestoreManager, get_default_backup_filename
+from .update_dialog import CheckForUpdatesDialog
 import logging
 
 class SettingsDialog(QDialog):
@@ -240,6 +241,18 @@ class SettingsDialog(QDialog):
         backup_restore_widget = QWidget()
         backup_restore_widget.setLayout(backup_restore_layout)
         layout.addRow("Data Management:", backup_restore_widget)
+
+        # --- Update Management Section ---
+        self.check_updates_button = QPushButton("Check for Updates")
+        self.check_updates_button.setToolTip("Check for available updates to Nojoin")
+        self.check_updates_button.clicked.connect(self._check_for_updates)
+        
+        update_layout = QHBoxLayout()
+        update_layout.addWidget(self.check_updates_button)
+        update_layout.addStretch()
+        update_widget = QWidget()
+        update_widget.setLayout(update_layout)
+        layout.addRow("Updates:", update_widget)
 
         # Now add advanced toggle and advanced container at the bottom
         layout.addRow("", self.advanced_toggle)
@@ -617,4 +630,17 @@ class SettingsDialog(QDialog):
                 self, 
                 "Restore Failed", 
                 "Failed to restore backup. Check the logs for details."
+            )
+    
+    def _check_for_updates(self):
+        """Handle check for updates button click."""
+        try:
+            dialog = CheckForUpdatesDialog(self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error checking for updates: {e}")
+            QMessageBox.critical(
+                self,
+                "Update Check Failed",
+                f"Failed to check for updates:\n{str(e)}"
             ) 
