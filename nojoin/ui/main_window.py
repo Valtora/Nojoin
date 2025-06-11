@@ -1547,12 +1547,26 @@ class MainWindow(QMainWindow):
             item = selected_items[0]
             recording_id = item.data(Qt.UserRole)
             recording_data = db_ops.get_recording_by_id(recording_id)
-        diarized_transcript_path = recording_data.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+        # Get transcript from database first, then fallback to file
+        from nojoin.utils.transcript_store import TranscriptStore
+        transcript = TranscriptStore.get(recording_id, "diarized")
+        
+        if not transcript:
+            # Fallback to file-based approach for legacy recordings
+            diarized_transcript_path = recording_data.get("diarized_transcript_path")
+            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+            if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
+                try:
+                    with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
+                        transcript = f.read()
+                except Exception as e:
+                    logger.error(f"Failed to read transcript file for recording {recording_id}: {e}")
+                    transcript = None
+        
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
         model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
-        if not api_key or not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+        if not api_key or not transcript:
             # Display transcript if API key missing, using setMarkdown
             transcript_html_content = self.load_transcript(recording_id) # This returns HTML
             # We need to convert this HTML to Markdown for setMarkdown, or find a way to display HTML directly
@@ -1580,8 +1594,6 @@ class MainWindow(QMainWindow):
             self.notes_have_been_edited = False
             self.status_bar.showMessage(f"Meeting notes not generated. No API key for {provider.title()}.", 3000)
             return
-        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-            transcript = f.read()
         spinner = MeetingNotesProgressDialog(self)
         spinner.show()
         backend = get_llm_backend(provider, api_key=api_key, model=model)
@@ -1632,12 +1644,26 @@ class MainWindow(QMainWindow):
             item = selected_items[0]
             recording_id = item.data(Qt.UserRole)
             recording_data = db_ops.get_recording_by_id(recording_id)
-        diarized_transcript_path = recording_data.get("diarized_transcript_path")
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+        # Get transcript from database first, then fallback to file
+        from nojoin.utils.transcript_store import TranscriptStore
+        transcript = TranscriptStore.get(recording_id, "diarized")
+        
+        if not transcript:
+            # Fallback to file-based approach for legacy recordings
+            diarized_transcript_path = recording_data.get("diarized_transcript_path")
+            abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
+            if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
+                try:
+                    with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
+                        transcript = f.read()
+                except Exception as e:
+                    logger.error(f"Failed to read transcript file for recording {recording_id}: {e}")
+                    transcript = None
+        
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
         model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
-        if not api_key or not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
+        if not api_key or not transcript:
             # Fallback message in Markdown
             error_markdown = (f"**Meeting notes regeneration failed.**\n\n"
                               f"No API key provided for {provider.title()} or transcript is missing.\n\n"
@@ -1659,8 +1685,6 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(self, "Regenerate Notes", "Regenerating will overwrite any unsaved edits. Continue?", QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
-        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-            transcript = f.read()
         spinner = MeetingNotesProgressDialog(self)
         spinner.show()
         backend = get_llm_backend(provider, api_key=api_key, model=model)
@@ -2904,26 +2928,31 @@ class MainWindow(QMainWindow):
         
         logger.info(f"Found recording data for ID {recording_id}: {dict(rec) if rec else 'None'}")
 
-        diarized_transcript_path = rec.get("diarized_transcript_path")
-        if not diarized_transcript_path:
-            logger.error(f"CRITICAL: Diarized transcript path not found in DB for recording ID {recording_id} (Name: {rec.get('name')}) in _generate_meeting_notes_after_relabel.")
-            QMessageBox.critical(self, "Notes Generation Error", f"Diarized transcript path is missing for recording '{rec.get('name')}'. Meeting notes cannot be generated.")
-            return
+        # Get transcript from database first, then fallback to file
+        from nojoin.utils.transcript_store import TranscriptStore
+        transcript_text = TranscriptStore.get(recording_id, "diarized")
         
-        logger.info(f"Diarized transcript path from DB for ID {recording_id}: {diarized_transcript_path}")
+        if not transcript_text:
+            # Fallback to file-based approach for legacy recordings
+            logger.info(f"No transcript found in database for recording {recording_id}, trying file fallback...")
+            diarized_transcript_path = rec.get("diarized_transcript_path")
+            if diarized_transcript_path:
+                abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path)
+                if abs_diarized_transcript_path and os.path.exists(abs_diarized_transcript_path):
+                    try:
+                        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
+                            transcript_text = f.read()
+                        logger.info(f"Successfully read transcript from file for recording {recording_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to read transcript file for recording {recording_id}: {e}")
+                        transcript_text = None
         
-        abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path)
-        logger.info(f"Absolute diarized transcript path for ID {recording_id}: {abs_diarized_transcript_path}")
-
-        if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-            logger.error(f"CRITICAL: Diarized transcript file does not exist at {abs_diarized_transcript_path} for recording ID {recording_id} (Name: {rec.get('name')}). Path from DB was '{diarized_transcript_path}'.")
-            QMessageBox.critical(self, "Notes Generation Error", f"Diarized transcript file is missing for recording '{rec.get('name')}' (expected at {abs_diarized_transcript_path}). Meeting notes cannot be generated.")
+        if not transcript_text:
+            logger.error(f"CRITICAL: No diarized transcript found for recording ID {recording_id} (Name: {rec.get('name')}) in _generate_meeting_notes_after_relabel.")
+            QMessageBox.critical(self, "Notes Generation Error", f"Diarized transcript is missing for recording '{rec.get('name')}'. Meeting notes cannot be generated.")
             return
 
-        logger.info(f"Proceeding with notes generation for ID {recording_id}. File exists: {abs_diarized_transcript_path}")
-
-        with open(abs_diarized_transcript_path, 'r', encoding='utf-8') as f:
-            transcript_text = f.read()
+        logger.info(f"Proceeding with notes generation for ID {recording_id}. Transcript found: {len(transcript_text)} characters")
         llm_provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{llm_provider}_api_key")
         model = config_manager.get(f"{llm_provider}_model", "gpt-4.1-mini-2025-04-14")
