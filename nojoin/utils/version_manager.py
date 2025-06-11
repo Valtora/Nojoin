@@ -29,7 +29,6 @@ GITHUB_REPO = "Valtora/Nojoin"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_COMMITS_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/commits/main"
 GITHUB_MAIN_ZIP_URL = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip"
-CURRENT_VERSION = "0.5.2"  # This should be updated with each release
 
 class UpdatePreference:
     """Enumeration of update reminder preferences."""
@@ -46,14 +45,12 @@ class VersionManager:
         self.backup_manager = BackupRestoreManager()
         
     def get_current_version(self) -> str:
-        """Get the current version of Nojoin."""
-        try:
-            # Try to get version from our version module
-            from .. import __version__
-            return __version__.get_version()
-        except Exception:
-            # Fallback to hardcoded version
-            return CURRENT_VERSION
+        """Get the current version of Nojoin based on Git commit."""
+        current_commit = self._get_current_commit_sha()
+        if current_commit:
+            return f"main-{current_commit[:8]}"
+        else:
+            return "main-unknown"
     
     def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
         """

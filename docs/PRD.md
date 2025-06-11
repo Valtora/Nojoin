@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-**Application Name:** Nojoin v0.5.4  
+**Application Name:** Nojoin  
 **Purpose:** Nojoin is a modern desktop application for Windows and macOS that enables individuals to record system audio (input and output) during meetings, generate accurate transcripts using OpenAI Whisper, and perform fully offline speaker diarization with Pyannote. The application is designed for personal use, focusing on privacy, robust local processing, and actionable meeting minutes with speaker attribution.
 
 ---
@@ -132,13 +132,14 @@
 - **Production-Ready:** Singleton pattern implementation with caching, error handling, and comprehensive logging.
 
 ### 2.14 Version Management & Automatic Updates
-- **GitHub Integration:** Automatic update checking via GitHub API with configurable frequency.
-- **User-Friendly Update Flow:** Non-intrusive update notifications with detailed release notes and version comparison.
-- **Flexible Reminder Preferences:** User-configurable update reminders (never, next run, weekly, monthly) with version skipping.
+- **Commit-Based Versioning:** Version tracking based on Git commit SHA instead of semantic versioning, eliminating manual version file updates.
+- **GitHub Integration:** Automatic update checking via GitHub API with configurable frequency, comparing against main branch commits.
+- **User-Friendly Update Flow:** Non-intrusive update notifications with detailed commit information and author details.
+- **Flexible Reminder Preferences:** User-configurable update reminders (never, next run, weekly, monthly) with commit skipping.
 - **Intelligent Update Process:** Automatic backup creation before updates with rollback capability.
 - **Progress Tracking:** Real-time download and installation progress with user cancellation support.
 - **Manual Update Checking:** "Check for Updates" button in Settings dialog for on-demand update checking.
-- **Version Consistency:** Centralized version management across all application components.
+- **Simplified Version Management:** No manual version file maintenance required - versions automatically derived from Git state.
 - **Cross-Platform Support:** Platform-specific update mechanisms for Windows and macOS.
 
 ### 2.15 Automated Setup & Installation System
