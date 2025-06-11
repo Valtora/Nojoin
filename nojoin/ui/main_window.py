@@ -233,39 +233,7 @@ class ProcessingWorker(QThread):
             self.error.emit(self.recording_id, f"An unexpected error occurred: {e}")
         logger.info(f"ProcessingWorker finished run method for ID: {self.recording_id}")
 
-# --- Model Download Worker ---
-class ModelDownloadWorker(QThread):
-    progress = Signal(int)  # percent
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, model_size, device):
-        super().__init__()
-        self.model_size = model_size
-        self.device = device
-
-    def run(self):
-        try:
-            # Patch tqdm in whisper to emit progress
-            import tqdm
-            orig_tqdm = tqdm.tqdm
-            worker = self
-            class QtTqdm(orig_tqdm):
-                def update(self2, n):
-                    super().update(n)
-                    percent = int((self2.n / self2.total) * 100) if self2.total else 0
-                    worker.progress.emit(percent)
-            # Patch
-            import whisper.transcribe
-            whisper.transcribe.tqdm.tqdm = QtTqdm
-            # Actually load the model (triggers download if needed)
-            whisper.load_model(self.model_size, device=self.device)
-            # Restore tqdm
-            whisper.transcribe.tqdm.tqdm = orig_tqdm
-            self.progress.emit(100)
-            self.finished.emit()
-        except Exception as e:
-            self.error.emit(str(e))
+# Note: ModelDownloadWorker moved to model_download_dialog.py
 
 # --- Main Window ---
 class MainWindow(QMainWindow):
@@ -405,6 +373,9 @@ class MainWindow(QMainWindow):
         
         # Check for updates on startup (after UI is fully initialized)
         QTimer.singleShot(2000, self._check_for_updates_on_startup)  # 2 second delay
+        
+        # Check for first-run model download prompt (after UI is shown)
+        QTimer.singleShot(500, self._check_first_run_model_download)
 
     def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str, scale_immune: bool = False):
         """Configures a notes toolbar button with a theme-aware icon and style."""
@@ -3619,6 +3590,45 @@ class MainWindow(QMainWindow):
             check_for_updates_on_startup(self)
         except Exception as e:
             logger.error(f"Error checking for updates on startup: {e}")
+    
+    def _check_first_run_model_download(self):
+        """Check if we should prompt user to download default Whisper model on first run."""
+        try:
+            from nojoin.utils.model_utils import should_prompt_for_first_run_download, check_default_model_availability
+            from nojoin.ui.model_download_dialog import ModelDownloadDialog
+            
+            if should_prompt_for_first_run_download():
+                is_available, model_size = check_default_model_availability()
+                
+                reply = QMessageBox.question(
+                    self,
+                    "Download Whisper Model",
+                    f"The default Whisper model '{model_size}' is not available locally.\n\n"
+                    f"Would you like to download it now? This will enable audio transcription.\n\n"
+                    f"You can also download it later during your first transcription.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    device = config_manager.get("processing_device", "cpu")
+                    dialog = ModelDownloadDialog(model_size, device, self)
+                    dialog.start_download()
+                    dialog.exec()
+                    
+                    if not dialog.was_cancelled():
+                        logger.info(f"First-run download of model '{model_size}' completed successfully")
+                        QMessageBox.information(
+                            self,
+                            "Model Downloaded",
+                            f"Whisper model '{model_size}' has been downloaded successfully!\n\n"
+                            f"You can now transcribe audio recordings."
+                        )
+                    else:
+                        logger.info(f"First-run download of model '{model_size}' was cancelled by user")
+                        
+        except Exception as e:
+            logger.error(f"Error checking for first-run model download: {e}", exc_info=True)
         
     def _refresh_current_meeting_view(self):
         """Refresh the currently displayed meeting notes/transcript after bulk operations."""

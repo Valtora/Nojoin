@@ -141,6 +141,10 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None, canc
         # Load model (use cache)
         if model_size not in _model_cache:
             logger.info(f"Loading Whisper model: {model_size}")
+            # Check if model exists locally, if not it will be downloaded by whisper.load_model
+            from ..utils.model_utils import is_whisper_model_downloaded
+            if not is_whisper_model_downloaded(model_size):
+                logger.info(f"Whisper model {model_size} not found locally - will be downloaded")
             _model_cache[model_size] = whisper.load_model(model_size, device=device)
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]

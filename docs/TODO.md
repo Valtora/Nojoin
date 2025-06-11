@@ -10,6 +10,3 @@ Implement advanced analyses for both the audio and transcript to gauge things li
 
 ## Codebase Polish - Definite TODO
 Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.
-
-## Whisper Model Download
-Update the progress dialog to tell the user it is downloading a new model if it is being run for the first time. Show this progress in a separate new dialog just for this purpose called 'Model Download Dialog'. Also centre the time elapsed counter and remove the 'Stage:' label and status update as there is already. Finally, let's prompt the user to download the default model on first-run if its not detected. They can of course bypass this and download on first transcription but let's offer the option.

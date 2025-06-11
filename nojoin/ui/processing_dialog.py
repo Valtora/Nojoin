@@ -86,21 +86,11 @@ class ProcessingProgressDialog(QDialog):
         """)
         layout.addWidget(self.progress_bar)
         
-        # Time info layout
-        time_layout = QHBoxLayout()
-        time_layout.setSpacing(20)
-        
+        # Centered elapsed time
         self.elapsed_label = QLabel("Elapsed: 00:00")
-        self.elapsed_label.setStyleSheet("color: #666;")
-        time_layout.addWidget(self.elapsed_label)
-        
-        time_layout.addStretch()
-        
-        self.stage_info_label = QLabel("")
-        self.stage_info_label.setStyleSheet("color: #666;")
-        time_layout.addWidget(self.stage_info_label)
-        
-        layout.addLayout(time_layout)
+        self.elapsed_label.setAlignment(Qt.AlignCenter)
+        self.elapsed_label.setStyleSheet("color: #666; font-size: 11px;")
+        layout.addWidget(self.elapsed_label)
         
         # Buttons
         layout.addSpacing(10)
@@ -143,7 +133,6 @@ class ProcessingProgressDialog(QDialog):
         
         name = stage_name or stage_names.get(stage, stage.title())
         self.status_label.setText(f"{name}...")
-        self.stage_info_label.setText(f"Stage: {stage.title()}")
         
         # Update overall progress to start of new stage
         start_percent, _ = self.STAGE_RANGES[stage]
