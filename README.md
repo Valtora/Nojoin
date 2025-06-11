@@ -43,6 +43,8 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
    - **Option B (If you have Git):** Open Command Prompt or PowerShell and run:
      ```bash
      git clone https://github.com/Valtora/Nojoin
+     ```
+     ```bash
      cd Nojoin
      ```
 2. **Right-click** on `setup_windows.bat` and select **"Run as administrator"**
@@ -65,6 +67,8 @@ Nojoin v0.5.2 includes automated setup scripts that handle all dependencies and 
    - **Option B (If you have Git):** Open Terminal and run:
      ```bash
      git clone https://github.com/Valtora/Nojoin
+     ```
+     ```bash
      cd Nojoin
      ```
 2. **Open Terminal** and navigate to the Nojoin folder:
