@@ -30,12 +30,13 @@ class BackupRestoreManager:
     def __init__(self):
         self.project_root = get_project_root()
         
-    def create_backup(self, backup_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> bool:
+    def create_backup(self, backup_path: str, include_audio: bool = False, progress_callback: Optional[Callable[[int, str], None]] = None) -> bool:
         """
-        Creates a complete backup of the application data.
+        Creates a backup of the application data.
         
         Args:
             backup_path: Path where the backup zip file will be created
+            include_audio: Whether to include audio files in the backup (default: False)
             progress_callback: Optional callback function for progress updates (percentage, message)
             
         Returns:
@@ -63,41 +64,50 @@ class BackupRestoreManager:
                     logger.error(f"Database file not found at {db_path}")
                     return False
                 
-                if progress_callback:
-                    progress_callback(30, "Gathering audio files...")
-                
-                # 2. Copy audio files
-                recordings = db_ops.get_all_recordings()
-                audio_dir = os.path.join(temp_backup_dir, "audio")
-                os.makedirs(audio_dir, exist_ok=True)
-                
                 copied_files = []
-                total_recordings = len(recordings)
+                total_recordings = 0
                 
-                for i, recording in enumerate(recordings):
+                # 2. Copy audio files (if requested)
+                if include_audio:
                     if progress_callback:
-                        progress = 30 + int((i / total_recordings) * 50)
-                        progress_callback(progress, f"Copying audio file {i+1}/{total_recordings}")
+                        progress_callback(30, "Gathering audio files...")
                     
-                    recording_dict = dict(recording)
-                    audio_path = recording_dict.get('audio_path')
+                    recordings = db_ops.get_all_recordings()
+                    audio_dir = os.path.join(temp_backup_dir, "audio")
+                    os.makedirs(audio_dir, exist_ok=True)
                     
-                    if audio_path:
-                        abs_audio_path = from_project_relative_path(audio_path)
-                        if os.path.exists(abs_audio_path):
-                            try:
-                                # Preserve relative path structure in backup
-                                backup_audio_path = os.path.join(audio_dir, os.path.basename(abs_audio_path))
-                                shutil.copy2(abs_audio_path, backup_audio_path)
-                                copied_files.append({
-                                    'recording_id': recording_dict['id'],
-                                    'original_path': audio_path,
-                                    'backup_filename': os.path.basename(abs_audio_path)
-                                })
-                            except Exception as e:
-                                logger.error(f"Failed to copy audio file {abs_audio_path}: {e}")
-                        else:
-                            logger.warning(f"Audio file not found: {abs_audio_path}")
+                    total_recordings = len(recordings)
+                    
+                    for i, recording in enumerate(recordings):
+                        if progress_callback:
+                            progress = 30 + int((i / total_recordings) * 50)
+                            progress_callback(progress, f"Copying audio file {i+1}/{total_recordings}")
+                        
+                        recording_dict = dict(recording)
+                        audio_path = recording_dict.get('audio_path')
+                        
+                        if audio_path:
+                            abs_audio_path = from_project_relative_path(audio_path)
+                            if os.path.exists(abs_audio_path):
+                                try:
+                                    # Preserve relative path structure in backup
+                                    backup_audio_path = os.path.join(audio_dir, os.path.basename(abs_audio_path))
+                                    shutil.copy2(abs_audio_path, backup_audio_path)
+                                    copied_files.append({
+                                        'recording_id': recording_dict['id'],
+                                        'original_path': audio_path,
+                                        'backup_filename': os.path.basename(abs_audio_path)
+                                    })
+                                except Exception as e:
+                                    logger.error(f"Failed to copy audio file {abs_audio_path}: {e}")
+                            else:
+                                logger.warning(f"Audio file not found: {abs_audio_path}")
+                else:
+                    if progress_callback:
+                        progress_callback(30, "Skipping audio files...")
+                    # Still get recording count for manifest
+                    recordings = db_ops.get_all_recordings()
+                    total_recordings = len(recordings)
                 
                 if progress_callback:
                     progress_callback(85, "Creating manifest...")
@@ -109,7 +119,8 @@ class BackupRestoreManager:
                     'app_version': 'nojoin-1.0',  # Could be dynamic
                     'total_recordings': total_recordings,
                     'copied_files': copied_files,
-                    'backup_type': 'complete'
+                    'includes_audio': include_audio,
+                    'backup_type': 'complete' if include_audio else 'database_only'
                 }
                 
                 manifest_path = os.path.join(temp_backup_dir, "manifest.json")
@@ -196,15 +207,22 @@ class BackupRestoreManager:
                     logger.error("Database file not found in backup")
                     return False
                 
-                # 4. Restore audio files
+                # 4. Restore audio files (if included in backup)
                 audio_backup_dir = os.path.join(restore_dir, "audio")
                 copied_files = manifest.get('copied_files', [])
+                includes_audio = manifest.get('includes_audio', True)  # Default to True for older backups
                 
-                if os.path.exists(audio_backup_dir) and copied_files:
+                if includes_audio and os.path.exists(audio_backup_dir) and copied_files:
                     if progress_callback:
                         progress_callback(60, "Restoring audio files...")
                     
                     self._restore_audio_files(audio_backup_dir, copied_files, progress_callback)
+                else:
+                    if progress_callback:
+                        if not includes_audio:
+                            progress_callback(60, "No audio files in backup to restore...")
+                        else:
+                            progress_callback(60, "No audio files found in backup...")
                 
                 if progress_callback:
                     progress_callback(100, "Restore complete!")

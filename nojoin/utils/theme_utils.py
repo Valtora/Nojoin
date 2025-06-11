@@ -671,10 +671,20 @@ def get_theme_qss(theme_name: str, scale_factor: float = 1.0) -> str:
         hover_color = "#ffb74d"  # lighter orange
         slider_groove = "#444444"
         slider_handle = "#ffb74d"
+        # Checkbox colors for dark theme (orange)
+        checkbox_border_color = "#ff9800"
+        checkbox_hover_color = "#ffb74d"
+        checkbox_checked_bg = "#ff9800"
+        checkbox_checked_hover_bg = "#ffb74d"
     else:
         hover_color = "#0051a8"  # darker blue
         slider_groove = "#cccccc"
         slider_handle = "#007aff"
+        # Checkbox colors for light theme (blue)
+        checkbox_border_color = "#007aff"
+        checkbox_hover_color = "#0051a8"
+        checkbox_checked_bg = "#007aff"
+        checkbox_checked_hover_bg = "#0051a8"
     return f"""
     QMainWindow, QDialog {{
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {palette['secondary_bg']}, stop:1 {palette['primary_bg']});
@@ -897,6 +907,40 @@ def get_theme_qss(theme_name: str, scale_factor: float = 1.0) -> str:
         color: {palette['disabled_text']};
     }}
     /* End of MeetingNotesToolbar specific styling */
+
+    /* QCheckBox styling with theme-aware borders */
+    QCheckBox {{
+        color: {palette['primary_text']};
+        background: transparent;
+        spacing: 5px;
+    }}
+    QCheckBox::indicator {{
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        border: 2px solid {checkbox_border_color};
+        background: {palette['primary_bg']};
+    }}
+    QCheckBox::indicator:hover {{
+        border: 2px solid {checkbox_hover_color};
+        background: {palette['secondary_bg']};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {checkbox_checked_bg};
+        border: 2px solid {checkbox_border_color};
+        image: none;
+    }}
+    QCheckBox::indicator:checked:hover {{
+        background: {checkbox_checked_hover_bg};
+        border: 2px solid {checkbox_hover_color};
+    }}
+    QCheckBox::indicator:disabled {{
+        border: 2px solid {palette['disabled_bg']};
+        background: {palette['disabled_bg']};
+    }}
+    QCheckBox:disabled {{
+        color: {palette['disabled_text']};
+    }}
     """
 
 def apply_theme_to_widget(widget: QWidget, theme_name: str, scale_factor: float = 1.0):

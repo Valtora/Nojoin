@@ -60,7 +60,7 @@ class SettingsDialog(QDialog):
             if recording_in_progress:
                 self.backup_button.setToolTip("Cannot create backup while recording is in progress")
             else:
-                self.backup_button.setToolTip("Create a complete backup of your recordings, transcripts, and settings")
+                self.backup_button.setToolTip("Create a backup of your data with optional audio file inclusion")
         
         if hasattr(self, 'restore_button'):
             self.restore_button.setEnabled(not recording_in_progress)
@@ -290,7 +290,7 @@ class SettingsDialog(QDialog):
 
         # --- Backup and Restore Section ---
         self.backup_button = QPushButton("Create Backup")
-        self.backup_button.setToolTip("Create a complete backup of your recordings, transcripts, and settings")
+        self.backup_button.setToolTip("Create a backup of your data with optional audio file inclusion")
         self.backup_button.clicked.connect(self._create_backup)
         
         self.restore_button = QPushButton("Restore Backup")
@@ -605,8 +605,45 @@ class SettingsDialog(QDialog):
         self.settings_saved.emit()
         self.accept()
     
+    def _ask_include_audio(self):
+        """
+        Ask user if they want to include audio files in the backup.
+        
+        Returns:
+            True if user wants to include audio, False if not, None if cancelled
+        """
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Backup Options")
+        msg_box.setText("Do you want to include audio recordings in your backup?")
+        msg_box.setInformativeText(
+            "Including audio files will make the backup significantly larger "
+            "but allows complete restoration of all your recordings.\n\n"
+            "Without audio files, only transcripts, notes, and metadata will be backed up."
+        )
+        
+        # Add custom buttons
+        include_button = msg_box.addButton("Include Audio", QMessageBox.YesRole)
+        skip_button = msg_box.addButton("Skip Audio", QMessageBox.NoRole)
+        cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)
+        
+        msg_box.setDefaultButton(skip_button)  # Default to skip audio
+        msg_box.exec()
+        
+        clicked_button = msg_box.clickedButton()
+        if clicked_button == include_button:
+            return True
+        elif clicked_button == skip_button:
+            return False
+        else:  # Cancel
+            return None
+    
     def _create_backup(self):
         """Handle backup creation with progress dialog."""
+        # Ask user if they want to include audio files
+        include_audio = self._ask_include_audio()
+        if include_audio is None:  # User cancelled
+            return
+        
         # Get backup file path from user
         default_filename = get_default_backup_filename()
         backup_path, _ = QFileDialog.getSaveFileName(
@@ -638,15 +675,16 @@ class SettingsDialog(QDialog):
         
         # Create backup
         backup_manager = BackupRestoreManager()
-        success = backup_manager.create_backup(backup_path, progress_callback)
+        success = backup_manager.create_backup(backup_path, include_audio, progress_callback)
         
         progress.close()
         
         if success:
+            backup_type = "complete backup (with audio)" if include_audio else "database backup (without audio)"
             QMessageBox.information(
                 self, 
                 "Backup Complete", 
-                f"Backup created successfully at:\n{backup_path}"
+                f"Your {backup_type} was created successfully at:\n{backup_path}"
             )
         else:
             QMessageBox.critical(

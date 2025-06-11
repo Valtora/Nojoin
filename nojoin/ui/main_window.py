@@ -1958,9 +1958,22 @@ class MainWindow(QMainWindow):
         abs_audio_path = from_project_relative_path(audio_path) if audio_path else None
         self.selected_audio_path = None
         self._playback_duration = 0.0
+        
+        # Check if audio file exists and handle accordingly
         if abs_audio_path and os.path.exists(abs_audio_path):
+            # Audio file exists - enable playback controls
             self.play_button.setEnabled(True)
+            self.pause_button.setEnabled(False)  # Initially disabled until playing
+            self.stop_button.setEnabled(False)   # Initially disabled until playing
+            self.seek_slider.setEnabled(True)
             self.selected_audio_path = abs_audio_path
+            
+            # Set appropriate tooltips
+            self.play_button.setToolTip("Play recording")
+            self.pause_button.setToolTip("Pause playback")
+            self.stop_button.setToolTip("Stop playback")
+            self.seek_slider.setToolTip("Seek to position in recording")
+            
             try:
                 with sf.SoundFile(abs_audio_path) as f:
                     duration = len(f) / f.samplerate
@@ -1974,11 +1987,24 @@ class MainWindow(QMainWindow):
                 self.seek_slider.setValue(0)
                 self.update_seek_time_label(0, 0)
         else:
+            # Audio file missing - disable all playback controls
             self.play_button.setEnabled(False)
+            self.pause_button.setEnabled(False)
             self.stop_button.setEnabled(False)
+            self.seek_slider.setEnabled(False)
             self.seek_slider.setMaximum(100)
             self.seek_slider.setValue(0)
             self.update_seek_time_label(0, 0)
+            
+            # Set informative tooltips explaining why controls are disabled
+            missing_tooltip = "Audio file not available - may have been excluded from backup or moved"
+            self.play_button.setToolTip(missing_tooltip)
+            self.pause_button.setToolTip(missing_tooltip)
+            self.stop_button.setToolTip(missing_tooltip)
+            self.seek_slider.setToolTip(missing_tooltip)
+            
+            # Show status message
+            self.status_bar.showMessage("Audio file not found for this recording", 5000)
         self.meeting_notes_edit.setVisible(True)
 
         # --- Chat: Load and display chat history for this meeting ---
@@ -3539,12 +3565,19 @@ class MainWindow(QMainWindow):
         # Explicitly reset playback UI elements for robustness
         self.selected_audio_path = None
         self._playback_duration = 0.0
-        if hasattr(self, 'play_button'): self.play_button.setEnabled(False)
-        if hasattr(self, 'pause_button'): self.pause_button.setEnabled(False)
-        if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
+        if hasattr(self, 'play_button'): 
+            self.play_button.setEnabled(False)
+            self.play_button.setToolTip("Select a recording to play")
+        if hasattr(self, 'pause_button'): 
+            self.pause_button.setEnabled(False)
+            self.pause_button.setToolTip("Select a recording to pause")
+        if hasattr(self, 'stop_button'): 
+            self.stop_button.setEnabled(False)
+            self.stop_button.setToolTip("Select a recording to stop")
         if hasattr(self, 'seek_slider'): 
             self.seek_slider.setEnabled(False)
             self.seek_slider.setValue(0)
+            self.seek_slider.setToolTip("Select a recording to seek")
         if hasattr(self, 'seek_time_label'): self.update_seek_time_label(0,0)
         
         # Disable transcribe button
