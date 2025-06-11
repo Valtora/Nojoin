@@ -7,7 +7,6 @@ setlocal enabledelayedexpansion
 echo.
 echo ================================================================
 echo                        Nojoin Setup for Windows
-echo                        (User Mode - No Admin)
 echo ================================================================
 echo.
 echo This script will set up Nojoin in your user directories.
@@ -67,40 +66,21 @@ if exist "%PYTHON_EXE%" (
     )
 )
 
-:: Check system Python
+:: Check system Python - simplified approach
 python --version >nul 2>&1
 if %errorlevel% equ 0 (
-    for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
-    echo Found system Python !PYTHON_VERSION!
-    
-    :: Check if Python version is 3.11+ (including 3.12, 3.13, etc.)
-    for /f "tokens=1,2 delims=." %%a in ("!PYTHON_VERSION!") do (
-        set MAJOR=%%a
-        set MINOR=%%b
-    )
-    
-    if !MAJOR! geq 3 (
-        if !MAJOR! gtr 3 (
-            set PYTHON_OK=1
-        ) else if !MINOR! geq 11 (
-            set PYTHON_OK=1
-        ) else (
-            set PYTHON_OK=0
-        )
-    ) else (
-        set PYTHON_OK=0
-    )
-    
-    if !PYTHON_OK! equ 1 (
-        echo System Python !PYTHON_VERSION! is compatible (3.11+).
-        set /p USE_SYSTEM="Use system Python !PYTHON_VERSION!? (Y/n): "
+    echo System Python found. Checking if it's Python 3.11.9...
+    python --version 2>&1 | findstr "3.11.9" >nul
+    if %errorlevel% equ 0 (
+        echo Found Python 3.11.9 on system.
+        set /p USE_SYSTEM="Use system Python 3.11.9? (Y/n): "
         if /i "!USE_SYSTEM!" neq "n" (
             set "PYTHON_EXE=python"
             goto python_ready
         )
     ) else (
-        echo WARNING: System Python !PYTHON_VERSION! found, but Nojoin requires Python 3.11+.
-        echo We'll install a portable Python 3.11.9 to your user directory.
+        echo System Python is not version 3.11.9.
+        echo Installing portable Python 3.11.9 to user directory for compatibility.
         echo.
     )
 ) else (
@@ -160,7 +140,7 @@ if %errorlevel% neq 0 (
 echo Portable Python 3.11.9 installed successfully.
 
 :python_ready
-echo [✓] Python 3.11.9 ready
+echo [Success] Python 3.11.9 ready
 
 :: Check and install ffmpeg to user directory
 echo [4] Checking ffmpeg installation...
@@ -222,7 +202,7 @@ rmdir /s /q "%TEMP%\ffmpeg_extract" >nul 2>&1
 echo Portable ffmpeg installed successfully.
 
 :ffmpeg_ready
-echo [✓] ffmpeg ready
+echo [Success] ffmpeg ready
 
 :: Update PATH for this session to include our tools
 if "!PYTHON_EXE!" neq "python" (
@@ -291,7 +271,7 @@ echo 1. CPU-only: Works on all computers but slower processing
 echo 2. CUDA (GPU): Much faster but requires NVIDIA GPU with CUDA support
 echo.
 if !CUDA_DETECTED! equ 1 (
-    echo [✓] NVIDIA CUDA Toolkit detected at: !CUDA_PATH_FOUND!
+    echo [Success] NVIDIA CUDA Toolkit detected at: !CUDA_PATH_FOUND!
     echo CUDA acceleration is available for faster processing.
 ) else (
     echo CUDA Information:
@@ -343,7 +323,7 @@ if "!PYTORCH_CHOICE!" == "2" (
             exit /b 1
         )
     ) else (
-        echo [✓] CUDA PyTorch installed successfully!
+        echo [Success] CUDA PyTorch installed successfully!
         goto pytorch_complete
     )
 ) else (
@@ -361,7 +341,7 @@ if "!PYTORCH_CHOICE!" == "2" (
         pause
         exit /b 1
     ) else (
-        echo [✓] CPU PyTorch installed successfully!
+        echo [Success] CPU PyTorch installed successfully!
     )
 )
 
@@ -386,13 +366,13 @@ if %errorlevel% neq 0 (
 :: Test the installation
 echo.
 echo Testing installation...
-python -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('[✓] Configuration system working')" 2>nul
+python -c "import sys; sys.path.insert(0, '.'); from nojoin.utils.config_manager import config_manager; print('[Success] Configuration system working')" 2>nul
 if %errorlevel% neq 0 (
     echo WARNING: Installation test failed. The application may not work correctly.
     echo You may need to restart your computer and try again.
     pause
 ) else (
-    echo [✓] Installation test passed!
+    echo [Success] Installation test passed!
 )
 
 :: Create convenience scripts
@@ -469,8 +449,8 @@ echo ================================================================
 echo                    Setup Complete!
 echo ================================================================
 echo.
-echo [✓] Nojoin has been successfully set up on your Windows system!
-echo [✓] All tools installed to user directories (no admin required)
+echo [Success] Nojoin has been successfully set up on your Windows system!
+echo [Success] All tools installed to user directories (no admin required)
 echo.
 echo Installation details:
 if "!PYTHON_EXE!" equ "python" (

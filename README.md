@@ -1,10 +1,26 @@
 # Nojoin
 
-Nojoin is a Python based desktop application for recording meeting audio (system input/output), transcribing with Whisper, and diarizing with Pyannote to create speaker-attributed minutes. Once the meeting notes are generated you can then use AI to ask questions about the meeting using your own API key from Google, OpenAI, or Anthropic (other providers to be supported in future based on demand). You can still view the full transcript without any AI processing if you don't have an API key.
+## Legal Disclaimer
 
-This project was created initially for personal use only but I wanted to offer it free of charge to others in case they also found it useful. I also wouldn't mind getting some feedback and help from other users. I built this project using Cursor mainly so as you can imagine the typical AI artifacts are all over the place so I appreciate the codebase could use some work.
+**Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
 
-I know there are similar free solutions out there which are all great and quirky in their own ways, Nojoin is no different. My goal was to have something relatively simple that can be deployed fairly quickly without too complicated of an initial, basic setup.
+## Quick Setup
+
+### Windows
+1. **Download the installer** from the [Releases page](https://github.com/Valtora/Nojoin/releases)
+2. **Run the installer** - it will copy all files to your chosen directory
+3. **Run the setup script** - after installation, run `setup_windows.bat` to install dependencies:
+   - Installs Python 3.11.9 to your user directory if needed
+   - Installs ffmpeg for audio processing to your user directory
+   - Sets up a virtual environment
+   - Detects and configures GPU acceleration (CUDA) if available
+   - Installs all dependencies
+   - Creates desktop shortcuts and launch scripts
+4. **Launch Nojoin** by double-clicking the desktop shortcut or running `Start Nojoin.bat`
+
+### macOS
+For macOS, please follow the [Manual Setup](#manual-setup-advanced-users) instructions below. An automated installer for macOS will be available in a future release.
+
 
 ## ✨ Features
 
@@ -26,72 +42,6 @@ I know there are similar free solutions out there which are all great and quirky
     *   Non-destructive restore that merges with existing data.
 *   **Automatic Updates:** Built-in update checking and installation system with user-configurable preferences.
 *   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
-
-## Legal Disclaimer
-
-**Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
-
-## Quick Setup
-
-Nojoin includes automated setup scripts that handle all dependencies and configuration for you.
-
-### Windows
-1. **Download the Nojoin files:**
-   - **Option A (Easiest):**
-   - Click the green **"<> Code"** button at the top of the page, then click **"Download ZIP"**
-   - Extract the ZIP file to your desired folder (e.g., `C:\Users\YourName\Documents\Nojoin`)
-   - **Option B (If you have Git):** Open Command Prompt or PowerShell in a directory of your choice and run:
-     ```bash
-     git clone https://github.com/Valtora/Nojoin
-     ```
-     ```bash
-     cd Nojoin
-     ```
-2. **Double-click** on `setup_windows.bat` (no administrator privileges required)
-3. **Follow the prompts** - the script will automatically:
-   - Install Python 3.11.9 to your user directory if needed
-   - Install ffmpeg for audio processing to your user directory
-   - Set up a virtual environment
-   - Detect and configure GPU acceleration (CUDA) if available
-   - Install all dependencies
-   - Create desktop shortcuts and launch scripts
-
-4. **Launch Nojoin** by double-clicking the desktop shortcut or running `Start Nojoin.bat`
-
-### macOS
-1. **Download the Nojoin files:**
-   - **Option A (Easiest):**
-   - Click the green **"<> Code"** button at the top of the page, then click **"Download ZIP"**
-   - Double-click the downloaded ZIP file to extract it
-   - Move the extracted folder to your desired location (e.g., `~/Documents/Nojoin`)
-   - **Option B (If you have Git):** Open Terminal in a directory of your choice and run:
-     ```bash
-     git clone https://github.com/Valtora/Nojoin
-     ```
-     ```bash
-     cd Nojoin
-     ```
-2. **Open Terminal** and navigate to the Nojoin folder:
-   - If you downloaded via ZIP: `cd ~/Documents/Nojoin` (or wherever you extracted it)
-   - If you used Git: `cd Nojoin` (if not already there)
-3. **Run** `./setup_mac.sh` and follow the prompts
-4. **The script will automatically:**
-   - Install Python 3.11.9 to your user directory if needed
-   - Install ffmpeg for audio processing to your user directory
-   - Set up a virtual environment with optimal settings
-   - Configure Metal Performance Shaders (MPS) for Apple Silicon Macs
-   - Create a native macOS app bundle
-   - Install all dependencies
-
-5. **Launch Nojoin** from your Applications folder or run `./start_nojoin_mac.sh`
-
-### What the Setup Scripts Do
-- **Intelligent Dependency Management:** Automatically detects and installs missing software to user directories
-- **No Administrator Rights Required:** All installations use user-writable directories for maximum security
-- **Python Version Enforcement:** Ensures Python 3.11.9 is installed (required for PyTorch compatibility)
-- **Hardware Optimization:** Automatically configures GPU acceleration where available
-- **Error Recovery:** Comprehensive error handling with helpful guidance
-- **User-Friendly:** Assumes no technical knowledge while providing advanced optimizations
 
 ## Manual Setup (Advanced Users)
 

@@ -47,7 +47,6 @@ mkdir -p "$USER_TOOLS_DIR"
 
 print_color $CYAN "================================================================"
 print_color $CYAN "                        Nojoin Setup for macOS"
-print_color $CYAN "                        (User Mode - No Admin)"
 print_color $CYAN "================================================================"
 echo
 print_color $PURPLE "This script will set up Nojoin in your user directories."

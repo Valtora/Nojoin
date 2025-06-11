@@ -9,7 +9,7 @@ set "FFMPEG_DIR=%USER_TOOLS_DIR%\ffmpeg"
 
 echo.
 echo ================================================================
-echo               Nojoin v0.5.2 - Starting Application
+echo                       Starting Application
 echo ================================================================
 echo.
 

@@ -30,3 +30,7 @@ nojoin/config.json
 #PRD and Todo files
 /PRD.md
 /TODO.md
+
+# Inno Setup files
+/dist/
+/docs/inno-setup-docs.txt
