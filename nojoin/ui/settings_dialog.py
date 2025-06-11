@@ -1,6 +1,6 @@
 import os
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog
+    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog, QScrollArea, QVBoxLayout
 )
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtCore import Qt, Signal, QThread
@@ -28,12 +28,16 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         
-        # Use scaled minimum width
+        # Use scaled minimum width and height
         from nojoin.utils.ui_scale_manager import get_ui_scale_manager
         ui_scale_manager = get_ui_scale_manager()
-        min_width, _ = ui_scale_manager.get_scaled_minimum_sizes()['settings_dialog']
+        min_width, min_height = ui_scale_manager.get_scaled_minimum_sizes()['settings_dialog']
         self.setMinimumWidth(min_width)
+        self.setMinimumHeight(min_height)
         self.setModal(True)
+        
+        # Make dialog resizable for user control
+        self.setSizeGripEnabled(True)
         self.parent_window = parent  # Store reference to check recording state
         self._init_ui()
         self._load_config()
@@ -73,12 +77,34 @@ class SettingsDialog(QDialog):
                 self.check_updates_button.setToolTip("Check for available updates to Nojoin")
 
     def _init_ui(self):
+        # Create main layout for the dialog
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Create scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        
+        # Create content widget that will be scrolled
+        self.content_widget = QWidget()
+        scroll_area.setWidget(self.content_widget)
+        
+        # Create form layout on the content widget
         layout = QFormLayout()
-        self.setLayout(layout)
+        self.content_widget.setLayout(layout)
         layout.setLabelAlignment(Qt.AlignRight)
         layout.setFormAlignment(Qt.AlignHCenter | Qt.AlignTop)
         layout.setSpacing(14)
+        layout.setContentsMargins(15, 15, 15, 15)  # Add padding around the form content
         self._form_layout = layout  # Store reference for label/widget hiding
+
+        # Add scroll area to main layout
+        main_layout.addWidget(scroll_area)
 
         # --- Advanced Section Container ---
         self.advanced_container = QWidget()
@@ -213,6 +239,9 @@ class SettingsDialog(QDialog):
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
+        
+        # Center the buttons
+        self.button_box.setCenterButtons(True)
 
         # --- UI Scaling Settings ---
         self.ui_scale_mode_combo = QComboBox()
@@ -290,10 +319,23 @@ class SettingsDialog(QDialog):
         # Now add advanced toggle and advanced container at the bottom
         layout.addRow("", self.advanced_toggle)
         layout.addRow("", self.advanced_container)
-        layout.addRow(self.button_box)
+        
+        # Add button box to main layout outside scroll area
+        main_layout.addWidget(self.button_box)
         
         # Update button states based on recording status
         self._update_button_states()
+        
+        # Set maximum height to prevent dialog from getting too tall on small screens
+        from nojoin.utils.ui_scale_manager import get_ui_scale_manager
+        ui_scale_manager = get_ui_scale_manager()
+        screen_info = ui_scale_manager.get_screen_info()
+        
+        # Set max height to 80% of screen height, but no less than 600px and no more than 800px
+        screen_height = screen_info.get('height', 1080)
+        max_height = min(max(int(screen_height * 0.8), 600), 800)
+        max_height = ui_scale_manager.scale_value(max_height)
+        self.setMaximumHeight(max_height)
 
     def showEvent(self, event):
         """Override showEvent to update button states when dialog is shown."""
@@ -302,7 +344,10 @@ class SettingsDialog(QDialog):
 
     def _toggle_advanced(self, checked):
         self.advanced_container.setVisible(checked)
-        # Optionally resize dialog
+        # Update the content size and let the scroll area handle the rest
+        if hasattr(self, 'content_widget'):
+            self.content_widget.adjustSize()
+        # Ensure the dialog maintains reasonable size bounds
         self.adjustSize()
 
     def _on_llm_provider_changed(self, provider):

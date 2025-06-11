@@ -450,64 +450,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'meeting_notes_edit'):
             self._update_center_panel_content() # This ensures notes/transcript is re-rendered with new theme
 
-        # Meeting Context Display (update on theme change)
-        if hasattr(self, 'meeting_context_display'):
-            selected_items = self.meetings_list_widget.selectedItems() if hasattr(self, 'meetings_list_widget') else []
-            if selected_items:
-                recording_id = selected_items[0].data(Qt.UserRole)
-                recording_data = db_ops.get_recording_by_id(recording_id)
-                if recording_data:
-                    created_at = recording_data.get("created_at")
-                    meeting_title = recording_data.get("name", "Untitled Meeting")
-                    import datetime
-                    date_str = "Unknown date"
-                    day_str = ""
-                    time_str = ""
-                    tz_str = ""
-                    try:
-                        from zoneinfo import ZoneInfo
-                        import tzlocal
-                        dt = None
-                        if created_at:
-                            if isinstance(created_at, datetime.datetime):
-                                dt = created_at
-                            elif isinstance(created_at, str):
-                                try:
-                                    dt = datetime.datetime.fromisoformat(created_at)
-                                except Exception:
-                                    try:
-                                        dt = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-                                    except Exception:
-                                        logger.warning(f"Could not parse created_at: {created_at}")
-                        if dt and dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=datetime.timezone.utc)
-                        local_tz = None
-                        try:
-                            local_tz = tzlocal.get_localzone()
-                        except Exception:
-                            try:
-                                local_tz = ZoneInfo(os.environ.get('TZ', 'Europe/London'))
-                            except Exception:
-                                local_tz = datetime.timezone.utc
-                        if dt:
-                            dt_local = dt.astimezone(local_tz)
-                            day_str = dt_local.strftime("%A")
-                            date_str = dt_local.strftime("%d %B %Y")
-                            time_str = dt_local.strftime("%H:%M")
-                            tz_str = dt_local.strftime("%Z")
-                    except Exception as e:
-                        logger.warning(f"Error parsing created_at: {created_at} ({e})")
-                        date_str = "Unknown date"
-                    context_html = f"""
-                    <h1>{meeting_title}</h1>
-                    <div class='meta'>{day_str if day_str else ''}{', ' if day_str and date_str else ''}{date_str if date_str else ''}</div>
-                    <div class='meta'>{time_str if time_str else ''} <span class='meta'>{tz_str if tz_str else ''}</span></div>
-                    """.strip()
-                    self._set_meeting_context_html_with_dynamic_font(context_html.strip(), theme_name)
-                else:
-                    self.meeting_context_display.clear()
-            else:
-                self.meeting_context_display.clear()
+        # Apply theme to meeting context widgets
+        if hasattr(self, 'meeting_context_container'):
+            apply_theme_to_widget(self.meeting_context_container, theme_name, font_scale_factor)
+        if hasattr(self, 'editable_meeting_name'):
+            apply_theme_to_widget(self.editable_meeting_name, theme_name, font_scale_factor)
+        if hasattr(self, 'meeting_metadata_display'):
+            apply_theme_to_widget(self.meeting_metadata_display, theme_name, font_scale_factor)
         # Speaker Relabelling: apply border to panel, not scroll area
         if hasattr(self, 'speakerLabelingPanel'):
             self.speakerLabelingPanel.setStyleSheet("")
@@ -922,14 +871,30 @@ class MainWindow(QMainWindow):
         meeting_notes_layout = QVBoxLayout(center_panel)
         meeting_notes_layout.setContentsMargins(0, 0, 0, 0) # Reverted to 0 margins
         meeting_notes_layout.setSpacing(0)
-        self.meeting_context_display = QTextEdit()
-        self.meeting_context_display.setReadOnly(True)
-        self.meeting_context_display.setFrameStyle(QTextEdit.NoFrame)
-        self.meeting_context_display.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.meeting_context_display.setObjectName("MeetingContextDisplay")
-        # Remove setStyleSheet for padding or border
-        self.meeting_context_display.setMaximumHeight(110)  # Restore original max height
-        meeting_notes_layout.addWidget(self.meeting_context_display)
+        
+        # Create meeting context container with editable name and metadata
+        self.meeting_context_container = QWidget()
+        self.meeting_context_container.setObjectName("MeetingContextContainer")
+        self.meeting_context_container.setMaximumHeight(110)
+        context_layout = QVBoxLayout(self.meeting_context_container)
+        context_layout.setContentsMargins(8, 8, 8, 8)
+        context_layout.setSpacing(4)
+        
+        # Editable meeting name
+        self.editable_meeting_name = EditableMeetingName()
+        self.editable_meeting_name.setObjectName("EditableMeetingName")
+        self.editable_meeting_name.name_changed.connect(self._on_meeting_name_changed)
+        context_layout.addWidget(self.editable_meeting_name)
+        
+        # Non-editable metadata display
+        self.meeting_metadata_display = QLabel()
+        self.meeting_metadata_display.setObjectName("MeetingMetadataDisplay")
+        self.meeting_metadata_display.setWordWrap(True)
+        self.meeting_metadata_display.setAlignment(Qt.AlignTop)
+        context_layout.addWidget(self.meeting_metadata_display)
+        
+        context_layout.addStretch(1)  # Push content to top
+        meeting_notes_layout.addWidget(self.meeting_context_container)
         self.meeting_tags_widget = QWidget()
         self.meeting_tags_layout = QHBoxLayout(self.meeting_tags_widget)
         self.meeting_tags_layout.setContentsMargins(2, 5, 2, 5)
@@ -1190,33 +1155,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'import_audio_button'):
                 self.import_audio_button.setText("Import Audio")
 
-    def _set_meeting_context_html_with_dynamic_font(self, context_html, theme):
-        """
-        Set the meeting context HTML, dynamically adjusting the <h1> font size so the content fits within 110px.
-        """
-        min_font_size = 12
-        max_font_size = 24
-        max_height = 110
-        font_size = max_font_size
-        # Try decreasing font size until it fits or reach min
-        while font_size >= min_font_size:
-            # Inject font size into <h1> style
-            html_with_size = context_html.replace(
-                '<h1>', f'<h1 style="font-size: {font_size}px; margin: 0; padding: 0;">'
-            )
-            themed_html = wrap_html_body(html_with_size, theme)
-            self.meeting_context_display.setHtml(themed_html)
-            doc_height = self.meeting_context_display.document().size().height()
-            if doc_height <= max_height:
-                break
-            font_size -= 1
-        # If even min size doesn't fit, just use min size
-        if font_size < min_font_size:
-            html_with_size = context_html.replace(
-                '<h1>', f'<h1 style="font-size: {min_font_size}px; margin: 0; padding: 0;">'
-            )
-            themed_html = wrap_html_body(html_with_size, theme)
-            self.meeting_context_display.setHtml(themed_html)
+
 
     def toggle_recording(self):
         if not self.is_recording:
@@ -1464,15 +1403,7 @@ class MainWindow(QMainWindow):
             if new_name and new_name != current_name:
                 if db_ops.update_recording_name(recording_id, new_name):
                     self.status_bar.showMessage(f"Recording '{current_name}' renamed to '{new_name}'.", 3000)
-                    self.load_recordings() # Refresh the list
-                    # If the renamed recording was selected, update the displayed info
-                    selected_items = self.meetings_list_widget.selectedItems()
-                    if selected_items and selected_items[0].data(Qt.UserRole) == recording_id:
-                        updated_recording_data = db_ops.get_recording_by_id(recording_id)
-                        if updated_recording_data:
-                            self.handle_meeting_selection_changed()
-                        else:
-                            self.meeting_notes_edit.clear()
+                    self._load_recordings_with_preserved_selection(recording_id)
                 else:
                     QMessageBox.warning(self, "Rename Failed", "Could not rename the recording in the database.")
             elif new_name == current_name:
@@ -1818,7 +1749,7 @@ class MainWindow(QMainWindow):
     # (Alternative to full reload after status changes)
     def update_table_status(self, recording_id: str, new_status: str):
         # With the list widget, just reload the recordings to reflect status changes
-        self.load_recordings()
+        self._load_recordings_with_preserved_selection()
 
     # --- Playback Controller Slots ---
     def _setup_playback_controller_connections(self):
@@ -1934,13 +1865,20 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.warning(f"Error parsing created_at: {created_at} ({e})")
             date_str = "Unknown date"
-        theme = config_manager.get("theme", "dark")
-        context_html = f"""
-        <h1>{meeting_title}</h1>
-        <div class='meta'>{day_str if day_str else ''}{', ' if day_str and date_str else ''}{date_str if date_str else ''}</div>
-        <div class='meta'>{time_str if time_str else ''} <span class='meta'>{tz_str if tz_str else ''}</span></div>
-        """
-        self._set_meeting_context_html_with_dynamic_font(context_html, theme)
+        # Update editable meeting name
+        if hasattr(self, 'editable_meeting_name'):
+            self.editable_meeting_name.set_meeting_data(recording_id, meeting_title)
+        
+        # Update metadata display
+        if hasattr(self, 'meeting_metadata_display'):
+            metadata_text = ""
+            if day_str or date_str:
+                metadata_text += f"{day_str}{', ' if day_str and date_str else ''}{date_str}"
+            if time_str:
+                if metadata_text:
+                    metadata_text += "\n"
+                metadata_text += f"{time_str} {tz_str if tz_str else ''}".strip()
+            self.meeting_metadata_display.setText(metadata_text)
         
         # --- Meeting Notes: Load using setMarkdown and apply theme ---
         if hasattr(self, 'meeting_notes_edit'):
@@ -2122,6 +2060,31 @@ class MainWindow(QMainWindow):
         # Update center panel content to apply new font size
         # Optional: Show confirmation or perform other updates if needed
         self.status_bar.showMessage("Settings saved successfully.", 3000)
+    
+    def _load_recordings_with_preserved_selection(self, target_recording_id: str = None):
+        """Helper method to refresh meetings list while preserving selection."""
+        # Remember the currently selected recording if not provided
+        if target_recording_id is None:
+            selected_items = self.meetings_list_widget.selectedItems()
+            target_recording_id = selected_items[0].data(Qt.UserRole) if selected_items else None
+        
+        # Refresh the meetings list
+        self.load_recordings()
+        
+        # Re-select the same meeting after refresh
+        if target_recording_id:
+            for i in range(self.meetings_list_widget.count()):
+                item = self.meetings_list_widget.item(i)
+                if item.data(Qt.UserRole) == target_recording_id:
+                    self.meetings_list_widget.setCurrentItem(item)
+                    break
+
+    def _on_meeting_name_changed(self, recording_id: str, new_name: str):
+        """Handle when the meeting name is changed via the editable widget."""
+        # Refresh the meetings list and preserve selection
+        self._load_recordings_with_preserved_selection(recording_id)
+        # Show success message
+        self.status_bar.showMessage(f"Meeting renamed to: {new_name}", 3000)
 
     def handle_seek_slider_moved(self, value):
         # User is dragging the slider; update the time label
@@ -2801,7 +2764,7 @@ class MainWindow(QMainWindow):
             reset_status_action = QAction("Reset Status to Error", self)
             def reset_status():
                 db_ops.update_recording_status(recording_id, 'Error')
-                self.load_recordings()
+                self._load_recordings_with_preserved_selection(recording_id)
             reset_status_action.triggered.connect(reset_status)
             context_menu.addAction(reset_status_action)
         context_menu.addSeparator()
@@ -2821,8 +2784,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_participants_changed(self, recording_id: str):
-        self.load_recordings() # Refresh the entire list to reflect participant changes on cards
-        self.handle_meeting_selection_changed()
+        self._load_recordings_with_preserved_selection(recording_id)
         # Don't automatically regenerate notes here - this will be done only when user explicitly requests it
 
     @staticmethod
@@ -3541,8 +3503,10 @@ class MainWindow(QMainWindow):
         self.currently_selected_recording_id = None
 
         # Clear context display
-        if hasattr(self, 'meeting_context_display'):
-            self.meeting_context_display.clear()
+        if hasattr(self, 'editable_meeting_name'):
+            self.editable_meeting_name.set_meeting_data("", "")
+        if hasattr(self, 'meeting_metadata_display'):
+            self.meeting_metadata_display.clear()
 
         # Clear tags display
         if hasattr(self, 'meeting_tags_layout'):
@@ -4121,3 +4085,69 @@ class TypingIndicatorWidget(QWidget):
         from nojoin.utils.theme_utils import apply_theme_to_widget
         self.theme_name = theme_name
         apply_theme_to_widget(self, theme_name)
+
+class EditableMeetingName(QLineEdit):
+    """Custom QLineEdit for editing meeting names with preserved formatting and auto-save."""
+    
+    name_changed = Signal(str, str)  # Signal emitted when name changes (recording_id, new_name)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.recording_id = None
+        self.original_name = ""
+        self.setReadOnly(False)
+        self.setFrame(False)  # Remove border to blend with context
+        self.setAttribute(Qt.WA_MacShowFocusRect, False)  # Remove focus ring on macOS
+        
+        # Connect signals for auto-save
+        self.editingFinished.connect(self._on_editing_finished)
+        self.returnPressed.connect(self._on_return_pressed)
+        
+        # Theme-based styling will be applied via QSS from theme_utils
+    
+    def set_meeting_data(self, recording_id: str, meeting_name: str):
+        """Set the meeting data for this widget."""
+        self.recording_id = recording_id
+        self.original_name = meeting_name
+        self.setText(meeting_name)
+        self.setCursorPosition(0)  # Reset cursor to start
+    
+    def _on_editing_finished(self):
+        """Handle when editing is finished (focus lost)."""
+        if self.recording_id and self.text().strip() != self.original_name:
+            self._save_name_change()
+    
+    def _on_return_pressed(self):
+        """Handle when return/enter key is pressed."""
+        if self.recording_id and self.text().strip() != self.original_name:
+            self._save_name_change()
+        self.clearFocus()  # Remove focus after saving
+    
+    def _save_name_change(self):
+        """Save the name change to the database."""
+        new_name = self.text().strip()
+        if not new_name:
+            # Revert to original name if empty
+            self.setText(self.original_name)
+            return
+        
+        if new_name != self.original_name:
+            from ..db import database as db_ops
+            success = db_ops.update_recording_name(self.recording_id, new_name)
+            if success:
+                self.original_name = new_name
+                self.name_changed.emit(self.recording_id, new_name)
+                logger.info(f"Updated meeting name to: {new_name}")
+            else:
+                # Revert to original name if save failed
+                self.setText(self.original_name)
+                logger.error(f"Failed to update meeting name to: {new_name}")
+    
+    def keyPressEvent(self, event):
+        """Handle key press events."""
+        if event.key() == Qt.Key_Escape:
+            # Revert changes and lose focus on Escape
+            self.setText(self.original_name)
+            self.clearFocus()
+        else:
+            super().keyPressEvent(event)

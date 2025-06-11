@@ -755,15 +755,31 @@ def get_theme_qss(theme_name: str, scale_factor: float = 1.0) -> str:
         border: none;
         color: {palette['primary_text']};
     }}
-    QLabel#MeetingContextInfo {{
+    QWidget#MeetingContextContainer {{
+        background: {palette['panel_bg']};
+        border-radius: 12px;
+        border: 2px solid {palette['panel_border']};
+    }}
+    QLineEdit#EditableMeetingName {{
         font-size: {font['h1']['size']}px;
         font-weight: {font['h1']['weight']};
         color: {palette['accent']};
-        margin-bottom: 6px;
-        border-radius: 12px;
-        border: 2px solid {palette['panel_border']};
-        padding: 8px 12px;
-        background: {palette['panel_bg']};
+        background: transparent;
+        border: none;
+        padding: 0px;
+        margin: 0px;
+    }}
+    QLineEdit#EditableMeetingName:focus {{
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid {palette['accent']};
+        border-radius: 4px;
+        padding: 2px;
+    }}
+    QLabel#MeetingMetadataDisplay {{
+        color: {palette['muted_text']};
+        font-size: {font['caption']['size']}px;
+        background: transparent;
+        border: none;
     }}
     QLabel {{
         color: {palette['accent']};
