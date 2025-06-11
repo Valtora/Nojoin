@@ -74,18 +74,18 @@ I know there are similar free solutions out there which are all great and quirky
     ```bash
     git clone https://github.com/Valtora/Nojoin
     ```
-    ### Switch to the newly cloned directoy.
+    **Switch to the newly cloned directoy:**
     ```bash
     cd Nojoin
     ```
 
 3.  **Create and activate a virtual environment:**
     It is highly recommended to use a virtual environment to manage project dependencies.
-    # Create the virtual environment
+    **Create the virtual environment:**
     ```bash
     python3 -m venv .venv
     ```
-    ### Activate the environment
+    **Activate the environment:**
     *   **Windows (PowerShell/CMD):**
         ```bash
         .venv\Scripts\Activate
