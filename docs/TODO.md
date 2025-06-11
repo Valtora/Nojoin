@@ -21,9 +21,6 @@ This might require the creation of a standalone update script with its own proce
 
 The database will need to have operations to import/merge to allow for backwards compatability in for new updates. This will only be needed if we make changes to the database architecture later. Once done the Nojoin application should be restarted. Possibly a button to view commit changes/releases, etc. can be added here.
 
-## Speaker Management - Definite TODO
-Allow for the addition of speakers via the participants dialog in case there were participants present that were silent. I believe there is valuable context in having a complete meeting participant list, even if some were silent.
-
 ## Advanced Meeting Analysis - Potential TODO
 Implement advanced analyses for both the audio and transcript to gauge things like speaker sentiments, engagement, bias, etc. with a view to extract as much information as possible from the meetings' interactions. Look at things like time spent on topics.
 
