@@ -9,8 +9,10 @@ CREATE TABLE IF NOT EXISTS recordings (
     start_time DATETIME, -- Meeting start time (optional, for future use)
     end_time DATETIME,   -- Meeting end time (optional, for future use)
     audio_path TEXT NOT NULL UNIQUE,
-    raw_transcript_path TEXT,
-    diarized_transcript_path TEXT,
+    raw_transcript_path TEXT, -- Legacy: will be deprecated after migration
+    diarized_transcript_path TEXT, -- Legacy: will be deprecated after migration
+    raw_transcript_text TEXT, -- New: canonical transcript storage
+    diarized_transcript_text TEXT, -- New: canonical transcript storage
     tags TEXT, -- Comma-separated or JSON list
     format TEXT DEFAULT 'MP3',
     duration_seconds REAL,

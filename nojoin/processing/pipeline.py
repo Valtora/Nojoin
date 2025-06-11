@@ -108,17 +108,12 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                 raise ValueError("Transcription failed.")
             logger.info(f"Transcription successful for recording ID: {recording_id}")
             
-            # Save raw transcript if configured
+            # Save raw transcript if configured (now stored in database)
             if config_manager.get("save_raw_transcript", True):
-                base_name = os.path.splitext(os.path.basename(abs_audio_path))[0]
-                raw_transcript_path = os.path.join(transcripts_dir, f"{base_name}_raw_transcript.json")
                 try:
-                    with open(raw_transcript_path, 'w', encoding='utf-8') as f:
-                        json.dump(transcription_result, f, indent=4)
-                    logger.info(f"Raw transcript saved to {raw_transcript_path}")
-                    # Update DB with raw transcript path (store as relative)
-                    rel_raw_transcript_path = to_project_relative_path(raw_transcript_path)
-                    database.update_recording_paths(recording_id, raw_transcript_path=rel_raw_transcript_path)
+                    raw_transcript_text = json.dumps(transcription_result, indent=4)
+                    database.update_recording_transcript_text(recording_id, raw_transcript_text=raw_transcript_text)
+                    logger.info(f"Raw transcript saved to database for recording {recording_id}")
                 except Exception as e:
                     logger.error(f"Failed to save raw transcript for {recording_id}: {e}", exc_info=True)
                     # Continue processing, but log the error
@@ -284,41 +279,30 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                 speaker_label_manager = SpeakerLabelManager()
                 speaker_label_manager.set_mapping(label_to_name)
 
-            # Save diarized transcript if configured
+            # Save diarized transcript if configured (now stored in database)
             if config_manager.get("save_diarized_transcript", True):
-                base_name = os.path.splitext(os.path.basename(abs_audio_path))[0]
-                diarized_transcript_path = os.path.join(transcripts_dir, f"{base_name}_diarized_transcript.txt")
                 try:
-                    with open(diarized_transcript_path, 'w', encoding='utf-8') as f:
-                        for entry in consolidated_transcript:
-                            start = entry['start']
-                            end = entry['end']
-                            def fmt(ts):
-                                h = int(ts // 3600)
-                                m = int((ts % 3600) // 60)
-                                s = ts % 60
-                                return f"{h:02}.{m:02}.{s:05.2f}s"
-                            diarization_label = entry['speaker']
-                            # Always write the diarization label (e.g., SPEAKER_00), not the display name
-                            # This allows dynamic relabeling, merging, and deletion in the UI and DB
-                            f.write(f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {entry['text']}\n\n")
-                        f.write("END\n")
-                    logger.info(f"Diarized transcript file created at: {diarized_transcript_path}, Exists: {os.path.exists(diarized_transcript_path)}")
+                    # Generate diarized transcript text
+                    diarized_lines = []
+                    for entry in consolidated_transcript:
+                        start = entry['start']
+                        end = entry['end']
+                        def fmt(ts):
+                            h = int(ts // 3600)
+                            m = int((ts % 3600) // 60)
+                            s = ts % 60
+                            return f"{h:02}.{m:02}.{s:05.2f}s"
+                        diarization_label = entry['speaker']
+                        # Always write the diarization label (e.g., SPEAKER_00), not the display name
+                        # This allows dynamic relabeling, merging, and deletion in the UI and DB
+                        diarized_lines.append(f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {entry['text']}")
                     
-                    rel_diarized_transcript_path = to_project_relative_path(diarized_transcript_path)
-                    logger.info(f"Attempting to save to DB for recording_id {recording_id}: rel_diarized_transcript_path = {rel_diarized_transcript_path}")
+                    diarized_lines.append("END")
+                    diarized_transcript_text = "\n\n".join(diarized_lines)
                     
-                    database.update_recording_paths(recording_id, diarized_transcript_path=rel_diarized_transcript_path)
-                    
-                    # Verification log after attempting to save
-                    test_rec_data = database.get_recording_by_id(recording_id)
-                    if test_rec_data:
-                        db_path = test_rec_data.get('diarized_transcript_path')
-                        logger.info(f"Verification: For recording_id {recording_id}, diarized_transcript_path from DB is: {db_path}")
-                        if db_path != rel_diarized_transcript_path:
-                            logger.warning(f"Discrepancy for {recording_id}: Saved '{rel_diarized_transcript_path}' but DB shows '{db_path}'")
-                    else:
-                        logger.warning(f"Verification failed: Could not retrieve recording_id {recording_id} after updating diarized_transcript_path.")
+                    # Save to database
+                    database.update_recording_transcript_text(recording_id, diarized_transcript_text=diarized_transcript_text)
+                    logger.info(f"Diarized transcript saved to database for recording {recording_id}")
 
                 except Exception as e:
                     logger.error(f"Failed to save diarized transcript for {recording_id}: {e}", exc_info=True)

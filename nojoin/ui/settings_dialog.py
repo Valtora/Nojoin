@@ -1,8 +1,8 @@
 import os
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout
+    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QPalette, QColor
 from nojoin.utils.config_manager import (
     config_manager,
@@ -14,6 +14,7 @@ from nojoin.utils.config_manager import (
     get_available_notes_font_sizes
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
+from nojoin.utils.backup_restore import BackupRestoreManager, get_default_backup_filename
 import logging
 
 class SettingsDialog(QDialog):
@@ -191,6 +192,22 @@ class SettingsDialog(QDialog):
         for label, seconds in self.min_meeting_length_options:
             self.min_meeting_length_combo.addItem(label, seconds)
         layout.addRow("Minimum Meeting Length:", self.min_meeting_length_combo)
+
+        # --- Backup and Restore Section ---
+        self.backup_button = QPushButton("Create Backup")
+        self.backup_button.setToolTip("Create a complete backup of your recordings, transcripts, and settings")
+        self.backup_button.clicked.connect(self._create_backup)
+        
+        self.restore_button = QPushButton("Restore Backup")
+        self.restore_button.setToolTip("Restore data from a backup file (non-destructive)")
+        self.restore_button.clicked.connect(self._restore_backup)
+        
+        backup_restore_layout = QHBoxLayout()
+        backup_restore_layout.addWidget(self.backup_button)
+        backup_restore_layout.addWidget(self.restore_button)
+        backup_restore_widget = QWidget()
+        backup_restore_widget.setLayout(backup_restore_layout)
+        layout.addRow("Data Management:", backup_restore_widget)
 
         # Now add advanced toggle and advanced container at the bottom
         layout.addRow("", self.advanced_toggle)
@@ -388,4 +405,117 @@ class SettingsDialog(QDialog):
         min_length = self.min_meeting_length_combo.currentData()
         config_manager.set("min_meeting_length_seconds", min_length)
         self.settings_saved.emit()
-        self.accept() 
+        self.accept()
+    
+    def _create_backup(self):
+        """Handle backup creation with progress dialog."""
+        # Get backup file path from user
+        default_filename = get_default_backup_filename()
+        backup_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create Backup",
+            default_filename,
+            "Zip Files (*.zip);;All Files (*)"
+        )
+        
+        if not backup_path:
+            return
+        
+        # Create progress dialog
+        progress = QProgressDialog("Creating backup...", "Cancel", 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.show()
+        
+        def progress_callback(percentage, message):
+            if percentage < 0:  # Error case
+                progress.close()
+                QMessageBox.critical(self, "Backup Failed", message)
+                return
+            progress.setValue(percentage)
+            progress.setLabelText(message)
+            if progress.wasCanceled():
+                return
+        
+        # Create backup
+        backup_manager = BackupRestoreManager()
+        success = backup_manager.create_backup(backup_path, progress_callback)
+        
+        progress.close()
+        
+        if success:
+            QMessageBox.information(
+                self, 
+                "Backup Complete", 
+                f"Backup created successfully at:\n{backup_path}"
+            )
+        else:
+            QMessageBox.critical(
+                self, 
+                "Backup Failed", 
+                "Failed to create backup. Check the logs for details."
+            )
+    
+    def _restore_backup(self):
+        """Handle backup restoration with progress dialog."""
+        # Get backup file from user
+        backup_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Backup File",
+            "",
+            "Zip Files (*.zip);;All Files (*)"
+        )
+        
+        if not backup_path:
+            return
+        
+        # Confirm restoration
+        reply = QMessageBox.question(
+            self,
+            "Restore Backup",
+            "This will restore data from the backup file and merge it with your existing data.\n\n"
+            "Existing recordings and notes will not be overwritten.\n\n"
+            "Continue with restore?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Create progress dialog
+        progress = QProgressDialog("Restoring backup...", "Cancel", 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.show()
+        
+        def progress_callback(percentage, message):
+            if percentage < 0:  # Error case
+                progress.close()
+                QMessageBox.critical(self, "Restore Failed", message)
+                return
+            progress.setValue(percentage)
+            progress.setLabelText(message)
+            if progress.wasCanceled():
+                return
+        
+        # Restore backup
+        backup_manager = BackupRestoreManager()
+        success = backup_manager.restore_backup(backup_path, progress_callback)
+        
+        progress.close()
+        
+        if success:
+            QMessageBox.information(
+                self, 
+                "Restore Complete", 
+                "Backup restored successfully! You may need to restart the application to see all changes."
+            )
+        else:
+            QMessageBox.critical(
+                self, 
+                "Restore Failed", 
+                "Failed to restore backup. Check the logs for details."
+            ) 

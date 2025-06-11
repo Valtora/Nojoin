@@ -12,6 +12,7 @@ from PySide6.QtGui import QFont, QTextCursor, QTextDocument
 from nojoin.utils.theme_utils import get_theme_qss, THEME_PALETTE
 from nojoin.db import database as db_ops
 from nojoin.utils.config_manager import from_project_relative_path, config_manager
+from nojoin.utils.transcript_store import TranscriptStore
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,13 +46,15 @@ class FindReplaceWorker(QThread):
                 self.progress_update.emit(int((processed / total_files) * 100), recording_name)
                 
                 # Process diarized transcript
-                diarized_path = recording_dict.get('diarized_transcript_path')
-                if diarized_path:
-                    abs_path = from_project_relative_path(diarized_path)
-                    if os.path.exists(abs_path):
-                        replacements = self._replace_in_file(abs_path)
+                if TranscriptStore.exists(recording_id, "diarized"):
+                    def replacement_fn(text):
+                        return FindReplaceWorker._replace_in_text(
+                            text, self.search_text, self.replace_text, self.case_sensitive, self.whole_word
+                        )
+                    replacements = TranscriptStore.replace(recording_id, replacement_fn, "diarized")
+                    if replacements > 0:
                         self.total_replacements += replacements
-                        logger.info(f"Made {replacements} replacements in {abs_path}")
+                        logger.info(f"Made {replacements} replacements in diarized transcript for {recording_id}")
                 
                 # Process meeting notes
                 notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
@@ -489,23 +492,16 @@ class FindReplaceDialog(QDialog):
             
             recording_dict = dict(recording)
             
-            # 1. Process transcript file
-            diarized_path = recording_dict.get('diarized_transcript_path')
-            if diarized_path:
-                abs_path = from_project_relative_path(diarized_path)
-                if os.path.exists(abs_path):
-                    with open(abs_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    new_content, replacements = FindReplaceWorker._replace_in_text(
-                        content, search_text, replace_text, case_sensitive, whole_word
+            # 1. Process transcript in database
+            if TranscriptStore.exists(self.recording_id, "diarized"):
+                def replacement_fn(text):
+                    return FindReplaceWorker._replace_in_text(
+                        text, search_text, replace_text, case_sensitive, whole_word
                     )
-                    
-                    if replacements > 0:
-                        with open(abs_path, 'w', encoding='utf-8') as f:
-                            f.write(new_content)
-                        total_replacements += replacements
-                        logger.info(f"Made {replacements} replacements in {abs_path}")
+                replacements = TranscriptStore.replace(self.recording_id, replacement_fn, "diarized")
+                if replacements > 0:
+                    total_replacements += replacements
+                    logger.info(f"Made {replacements} replacements in diarized transcript for {self.recording_id}")
 
             # 2. Process meeting notes
             notes_entry = db_ops.get_meeting_notes_for_recording(self.recording_id)

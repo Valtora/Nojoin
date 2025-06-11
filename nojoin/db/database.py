@@ -41,12 +41,20 @@ def init_db():
                 cursor.execute(statement)
             conn.commit()
             logger.info("Database schema initialized successfully.")
-        ensure_chat_history_column()
-        ensure_global_speaker_columns()
+        run_migrations()
     except sqlite3.Error as e:
         logger.error(f"Error initializing database schema: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"An unexpected error occurred during database initialization: {e}", exc_info=True)
+
+def run_migrations():
+    """Run all pending migrations to ensure database is up to date."""
+    logger.info("Running database migrations...")
+    ensure_chat_history_column()
+    ensure_global_speaker_columns()
+    ensure_transcript_text_columns()
+    migrate_transcripts_to_db()
+    logger.info("Database migrations completed.")
 
 # --- Basic CRUD Operations --- 
 
@@ -169,10 +177,33 @@ def delete_recording(recording_id: str):
         logger.error(f"db_ops.delete_recording: Unexpected error for recording ID {recording_id}: {e}", exc_info=True)
         return False
 
-def update_recording_paths(recording_id: str, raw_transcript_path: str | None = None, diarized_transcript_path: str | None = None):
-    """Updates the file paths associated with a recording."""
+def update_recording_transcript_text(recording_id: str, raw_transcript_text: str | None = None, diarized_transcript_text: str | None = None):
+    """Updates the transcript text content for a recording."""
+    from ..utils.transcript_store import TranscriptStore
+    
     recording_id = str(recording_id)
-    logger.info(f"Attempting to update paths for recording_id: {recording_id}. Raw path: {raw_transcript_path}, Diarized path: {diarized_transcript_path}")
+    logger.info(f"Attempting to update transcript text for recording_id: {recording_id}")
+    
+    success = True
+    if raw_transcript_text is not None:
+        if not TranscriptStore.set(recording_id, raw_transcript_text, "raw"):
+            success = False
+            
+    if diarized_transcript_text is not None:
+        if not TranscriptStore.set(recording_id, diarized_transcript_text, "diarized"):
+            success = False
+    
+    if success:
+        logger.info(f"Successfully updated transcript text for recording ID {recording_id}")
+    else:
+        logger.error(f"Failed to update transcript text for recording ID {recording_id}")
+    
+    return success
+
+def update_recording_paths(recording_id: str, raw_transcript_path: str | None = None, diarized_transcript_path: str | None = None):
+    """Updates the file paths associated with a recording. DEPRECATED - Use update_recording_transcript_text instead."""
+    recording_id = str(recording_id)
+    logger.warning(f"update_recording_paths is deprecated. Consider using update_recording_transcript_text for recording {recording_id}")
     updates = []
     params = []
     if raw_transcript_path:
@@ -503,6 +534,8 @@ def get_speaker_diarization_segments(recording_id: str, speaker_id: int):
     Returns a dict with a list of segments (start_time, end_time) for the given speaker in the specified recording.
     Returns {'segments': [{'start_time': float, 'end_time': float}, ...]} or {'segments': []} if none found.
     """
+    from ..utils.transcript_store import TranscriptStore
+    
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -513,30 +546,25 @@ def get_speaker_diarization_segments(recording_id: str, speaker_id: int):
                 logger.warning(f"No diarization label found for speaker {speaker_id} in recording {recording_id} within get_speaker_diarization_segments.")
                 return {'segments': []}
             diarization_label = row['diarization_label']
-            # Find diarized transcript path
-            cursor.execute("SELECT diarized_transcript_path FROM recordings WHERE id = ?", (recording_id,))
-            rec_row = cursor.fetchone()
-            if not rec_row or not rec_row['diarized_transcript_path']:
-                logger.warning(f"Diarized transcript path not found in DB for recording {recording_id} within get_speaker_diarization_segments. Record data: {rec_row}")
+            
+            # Get transcript text from database
+            transcript_text = TranscriptStore.get(recording_id, "diarized")
+            if not transcript_text:
+                logger.warning(f"No diarized transcript text found for recording {recording_id} within get_speaker_diarization_segments.")
                 return {'segments': []}
-            transcript_path = rec_row['diarized_transcript_path']
-            abs_transcript_path = from_project_relative_path(transcript_path) # Convert to absolute path
-            if not os.path.exists(abs_transcript_path):
-                logger.error(f"Transcript file NOT FOUND at {abs_transcript_path} (relative: {transcript_path}) for recording {recording_id} in get_speaker_diarization_segments.")
-                return {'segments': []}
+                
             # Parse transcript for segments
             segments = []
             import re
-            with open(abs_transcript_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    # Example line: [00.00.00 - 00.00.05] - SPEAKER_00. text
-                    m = re.match(r"\[(\d+)\.(\d+)\.(\d+\.\d+) - (\d+)\.(\d+)\.(\d+\.\d+)\] - (\w+)[.:]", line)
-                    if m:
-                        start = int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
-                        end = int(m.group(4))*3600 + int(m.group(5))*60 + float(m.group(6))
-                        label = m.group(7)
-                        if label.upper() == diarization_label.upper():
-                            segments.append({'start_time': start, 'end_time': end})
+            for line in transcript_text.split('\n'):
+                # Example line: [00.00.00 - 00.00.05] - SPEAKER_00. text
+                m = re.match(r"\[(\d+)\.(\d+)\.(\d+\.\d+) - (\d+)\.(\d+)\.(\d+\.\d+)\] - (\w+)[.:]", line)
+                if m:
+                    start = int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
+                    end = int(m.group(4))*3600 + int(m.group(5))*60 + float(m.group(6))
+                    label = m.group(7)
+                    if label.upper() == diarization_label.upper():
+                        segments.append({'start_time': start, 'end_time': end})
             return {'segments': segments}
     except Exception as e:
         logger.error(f"Error getting diarization segments for speaker {speaker_id} in recording {recording_id}: {e}", exc_info=True)
@@ -785,214 +813,139 @@ def migrate_tags_to_normalized_schema():
     except sqlite3.Error as e:
         logger.error(f"Error migrating tags to normalized schema: {e}", exc_info=True)
 
+def _replace_speaker_in_text(text: str, old_labels_to_find: list[str], new_name_for_transcript: str | None) -> tuple[str, int]:
+    """
+    Core text processing function that replaces speakers in transcript text.
+    This is a pure function that operates on strings without file system operations.
+    """
+    if not old_labels_to_find or not text:
+        return text, 0
+        
+    lines = text.split('\n')
+    modified_lines = []
+    total_replacements = 0
+    
+    for line_number, line in enumerate(lines):
+        original_line = line
+        modified_line_this_iteration = False
+
+        # Regex to capture: (timestamp_prefix, full_speaker_part, text_suffix_with_separator)
+        match = re.match(r"^(\[.+?\]\s*-\s*)(.+?)(\s*-\s*)(.*)$", line)
+
+        if match:
+            timestamp_prefix = match.group(1)
+            current_speaker_part = match.group(2).strip()
+            separator = match.group(3)
+            text_content = match.group(4)
+
+            # Handle each old_label to see if it's in the current_speaker_part
+            for old_label in old_labels_to_find:
+                escaped_old_label = re.escape(old_label)
+
+                # Check if the old_label is part of the current_speaker_part (case-insensitive)
+                if re.search(r"\b" + escaped_old_label + r"\b", current_speaker_part, re.IGNORECASE):
+                    if new_name_for_transcript: # Renaming/Merging
+                        components = [c.strip() for c in re.split(r'\s+and\s+', current_speaker_part)]
+                        
+                        new_components = []
+                        replaced_in_components = False
+                        for comp in components:
+                            has_overlap_suffix = comp.endswith(" (Overlap)")
+                            clean_comp = comp.removesuffix(" (Overlap)").strip() if has_overlap_suffix else comp
+                            
+                            if clean_comp.lower() == old_label.lower():
+                                new_comp = new_name_for_transcript
+                                if has_overlap_suffix:
+                                    new_comp += " (Overlap)"
+                                new_components.append(new_comp)
+                                replaced_in_components = True
+                            else:
+                                new_components.append(comp)
+                        
+                        if replaced_in_components:
+                            unique_new_components = []
+                            for nc in new_components:
+                                if nc and nc not in unique_new_components:
+                                    unique_new_components.append(nc)
+                            
+                            current_speaker_part = " and ".join(unique_new_components)
+                            modified_line_this_iteration = True
+                        else: 
+                            if current_speaker_part.lower() == old_label.lower():
+                                current_speaker_part = new_name_for_transcript
+                                modified_line_this_iteration = True
+
+                    else: # Deleting speaker (new_name_for_transcript is None)
+                        components = [c.strip() for c in re.split(r'\s+and\s+', current_speaker_part)]
+                        remaining_components = []
+                        overlap_suffix_present_originally = any("(Overlap)" in c for c in components)
+                        
+                        for comp in components:
+                            clean_comp = comp.removesuffix(" (Overlap)").strip()
+                            if clean_comp.lower() != old_label.lower():
+                                remaining_components.append(comp)
+                        
+                        if len(remaining_components) < len(components):
+                            if not remaining_components:
+                                line = ""  # Remove line entirely if no speakers left
+                            else:
+                                current_speaker_part = " and ".join(remaining_components)
+                                if len(remaining_components) == 1 and overlap_suffix_present_originally and not current_speaker_part.endswith(" (Overlap)"):
+                                    current_speaker_part += " (Overlap)"
+                            modified_line_this_iteration = True
+                        else:
+                            if current_speaker_part.lower() == old_label.lower():
+                                line = ""  # Remove line
+                                modified_line_this_iteration = True
+                    
+                    # Reconstruct line if it wasn't blanked out
+                    if line and modified_line_this_iteration:
+                        line = f"{timestamp_prefix}{current_speaker_part}{separator}{text_content}"
+                    break
+            
+            if modified_line_this_iteration:
+                total_replacements += 1
+        
+        # Add the line to results if it's not empty
+        if line.strip():
+            modified_lines.append(line)
+        elif original_line.strip() and not line.strip():
+            total_replacements += 1  # Count deletions as replacements
+
+    return '\n'.join(modified_lines), total_replacements
+
 def replace_speaker_in_transcript(recording_id: str, old_labels_to_find: list[str], new_name_for_transcript: str | None) -> bool:
     """
-    In the diarized transcript for the recording, replace all occurrences of any label in old_labels_to_find
-    with new_name_for_transcript. If new_name_for_transcript is None, remove lines matching any of old_labels_to_find,
-    or intelligently modify lines with composite speaker labels (e.g., 'SPEAKER_A and SPEAKER_B').
-
+    Replace speakers in the diarized transcript stored in the database.
+    
     Args:
         recording_id: The ID of the recording.
-        old_labels_to_find: A list of speaker identifiers (original diarization labels or current names)
-                            that need to be replaced or removed.
-        new_name_for_transcript: The new name to use in the transcript. If None, segments associated with
-                                 old_labels_to_find are removed or modified.
+        old_labels_to_find: A list of speaker identifiers to replace or remove.
+        new_name_for_transcript: The new name to use in the transcript. If None, segments are removed.
     Returns:
         True on success, False on error.
     """
+    from ..utils.transcript_store import TranscriptStore
+    
     recording_id = str(recording_id)
     if not old_labels_to_find:
         logger.warning("replace_speaker_in_transcript called with no old_labels_to_find.")
         return False
 
-    rec = get_recording_by_id(recording_id)
-    if not rec or not rec.get('diarized_transcript_path'):
-        logger.error(f"Diarized transcript path not found for recording ID {recording_id}.")
-        return False
-
-    diarized_path = from_project_relative_path(rec['diarized_transcript_path'])
-    if not os.path.exists(diarized_path):
-        logger.error(f"Diarized transcript file does not exist: {diarized_path}")
-        return False
-
-    temp_diarized_path = diarized_path + ".tmp"
-    modified = False
-    processed_lines_count = 0
-    written_lines_count = 0
-
     try:
-        with open(diarized_path, 'r', encoding='utf-8') as infile, \
-             open(temp_diarized_path, 'w', encoding='utf-8') as outfile:
-            
-            logger.debug(f"[replace_speaker_in_transcript] Processing file: {diarized_path}")
-            logger.debug(f"[replace_speaker_in_transcript] Old labels to find: {old_labels_to_find}, New name: {new_name_for_transcript}")
-
-            for line_number, line in enumerate(infile):
-                processed_lines_count += 1
-                original_line = line
-                modified_line_this_iteration = False
-
-                # Regex to capture: (timestamp_prefix, full_speaker_part, text_suffix_with_separator)
-                # Example: "[00:00:00.123s - 00:00:01.456s] - SPEAKER_01 and SPEAKER_02 (Overlap) - Hello"
-                # Group 1 (prefix): "[00:00:00.123s - 00:00:01.456s] - "
-                # Group 2 (speaker_part): "SPEAKER_01 and SPEAKER_02 (Overlap)"
-                # Group 3 (suffix_separator): " - "
-                # Group 4 (text): "Hello"
-                match = re.match(r"^(\[.+?\]\s*-\s*)(.+?)(\s*-\s*)(.*)$", line)
-
-                if match:
-                    timestamp_prefix = match.group(1)
-                    current_speaker_part = match.group(2).strip()
-                    separator = match.group(3)
-                    text_content = match.group(4)
-                    
-                    logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Parsed. Raw Speaker Part: '{match.group(2)}', Stripped: '{current_speaker_part}'")
-
-                    original_speaker_part_for_log = current_speaker_part
-
-                    # Handle each old_label to see if it's in the current_speaker_part
-                    for old_label in old_labels_to_find:
-                        # Escape old_label for regex. Special care for labels that might BE regex patterns.
-                        # For this use case, old_label is expected to be a literal string.
-                        # However, if old_label could contain regex special chars, more robust escaping is needed.
-                        # Assuming old_label is simple, e.g., "SPEAKER_01", "John Doe".
-                        escaped_old_label = re.escape(old_label)
-
-                        # Check if the old_label is part of the current_speaker_part (case-insensitive)
-                        if re.search(r"\b" + escaped_old_label + r"\b", current_speaker_part, re.IGNORECASE):
-                            if new_name_for_transcript: # Renaming/Merging
-                                # Scenario 1: old_label is part of an "and" construct
-                                # Try to replace robustly, handling cases like "A and B", "B and A"
-                                
-                                # Regex to find old_label possibly surrounded by "and" and other speakers
-                                # This needs to be careful not to be too greedy or too specific.
-                                # Let's split by " and " and see if old_label is one of the components.
-                                components = [c.strip() for c in re.split(r'\s+and\s+', current_speaker_part)]
-                                
-                                new_components = []
-                                replaced_in_components = False
-                                for comp in components:
-                                    # Remove (Overlap) suffix for comparison, add back later if needed
-                                    has_overlap_suffix = comp.endswith(" (Overlap)")
-                                    clean_comp = comp.removesuffix(" (Overlap)").strip() if has_overlap_suffix else comp
-                                    
-                                    if clean_comp.lower() == old_label.lower():
-                                        new_comp = new_name_for_transcript
-                                        if has_overlap_suffix:
-                                            new_comp += " (Overlap)"
-                                        new_components.append(new_comp)
-                                        replaced_in_components = True
-                                    else:
-                                        new_components.append(comp) # Add original component back
-                                
-                                if replaced_in_components:
-                                    # Reconstruct, removing duplicates like "NewName and NewName"
-                                    # Filter out empty strings that might result from splits
-                                    unique_new_components = []
-                                    for nc in new_components:
-                                        if nc and nc not in unique_new_components:
-                                            unique_new_components.append(nc)
-                                    
-                                    current_speaker_part = " and ".join(unique_new_components)
-                                    # Simplify "NewName and NewName (Overlap)" to "NewName (Overlap)"
-                                    # Or "NewName (Overlap) and NewName" to "NewName (Overlap)"
-                                    # This part is tricky. For now, joining unique components is a good step.
-                                    # A direct replace might be simpler if we ensure "\bOLD\b" for safety.
-                                    # current_speaker_part = re.sub(r"\b" + escaped_old_label + r"\b", new_name_for_transcript, current_speaker_part)
-                                    
-                                    # Post-simplification for cases like "A and A" -> "A"
-                                    # Or "A (Overlap) and A" -> "A (Overlap)"
-                                    parts = [p.strip() for p in re.split(r'\s+and\s+', current_speaker_part)]
-                                    final_parts = []
-                                    temp_set = set()
-                                    for p_idx, p_val in enumerate(parts):
-                                        # Check if a simple version of p_val (without (Overlap)) is already added
-                                        # or if p_val (with (Overlap)) is already added
-                                        p_val_no_overlap = p_val.removesuffix(" (Overlap)").strip()
-                                        
-                                        can_add = True
-                                        for fp in final_parts:
-                                            fp_no_overlap = fp.removesuffix(" (Overlap)").strip()
-                                            if p_val_no_overlap == fp_no_overlap:
-                                                # If current part is X and X (Overlap) is already there, don't add X
-                                                # If current part is X (Overlap) and X is already there, replace X with X (Overlap)
-                                                if p_val.endswith(" (Overlap)") and not fp.endswith(" (Overlap)"):
-                                                    final_parts.remove(fp)
-                                                    break # break inner to re-evaluate adding p_val
-                                                else: # fp is same or fp is X (Overlap) and p_val is X
-                                                    can_add = False
-                                                    break
-                                        if can_add:
-                                            final_parts.append(p_val)
-                                            
-                                    current_speaker_part = " and ".join(sorted(list(set(final_parts)))) # Sort for consistency
-                                    modified_line_this_iteration = True
-                                    logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Complex replace. Original speaker part: '{original_speaker_part_for_log}', New speaker part: '{current_speaker_part}' (old_label: {old_label}, new_name: {new_name_for_transcript})")
-                                else: 
-                                    # Direct match and replace if not part of 'and' or if split logic failed
-                                    # This also covers the case where current_speaker_part was just old_label
-                                    if current_speaker_part.lower() == old_label.lower():
-                                        current_speaker_part = new_name_for_transcript
-                                        modified_line_this_iteration = True
-                                        logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Direct replace. Original speaker part: '{original_speaker_part_for_log}', New speaker part: '{current_speaker_part}' (old_label: {old_label}, new_name: {new_name_for_transcript})")
-
-                            else: # Deleting speaker (new_name_for_transcript is None)
-                                components = [c.strip() for c in re.split(r'\s+and\s+', current_speaker_part)]
-                                remaining_components = []
-                                overlap_suffix_present_originally = any("(Overlap)" in c for c in components)
-                                
-                                for comp in components:
-                                    # Preserve (Overlap) if it was on a component *not* being removed
-                                    clean_comp = comp.removesuffix(" (Overlap)").strip()
-                                    if clean_comp.lower() != old_label.lower():
-                                        remaining_components.append(comp) # Add original component back
-                                
-                                if len(remaining_components) < len(components): # old_label was found and removed
-                                    if not remaining_components:
-                                        line = "" # Remove line entirely if no speakers left
-                                    else:
-                                        current_speaker_part = " and ".join(remaining_components)
-                                        # If only one speaker remains, and original had (Overlap), ensure it's preserved on the single remaining one if not already
-                                        if len(remaining_components) == 1 and overlap_suffix_present_originally and not current_speaker_part.endswith(" (Overlap)"):
-                                            current_speaker_part += " (Overlap)"
-                                    modified_line_this_iteration = True
-                                else: # old_label was not part of this structure (e.g. direct match)
-                                    if current_speaker_part.lower() == old_label.lower():
-                                        line = "" # Remove line
-                                        modified_line_this_iteration = True
-                                        logger.debug(f"[replace_speaker_in_transcript] Line {line_number+1}: Deleted speaker part. Original speaker part: '{original_speaker_part_for_log}' (old_label: {old_label})")
-                            # Reconstruct line if it wasn't blanked out
-                            if line:
-                                line = f"{timestamp_prefix}{current_speaker_part}{separator}{text_content}\n"
-                            break # Processed this old_label for this line, move to next line
-                    
-                    if modified_line_this_iteration:
-                        modified = True
-                
-                # If line is not empty after processing (i.e., not deleted)
-                if line.strip(): 
-                    outfile.write(line)
-                    written_lines_count += 1
-                elif original_line.strip() and not line.strip(): # Line was deleted
-                    modified = True # Ensure modified is true if a line is deleted
-                    logger.debug(f"Line {line_number+1} deleted: {original_line.strip()}")
-                # else: line was already empty or whitespace
-
-        if modified:
-            os.replace(temp_diarized_path, diarized_path)
-            logger.info(f"Diarized transcript {diarized_path} updated. Lines processed: {processed_lines_count}, lines written: {written_lines_count}.")
+        def replacement_fn(text):
+            return _replace_speaker_in_text(text, old_labels_to_find, new_name_for_transcript)
+        
+        replacements = TranscriptStore.replace(recording_id, replacement_fn, "diarized")
+        if replacements >= 0:
+            logger.info(f"Successfully made {replacements} replacements in transcript for recording {recording_id}")
+            return True
         else:
-            os.remove(temp_diarized_path)
-            logger.info(f"Diarized transcript {diarized_path} had no changes. Lines processed: {processed_lines_count}.")
-        return True
-
+            logger.error(f"Failed to update transcript for recording {recording_id}")
+            return False
+            
     except Exception as e:
-        logger.error(f"Error processing transcript file {diarized_path}: {e}", exc_info=True)
-        if os.path.exists(temp_diarized_path):
-            try:
-                os.remove(temp_diarized_path)
-            except OSError as ose:
-                logger.error(f"Could not remove temporary transcript file {temp_diarized_path}: {ose}")
+        logger.error(f"Error replacing speaker in transcript for recording {recording_id}: {e}", exc_info=True)
         return False
 
 def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], target_speaker_id: int) -> bool:
@@ -1380,3 +1333,90 @@ def ensure_global_speaker_columns():
                 logger.info("Added global_speaker_id column to speakers table.")
     except Exception as e:
         logger.error(f"Error ensuring global_speaker_id column in speakers table: {e}", exc_info=True)
+
+def ensure_transcript_text_columns():
+    """Ensures the transcript text columns exist in the recordings table (for backward compatibility)."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Check which transcript text columns exist
+            cursor.execute("PRAGMA table_info(recordings)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'raw_transcript_text' not in columns:
+                cursor.execute("ALTER TABLE recordings ADD COLUMN raw_transcript_text TEXT")
+                logger.info("Added raw_transcript_text column to recordings table.")
+                
+            if 'diarized_transcript_text' not in columns:
+                cursor.execute("ALTER TABLE recordings ADD COLUMN diarized_transcript_text TEXT")
+                logger.info("Added diarized_transcript_text column to recordings table.")
+                
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error ensuring transcript text columns: {e}", exc_info=True)
+
+def migrate_transcripts_to_db():
+    """
+    Migrates existing transcript files to database storage.
+    For each recording with file paths but no text content:
+    1. Read the file content
+    2. Store in the appropriate text column  
+    3. Delete the file
+    4. Clear the path column
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Find recordings with file paths but no text content
+            cursor.execute("""
+                SELECT id, raw_transcript_path, diarized_transcript_path 
+                FROM recordings 
+                WHERE (raw_transcript_path IS NOT NULL AND raw_transcript_text IS NULL)
+                   OR (diarized_transcript_path IS NOT NULL AND diarized_transcript_text IS NULL)
+            """)
+            recordings_to_migrate = cursor.fetchall()
+            
+            migrated_count = 0
+            for recording in recordings_to_migrate:
+                recording_id = recording['id']
+                raw_path = recording['raw_transcript_path']
+                diarized_path = recording['diarized_transcript_path']
+                
+                # Migrate raw transcript
+                if raw_path:
+                    abs_path = from_project_relative_path(raw_path)
+                    if os.path.exists(abs_path):
+                        try:
+                            with open(abs_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            cursor.execute("UPDATE recordings SET raw_transcript_text = ?, raw_transcript_path = NULL WHERE id = ?", 
+                                         (content, recording_id))
+                            os.remove(abs_path)
+                            logger.info(f"Migrated raw transcript for recording {recording_id}")
+                            migrated_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to migrate raw transcript for recording {recording_id}: {e}")
+                
+                # Migrate diarized transcript
+                if diarized_path:
+                    abs_path = from_project_relative_path(diarized_path)
+                    if os.path.exists(abs_path):
+                        try:
+                            with open(abs_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            cursor.execute("UPDATE recordings SET diarized_transcript_text = ?, diarized_transcript_path = NULL WHERE id = ?", 
+                                         (content, recording_id))
+                            os.remove(abs_path)
+                            logger.info(f"Migrated diarized transcript for recording {recording_id}")
+                            migrated_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to migrate diarized transcript for recording {recording_id}: {e}")
+            
+            conn.commit()
+            if migrated_count > 0:
+                logger.info(f"Successfully migrated {migrated_count} transcript files to database")
+            else:
+                logger.debug("No transcript files found to migrate")
+                
+    except Exception as e:
+        logger.error(f"Error during transcript migration: {e}", exc_info=True)

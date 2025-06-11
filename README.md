@@ -74,14 +74,11 @@ I know there are similar free solutions out there which are all great and quirky
 
 3.  **Create and activate a virtual environment:**
     It is highly recommended to use a virtual environment to manage project dependencies.
-
-    ```bash
     # Create the virtual environment
+    ```bash
     python3 -m venv .venv
-    
-    # Activate the environment
     ```
-
+    # Activate the environment
     *   **Windows (PowerShell/CMD):**
         ```bash
         .venv\Scripts\Activate
