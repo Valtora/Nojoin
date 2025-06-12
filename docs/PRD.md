@@ -132,25 +132,15 @@
 - **Production-Ready:** Singleton pattern implementation with caching, error handling, and comprehensive logging.
 
 ### 2.14 Version Management & Automatic Updates
-- **Commit-Based Versioning:** Version tracking based on Git commit SHA instead of semantic versioning, eliminating manual version file updates.
-- **GitHub Integration:** Automatic update checking via GitHub API with configurable frequency, comparing against main branch commits.
-- **User-Friendly Update Flow:** Non-intrusive update notifications with detailed commit information and author details.
-- **Flexible Reminder Preferences:** User-configurable update reminders (never, next run, weekly, monthly) with commit skipping.
-- **Intelligent Update Process:** Automatic backup creation before updates with rollback capability.
-- **Progress Tracking:** Real-time download and installation progress with user cancellation support.
+- **Semantic Versioning:** Version tracking using traditional semantic versioning (e.g., 0.6.2) stored in Windows registry and fallback version files.
+- **GitHub Integration:** Automatic update checking via GitHub releases API with configurable frequency and user preferences.
+- **User-Friendly Update Flow:** Non-intrusive update notifications with detailed release information including changelog and download size.
+- **Flexible Reminder Preferences:** User-configurable update reminders (never, next run, weekly, monthly) with version skipping capability.
+- **Intelligent Update Process:** Direct download and execution of Inno Setup installers with progress tracking.
+- **Progress Tracking:** Real-time download progress with cancellation support and error handling.
 - **Manual Update Checking:** "Check for Updates" button in Settings dialog for on-demand update checking.
-- **Simplified Version Management:** No manual version file maintenance required - versions automatically derived from Git state.
-- **Cross-Platform Support:** Platform-specific update mechanisms for Windows and macOS.
-
-### 2.15 Automated Setup & Installation System
-- **Zero-Knowledge Setup:** Automated setup scripts assume no technical expertise from users.
-- **Intelligent Dependency Detection:** Automatic detection and installation of Python 3.11.9, ffmpeg, and other requirements.
-- **Hardware Optimization:** Automatic GPU detection and CUDA configuration where available.
-- **Cross-Platform Scripts:** Dedicated setup scripts for Windows (`setup_windows.bat`) and macOS (`setup_mac.sh`).
-- **Error Recovery:** Comprehensive error handling with helpful guidance and troubleshooting steps.
-- **Convenience Utilities:** Automatic creation of launch scripts, desktop shortcuts, and update utilities.
-- **Virtual Environment Management:** Automatic virtual environment creation and dependency isolation.
-- **Version Enforcement:** Strict Python 3.11.9 requirement with clear warnings for compatibility issues.
+- **Registry Integration:** Version information stored in Windows registry with file-based fallback for cross-platform compatibility.
+- **Silent Installation:** Automated installer execution with silent upgrade flags for seamless updates.
 
 ---
 
