@@ -149,7 +149,7 @@ class GeminiLLMBackend(LLMBackend):
         if not api_key:
             raise ValueError("Google Gemini API key is not set. Please provide it in settings.")
         self.api_key = api_key
-        self.model = model or "gemini-2.5-flash-preview-04-17"
+        self.model = model or _get_default_model_for_provider("gemini")
         self.client = genai.Client(api_key=self.api_key)
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
@@ -228,7 +228,7 @@ class OpenAILLMBackend(LLMBackend):
         if not api_key:
             raise ValueError("OpenAI API key is not set. Please provide it in settings.")
         self.api_key = api_key
-        self.model = model or "gpt-3.5-turbo"
+        self.model = model or _get_default_model_for_provider("openai")
         openai.api_key = self.api_key
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
@@ -318,7 +318,7 @@ class AnthropicLLMBackend(LLMBackend):
         if not api_key:
             raise ValueError("Anthropic API key is not set. Please provide it in settings.")
         self.api_key = api_key
-        self.model = model or "claude-3-opus-20240229"
+        self.model = model or _get_default_model_for_provider("anthropic")
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
@@ -408,9 +408,16 @@ def _get_default_model_for_provider(provider: str) -> str:
     elif provider == "openai":
         return "gpt-4.1-mini-2025-04-14"
     elif provider == "anthropic":
-        return "claude-3-7-sonnet-latest"
+        return "claude-sonnet-4-20250514"
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
+
+def get_default_model_for_provider(provider: str) -> str:
+    """
+    Public function to get the default model for a provider.
+    This is the single source of truth for default model names.
+    """
+    return _get_default_model_for_provider(provider)
 
 # --- LLM Backend Factory ---
 def get_llm_backend(provider: str, api_key=None, model=None):

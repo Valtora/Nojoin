@@ -36,7 +36,7 @@
 
         *   **Windows (winget):**
             ```bash
-            winget install Python.Python.3.11 --version 3.11.9
+            winget install Python.Python.3.11
             ```
         *   **macOS (Homebrew):**
             ```bash

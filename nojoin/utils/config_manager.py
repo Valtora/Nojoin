@@ -12,6 +12,26 @@ CONFIG_FILENAME = 'config.json'
 # Place config in the project root alongside the DB for simplicity
 CONFIG_PATH = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), CONFIG_FILENAME)
 
+def _get_default_models():
+    """Get default models from LLM_Services to avoid circular imports."""
+    try:
+        from nojoin.processing.LLM_Services import get_default_model_for_provider
+        return {
+            "gemini_model": get_default_model_for_provider("gemini"),
+            "openai_model": get_default_model_for_provider("openai"),
+            "anthropic_model": get_default_model_for_provider("anthropic"),
+        }
+    except ImportError:
+        # Fallback in case of import issues
+        return {
+            "gemini_model": "gemini-2.5-pro-preview-06-05",
+            "openai_model": "gpt-4.1-mini-2025-04-14",
+            "anthropic_model": "claude-sonnet-4-20250514",
+        }
+
+# Get default models
+_default_models = _get_default_models()
+
 DEFAULT_CONFIG = {
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
     "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
@@ -25,6 +45,9 @@ DEFAULT_CONFIG = {
     "gemini_api_key": None,     # Google Gemini API key
     "openai_api_key": None,     # OpenAI API key
     "anthropic_api_key": None,  # Anthropic API key
+    "gemini_model": _default_models["gemini_model"],     # Default Gemini model
+    "openai_model": _default_models["openai_model"],     # Default OpenAI model
+    "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "notes_font_size": "Medium",  # Font size for meeting notes display
     "advanced": {
         "log_verbosity": "INFO"
@@ -274,6 +297,23 @@ def migrate_file_if_needed(old_path, new_path):
         except Exception:
             import shutil
             shutil.move(old_path, new_path)
+
+def get_default_model_for_provider(provider: str) -> str:
+    """
+    Get the default model for a specific LLM provider.
+    This imports from LLM_Services to maintain single source of truth.
+    """
+    try:
+        from nojoin.processing.LLM_Services import get_default_model_for_provider as _get_default
+        return _get_default(provider)
+    except ImportError:
+        # Fallback values
+        defaults = {
+            "gemini": "gemini-2.5-pro-preview-06-05",
+            "openai": "gpt-4.1-mini-2025-04-14", 
+            "anthropic": "claude-sonnet-4-20250514"
+        }
+        return defaults.get(provider, "")
 
 def is_llm_available():
     provider = config_manager.get("llm_provider", "gemini")

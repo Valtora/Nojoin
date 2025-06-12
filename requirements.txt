@@ -4,11 +4,10 @@ setuptools
 dotenv
 
 # Core ML Libraries
-# Commented out for now as README provides instructions for installing PyTorch manually as it is very system specific.
-#--extra-index-url https://download.pytorch.org/whl/cu128
-#torch==2.7.1+cu128
-#torchvision==0.22.1+cu128
-#torchaudio==2.7.1+cu128
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
+torchaudio==2.7.1+cu128
 
 # Speech Recognition
 openai-whisper  
@@ -23,7 +22,6 @@ ffmpeg # ffmpeg must be installed and in PATH for audio conversion
 soundcard # For recording
 pydub # Useful for audio manipulation/snippeting
 soundfile # For reading audio files
-pyaudio # For audio playback
 just-playback # For audio playback
 silero-vad # For audio processing
 

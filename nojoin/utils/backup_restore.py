@@ -240,61 +240,172 @@ class BackupRestoreManager:
         """
         Merge records from backup database into current database.
         Uses INSERT OR IGNORE to avoid conflicts with existing records.
+        Handles foreign key constraints by inserting in the correct order.
         """
         try:
             import sqlite3
             
-            # Open both databases
-            with db_ops.get_db_connection() as current_conn:
-                current_conn.execute("ATTACH DATABASE ? AS backup_db", (backup_db_path,))
+            # Use a separate connection for the backup database to ensure proper cleanup
+            backup_conn = None
+            try:
+                # Open backup database separately
+                backup_conn = sqlite3.connect(backup_db_path)
+                backup_conn.row_factory = sqlite3.Row
                 
-                # Merge recordings (will ignore conflicts due to primary key)
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO recordings 
-                    SELECT * FROM backup_db.recordings
-                """)
-                
-                # Merge global speakers
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO global_speakers 
-                    SELECT * FROM backup_db.global_speakers
-                """)
-                
-                # Merge speakers
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO speakers 
-                    SELECT * FROM backup_db.speakers
-                """)
-                
-                # Merge recording_speakers
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO recording_speakers 
-                    SELECT * FROM backup_db.recording_speakers
-                """)
-                
-                # Merge tags
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO tags 
-                    SELECT * FROM backup_db.tags
-                """)
-                
-                # Merge recording_tags
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO recording_tags 
-                    SELECT * FROM backup_db.recording_tags
-                """)
-                
-                # Merge meeting_notes
-                current_conn.execute("""
-                    INSERT OR IGNORE INTO meeting_notes 
-                    SELECT * FROM backup_db.meeting_notes
-                """)
-                
-                current_conn.execute("DETACH DATABASE backup_db")
-                current_conn.commit()
+                # Open current database
+                with db_ops.get_db_connection() as current_conn:
+                    # Start a transaction for the entire merge operation
+                    current_conn.execute("BEGIN TRANSACTION")
+                    
+                    try:
+                        # Temporarily disable foreign key constraints during merge
+                        current_conn.execute("PRAGMA foreign_keys = OFF")
+                        
+                        # Insert records in correct order to satisfy foreign key constraints
+                        
+                        # 1. First insert parent tables (no foreign key dependencies)
+                        # Insert recordings first
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM recordings")
+                            recordings = cursor.fetchall()
+                            for row in recordings:
+                                record = dict(row)  # Convert Row to dict for .get() method
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO recordings 
+                                    (id, name, created_at, processed_at, start_time, end_time, audio_path, 
+                                     raw_transcript_path, diarized_transcript_path, raw_transcript_text, 
+                                     diarized_transcript_text, tags, format, duration_seconds, 
+                                     file_size_bytes, status, chat_history)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    record['id'], record['name'], record['created_at'], record['processed_at'],
+                                    record['start_time'], record['end_time'], record['audio_path'],
+                                    record.get('raw_transcript_path'), record.get('diarized_transcript_path'),
+                                    record.get('raw_transcript_text'), record.get('diarized_transcript_text'),
+                                    record.get('tags'), record.get('format', 'MP3'), record.get('duration_seconds'),
+                                    record.get('file_size_bytes'), record.get('status', 'Recorded'),
+                                    record.get('chat_history')
+                                ))
+                            logger.info(f"Merged {len(recordings)} recordings")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging recordings (table may not exist in backup): {e}")
+                        
+                        # Insert global_speakers
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM global_speakers")
+                            global_speakers = cursor.fetchall()
+                            for row in global_speakers:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO global_speakers (id, name)
+                                    VALUES (?, ?)
+                                """, (record['id'], record['name']))
+                            logger.info(f"Merged {len(global_speakers)} global speakers")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging global speakers (table may not exist in backup): {e}")
+                        
+                        # Insert tags
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM tags")
+                            tags = cursor.fetchall()
+                            for row in tags:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO tags (id, name)
+                                    VALUES (?, ?)
+                                """, (record['id'], record['name']))
+                            logger.info(f"Merged {len(tags)} tags")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging tags (table may not exist in backup): {e}")
+                        
+                        # 2. Then insert child tables (with foreign key dependencies)
+                        # Insert speakers (depends on global_speakers)
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM speakers")
+                            speakers = cursor.fetchall()
+                            for row in speakers:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO speakers (id, name, voice_snippet_path, global_speaker_id)
+                                    VALUES (?, ?, ?, ?)
+                                """, (record['id'], record['name'], record.get('voice_snippet_path'), record.get('global_speaker_id')))
+                            logger.info(f"Merged {len(speakers)} speakers")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging speakers (table may not exist in backup): {e}")
+                        
+                        # Insert recording_speakers (depends on recordings and speakers)
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM recording_speakers")
+                            recording_speakers = cursor.fetchall()
+                            for row in recording_speakers:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO recording_speakers 
+                                    (recording_id, speaker_id, diarization_label, snippet_start, snippet_end)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (record['recording_id'], record['speaker_id'], record['diarization_label'],
+                                      record.get('snippet_start'), record.get('snippet_end')))
+                            logger.info(f"Merged {len(recording_speakers)} recording-speaker relationships")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging recording_speakers (table may not exist in backup): {e}")
+                        
+                        # Insert recording_tags (depends on recordings and tags)
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM recording_tags")
+                            recording_tags = cursor.fetchall()
+                            for row in recording_tags:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO recording_tags (recording_id, tag_id)
+                                    VALUES (?, ?)
+                                """, (record['recording_id'], record['tag_id']))
+                            logger.info(f"Merged {len(recording_tags)} recording-tag relationships")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging recording_tags (table may not exist in backup): {e}")
+                        
+                        # Insert meeting_notes (depends on recordings)
+                        try:
+                            cursor = backup_conn.cursor()
+                            cursor.execute("SELECT * FROM meeting_notes")
+                            meeting_notes = cursor.fetchall()
+                            for row in meeting_notes:
+                                record = dict(row)  # Convert Row to dict
+                                current_conn.execute("""
+                                    INSERT OR IGNORE INTO meeting_notes 
+                                    (id, recording_id, llm_backend, model, notes, created_at, updated_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (record['id'], record['recording_id'], record['llm_backend'],
+                                      record['model'], record['notes'], record['created_at'], record.get('updated_at')))
+                            logger.info(f"Merged {len(meeting_notes)} meeting notes")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"Error merging meeting_notes (table may not exist in backup): {e}")
+                        
+                        # Re-enable foreign key constraints
+                        current_conn.execute("PRAGMA foreign_keys = ON")
+                        
+                        # Commit the transaction
+                        current_conn.execute("COMMIT")
+                        
+                    except Exception as e:
+                        # Rollback on any error during the merge
+                        current_conn.execute("ROLLBACK")
+                        current_conn.execute("PRAGMA foreign_keys = ON")  # Re-enable constraints
+                        raise e
                 
                 logger.info("Database records merged successfully")
                 return True
+                
+            finally:
+                # Ensure backup connection is properly closed
+                if backup_conn:
+                    backup_conn.close()
+                    logger.debug("Backup database connection closed")
                 
         except Exception as e:
             logger.error(f"Error merging database records: {e}", exc_info=True)

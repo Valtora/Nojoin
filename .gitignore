@@ -28,5 +28,5 @@ nojoin/config.json
 /PRD.md
 /TODO.md
 
-# Installer files
-*.exe
+# Tools
+tools/ffmpeg.exe

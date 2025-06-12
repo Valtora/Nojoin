@@ -13,7 +13,8 @@ from nojoin.utils.config_manager import (
     get_available_output_devices,
     get_available_themes,
     get_available_notes_font_sizes,
-    get_available_ui_scale_modes
+    get_available_ui_scale_modes,
+    get_default_model_for_provider
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
 from nojoin.utils.backup_restore import BackupRestoreManager, get_default_backup_filename
@@ -170,7 +171,7 @@ class SettingsDialog(QDialog):
         # Gemini Model
         self._gemini_model_row = layout.rowCount()
         self.gemini_model_edit = QLineEdit()
-        self.gemini_model_edit.setPlaceholderText("e.g. gemini-2.5-flash-preview-05-20")
+        self.gemini_model_edit.setPlaceholderText(f"e.g. {get_default_model_for_provider('gemini')}")
         layout.addRow("Gemini Model:", self.gemini_model_edit)
         self._openai_row = layout.rowCount()
         self.openai_api_key_edit = QLineEdit()
@@ -189,7 +190,7 @@ class SettingsDialog(QDialog):
         # OpenAI Model
         self._openai_model_row = layout.rowCount()
         self.openai_model_edit = QLineEdit()
-        self.openai_model_edit.setPlaceholderText("e.g. gpt-4.1-mini-2025-04-14")
+        self.openai_model_edit.setPlaceholderText(f"e.g. {get_default_model_for_provider('openai')}")
         layout.addRow("OpenAI Model:", self.openai_model_edit)
         self._anthropic_row = layout.rowCount()
         self.anthropic_api_key_edit = QLineEdit()
@@ -208,7 +209,7 @@ class SettingsDialog(QDialog):
         # Anthropic Model
         self._anthropic_model_row = layout.rowCount()
         self.anthropic_model_edit = QLineEdit()
-        self.anthropic_model_edit.setPlaceholderText("e.g. claude-3-7-sonnet-latest")
+        self.anthropic_model_edit.setPlaceholderText(f"e.g. {get_default_model_for_provider('anthropic')}")
         layout.addRow("Anthropic Model:", self.anthropic_model_edit)
         # Hide all API key/model widgets except the selected provider
         self._on_llm_provider_changed(self.llm_provider_combo.currentText())
@@ -415,9 +416,9 @@ class SettingsDialog(QDialog):
         self.gemini_api_key_edit.setText(cfg.get("gemini_api_key", ""))
         self.openai_api_key_edit.setText(cfg.get("openai_api_key", ""))
         self.anthropic_api_key_edit.setText(cfg.get("anthropic_api_key", ""))
-        self.gemini_model_edit.setText(cfg.get("gemini_model", "gemini-2.5-flash-preview-05-20"))
-        self.openai_model_edit.setText(cfg.get("openai_model", "gpt-4.1-mini-2025-04-14"))
-        self.anthropic_model_edit.setText(cfg.get("anthropic_model", "claude-3-7-sonnet-latest"))
+        self.gemini_model_edit.setText(cfg.get("gemini_model", get_default_model_for_provider("gemini")))
+        self.openai_model_edit.setText(cfg.get("openai_model", get_default_model_for_provider("openai")))
+        self.anthropic_model_edit.setText(cfg.get("anthropic_model", get_default_model_for_provider("anthropic")))
         # Set log verbosity
         log_verbosity = cfg.get("advanced", {}).get("log_verbosity", "INFO")
         self.log_verbosity_combo.setCurrentText(log_verbosity.upper())

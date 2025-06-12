@@ -11,5 +11,5 @@ Implement advanced analyses for both the audio and transcript to gauge things li
 ## Codebase Polish - Definite TODO
 Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.
 
-## Update Default Gemini Model - Definite TODO
-Update default Gemini model to: gemini-2.5-pro-preview-06-05
+## Address Monolithic Code
+The codebase has a few monolithic scripts such as Main Window and Database. Let's refactor Nojoin to break these up.

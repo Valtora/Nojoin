@@ -69,6 +69,7 @@ from nojoin.utils.config_manager import (
     from_project_relative_path,
     get_recordings_dir,
     get_available_themes, # Import theme getter
+    get_default_model_for_provider
 )
 
 from nojoin.utils.theme_utils import apply_theme_to_widget, get_theme_qss, get_menu_qss, get_border_color, wrap_html_body, get_notes_font_size
@@ -1536,7 +1537,7 @@ class MainWindow(QMainWindow):
         
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
-        model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
+        model = config_manager.get(f"{provider}_model", get_default_model_for_provider(provider))
         if not api_key or not transcript:
             # Display transcript if API key missing, using setMarkdown
             transcript_html_content = self.load_transcript(recording_id) # This returns HTML
@@ -1633,7 +1634,7 @@ class MainWindow(QMainWindow):
         
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
-        model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
+        model = config_manager.get(f"{provider}_model", get_default_model_for_provider(provider))
         if not api_key or not transcript:
             # Fallback message in Markdown
             error_markdown = (f"**Meeting notes regeneration failed.**\n\n"
@@ -2700,7 +2701,7 @@ class MainWindow(QMainWindow):
 
         provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{provider}_api_key")
-        model = config_manager.get(f"{provider}_model", "gemini-2.5-flash-preview-05-20")
+        model = config_manager.get(f"{provider}_model", get_default_model_for_provider(provider))
         if not api_key:
             sys_html = f'<div class="chat-message system"><i>No API key provided for {provider.title()}. Meeting chat is disabled.</i></div>'
             self.chat_display_area.append(sys_html)
@@ -2952,7 +2953,7 @@ class MainWindow(QMainWindow):
         logger.info(f"Proceeding with notes generation for ID {recording_id}. Transcript found: {len(transcript_text)} characters")
         llm_provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{llm_provider}_api_key")
-        model = config_manager.get(f"{llm_provider}_model", "gpt-4.1-mini-2025-04-14")
+        model = config_manager.get(f"{llm_provider}_model", get_default_model_for_provider(llm_provider))
         try:
             backend = get_llm_backend(llm_provider, api_key=api_key, model=model)
         except Exception as e:
