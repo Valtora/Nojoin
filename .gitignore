@@ -19,9 +19,6 @@
 # Config file, generated on first run
 nojoin/config.json
 
-# Current commit tracking file
-.current_commit
-
 # Cursor files
 *.cursorrules
 *.mdc
@@ -32,5 +29,6 @@ nojoin/config.json
 /TODO.md
 
 # Inno Setup files
-/dist/
+/nojoin/setup/dist/
 /docs/inno-setup-docs.txt
+*.exe

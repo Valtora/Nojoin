@@ -2,21 +2,23 @@
 setlocal enabledelayedexpansion
 
 :: Nojoin Setup Script for Windows (User Mode - No Admin Required)
+:: This script runs from the Nojoin installation root directory
 :: This script installs everything to user directories for maximum security
+:: System-level Python, ffmpeg, and CUDA will be used if available
 
 echo.
 echo ================================================================
 echo                        Nojoin Setup for Windows
 echo ================================================================
 echo.
-echo This script will set up Nojoin in your user directories.
+echo This script will set up Nojoin using only user directories.
 echo No administrator privileges required for maximum security.
 echo.
 echo Prerequisites that will be installed if missing:
-echo - Python 3.11.9 (portable, user directory)
-echo - ffmpeg (portable, user directory)
-echo - Virtual environment and dependencies
-echo - CUDA support (if compatible hardware detected)
+echo - Python 3.11.9 (portable to user directory, or use system if available)
+echo - ffmpeg (portable to user directory, or use system if available)  
+echo - Virtual environment and dependencies (always in user directory)
+echo - CUDA support (will use system installation if available)
 echo.
 pause
 
@@ -28,16 +30,36 @@ set "FFMPEG_DIR=%USER_TOOLS_DIR%\ffmpeg"
 :: Create tools directory
 if not exist "%USER_TOOLS_DIR%" mkdir "%USER_TOOLS_DIR%"
 
-:: Check if we're in the correct directory
-echo [1] Checking project directory...
+:: Check if we're in the correct directory (should be installation root)
+echo [1] Checking project directory and permissions...
+cd /d "%~dp0"
 if not exist "Nojoin.py" (
-    echo ERROR: This script must be run from the Nojoin project directory.
-    echo Please navigate to the directory containing Nojoin.py and run this script again.
+    echo ERROR: Cannot find Nojoin.py in the current directory.
+    echo This script should be run from the Nojoin installation directory.
+    echo Current directory: %CD%
     echo.
     pause
     exit /b 1
 )
-echo Project directory verified.
+
+:: Test if current directory is writable by creating a temporary file
+echo test > test_write.tmp 2>nul
+if %errorlevel% neq 0 (
+    echo ERROR: Current directory is not writable.
+    echo The setup script needs write permissions to create the virtual environment
+    echo and configuration files.
+    echo.
+    echo Please ensure Nojoin is installed in a user-writable directory such as:
+    echo - %LOCALAPPDATA%\Nojoin
+    echo - %USERPROFILE%\Documents\Nojoin
+    echo - C:\Users\%USERNAME%\Nojoin
+    echo.
+    pause
+    exit /b 1
+)
+del test_write.tmp >nul 2>&1
+
+echo Project directory verified and writable.
 
 :: Check if we have curl for downloads
 echo [2] Checking download capabilities...
@@ -450,7 +472,7 @@ echo                    Setup Complete!
 echo ================================================================
 echo.
 echo [Success] Nojoin has been successfully set up on your Windows system!
-echo [Success] All tools installed to user directories (no admin required)
+echo [Success] All files and tools installed to user directories
 echo.
 echo Installation details:
 if "!PYTHON_EXE!" equ "python" (

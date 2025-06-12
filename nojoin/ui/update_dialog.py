@@ -182,9 +182,8 @@ class UpdateAvailableDialog(QDialog):
     
     def _skip_version(self):
         """Skip this version."""
-        # Use commit SHA if available, otherwise fall back to version string
-        skip_identifier = self.release_info.get('commit_sha', self.release_info['version'])
-        version_manager.skip_version(skip_identifier)
+        # Skip this specific version
+        version_manager.skip_version(self.release_info['version'])
         version_manager.set_reminder_preference(self._get_selected_preference())
         self.reject()
     
@@ -283,81 +282,51 @@ class UpdateProgressDialog(QDialog):
             self.reject()
     
     def _start_backup_and_update(self):
-        """Create backup and start the update process."""
-        self.status_label.setText("Creating backup...")
+        """Start the update process (Inno Setup handles backup automatically)."""
+        self.status_label.setText("Preparing for update...")
         
-        # Show backup progress
-        backup_progress = QProgressDialog("Creating backup before update...", "Cancel", 0, 100, self)
-        backup_progress.setWindowModality(Qt.WindowModal)
-        backup_progress.setAutoClose(False)
-        backup_progress.setAutoReset(False)
-        backup_progress.show()
-        
-        def backup_progress_callback(progress, message):
-            if backup_progress.wasCanceled():
-                return
-            backup_progress.setValue(progress)
-            backup_progress.setLabelText(message)
-        
-        # Create backup
-        backup_path = version_manager.create_backup_before_update(backup_progress_callback)
-        backup_progress.close()
-        
-        if not backup_path:
-            reply = QMessageBox.question(
-                self, "Backup Failed",
-                "Failed to create backup before update. Continue anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
-                self.reject()
-                return
-        
-        # Prepare and execute update
-        self._execute_update(backup_path)
+        # Inno Setup automatically preserves config.json and nojoin_data.db
+        # No manual backup needed - proceed directly to update
+        self._execute_update(None)
     
     def _execute_update(self, backup_path: Optional[str]):
-        """Execute the update using the standalone updater."""
+        """Execute the update using Inno Setup installer."""
         try:
-            self.status_label.setText("Preparing update...")
-            
-            # Prepare update script
-            script_path = version_manager.prepare_update_script(self.update_file_path, backup_path)
+            self.status_label.setText("Preparing installer...")
             
             # Show final confirmation
             reply = QMessageBox.question(
                 self, "Ready to Update",
                 f"Ready to update to Nojoin {self.release_info['version']}.\n\n"
-                "The application will close and the updater will:\n"
-                "1. Install the new version\n"
-                "2. Preserve your settings and data\n"
-                "3. Restart Nojoin\n\n"
+                "The installer will:\n"
+                "1. Preserve your settings and database\n"
+                "2. Update application files\n"
+                "3. Restart Nojoin automatically\n\n"
                 "Continue with the update?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes
             )
             
             if reply == QMessageBox.Yes:
-                # Execute the update
-                if version_manager.execute_update(script_path):
+                # Execute the installer
+                if version_manager.execute_update(self.update_file_path):
                     QMessageBox.information(
                         self, "Update Started",
-                        "Update process started. Nojoin will close and restart automatically."
+                        "The installer is running. Nojoin will close and restart automatically."
                     )
                     # Signal the main application to close
                     self.accept()
-                    # Close the main application
+                    # Close the main application to allow installer to work
                     sys.exit(0)
                 else:
-                    QMessageBox.critical(self, "Update Failed", "Failed to start the update process.")
+                    QMessageBox.critical(self, "Update Failed", "Failed to start the installer.")
                     self.reject()
             else:
                 self.reject()
                 
         except Exception as e:
             logger.error(f"Error executing update: {e}")
-            QMessageBox.critical(self, "Update Error", f"An error occurred while preparing the update:\n{str(e)}")
+            QMessageBox.critical(self, "Update Error", f"An error occurred: {str(e)}")
             self.reject()
     
     def _cancel_update(self):

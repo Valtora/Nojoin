@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Nojoin v0.5.2 - Meeting Recording and Transcription
+title Nojoin - Meeting Recording and Transcription
 
 :: Set up user tools directories
 set "USER_TOOLS_DIR=%APPDATA%\NojoinTools"
@@ -30,12 +30,12 @@ if not exist "Nojoin.py" (
 :: Update PATH to include portable tools if they exist
 if exist "%PYTHON_DIR%" (
     set "PATH=%PYTHON_DIR%;%PATH%"
-    echo Using portable Python from user directory...
+    echo Using portable Python from: %PYTHON_DIR%
 )
 
 if exist "%FFMPEG_DIR%\bin" (
     set "PATH=%FFMPEG_DIR%\bin;%PATH%"
-    echo Using portable ffmpeg from user directory...
+    echo Using portable ffmpeg from: %FFMPEG_DIR%\bin
 )
 
 :: Check if virtual environment exists
@@ -114,7 +114,7 @@ if %errorlevel% neq 0 (
 
 :: Final verification
 echo Performing final system check...
-python -c "import torch; import whisper; import pyannote.audio; print('✓ All core libraries available')" 2>nul
+python -c "import torch; import whisper; import pyannote.audio; print('[Success] All core libraries available')" 2>nul
 if %errorlevel% neq 0 (
     echo WARNING: Some advanced features may not work correctly.
     echo The application will still start, but you may experience issues.
@@ -126,8 +126,8 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo ✓ Environment ready
-echo ✓ Starting Nojoin...
+echo [Success] Environment ready
+echo [Success] Starting Nojoin...
 echo.
 echo ================================================================
 echo             Welcome to Nojoin - Ready for Recording!
