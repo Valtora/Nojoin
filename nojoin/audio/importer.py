@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from pydub import AudioSegment
 from ..utils.config_manager import get_recordings_dir, to_project_relative_path
+from ..utils.path_manager import path_manager
 
 logger = logging.getLogger(__name__)
 

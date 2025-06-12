@@ -20,8 +20,13 @@ DEFAULT_PIPELINE = "pyannote/speaker-diarization-3.1"
 # Cache for loaded pipelines
 _pipeline_cache = {}
 
-# Path to offline diarization config
-OFFLINE_DIARIZATION_CONFIG = os.path.join(os.path.dirname(__file__), '../../models/pyannote_diarization_config.yaml')
+# Path to offline diarization config using PathManager
+from ..utils.path_manager import path_manager
+
+if path_manager.is_development_mode:
+    OFFLINE_DIARIZATION_CONFIG = str(path_manager.app_directory / 'models' / 'pyannote_diarization_config.yaml')
+else:
+    OFFLINE_DIARIZATION_CONFIG = str(path_manager.app_directory / 'models' / 'pyannote_diarization_config.yaml')
 
 def _filter_short_segments(annotation: Annotation, min_duration_s: float = 1.0) -> Annotation:
     """

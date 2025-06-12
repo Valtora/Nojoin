@@ -380,9 +380,18 @@ class MainWindow(QMainWindow):
 
     def _configure_notes_toolbar_button(self, button: QPushButton, icon_file_prefix: str, tooltip_text: str, theme_name: str, scale_immune: bool = False):
         """Configures a notes toolbar button with a theme-aware icon and style."""
-        # Corrected path to include 'icons' subdirectory and match new naming convention
+        # Use PathManager to resolve asset paths properly
+        from ..utils.path_manager import path_manager
         file_name = f"{icon_file_prefix}{theme_name.capitalize()}Mode.png"
-        icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "icons", file_name)
+        
+        if path_manager.is_development_mode:
+            # Development mode: assets are in project directory
+            icon_path = path_manager.app_directory / "assets" / "icons" / file_name
+        else:
+            # Production mode: assets are with the application
+            icon_path = path_manager.app_directory / "assets" / "icons" / file_name
+        
+        icon_path = str(icon_path)
         
         if os.path.exists(icon_path):
             button.setIcon(QIcon(icon_path))

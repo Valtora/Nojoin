@@ -8,15 +8,14 @@ from .schema import SCHEMA_STATEMENTS
 from datetime import datetime
 import re
 from ..utils.config_manager import to_project_relative_path, from_project_relative_path, get_db_path, migrate_file_if_needed, get_project_root
+from ..utils.path_manager import path_manager
 
 logger = logging.getLogger(__name__)
 
-# Define database path (now in the nojoin directory)
+# Define database path (now in user data directory)
 DB_NAME = 'nojoin_data.db'
 DB_PATH = get_db_path()
-# Migrate old DB if needed
-old_db_path = os.path.abspath(os.path.join(get_project_root(), DB_NAME))
-migrate_file_if_needed(old_db_path, DB_PATH)
+# Migration is handled by PathManager on startup
 
 def get_db_connection():
     """Establishes and returns a connection to the SQLite database."""

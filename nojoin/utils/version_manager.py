@@ -18,6 +18,7 @@ from packaging import version
 from pathlib import Path
 
 from .config_manager import config_manager, get_project_root
+from .path_manager import path_manager
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ class VersionManager:
     
     def __init__(self):
         self.project_root = get_project_root()
+        # Also have access to both deployment modes
+        self.path_manager = path_manager
         
     def get_current_version(self) -> str:
         """Get the current version of Nojoin from registry or fallback methods."""

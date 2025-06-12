@@ -5,12 +5,13 @@ import logging
 import os
 import torch
 import soundcard as sc
+from .path_manager import path_manager
 
 logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = 'config.json'
-# Place config in the project root alongside the DB for simplicity
-CONFIG_PATH = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), CONFIG_FILENAME)
+# Use PathManager for configuration file location
+CONFIG_PATH = str(path_manager.config_path)
 
 def _get_default_models():
     """Get default models from LLM_Services to avoid circular imports."""
@@ -35,7 +36,7 @@ _default_models = _get_default_models()
 DEFAULT_CONFIG = {
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
     "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
-    "recordings_directory": "recordings",
+    "recordings_directory": "recordings",  # Relative to user data directory
     # Add other settings as needed, e.g., default input/output devices
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
@@ -141,10 +142,10 @@ def get_notes_font_size_pixels(size_setting):
 class ConfigManager:
     def __init__(self, config_path=None):
         if config_path is None:
-            old_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.json'))
-            new_path = CONFIG_PATH
-            self.migrate_file_if_needed(old_path, new_path)
-            config_path = new_path
+            # Ensure directories exist and handle migration
+            path_manager.ensure_directories_exist()
+            path_manager.migrate_from_project_directory()
+            config_path = CONFIG_PATH
         self.config_path = config_path
         self.config = self._load_config()
 
@@ -200,14 +201,15 @@ class ConfigManager:
     def _ensure_dirs_exist(self, config):
         """Creates directories specified in the config if they don't exist."""
         recordings_dir = config.get("recordings_directory")
-        for d in [recordings_dir]:
-            if d and not os.path.exists(d):
-                try:
-                    os.makedirs(d, exist_ok=True)
-                    logger.info(f"Created directory: {d}")
-                except OSError as e:
-                    logger.error(f"Failed to create directory {d}: {e}", exc_info=True)
-                    # Potentially fallback to a default or raise an error
+        if recordings_dir:
+            # Resolve recordings directory using PathManager
+            abs_recordings_dir = path_manager.get_recordings_directory_from_config(recordings_dir)
+            try:
+                abs_recordings_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created directory: {abs_recordings_dir}")
+            except OSError as e:
+                logger.error(f"Failed to create directory {abs_recordings_dir}: {e}", exc_info=True)
+                # Potentially fallback to a default or raise an error
 
     def get(self, key, default=None):
         """Gets a configuration value."""
@@ -246,48 +248,43 @@ config_manager = ConfigManager()
 # --- Path Utilities ---
 def get_project_root():
     """Returns the absolute path to the project root directory."""
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    if path_manager.is_development_mode:
+        return str(path_manager.app_directory)
+    else:
+        # In production, this concept doesn't really apply, return app directory
+        return str(path_manager.app_directory)
 
 def get_recordings_dir():
     """Returns the absolute path to the recordings directory from config."""
-    root = get_project_root()
     rel_dir = config_manager.get("recordings_directory", "recordings")
-    return os.path.abspath(os.path.join(root, rel_dir))
+    return str(path_manager.get_recordings_directory_from_config(rel_dir))
 
 # Note: get_transcripts_dir() function removed - transcripts are now stored in database
 
 def to_project_relative_path(abs_path):
-    """Converts an absolute path to a path relative to the project root."""
-    root = get_project_root()
-    abs_path = os.path.abspath(abs_path)
-    try:
-        rel_path = os.path.relpath(abs_path, root)
-        return rel_path
-    except ValueError:
-        # If abs_path is on a different drive (Windows), return as-is
-        return abs_path
+    """Converts an absolute path to a path relative to the user data directory."""
+    return path_manager.to_user_data_relative_path(abs_path)
 
 def from_project_relative_path(rel_path):
-    """Converts a project-root-relative path to an absolute path."""
-    root = get_project_root()
-    return os.path.abspath(os.path.join(root, rel_path))
+    """Converts a user-data-relative path to an absolute path."""
+    return str(path_manager.from_user_data_relative_path(rel_path))
 
 # --- Path Utilities (Extended) ---
 def get_nojoin_dir():
-    """Returns the absolute path to the 'nojoin' package directory."""
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    """Returns the absolute path to the user data directory."""
+    return str(path_manager.user_data_directory)
 
 def get_config_path():
-    """Returns the absolute path to the config.json file in the nojoin directory."""
-    return os.path.join(get_nojoin_dir(), 'config.json')
+    """Returns the absolute path to the config.json file."""
+    return str(path_manager.config_path)
 
 def get_log_path():
-    """Returns the absolute path to the nojoin.log file in the nojoin directory."""
-    return os.path.join(get_nojoin_dir(), 'nojoin.log')
+    """Returns the absolute path to the nojoin.log file."""
+    return str(path_manager.log_path)
 
 def get_db_path():
-    """Returns the absolute path to the nojoin_data.db file in the nojoin directory."""
-    return os.path.join(get_nojoin_dir(), 'nojoin_data.db')
+    """Returns the absolute path to the nojoin_data.db file."""
+    return str(path_manager.database_path)
 
 # --- Migration Logic for Old Files ---
 def migrate_file_if_needed(old_path, new_path):

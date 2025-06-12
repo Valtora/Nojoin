@@ -14,6 +14,9 @@ if sys.platform == "win32":
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
+# Initialize path management system early
+from nojoin.utils.path_manager import path_manager
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 
@@ -41,10 +44,16 @@ except Exception as e:
 try:
     from nojoin.utils import logging_config
     logging_config.setup_logging()  # Now uses config for log level and new log path
+    
+    # Log deployment mode information now that logging is configured
+    path_manager.log_deployment_mode()
 except ImportError:
     import logging
     logging.basicConfig(level=logging.INFO)
     print("[Nojoin] WARNING: Could not import logging_config, using basicConfig at INFO level.")
+    
+    # Log deployment mode even with basic logging
+    path_manager.log_deployment_mode()
 
 # Ensure config is loaded from new location
 from nojoin.utils.config_manager import config_manager
@@ -79,19 +88,28 @@ def Nojoin():
 
     # --- Set Application Icon ---
     # This is the most reliable way to set the taskbar icon.
-    icon_path = os.path.join(script_dir, "assets", "NojoinLogo.png")
-    if os.path.exists(icon_path):
-        app_icon = QIcon(icon_path)
+    # Set application icon using PathManager
+    if path_manager.is_development_mode:
+        icon_path = path_manager.app_directory / "assets" / "NojoinLogo.png"
+    else:
+        icon_path = path_manager.app_directory / "assets" / "NojoinLogo.png"
+    
+    if icon_path.exists():
+        app_icon = QIcon(str(icon_path))
         app.setWindowIcon(app_icon)
     else:
         print(f"Warning: Icon file not found at {icon_path}")
 
-    # Show Splash Screen as early as possible
-    splash_image_path = os.path.join(script_dir, "assets", "Banner_Image1.png")
+    # Show Splash Screen as early as possible using PathManager
+    if path_manager.is_development_mode:
+        splash_image_path = path_manager.app_directory / "assets" / "Banner_Image1.png"
+    else:
+        splash_image_path = path_manager.app_directory / "assets" / "Banner_Image1.png"
+    
     splash = None
-    if os.path.exists(splash_image_path):
+    if splash_image_path.exists():
         from nojoin.ui.splash import SplashScreen
-        splash = SplashScreen(splash_image_path)
+        splash = SplashScreen(str(splash_image_path))
         splash.show_splash()
     else:
         print(f"Warning: Splash image not found at {splash_image_path}")

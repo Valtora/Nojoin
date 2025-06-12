@@ -1,9 +1,10 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from .config_manager import config_manager, get_log_path
+from .path_manager import path_manager
+from .config_manager import config_manager
 
-LOG_PATH = get_log_path()
+LOG_PATH = str(path_manager.log_path)
 
 # Delete log if >100KB before logging is initialized
 if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 100 * 1024:

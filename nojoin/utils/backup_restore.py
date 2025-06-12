@@ -19,7 +19,8 @@ from typing import Dict, List, Optional, Callable
 from pathlib import Path
 
 from ..db import database as db_ops
-from ..utils.config_manager import get_project_root, from_project_relative_path, to_project_relative_path
+from ..utils.config_manager import from_project_relative_path, to_project_relative_path
+from ..utils.path_manager import path_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class BackupRestoreManager:
     """Manages backup and restore operations for the Nojoin application."""
     
     def __init__(self):
-        self.project_root = get_project_root()
+        self.user_data_root = path_manager.user_data_directory
         
     def create_backup(self, backup_path: str, include_audio: bool = False, progress_callback: Optional[Callable[[int, str], None]] = None) -> bool:
         """

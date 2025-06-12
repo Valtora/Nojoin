@@ -1,0 +1,74 @@
+2025-06-12 23:15:20,651 - root - INFO - Logging configured.
+2025-06-12 23:15:20,667 - nojoin.utils.ui_scale_manager - INFO - Screen detected: 2048x1152 @ 96.0 DPI
+2025-06-12 23:15:20,668 - nojoin.utils.ui_scale_manager - INFO - Selected scaling tier: comfortable (Comfortable)
+2025-06-12 23:15:20,668 - nojoin.utils.config_manager - INFO - Configuration saved to C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\config.json
+2025-06-12 23:15:20,668 - nojoin.utils.ui_scale_manager - INFO - UIScaleManager initialized with tier: comfortable
+2025-06-12 23:15:21,735 - nojoin.db.database - INFO - Initializing database at C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\nojoin_data.db...
+2025-06-12 23:15:21,736 - nojoin.db.database - INFO - Database schema initialized successfully.
+2025-06-12 23:15:21,737 - nojoin.db.database - INFO - Running database migrations...
+2025-06-12 23:15:21,739 - nojoin.db.database - INFO - Database migrations completed.
+2025-06-12 23:15:21,739 - nojoin.ui.main_window - INFO - Database initialized successfully.
+2025-06-12 23:15:22,846 - nojoin.utils.model_utils - INFO - Default model 'turbo' availability: True
+2025-06-12 23:15:22,846 - nojoin.utils.model_utils - INFO - Default model is available, no first-run prompt needed
+2025-06-12 23:18:27,844 - root - INFO - Logging configured.
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - NOJOIN STARTING IN DEVELOPMENT MODE
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - App directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - User data directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin
+2025-06-12 23:18:27,845 - nojoin.utils.path_manager - INFO - Development mode: all data stored in project directory
+2025-06-12 23:18:27,846 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:00,573 - root - INFO - Logging configured.
+2025-06-12 23:19:00,573 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:00,573 - nojoin.utils.path_manager - INFO - NOJOIN STARTING IN DEVELOPMENT MODE
+2025-06-12 23:19:00,573 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:00,574 - nojoin.utils.path_manager - INFO - App directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin
+2025-06-12 23:19:00,574 - nojoin.utils.path_manager - INFO - User data directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin
+2025-06-12 23:19:00,574 - nojoin.utils.path_manager - INFO - Development mode: all data stored in project directory
+2025-06-12 23:19:00,575 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:00,591 - nojoin.utils.ui_scale_manager - INFO - Screen detected: 2048x1152 @ 96.0 DPI
+2025-06-12 23:19:00,591 - nojoin.utils.ui_scale_manager - INFO - Selected scaling tier: comfortable (Comfortable)
+2025-06-12 23:19:00,592 - nojoin.utils.config_manager - INFO - Configuration saved to C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\config.json
+2025-06-12 23:19:00,592 - nojoin.utils.ui_scale_manager - INFO - UIScaleManager initialized with tier: comfortable
+2025-06-12 23:19:01,659 - nojoin.db.database - INFO - Initializing database at C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\nojoin_data.db...
+2025-06-12 23:19:01,660 - nojoin.db.database - INFO - Database schema initialized successfully.
+2025-06-12 23:19:01,661 - nojoin.db.database - INFO - Running database migrations...
+2025-06-12 23:19:01,662 - nojoin.db.database - INFO - Database migrations completed.
+2025-06-12 23:19:01,663 - nojoin.ui.main_window - INFO - Database initialized successfully.
+2025-06-12 23:19:02,754 - nojoin.utils.model_utils - INFO - Default model 'turbo' availability: True
+2025-06-12 23:19:02,755 - nojoin.utils.model_utils - INFO - Default model is available, no first-run prompt needed
+2025-06-12 23:19:24,992 - nojoin.db.database - INFO - Successfully fetched recording ID 20250609182602. Data: {'id': '20250609182602', 'name': 'RS - HUFT - 2nd Call', 'created_at': '2025-06-09 17:26:02', 'duration_seconds': 1245.2, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250609_180514.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 9962156, 'processed_at': '2025-06-09 17:31:10', 'chat_history': None}
+2025-06-12 23:19:25,280 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': None}
+2025-06-12 23:19:37,622 - root - INFO - Logging configured.
+2025-06-12 23:19:37,623 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:37,623 - nojoin.utils.path_manager - INFO - NOJOIN STARTING IN DEVELOPMENT MODE
+2025-06-12 23:19:37,623 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:37,623 - nojoin.utils.path_manager - INFO - App directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin
+2025-06-12 23:19:37,624 - nojoin.utils.path_manager - INFO - User data directory: C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin
+2025-06-12 23:19:37,624 - nojoin.utils.path_manager - INFO - Development mode: all data stored in project directory
+2025-06-12 23:19:37,624 - nojoin.utils.path_manager - INFO - ============================================================
+2025-06-12 23:19:37,640 - nojoin.utils.ui_scale_manager - INFO - Screen detected: 2048x1152 @ 96.0 DPI
+2025-06-12 23:19:37,641 - nojoin.utils.ui_scale_manager - INFO - Selected scaling tier: comfortable (Comfortable)
+2025-06-12 23:19:37,641 - nojoin.utils.config_manager - INFO - Configuration saved to C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\config.json
+2025-06-12 23:19:37,642 - nojoin.utils.ui_scale_manager - INFO - UIScaleManager initialized with tier: comfortable
+2025-06-12 23:19:38,703 - nojoin.db.database - INFO - Initializing database at C:\Users\tayla\Documents\Local Git Repos\Nojoin\nojoin\nojoin_data.db...
+2025-06-12 23:19:38,704 - nojoin.db.database - INFO - Database schema initialized successfully.
+2025-06-12 23:19:38,705 - nojoin.db.database - INFO - Running database migrations...
+2025-06-12 23:19:38,706 - nojoin.db.database - INFO - Database migrations completed.
+2025-06-12 23:19:38,707 - nojoin.ui.main_window - INFO - Database initialized successfully.
+2025-06-12 23:19:39,803 - nojoin.utils.model_utils - INFO - Default model 'turbo' availability: True
+2025-06-12 23:19:39,803 - nojoin.utils.model_utils - INFO - Default model is available, no first-run prompt needed
+2025-06-12 23:19:40,659 - nojoin.db.database - INFO - Successfully fetched recording ID 20250609182602. Data: {'id': '20250609182602', 'name': 'RS - HUFT - 2nd Call', 'created_at': '2025-06-09 17:26:02', 'duration_seconds': 1245.2, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250609_180514.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 9962156, 'processed_at': '2025-06-09 17:31:10', 'chat_history': None}
+2025-06-12 23:19:45,102 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': None}
+2025-06-12 23:20:27,207 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': '[{"role": "user", "parts": [{"text": "What can Saul Lewin\'s contribution to the meeting be summarised as?"}]}]'}
+2025-06-12 23:20:27,432 - nojoin.ui.main_window - INFO - [Chat] Gemini API call started.
+2025-06-12 23:20:27,434 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': '[{"role": "user", "parts": [{"text": "What can Saul Lewin\'s contribution to the meeting be summarised as?"}]}]'}
+2025-06-12 23:20:27,437 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2025-06-12 23:20:44,107 - httpx - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-06-05:generateContent "HTTP/1.1 200 OK"
+2025-06-12 23:20:44,109 - google_genai.models - INFO - AFC remote call 1 is done.
+2025-06-12 23:20:44,109 - nojoin.ui.main_window - INFO - [Chat] Gemini API call finished.
+2025-06-12 23:20:44,110 - nojoin.ui.main_window - INFO - [Chat] Updating UI with Gemini response.
+2025-06-12 23:20:56,844 - nojoin.db.database - INFO - Successfully fetched recording ID 20250609182602. Data: {'id': '20250609182602', 'name': 'RS - HUFT - 2nd Call', 'created_at': '2025-06-09 17:26:02', 'duration_seconds': 1245.2, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250609_180514.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 9962156, 'processed_at': '2025-06-09 17:31:10', 'chat_history': None}
+2025-06-12 23:20:57,203 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': '[{"role": "user", "parts": [{"text": "What can Saul Lewin\'s contribution to the meeting be summarised as?"}]}, {"role": "model", "parts": [{"text": "Based on the meeting notes and transcript, Saul Lewin\'s contribution to the meeting can be summarized as follows:\\n\\n*   He joined the meeting late (at around the 18-minute mark) and asked for a recap of what had been discussed.\\n*   He asked what the \\"critical pinch point\\" was for solving the current profitability issues, which prompted a detailed explanation from Rob Jolly about the need for a direct booking platform.\\n*   He inquired about the timeline for completing the front-end platform.\\n*   He agreed with the strategy proposed by Rob and Taylan to pause expansion into new cities in order to \\"fine-tune the systems\\" and become better prepared for future growth."}], "timestamp": "2025-06-12T23:20:44.110130"}]'}
+2025-06-12 23:21:01,909 - nojoin.db.database - INFO - Successfully fetched recording ID 20250609182602. Data: {'id': '20250609182602', 'name': 'RS - HUFT - 2nd Call', 'created_at': '2025-06-09 17:26:02', 'duration_seconds': 1245.2, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250609_180514.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 9962156, 'processed_at': '2025-06-09 17:31:10', 'chat_history': None}
+2025-06-12 23:21:02,245 - nojoin.db.database - INFO - Successfully fetched recording ID 20250610135326. Data: {'id': '20250610135326', 'name': 'GotMoves - June Meeting', 'created_at': '2025-06-10 12:53:26', 'duration_seconds': 3109.1, 'status': 'Processed', 'audio_path': 'recordings\\recording_20250610_130124.mp3', 'raw_transcript_path': None, 'diarized_transcript_path': None, 'tags': None, 'format': 'MP3', 'file_size_bytes': 24873260, 'processed_at': '2025-06-10 13:06:23', 'chat_history': '[{"role": "user", "parts": [{"text": "What can Saul Lewin\'s contribution to the meeting be summarised as?"}]}, {"role": "model", "parts": [{"text": "Based on the meeting notes and transcript, Saul Lewin\'s contribution to the meeting can be summarized as follows:\\n\\n*   He joined the meeting late (at around the 18-minute mark) and asked for a recap of what had been discussed.\\n*   He asked what the \\"critical pinch point\\" was for solving the current profitability issues, which prompted a detailed explanation from Rob Jolly about the need for a direct booking platform.\\n*   He inquired about the timeline for completing the front-end platform.\\n*   He agreed with the strategy proposed by Rob and Taylan to pause expansion into new cities in order to \\"fine-tune the systems\\" and become better prepared for future growth."}], "timestamp": "2025-06-12T23:20:44.110130"}]'}
