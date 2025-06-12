@@ -4,24 +4,6 @@
 
 **Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
 
-## Quick Setup
-
-### Windows
-1. **Download the installer** from the [Releases page](https://github.com/Valtora/Nojoin/releases)
-2. **Run the installer** - it will copy all files to your chosen directory
-3. **Run the setup script** - after installation, run `setup_windows.bat` to install dependencies:
-   - Installs Python 3.11.9 to your user directory if needed
-   - Installs ffmpeg for audio processing to your user directory
-   - Sets up a virtual environment
-   - Detects and configures GPU acceleration (CUDA) if available
-   - Installs all dependencies
-   - Creates desktop shortcuts and launch scripts
-4. **Launch Nojoin** by double-clicking the desktop shortcut or running `Start Nojoin.bat`
-
-### macOS
-For macOS, please follow the [Manual Setup](#manual-setup-advanced-users) instructions below. An automated installer for macOS will be available in a future release.
-
-
 ## ✨ Features
 
 *   **System Audio Recording:** Simultaneously record what you hear (system output) and what you say (microphone input).
@@ -43,9 +25,7 @@ For macOS, please follow the [Manual Setup](#manual-setup-advanced-users) instru
 *   **Automatic Updates:** Built-in update checking and installation system with user-configurable preferences.
 *   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
 
-## Manual Setup (Advanced Users)
-
-If you prefer manual installation or need custom configuration:
+## Manual Setup
 
 1.  **Prerequisites:**
 
