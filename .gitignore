@@ -9,9 +9,6 @@
 # Recordings and transcripts directory
 /recordings/
 
-# Debug log
-/nojoin/nojoin.log
-
 # Database file, should be regenerated on first run
 /nojoin/nojoin_data.db
 
@@ -29,3 +26,6 @@ nojoin/config.json
 
 # Tools
 tools/ffmpeg.exe
+
+# Logs
+nojoin/logs/

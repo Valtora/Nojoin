@@ -2041,6 +2041,17 @@ class MainWindow(QMainWindow):
                 else:
                     sys_html = f'<div class="chat-message system">{html}</div>'
                     self.chat_display_area.append(sys_html)
+        
+        # Enable chat input controls when a meeting is selected
+        if hasattr(self, 'chat_input'):
+            self.chat_input.setEnabled(True)
+        if hasattr(self, 'chat_send_button'):
+            self.chat_send_button.setEnabled(True)
+        
+        # Enable Clear Chat button if there's existing chat history
+        if hasattr(self, 'clear_chat_button'):
+            self.clear_chat_button.setEnabled(bool(self.current_chat_history))
+        
         # --- New: Apply theme to search bar widget ---
         if hasattr(self, 'search_bar_widget'):
             from nojoin.utils.theme_utils import get_border_color
@@ -2865,6 +2876,9 @@ class MainWindow(QMainWindow):
                 self.logger.error(f"Failed to save chat history: {e}")
         self.chat_input.setEnabled(True)
         self.chat_send_button.setVisible(True)
+        # Enable Clear Chat button after new messages are added
+        if hasattr(self, 'clear_chat_button'):
+            self.clear_chat_button.setEnabled(True)
         if hasattr(self, 'chat_spinner'):
             self.chat_panel.layout().removeWidget(self.chat_spinner)
             self.chat_spinner.setParent(None)
@@ -2884,6 +2898,9 @@ class MainWindow(QMainWindow):
         #         self.logger.error(f"Failed to save chat history: {e}")
         self.chat_input.setEnabled(True)
         self.chat_send_button.setVisible(True)
+        # Enable Clear Chat button after new messages are added
+        if hasattr(self, 'clear_chat_button'):
+            self.clear_chat_button.setEnabled(True)
         if hasattr(self, 'chat_spinner'):
             self.chat_panel.layout().removeWidget(self.chat_spinner)
             self.chat_spinner.setParent(None)
@@ -3033,6 +3050,9 @@ class MainWindow(QMainWindow):
             self.current_chat_history = []
             if hasattr(self, 'chat_display_area'):
                 self.chat_display_area.clear()
+            # Disable Clear Chat button after clearing history
+            if hasattr(self, 'clear_chat_button'):
+                self.clear_chat_button.setEnabled(False)
             import json
             db_ops.set_chat_history_for_recording(recording_id, json.dumps([]))
             self.status_bar.showMessage("Chat history cleared.", 3000)

@@ -1,4 +1,3 @@
-
 ## Meeting Name Inference - Low Priority - Potential TODO
 Implement a first-pass attempt at inferring a title for the meeting based on the context within the transcript.
 
@@ -13,6 +12,3 @@ Prune the codebase of unnecessary or overly verbose comments. Especially where c
 
 ## Address Monolithic Code
 The codebase has a few monolithic scripts such as Main Window and Database. Let's refactor Nojoin to break these up.
-
-## Meeting Chat
-The 'Clear Chat' button is disabled, even when there are messages in the chat. This means the chat cannot be cleared until this is addressed.
