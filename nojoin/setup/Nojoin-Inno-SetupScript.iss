@@ -4,7 +4,7 @@
 ; Simplified version - installs files only, dependencies handled by setup_windows.bat
 
 #define MyAppName "Nojoin"
-#define MyAppVersion "0.6.2"
+#define MyAppVersion "0.6.1"
 #define MyAppPublisher "Valtora"
 #define MyAppURL "https://www.nojoin.co.uk"
 #define MyAppExeName "Nojoin.py"
