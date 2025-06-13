@@ -24,8 +24,5 @@ nojoin/config.json
 /PRD.md
 /TODO.md
 
-# Tools
-tools/ffmpeg.exe
-
 # Logs
-nojoin/logs/
+*.log
