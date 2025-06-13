@@ -49,16 +49,12 @@ except ImportError:
         # Allow app to run, but processing won't work
         processing_pipeline = None
 
-# Import audio playback libraries
+# Import soundfile for audio metadata reading
 try:
     import soundfile as sf
-    import pyaudio
-    playback_enabled = True
 except ImportError as e:
-    print(f"WARNING: Could not import pyaudio or soundfile: {e}. Audio playback disabled.")
+    print(f"WARNING: Could not import soundfile: {e}. Audio file operations may be limited.")
     sf = None
-    pyaudio = None
-    playback_enabled = False
 
 from nojoin.utils.config_manager import (
     config_manager,
@@ -242,7 +238,7 @@ class MainWindow(QMainWindow):
     chat_error_signal = Signal(str)
     def __init__(self):
         super().__init__()
-        # --- Robust: Initialize all attributes used in early methods ---
+        # Initialize attributes
         self.current_chat_history = []
         self._chat_threads = []
         self._chat_request_in_progress = False
@@ -252,11 +248,11 @@ class MainWindow(QMainWindow):
         self.notes_undo_button = None
         self.notes_redo_button = None
         self.currently_selected_recording_id = None # Initialize the attribute
-        # --- End robust early attribute init ---
+
         self.setWindowTitle("Nojoin")
         self.setGeometry(100, 100, 1200, 800)
         
-        # --- Initialize UI Scale Manager ---
+        # Initialize UI Scale Manager
         from nojoin.utils.ui_scale_manager import get_ui_scale_manager
         self.ui_scale_manager = get_ui_scale_manager()
         
@@ -265,7 +261,7 @@ class MainWindow(QMainWindow):
         min_width, min_height = min_sizes['main_window']
         self.setMinimumSize(min_width, min_height)
 
-        # --- Base Spacing Unit (scaled) ---
+        # Base spacing unit
         self.BASE_SPACING = self.ui_scale_manager.get_scaled_base_spacing(8)
 
         # Set application icon
@@ -275,12 +271,12 @@ class MainWindow(QMainWindow):
         else:
             logger.warning(f"Application icon not found at: {icon_path}")
 
-        # --- Apply Theme (loaded from config) ---
+        # Apply theme
         theme = config_manager.get("theme", "dark")
         font_scale = self.ui_scale_manager.get_font_scale_factor()
         self.apply_theme(theme, font_scale)
 
-        # --- Initialize recorder and related variables ---
+        # Initialize recorder
         self.recordings_dir = get_recordings_dir()
         os.makedirs(self.recordings_dir, exist_ok=True)
         try:
@@ -298,7 +294,7 @@ class MainWindow(QMainWindow):
         self.recording_start_time = None # To calculate duration for timer
         self.selected_audio_path = None # For playback
         
-        # --- Timer Setup ---
+        # Timer setup
         self.recording_timer = QTimer(self)
         self.recording_timer.setInterval(1000) # Update every second
         self.recording_timer.timeout.connect(self.update_recording_timer_display)
@@ -311,7 +307,7 @@ class MainWindow(QMainWindow):
             logger.error(f"Failed to initialize database: {e}", exc_info=True)
             QMessageBox.critical(self, "Database Error", f"Failed to initialize the database: {e}")
 
-        # --- Setup UI and connections ---
+        # Setup UI
         self.setup_ui()
         self.load_recordings()
         self.setup_worker_connections()
@@ -580,8 +576,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setStyleSheet(final_qss)
 
     def setup_ui(self):
-
-        # --- Central Widget and Main Layout ---
+        # Central widget and main layout
         central_widget = QWidget()
         central_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.setCentralWidget(central_widget)
@@ -1194,28 +1189,6 @@ class MainWindow(QMainWindow):
         # Re-enable UI elements after recording
         self._enable_ui_after_recording()
         
-        # Database entry is now handled by RecordingPipeline
-        # Remove the following block:
-        # import datetime
-        # from nojoin.db import database as db_ops
-        # start_time = None
-        # end_time = None
-        # if self.recording_start_time is not None:
-        #     start_dt = datetime.datetime.fromtimestamp(self.recording_start_time)
-        #     end_dt = datetime.datetime.now()
-        #     start_time = start_dt.isoformat(sep=" ", timespec="seconds")
-        #     end_time = end_dt.isoformat(sep=" ", timespec="seconds")
-        # recording_name = f"Meeting - {base_filename}"
-        # db_ops.add_recording(
-        #     name=recording_name,
-        #     audio_path=filename,
-        #     duration=duration,
-        #     size_bytes=size,
-        #     format="MP3",
-        #     start_time=start_time,
-        #     end_time=end_time
-        # )
-
         self.load_recordings()
 
         # --- Auto-transcribe if enabled --- 
@@ -1481,43 +1454,14 @@ class MainWindow(QMainWindow):
              pass
 
 
-        # The old logic for manually setting HTML is removed, as handle_meeting_selection_changed now does it with setMarkdown
-        # notes_entry = db_ops.get_meeting_notes_for_recording(recording_id)
-        # from nojoin.utils.theme_utils import wrap_html_body # No longer needed here
-        # theme = config_manager.get("theme", "dark") # No longer needed here
-        # if notes_entry:
-        #     try:
-        #         import markdown2  # Local import for performance
-        #         html_notes = markdown2.markdown(notes_entry['notes'])
-        #         # Strip <html> and <body> tags if present
-        #         import re
-        #         html_notes = re.sub(r'<\/?(html|body)[^>]*>', '', html_notes, flags=re.IGNORECASE)
-        #         themed_html = wrap_html_body(html_notes, theme) # No longer needed
-        #         self.meeting_notes_edit.setHtml(themed_html) # No longer needed
-        #     except Exception as e:
-        #         self.meeting_notes_edit.setPlainText(f"Error displaying notes: {e}\n{notes_entry['notes']}")
-        # else:
-        #    self.meeting_notes_edit.setPlainText("No meeting notes available. Right-click the recording to generate notes.")
-        
-        self.meeting_notes_edit.setVisible(True) # Ensure it's visible
-        # self.notes_have_been_edited = False # This is reset by handle_meeting_selection_changed
+        self.meeting_notes_edit.setVisible(True)
 
     def _context_show_diarized_transcript_dialog(self, recording_id, recording_data):
         """Shows the diarized transcript in a new dialog window."""
         logger.info(f"Showing diarized transcript dialog for recording ID: {recording_id}")
         
-        # This method is no longer used as transcript is shown in main panel.
-        # Kept for reference during refactor, can be removed.
-        # diarized_transcript_path = recording_data.get("diarized_transcript_path")
-        # abs_diarized_transcript_path = from_project_relative_path(diarized_transcript_path) if diarized_transcript_path else None
-        # if not abs_diarized_transcript_path or not os.path.exists(abs_diarized_transcript_path):
-        #     QMessageBox.warning(self, "Transcript Missing", "Diarized transcript file not found for this recording.")
-        #     return
-        # dialog_title = f"Diarized Transcript - {recording_data.get('name', f'ID {recording_id}')}"
-        # from .transcript_dialog import TranscriptViewDialog # Import removed
-        # dialog = TranscriptViewDialog(window_title=dialog_title, parent=self, recording_id=recording_id)
-        # dialog.exec()
-        pass # Method no longer used
+        # Method no longer used as transcript is shown in main panel
+        pass
 
     def on_generate_meeting_notes_clicked(self, recording_id=None, recording_data=None):
         if recording_id is None or recording_data is None:
@@ -2234,12 +2178,11 @@ class MainWindow(QMainWindow):
         self.merge_btn.setEnabled(len(self._merge_selected) >= 2)
 
     def handle_delete_speaker(self, recording_id, speaker_id):
-        # Confirm deletion
+
         from nojoin.db import database as db_ops
         reply = QMessageBox.question(self, "Delete Speaker", f"Are you sure you want to delete this speaker from the recording? This will remove all their segments and references.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
-        # Delete from DB
         success = db_ops.delete_speaker_from_recording(recording_id, speaker_id)
         if not success:
             QMessageBox.critical(self, "Delete Speaker", "Failed to delete speaker from recording.")
@@ -3262,7 +3205,7 @@ class MainWindow(QMainWindow):
 
     # --- New methods for toggling view and updating content ---
     def _update_center_panel_content(self):
-        # self.logger.info(f"_update_center_panel_content called. Current mode: {self.center_panel_view_mode}") # Log mode # REMOVED DEBUG_PRINT
+
         selected_items = self.meetings_list_widget.selectedItems()
         
         if not hasattr(self, 'meeting_notes_edit'): # Should always exist if UI is setup
@@ -4066,18 +4009,18 @@ class MeetingListItemWidget(QFrame):
             try:
                 from nojoin.db import database as db_ops
                 speakers = db_ops.get_speakers_for_recording(self.recording_data.get("id"))
-                logger.debug(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Fetched speakers from DB: {speakers}") # ADDED LOGGING
+                logger.debug(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Fetched speakers from DB: {speakers}")
                 participants = [s.get("name") or s.get("diarization_label") for s in speakers if s.get("name") or s.get("diarization_label")]
-            except Exception as e: # ADDED EXCEPTION LOGGING
+            except Exception as e:
                 logger.error(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Error fetching speakers: {e}", exc_info=True)
                 participants = []
-        else: # ADDED LOGGING FOR CACHED PARTICIPANTS
+        else:
             logger.debug(f"MeetingListItemWidget update_content for ID {self.recording_data.get('id')}: Using pre-loaded participants: {participants}")
         
         # Join participant names with a comma and space for display on the card
         escaped_participants = [html.escape(p) for p in participants if p] # Ensure p is not None or empty
         if escaped_participants:
-            # participants_html = "".join([f'<span style="{chip_style}">{p}</span>' for p in escaped_participants]) # Old chip display
+
             participants_display_string = ", ".join(escaped_participants)
             # Display as plain text, styled like other metadata
             participants_html = f'<span style="color:{metadata_color}; font-size:13px;">{participants_display_string}</span>'

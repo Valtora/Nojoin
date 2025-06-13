@@ -79,9 +79,4 @@ def setup_logging(log_level=None):
 
     logging.info("Logging configured.")
 
-# Example usage (typically called once at application startup)
-# if __name__ == '__main__':
-#     setup_logging()
-#     logging.info("This is an info message.")
-#     logging.warning("This is a warning message.")
-#     logging.error("This is an error message.") 
+ 

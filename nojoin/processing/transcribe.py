@@ -104,21 +104,18 @@ def transcribe_audio(audio_path: str) -> dict | None:
         model = _model_cache[model_size]
 
         # Perform transcription
-        # Use fp16=False if device is CPU, True potentially faster on CUDA but check compatibility
+
         use_fp16 = device == "cuda" 
         result = model.transcribe(audio_path, fp16=use_fp16)
 
         logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")
         # logger.debug(f"Transcription result: {result}") # Can be very verbose
 
-        # TODO: Save transcript to file? Or handle in pipeline manager?
-        # For now, just return the result dictionary.
-
         return result
 
     except Exception as e:
         logger.error(f"Error during Whisper transcription for {audio_path}: {e}", exc_info=True)
-        # Clear model cache entry if loading failed?
+
         if model_size in _model_cache and isinstance(e, RuntimeError): # e.g., CUDA out of memory
              logger.warning(f"Clearing model cache for {model_size} due to error.")
              del _model_cache[model_size]
@@ -181,18 +178,4 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None, canc
                 torch.cuda.empty_cache()
         return None
 
-# Example Usage:
-# if __name__ == '__main__':
-#     from ..utils.logging_config import setup_logging
-#     setup_logging(logging.DEBUG)
-#     # Create a dummy mp3 file path for testing
-#     dummy_audio = "path/to/your/test_audio.mp3" 
-#     if os.path.exists(dummy_audio):
-#         transcription = transcribe_audio(dummy_audio)
-#         if transcription:
-#             print(f"Transcription successful:")
-#             print(transcription['text'])
-#         else:
-#             print("Transcription failed.")
-#     else:
-#         print(f"Test audio file not found: {dummy_audio}") 
+ 

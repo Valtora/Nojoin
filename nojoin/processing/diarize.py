@@ -215,21 +215,4 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
         except Exception:
             pass
 
-# Example Usage:
-# if __name__ == '__main__':
-#     from ..utils.logging_config import setup_logging
-#     setup_logging(logging.DEBUG)
-#     # Create a dummy mp3 file path for testing
-#     dummy_audio = "path/to/your/test_audio.mp3" 
-#     if os.path.exists(dummy_audio):
-#         diarization = diarize_audio(dummy_audio)
-#         if diarization:
-#             print(f"Diarization successful. RTTM-like output:")
-#             print(diarization.to_rttm())
-#             # You can iterate through segments:
-#             # for segment, track, label in diarization.itertracks(yield_label=True):
-#             #     print(f"[{segment.start:.2f}s - {segment.end:.2f}s] Speaker {label}")
-#         else:
-#             print("Diarization failed.")
-#     else:
-#         print(f"Test audio file not found: {dummy_audio}") 
+ 

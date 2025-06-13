@@ -406,7 +406,7 @@ class ParticipantsDialog(QDialog):
         """Handles logic when a speaker name QLineEdit finishes editing. Auto-saves changes."""
         new_name = name_edit_widget.text().strip()
         speaker_id = name_edit_widget.property("speaker_id")
-        # diarization_label = name_edit_widget.property("diarization_label") # No longer needed for pending
+
 
         logger.debug(f"handle_speaker_name_editing_finished for SID: {speaker_id}, new_name: '{new_name}'")
 
@@ -521,7 +521,7 @@ class ParticipantsDialog(QDialog):
         prospective_targets = [] 
 
         for speaker_id_to_display in selected_ids:
-            # base_speaker_data = next((s for s in self.speakers if s['id'] == speaker_id_to_display), None)
+
             
             # if not base_speaker_data:
             #     logger.warning(f"Could not find base data for selected speaker ID {speaker_id_to_display} during merge prep.")
@@ -631,7 +631,7 @@ class ParticipantsDialog(QDialog):
             event.accept()
         # Clear pending changes on close
         # self._pending_name_changes.clear() # No longer used for names, and attribute removed
-        # self._speakers_modified = False # Already handled by save/discard/no changes logic
+
         # self._update_window_title() # Already handled
         super().closeEvent(event) # Call super only if event is accepted
 

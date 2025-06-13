@@ -343,20 +343,6 @@ def update_speaker_name(speaker_id: int, new_name: str, recording_id: str = None
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE speakers SET name = ? WHERE id = ?", (new_name, speaker_id))
-            # Update transcript(s) - REMOVED. Transcript file should only contain diarization labels.
-            # The name change is a DB/display layer change.
-            # if recording_id:
-            #     cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, speaker_id))
-            #     rows = cursor.fetchall()
-            #     old_labels_for_this_recording = [row['diarization_label'] for row in rows]
-            #     if old_labels_for_this_recording:
-            #         replace_speaker_in_transcript(recording_id, old_labels_for_this_recording, new_name)
-            # else:
-            #     # Update all recordings for this speaker
-            #     cursor.execute("SELECT recording_id, diarization_label FROM recording_speakers WHERE speaker_id = ?", (speaker_id,))
-            #     all_speaker_associations = cursor.fetchall()
-            #     for assoc in all_speaker_associations:
-            #         replace_speaker_in_transcript(assoc['recording_id'], [assoc['diarization_label']], new_name)
             conn.commit()
             logger.info(f"Updated name for speaker ID {speaker_id} to '{new_name}'. Transcript file NOT modified by this operation.")
             return True
@@ -473,7 +459,6 @@ def delete_speaker_from_recording(recording_id: str, speaker_id: int) -> bool:
             # Get current name of the speaker from the 'speakers' table
             cursor.execute("SELECT name FROM speakers WHERE id = ?", (speaker_id,))
             speaker_name_row = cursor.fetchone()
-            # current_speaker_name = speaker_name_row['name'] if speaker_name_row else None # No longer needed for transcript replacement
 
             # Identifiers for this speaker in this recording are their diarization labels.
             labels_to_delete_from_transcript = set(diarization_labels)

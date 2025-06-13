@@ -4,7 +4,6 @@ import sys
 if sys.platform == "win32":
     try:
         import ctypes
-        # COINIT_APARTMENTTHREADED = 2
         ctypes.windll.ole32.CoInitializeEx(0, 2)
     except Exception as e:
         print(f"Warning: Failed to initialize COM in STA mode: {e}")
@@ -37,10 +36,9 @@ except ImportError as e:
     sys.exit(1)
 except Exception as e:
     print(f"FATAL: Failed to initialize database: {e}")
-    # Display error message box?
     sys.exit(1)
 
-# TODO: Add logging setup here later
+
 try:
     from nojoin.utils import logging_config
     logging_config.setup_logging()  # Now uses config for log level and new log path
@@ -61,7 +59,7 @@ from nojoin.utils.config_manager import config_manager
 # Import SplashScreen
 from nojoin.ui.splash import SplashScreen
 
-# TODO: Add configuration loading here later
+
 
 def Nojoin():
     """Application entry point."""
@@ -86,8 +84,7 @@ def Nojoin():
     font_scale_factor = ui_scale_manager.get_font_scale_factor()
     app.setStyleSheet(get_theme_qss(theme, font_scale_factor))
 
-    # --- Set Application Icon ---
-    # This is the most reliable way to set the taskbar icon.
+    # Set application icon
     # Set application icon using PathManager
     if path_manager.is_development_mode:
         icon_path = path_manager.app_directory / "assets" / "NojoinLogo.png"

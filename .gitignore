@@ -26,3 +26,6 @@ nojoin/config.json
 
 # Logs
 *.log
+
+# Dist and Output Folders and Files
+/output/

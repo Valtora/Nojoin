@@ -161,10 +161,7 @@ class AudioRecorder:
                     # Ensure data is float for averaging
                     mixed_data = (mic_data.astype(np.float32) + spk_data.astype(np.float32)) / 2.0
 
-                    # Optional: Clipping prevention (simple normalization if max amplitude is high)
-                    # max_amp = np.max(np.abs(mixed_data))
-                    # if max_amp > 0.9:
-                    #     mixed_data /= max_amp 
+ 
 
                     self.frames.append(mixed_data.astype(np.float32)) # Store as float32
         except Exception as e:
@@ -302,19 +299,4 @@ class AudioRecorder:
             self.output_filename = None
             self.start_time = None
 
-# Example Usage:
-# if __name__ == '__main__':
-#     from ..utils.logging_config import setup_logging
-#     setup_logging(logging.DEBUG)
-
-#     recorder = AudioRecorder()
-#     print("Starting recording for 10 seconds...")
-#     if recorder.start_recording():
-#         time.sleep(10)
-#         result = recorder.stop_recording()
-#         if result:
-#             print(f"Saved: {result[0]}, Duration: {result[1]:.2f}s, Size: {result[2]} bytes")
-#         else:
-#             print("Failed to save recording.")
-#     else:
-#         print("Failed to start recording.") 
+ 

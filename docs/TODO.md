@@ -6,6 +6,3 @@ Allow the user to provide the LLMs with some custom context. E.g., their name, t
 
 ## Advanced Meeting Analysis - Potential TODO
 Implement advanced analyses for both the audio and transcript to gauge things like speaker sentiments, engagement, bias, etc. with a view to extract as much information as possible from the meetings' interactions. Look at things like time spent on topics.
-
-## Codebase Polish - Definite TODO
-Prune the codebase of unnecessary or overly verbose comments. Especially where code has been commented out and is now obsolete.

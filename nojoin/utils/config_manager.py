@@ -242,7 +242,7 @@ config_manager = ConfigManager()
 
 # Example Usage:
 # from nojoin.utils.config_manager import config_manager
-# model = config_manager.get("whisper_model_size")
+
 # config_manager.set("whisper_model_size", "small")
 
 # --- Path Utilities ---
