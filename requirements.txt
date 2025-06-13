@@ -4,6 +4,7 @@ setuptools
 dotenv
 
 # Core ML Libraries
+# README covers this section separately but including here for reference
 --extra-index-url https://download.pytorch.org/whl/cu128
 torch==2.7.1+cu128
 torchvision==0.22.1+cu128

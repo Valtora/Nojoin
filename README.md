@@ -66,10 +66,15 @@
         NVIDIA GPU with the [CUDA 12.8 Toolkit](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed. See the "GPU Acceleration" section for more details.
 
 2.  **Clone the repository:**
+    First, navigate to the directory where you want to clone the repository:
+    ```bash
+    cd /path/to/your/preferred/location
+    ```
+    Then clone the repository:  
     ```bash
     git clone https://github.com/Valtora/Nojoin
     ```
-    **Switch to the newly cloned directoy:**
+    **Switch to the newly cloned directory:**
     ```bash
     cd Nojoin
     ```
