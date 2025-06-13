@@ -42,6 +42,7 @@ class PathManager:
         self._initialized = True
         self._deployment_mode = None
         self._app_directory = None
+        self._executable_directory = None  # New: Directory where executable/assets are located
         self._user_data_directory = None
         
         # Initialize paths
@@ -50,6 +51,7 @@ class PathManager:
         
         # Minimal logging during initialization (full logging happens later in main app)
         logger.debug(f"PathManager initialized - Mode: {self._deployment_mode}")
+        logger.debug(f"Executable directory: {self._executable_directory}")
         logger.debug(f"App directory: {self._app_directory}")
         logger.debug(f"User data directory: {self._user_data_directory}")
     
@@ -83,12 +85,28 @@ class PathManager:
         if self._deployment_mode == 'development':
             # Development mode: everything in project directory
             project_root = Path(__file__).parent.parent.parent
-            self._app_directory = project_root
+            self._executable_directory = project_root  # Assets are in project root
+            self._app_directory = project_root  # Keep for backward compatibility
             self._user_data_directory = project_root / 'nojoin'
         else:
-            # Production mode: app in AppData, user data in Documents
-            self._app_directory = self._get_app_directory()
+            # Production mode: executable has assets, user data in Documents
+            self._executable_directory = self._get_executable_directory()  # Where assets are bundled
+            self._app_directory = self._get_app_directory()  # User data location (backward compatibility)
             self._user_data_directory = self._get_user_data_directory()
+    
+    def _get_executable_directory(self) -> Path:
+        """Get the directory where the executable (and bundled assets) are located."""
+        if getattr(sys, 'frozen', False):
+            # Running as bundled executable
+            if hasattr(sys, '_MEIPASS'):
+                # PyInstaller temporary directory
+                return Path(sys._MEIPASS)
+            else:
+                # Other bundlers or direct executable
+                return Path(sys.executable).parent
+        else:
+            # Running as script - return script directory
+            return Path(__file__).parent.parent.parent
     
     def _get_app_directory(self) -> Path:
         """Get platform-appropriate application directory."""
@@ -158,6 +176,16 @@ class PathManager:
     def app_directory(self) -> Path:
         """Get the application directory path."""
         return self._app_directory
+    
+    @property
+    def executable_directory(self) -> Path:
+        """Get the executable directory path (where bundled assets are located)."""
+        return self._executable_directory
+    
+    @property
+    def assets_directory(self) -> Path:
+        """Get the assets directory path (where icons, images, etc. are bundled)."""
+        return self._executable_directory / "assets"
     
     @property
     def user_data_directory(self) -> Path:
@@ -238,10 +266,12 @@ class PathManager:
         logger.info("=" * 60)
         logger.info(f"NOJOIN STARTING IN {mode_display} MODE")
         logger.info("=" * 60)
+        logger.info(f"Executable directory: {self._executable_directory}")
+        logger.info(f"Assets directory: {self.assets_directory}")
         logger.info(f"App directory: {self._app_directory}")
         logger.info(f"User data directory: {self._user_data_directory}")
         if self._deployment_mode == 'production':
-            logger.info("User data (config, database, recordings) will be stored in Documents/Nojoin")
+            logger.info("Assets bundled with executable, user data stored in Documents/Nojoin")
         else:
             logger.info("Development mode: all data stored in project directory")
         logger.info("=" * 60)

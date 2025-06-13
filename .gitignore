@@ -12,17 +12,13 @@
 # Database file, should be regenerated on first run
 /nojoin/nojoin_data.db
 
-# Config file, generated on first run
+# Config file, generated on first run - contains API keys and other sensitive data
 nojoin/config.json
 
 # Cursor files
 *.cursorrules
 *.mdc
 /.cursor/
-
-#PRD and Todo files
-/PRD.md
-/TODO.md
 
 # Logs
 *.log

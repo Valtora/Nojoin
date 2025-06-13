@@ -23,10 +23,8 @@ _pipeline_cache = {}
 # Path to offline diarization config using PathManager
 from ..utils.path_manager import path_manager
 
-if path_manager.is_development_mode:
-    OFFLINE_DIARIZATION_CONFIG = str(path_manager.app_directory / 'models' / 'pyannote_diarization_config.yaml')
-else:
-    OFFLINE_DIARIZATION_CONFIG = str(path_manager.app_directory / 'models' / 'pyannote_diarization_config.yaml')
+# Use executable directory for bundled models in deployed mode
+OFFLINE_DIARIZATION_CONFIG = str(path_manager.executable_directory / 'models' / 'pyannote_diarization_config.yaml')
 
 def _filter_short_segments(annotation: Annotation, min_duration_s: float = 1.0) -> Annotation:
     """

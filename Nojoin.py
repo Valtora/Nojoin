@@ -84,12 +84,8 @@ def Nojoin():
     font_scale_factor = ui_scale_manager.get_font_scale_factor()
     app.setStyleSheet(get_theme_qss(theme, font_scale_factor))
 
-    # Set application icon
     # Set application icon using PathManager
-    if path_manager.is_development_mode:
-        icon_path = path_manager.app_directory / "assets" / "NojoinLogo.png"
-    else:
-        icon_path = path_manager.app_directory / "assets" / "NojoinLogo.png"
+    icon_path = path_manager.assets_directory / "NojoinLogo.png"
     
     if icon_path.exists():
         app_icon = QIcon(str(icon_path))
@@ -98,10 +94,7 @@ def Nojoin():
         print(f"Warning: Icon file not found at {icon_path}")
 
     # Show Splash Screen as early as possible using PathManager
-    if path_manager.is_development_mode:
-        splash_image_path = path_manager.app_directory / "assets" / "Banner_Image1.png"
-    else:
-        splash_image_path = path_manager.app_directory / "assets" / "Banner_Image1.png"
+    splash_image_path = path_manager.assets_directory / "Banner_Image1.png"
     
     splash = None
     if splash_image_path.exists():

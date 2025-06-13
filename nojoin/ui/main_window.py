@@ -380,13 +380,8 @@ class MainWindow(QMainWindow):
         from ..utils.path_manager import path_manager
         file_name = f"{icon_file_prefix}{theme_name.capitalize()}Mode.png"
         
-        if path_manager.is_development_mode:
-            # Development mode: assets are in project directory
-            icon_path = path_manager.app_directory / "assets" / "icons" / file_name
-        else:
-            # Production mode: assets are with the application
-            icon_path = path_manager.app_directory / "assets" / "icons" / file_name
-        
+        # Use the new assets_directory property for consistent path resolution
+        icon_path = path_manager.assets_directory / "icons" / file_name
         icon_path = str(icon_path)
         
         if os.path.exists(icon_path):
