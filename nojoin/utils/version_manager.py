@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # GitHub repository information
 GITHUB_REPO = "Valtora/Nojoin"
-GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 
 class UpdatePreference:
     """Enumeration of update reminder preferences."""
@@ -72,7 +72,7 @@ class VersionManager:
     
     def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
         """
-        Check for available updates from GitHub releases.
+        Check for available updates from GitHub releases (including pre-releases).
         
         Args:
             timeout: Request timeout in seconds
@@ -82,23 +82,55 @@ class VersionManager:
         """
         try:
             logger.info("Checking for updates from GitHub releases...")
-            response = requests.get(GITHUB_API_URL, timeout=timeout)
+            response = requests.get(GITHUB_RELEASES_URL, timeout=timeout)
             response.raise_for_status()
             
-            release_data = response.json()
-            latest_version = release_data.get("tag_name", "").lstrip('v')
-            current_version = self.get_current_version()
-            
-            if not latest_version:
-                logger.warning("Could not parse latest version from GitHub")
+            releases = response.json()
+            if not releases:
+                logger.warning("No releases found on GitHub")
                 return False, None
             
-            # Compare versions using semantic versioning
+            current_version = self.get_current_version()
+            logger.debug(f"Current version: {current_version}")
+            
+            # Find the latest release (including pre-releases) by version comparison
+            latest_release = None
+            latest_version = None
+            
+            for release in releases:
+                release_version = release.get("tag_name", "").lstrip('v')
+                if not release_version:
+                    continue
+                    
+                logger.debug(f"Found release: {release_version}")
+                
+                # Skip drafts
+                if release.get("draft", False):
+                    logger.debug(f"Skipping draft release: {release_version}")
+                    continue
+                
+                try:
+                    # Compare versions using semantic versioning
+                    if latest_version is None or version.parse(release_version) > version.parse(latest_version):
+                        latest_version = release_version
+                        latest_release = release
+                        logger.debug(f"New latest version candidate: {release_version}")
+                except Exception as e:
+                    logger.warning(f"Error parsing version {release_version}: {e}")
+                    continue
+            
+            if not latest_release or not latest_version:
+                logger.warning("Could not find any valid releases")
+                return False, None
+            
+            logger.info(f"Latest release found: {latest_version}")
+            
+            # Compare with current version
             try:
                 if version.parse(latest_version) > version.parse(current_version):
                     # Find Windows installer asset
                     installer_asset = None
-                    for asset in release_data.get("assets", []):
+                    for asset in latest_release.get("assets", []):
                         asset_name = asset.get("name", "").lower()
                         if asset_name.endswith(".exe") and ("setup" in asset_name or "install" in asset_name):
                             installer_asset = asset
@@ -106,14 +138,18 @@ class VersionManager:
                     
                     if installer_asset:
                         logger.info(f"Update available: {latest_version} (current: {current_version})")
+                        release_type = "pre-release" if latest_release.get("prerelease", False) else "release"
+                        logger.info(f"Release type: {release_type}")
+                        
                         return True, {
                             'version': latest_version,
-                            'name': release_data.get('name', f'Version {latest_version}'),
-                            'body': release_data.get('body', ''),
-                            'published_at': release_data.get('published_at'),
+                            'name': latest_release.get('name', f'Version {latest_version}'),
+                            'body': latest_release.get('body', ''),
+                            'published_at': latest_release.get('published_at'),
                             'download_url': installer_asset['browser_download_url'],
                             'size': installer_asset.get('size'),
-                            'installer_name': installer_asset.get('name')
+                            'installer_name': installer_asset.get('name'),
+                            'prerelease': latest_release.get('prerelease', False)
                         }
                     else:
                         logger.warning("No Windows installer found in release assets")
@@ -129,11 +165,12 @@ class VersionManager:
                     logger.info("Using fallback version comparison")
                     return True, {
                         'version': latest_version,
-                        'name': release_data.get('name', f'Version {latest_version}'),
-                        'body': release_data.get('body', ''),
-                        'published_at': release_data.get('published_at'),
-                        'download_url': release_data.get('html_url', ''),  # Fallback to release page
-                        'size': None
+                        'name': latest_release.get('name', f'Version {latest_version}'),
+                        'body': latest_release.get('body', ''),
+                        'published_at': latest_release.get('published_at'),
+                        'download_url': latest_release.get('html_url', ''),  # Fallback to release page
+                        'size': None,
+                        'prerelease': latest_release.get('prerelease', False)
                     }
                 else:
                     return False, None

@@ -84,7 +84,12 @@ class UpdateAvailableDialog(QDialog):
         header_frame = QFrame()
         header_layout = QVBoxLayout(header_frame)
         
-        title_label = QLabel(f"Nojoin {self.release_info['version']} is available!")
+        # Show version with pre-release indicator if applicable
+        version_text = f"Nojoin {self.release_info['version']} is available!"
+        if self.release_info.get('prerelease', False):
+            version_text += " (Pre-release)"
+        
+        title_label = QLabel(version_text)
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -93,6 +98,12 @@ class UpdateAvailableDialog(QDialog):
         
         current_version_label = QLabel(f"Current version: {version_manager.get_current_version()}")
         header_layout.addWidget(current_version_label)
+        
+        # Add pre-release note if applicable
+        if self.release_info.get('prerelease', False):
+            prerelease_note = QLabel("Note: This is a pre-release version that may contain experimental features.")
+            prerelease_note.setStyleSheet("color: #ff8c00; font-style: italic;")
+            header_layout.addWidget(prerelease_note)
         
         if self.release_info.get('published_at'):
             published_date = datetime.fromisoformat(
