@@ -1,6 +1,6 @@
 import os
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog, QScrollArea, QVBoxLayout
+    QDialog, QFormLayout, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QLabel, QFileDialog, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QProgressDialog, QScrollArea, QVBoxLayout, QFrame
 )
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtCore import Qt, Signal, QThread
@@ -151,6 +151,9 @@ class SettingsDialog(QDialog):
         self.notes_font_size_combo.addItems(self.available_notes_font_sizes)
         self.notes_font_size_combo.setToolTip("Font size for meeting notes display area only")
 
+        # === LLM/AI SETTINGS ===
+        layout.addRow("", self._create_section_divider("LLM / AI PROVIDER"))
+        
         # LLM Provider selection
         self.llm_provider_combo = QComboBox()
         self.llm_provider_combo.addItems(["gemini", "openai", "anthropic"])
@@ -269,12 +272,17 @@ class SettingsDialog(QDialog):
         scale_factor_layout.addWidget(self.ui_scale_factor_edit)
         scale_factor_layout.addStretch()
         
-        # Add all main settings first (theme, devices, transcript, etc.)
+        # === APPEARANCE SETTINGS ===
+        layout.addRow("", self._create_section_divider("APPEARANCE"))
         layout.addRow("Theme:", self.theme_combo)
         layout.addRow("UI Scale Mode:", self.ui_scale_mode_combo)
+        self._ui_scale_factor_row = layout.rowCount()
         layout.addRow("Scale Factor:", self.ui_scale_factor_widget)
         layout.addRow("", self.ui_scale_info_label)
         layout.addRow("Notes Font Size:", self.notes_font_size_combo)
+
+        # === AUDIO & RECORDING SETTINGS ===
+        layout.addRow("", self._create_section_divider("AUDIO & RECORDING"))
         layout.addRow("Default Input Device:", self.input_device_combo)
         layout.addRow("Default Output Device:", self.output_device_combo)
         layout.addRow("Auto Transcribe:", self.auto_transcribe_checkbox)
@@ -292,7 +300,8 @@ class SettingsDialog(QDialog):
             self.min_meeting_length_combo.addItem(label, seconds)
         layout.addRow("Minimum Meeting Length:", self.min_meeting_length_combo)
 
-        # --- Update Management Section ---
+        # === UPDATE MANAGEMENT ===
+        layout.addRow("", self._create_section_divider("UPDATES"))
         # Update channel selection
         self.update_channel_combo = QComboBox()
         self.update_channel_combo.addItem("Stable (Releases)", "stable")
@@ -329,13 +338,15 @@ class SettingsDialog(QDialog):
         version_widget.setLayout(version_layout)
         update_container_layout.addWidget(version_widget)
         
-        layout.addRow("Updates:", update_container)
+        layout.addRow("Version Info:", update_container)
 
-        # Now add advanced toggle and advanced container
+        # === ADVANCED SETTINGS ===
+        layout.addRow("", self._create_section_divider("ADVANCED"))
         layout.addRow("", self.advanced_toggle)
         layout.addRow("", self.advanced_container)
         
-        # --- Backup and Restore Section (moved to bottom) ---
+        # === DATA MANAGEMENT ===
+        layout.addRow("", self._create_section_divider("DATA MANAGEMENT"))
         self.backup_button = QPushButton("Create Backup")
         self.backup_button.setToolTip("Create a backup of your data with optional audio file inclusion")
         self.backup_button.clicked.connect(self._create_backup)
@@ -349,10 +360,14 @@ class SettingsDialog(QDialog):
         backup_restore_layout.addWidget(self.restore_button)
         backup_restore_widget = QWidget()
         backup_restore_widget.setLayout(backup_restore_layout)
-        layout.addRow("Data Management:", backup_restore_widget)
+        layout.addRow("Backup & Restore:", backup_restore_widget)
         
-        # Add button box to main layout outside scroll area
-        main_layout.addWidget(self.button_box)
+        # Add button box to main layout outside scroll area with padding
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(15, 15, 15, 15)  # Add 15px padding around buttons
+        button_layout.addWidget(self.button_box)
+        main_layout.addWidget(button_container)
         
         # Update button states based on recording status
         self._update_button_states()
@@ -367,6 +382,27 @@ class SettingsDialog(QDialog):
         max_height = min(max(int(screen_height * 0.8), 600), 800)
         max_height = ui_scale_manager.scale_value(max_height)
         self.setMaximumHeight(max_height)
+
+    def _create_section_divider(self, title):
+        """Create a section divider with title."""
+        divider_widget = QWidget()
+        divider_layout = QHBoxLayout(divider_widget)
+        divider_layout.setContentsMargins(0, 10, 0, 5)
+        
+        # Create title label
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: bold; color: #888; font-size: 12px;")
+        
+        # Create horizontal line
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("color: #444;")
+        
+        divider_layout.addWidget(title_label)
+        divider_layout.addWidget(line, 1)  # Line takes up remaining space
+        
+        return divider_widget
 
     def showEvent(self, event):
         """Override showEvent to update button states when dialog is shown."""
@@ -418,7 +454,13 @@ class SettingsDialog(QDialog):
     def _on_ui_scale_mode_changed(self, mode):
         """Handle UI scale mode change."""
         is_manual = mode.lower() == "manual"
-        self.ui_scale_factor_widget.setVisible(is_manual)
+        
+        # Hide/show both label and widget for scale factor row
+        layout = self._form_layout
+        scale_factor_label = layout.itemAt(self._ui_scale_factor_row, QFormLayout.LabelRole)
+        scale_factor_widget = layout.itemAt(self._ui_scale_factor_row, QFormLayout.FieldRole)
+        if scale_factor_label: scale_factor_label.widget().setVisible(is_manual)
+        if scale_factor_widget: scale_factor_widget.widget().setVisible(is_manual)
         
         # Update info label based on mode
         if is_manual:
