@@ -579,32 +579,16 @@ class MainWindow(QMainWindow):
         central_layout.setContentsMargins(self.BASE_SPACING, self.BASE_SPACING, self.BASE_SPACING, self.BASE_SPACING)
         central_layout.setSpacing(self.BASE_SPACING)
 
-        # --- Top Controls Bar: Recording + Playback + Settings ---
+        # --- Top Controls Bar: Three-Section Layout ---
         top_controls_layout = QHBoxLayout()
-        top_controls_layout.setSpacing(self.BASE_SPACING) # Spacing within the top bar
+        top_controls_layout.setSpacing(self.BASE_SPACING * 2) # Spacing between sections
         top_controls_layout.setContentsMargins(0, 0, 0, 0)
-        # Settings button (icon only)
-        self.settings_button = QPushButton("Settings")
-        self.settings_button.setMinimumWidth(self.BASE_SPACING * 14)  # Match Transcribe button width
-        self.settings_button.setFixedHeight(self.BASE_SPACING * 5)
-        self.settings_button.setToolTip("Open application settings")
-        # Set accent color based on theme
-        self._set_settings_button_accent()
-        self.settings_button.clicked.connect(self.open_settings_dialog)
-        # --- Import Audio Button ---
-        self.import_audio_button = QPushButton("Import Audio")
-        self.import_audio_button.setMinimumWidth(self.BASE_SPACING * 14)
-        self.import_audio_button.setFixedHeight(self.BASE_SPACING * 5)
-        self.import_audio_button.setToolTip("Import existing audio files (MP3, WAV, etc.)")
-        self.import_audio_button.clicked.connect(self.on_import_audio_clicked)
-        # Transcribe button
-        self.transcribe_button = QPushButton("Transcribe")
-        self.transcribe_button.setToolTip("Transcribe the selected recording")
-        self.transcribe_button.setEnabled(False)
-        self.transcribe_button.setMinimumWidth(self.BASE_SPACING * 14) # Give text some space
-        self.transcribe_button.setFixedHeight(self.BASE_SPACING * 5)
-        self.transcribe_button.clicked.connect(self.on_transcribe_clicked)
-        self.transcribe_button.setVisible(False)
+        
+        # === LEFT SECTION - MEETING CONTROLS ===
+        left_section_layout = QHBoxLayout()
+        left_section_layout.setSpacing(self.BASE_SPACING)
+        left_section_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Recording controls
         self.record_button = QPushButton("Start Meeting")
         record_pixmap = QPixmap(20, 20)
@@ -619,30 +603,48 @@ class MainWindow(QMainWindow):
         self.record_button.setMinimumWidth(self.BASE_SPACING * 18) # Give text space
         self.record_button.setFixedHeight(self.BASE_SPACING * 5)
         self.record_button.clicked.connect(self.toggle_recording)
-        self.status_indicator = QLabel("Status: Idle")
-        # Margin handled by layout/QSS
+        
+        # Recording timer (hidden by default, shown only during recording)
         self.timer_label = QLabel("00:00:00")
         self.timer_label.setToolTip("Elapsed recording time")
-        # Font weight and margin handled by QSS
-        # Playback controls
+        self.timer_label.setVisible(False)  # Hidden until recording starts
+        
+        left_section_layout.addWidget(self.record_button)
+        left_section_layout.addWidget(self.timer_label)
+        left_section_layout.addStretch()  # Push content to the left
+        
+        # Wrap left section in a widget
+        left_section_widget = QWidget()
+        left_section_widget.setLayout(left_section_layout)
+        left_section_widget.setMinimumWidth(self.ui_scale_manager.scale_value(200))
+        
+        # === MIDDLE SECTION - PLAYBACK CONTROLS ===
+        middle_section_layout = QHBoxLayout()
+        middle_section_layout.setSpacing(self.BASE_SPACING)
+        middle_section_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Playback buttons
         self.play_button = QPushButton()
         self.play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.play_button.setToolTip("Play Selected Recording")
         self.play_button.setEnabled(False)
         self.play_button.setFixedSize(self.BASE_SPACING * 5, self.BASE_SPACING * 5)
         self.play_button.clicked.connect(self.on_play_clicked)
+        
         self.pause_button = QPushButton()
         self.pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
         self.pause_button.setToolTip("Pause Playback")
         self.pause_button.setEnabled(False)
         self.pause_button.setFixedSize(self.BASE_SPACING * 5, self.BASE_SPACING * 5)
         self.pause_button.clicked.connect(self.on_pause_clicked)
+        
         self.stop_button = QPushButton()
         self.stop_button.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
         self.stop_button.setToolTip("Stop Playback")
         self.stop_button.setEnabled(False)
         self.stop_button.setFixedSize(self.BASE_SPACING * 5, self.BASE_SPACING * 5)
         self.stop_button.clicked.connect(self.on_stop_clicked)
+        
         # Audio seeker slider (with click-to-seek functionality)
         self.seek_slider = ClickToSeekSlider(Qt.Horizontal)
         self.seek_slider.setMinimum(0)
@@ -657,6 +659,7 @@ class MainWindow(QMainWindow):
         self.seek_slider.sliderReleased.connect(self.handle_seek_slider_released)
         self.seeker_user_is_dragging = False
         self.seek_time_label = QLabel("00:00 / 00:00")
+        
         # Volume control
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
@@ -665,6 +668,7 @@ class MainWindow(QMainWindow):
         self.volume_slider.setFixedWidth(80)
         self.volume_slider.valueChanged.connect(self._handle_volume_changed)
         self.volume_label = QLabel("75%")
+        
         # --- Explicitly set slider style for theme awareness ---
         from nojoin.utils.config_manager import config_manager
         theme = config_manager.get("theme", "dark")
@@ -690,52 +694,90 @@ class MainWindow(QMainWindow):
         """
         self.seek_slider.setStyleSheet(slider_qss)
         self.volume_slider.setStyleSheet(slider_qss)
-        # Add widgets to top bar
-        top_controls_layout.addWidget(self.transcribe_button)
-        top_controls_layout.addWidget(self.record_button)
-        top_controls_layout.addWidget(self.status_indicator)
-        top_controls_layout.addWidget(self.timer_label)
-        top_controls_layout.addSpacing(self.BASE_SPACING * 2.5) # Extra space before playback
-
-        # --- Playback Control Group ---
-        playback_group = QHBoxLayout()
-        playback_group.setSpacing(self.BASE_SPACING)
-        playback_group.setContentsMargins(0, 0, 0, 0)
-        playback_group.addWidget(self.play_button)
-        playback_group.addWidget(self.pause_button)
-        playback_group.addWidget(self.stop_button)
-        playback_group.addSpacing(self.BASE_SPACING * 1.5) # Space before slider
-        playback_group.addWidget(self.seek_slider)
-        playback_group.addWidget(self.seek_time_label)
-        # Add separator between timestamp and volume controls
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setFixedHeight(20)
-        playback_group.addWidget(separator)
-        playback_group.addWidget(QLabel("Vol:"))
-        playback_group.addWidget(self.volume_slider)
-        playback_group.addWidget(self.volume_label)
-        # Wrap in a widget to set minimum width for the group
-        playback_widget = QWidget()
-        playback_widget.setLayout(playback_group)
-        playback_widget.setMinimumWidth(self.ui_scale_manager.scale_value(450)) # Minimum width for playback controls + slider
-
-        top_controls_layout.addWidget(playback_widget)
-        top_controls_layout.addStretch() # Add stretch *before* settings button
         
-        # --- New Global Speakers Button ---
+        # Add playback controls to middle section
+        middle_section_layout.addStretch()  # Center the content
+        middle_section_layout.addWidget(self.play_button)
+        middle_section_layout.addWidget(self.pause_button)
+        middle_section_layout.addWidget(self.stop_button)
+        middle_section_layout.addSpacing(self.BASE_SPACING * 1.5) # Space before slider
+        middle_section_layout.addWidget(self.seek_slider)
+        middle_section_layout.addWidget(self.seek_time_label)
+        
+        # Add vertical divider between seek controls and volume
+        seek_volume_separator = QFrame()
+        seek_volume_separator.setFrameShape(QFrame.VLine)
+        seek_volume_separator.setFrameShadow(QFrame.Sunken)
+        seek_volume_separator.setFixedHeight(20)
+        middle_section_layout.addWidget(seek_volume_separator)
+        
+        middle_section_layout.addWidget(QLabel("Vol:"))
+        middle_section_layout.addWidget(self.volume_slider)
+        middle_section_layout.addWidget(self.volume_label)
+        middle_section_layout.addStretch()  # Center the content
+        
+        # Wrap middle section in a widget
+        middle_section_widget = QWidget()
+        middle_section_widget.setLayout(middle_section_layout)
+        middle_section_widget.setMinimumWidth(self.ui_scale_manager.scale_value(500)) # Minimum width for playback controls
+        
+        # === RIGHT SECTION - UTILITIES ===
+        right_section_layout = QHBoxLayout()
+        right_section_layout.setSpacing(self.BASE_SPACING)
+        right_section_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Transcribe button (hidden by default)
+        self.transcribe_button = QPushButton("Transcribe")
+        self.transcribe_button.setToolTip("Transcribe the selected recording")
+        self.transcribe_button.setEnabled(False)
+        self.transcribe_button.setMinimumWidth(self.BASE_SPACING * 14)
+        self.transcribe_button.setFixedHeight(self.BASE_SPACING * 5)
+        self.transcribe_button.clicked.connect(self.on_transcribe_clicked)
+        self.transcribe_button.setVisible(False)
+        
+        # Global Speakers button
         self.global_speakers_button = QPushButton("Global Speakers")
         self.global_speakers_button.setMinimumWidth(self.BASE_SPACING * 18) # Match record button width
         self.global_speakers_button.setFixedHeight(self.BASE_SPACING * 5)
         self.global_speakers_button.setToolTip("Manage the Global Speaker Library")
         self.global_speakers_button.clicked.connect(self._open_global_speakers_dialog)
-        top_controls_layout.addWidget(self.global_speakers_button)
-        # --- End New Global Speakers Button ---
         
-        top_controls_layout.addWidget(self.import_audio_button)
-        top_controls_layout.addWidget(self.settings_button) # Move settings button to the end
+        # Import Audio button
+        self.import_audio_button = QPushButton("Import Audio")
+        self.import_audio_button.setMinimumWidth(self.BASE_SPACING * 14)
+        self.import_audio_button.setFixedHeight(self.BASE_SPACING * 5)
+        self.import_audio_button.setToolTip("Import existing audio files (MP3, WAV, etc.)")
+        self.import_audio_button.clicked.connect(self.on_import_audio_clicked)
+        
+        # Settings button
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.setMinimumWidth(self.BASE_SPACING * 14)  # Match other buttons
+        self.settings_button.setFixedHeight(self.BASE_SPACING * 5)
+        self.settings_button.setToolTip("Open application settings")
+        # Set accent color based on theme
+        self._set_settings_button_accent()
+        self.settings_button.clicked.connect(self.open_settings_dialog)
+        
+        right_section_layout.addStretch()  # Push content to the right
+        right_section_layout.addWidget(self.transcribe_button)
+        right_section_layout.addWidget(self.global_speakers_button)
+        right_section_layout.addWidget(self.import_audio_button)
+        right_section_layout.addWidget(self.settings_button)
+        
+        # Wrap right section in a widget
+        right_section_widget = QWidget()
+        right_section_widget.setLayout(right_section_layout)
+        right_section_widget.setMinimumWidth(self.ui_scale_manager.scale_value(250))
+        
+        # === ASSEMBLE THE THREE SECTIONS ===
+        top_controls_layout.addWidget(left_section_widget)
+        top_controls_layout.addWidget(middle_section_widget)
+        top_controls_layout.addWidget(right_section_widget)
+        
         central_layout.addLayout(top_controls_layout)
+
+        # Remove the old status_indicator since we're not using it anymore
+        # self.status_indicator is no longer created
 
         # --- Audio Detection Warning Banner ---
         self.audio_warning_banner = QFrame()
@@ -1131,16 +1173,17 @@ class MainWindow(QMainWindow):
     def toggle_recording(self):
         if not self.is_recording:
             self.status_bar.showMessage("Starting recording...")
-            self.status_indicator.setText("Status: Starting...")
             self.timer_label.setText("00:00:00")
+            self.timer_label.setVisible(True)  # Show timer when starting recording
             self.record_button.setText("End Meeting")
             self.record_button.setEnabled(False)
             self.recording_pipeline.start()
         else:
             self.status_bar.showMessage("Stopping recording...")
-            self.status_indicator.setText("Status: Stopping...")
             self.record_button.setEnabled(False)
             self.recording_timer.stop()
+            # Hide timer when stopping recording
+            self.timer_label.setVisible(False)
             # Dismiss audio warning banner when ending recording
             self.audio_warning_banner.setVisible(False)
             self.recording_pipeline.stop()
@@ -1148,10 +1191,10 @@ class MainWindow(QMainWindow):
     def handle_recording_started(self):
         self.is_recording = True
         self.recording_start_time = time.monotonic()
-        self.status_indicator.setText("Status: Recording")
         self.status_bar.showMessage("Recording in progress...")
         self.record_button.setEnabled(True)
         self.record_button.setText("End Meeting")
+        self.timer_label.setVisible(True)  # Ensure timer is visible during recording
         self.update_recording_timer_display()
         self.recording_timer.start()
         logger.info("UI: Recording started signal received.")
@@ -1169,8 +1212,8 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.recording_timer.stop()
         self.record_button.setText("Start Meeting")
-        self.status_indicator.setText("Status: Idle")
         self.timer_label.setText("00:00:00")
+        self.timer_label.setVisible(False)  # Hide timer when recording finishes
         self.record_button.setEnabled(True)
         base_filename = os.path.basename(filename)
         self.status_bar.showMessage(f"Recording saved: {base_filename} ({duration:.1f}s)")
@@ -1209,8 +1252,8 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.recording_timer.stop()
         self.record_button.setText("Start Meeting")
-        self.status_indicator.setText("Status: Error")
         self.timer_label.setText("00:00:00")
+        self.timer_label.setVisible(False)  # Hide timer on recording error
         self.record_button.setEnabled(True)
         self.status_bar.showMessage(f"Error: {error_message}")
         
