@@ -289,7 +289,43 @@ class SettingsDialog(QDialog):
             self.min_meeting_length_combo.addItem(label, seconds)
         layout.addRow("Minimum Meeting Length:", self.min_meeting_length_combo)
 
-        # --- Backup and Restore Section ---
+        # --- Update Management Section ---
+        # Add version info and check updates button together
+        update_container = QWidget()
+        update_container_layout = QVBoxLayout(update_container)
+        update_container_layout.setContentsMargins(0, 0, 0, 0)
+        update_container_layout.setSpacing(8)
+        
+        # Version info layout
+        version_layout = QHBoxLayout()
+        version_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Import version manager here to get current version
+        from nojoin.utils.version_manager import version_manager
+        current_version = version_manager.get_current_version()
+        
+        version_label = QLabel(f"Current Version: {current_version}")
+        version_label.setStyleSheet("color: #666; font-size: 11px;")
+        
+        self.check_updates_button = QPushButton("Check for Updates")
+        self.check_updates_button.setToolTip("Check for available updates to Nojoin")
+        self.check_updates_button.clicked.connect(self._check_for_updates)
+        
+        version_layout.addWidget(version_label)
+        version_layout.addStretch()
+        version_layout.addWidget(self.check_updates_button)
+        
+        version_widget = QWidget()
+        version_widget.setLayout(version_layout)
+        update_container_layout.addWidget(version_widget)
+        
+        layout.addRow("Updates:", update_container)
+
+        # Now add advanced toggle and advanced container
+        layout.addRow("", self.advanced_toggle)
+        layout.addRow("", self.advanced_container)
+        
+        # --- Backup and Restore Section (moved to bottom) ---
         self.backup_button = QPushButton("Create Backup")
         self.backup_button.setToolTip("Create a backup of your data with optional audio file inclusion")
         self.backup_button.clicked.connect(self._create_backup)
@@ -304,22 +340,6 @@ class SettingsDialog(QDialog):
         backup_restore_widget = QWidget()
         backup_restore_widget.setLayout(backup_restore_layout)
         layout.addRow("Data Management:", backup_restore_widget)
-
-        # --- Update Management Section ---
-        self.check_updates_button = QPushButton("Check for Updates")
-        self.check_updates_button.setToolTip("Check for available updates to Nojoin")
-        self.check_updates_button.clicked.connect(self._check_for_updates)
-        
-        update_layout = QHBoxLayout()
-        update_layout.addWidget(self.check_updates_button)
-        update_layout.addStretch()
-        update_widget = QWidget()
-        update_widget.setLayout(update_layout)
-        layout.addRow("Updates:", update_widget)
-
-        # Now add advanced toggle and advanced container at the bottom
-        layout.addRow("", self.advanced_toggle)
-        layout.addRow("", self.advanced_container)
         
         # Add button box to main layout outside scroll area
         main_layout.addWidget(self.button_box)

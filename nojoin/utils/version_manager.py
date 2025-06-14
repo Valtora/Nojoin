@@ -42,32 +42,18 @@ class VersionManager:
         self.path_manager = path_manager
         
     def get_current_version(self) -> str:
-        """Get the current version of Nojoin from registry or fallback methods."""
-        # Try registry first (set by Inno Setup)
+        """Get the current version of Nojoin from config."""
         try:
-            import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\Valtora\Nojoin")
-            version_str = winreg.QueryValueEx(key, "Version")[0]
-            winreg.CloseKey(key)
-            logger.debug(f"Version from registry: {version_str}")
-            return version_str
+            version_str = config_manager.get("version")
+            if version_str:
+                logger.debug(f"Version from config: {version_str}")
+                return version_str
         except Exception as e:
-            logger.debug(f"Could not read version from registry: {e}")
+            logger.debug(f"Could not read version from config: {e}")
         
-        # Try to read from a version file if it exists
-        try:
-            version_file = os.path.join(self.project_root, 'VERSION')
-            if os.path.exists(version_file):
-                with open(version_file, 'r') as f:
-                    version_str = f.read().strip()
-                    logger.debug(f"Version from file: {version_str}")
-                    return version_str
-        except Exception as e:
-            logger.debug(f"Could not read version from file: {e}")
-        
-        # Fallback to hardcoded version (should match current Inno Setup version)
-        fallback_version = "0.6.2"
-        logger.debug(f"Using fallback version: {fallback_version}")
+        # Final fallback if config fails
+        fallback_version = "unknown"
+        logger.warning(f"Could not determine version from config, using fallback: {fallback_version}")
         return fallback_version
     
     def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
@@ -376,24 +362,9 @@ class VersionManager:
     def mark_successful_update(self, version: str):
         """Mark that an update was successful and store the new version."""
         try:
-            # Update registry with new version (if on Windows)
-            try:
-                import winreg
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\Valtora\Nojoin")
-                winreg.SetValueEx(key, "Version", 0, winreg.REG_SZ, version)
-                winreg.CloseKey(key)
-                logger.info(f"Updated registry with version: {version}")
-            except Exception as e:
-                logger.debug(f"Could not update registry: {e}")
-            
-            # Write version to file as backup
-            try:
-                version_file = os.path.join(self.project_root, 'VERSION')
-                with open(version_file, 'w') as f:
-                    f.write(version)
-                logger.info(f"Updated version file: {version}")
-            except Exception as e:
-                logger.debug(f"Could not update version file: {e}")
+            # Update config with new version
+            config_manager.set("version", version)
+            logger.info(f"Updated config with version: {version}")
             
             # Clear any skipped version since we successfully updated
             prefs = self.get_update_preferences()

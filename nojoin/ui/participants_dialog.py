@@ -357,11 +357,17 @@ class ParticipantsDialog(QDialog):
             # Play the new snippet
             speaker_data = db_ops.get_speaker_by_id(speaker_id)
             rec = db_ops.get_recording_by_id(self.recording_id)
-            if not rec or not rec.get('audio_path') or not os.path.exists(rec['audio_path']):
-                QMessageBox.warning(self, "Audio Missing", "Audio file for this recording is missing.")
+            if not rec or not rec.get('audio_path'):
+                QMessageBox.warning(self, "Audio Missing", "Audio file path for this recording is missing.")
                 button.setChecked(False)
                 return
-            audio_path = rec['audio_path']
+            
+            # Convert relative path to absolute path for file access
+            audio_path = from_project_relative_path(rec['audio_path'])
+            if not os.path.exists(audio_path):
+                QMessageBox.warning(self, "Audio Missing", f"Audio file for this recording is missing: {audio_path}")
+                button.setChecked(False)
+                return
             with db_ops.get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT snippet_start, snippet_end FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (self.recording_id, speaker_id))

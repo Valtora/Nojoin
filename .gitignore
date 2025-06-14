@@ -7,7 +7,7 @@
 /.venv
 
 # Recordings and transcripts directory
-/recordings/
+/nojoin/recordings
 
 # Database file, should be regenerated on first run
 /nojoin/nojoin_data.db
@@ -25,3 +25,4 @@ nojoin/config.json
 
 # Dist and Output Folders and Files
 /output/
+
