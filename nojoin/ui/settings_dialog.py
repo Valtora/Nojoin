@@ -309,36 +309,24 @@ class SettingsDialog(QDialog):
         self.update_channel_combo.setToolTip("Stable: Updates from GitHub releases only\nDevelopment: Updates from latest main branch commits")
         layout.addRow("Update Channel:", self.update_channel_combo)
         
-        # Add version info and check updates button together
-        update_container = QWidget()
-        update_container_layout = QVBoxLayout(update_container)
-        update_container_layout.setContentsMargins(0, 0, 0, 0)
-        update_container_layout.setSpacing(8)
-        
-        # Version info layout
-        version_layout = QHBoxLayout()
-        version_layout.setContentsMargins(0, 0, 0, 0)
-        
         # Import version manager here to get current version
         from nojoin.utils.version_manager import version_manager
         current_version = version_manager.get_current_version()
         
         version_label = QLabel(f"Current Version: {current_version}")
-        version_label.setStyleSheet("color: #666; font-size: 11px;")
+        # Apply theme-appropriate styling
+        current_theme = config_manager.get("theme", "dark")
+        if current_theme == "dark":
+            version_color = "#FFA500"  # Orange for dark mode
+        else:
+            version_color = "#0066CC"  # Blue for light mode
+        version_label.setStyleSheet(f"color: {version_color}; font-size: 13px; font-weight: 500;")
+        layout.addRow("Version Info:", version_label)
         
         self.check_updates_button = QPushButton("Check for Updates")
         self.check_updates_button.setToolTip("Check for available updates to Nojoin")
         self.check_updates_button.clicked.connect(self._check_for_updates)
-        
-        version_layout.addWidget(version_label)
-        version_layout.addStretch()
-        version_layout.addWidget(self.check_updates_button)
-        
-        version_widget = QWidget()
-        version_widget.setLayout(version_layout)
-        update_container_layout.addWidget(version_widget)
-        
-        layout.addRow("Version Info:", update_container)
+        layout.addRow("", self.check_updates_button)
 
         # === ADVANCED SETTINGS ===
         layout.addRow("", self._create_section_divider("ADVANCED"))
