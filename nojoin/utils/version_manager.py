@@ -40,7 +40,7 @@ class VersionManager:
     """Manages version checking, update preferences, and update process."""
     
     def __init__(self):
-        self.project_root = get_project_root()
+        self.project_root = Path(get_project_root())
         # Also have access to both deployment modes
         self.path_manager = path_manager
         self._current_version = None
@@ -378,11 +378,13 @@ class VersionManager:
             Path to the created update script or None if failed
         """
         try:
-            # Get project root and important paths
+            # Get project root and important paths using path_manager
             project_root = self.project_root
             venv_path = project_root / ".venv"
-            config_path = project_root / "config.json"
-            db_path = project_root / "nojoin_data.db"
+            config_path = self.path_manager.config_path
+            db_path = self.path_manager.database_path
+            user_data_dir = self.path_manager.user_data_directory
+            deployment_mode = self.path_manager.deployment_mode
             
             # Create update script content
             script_content = f'''#!/usr/bin/env python3
@@ -420,8 +422,9 @@ def main():
     archive_path = r"{archive_path}"
     project_root = Path(r"{project_root}")
     venv_path = project_root / ".venv"
-    config_path = project_root / "config.json" 
-    db_path = project_root / "nojoin_data.db"
+    config_path = Path(r"{config_path}")
+    db_path = Path(r"{db_path}")
+    user_data_dir = Path(r"{user_data_dir}")
     
     # Wait for main app to close
     logger.info("Waiting for main application to close...")
@@ -471,8 +474,18 @@ def main():
         # Update project files (excluding .venv)
         logger.info("Updating project files...")
         
-        # List of items to preserve during update
-        preserve_items = {{".venv", "config.json", "nojoin_data.db", ".git"}}
+        # List of items to preserve during update - depends on deployment mode
+        # In development mode: preserve .venv, .git, and user data is in nojoin/ subdir
+        # In production mode: preserve .venv, .git, user data is separate in Documents
+        preserve_items = {{".venv", ".git"}}
+        
+        # Add deployment-specific preservations
+        deployment_mode = "{deployment_mode}"
+        if deployment_mode == "development":
+            # In development mode, user data directory might be in project root
+            user_data_relative = user_data_dir.relative_to(project_root) if user_data_dir.is_relative_to(project_root) else None
+            if user_data_relative and str(user_data_relative) != ".":
+                preserve_items.add(str(user_data_relative).split("/")[0])  # Preserve top-level directory
         
         # Remove old files except preserved ones
         for item in project_root.iterdir():
@@ -495,6 +508,9 @@ def main():
         
         # Restore backed up files
         logger.info("Restoring important files...")
+        # Ensure user data directory exists
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        
         if (backup_dir / "config.json").exists():
             shutil.copy2(backup_dir / "config.json", config_path)
         
@@ -568,6 +584,9 @@ def main():
         try:
             if backup_dir.exists():
                 logger.info("Attempting to restore from backup...")
+                # Ensure user data directory exists for restoration
+                user_data_dir.mkdir(parents=True, exist_ok=True)
+                
                 if (backup_dir / "config.json").exists():
                     shutil.copy2(backup_dir / "config.json", config_path)
                 if (backup_dir / "nojoin_data.db").exists():
