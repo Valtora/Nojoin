@@ -465,11 +465,8 @@ def main():
             shutil.copy2(db_path, backup_dir / "nojoin_data.db")
             logger.info("Database backed up")
         
-        # Copy .venv directory if it exists
-        if venv_path.exists():
-            logger.info("Backing up virtual environment...")
-            shutil.copytree(venv_path, backup_dir / ".venv")
-            logger.info("Virtual environment backed up")
+        # Note: .venv backup not needed since it's in .gitignore and won't be in source archive
+        # and it's preserved by being in preserve_items list
         
         # Update project files (excluding .venv)
         logger.info("Updating project files...")
@@ -563,9 +560,19 @@ def main():
         
         # Restart application
         logger.info("Restarting Nojoin...")
+        
+        # Define python_path for restart (may not be defined if dependency update was skipped)
+        if venv_path.exists():
+            if sys.platform == "win32":
+                python_path = venv_path / "Scripts" / "python.exe"
+            else:
+                python_path = venv_path / "bin" / "python"
+        else:
+            python_path = None
+        
         if sys.platform == "win32":
             if (project_root / "Nojoin.py").exists():
-                if python_path.exists():
+                if python_path and python_path.exists():
                     subprocess.Popen([str(python_path), str(project_root / "Nojoin.py")])
                 else:
                     subprocess.Popen([sys.executable, str(project_root / "Nojoin.py")])
@@ -574,7 +581,10 @@ def main():
         else:
             # For non-Windows systems
             if (project_root / "Nojoin.py").exists():
-                subprocess.Popen([sys.executable, str(project_root / "Nojoin.py")])
+                if python_path and python_path.exists():
+                    subprocess.Popen([str(python_path), str(project_root / "Nojoin.py")])
+                else:
+                    subprocess.Popen([sys.executable, str(project_root / "Nojoin.py")])
         
         return True
         
