@@ -58,6 +58,14 @@ DEFAULT_CONFIG = {
         "mode": "auto",  # "auto", "manual"
         "scale_factor": 1.0,  # Manual scale factor override (when mode is "manual")
         "tier": None  # Auto-detected tier (for display purposes)
+    },
+    "update_preferences": {
+        "check_on_startup": True,
+        "last_check": None,
+        "last_reminded": None,
+        "reminder_preference": "one_week",
+        "skip_version": None,
+        "update_channel": "stable"  # "stable" for releases, "development" for main branch
     }
 }
 
@@ -121,6 +129,10 @@ def get_available_notes_font_sizes():
 def get_available_ui_scale_modes():
     """Returns available UI scale modes."""
     return ["auto", "manual"]
+
+def get_available_update_channels():
+    """Returns available update channels."""
+    return ["stable", "development"]
 
 def get_notes_font_size_pixels(size_setting):
     """

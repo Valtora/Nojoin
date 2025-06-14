@@ -217,7 +217,7 @@ class VersionManager:
             "last_reminded": None,
             "reminder_preference": UpdatePreference.ONE_WEEK,
             "skip_version": None,
-            "use_releases": True  # True for releases, False for main branch
+            "update_channel": "stable"  # "stable" for releases, "development" for main branch
         })
     
     def set_update_preferences(self, preferences: Dict):
@@ -238,9 +238,10 @@ class VersionManager:
         if last_check:
             try:
                 last_check_date = datetime.fromisoformat(last_check)
-                # For main branch, check more frequently (every 6 hours)
-                # For releases, check once per day
-                check_interval = timedelta(hours=6) if not prefs.get("use_releases", True) else timedelta(days=1)
+                # For development channel, check more frequently (every 6 hours)
+                # For stable channel, check once per day
+                update_channel = prefs.get("update_channel", "stable")
+                check_interval = timedelta(hours=6) if update_channel == "development" else timedelta(days=1)
                 if datetime.now() - last_check_date < check_interval:
                     return False
             except ValueError:

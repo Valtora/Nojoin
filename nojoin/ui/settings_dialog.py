@@ -14,6 +14,7 @@ from nojoin.utils.config_manager import (
     get_available_themes,
     get_available_notes_font_sizes,
     get_available_ui_scale_modes,
+    get_available_update_channels,
     get_default_model_for_provider
 )
 from nojoin.utils.theme_utils import apply_theme_to_widget
@@ -290,6 +291,13 @@ class SettingsDialog(QDialog):
         layout.addRow("Minimum Meeting Length:", self.min_meeting_length_combo)
 
         # --- Update Management Section ---
+        # Update channel selection
+        self.update_channel_combo = QComboBox()
+        self.update_channel_combo.addItem("Stable (Releases)", "stable")
+        self.update_channel_combo.addItem("Development (Latest Commits)", "development")
+        self.update_channel_combo.setToolTip("Stable: Updates from GitHub releases only\nDevelopment: Updates from latest main branch commits")
+        layout.addRow("Update Channel:", self.update_channel_combo)
+        
         # Add version info and check updates button together
         update_container = QWidget()
         update_container_layout = QVBoxLayout(update_container)
@@ -482,6 +490,14 @@ class SettingsDialog(QDialog):
         scale_factor = ui_scale_config.get("scale_factor", 1.0)
         self.ui_scale_factor_edit.setText(str(scale_factor))
         
+        # Set update channel
+        update_prefs = cfg.get("update_preferences", {})
+        update_channel = update_prefs.get("update_channel", "stable")
+        for i in range(self.update_channel_combo.count()):
+            if self.update_channel_combo.itemData(i) == update_channel:
+                self.update_channel_combo.setCurrentIndex(i)
+                break
+        
         # Trigger UI update
         self._on_ui_scale_mode_changed(scale_mode.capitalize())
 
@@ -622,6 +638,12 @@ class SettingsDialog(QDialog):
                 scale_manager.refresh_screen_detection()
         except Exception as e:
             logger.error(f"Failed to apply UI scaling changes: {e}")
+        
+        # Save update channel setting
+        update_channel = self.update_channel_combo.currentData()
+        current_update_prefs = config_manager.get("update_preferences", {})
+        current_update_prefs["update_channel"] = update_channel
+        config_manager.set("update_preferences", current_update_prefs)
         
         self.settings_saved.emit()
         self.accept()
