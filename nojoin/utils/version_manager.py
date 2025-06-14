@@ -67,38 +67,125 @@ class VersionManager:
         return fallback_version
     
     def _get_version_from_git(self) -> Optional[str]:
-        """Extract version from the latest git commit message."""
+        """
+        Extract version using multi-tier approach:
+        1. Git tags (most reliable)
+        2. Enhanced commit message parsing (fallback)
+        """
         try:
-            # Get the latest commit message
+            # Tier 1: Try to get version from git tags
+            tag_version = self._get_version_from_git_tags()
+            if tag_version:
+                logger.debug(f"Version from git tag: {tag_version}")
+                return tag_version
+            
+            # Tier 2: Fallback to enhanced commit message parsing
+            commit_version = self._get_version_from_commit_messages()
+            if commit_version:
+                logger.debug(f"Version from commit message: {commit_version}")
+                return commit_version
+            
+            logger.debug("No version found in git tags or commit messages")
+            return None
+                
+        except Exception as e:
+            logger.debug(f"Unexpected error getting git version: {e}")
+            return None
+    
+    def _get_version_from_git_tags(self) -> Optional[str]:
+        """Get version from git tags - most reliable method."""
+        try:
+            # Try to get exact tag for current commit
             result = subprocess.run([
-                'git', 'log', '-1', '--pretty=format:%s'
+                'git', 'describe', '--tags', '--exact-match', 'HEAD'
             ], capture_output=True, text=True, cwd=self.project_root, timeout=5)
             
             if result.returncode == 0:
-                commit_message = result.stdout.strip()
-                logger.debug(f"Latest commit message: {commit_message}")
+                tag_name = result.stdout.strip()
+                # Remove 'v' prefix if present
+                version = tag_name.lstrip('v')
+                logger.debug(f"Found exact tag for HEAD: {tag_name} -> {version}")
+                return version
+            
+            # If no exact tag, get the latest tag with distance info for context
+            result = subprocess.run([
+                'git', 'describe', '--tags', '--abbrev=0'
+            ], capture_output=True, text=True, cwd=self.project_root, timeout=5)
+            
+            if result.returncode == 0:
+                latest_tag = result.stdout.strip()
+                # Check if we're ahead of the latest tag
+                result_distance = subprocess.run([
+                    'git', 'rev-list', '--count', f'{latest_tag}..HEAD'
+                ], capture_output=True, text=True, cwd=self.project_root, timeout=5)
                 
-                # Extract semantic version from commit message
-                # Look for patterns like v1.2.3, 1.2.3, v1.2.3-beta, etc.
-                version_pattern = r'v?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)'
-                match = re.search(version_pattern, commit_message)
+                if result_distance.returncode == 0:
+                    distance = int(result_distance.stdout.strip())
+                    base_version = latest_tag.lstrip('v')
+                    
+                    if distance == 0:
+                        # We're exactly on the tagged commit
+                        logger.debug(f"On tagged commit: {latest_tag} -> {base_version}")
+                        return base_version
+                    else:
+                        # We're ahead of the tag - this is development version
+                        # Get short commit hash for unique identification
+                        result_hash = subprocess.run([
+                            'git', 'rev-parse', '--short', 'HEAD'
+                        ], capture_output=True, text=True, cwd=self.project_root, timeout=5)
+                        
+                        if result_hash.returncode == 0:
+                            short_hash = result_hash.stdout.strip()
+                            dev_version = f"{base_version}-dev.{distance}+{short_hash}"
+                            logger.debug(f"Development version: {dev_version} ({distance} commits ahead of {latest_tag})")
+                            return dev_version
+            
+            return None
                 
-                if match:
-                    extracted_version = match.group(1)
-                    logger.debug(f"Extracted version: {extracted_version}")
-                    return extracted_version
-                else:
-                    logger.debug("No version pattern found in commit message")
-                    return None
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.debug(f"Git tag command error: {e}")
+            return None
+        except Exception as e:
+            logger.debug(f"Unexpected error getting version from git tags: {e}")
+            return None
+    
+    def _get_version_from_commit_messages(self) -> Optional[str]:
+        """Fallback: Extract version from recent commit messages with enhanced regex."""
+        try:
+            # Get last 10 commit messages to scan for version info
+            result = subprocess.run([
+                'git', 'log', '-10', '--pretty=format:%s'
+            ], capture_output=True, text=True, cwd=self.project_root, timeout=5)
+            
+            if result.returncode == 0:
+                commit_messages = result.stdout.strip().split('\n')
+                
+                # Enhanced regex to support 4+ digit versioning
+                # Matches: v0.7.0.1, 0.7.0.1, v1.2.3.4.5, 1.2.3-beta, etc.
+                version_pattern = r'v?(\d+(?:\.\d+)*(?:-[a-zA-Z0-9.-]+)?)'
+                
+                for i, commit_message in enumerate(commit_messages):
+                    logger.debug(f"Scanning commit {i+1}: {commit_message}")
+                    match = re.search(version_pattern, commit_message)
+                    
+                    if match:
+                        extracted_version = match.group(1)
+                        # Validate it looks like a version (has at least one dot)
+                        if '.' in extracted_version:
+                            logger.debug(f"Found version in commit {i+1}: {extracted_version}")
+                            return extracted_version
+                
+                logger.debug("No version pattern found in recent commit messages")
+                return None
             else:
-                logger.debug("Git command failed")
+                logger.debug("Git log command failed")
                 return None
                 
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError) as e:
-            logger.debug(f"Git command error: {e}")
+            logger.debug(f"Git commit message command error: {e}")
             return None
         except Exception as e:
-            logger.debug(f"Unexpected error getting git version: {e}")
+            logger.debug(f"Unexpected error getting version from commit messages: {e}")
             return None
     
     def check_for_updates(self, timeout: int = 10, use_releases: bool = True) -> Tuple[bool, Optional[Dict]]:
