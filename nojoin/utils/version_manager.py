@@ -188,32 +188,18 @@ class VersionManager:
             logger.debug(f"Unexpected error getting version from commit messages: {e}")
             return None
     
-    def check_for_updates(self, timeout: int = 10, use_releases: bool = True) -> Tuple[bool, Optional[Dict]]:
+    def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
         """
-        Check for available updates from GitHub releases or main branch.
+        Check for available updates from GitHub releases.
         
         Args:
             timeout: Request timeout in seconds
-            use_releases: If True, check releases API; if False, check main branch and releases (hybrid)
             
         Returns:
             Tuple of (has_update, release_info)
         """
-        current_version = self.get_current_version()
-        logger.debug(f"Current version: {current_version}")
-        
-        if use_releases:
-            # Stable channel: Only check releases
-            logger.info("Checking for updates from GitHub releases...")
-            return self._check_releases_only(timeout, current_version)
-        else:
-            # Development channel: Check both main branch AND releases, show whichever is newer
-            logger.info("Checking for updates from main branch and releases (hybrid mode)...")
-            return self._check_hybrid_updates(timeout, current_version)
-    
-    def _check_releases_only(self, timeout: int, current_version: str) -> Tuple[bool, Optional[Dict]]:
-        """Check only GitHub releases for updates."""
         try:
+            logger.info("Checking for updates from GitHub releases...")
             response = requests.get(GITHUB_RELEASES_URL, timeout=timeout)
             response.raise_for_status()
             
@@ -222,31 +208,33 @@ class VersionManager:
                 logger.warning("No releases found on GitHub")
                 return False, None
             
-            # Find the latest release (including pre-releases) by version comparison
+            current_version = self.get_current_version()
+            logger.info(f"Current version: {current_version}")
+            
+            # Find the latest non-draft release
             latest_release = None
             latest_version = None
             
+            # Sort releases by created date (newest first) to ensure we get the actual latest
+            releases.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            
             for release in releases:
+                # Skip drafts
+                if release.get("draft", False):
+                    logger.debug(f"Skipping draft release: {release.get('tag_name', 'unknown')}")
+                    continue
+                
                 release_version = release.get("tag_name", "").lstrip('v')
                 if not release_version:
+                    logger.debug(f"Skipping release with no tag_name")
                     continue
                     
                 logger.debug(f"Found release: {release_version}")
                 
-                # Skip drafts
-                if release.get("draft", False):
-                    logger.debug(f"Skipping draft release: {release_version}")
-                    continue
-                
-                try:
-                    # Compare versions using semantic versioning
-                    if latest_version is None or version.parse(release_version) > version.parse(latest_version):
-                        latest_version = release_version
-                        latest_release = release
-                        logger.debug(f"New latest version candidate: {release_version}")
-                except Exception as e:
-                    logger.warning(f"Error parsing version {release_version}: {e}")
-                    continue
+                # Take the first valid release (latest by date)
+                latest_version = release_version
+                latest_release = release
+                break
             
             if not latest_release or not latest_version:
                 logger.warning("Could not find any valid releases")
@@ -255,7 +243,45 @@ class VersionManager:
             logger.info(f"Latest release found: {latest_version}")
             
             # Compare with current version
-            return self._compare_and_build_update_info(current_version, latest_version, latest_release, is_release=True)
+            # Strip development version suffixes for comparison
+            current_clean = current_version.split('-')[0]  # Remove -dev.1+abc123 suffixes
+            
+            try:
+                if version.parse(latest_version) > version.parse(current_clean):
+                    logger.info(f"Update available: {latest_version} (current: {current_version})")
+                    
+                    download_url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{latest_release.get('tag_name', latest_version)}.zip"
+                    
+                    return True, {
+                        'version': latest_version,
+                        'name': latest_release.get('name', f'Version {latest_version}'),
+                        'body': latest_release.get('body', ''),
+                        'published_at': latest_release.get('published_at'),
+                        'download_url': download_url,
+                        'tag_name': latest_release.get('tag_name', latest_version),
+                        'prerelease': latest_release.get('prerelease', False)
+                    }
+                else:
+                    logger.info(f"Current version {current_version} is up to date with latest release {latest_version}")
+                    return False, None
+                    
+            except Exception as e:
+                logger.warning(f"Error comparing versions: {e}")
+                # Fallback to string comparison
+                if latest_version != current_clean:
+                    logger.info("Using fallback string comparison - assuming update available")
+                    download_url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{latest_release.get('tag_name', latest_version)}.zip"
+                    return True, {
+                        'version': latest_version,
+                        'name': latest_release.get('name', f'Version {latest_version}'),
+                        'body': latest_release.get('body', ''),
+                        'published_at': latest_release.get('published_at'),
+                        'download_url': download_url,
+                        'tag_name': latest_release.get('tag_name', latest_version),
+                        'prerelease': latest_release.get('prerelease', False)
+                    }
+                else:
+                    return False, None
                 
         except requests.RequestException as e:
             logger.error(f"Network error checking for updates: {e}")
@@ -264,103 +290,6 @@ class VersionManager:
             logger.error(f"Error checking for updates: {e}")
             return False, None
     
-    def _check_hybrid_updates(self, timeout: int, current_version: str) -> Tuple[bool, Optional[Dict]]:
-        """Check both releases and main branch, return whichever is newer."""
-        try:
-            # Check releases first
-            logger.info("Checking releases for hybrid mode...")
-            has_release_update, release_info = self._check_releases_only(timeout, current_version)
-            logger.info(f"Release check result: has_update={has_release_update}, version={release_info['version'] if release_info else 'None'}")
-            
-            # Check main branch
-            logger.info("Checking main branch for hybrid mode...")
-            has_branch_update, branch_info = self._check_main_branch_update(timeout)
-            logger.info(f"Branch check result: has_update={has_branch_update}, version={branch_info['version'] if branch_info else 'None'}")
-            
-            # Determine which update to show
-            if not has_release_update and not has_branch_update:
-                logger.info("No updates available from releases or main branch")
-                return False, None
-            
-            if has_release_update and not has_branch_update:
-                logger.info(f"Update available from releases only: {release_info['version']}")
-                return True, release_info
-            
-            if has_branch_update and not has_release_update:
-                logger.info(f"Update available from main branch only: {branch_info['version']}")
-                return True, branch_info
-            
-            # Both have updates - compare versions to show newer one
-            if has_release_update and has_branch_update:
-                release_version = release_info['version']
-                branch_version = branch_info['version']
-                
-                try:
-                    # If branch version is just a commit SHA, prefer the release
-                    if branch_version.startswith('main-'):
-                        logger.info(f"Both updates available, preferring release: {release_version} over main branch")
-                        return True, release_info
-                    
-                    # Compare semantic versions
-                    if version.parse(release_version) >= version.parse(branch_version):
-                        logger.info(f"Release version {release_version} is newer than or equal to branch version {branch_version}")
-                        return True, release_info
-                    else:
-                        logger.info(f"Branch version {branch_version} is newer than release version {release_version}")
-                        return True, branch_info
-                        
-                except Exception as e:
-                    logger.warning(f"Error comparing versions, preferring release: {e}")
-                    return True, release_info
-            
-            return False, None
-            
-        except Exception as e:
-            logger.error(f"Error in hybrid update check: {e}")
-            return False, None
-    
-    def _compare_and_build_update_info(self, current_version: str, latest_version: str, latest_release: Dict, is_release: bool = True) -> Tuple[bool, Optional[Dict]]:
-        """Compare versions and build update info if update is available."""
-        try:
-            if version.parse(latest_version) > version.parse(current_version):
-                # Use zipball download URL for source archive
-                download_url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{latest_release.get('tag_name', latest_version)}.zip"
-                
-                logger.info(f"Update available: {latest_version} (current: {current_version})")
-                release_type = "pre-release" if latest_release.get("prerelease", False) else "release"
-                logger.info(f"Release type: {release_type}")
-                
-                return True, {
-                    'version': latest_version,
-                    'name': latest_release.get('name', f'Version {latest_version}'),
-                    'body': latest_release.get('body', ''),
-                    'published_at': latest_release.get('published_at'),
-                    'download_url': download_url,
-                    'tag_name': latest_release.get('tag_name', latest_version),
-                    'prerelease': latest_release.get('prerelease', False)
-                }
-            else:
-                logger.info("Current version is up to date")
-                return False, None
-                
-        except Exception as e:
-            logger.warning(f"Error comparing versions: {e}")
-            # Fallback to string comparison if semantic versioning fails
-            if latest_version != current_version:
-                logger.info("Using fallback version comparison")
-                download_url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{latest_release.get('tag_name', latest_version)}.zip"
-                return True, {
-                    'version': latest_version,
-                    'name': latest_release.get('name', f'Version {latest_version}'),
-                    'body': latest_release.get('body', ''),
-                    'published_at': latest_release.get('published_at'),
-                    'download_url': download_url,
-                    'tag_name': latest_release.get('tag_name', latest_version),
-                    'prerelease': latest_release.get('prerelease', False)
-                }
-            else:
-                return False, None
-    
     def get_update_preferences(self) -> Dict:
         """Get current update preferences from config."""
         return config_manager.get("update_preferences", {
@@ -368,8 +297,7 @@ class VersionManager:
             "last_check": None,
             "last_reminded": None,
             "reminder_preference": UpdatePreference.ONE_WEEK,
-            "skip_version": None,
-            "update_channel": "stable"  # "stable" for releases, "development" for main branch
+            "skip_version": None
         })
     
     def set_update_preferences(self, preferences: Dict):
@@ -385,16 +313,12 @@ class VersionManager:
         if not prefs.get("check_on_startup", True):
             return False
         
-        # Check if we've checked recently
+        # Check if we've checked recently (once per day)
         last_check = prefs.get("last_check")
         if last_check:
             try:
                 last_check_date = datetime.fromisoformat(last_check)
-                # For development channel, check more frequently (every 6 hours)
-                # For stable channel, check once per day
-                update_channel = prefs.get("update_channel", "stable")
-                check_interval = timedelta(hours=6) if update_channel == "development" else timedelta(days=1)
-                if datetime.now() - last_check_date < check_interval:
+                if datetime.now() - last_check_date < timedelta(days=1):
                     return False
             except ValueError:
                 pass  # Invalid date format, proceed with check
@@ -842,83 +766,7 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"Error finding system Python: {e}, using current executable")
             return sys.executable
-    
-    def _check_main_branch_update(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
-        """
-        Check for updates from the main branch.
-        
-        Args:
-            timeout: Request timeout in seconds
-            
-        Returns:
-            Tuple of (has_update, release_info)
-        """
-        try:
-            # Get the latest commit from main branch
-            commits_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/main"
-            response = requests.get(commits_url, timeout=timeout)
-            response.raise_for_status()
-            
-            commit_data = response.json()
-            latest_commit_sha = commit_data['sha'][:7]  # Short SHA
-            commit_date = commit_data['commit']['committer']['date']
-            commit_message = commit_data['commit']['message'].split('\n')[0]  # First line
-            
-            current_version = self.get_current_version()
-            logger.debug(f"Main branch check: current={current_version}, latest_commit={latest_commit_sha}")
-            logger.debug(f"Latest commit message: {commit_message}")
-            
-            # Extract version from commit message if available
-            version_pattern = r'v?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)'
-            match = re.search(version_pattern, commit_message)
-            
-            if match:
-                extracted_version = match.group(1)
-                logger.debug(f"Extracted version from commit message: {extracted_version}")
-                # Compare with current version
-                try:
-                    if version.parse(extracted_version) <= version.parse(current_version):
-                        logger.info(f"Main branch version {extracted_version} is not newer than current {current_version}")
-                        return False, None  # No update needed
-                except:
-                    logger.warning(f"Could not compare versions, assuming update available")
-                    pass  # Fall through to assume update available
-                    
-                version_display = extracted_version
-            else:
-                # No version in commit message, use commit SHA
-                logger.debug(f"No version found in commit message, using commit SHA")
-                version_display = f"main-{latest_commit_sha}"
-                
-                # For SHA-based versions, only show update if commit is newer than current
-                # This prevents showing updates when on a tagged version
-                try:
-                    if not current_version.startswith('main-') and 'dev' not in current_version:
-                        logger.info(f"Current version {current_version} is a release, not showing main branch commit as update")
-                        return False, None
-                except:
-                    pass
-            
-            download_url = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip"
-            
-            return True, {
-                'version': version_display,
-                'name': f'Latest Development Version ({version_display})',
-                'body': f'Latest commit: {commit_message}\n\nNote: This is the development version from the main branch.',
-                'published_at': commit_date,
-                'download_url': download_url,
-                'tag_name': 'main',
-                'prerelease': True,  # Mark main branch as pre-release
-                'commit_sha': latest_commit_sha,
-                'commit_message': commit_message
-            }
-            
-        except requests.RequestException as e:
-            logger.error(f"Network error checking main branch: {e}")
-            return False, None
-        except Exception as e:
-            logger.error(f"Error checking main branch: {e}")
-            return False, None
+
     
     def execute_update(self, archive_path: str, release_info: Dict) -> bool:
         """

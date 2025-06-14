@@ -32,12 +32,7 @@ class UpdateCheckThread(QThread):
     def run(self):
         """Check for updates in background thread."""
         try:
-            # Get user preference for update channel
-            prefs = version_manager.get_update_preferences()
-            update_channel = prefs.get("update_channel", "stable")
-            use_releases = (update_channel == "stable")
-            
-            has_update, release_info = version_manager.check_for_updates(use_releases=use_releases)
+            has_update, release_info = version_manager.check_for_updates()
             version_manager.mark_update_check_performed()
             self.update_checked.emit(has_update, release_info)
         except Exception as e:

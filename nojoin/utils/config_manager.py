@@ -64,8 +64,7 @@ DEFAULT_CONFIG = {
         "last_check": None,
         "last_reminded": None,
         "reminder_preference": "one_week",
-        "skip_version": None,
-        "update_channel": "stable"  # "stable" for releases, "development" for main branch
+        "skip_version": None
     }
 }
 
@@ -130,9 +129,7 @@ def get_available_ui_scale_modes():
     """Returns available UI scale modes."""
     return ["auto", "manual"]
 
-def get_available_update_channels():
-    """Returns available update channels."""
-    return ["stable", "development"]
+
 
 def get_notes_font_size_pixels(size_setting):
     """
