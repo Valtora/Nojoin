@@ -32,7 +32,11 @@ class UpdateCheckThread(QThread):
     def run(self):
         """Check for updates in background thread."""
         try:
-            has_update, release_info = version_manager.check_for_updates()
+            # Get user preference for releases vs main branch
+            prefs = version_manager.get_update_preferences()
+            use_releases = prefs.get("use_releases", True)
+            
+            has_update, release_info = version_manager.check_for_updates(use_releases=use_releases)
             version_manager.mark_update_check_performed()
             self.update_checked.emit(has_update, release_info)
         except Exception as e:
@@ -293,44 +297,46 @@ class UpdateProgressDialog(QDialog):
             self.reject()
     
     def _start_backup_and_update(self):
-        """Start the update process (Inno Setup handles backup automatically)."""
+        """Start the update process using source archive."""
         self.status_label.setText("Preparing for update...")
         
-        # Inno Setup automatically preserves config.json and nojoin_data.db
-        # No manual backup needed - proceed directly to update
+        # No manual backup needed - the update script handles this
         self._execute_update(None)
     
     def _execute_update(self, backup_path: Optional[str]):
-        """Execute the update using Inno Setup installer."""
+        """Execute the update using source archive and update script."""
         try:
-            self.status_label.setText("Preparing installer...")
+            self.status_label.setText("Preparing update...")
             
             # Show final confirmation
             reply = QMessageBox.question(
                 self, "Ready to Update",
                 f"Ready to update to Nojoin {self.release_info['version']}.\n\n"
-                "The installer will:\n"
-                "1. Preserve your settings and database\n"
-                "2. Update application files\n"
-                "3. Restart Nojoin automatically\n\n"
+                "The update process will:\n"
+                "1. Preserve your .venv, settings, and database\n"
+                "2. Download and extract source files\n"
+                "3. Update dependencies via pip\n"
+                "4. Restart Nojoin automatically\n\n"
                 "Continue with the update?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes
             )
             
             if reply == QMessageBox.Yes:
-                # Execute the installer
-                if version_manager.execute_update(self.update_file_path):
+                # Execute the update script
+                if version_manager.execute_update(self.update_file_path, self.release_info):
                     QMessageBox.information(
                         self, "Update Started",
-                        "The installer is running. Nojoin will close and restart automatically."
+                        "The update process is running in the background.\n"
+                        "Nojoin will close and restart automatically when complete.\n\n"
+                        "You can check the update log in your temp directory if needed."
                     )
                     # Signal the main application to close
                     self.accept()
-                    # Close the main application to allow installer to work
+                    # Close the main application to allow update to work
                     sys.exit(0)
                 else:
-                    QMessageBox.critical(self, "Update Failed", "Failed to start the installer.")
+                    QMessageBox.critical(self, "Update Failed", "Failed to start the update process.")
                     self.reject()
             else:
                 self.reject()
