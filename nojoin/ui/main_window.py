@@ -2028,6 +2028,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'settings_dialog') or not self.settings_dialog:
             self.settings_dialog = SettingsDialog(self)
             self.settings_dialog.settings_saved.connect(self._handle_settings_saved)
+            self.settings_dialog.backup_restored.connect(self._handle_backup_restored)
 
         # Apply current main window palette to ensure consistency
         self.settings_dialog.setPalette(self.palette())
@@ -2041,6 +2042,18 @@ class MainWindow(QMainWindow):
         # Update center panel content to apply new font size
         # Optional: Show confirmation or perform other updates if needed
         self.status_bar.showMessage("Settings saved successfully.", 3000)
+    
+    def _handle_backup_restored(self):
+        """Handle successful backup restore by refreshing the meeting list."""
+        # Clear current selection to avoid issues with stale data
+        self.meetings_list_widget.clearSelection()
+        self._clear_meeting_details()
+        
+        # Refresh the meeting list to show newly restored data
+        self.load_recordings()
+        
+        # Show confirmation in status bar
+        self.status_bar.showMessage("Meeting list refreshed with restored data.", 5000)
     
     def _load_recordings_with_preserved_selection(self, target_recording_id: str = None):
         """Helper method to refresh meetings list while preserving selection."""

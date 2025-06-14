@@ -25,6 +25,8 @@ import logging
 class SettingsDialog(QDialog):
     # Signal emitted when settings (potentially theme) are saved
     settings_saved = Signal()
+    # Signal emitted when backup restore completes successfully
+    backup_restored = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -784,15 +786,22 @@ class SettingsDialog(QDialog):
         backup_manager = BackupRestoreManager()
         success = backup_manager.restore_backup(backup_path, progress_callback)
         
-        progress.close()
-        
         if success:
+            # Add UI refresh step
+            if progress_callback:
+                progress_callback(95, "Refreshing interface...")
+            
+            # Emit signal to refresh UI
+            self.backup_restored.emit()
+            
+            progress.close()
             QMessageBox.information(
                 self, 
                 "Restore Complete", 
-                "Backup restored successfully! You may need to restart the application to see all changes."
+                "Backup restored successfully! The meeting list has been refreshed with your restored data."
             )
         else:
+            progress.close()
             QMessageBox.critical(
                 self, 
                 "Restore Failed", 
