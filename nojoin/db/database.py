@@ -84,7 +84,8 @@ def add_recording(name: str, audio_path: str, duration: float, size_bytes: int, 
 def get_all_recordings():
     """Retrieves all recordings from the database, ordered by creation date descending."""
     sql = '''SELECT id, name, created_at, duration_seconds, status,
-                   audio_path, raw_transcript_path, diarized_transcript_path
+                   audio_path, raw_transcript_path, diarized_transcript_path,
+                   start_time, end_time
              FROM recordings
              ORDER BY created_at DESC''' # Show newest first
     recordings = []
@@ -601,7 +602,7 @@ def add_diarization_labels(recording_id: str, diarization_labels: list, snippet_
 def get_recording_by_id(recording_id: str):
     """Fetch a single recording by its ID. Returns a dict or None if not found. Includes chat_history."""
     recording_id = str(recording_id)
-    sql = '''SELECT id, name, created_at, duration_seconds, status, audio_path, raw_transcript_path, diarized_transcript_path, tags, format, file_size_bytes, processed_at, chat_history
+    sql = '''SELECT id, name, created_at, duration_seconds, status, audio_path, raw_transcript_path, diarized_transcript_path, tags, format, file_size_bytes, processed_at, chat_history, start_time, end_time
              FROM recordings WHERE id = ?'''
     logger.debug(f"Attempting to fetch recording by ID: {recording_id}")
     try:

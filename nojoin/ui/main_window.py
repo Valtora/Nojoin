@@ -4043,8 +4043,18 @@ class MeetingListItemWidget(QFrame):
                         dt = None
             if dt:
                 date_str = dt.strftime("%d %b %Y")
-                time_str = dt.strftime("%H:%M")
-                tooltip_date_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                # Format time with start and end times if both are available
+                if start_time_str and end_time_str:
+                    start_dt = datetime.datetime.fromisoformat(start_time_str)
+                    end_dt = datetime.datetime.fromisoformat(end_time_str)
+                    start_time_formatted = start_dt.strftime("%H:%M")
+                    end_time_formatted = end_dt.strftime("%H:%M")
+                    time_str = f"{start_time_formatted} - {end_time_formatted}"
+                    tooltip_date_time = f"{start_dt.strftime('%Y-%m-%d %H:%M:%S')} - {end_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+                else:
+                    # Fall back to single time display if end time not available
+                    time_str = dt.strftime("%H:%M")
+                    tooltip_date_time = dt.strftime("%Y-%m-%d %H:%M:%S")
             if start_time_str and end_time_str:
                 start_dt = datetime.datetime.fromisoformat(start_time_str)
                 end_dt = datetime.datetime.fromisoformat(end_time_str)
