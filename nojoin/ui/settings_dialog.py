@@ -304,9 +304,9 @@ class SettingsDialog(QDialog):
         layout.addRow("", self._create_section_divider("UPDATES"))
         # Update channel selection
         self.update_channel_combo = QComboBox()
-        self.update_channel_combo.addItem("Stable (Releases)", "stable")
-        self.update_channel_combo.addItem("Development (Latest Commits)", "development")
-        self.update_channel_combo.setToolTip("Stable: Updates from GitHub releases only\nDevelopment: Updates from latest main branch commits")
+        self.update_channel_combo.addItem("Stable (Releases Only)", "stable")
+        self.update_channel_combo.addItem("Development (Releases + Main Branch)", "development")
+        self.update_channel_combo.setToolTip("Stable: Updates from GitHub releases only\nDevelopment: Updates from both releases and main branch commits (shows whichever is newer)")
         layout.addRow("Update Channel:", self.update_channel_combo)
         
         # Import version manager here to get current version
