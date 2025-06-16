@@ -552,13 +552,11 @@ def main():
         # In production mode: preserve .venv, .git, user data is separate in Documents
         preserve_items = {{".venv", ".git"}}
         
-        # Add deployment-specific preservations
-        deployment_mode = "{deployment_mode}"
-        if deployment_mode == "development":
-            # In development mode, user data directory might be in project root
-            user_data_relative = user_data_dir.relative_to(project_root) if user_data_dir.is_relative_to(project_root) else None
-            if user_data_relative and str(user_data_relative) != ".":
-                preserve_items.add(str(user_data_relative).split("/")[0])  # Preserve top-level directory
+        # NOTE: We no longer add the entire user data directory (which is also named 'nojoin')
+        # to preserve_items when running in development mode. This ensures the source code
+        # package is replaced by the newer release. User data is already backed up explicitly
+        # above and restored later, so it is safe to let the update overwrite the package
+        # directory.
         
         # Remove old files except preserved ones
         for item in project_root.iterdir():
