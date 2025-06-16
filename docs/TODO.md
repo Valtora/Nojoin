@@ -8,8 +8,5 @@ Implement advanced analyses for both the audio and transcript to gauge things li
 ## UX / Quality of Life
 Avoid success prompts generally, prompts are for important notices, important inputs, and important warnings only. If something was successful, just display the result and remove the pop-up prompts.
 
-## Participant Dialog
-Centre the 'Add Participant', 'Enable Merge Mode', and 'Merge Selected' buttons. Change the name of the 'Enable Merge Mode' to 'Merge Speakers'.
-
 ## Meeting Note Generation
 The user is prompted to generate meeting notes after pressing 'Save' in the Participants Dialog after a meeting has finished processing. Remove this prompt. Meeting Notes should ALWAYS be generated unless an LLM is not available, only then should meeting note generation be skipped and Nojoin falls back to having the transcript available only as designed.

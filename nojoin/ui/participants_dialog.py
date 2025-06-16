@@ -79,20 +79,22 @@ class ParticipantsDialog(QDialog):
         self.layout.addWidget(scroll, 1)
         # Merge controls
         merge_row = QHBoxLayout()
+        merge_row.addStretch(1)  # Add stretch before buttons to center them
         # Add Participant button
         self.add_participant_btn = QPushButton("Add Participant")
         self.add_participant_btn.clicked.connect(self.show_add_participant_dialog)
         merge_row.addWidget(self.add_participant_btn)
         # Merge controls
-        self.merge_mode_btn = QPushButton("Enable Merge Mode")
+        self.merge_mode_btn = QPushButton("Merge Speakers")
         self.merge_mode_btn.setCheckable(True)
         self.merge_mode_btn.toggled.connect(self.toggle_merge_mode)
         self.merge_btn = QPushButton("Merge Selected")
         self.merge_btn.setEnabled(False)
+        self.merge_btn.setVisible(False)  # Initially hidden
         self.merge_btn.clicked.connect(self.handle_merge_speakers)
         merge_row.addWidget(self.merge_mode_btn)
         merge_row.addWidget(self.merge_btn)
-        merge_row.addStretch(1)
+        merge_row.addStretch(1)  # Add stretch after buttons to center them
         self.layout.addLayout(merge_row)
         
         # Meeting notes will now ALWAYS be regenerated after saving changes, so the checkbox is removed.
@@ -322,6 +324,7 @@ class ParticipantsDialog(QDialog):
             widgets['merge_checkbox'].setChecked(False)
         self._merge_selected = set()
         self.merge_btn.setEnabled(False)
+        self.merge_btn.setVisible(checked)  # Show/hide button based on merge mode
 
     def handle_merge_checkbox(self, speaker_id, checked):
         if checked:
