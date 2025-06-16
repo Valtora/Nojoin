@@ -1501,66 +1501,28 @@ class MainWindow(QMainWindow):
              QMessageBox.warning(self, "Invalid Name", "Recording name cannot be empty.")
 
     def delete_selected_recording(self, recording_id, recording_data):
-        logger.info(f"delete_selected_recording called for ID: {recording_id}, Data: {recording_data}")
-        reply = QMessageBox.question(self, "Delete Recording", 
-                                     f"Are you sure you want to delete the recording: '{recording_data.get('name', recording_id)}'?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            # Stop playback if this recording is currently playing or loaded
-            current_audio_path = self.playback_controller.audio_path
-            db_audio_path_relative = recording_data.get('audio_path')
-            
-            logger.info(f"Current playback audio path: {current_audio_path}")
-            logger.info(f"Recording to delete audio path (relative): {db_audio_path_relative}")
-
-            if db_audio_path_relative:
-                db_audio_path_abs = from_project_relative_path(db_audio_path_relative)
-                logger.info(f"Recording to delete audio path (absolute): {db_audio_path_abs}")
-                if current_audio_path and os.path.normpath(current_audio_path) == os.path.normpath(db_audio_path_abs):
-                    logger.info(f"Recording {recording_id} is currently loaded in playback_controller. Stopping playback.")
-                    self.playback_controller.stop() # Ensure playback is stopped
-                    logger.info(f"Playback_controller stopped for {recording_id}.")
+        reply = QMessageBox.question(self, "Delete Recording", "Are you sure you want to delete this recording?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Close any existing dialogs that might reference this recording
+        if hasattr(self, '_meeting_notes_worker') and self._meeting_notes_worker:
+            self._meeting_notes_worker.terminate()
+            self._meeting_notes_worker = None
+        
+        try:
+            success = db_ops.delete_recording(recording_id)
+            if success:
+                self.status_bar.showMessage("Recording deleted successfully.", 3000)
+                self.load_recordings()
+                # Clear the meeting details panel if this was the selected recording
+                selected_items = self.meetings_list_widget.selectedItems()
+                if not selected_items:
+                    self._clear_meeting_details()
             else:
-                    logger.info(f"Recording {recording_id} is NOT currently loaded in playback_controller. No stop needed for main player.")
-        else:
-                logger.warning(f"No audio_path found in recording_data for {recording_id} during delete operation.")
-
-        logger.info(f"Attempting to delete recording {recording_id} from database and file system.")
-        success = db_ops.delete_recording(recording_id)
-        if success:
-                logger.info(f"Successfully deleted recording {recording_id}.")
-                QMessageBox.information(self, "Success", "Recording deleted successfully.")
-                self.load_recordings()  # Refresh the list
-                
-                # Check if the deleted recording was the one displayed
-                if self.currently_selected_recording_id == recording_id:
-                    self._clear_meeting_details() # Clear details panel
-                    self.currently_selected_recording_id = None # No recording is selected now
-                
-                # If meetings list is now empty, ensure no selection state
-                if self.meetings_list_widget.count() == 0:
-                    self._clear_meeting_details() # Clear details panel
-                    self.currently_selected_recording_id = None
-                    # Explicitly disable playback controls and other relevant UI elements
-                    self.play_button.setEnabled(False)
-                    self.pause_button.setEnabled(False)
-                    self.stop_button.setEnabled(False)
-                    self.seek_slider.setEnabled(False)
-                    self.seek_slider.setValue(0)
-                    self.update_seek_time_label(0, 0)
-                    self.selected_audio_path = None # Clear selected audio path
-                    self.chat_input.setEnabled(False)
-                    self.chat_send_button.setEnabled(False)
-                    self.clear_chat_button.setEnabled(False)
-                elif not self.meetings_list_widget.selectedItems():
-                    # If list is not empty, but nothing is selected (e.g. after deleting the only item)
-                    # The handle_meeting_selection_changed should take care of resetting UI
-                    # but explicitly setting currently_selected_recording_id is good practice.
-                    self.currently_selected_recording_id = None
-
-        else:
-                logger.error(f"Failed to delete recording {recording_id}.")
-                QMessageBox.critical(self, "Error", "Failed to delete recording. Check logs for details.")
+                QMessageBox.critical(self, "Delete Recording", "Failed to delete recording.")
+        except Exception as e:
+            QMessageBox.critical(self, "Delete Recording", f"Error deleting recording: {str(e)}")
 
     def _context_view_edit_meeting_notes(self, recording_id, recording_data):
         # This function is primarily for when user right-clicks and wants to ensure notes are visible.
@@ -2326,66 +2288,44 @@ class MainWindow(QMainWindow):
         self.merge_btn.setEnabled(len(self._merge_selected) >= 2)
 
     def handle_delete_speaker(self, recording_id, speaker_id):
-
-        from nojoin.db import database as db_ops
-        reply = QMessageBox.question(self, "Delete Speaker", f"Are you sure you want to delete this speaker from the recording? This will remove all their segments and references.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        reply = QMessageBox.question(self, "Delete Speaker", "Are you sure you want to delete this speaker?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
         success = db_ops.delete_speaker_from_recording(recording_id, speaker_id)
-        if not success:
-            QMessageBox.critical(self, "Delete Speaker", "Failed to delete speaker from recording.")
-            return
-        # Update diarized transcript to remove speaker segments
-        speaker = db_ops.get_speaker_by_id(speaker_id)
-        diarization_label = None
-        for s in db_ops.get_speakers_for_recording(recording_id):
-            if s['id'] == speaker_id:
-                diarization_label = s.get('diarization_label')
-                break
-        if diarization_label:
-            transcript_ok = db_ops.replace_speaker_in_transcript(recording_id, diarization_label, None)
-            if not transcript_ok:
-                QMessageBox.warning(self, "Transcript Update", "Speaker deleted, but failed to update transcript.")
-        # Don't regenerate meeting notes here - will be done when user explicitly requests it
-        self.status_bar.showMessage("Speaker deleted and transcript updated", 3000)
-        QMessageBox.information(self, "Delete Speaker", "Speaker deleted from recording.")
-        # Reload panel and table
-        rec = db_ops.get_recording_by_id(recording_id)
-        self.load_speaker_labels(rec)
-        self.load_recordings()
-        self.load_transcript(recording_id)
+        if success:
+            self.status_bar.showMessage("Speaker deleted from recording.", 3000)
+            self.load_transcript(recording_id)
+        else:
+            QMessageBox.critical(self, "Delete Speaker", "Failed to delete speaker.")
 
     def handle_merge_speakers(self, recording_id, speakers):
-        from nojoin.db import database as db_ops
-        selected_ids = list(self._merge_selected)
-        if len(selected_ids) < 2:
+        if len(speakers) < 2:
             QMessageBox.warning(self, "Merge Speakers", "Select at least two speakers to merge.")
             return
-        # Prompt user to select target speaker
-        speaker_map = {s['id']: s for s in speakers if s['id'] in selected_ids}
-        items = [f"{s['name'] or s['diarization_label']} (ID {sid})" for sid, s in speaker_map.items()]
-        target_idx, ok = QInputDialog.getItem(self, "Select Target Speaker", "Merge into:", items, 0, False)
+        # Create a list for selection
+        speaker_options = []
+        for s in speakers:
+            speaker_options.append(f"{s['name']} (ID: {s['id']})")
+        # Ask which speaker to merge into
+        target_speaker_text, ok = QInputDialog.getItem(self, "Select Target Speaker", "Merge into:", speaker_options, 0, False)
         if not ok:
             return
-        # Find selected target speaker_id
-        for sid, s in speaker_map.items():
-            label = f"{s['name'] or s['diarization_label']} (ID {sid})"
-            if label == target_idx:
-                target_speaker_id = sid
+        # Extract the speaker ID from the selected text
+        target_speaker_id = None
+        for s in speakers:
+            if f"{s['name']} (ID: {s['id']})" == target_speaker_text:
+                target_speaker_id = s['id']
                 break
+        if not target_speaker_id:
+            QMessageBox.critical(self, "Merge Speakers", "Failed to identify target speaker.")
+            return
+        speaker_ids = [s['id'] for s in speakers]
+        success = db_ops.merge_speakers_in_recording(recording_id, speaker_ids, target_speaker_id)
+        if success:
+            self.status_bar.showMessage("Speakers merged successfully.", 3000)
+            self.load_transcript(recording_id)
         else:
-            QMessageBox.warning(self, "Merge Speakers", "Could not determine target speaker.")
-            return
-        # Merge in backend
-        success = db_ops.merge_speakers_in_recording(recording_id, selected_ids, target_speaker_id)
-        if not success:
             QMessageBox.critical(self, "Merge Speakers", "Failed to merge speakers.")
-            return
-        # Don't regenerate meeting notes here - will be done when user explicitly requests it
-        self.status_bar.showMessage("Speakers merged and transcript updated", 3000)
-        self.load_recordings()
-        self.load_transcript(recording_id)
-        QMessageBox.information(self, "Merge Speakers", "Speakers merged successfully.")
 
     def load_transcript(self, recording_id):
         """Load and display the transcript for the given recording ID, mapping diarization labels to current speaker names."""
@@ -2634,7 +2574,7 @@ class MainWindow(QMainWindow):
         print(f"[DEBUG] Recording status after processing: {status} (ID: {recording_id})")
         if status == "cancelled":
             self.update_table_status(recording_id, "Cancelled")
-            QMessageBox.information(self, "Processing Cancelled", "Recording was cancelled.")
+            self.status_bar.showMessage("Recording processing was cancelled.", 3000)
             return
         if status == "error":
             self.update_table_status(recording_id, "Error")
@@ -2913,7 +2853,7 @@ class MainWindow(QMainWindow):
     def _open_participants_dialog(self, recording_id, recording_data):
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
         dlg.participants_updated.connect(self._on_participants_changed)
-        dlg.regenerate_notes_requested.connect(lambda rec_id: self.on_regenerate_meeting_notes_clicked(rec_id, db_ops.get_recording_by_id(rec_id)))
+        dlg.regenerate_notes_requested.connect(lambda rec_id: self._generate_meeting_notes_after_relabel(rec_id))
         dlg.exec()
 
     def _on_participants_changed(self, recording_id: str):
@@ -3007,30 +2947,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Relabel Speakers", "Recording not found in database. Cannot relabel speakers.")
             return
         
-        # Track if notes were regenerated
-        notes_regenerated = [False]  # Use list to allow mutation in lambda
-        
-        def on_regenerate_requested(rec_id: str): # Ensure rec_id type hint is str
-            notes_regenerated[0] = True
-            # Ensure rec_id is passed, not a potentially stale recording_data
-            self._generate_meeting_notes_after_relabel(rec_id) 
-        
         dlg = ParticipantsDialog(recording_id, recording_data, parent=self)
         dlg.participants_updated.connect(self._on_participants_changed)
-        dlg.regenerate_notes_requested.connect(on_regenerate_requested)
-        result = dlg.exec()
-        
-        # If dialog was accepted and notes weren't regenerated through the dialog, ask if they want to generate notes
-        if result == QDialog.Accepted and not notes_regenerated[0]:
-            reply = QMessageBox.question(
-                self, 
-                "Generate Meeting Notes",
-                "Would you like to generate meeting notes for this recording?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            if reply == QMessageBox.Yes:
-                self._generate_meeting_notes_after_relabel(recording_id)
+        dlg.regenerate_notes_requested.connect(lambda rec_id: self._generate_meeting_notes_after_relabel(rec_id))
+        dlg.exec()
 
     def _generate_meeting_notes_after_relabel(self, recording_id):
         logger.info(f"Attempting to generate notes for recording_id: {recording_id}")
@@ -3071,10 +2991,18 @@ class MainWindow(QMainWindow):
         llm_provider = config_manager.get("llm_provider", "gemini")
         api_key = config_manager.get(f"{llm_provider}_api_key")
         model = config_manager.get(f"{llm_provider}_model", get_default_model_for_provider(llm_provider))
+        
+        # Check if LLM is available - if not, silently skip notes generation and fall back to transcript only
+        if not api_key:
+            logger.info(f"No API key available for {llm_provider}. Skipping meeting notes generation, falling back to transcript only.")
+            self.status_bar.showMessage("Meeting notes skipped - no LLM configured. Transcript available.", 3000)
+            return
+            
         try:
             backend = get_llm_backend(llm_provider, api_key=api_key, model=model)
         except Exception as e:
-            QMessageBox.warning(self, "Meeting Notes", f"Unknown LLM provider: {llm_provider}\n{e}")
+            logger.warning(f"Could not initialize LLM backend: {e}. Skipping meeting notes generation.")
+            self.status_bar.showMessage("Meeting notes skipped - LLM unavailable. Transcript available.", 3000)
             return
         # Get latest speaker mapping
         speakers = db_ops.get_speakers_for_recording(recording_id)
@@ -3099,7 +3027,6 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Meeting notes generated.", 3000)
             db_ops.add_meeting_notes(recording_id, llm_provider, model, notes)
             notes_dialog.close()
-            QMessageBox.information(self, "Meeting Notes", "Meeting notes have been generated.")
         def on_error(error):
             logger.error(f"Failed to generate meeting notes: {error}")
             placeholder = (f"Meeting notes cannot be generated right now.\nPlease check your {llm_provider.title()} API key in settings or view the raw diarized transcript via the context menu.")
@@ -3158,9 +3085,7 @@ class MainWindow(QMainWindow):
         self.status_indicator.setText("Status: Idle")
         self.timer_label.setText("00:00:00")
         self.record_button.setEnabled(True)
-        self.status_bar.showMessage(message)
-        from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Recording Discarded", message)
+        self.status_bar.showMessage(message, 5000)
 
     def _on_notes_edited_autosave(self):
         # Start/restart debounce timer

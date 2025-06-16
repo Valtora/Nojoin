@@ -593,10 +593,7 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         self._playing_speaker_id = None
         
-        # Determine whether we need to regenerate notes (only when something actually changed)
-        should_regenerate = self._speakers_modified
-
-        # Emit update signal before closing so the main window can refresh immediately
+        # Emit update signal before closing if changes were made
         if self._speakers_modified:
             self.participants_updated.emit(self.recording_id)
 
@@ -607,9 +604,9 @@ class ParticipantsDialog(QDialog):
         # Close the dialog first so it no longer blocks subsequent modal dialogs
         self.accept()
 
-        # Now that the dialog is closed, immediately trigger regeneration if required.
-        if should_regenerate:
-            self.regenerate_notes_requested.emit(self.recording_id)
+        # Always trigger meeting notes generation when dialog is saved (if LLM available)
+        # This aligns with TODO requirements to always auto-generate notes after Save
+        self.regenerate_notes_requested.emit(self.recording_id)
 
     def reject(self):
         # Stop any playing snippet

@@ -5,8 +5,11 @@ Allow the user to provide the LLMs with some custom context. E.g., their name, t
 ## Advanced Meeting Analysis - Potential TODO
 Implement advanced analyses for both the audio and transcript to gauge things like speaker sentiments, engagement, bias, etc. with a view to extract as much information as possible from the meetings' interactions. Look at things like time spent on topics.
 
-## UX / Quality of Life
-Avoid success prompts generally, prompts are for important notices, important inputs, and important warnings only. If something was successful, just display the result and remove the pop-up prompts.
+## Settings Dialog - Definite TODO
+The 'Advanced' section should be above the 'Updates' section. Also the 'Backup_Restore' label shouldn't have an underscore. It should just be 'Backup/Restore'.
 
-## Meeting Note Generation
-The user is prompted to generate meeting notes after pressing 'Save' in the Participants Dialog after a meeting has finished processing. Remove this prompt. Meeting Notes should ALWAYS be generated unless an LLM is not available, only then should meeting note generation be skipped and Nojoin falls back to having the transcript available only as designed.
+## Processing Recording Dialog - Definite TODO
+Add a status message after 'Diarizing...' when participant names are being inferred: 'Inferring Speakers...'.
+
+## Meeting Notes and Context Consolidation - Potential TODO
+Find a way to 'combine' or otherwise consolidate meeting notes and context... Develop this idea further first.
