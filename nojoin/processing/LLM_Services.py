@@ -41,6 +41,13 @@ class LLMBackend:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+        """
+        Infer a concise, descriptive meeting title from the provided transcript.
+        Sub-classes must implement.
+        """
+        raise NotImplementedError
+
     @staticmethod
     def get_default_speaker_prompt_template():
         return """
@@ -50,6 +57,15 @@ You are an expert meeting assistant. Analyze the diarized meeting transcript bel
     def get_default_notes_prompt_template():
         return """
 You are an expert meeting assistant. Using the mapping of speaker labels to real names/roles provided below, generate the meeting notes. Use the inferred names/roles in place of the generic labels. Output ONLY the meeting notes in the following strict format, with no extra commentary, introductory text, concluding remarks, or additional sections.\n\n# Speaker Mapping\n{mapping_table}\n\n# Meeting Notes\n\n## Summary\nA concise summary of the key topics discussed, main points raised, and significant conclusions or outcomes. Use bullet points if appropriate.\n\n## Decisions\n*Only include this section if clear decisions were made during the meeting. List each decision as a bullet point. Omit this section if no decisions were made.*\n\n## Tasks\n*Only include this section if clear tasks or follow-up actions were discussed. List each task as a bullet point. Omit this section if no tasks were discussed.*\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
+
+    @staticmethod
+    def get_default_title_prompt_template():
+        return (
+            "You are an expert meeting assistant. Given the full meeting transcript below, "
+            "provide a concise, descriptive title that summarises the main topic or purpose of the meeting. "
+            "Limit the title to at most 12 words. Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
+            "# Transcript\n\n{transcript}\n"
+        )
 
     @staticmethod
     def parse_mapping_table(response_text: str) -> Dict[str, str]:
@@ -78,6 +94,17 @@ You are an expert meeting assistant. Using the mapping of speaker labels to real
             if in_notes:
                 notes_lines.append(line)
         return "\n".join(notes_lines).strip()
+
+    @staticmethod
+    def parse_title(response_text: str) -> str:
+        # Take first non-empty line, strip spurious characters/quotes/markdown
+        for line in response_text.splitlines():
+            cleaned = line.strip().lstrip('#').strip()
+            cleaned = re.sub(r'^\W+|\W+$', '', cleaned)  # Remove leading/trailing non-word chars/quotes
+            if cleaned:
+                cleaned = re.sub(r"\s+", " ", cleaned)
+                return cleaned
+        return response_text.strip()
 
     @staticmethod
     def mapping_to_markdown_table(mapping: Dict[str, str]) -> str:
@@ -221,6 +248,25 @@ User Question: {user_question}
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
 
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+        """
+        Infer a concise, descriptive meeting title from the provided transcript.
+        Sub-classes must implement.
+        """
+        if prompt_template is None:
+            prompt_template = self.get_default_title_prompt_template()
+        prompt = prompt_template.format(transcript=transcript)
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
+            title = self.parse_title(response.text)
+            return title
+        except Exception as e:
+            logger.error(f"Gemini API error (meeting title): {e}")
+            raise RuntimeError(f"Gemini API error (meeting title): {e}")
+
 class OpenAILLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         if api_key is None:
@@ -311,6 +357,27 @@ User Question: {user_question}
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
 
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+        """
+        Infer a concise, descriptive meeting title from the provided transcript.
+        Sub-classes must implement.
+        """
+        if prompt_template is None:
+            prompt_template = self.get_default_title_prompt_template()
+        prompt = prompt_template.format(transcript=transcript)
+        try:
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                timeout=timeout
+            )
+            title = self.parse_title(response["choices"][0]["message"]["content"])
+            return title
+        except Exception as e:
+            logger.error(f"OpenAI API error (meeting title): {e}")
+            raise RuntimeError(f"OpenAI API error (meeting title): {e}")
+
 class AnthropicLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         if api_key is None:
@@ -400,6 +467,27 @@ User Question: {user_question}
         except Exception as e:
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
+
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+        """
+        Infer a concise, descriptive meeting title from the provided transcript.
+        Sub-classes must implement.
+        """
+        if prompt_template is None:
+            prompt_template = self.get_default_title_prompt_template()
+        prompt = prompt_template.format(transcript=transcript)
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            title = self.parse_title(response.content[0].text if hasattr(response.content[0], 'text') else response.content[0])
+            return title
+        except Exception as e:
+            logger.error(f"Anthropic API error (meeting title): {e}")
+            raise RuntimeError(f"Anthropic API error (meeting title): {e}")
 
 def _get_default_model_for_provider(provider: str) -> str:
     """Return the hardcoded default model for each provider."""

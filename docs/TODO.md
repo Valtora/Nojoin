@@ -1,7 +1,5 @@
-## Meeting Name Inference - Low Priority - Potential TODO
-Implement a first-pass attempt at inferring a title for the meeting based on the context within the transcript.
 
-## LLM User Context - Medium Priority - Definite TODO
+## LLM User Context - Medium Priority - Potential TODO
 Allow the user to provide the LLMs with some custom context. E.g., their name, title, role, company, and whatever else they want to provide as context to the LLMs. This might help with improving meeting note quality and or provide general quality of life increase for the user.
 
 ## Advanced Meeting Analysis - Potential TODO

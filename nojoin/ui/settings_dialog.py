@@ -219,6 +219,11 @@ class SettingsDialog(QDialog):
         # Hide all API key/model widgets except the selected provider
         self._on_llm_provider_changed(self.llm_provider_combo.currentText())
 
+        # --- New: Infer Meeting Name checkbox ---
+        self.infer_meeting_title_checkbox = QCheckBox("Infer Meeting Name Automatically")
+        self.infer_meeting_title_checkbox.setToolTip("When enabled, Nojoin will use the selected LLM to suggest a concise meeting title based on the transcript.")
+        layout.addRow("Meeting Name Inference:", self.infer_meeting_title_checkbox)
+
         # Default input device
         self.input_device_combo = QComboBox()
         self.input_devices = get_available_input_devices()
@@ -498,6 +503,8 @@ class SettingsDialog(QDialog):
                     self.output_device_combo.setCurrentIndex(i)
                     break
         self.auto_transcribe_checkbox.setChecked(cfg.get("auto_transcribe_on_recording_finish", True))
+        # New: infer meeting title
+        self.infer_meeting_title_checkbox.setChecked(cfg.get("infer_meeting_title", True))
         # Set minimum meeting length
         min_length = cfg.get("min_meeting_length_seconds", 1)
         idx = 0  # Default to '1 second'
@@ -658,7 +665,8 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logger.error(f"Failed to apply UI scaling changes: {e}")
         
-
+        # Save infer meeting title option
+        config_manager.set("infer_meeting_title", self.infer_meeting_title_checkbox.isChecked())
         
         self.settings_saved.emit()
         self.accept()

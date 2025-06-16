@@ -50,6 +50,7 @@ DEFAULT_CONFIG = {
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "notes_font_size": "Medium",  # Font size for meeting notes display
+    "infer_meeting_title": True,  # Automatically infer meeting name from transcript using LLM
     "advanced": {
         "log_verbosity": "INFO"
     },
