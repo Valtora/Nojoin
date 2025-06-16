@@ -61,24 +61,46 @@ def run_migrations():
 
 # Example: Function to add a new recording (will be expanded)
 def add_recording(name: str, audio_path: str, duration: float, size_bytes: int, format: str = "MP3", chat_history: str = None, start_time: str = None, end_time: str = None):
-    """Adds a new recording entry to the database, optionally with chat_history, start_time, and end_time."""
+    """Adds a new recording entry to the database, optionally with chat_history, start_time, and end_time.
+    
+    Returns:
+        str: New recording ID if successful
+        tuple: (existing_id, 'DUPLICATE') if duplicate detected
+        None: If database error occurred
+    """
     audio_path = to_project_relative_path(from_project_relative_path(audio_path))
+    
+    # Check if audio_path already exists to provide clearer error handling
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM recordings WHERE audio_path = ?", (audio_path,))
+            existing = cursor.fetchone()
+            if existing:
+                logger.warning(f"Attempted to add recording with existing audio_path '{audio_path}'. Existing ID: {existing['id']}")
+                # Return tuple to clearly indicate this is a duplicate
+                return (existing['id'], 'DUPLICATE')
+    except sqlite3.Error as e:
+        logger.error(f"Error checking for existing audio_path '{audio_path}': {e}")
+        return None
+    
     sql = '''INSERT INTO recordings(id, name, audio_path, duration_seconds, file_size_bytes, status, format, chat_history, start_time, end_time)
              VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
     status = 'Recorded'
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            # Use seconds for unique ID generation (sufficient precision)
             recording_id = datetime.now().strftime('%Y%m%d%H%M%S')
             cursor.execute(sql, (recording_id, name, audio_path, duration, size_bytes, status, format, chat_history, start_time, end_time))
             conn.commit()
             logger.info(f"Added recording '{name}' with path '{audio_path}'. ID: {recording_id}")
             return recording_id
     except sqlite3.IntegrityError as e:
-        logger.error(f"Integrity error adding recording '{name}': {e}", exc_info=True)
+        logger.error(f"Integrity error adding recording '{name}' with path '{audio_path}': {e}", exc_info=True)
         return None
     except sqlite3.Error as e:
-        logger.error(f"Database error adding recording '{name}': {e}", exc_info=True)
+        logger.error(f"Database error adding recording '{name}' with path '{audio_path}': {e}", exc_info=True)
         return None
 
 def get_all_recordings():

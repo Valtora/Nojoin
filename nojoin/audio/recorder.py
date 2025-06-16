@@ -219,10 +219,17 @@ class AudioRecorder:
             self._sample_rate = sample_rate
             self._channels = channels
 
-            # Prepare filename
+            # Prepare filename with second precision
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename_base = f"recording_{timestamp}.mp3"
             self.output_filename = os.path.join(self.output_dir, filename_base)
+            
+            # Ensure filename is unique (in case of extreme edge cases)
+            counter = 1
+            while os.path.exists(self.output_filename):
+                filename_base = f"recording_{timestamp}_{counter}.mp3"
+                self.output_filename = os.path.join(self.output_dir, filename_base)
+                counter += 1
 
             self.recording_thread = threading.Thread(
                 target=self._record_audio,

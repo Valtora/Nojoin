@@ -41,6 +41,7 @@ class RecordingPipeline(QObject):
         self._channels = None
         self._input_device = None
         self._output_device_loopback = None
+        self._finalization_in_progress = False  # Guard to prevent duplicate finalization
 
     def start(self, input_device=None, output_device_loopback=None, sample_rate=None, channels=None):
         if self._is_recording and not self._is_paused:
@@ -63,6 +64,7 @@ class RecordingPipeline(QObject):
             self._total_pause_duration = 0
             self._audio_segments = []
             self._recording_name = self.get_human_friendly_recording_name(self._recording_start_time)
+            self._finalization_in_progress = False  # Reset finalization flag for new recording
         
         self._should_stop.clear()
         self._should_pause.clear()
@@ -129,7 +131,7 @@ class RecordingPipeline(QObject):
                 self._pause_start_time = None
         
         # Process the final recording
-        if self._audio_segments:
+        if self._audio_segments and not self._finalization_in_progress:
             self._finalize_recording()
         
         self._is_recording = False
@@ -200,7 +202,8 @@ class RecordingPipeline(QObject):
                 self.recording_status.emit(f"Recording paused. Segment {len(self._audio_segments)} saved.")
             elif self._should_stop.is_set():
                 # This was a stop, finalize the recording
-                self._finalize_recording()
+                if not self._finalization_in_progress:
+                    self._finalize_recording()
                 
         except Exception as e:
             logger.error(f"RecordingPipeline error: {e}", exc_info=True)
@@ -209,6 +212,12 @@ class RecordingPipeline(QObject):
 
     def _finalize_recording(self):
         """Concatenate all audio segments and finalize the recording."""
+        # Prevent duplicate finalization
+        if self._finalization_in_progress:
+            logger.warning("_finalize_recording called while already in progress - skipping duplicate call")
+            return
+        
+        self._finalization_in_progress = True
         try:
             if not self._audio_segments:
                 self.recording_error.emit("No audio segments to process.")
@@ -257,8 +266,10 @@ class RecordingPipeline(QObject):
             # Ensure filename is relative
             rel_filename = to_project_relative_path(from_project_relative_path(final_filename))
             
-            # Add to database
-            new_id = db_ops.add_recording(
+            logger.info(f"Attempting to add recording to database: name='{self._recording_name}', path='{rel_filename}', duration={total_duration:.2f}s")
+            
+            # Add to database with improved error handling
+            result = db_ops.add_recording(
                 name=self._recording_name,
                 audio_path=rel_filename,
                 duration=total_duration,
@@ -268,11 +279,37 @@ class RecordingPipeline(QObject):
                 end_time=end_time_iso
             )
             
-            if not new_id:
-                self.recording_error.emit(f"Failed to save recording details for '{self._recording_name}' to the database.")
+            if not result:
+                # Database insertion truly failed - clean up the audio file to avoid orphaned files
+                try:
+                    final_abs_path = from_project_relative_path(final_filename)
+                    if os.path.exists(final_abs_path):
+                        os.remove(final_abs_path)
+                        logger.info(f"Cleaned up orphaned audio file after database error: {final_abs_path}")
+                    # Also clean up intermediate files
+                    if len(self._audio_segments) > 1:
+                        for seg_filename, _, _ in self._audio_segments:
+                            abs_path = from_project_relative_path(seg_filename)
+                            if os.path.exists(abs_path):
+                                os.remove(abs_path)
+                                logger.info(f"Cleaned up orphaned segment file after database error: {abs_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up files after database error: {cleanup_error}")
+                
+                self.recording_error.emit(f"Failed to save recording to database. There was a database error.")
                 self._is_recording = False
                 return
             
+            # Check if this was a duplicate (race condition) or a new recording
+            if isinstance(result, tuple) and result[1] == 'DUPLICATE':
+                existing_id = result[0]
+                logger.info(f"RecordingPipeline: Recording already exists in database (ID: {existing_id}) - race condition detected. Skipping duplicate finalization.")
+                # Don't process further - this is a duplicate call, let the first one handle the UI updates
+                self._is_recording = False
+                return
+            
+            # This was a new recording
+            new_id = result
             logger.info(f"RecordingPipeline: Added recording '{self._recording_name}' (ID: {new_id}) to database.")
             
             # Clean up intermediate files if we concatenated
@@ -299,6 +336,9 @@ class RecordingPipeline(QObject):
             logger.error(f"Error finalizing recording: {e}", exc_info=True)
             self.recording_error.emit(str(e))
             self._is_recording = False
+        finally:
+            # Always reset the finalization flag
+            self._finalization_in_progress = False
 
     def _concatenate_audio_segments(self):
         """Concatenate multiple audio segments into a single file."""
@@ -320,10 +360,17 @@ class RecordingPipeline(QObject):
                 combined_audio += segment_audio
                 logger.info(f"Added segment {i+1} to concatenated audio")
             
-            # Generate output filename
+            # Generate output filename with second precision
             timestamp = self._recording_start_time.strftime("%Y%m%d_%H%M%S") if self._recording_start_time else datetime.now().strftime("%Y%m%d_%H%M%S")
             output_filename = f"recording_{timestamp}_combined.mp3"
             output_path = os.path.join(self.output_dir, output_filename)
+            
+            # Ensure filename is unique
+            counter = 1
+            while os.path.exists(output_path):
+                output_filename = f"recording_{timestamp}_combined_{counter}.mp3"
+                output_path = os.path.join(self.output_dir, output_filename)
+                counter += 1
             
             # Export combined audio
             combined_audio.export(output_path, format="mp3")
