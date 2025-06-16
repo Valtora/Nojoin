@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QWidget, QGridLayout, QMessageBox, QInputDialog, QDialogButtonBox, QSizePolicy, QStyle, QSlider, QCheckBox, QCompleter
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
 from PySide6.QtGui import QIcon
 import os
 from nojoin.db import database as db_ops
@@ -593,17 +593,24 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         self._playing_speaker_id = None
         
-        # The logic to apply pending name changes has been removed, as names are now auto-saved
-        # upon editing finishing. This method now just handles the final "OK" action.
-        
-        if self._speakers_modified: # Check if any modifications were made (local or global names, merges, deletes)
+        # Capture whether we need to trigger meeting-note regeneration after closing
+        should_regenerate = self._speakers_modified and self.regenerate_notes_checkbox.isChecked()
+
+        # Emit update signal before closing so the main window can refresh immediately
+        if self._speakers_modified:
             self.participants_updated.emit(self.recording_id)
-            if self.regenerate_notes_checkbox.isChecked():
-                self.regenerate_notes_requested.emit(self.recording_id)
-        
-        self._speakers_modified = False # Reset on save
-        self._update_window_title() # Update title to remove asterisk
+
+        # Reset modified flag and update title prior to closing
+        self._speakers_modified = False
+        self._update_window_title()
+
+        # Close the dialog first so it no longer blocks subsequent modal dialogs
         self.accept()
+
+        # Defer regeneration request until the dialog has fully closed and the event
+        # loop has unwound. This prevents the need for the user to press Save twice.
+        if should_regenerate:
+            QTimer.singleShot(0, lambda rid=self.recording_id: self.regenerate_notes_requested.emit(rid))
 
     def reject(self):
         # Stop any playing snippet
