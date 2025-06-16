@@ -502,6 +502,14 @@ class MainWindow(QMainWindow):
             self.seek_slider.setStyleSheet(slider_qss)
             self.volume_slider.setStyleSheet(slider_qss)
 
+        # Update pause/resume button icon for theme
+        if hasattr(self, 'pause_resume_button') and hasattr(self, 'recording_pipeline'):
+            if self.pause_resume_button.isVisible():
+                if self.recording_pipeline.is_paused():
+                    self._update_pause_resume_button_icon("resume", theme_name)
+                else:
+                    self._update_pause_resume_button_icon("pause", theme_name)
+
         # --- Refresh Meeting List Item Widgets with new theme ---
         if hasattr(self, 'meetings_list_widget'):
             for i in range(self.meetings_list_widget.count()):
@@ -604,12 +612,22 @@ class MainWindow(QMainWindow):
         self.record_button.setFixedHeight(self.BASE_SPACING * 5)
         self.record_button.clicked.connect(self.toggle_recording)
         
+        # Pause/Resume recording button (hidden by default, shown only during recording)
+        self.pause_resume_button = QPushButton("Pause Recording")
+        self.pause_resume_button.setMinimumWidth(self.BASE_SPACING * 18)
+        self.pause_resume_button.setFixedHeight(self.BASE_SPACING * 5)
+        self.pause_resume_button.clicked.connect(self.toggle_recording_pause)
+        self.pause_resume_button.setVisible(False)  # Hidden until recording starts
+        # Set initial pause icon (will be updated by theme later)
+        self._update_pause_resume_button_icon("pause")
+        
         # Recording timer (hidden by default, shown only during recording)
         self.timer_label = QLabel("00:00:00")
         self.timer_label.setToolTip("Elapsed recording time")
         self.timer_label.setVisible(False)  # Hidden until recording starts
         
         left_section_layout.addWidget(self.record_button)
+        left_section_layout.addWidget(self.pause_resume_button)
         left_section_layout.addWidget(self.timer_label)
         left_section_layout.addStretch()  # Push content to the left
         
@@ -1181,12 +1199,30 @@ class MainWindow(QMainWindow):
         else:
             self.status_bar.showMessage("Stopping recording...")
             self.record_button.setEnabled(False)
+            self.pause_resume_button.setEnabled(False)
             self.recording_timer.stop()
-            # Hide timer when stopping recording
+            # Hide timer and pause button when stopping recording
             self.timer_label.setVisible(False)
+            self.pause_resume_button.setVisible(False)
             # Dismiss audio warning banner when ending recording
             self.audio_warning_banner.setVisible(False)
             self.recording_pipeline.stop()
+
+    def toggle_recording_pause(self):
+        """Toggle between pause and resume states for recording."""
+        if not self.is_recording:
+            return
+        
+        if self.recording_pipeline.is_paused():
+            # Currently paused, so resume
+            self.status_bar.showMessage("Resuming recording...")
+            self.pause_resume_button.setEnabled(False)
+            self.recording_pipeline.resume()
+        else:
+            # Currently recording, so pause
+            self.status_bar.showMessage("Pausing recording...")
+            self.pause_resume_button.setEnabled(False)
+            self.recording_pipeline.pause()
 
     def handle_recording_started(self):
         self.is_recording = True
@@ -1195,6 +1231,8 @@ class MainWindow(QMainWindow):
         self.record_button.setEnabled(True)
         self.record_button.setText("End Meeting")
         self.timer_label.setVisible(True)  # Ensure timer is visible during recording
+        self.pause_resume_button.setVisible(True)  # Show pause button during recording
+        self.pause_resume_button.setEnabled(True)
         self.update_recording_timer_display()
         self.recording_timer.start()
         logger.info("UI: Recording started signal received.")
@@ -1214,6 +1252,7 @@ class MainWindow(QMainWindow):
         self.record_button.setText("Start Meeting")
         self.timer_label.setText("00:00:00")
         self.timer_label.setVisible(False)  # Hide timer when recording finishes
+        self.pause_resume_button.setVisible(False)  # Hide pause button when recording finishes
         self.record_button.setEnabled(True)
         base_filename = os.path.basename(filename)
         self.status_bar.showMessage(f"Recording saved: {base_filename} ({duration:.1f}s)")
@@ -1254,6 +1293,7 @@ class MainWindow(QMainWindow):
         self.record_button.setText("Start Meeting")
         self.timer_label.setText("00:00:00")
         self.timer_label.setVisible(False)  # Hide timer on recording error
+        self.pause_resume_button.setVisible(False)  # Hide pause button on recording error
         self.record_button.setEnabled(True)
         self.status_bar.showMessage(f"Error: {error_message}")
         
@@ -1268,6 +1308,61 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "Recording Error", error_message)
         print(f"UI: Recording error: {error_message}")
 
+    def handle_recording_paused(self):
+        """Handle when recording is paused."""
+        logger.info("UI: Recording paused signal received.")
+        self.pause_resume_button.setText("Resume Recording")
+        self.pause_resume_button.setEnabled(True)
+        self._update_pause_resume_button_icon("resume")
+        
+        self.status_bar.showMessage("Recording paused")
+        # Pause the recording timer to show paused time accurately
+        self.recording_timer.stop()
+
+    def handle_recording_resumed(self):
+        """Handle when recording is resumed."""
+        logger.info("UI: Recording resumed signal received.")
+        self.pause_resume_button.setText("Pause Recording")
+        self.pause_resume_button.setEnabled(True)
+        self._update_pause_resume_button_icon("pause")
+        
+        self.status_bar.showMessage("Recording resumed")
+        # Resume the recording timer
+        self.recording_timer.start()
+
+    def _update_pause_resume_button_icon(self, icon_type, theme_name=None):
+        """Update the pause/resume button icon based on type and theme."""
+        if theme_name is None:
+            theme_name = getattr(self, 'current_theme', 'dark')
+        
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        
+        if icon_type == "pause":
+            # Orange color for pause, but adjust for theme
+            if theme_name == "dark":
+                color = QColor(255, 0, 0)  # Red
+            else:
+                color = QColor(255, 0, 0)   # Red
+            painter.setBrush(QBrush(color))
+            painter.drawRect(4, 3, 4, 14)  # First pause bar
+            painter.drawRect(12, 3, 4, 14)  # Second pause bar
+        else:  # resume
+            # Green color for resume, but adjust for theme
+            if theme_name == "dark":
+                color = QColor(76, 175, 80)   # Green
+            else:
+                color = QColor(56, 142, 60)   # Darker green for light theme
+            painter.setBrush(QBrush(color))
+            # Draw a play triangle for resume
+            points = [QPoint(6, 4), QPoint(6, 16), QPoint(16, 10)]
+            painter.drawPolygon(points)
+        
+        painter.end()
+        self.pause_resume_button.setIcon(QIcon(pixmap))
     def _disable_ui_during_recording(self):
         """Disable UI elements that should not be accessible during recording."""
         # Disable playback controls
@@ -2160,6 +2255,8 @@ class MainWindow(QMainWindow):
         rp.recording_error.connect(self.handle_recording_error)
         rp.recording_status.connect(self.status_bar.showMessage)
         rp.recording_discarded.connect(self.handle_recording_discarded)
+        rp.recording_paused.connect(self.handle_recording_paused)
+        rp.recording_resumed.connect(self.handle_recording_resumed)
 
     def add_tag_filter_from_input(self):
         tag = self.tag_filter_input.text().strip()

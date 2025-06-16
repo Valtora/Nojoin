@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QWidget, QGridLayout, QMessageBox, QInputDialog, QDialogButtonBox, QSizePolicy, QStyle, QSlider, QCheckBox, QCompleter
-from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon
 import os
 from nojoin.db import database as db_ops
@@ -95,10 +95,7 @@ class ParticipantsDialog(QDialog):
         merge_row.addStretch(1)
         self.layout.addLayout(merge_row)
         
-        # Regenerate notes checkbox
-        self.regenerate_notes_checkbox = QCheckBox("Regenerate meeting notes after saving")
-        self.regenerate_notes_checkbox.setChecked(True)  # Default to regenerating notes
-        self.layout.addWidget(self.regenerate_notes_checkbox)
+        # Meeting notes will now ALWAYS be regenerated after saving changes, so the checkbox is removed.
         
         # Save/Cancel
         btn_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -593,8 +590,8 @@ class ParticipantsDialog(QDialog):
         self.snippet_player.stop()
         self._playing_speaker_id = None
         
-        # Capture whether we need to trigger meeting-note regeneration after closing
-        should_regenerate = self._speakers_modified and self.regenerate_notes_checkbox.isChecked()
+        # Determine whether we need to regenerate notes (only when something actually changed)
+        should_regenerate = self._speakers_modified
 
         # Emit update signal before closing so the main window can refresh immediately
         if self._speakers_modified:
@@ -607,10 +604,9 @@ class ParticipantsDialog(QDialog):
         # Close the dialog first so it no longer blocks subsequent modal dialogs
         self.accept()
 
-        # Defer regeneration request until the dialog has fully closed and the event
-        # loop has unwound. This prevents the need for the user to press Save twice.
+        # Now that the dialog is closed, immediately trigger regeneration if required.
         if should_regenerate:
-            QTimer.singleShot(0, lambda rid=self.recording_id: self.regenerate_notes_requested.emit(rid))
+            self.regenerate_notes_requested.emit(self.recording_id)
 
     def reject(self):
         # Stop any playing snippet

@@ -5,6 +5,11 @@ Allow the user to provide the LLMs with some custom context. E.g., their name, t
 ## Advanced Meeting Analysis - Potential TODO
 Implement advanced analyses for both the audio and transcript to gauge things like speaker sentiments, engagement, bias, etc. with a view to extract as much information as possible from the meetings' interactions. Look at things like time spent on topics.
 
-## Bug Fix - Speaker Management - Definite TODO
-After merging a speaker and or being prompted to add the speaker to the Global Speaker Library (regardless of which option the user chose), pressing the 'Save' button in the Participants Dialog, looks to trigger Meeting Note Generation as the meeting note generation spinner appears but the user has to press 'Save' again for the process to actually begin and for the Participant Manager dialog to disappear.
- 
+## UX / Quality of Life
+Avoid success prompts generally, prompts are for important notices, important inputs, and important warnings only. If something was successful, just display the result and remove the pop-up prompts.
+
+## Participant Dialog
+Centre the 'Add Participant', 'Enable Merge Mode', and 'Merge Selected' buttons. Change the name of the 'Enable Merge Mode' to 'Merge Speakers'.
+
+## Meeting Note Generation
+The user is prompted to generate meeting notes after pressing 'Save' in the Participants Dialog after a meeting has finished processing. Remove this prompt. Meeting Notes should ALWAYS be generated unless an LLM is not available, only then should meeting note generation be skipped and Nojoin falls back to having the transcript available only as designed.
