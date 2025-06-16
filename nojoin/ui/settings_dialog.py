@@ -304,6 +304,11 @@ class SettingsDialog(QDialog):
             self.min_meeting_length_combo.addItem(label, seconds)
         layout.addRow("Minimum Meeting Length:", self.min_meeting_length_combo)
 
+        # === ADVANCED SETTINGS ===
+        layout.addRow("", self._create_section_divider("ADVANCED"))
+        layout.addRow("", self.advanced_toggle)
+        layout.addRow("", self.advanced_container)
+
         # === UPDATE MANAGEMENT ===
         layout.addRow("", self._create_section_divider("UPDATES"))
         
@@ -325,11 +330,6 @@ class SettingsDialog(QDialog):
         self.check_updates_button.setToolTip("Check for available updates to Nojoin")
         self.check_updates_button.clicked.connect(self._check_for_updates)
         layout.addRow("", self.check_updates_button)
-
-        # === ADVANCED SETTINGS ===
-        layout.addRow("", self._create_section_divider("ADVANCED"))
-        layout.addRow("", self.advanced_toggle)
-        layout.addRow("", self.advanced_container)
         
         # === DATA MANAGEMENT ===
         layout.addRow("", self._create_section_divider("DATA MANAGEMENT"))
@@ -346,7 +346,7 @@ class SettingsDialog(QDialog):
         backup_restore_layout.addWidget(self.restore_button)
         backup_restore_widget = QWidget()
         backup_restore_widget.setLayout(backup_restore_layout)
-        layout.addRow("Backup & Restore:", backup_restore_widget)
+        layout.addRow("Backup/Restore:", backup_restore_widget)
         
         # Add button box to main layout outside scroll area with padding
         button_container = QWidget()

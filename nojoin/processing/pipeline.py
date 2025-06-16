@@ -237,6 +237,8 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
             # --- LLM Speaker Name Inference (First Pass) ---
             if is_llm_available():
                 try:
+                    if stage_update_callback:
+                        stage_update_callback("Inferring speakers...")
                     transcript_for_llm = ""
                     for entry in consolidated_transcript:
                         start = entry['start']
@@ -305,6 +307,8 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                     # --- New: Infer meeting title using LLM ---
                     if is_llm_available() and config_manager.get("infer_meeting_title", True):
                         try:
+                            if stage_update_callback:
+                                stage_update_callback("Inferring meeting title...")
                             from nojoin.utils.transcript_store import TranscriptStore
                             if is_llm_available():
                                 transcript_for_title = diarized_transcript_text or TranscriptStore.get(recording_id, "raw")
