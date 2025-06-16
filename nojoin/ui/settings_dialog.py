@@ -286,7 +286,7 @@ class SettingsDialog(QDialog):
         layout.addRow("Notes Font Size:", self.notes_font_size_combo)
 
         # === AUDIO & RECORDING SETTINGS ===
-        layout.addRow("", self._create_section_divider("AUDIO & RECORDING"))
+        layout.addRow("", self._create_section_divider("AUDIO && RECORDING"))
         layout.addRow("Default Input Device:", self.input_device_combo)
         layout.addRow("Default Output Device:", self.output_device_combo)
         layout.addRow("Auto Transcribe:", self.auto_transcribe_checkbox)

@@ -169,7 +169,7 @@ class UpdateAvailableDialog(QDialog):
         self.remind_button = QPushButton("Remind Me Later")
         self.remind_button.clicked.connect(self._remind_later)
         
-        self.install_button = QPushButton("Download & Install")
+        self.install_button = QPushButton("Download && Install")
         self.install_button.setDefault(True)
         self.install_button.clicked.connect(self._start_update)
         
