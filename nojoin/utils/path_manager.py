@@ -260,22 +260,6 @@ class PathManager:
             return Path(relative_path)
         return self._user_data_directory / relative_path
     
-    def log_deployment_mode(self):
-        """Log deployment mode information. Should be called after logging is configured."""
-        mode_display = "DEVELOPMENT" if self._deployment_mode == 'development' else "DEPLOYED"
-        logger.info("=" * 60)
-        logger.info(f"NOJOIN STARTING IN {mode_display} MODE")
-        logger.info("=" * 60)
-        logger.info(f"Executable directory: {self._executable_directory}")
-        logger.info(f"Assets directory: {self.assets_directory}")
-        logger.info(f"App directory: {self._app_directory}")
-        logger.info(f"User data directory: {self._user_data_directory}")
-        if self._deployment_mode == 'production':
-            logger.info("Assets bundled with executable, user data stored in Documents/Nojoin")
-        else:
-            logger.info("Development mode: all data stored in project directory")
-        logger.info("=" * 60)
-    
     def migrate_from_project_directory(self) -> bool:
         """
         Migrate data from old project-based structure to new structure.

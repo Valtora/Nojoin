@@ -40,7 +40,7 @@ class CheckpointFilter(logging.Filter):
 def setup_logging(log_level=None):
     """Configures application-wide logging."""
     log_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '(%(levelname)s) %(name)s: %(message)s'
     )
 
     # Determine log level from config if not provided

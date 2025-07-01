@@ -1,12 +1,13 @@
 import os
 import sys
+import logging
 
 if sys.platform == "win32":
     try:
         import ctypes
         ctypes.windll.ole32.CoInitializeEx(0, 2)
     except Exception as e:
-        print(f"Warning: Failed to initialize COM in STA mode: {e}")
+        logging.warning(f"Failed to initialize COM in STA mode: {e}")
 
 # Ensure the 'nojoin' directory is in the Python path
 # This allows importing modules like 'nojoin.ui.main_window'
@@ -19,12 +20,20 @@ from nojoin.utils.path_manager import path_manager
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 
+# Set up logging as early as possible
+try:
+    from nojoin.utils import logging_config
+    logging_config.setup_logging()
+except ImportError:
+    logging.basicConfig(level=logging.INFO)
+    logging.warning("Could not import logging_config, using basicConfig at INFO level.")
+
 # Import the main window class (assuming it's defined correctly)
 try:
     from nojoin.ui.main_window import MainWindow
 except ImportError as e:
-    print(f"Error importing MainWindow: {e}")
-    print("Please ensure 'nojoin/ui/main_window.py' exists and PySide6 is installed.")
+    logging.error(f"Error importing MainWindow: {e}")
+    logging.error("Please ensure 'nojoin/ui/main_window.py' exists and PySide6 is installed.")
     sys.exit(1)
 
 # Import and initialize database
@@ -32,26 +41,11 @@ try:
     from nojoin.db import database as db_ops
     db_ops.init_db()
 except ImportError as e:
-    print(f"FATAL: Could not import database module: {e}")
+    logging.critical(f"Could not import database module: {e}")
     sys.exit(1)
 except Exception as e:
-    print(f"FATAL: Failed to initialize database: {e}")
+    logging.critical(f"Failed to initialize database: {e}")
     sys.exit(1)
-
-
-try:
-    from nojoin.utils import logging_config
-    logging_config.setup_logging()  # Now uses config for log level and new log path
-    
-    # Log deployment mode information now that logging is configured
-    path_manager.log_deployment_mode()
-except ImportError:
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    print("[Nojoin] WARNING: Could not import logging_config, using basicConfig at INFO level.")
-    
-    # Log deployment mode even with basic logging
-    path_manager.log_deployment_mode()
 
 # Ensure config is loaded from new location
 from nojoin.utils.config_manager import config_manager
@@ -91,7 +85,7 @@ def Nojoin():
         app_icon = QIcon(str(icon_path))
         app.setWindowIcon(app_icon)
     else:
-        print(f"Warning: Icon file not found at {icon_path}")
+        logging.warning(f"Icon file not found at {icon_path}")
 
     # Show Splash Screen as early as possible using PathManager
     splash_image_path = path_manager.assets_directory / "Banner_Image1.png"
@@ -102,7 +96,7 @@ def Nojoin():
         splash = SplashScreen(str(splash_image_path))
         splash.show_splash()
     else:
-        print(f"Warning: Splash image not found at {splash_image_path}")
+        logging.warning(f"Splash image not found at {splash_image_path}")
 
     # Now import and initialize the rest of the app
     window = MainWindow()
