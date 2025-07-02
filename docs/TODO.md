@@ -11,3 +11,4 @@
 ## Meeting Notes and Context Consolidation - Potential TODO
 
 - Find a way to 'combine' or otherwise consolidate meeting notes and context... Develop this idea further first.
+- Perhaps this could be a way to implement AI chat across multiple meetings?

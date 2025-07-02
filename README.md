@@ -25,12 +25,22 @@
 *   **Automatic Updates:** Built-in update checking and installation system with user-configurable preferences.
 *   **Full Control:** Manage recordings, view transcripts, and configure settings like transcription models and audio devices through a modern UI.
 
+## ⚙️ Hardware Considerations
+
+The performance of Nojoin, particularly the speed of transcription and speaker diarization, is heavily dependent on your computer's hardware.
+
+*   **For the best experience:** Using a modern NVIDIA GPU for acceleration is highly recommended. This will significantly reduce processing time.
+*   **For CPU-only users:** A powerful, multi-core CPU is essential for reasonable performance.
+*   **On lower-end hardware:** Be aware that processing on machines with older or less powerful CPUs (like an average laptop) can take a very long time, especially for longer recordings.
+
 ## Manual Setup
 
 1.  **Prerequisites:**
 
     *   **Python 3.11.9:**
-        This project requires Python 3.11.9 SPECIFICALLY due to PyTorch compatibility issues. You can download it directly from the [Python website](https://www.python.org/downloads/release/python-3119/). The typical caveats of running multiple Python versions/installations apply.
+        This project requires Python 3.11.9 SPECIFICALLY due to PyTorch compatibility. You can download it directly from the [Python website](https://www.python.org/downloads/release/python-3119/).
+        
+        The typical caveats of running multiple Python versions/installations apply.
 
         Alternatively, you can install it using your system's package manager:
 
@@ -62,7 +72,7 @@
             ```bash
             sudo apt update && sudo apt install ffmpeg
             ```
-    *   **Optional (for GPU Acceleration):**
+    *   **Optional but recommended - GPU Acceleration:**
         NVIDIA GPU with the [CUDA 12.8 Toolkit](https://developer.nvidia.com/cuda-12-8-1-download-archive) installed. See the "GPU Acceleration" section for more details.
 
 2.  **Clone the repository:**
