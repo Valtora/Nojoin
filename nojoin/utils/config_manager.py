@@ -26,7 +26,7 @@ def _get_default_models():
         # Fallback in case of import issues
         return {
             "gemini_model": "gemini-2.5-pro-preview-06-05",
-            "openai_model": "gpt-4.1-mini-2025-04-14",
+            "openai_model": "gpt-4.1-2025-04-14",
             "anthropic_model": "claude-sonnet-4-20250514",
         }
 

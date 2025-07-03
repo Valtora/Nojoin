@@ -494,7 +494,7 @@ def _get_default_model_for_provider(provider: str) -> str:
     if provider == "gemini":
         return "gemini-2.5-pro-preview-06-05"
     elif provider == "openai":
-        return "gpt-4.1-mini-2025-04-14"
+        return "gpt-4.1-2025-04-14"
     elif provider == "anthropic":
         return "claude-sonnet-4-20250514"
     else:

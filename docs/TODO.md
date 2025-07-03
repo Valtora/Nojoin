@@ -12,3 +12,7 @@
 
 - Find a way to 'combine' or otherwise consolidate meeting notes and context... Develop this idea further first.
 - Perhaps this could be a way to implement AI chat across multiple meetings?
+
+## Global Speaker Library Upgrades - Potential TODO
+
+- Use voice embeddings to automatically detect speakers based on their 'voice print'.
