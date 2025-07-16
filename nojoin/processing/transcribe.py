@@ -8,6 +8,7 @@ import tqdm
 import threading
 
 from ..utils.config_manager import config_manager
+from ..utils.progress_manager import get_progress_manager
 
 logger = logging.getLogger(__name__)
 
@@ -146,29 +147,38 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None, canc
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]
 
-        # Use robust progress listener and patch global tqdm
-        import tqdm
-        orig_tqdm = tqdm.tqdm
-        tqdm.tqdm = _CustomProgressBar
-        try:
-            listener = ProgressListener(progress_callback)
-            with create_progress_listener_handle(listener):
+        # Use unified progress system for transcription
+        progress_manager = get_progress_manager()
+        
+        with progress_manager.create_transcription_context(progress_callback) as context:
+            try:
                 use_fp16 = device == "cuda"
+                
                 # Check for cancellation before starting
                 if cancel_check and cancel_check():
                     logger.info("Transcription cancelled before starting model.transcribe.")
                     return None
+                    
+                # Perform transcription with progress tracking
                 result = model.transcribe(audio_path, fp16=use_fp16, verbose=None)
+                
                 # Check for cancellation after transcribe
                 if cancel_check and cancel_check():
                     logger.info("Transcription cancelled after model.transcribe.")
                     return None
-            if progress_callback:
-                progress_callback(100)
-            logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")
-            return result
-        finally:
-            tqdm.tqdm = orig_tqdm
+                    
+                # Ensure 100% completion is reported
+                context.emit_progress(100, 100)
+                if progress_callback:
+                    progress_callback(100)
+                    
+                logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error during transcription: {e}", exc_info=True)
+                raise
+                
     except Exception as e:
         logger.error(f"Error during Whisper transcription for {audio_path}: {e}", exc_info=True)
         if model_size in _model_cache and isinstance(e, RuntimeError):

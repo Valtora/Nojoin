@@ -3675,6 +3675,7 @@ class MainWindow(QMainWindow):
         try:
             from nojoin.utils.model_utils import should_prompt_for_first_run_download, check_default_model_availability
             from nojoin.ui.model_download_dialog import ModelDownloadDialog
+            from nojoin.utils.progress_manager import get_progress_manager
             
             if should_prompt_for_first_run_download():
                 is_available, model_size = check_default_model_availability()
@@ -3691,9 +3692,18 @@ class MainWindow(QMainWindow):
                 
                 if reply == QMessageBox.Yes:
                     device = config_manager.get("processing_device", "cpu")
+                    
+                    # Check for TQDM conflicts before starting download
+                    progress_manager = get_progress_manager()
+                    conflicts = progress_manager.detect_tqdm_conflicts()
+                    if conflicts:
+                        logger.warning(f"TQDM conflicts detected before first-run download: {conflicts}")
+                        # Reset TQDM state to resolve conflicts
+                        progress_manager.reset_tqdm_state()
+                    
                     dialog = ModelDownloadDialog(model_size, device, self)
                     dialog.start_download()
-                    dialog.exec()
+                    result = dialog.exec()
                     
                     if not dialog.was_cancelled():
                         logger.info(f"First-run download of model '{model_size}' completed successfully")
@@ -3706,8 +3716,75 @@ class MainWindow(QMainWindow):
                     else:
                         logger.info(f"First-run download of model '{model_size}' was cancelled by user")
                         
+                        # Offer retry option if download failed
+                        if result == QDialog.Rejected:
+                            retry_reply = QMessageBox.question(
+                                self,
+                                "Download Failed",
+                                f"The model download was cancelled or failed.\n\n"
+                                f"Would you like to try downloading again with automatic retry?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.No
+                            )
+                            
+                            if retry_reply == QMessageBox.Yes:
+                                self._retry_model_download(model_size, device)
+                        
         except Exception as e:
             logger.error(f"Error checking for first-run model download: {e}", exc_info=True)
+            
+            # Show user-friendly error message
+            QMessageBox.warning(
+                self,
+                "Model Download Error",
+                f"An error occurred while checking for model downloads:\n\n{str(e)}\n\n"
+                f"You can try downloading the model later from the Settings dialog."
+            )
+            
+    def _retry_model_download(self, model_size: str, device: str):
+        """Retry model download with automatic retry logic."""
+        try:
+            from nojoin.utils.progress_manager import get_progress_manager
+            
+            progress_manager = get_progress_manager()
+            
+            # Show progress dialog for retry
+            from PySide6.QtWidgets import QProgressDialog
+            progress_dialog = QProgressDialog(
+                f"Retrying download of Whisper model '{model_size}'...",
+                "Cancel", 0, 0, self
+            )
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            progress_dialog.show()
+            
+            # Attempt download with retry logic
+            success = progress_manager.handle_download_retry(model_size, device, max_retries=3)
+            
+            progress_dialog.close()
+            
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Download Successful",
+                    f"Whisper model '{model_size}' has been downloaded successfully!"
+                )
+                logger.info(f"Retry download successful for model: {model_size}")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Download Failed",
+                    f"Failed to download Whisper model '{model_size}' after multiple attempts.\n\n"
+                    f"Please check your internet connection and try again later."
+                )
+                logger.error(f"Retry download failed for model: {model_size}")
+                
+        except Exception as e:
+            logger.error(f"Error during retry download: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Retry Failed",
+                f"An error occurred during retry download:\n\n{str(e)}"
+            )
         
     def _refresh_current_meeting_view(self):
         """Refresh the currently displayed meeting notes/transcript after bulk operations."""
