@@ -15,19 +15,15 @@
 # Config file, generated on first run - contains API keys and other sensitive data
 nojoin/config.json
 
-# Cursor files
+# IDE files
 *.cursorrules
 *.mdc
 /.cursor/
+/.kiro
 
 # Logs
 *.log
 
 # Dist and Output Folders and Files
 /output/
-
-# Personal launcher scripts
-launch_nojoin.ps1
-launch_nojoin.bat
-
-/.kiro
+/dist
