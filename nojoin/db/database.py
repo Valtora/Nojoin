@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 from ..utils.config_manager import to_project_relative_path, from_project_relative_path, get_db_path, migrate_file_if_needed, get_project_root
 from ..utils.path_manager import path_manager
+from ..utils.transcript_store import TranscriptStore
 
 logger = logging.getLogger(__name__)
 
@@ -960,38 +961,53 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], targe
     Merge multiple speakers into one in a recording. Updates transcript lines to the user-defined name of the target speaker, removes redundant speakers.
     """
     recording_id = str(recording_id)
+    
+    # First, get the current transcript text. This is crucial to avoid repeated DB reads/writes.
+    current_transcript = TranscriptStore.get(recording_id, kind='diarized')
+    if current_transcript is None:
+        logger.error(f"[merge_speakers] Could not retrieve transcript for recording {recording_id}. Aborting merge.")
+        return False
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # Get target speaker's current name AND diarization label for this recording
+            
+            # Get target speaker's info
             cursor.execute("SELECT s.name, rs.diarization_label FROM speakers s JOIN recording_speakers rs ON s.id = rs.speaker_id WHERE s.id = ? AND rs.recording_id = ?", 
                            (target_speaker_id, recording_id))
             target_speaker_info = cursor.fetchone()
             if not target_speaker_info:
                 logger.error(f"[merge_speakers] Target speaker {target_speaker_id} not found or not associated with recording {recording_id} for merge.")
                 return False
-            # target_name = target_speaker_info['name'] # We still need this for logging or other purposes if any
             target_diarization_label = target_speaker_info['diarization_label']
             logger.info(f"[merge_speakers] Target for merge: ID={target_speaker_id}, Name={target_speaker_info['name']}, Label={target_diarization_label}")
 
-            # For each other speaker, update transcript and DB
+            labels_to_merge = []
             for sid in speaker_ids:
                 if sid == target_speaker_id:
                     continue
                 cursor.execute("SELECT diarization_label FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, sid))
                 r = cursor.fetchone()
-                if not r:
-                    continue
-                old_label = r['diarization_label']
-                logger.info(f"[merge_speakers] Merging SID={sid} (Old Label: {old_label}) into Target Label: {target_diarization_label}")
-                # Update transcript to use target_diarization_label
-                if not replace_speaker_in_transcript(recording_id, [old_label], target_diarization_label):
-                    logger.error(f"[merge_speakers] Failed to update transcript while merging {old_label} to {target_diarization_label} for recording {recording_id}. Aborting merge for this speaker.")
-                    # Decide on error handling: continue with other speakers or rollback/return False?
-                    # For now, let's be strict and abort if any transcript update fails.
-                    conn.rollback() # Rollback any DB changes made in this transaction for this merge
+                if r:
+                    labels_to_merge.append(r['diarization_label'])
+                    logger.info(f"[merge_speakers] Queuing SID={sid} (Old Label: {r['diarization_label']}) for merge into Target Label: {target_diarization_label}")
+
+            # Perform all text replacements in memory
+            modified_transcript, total_replacements = _replace_speaker_in_text(current_transcript, labels_to_merge, target_diarization_label)
+            logger.info(f"[merge_speakers] Performed {total_replacements} text replacements in memory.")
+
+            # Now, write the updated transcript back to the database ONCE.
+            # This is done outside the main transaction loop to prevent locking.
+            if total_replacements > 0:
+                if not TranscriptStore.set(recording_id, modified_transcript, kind='diarized'):
+                    logger.error(f"[merge_speakers] Failed to write updated transcript to database for recording {recording_id}. Aborting.")
+                    # No need to rollback conn, as TranscriptStore manages its own connection.
                     return False
-                
+
+            # Perform all database modifications for speaker records
+            for sid in speaker_ids:
+                if sid == target_speaker_id:
+                    continue
                 # Remove from recording_speakers
                 cursor.execute("DELETE FROM recording_speakers WHERE recording_id = ? AND speaker_id = ?", (recording_id, sid))
                 # If speaker not used elsewhere, delete from speakers
@@ -999,6 +1015,7 @@ def merge_speakers_in_recording(recording_id: str, speaker_ids: list[int], targe
                 rc = cursor.fetchone()
                 if rc and rc['cnt'] == 0:
                     cursor.execute("DELETE FROM speakers WHERE id = ?", (sid,))
+            
             conn.commit()
         return True
     except Exception as e:
