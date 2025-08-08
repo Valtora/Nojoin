@@ -27,3 +27,7 @@ nojoin/config.json
 # Dist and Output Folders and Files
 /output/
 /dist
+
+# Scripts
+*.ps1
+*.bat
