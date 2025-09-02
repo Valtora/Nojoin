@@ -4,6 +4,9 @@
 
 **Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
 
+<img width="465" height="103" alt="image" src="https://github.com/user-attachments/assets/db6feda0-7fb5-42eb-bae9-65f3065c553c" />
+
+
 ## ✨ Features
 
 *   **System Audio Recording:** Simultaneously record what you hear (system output) and what you say (microphone input).
