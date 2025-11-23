@@ -1,0 +1,63 @@
+# Byte-compiled / optimized / DLL files
+/__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+/.venv
+
+# Recordings and transcripts directory
+/data
+/recordings/
+
+# Database file, should be regenerated on first run
+nojoin_data.db
+
+# Config file, generated on first run - contains API keys and other sensitive data
+config.json
+
+# IDE files
+*.mdc
+
+# Logs
+*.log
+
+# Dist and Output Folders and Files
+/output/
+/dist
+
+# Scripts
+*.ps1
+
+# Added by cargo
+
+/target
+
+# Companion App (Rust)
+companion/target/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Node modules
+node_modules/
+
+# Database files (generic)
+*.db
+*.sqlite
+*.sqlite3
+
+# SSL/Security
+*.pem
+*.key
+*.p12
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/

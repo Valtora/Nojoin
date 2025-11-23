@@ -1,0 +1,21 @@
+[package]
+name = "nojoin-companion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+cpal = "0.15"
+hound = "3.5"
+anyhow = "1.0"
+tray-icon = "0.14"
+tao = "0.28"
+chrono = "0.4"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+image = "0.24"
