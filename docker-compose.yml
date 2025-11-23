@@ -52,6 +52,7 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - WHISPER_ENABLE_WORD_TIMESTAMPS=True
     deploy:
       resources:
         reservations:

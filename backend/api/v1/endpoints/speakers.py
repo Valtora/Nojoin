@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from backend.api.deps import get_db
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.recording import Recording
+from backend.processing.embedding import merge_embeddings
 
 router = APIRouter()
 
@@ -104,36 +105,20 @@ async def update_recording_speaker(
     if not recording_speakers:
         raise HTTPException(status_code=404, detail=f"No speakers found with label {update.diarization_label} in this recording")
         
-    import numpy as np
-
     for rs in recording_speakers:
         rs.global_speaker_id = global_speaker.id
         db.add(rs)
         
-        # Update Global Speaker embedding
+        # Active Learning: Update Global Speaker embedding from user feedback
         if rs.embedding:
-            if global_speaker.embedding is None:
-                global_speaker.embedding = rs.embedding
+            if global_speaker.embedding:
+                # Use a higher alpha (e.g., 0.3) because this is explicit user feedback
+                global_speaker.embedding = merge_embeddings(global_speaker.embedding, rs.embedding, alpha=0.3)
             else:
-                # Update centroid
-                try:
-                    g_emb = np.array(global_speaker.embedding)
-                    r_emb = np.array(rs.embedding)
-                    
-                    # Simple average for now
-                    new_emb = (g_emb + r_emb) / 2.0
-                    
-                    # Normalize
-                    norm = np.linalg.norm(new_emb)
-                    if norm > 0:
-                        new_emb = new_emb / norm
-                        
-                    global_speaker.embedding = new_emb.tolist()
-                    db.add(global_speaker)
-                except Exception as e:
-                    # Log error but don't fail request
-                    print(f"Failed to update global speaker embedding: {e}")
-        
+                # Initialize if empty
+                global_speaker.embedding = rs.embedding
+            db.add(global_speaker)
+
     await db.commit()
     
     # Return updated list

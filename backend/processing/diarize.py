@@ -24,7 +24,7 @@ OFFLINE_DIARIZATION_CONFIG = "backend/processing/offline_diarization_config.yaml
 # Cache for loaded pipelines
 _pipeline_cache = {}
 
-def _filter_short_segments(annotation: Annotation, min_duration_s: float = 1.0) -> Annotation:
+def _filter_short_segments(annotation: Annotation, min_duration_s: float = 0.3) -> Annotation:
     """
     Filters out segments shorter than a minimum duration from a pyannote Annotation.
 
@@ -116,7 +116,7 @@ def diarize_audio(audio_path: str) -> Annotation | None:
         if num_segments == 0:
             logger.warning("Diarization returned 0 segments! This explains why speakers are UNKNOWN.")
             
-        return _filter_short_segments(diarization_result, min_duration_s=1.0)
+        return _filter_short_segments(diarization_result, min_duration_s=0.3)
 
     except Exception as e:
         logger.error(f"Diarization failed with error: {e}", exc_info=True)
@@ -188,7 +188,7 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
         with open(output_path, "rb") as f:
             diarization_result = pickle.load(f)
         logger.info(f"Diarization completed for {audio_path} (subprocess mode).")
-        return _filter_short_segments(diarization_result, min_duration_s=1.0)
+        return _filter_short_segments(diarization_result, min_duration_s=0.3)
     except Exception as e:
         logger.error(f"Error during diarization subprocess for {audio_path}: {e}", exc_info=True)
         return None

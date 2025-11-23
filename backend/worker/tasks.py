@@ -6,12 +6,13 @@ from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
-from backend.models.speaker import RecordingSpeaker
+from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
 from backend.processing.vad import mute_non_speech_segments
 from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad
 from backend.processing.transcribe import transcribe_audio
 from backend.processing.diarize import diarize_audio
+from backend.processing.embedding import extract_embeddings, cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
 
@@ -78,8 +79,18 @@ def process_recording_task(self, recording_id: int):
         if not vad_success:
              raise RuntimeError("VAD execution failed")
              
-        # Use the processed WAV for subsequent steps
-        processed_audio_path = vad_output_path
+        # Convert to MP3 (aligning with pipeline.py)
+        vad_processed_mp3 = vad_output_path.replace(".wav", ".mp3")
+        mp3_success = convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
+        if not mp3_success:
+             logger.warning("MP3 conversion failed, falling back to WAV")
+             processed_audio_path = vad_output_path
+        else:
+             processed_audio_path = vad_processed_mp3
+
+        logger.info(f"Using processed audio for transcription: {processed_audio_path}")
+        if not os.path.exists(processed_audio_path):
+             raise FileNotFoundError(f"Processed audio file missing: {processed_audio_path}")
         
         # --- Transcription Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 30, 'stage': 'Transcription'})
@@ -102,39 +113,53 @@ def process_recording_task(self, recording_id: int):
         if not combined_segments:
             # Fallback if combination fails (e.g. no diarization segments)
             logger.warning("Combination failed, using raw transcription segments with UNKNOWN speaker.")
-            combined_segments = [
-                {
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "speaker": "UNKNOWN",
-                    "text": seg["text"].strip()
-                }
-                for seg in transcription_result.get('segments', [])
-            ]
+            
+            # Check if transcription_result is None before accessing
+            if transcription_result and 'segments' in transcription_result:
+                combined_segments = [
+                    {
+                        "start": seg["start"],
+                        "end": seg["end"],
+                        "speaker": "UNKNOWN",
+                        "text": seg["text"].strip()
+                    }
+                    for seg in transcription_result.get('segments', [])
+                ]
+            else:
+                logger.error("Transcription result is None or missing segments during fallback.")
+                combined_segments = []
 
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
         
         # Create or Update Transcript Record
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
+        
+        # Handle case where transcription_result is None (e.g. due to error)
+        full_text = transcription_result.get('text', '') if transcription_result else ''
+        
         if transcript:
-            transcript.text = transcription_result.get('text', '')
+            transcript.text = full_text
             transcript.segments = final_segments
             session.add(transcript)
         else:
             transcript = Transcript(
                 recording_id=recording.id,
-                text=transcription_result.get('text', ''),
+                text=full_text,
                 segments=final_segments
             )
             session.add(transcript)
         
-        # Save Speakers
+        # Save Speakers & Embeddings
         # Extract unique speakers from the final segments
         unique_speakers = set(seg['speaker'] for seg in final_segments)
         
-        # Also check diarization result for any speakers that might have been missed in consolidation
-        # (though we only care about speakers who actually spoke in the transcript)
+        # Extract embeddings for all speakers in the diarization result
+        # We use the processed_audio_path (MP3) which pyannote can handle
+        speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
+        
+        # Map local labels (SPEAKER_00) to resolved names (John Doe)
+        label_map = {} 
         
         for label in unique_speakers:
             # Check if speaker already exists for this recording (idempotency)
@@ -144,14 +169,71 @@ def process_recording_task(self, recording_id: int):
                 .where(RecordingSpeaker.diarization_label == label)
             ).first()
             
-            if not existing_speaker:
+            embedding = speaker_embeddings.get(label)
+            resolved_name = label
+            global_speaker_id = None
+            
+            # Try to identify speaker using embedding
+            if embedding:
+                # Fetch all global speakers with embeddings
+                global_speakers = session.exec(select(GlobalSpeaker).where(GlobalSpeaker.embedding != None)).all()
+                
+                best_match = None
+                best_score = 0.0
+                SIMILARITY_THRESHOLD = 0.65 # Adjust based on model (wespeaker usually needs ~0.5-0.7)
+                
+                for gs in global_speakers:
+                    score = cosine_similarity(embedding, gs.embedding)
+                    if score > best_score:
+                        best_score = score
+                        best_match = gs
+                
+                if best_match and best_score > SIMILARITY_THRESHOLD:
+                    logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
+                    resolved_name = best_match.name
+                    global_speaker_id = best_match.id
+                    
+                    # Active Learning: Update Global Speaker embedding with new data
+                    # This keeps the profile up-to-date with latest voice samples
+                    try:
+                        new_emb = merge_embeddings(best_match.embedding, embedding)
+                        best_match.embedding = new_emb
+                        session.add(best_match)
+                    except Exception as e:
+                        logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
+                else:
+                    logger.info(f"No match found for {label} (Best score: {best_score:.2f}). Keeping as new/unknown.")
+                    # Optional: Auto-create Global Speaker? 
+                    # For now, we just store the embedding in RecordingSpeaker so we can identify them later.
+
+            label_map[label] = resolved_name
+
+            if existing_speaker:
+                existing_speaker.embedding = embedding
+                existing_speaker.name = resolved_name
+                existing_speaker.global_speaker_id = global_speaker_id
+                session.add(existing_speaker)
+            else:
                 rec_speaker = RecordingSpeaker(
                     recording_id=recording.id,
                     diarization_label=label,
-                    name=label # Default name to label
+                    name=resolved_name,
+                    embedding=embedding,
+                    global_speaker_id=global_speaker_id
                 )
                 session.add(rec_speaker)
+        
+        # Update Transcript Segments with Resolved Names
+        # We need to update the 'speaker' field in the JSON segments
+        updated_segments = []
+        for seg in final_segments:
+            original_label = seg['speaker']
+            seg['speaker'] = label_map.get(original_label, original_label)
+            updated_segments.append(seg)
             
+        transcript.segments = updated_segments
+        session.add(transcript)
+
         # Update Recording Status
         recording.status = RecordingStatus.PROCESSED
         session.add(recording)

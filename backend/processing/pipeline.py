@@ -180,10 +180,11 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                 if stage_update_callback:
                     stage_update_callback("Identifying speakers...")
                 
-                from .embedding import extract_embeddings, cosine_similarity
+                from .embedding import extract_embeddings, cosine_similarity, merge_embeddings
                 from backend.core.db import get_sync_session
                 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
                 from sqlmodel import select
+                import uuid
 
                 device_str = config_manager.get("processing_device", "cpu")
                 embeddings = extract_embeddings(processed_audio_path, diarization_result, device_str=device_str)
@@ -219,6 +220,31 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                                 if best_match and best_score >= threshold:
                                     logger.info(f"Matched {label} to Global Speaker {best_match.name} (Score: {best_score:.2f})")
                                     rs.global_speaker_id = best_match.id
+                                    
+                                    # Active Learning: Update Global Speaker embedding
+                                    # We use a small alpha (0.1) for automatic updates to avoid drift from single bad samples
+                                    if best_match.embedding:
+                                        best_match.embedding = merge_embeddings(best_match.embedding, embedding, alpha=0.1)
+                                        session.add(best_match)
+                                    
+                                    session.add(rs)
+                                else:
+                                    # No match found - Auto-create new Global Speaker
+                                    short_id = str(uuid.uuid4())[:8]
+                                    new_name = f"New Voice {short_id}"
+                                    logger.info(f"No match for {label} (Best score: {best_score:.2f}). Creating new Global Speaker: {new_name}")
+                                    
+                                    new_gs = GlobalSpeaker(name=new_name, embedding=embedding)
+                                    session.add(new_gs)
+                                    # We need to commit here to get the ID for the new global speaker
+                                    # and to make it available for other speakers in this loop if needed (though unlikely)
+                                    session.commit()
+                                    session.refresh(new_gs)
+                                    
+                                    # Add to local list so subsequent iterations can match against it if needed
+                                    global_speakers.append(new_gs)
+                                    
+                                    rs.global_speaker_id = new_gs.id
                                     session.add(rs)
                         
                         session.commit()

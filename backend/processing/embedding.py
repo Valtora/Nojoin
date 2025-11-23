@@ -63,10 +63,30 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "c
                 # But pyannote Inference usually works on the whole file with a sliding window OR a specific crop.
                 # model.crop(audio_path, seg) returns the embedding for that segment.
                 try:
+                    # Pyannote 3.1 / SpeechBrain 1.0+ change:
+                    # model(path) returns SlidingWindowFeature
+                    # We need to crop it manually or use the inference object correctly.
+                    # The 'Inference' class from pyannote.audio is a wrapper.
+                    # Calling model.crop(path, segment) is the correct way for the Inference wrapper.
+                    
                     emb = model.crop(audio_path, seg)
-                    # emb is (1, dimension) or (dimension,)
+                    
+                    # Handle SlidingWindowFeature (it might be a wrapper around numpy)
+                    # If it has no shape, it might be a SlidingWindowFeature object that behaves like an array but fails hasattr check?
+                    # Or maybe it's returning something else.
+                    # Let's force conversion to numpy if possible.
+                    
+                    if hasattr(emb, 'data'):
+                        emb = emb.data
+                        
+                    # Ensure it's a numpy array
+                    emb = np.array(emb)
+                    
+                    # emb is (1, dimension) or (dimension,) or (frames, dimension)
+                    # If it returns multiple frames for the segment, we should average them.
                     if len(emb.shape) == 2:
-                        emb = emb[0]
+                        emb = np.mean(emb, axis=0)
+                        
                     speaker_embeddings.append(emb)
                 except Exception as e:
                     logger.warning(f"Failed to extract embedding for speaker {label} segment {seg}: {e}")
@@ -91,3 +111,27 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return float(np.dot(a, b) / (norm_a * norm_b))
+
+def merge_embeddings(current_embedding: List[float], new_embedding: List[float], alpha: float = 0.1) -> List[float]:
+    """
+    Merges a new embedding into an existing one using a weighted moving average.
+    
+    Args:
+        current_embedding: The existing embedding vector.
+        new_embedding: The new embedding vector to merge.
+        alpha: The weight of the new embedding (0.0 to 1.0). 
+               Higher alpha means the new embedding has more influence.
+               
+    Returns:
+        The merged embedding vector.
+    """
+    if not current_embedding:
+        return new_embedding
+    
+    curr_arr = np.array(current_embedding)
+    new_arr = np.array(new_embedding)
+    
+    # Weighted average
+    merged = (1 - alpha) * curr_arr + alpha * new_arr
+    
+    return merged.tolist()

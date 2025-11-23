@@ -101,6 +101,8 @@ def normalize_audio_levels(input_path: str, output_path: str, target_dBFS: float
     # For now, just copy the file
     import shutil
     try:
+        if os.path.abspath(input_path) == os.path.abspath(output_path):
+            return True
         shutil.copy2(input_path, output_path)
         return True
     except Exception as e:

@@ -54,6 +54,10 @@ if TYPE_CHECKING:
 
 def combine_transcription_diarization(transcription: dict, diarization: Any) -> Optional[List[Dict]]:
     """Combines Whisper segments with Pyannote diarization.
+    
+    Automatically detects if word-level timestamps are available:
+    - If YES: Uses precise word-level alignment (better for fast turn-taking).
+    - If NO: Uses segment-level dominant speaker logic (fallback for Windows/No-Triton).
 
     Args:
         transcription: The result dictionary from whisper.transcribe().
@@ -72,68 +76,118 @@ def combine_transcription_diarization(transcription: dict, diarization: Any) -> 
     try:
         segments = transcription['segments']
         speaker_turns = diarization
-        combined = []
-        # Keep track of the last known speaker to attribute short, unassigned segments
-        last_known_speaker = "UNKNOWN"
-        last_segment_end_time = 0.0
+        
+        # Check if we have word timestamps
+        has_word_timestamps = len(segments) > 0 and 'words' in segments[0]
+        
+        if has_word_timestamps:
+            logger.info("Combining using WORD-LEVEL timestamps (High Precision)")
+            return _combine_word_level(segments, speaker_turns)
+        else:
+            logger.info("Combining using SEGMENT-LEVEL timestamps (Standard Precision)")
+            return _combine_segment_level(segments, speaker_turns)
 
-        for segment in segments:
-            start_time = segment['start']
-            end_time = segment['end']
-            text = segment['text'].strip()
-
-            active_speaker = "UNKNOWN"
-            max_overlap = 0.0
-            speaker_overlap = {}
-            transcript_seg = Segment(start_time, end_time)
-            try:
-                # Iterate over all diarization segments and compute overlap
-                for turn, _, label in speaker_turns.itertracks(yield_label=True):
-                    overlap_seg = transcript_seg & turn  # intersection segment
-                    overlap = overlap_seg.duration if overlap_seg else 0.0
-                    if overlap > 0:
-                        if label not in speaker_overlap:
-                            speaker_overlap[label] = 0.0
-                        speaker_overlap[label] += overlap
-                        if speaker_overlap[label] > max_overlap:
-                            max_overlap = speaker_overlap[label]
-                            active_speaker = label
-
-                if max_overlap == 0.0:
-                    time_since_last_segment = start_time - last_segment_end_time
-                    # If no overlap, try to assign to the last known speaker if the gap is small
-                    if last_known_speaker != "UNKNOWN" and time_since_last_segment < 2.0:
-                        active_speaker = last_known_speaker
-                        logger.info(
-                            f"Segment [{start_time:.2f}s - {end_time:.2f}s] had no direct overlap. "
-                            f"Attributed to recent speaker '{active_speaker}' (gap: {time_since_last_segment:.2f}s)."
-                        )
-                    else:
-                        logger.warning(
-                            f"No speaker turn found overlapping with segment [{start_time:.2f}s - {end_time:.2f}s]. "
-                            f"Assigning UNKNOWN. (Time since last speaker: {time_since_last_segment:.2f}s)"
-                        )
-
-            except Exception as e:
-                logger.error(f"Error assigning speaker for segment [{start_time:.2f}s - {end_time:.2f}s]: {e}", exc_info=True)
-            
-            if text: # Only add segments with actual text
-                combined.append({
-                    "start": start_time,
-                    "end": end_time,
-                    "speaker": active_speaker,
-                    "text": text
-                })
-                # Update the last known speaker if we found one
-                if active_speaker != "UNKNOWN":
-                    last_known_speaker = active_speaker
-                last_segment_end_time = end_time
-
-        logger.info(f"Successfully combined {len(segments)} transcription segments with speaker turns.")
-        return combined
     except Exception as e:
         logger.error(f"Error combining transcription and diarization: {e}", exc_info=True)
-        return None 
+        return None
+
+def _combine_segment_level(segments, speaker_turns):
+    """Fallback logic: Assign speaker based on max overlap with the whole segment."""
+    from pyannote.core import Segment
+    final_segments = []
+    
+    for seg in segments:
+        start = seg['start']
+        end = seg['end']
+        text = seg['text'].strip()
+        
+        if not text:
+            continue
+            
+        whisper_segment = Segment(start, end)
+        max_overlap = 0.0
+        dominant_speaker = "UNKNOWN"
+        
+        for turn, _, label in speaker_turns.itertracks(yield_label=True):
+            intersection = whisper_segment & turn
+            if intersection:
+                overlap_duration = intersection.duration
+                if overlap_duration > max_overlap:
+                    max_overlap = overlap_duration
+                    dominant_speaker = label
+        
+        final_segments.append({
+            "start": start,
+            "end": end,
+            "speaker": dominant_speaker,
+            "text": text
+        })
+    return final_segments
+
+def _combine_word_level(segments, speaker_turns):
+    """High-precision logic: Align individual words to speakers."""
+    from pyannote.core import Segment
+    
+    # Flatten all words
+    all_words = []
+    for seg in segments:
+        if 'words' in seg:
+            all_words.extend(seg['words'])
+            
+    final_segments = []
+    current_segment = {
+        "start": 0.0,
+        "end": 0.0,
+        "speaker": "UNKNOWN",
+        "text": "",
+        "words": []
+    }
+    
+    def get_speaker_for_range(start, end):
+        max_overlap = 0.0
+        active_speaker = "UNKNOWN"
+        word_seg = Segment(start, end)
+        for turn, _, label in speaker_turns.itertracks(yield_label=True):
+            overlap_seg = word_seg & turn
+            if overlap_seg:
+                overlap_dur = overlap_seg.duration
+                if overlap_dur > max_overlap:
+                    max_overlap = overlap_dur
+                    active_speaker = label
+        return active_speaker
+
+    for i, word_data in enumerate(all_words):
+        w_start = word_data['start']
+        w_end = word_data['end']
+        w_text = word_data['word']
+        
+        speaker = get_speaker_for_range(w_start, w_end)
+        
+        if i == 0:
+            current_segment["start"] = w_start
+            current_segment["speaker"] = speaker
+            current_segment["text"] = w_text
+            current_segment["end"] = w_end
+            continue
+        
+        gap = w_start - current_segment["end"]
+        
+        # Split if speaker changes OR gap > 1.0s
+        if speaker != current_segment["speaker"] or gap > 1.0:
+            final_segments.append(current_segment)
+            current_segment = {
+                "start": w_start,
+                "end": w_end,
+                "speaker": speaker,
+                "text": w_text,
+                "words": []
+            }
+        else:
+            current_segment["text"] += "" + w_text
+            current_segment["end"] = w_end
+            
+    final_segments.append(current_segment)
+    return final_segments 
 
 def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
     """

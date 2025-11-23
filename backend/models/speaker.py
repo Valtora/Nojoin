@@ -22,6 +22,9 @@ class RecordingSpeaker(BaseDBModel, table=True):
     
     diarization_label: str # e.g. SPEAKER_00
     
+    # The resolved name for this speaker in this recording (e.g. "John Doe" or "SPEAKER_00")
+    name: Optional[str] = None
+
     # Optional snippet for identification
     snippet_start: Optional[float] = None
     snippet_end: Optional[float] = None
