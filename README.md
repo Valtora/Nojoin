@@ -4,15 +4,13 @@
 
 **Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded. By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
 
-<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/636ff7be-afc0-43b1-ab80-a3c0efa8eff8" />
-
 ## 🚀 Overview
 
 **Nojoin** is a distributed, containerized meeting intelligence platform. It enables users to record system audio from any client device, process it centrally on a powerful GPU-enabled server, and access transcripts, diarization, and AI-generated insights via a modern web interface.
 
 **Core Philosophy:**
 *   **Centralized Intelligence:** Heavy lifting (Whisper/Pyannote) happens on a dedicated server.
-*   **Ubiquitous Access:** Manage and view meetings from any device with a browser.
+*   **Ubiquitous Access:** Manage and view meetings from any desktop device with a browser. (The companion app is currently desktop-only, mobile support will be added in future releases.)
 *   **Privacy First:** Self-hosted architecture ensures audio and transcripts never leave your control unless explicitly configured for external LLM services.
 
 ## ✨ Features
@@ -70,18 +68,18 @@ Nojoin is composed of three distinct subsystems:
     docker-compose up -d
     ```
     This will spin up the Database, Redis, API, Worker, and Frontend.
+    *Note: The first run may take several minutes as it needs to download large Docker images (including the NVIDIA CUDA runtime).*
 
 3.  **Access the Application:**
     *   **Web Interface:** Open `http://localhost:14141` (or configured port).
     *   **API Docs:** Open `http://localhost:8000/docs`.
 
 ### Running the Companion App
-Navigate to the `companion` directory and run the Rust application:
-```bash
-cd companion
-cargo run --release
-```
-*Note: You will need the Rust toolchain installed.*
+1.  Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
+2.  Download the executable for your operating system (Windows, macOS, or Linux).
+3.  Run the application. It will appear in your system tray.
+
+*Note: For developers, you can still build from source by navigating to the `companion` directory and running `cargo run --release`.*
 
 ## ☕ Buy Me a Coffee
 

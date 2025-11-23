@@ -1,0 +1,57 @@
+name: Build Companion App
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: companion.exe
+            asset_name: companion-windows.exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: companion
+            asset_name: companion-linux
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: companion
+            asset_name: companion-macos
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Install Linux Dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config libssl-dev
+
+    - name: Build
+      run: |
+        cd companion
+        cargo build --release --target ${{ matrix.target }}
+
+    - name: Rename Binary
+      shell: bash
+      run: |
+        cd companion/target/${{ matrix.target }}/release
+        mv ${{ matrix.artifact_name }} ../../../${{ matrix.asset_name }}
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: companion/${{ matrix.asset_name }}
