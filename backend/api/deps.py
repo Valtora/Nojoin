@@ -1,5 +1,5 @@
 from typing import AsyncGenerator, Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -11,7 +11,8 @@ from backend.core.security import ALGORITHM, SECRET_KEY
 from backend.models.user import User
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/login/access-token"
+    tokenUrl="/api/v1/login/access-token",
+    auto_error=False
 )
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -20,20 +21,32 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def get_current_user(
     db: AsyncSession = Depends(get_db),
-    token: str = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
+    token_query: Optional[str] = Query(None, alias="token")
 ) -> User:
+    actual_token = token or token_query
+    
+    if not actual_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(actual_token, SECRET_KEY, algorithms=[ALGORITHM])
         token_data = payload.get("sub")
         if token_data is None:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
             )
     except (JWTError, ValidationError):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     # token_data is the username (subject)

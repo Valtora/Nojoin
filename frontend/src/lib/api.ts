@@ -71,6 +71,12 @@ export const retryProcessing = async (id: number): Promise<Recording> => {
 };
 
 export const getRecordingStreamUrl = (id: number): string => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token');
+    if (token) {
+      return `${API_BASE_URL}/recordings/${id}/stream?token=${token}`;
+    }
+  }
   return `${API_BASE_URL}/recordings/${id}/stream`;
 };
 
