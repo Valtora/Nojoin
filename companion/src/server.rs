@@ -29,6 +29,7 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<AppStatus> {
 #[derive(serde::Deserialize)]
 struct StartRequest {
     name: String,
+    token: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -41,9 +42,23 @@ async fn start_recording(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<StartRequest>,
 ) -> Result<Json<StartResponse>, StatusCode> {
+    // Update token if provided
+    if let Some(token) = &payload.token {
+        let mut config = state.config.lock().unwrap();
+        config.api_token = token.clone();
+    }
+
+    // Get config for request
+    let (api_url, api_token) = {
+        let config = state.config.lock().unwrap();
+        (config.api_url.clone(), config.api_token.clone())
+    };
+
     // 1. Call Backend to Init
     let client = reqwest::Client::new();
-    let res = client.post("http://localhost:8000/api/v1/recordings/init")
+    let url = format!("{}/recordings/init", api_url);
+    let res = client.post(&url)
+        .header("Authorization", format!("Bearer {}", api_token))
         .query(&[("name", &payload.name)])
         .send()
         .await

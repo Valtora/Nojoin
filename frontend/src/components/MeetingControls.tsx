@@ -73,7 +73,8 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
 
   const handleStart = async () => {
     const name = `Meeting ${new Date().toLocaleString()}`;
-    const response = await sendCommand('start', { name });
+    const token = localStorage.getItem('token');
+    const response = await sendCommand('start', { name, token });
     if (response && response.id) {
         router.push(`/recordings/${response.id}`);
         if (onMeetingEnd) onMeetingEnd(); // Refresh list to show new meeting

@@ -13,7 +13,7 @@ from backend.processing.audio_preprocessing import convert_wav_to_mp3, preproces
 from backend.processing.transcribe import transcribe_audio
 from backend.processing.diarize import diarize_audio
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
-from pydub import AudioSegment
+from backend.utils.audio import get_audio_duration
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,8 @@ def process_recording_task(self, recording_id: int):
     # Fix missing duration if needed
     if (not recording.duration_seconds or recording.duration_seconds == 0) and os.path.exists(recording.audio_path):
         try:
-            audio = AudioSegment.from_file(recording.audio_path)
-            recording.duration_seconds = audio.duration_seconds
+            duration = get_audio_duration(recording.audio_path)
+            recording.duration_seconds = duration
             session.add(recording)
             session.commit()
             session.refresh(recording)

@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+psycopg2-binary
+asyncpg
+celery[redis]
+python-multipart
+python-jose[cryptography]
+passlib[argon2]
+aiofiles
+requests
+httpx
+python-dotenv
+torch --index-url https://download.pytorch.org/whl/cu124
+torchaudio --index-url https://download.pytorch.org/whl/cu124
+openai-whisper --index-url https://pypi.org/simple
+pyannote.audio
+silero-vad
+numpy
+pandas

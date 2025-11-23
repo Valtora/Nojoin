@@ -10,7 +10,43 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const login = async (username: string, password: string): Promise<{ access_token: string }> => {
+  const formData = new FormData();
+  formData.append('username', username);
+  formData.append('password', password);
+  
+  const response = await api.post<{ access_token: string }>('/login/access-token', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
 export const getRecordings = async (): Promise<Recording[]> => {
+
   const response = await api.get<Recording[]>('/recordings/');
   return response.data;
 };

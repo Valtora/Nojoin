@@ -49,6 +49,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                 is_recording.store(false, Ordering::SeqCst);
                 // Trigger finalize
                 let id = *state.current_recording_id.lock().unwrap();
+                let config = state.config.lock().unwrap().clone();
                 if let Some(rec_id) = id {
                     // Create a new runtime for the async task since we are in a sync thread
                     thread::spawn(move || {
@@ -56,7 +57,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                         rt.block_on(async move {
                             // Wait a bit for the upload to finish
                             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; 
-                            match uploader::finalize_recording(rec_id).await {
+                            match uploader::finalize_recording(rec_id, &config).await {
                                 Ok(_) => println!("Recording finalized"),
                                 Err(e) => eprintln!("Failed to finalize: {}", e),
                             }
@@ -71,10 +72,11 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
 fn start_segment(
     recording_id: i32,
     sequence: i32,
-    _state: Arc<AppState>,
+    state: Arc<AppState>,
     is_recording: Arc<AtomicBool>
 ) {
     is_recording.store(true, Ordering::SeqCst);
+    let config = state.config.lock().unwrap().clone();
     
     thread::spawn(move || {
         let host = cpal::default_host();
@@ -205,7 +207,7 @@ fn start_segment(
         // Upload
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            match uploader::upload_segment(recording_id, sequence, &path).await {
+            match uploader::upload_segment(recording_id, sequence, &path, &config).await {
                 Ok(_) => println!("Segment uploaded successfully"),
                 Err(e) => eprintln!("Failed to upload segment: {}", e),
             }

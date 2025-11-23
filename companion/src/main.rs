@@ -8,10 +8,13 @@ mod server;
 mod audio;
 mod state;
 mod uploader;
+mod config;
 
 use state::{AppState, AppStatus};
+use config::Config;
 
 fn load_icon() -> Icon {
+
     let (icon_rgba, icon_width, icon_height) = {
         let image = image::load_from_memory(include_bytes!("icon.png"))
             .expect("Failed to open icon path")
@@ -40,11 +43,13 @@ fn main() {
 
     // App State
     let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
+    let config = Config::load();
     let state = Arc::new(AppState {
         status: Mutex::new(AppStatus::Idle),
         current_recording_id: Mutex::new(None),
         current_sequence: Mutex::new(1),
         audio_command_tx: audio_tx,
+        config: Mutex::new(config),
     });
 
     // Audio Thread

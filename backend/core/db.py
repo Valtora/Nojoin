@@ -30,11 +30,12 @@ else:
 engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
 sync_engine = create_engine(SYNC_DATABASE_URL, echo=True, future=True)
 
+async_session_maker = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session() as session:
+    async with async_session_maker() as session:
         yield session
 
 def get_sync_session() -> Session:

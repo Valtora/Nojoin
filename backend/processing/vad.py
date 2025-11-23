@@ -90,6 +90,11 @@ def mute_non_speech_segments(
         processed_audio_tensor = torch.from_numpy(processed_audio.astype(np.float32))
         
         # Save output
+        # silero_vad.save_audio expects a tensor [channels, samples] or [samples]
+        # If our numpy array is 1D, we might need to unsqueeze
+        if processed_audio_tensor.ndim == 1:
+            processed_audio_tensor = processed_audio_tensor.unsqueeze(0)
+            
         silero_vad.save_audio(output_wav_path, processed_audio_tensor, sampling_rate=sampling_rate)
         
         output_file_size = os.path.getsize(output_wav_path)

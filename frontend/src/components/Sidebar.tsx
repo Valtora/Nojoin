@@ -85,6 +85,7 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
   };
 
   useEffect(() => {
+    fetchRecordings();
     // Poll for updates every 5 seconds
     const interval = setInterval(fetchRecordings, 5000);
     return () => clearInterval(interval);

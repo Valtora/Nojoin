@@ -7,11 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 import aiofiles
 from uuid import uuid4
-from pydub import AudioSegment
 
 from backend.api.deps import get_db
 from backend.models.recording import Recording, RecordingStatus, RecordingRead, RecordingUpdate
 from backend.worker.tasks import process_recording_task
+from backend.utils.audio import concatenate_wavs, get_audio_duration
 
 router = APIRouter()
 
@@ -116,23 +116,20 @@ async def finalize_upload(
     if not segments:
         raise HTTPException(status_code=400, detail="No valid segments found")
         
-    # Concatenate using PyDub
+    # Concatenate using ffmpeg
     try:
-        combined = AudioSegment.empty()
-        for _, path in segments:
-            segment = AudioSegment.from_wav(path)
-            combined += segment
-            
-        # Export to final destination
-        combined.export(recording.audio_path, format="wav")
+        segment_paths = [path for _, path in segments]
+        concatenate_wavs(segment_paths, recording.audio_path)
         
         # Cleanup temp dir
         shutil.rmtree(recording_temp_dir)
         
         # Set duration
-        recording.duration_seconds = combined.duration_seconds
+        recording.duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to concatenate segments: {str(e)}")
         
     # Update recording status
@@ -179,8 +176,7 @@ async def upload_recording(
     # Get duration
     duration = 0.0
     try:
-        audio = AudioSegment.from_file(file_path)
-        duration = audio.duration_seconds
+        duration = get_audio_duration(file_path)
     except Exception as e:
         print(f"Failed to get duration: {e}")
     

@@ -1,0 +1,4 @@
+{
+  "api_url": "http://localhost:8000/api/v1",
+  "api_token": "YOUR_API_TOKEN_HERE"
+}

@@ -10,11 +10,20 @@ from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
+from backend.models.user import User
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup
     SQLModel.metadata.create_all(sync_engine)
+    
+    # Create default user (admin/admin) if not exists
+    from backend.create_first_user import create_first_user
+    try:
+        await create_first_user()
+    except Exception as e:
+        print(f"Error creating first user: {e}")
+        
     yield
 
 app = FastAPI(
