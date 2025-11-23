@@ -3,12 +3,15 @@
 import { useState } from 'react';
 import { Settings, FileInput, MessageSquare, Users, Upload } from 'lucide-react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import GlobalSpeakersModal from './GlobalSpeakersModal';
 import SettingsModal from './SettingsModal';
 
 export default function ChatPanel() {
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const params = useParams();
+  const recordingId = params?.id;
 
   return (
     <aside className="w-80 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
@@ -38,18 +41,23 @@ export default function ChatPanel() {
       
       <div className="flex-1 p-4 flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
         <MessageSquare className="w-12 h-12 mb-4 opacity-20" />
-        <p className="text-sm">Select a meeting to start chatting with it.</p>
+        <p className="text-sm">
+            {recordingId ? "Chat functionality coming soon." : "Select a meeting to start chatting with it."}
+        </p>
       </div>
 
       <div className="p-4 border-t border-gray-200 dark:border-gray-800">
         <div className="flex gap-2">
             <input 
             type="text" 
-            placeholder="Ask a question about this meeting..." 
+            placeholder={recordingId ? "Ask a question..." : "Select a meeting first..."}
             className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-            disabled
+            disabled={!recordingId}
             />
-            <button className="bg-orange-500 text-white px-4 py-2 rounded-md text-sm font-medium opacity-50 cursor-not-allowed">
+            <button 
+                disabled={!recordingId}
+                className={`bg-orange-500 text-white px-4 py-2 rounded-md text-sm font-medium ${!recordingId ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-600'}`}
+            >
                 Send
             </button>
         </div>

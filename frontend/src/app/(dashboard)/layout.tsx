@@ -1,5 +1,6 @@
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import ChatPanel from "@/components/ChatPanel";
 
 export default function DashboardLayout({
   children,
@@ -14,6 +15,8 @@ export default function DashboardLayout({
         <TopBar />
         {children}
       </main>
+      
+      <ChatPanel />
     </div>
   );
 }

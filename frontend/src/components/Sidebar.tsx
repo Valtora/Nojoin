@@ -158,6 +158,12 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
         />
       </div>
       <div className="p-2 space-y-2">
+        {recordings.length === 0 && (
+            <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
+                <p>No recordings found.</p>
+                <p className="mt-1 text-xs">Start a new meeting or import audio to get started.</p>
+            </div>
+        )}
         {recordings.map((recording) => {
           const isActive = pathname === `/recordings/${recording.id}`;
           const startDate = new Date(recording.created_at);
