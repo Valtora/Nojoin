@@ -1,5 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB
 from .base import BaseDBModel
 
 if TYPE_CHECKING:
@@ -8,6 +10,7 @@ if TYPE_CHECKING:
 class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
     name: str = Field(unique=True, index=True)
+    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
     
     recording_speakers: List["RecordingSpeaker"] = Relationship(back_populates="global_speaker")
 
@@ -23,6 +26,8 @@ class RecordingSpeaker(BaseDBModel, table=True):
     snippet_start: Optional[float] = None
     snippet_end: Optional[float] = None
     voice_snippet_path: Optional[str] = None
+    
+    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
 
     recording: "Recording" = Relationship(back_populates="speakers")
     global_speaker: Optional["GlobalSpeaker"] = Relationship(back_populates="recording_speakers")

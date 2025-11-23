@@ -50,6 +50,8 @@ fn main() {
         current_sequence: Mutex::new(1),
         audio_command_tx: audio_tx,
         config: Mutex::new(config),
+        recording_start_time: Mutex::new(None),
+        accumulated_duration: Mutex::new(Duration::new(0, 0)),
     });
 
     // Audio Thread

@@ -54,7 +54,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
           }}
           className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${item.className || 'text-gray-700 dark:text-gray-200'}`}
         >
-          {/* Icons removed as per request */}
+          {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
           {item.label}
         </button>
       ))}

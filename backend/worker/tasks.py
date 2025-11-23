@@ -115,13 +115,19 @@ def process_recording_task(self, recording_id: int):
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
         
-        # Create Transcript Record
-        transcript = Transcript(
-            recording_id=recording.id,
-            text=transcription_result.get('text', ''),
-            segments=final_segments
-        )
-        session.add(transcript)
+        # Create or Update Transcript Record
+        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
+        if transcript:
+            transcript.text = transcription_result.get('text', '')
+            transcript.segments = final_segments
+            session.add(transcript)
+        else:
+            transcript = Transcript(
+                recording_id=recording.id,
+                text=transcription_result.get('text', ''),
+                segments=final_segments
+            )
+            session.add(transcript)
         
         # Save Speakers
         # Extract unique speakers from the final segments

@@ -1,5 +1,7 @@
 # Use Nvidia CUDA base image for GPU support
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# Note: Ensure this tag exists on Docker Hub. If 13.0 is not yet available as a container image, 
+# you may need to use a 12.x image and rely on forward compatibility or wait for the image release.
+FROM nvidia/cuda:13.0.0-runtime-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1

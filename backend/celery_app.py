@@ -1,4 +1,6 @@
 import os
+# Apply HuggingFace patch for Pyannote compatibility
+import backend.utils.hf_patch
 from celery import Celery
 
 # Redis Configuration

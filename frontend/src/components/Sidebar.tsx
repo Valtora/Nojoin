@@ -231,10 +231,10 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
                         if (rec) handleRenameStart(rec.id, rec.name);
                     } 
                 },
-                ...(recordings.find(r => r.id === contextMenu.recordingId)?.status === RecordingStatus.ERROR ? [{
+                {
                     label: 'Retry Processing',
                     onClick: () => handleRetry(contextMenu.recordingId)
-                }] : []),
+                },
                 { 
                     label: 'Delete', 
                     className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',

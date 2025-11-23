@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+# Apply HuggingFace patch for Pyannote compatibility
+import backend.utils.hf_patch
 from sqlmodel import SQLModel
 from backend.core.db import sync_engine
 from backend.api.v1.api import api_router

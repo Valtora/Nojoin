@@ -3,10 +3,35 @@ import logging
 import silero_vad
 import os
 import numpy as np
+import torchaudio
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+def safe_read_audio(path: str, sampling_rate: int = 16000):
+    """
+    Reads audio using torchaudio with 'soundfile' backend to avoid torchcodec issues.
+    Replicates silero_vad.read_audio functionality.
+    """
+    # In newer torchaudio versions, set_audio_backend is deprecated/removed.
+    # We can rely on the 'backend' argument in load() or use set_audio_backend if available.
+    if hasattr(torchaudio, 'set_audio_backend'):
+        try:
+            if torchaudio.get_audio_backend() != 'soundfile':
+                torchaudio.set_audio_backend("soundfile")
+        except (RuntimeError, AttributeError):
+            pass # Ignore if backend setting fails, rely on load argument
+
+    wav, sr = torchaudio.load(path, backend="soundfile")
+    
+    if wav.size(0) > 1:
+        wav = wav.mean(dim=0, keepdim=True)
+        
+    if sr != sampling_rate:
+        transform = torchaudio.transforms.Resample(orig_freq=sr, new_freq=sampling_rate)
+        wav = transform(wav)
+        
+    return wav.squeeze(0)
 
 def mute_non_speech_segments(
     input_wav_path: str, 
@@ -50,8 +75,8 @@ def mute_non_speech_segments(
         input_file_size = os.path.getsize(input_wav_path)
         logger.info(f"[VAD] Input file size: {input_file_size:,} bytes")
 
-        # Load audio using silero_vad.read_audio
-        wav = silero_vad.read_audio(input_wav_path, sampling_rate=sampling_rate)
+        # Load audio using safe_read_audio to avoid torchcodec issues
+        wav = safe_read_audio(input_wav_path, sampling_rate=sampling_rate)
         logger.info(f"[VAD] Loaded audio shape: {wav.shape}, dtype: {wav.dtype}")
         
         # Convert to numpy for processing
@@ -253,4 +278,4 @@ def get_vad_config_from_settings() -> Dict[str, Any]:
         "min_silence_duration_ms": 100,  
         "fade_duration_ms": 50,
         "silence_method": "mute"
-    } 
+    }

@@ -12,7 +12,6 @@ venv
 ENV
 env.bak
 venv.bak
-nojoin_data.db
 recordings
 .DS_Store
 .vscode
@@ -22,3 +21,4 @@ Nojoin.py
 README.md
 LICENSE
 .venv/
+.wav

@@ -17,6 +17,8 @@ pub struct AppState {
     pub current_sequence: Mutex<i32>,
     pub audio_command_tx: Sender<AudioCommand>,
     pub config: Mutex<Config>,
+    pub recording_start_time: Mutex<Option<std::time::SystemTime>>,
+    pub accumulated_duration: Mutex<std::time::Duration>,
 }
 
 

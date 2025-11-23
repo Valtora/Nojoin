@@ -324,3 +324,27 @@ async def stream_recording(
         raise HTTPException(status_code=404, detail="Audio file not found on server")
         
     return FileResponse(recording.audio_path, media_type="audio/wav", filename=recording.name)
+
+@router.post("/{recording_id}/retry", response_model=Recording)
+async def retry_processing(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retry processing for a recording that is in ERROR or COMPLETED state.
+    Useful if the pipeline failed or if code has been updated.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    # Reset status
+    recording.status = RecordingStatus.PROCESSING
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    # Trigger Celery task
+    process_recording_task.delay(recording.id)
+    
+    return recording

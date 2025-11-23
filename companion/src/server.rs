@@ -21,9 +21,41 @@ pub async fn start_server(state: Arc<AppState>) {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn get_status(State(state): State<Arc<AppState>>) -> Json<AppStatus> {
+use std::time::SystemTime;
+
+#[derive(serde::Serialize)]
+struct StatusResponse {
+    status: AppStatus,
+    duration_seconds: u64,
+}
+
+async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
     let status = state.status.lock().unwrap().clone();
-    Json(status)
+    
+    let duration = {
+        let acc = *state.accumulated_duration.lock().unwrap();
+        let start = *state.recording_start_time.lock().unwrap();
+        
+        match status {
+            AppStatus::Recording => {
+                if let Some(s) = start {
+                    if let Ok(elapsed) = s.elapsed() {
+                        acc + elapsed
+                    } else {
+                        acc
+                    }
+                } else {
+                    acc
+                }
+            },
+            _ => acc,
+        }
+    };
+
+    Json(StatusResponse {
+        status,
+        duration_seconds: duration.as_secs(),
+    })
 }
 
 #[derive(serde::Deserialize)]
@@ -83,6 +115,12 @@ async fn start_recording(
         *id = Some(recording_id);
         let mut seq = state.current_sequence.lock().unwrap();
         *seq = 1;
+        
+        // Reset timing
+        let mut start_time = state.recording_start_time.lock().unwrap();
+        *start_time = Some(SystemTime::now());
+        let mut acc = state.accumulated_duration.lock().unwrap();
+        *acc = std::time::Duration::new(0, 0);
     }
     
     // 3. Send Command to Audio Thread
@@ -94,10 +132,32 @@ async fn start_recording(
     }))
 }
 
-async fn stop_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+#[derive(serde::Deserialize)]
+struct StopRequest {
+    token: Option<String>,
+}
+
+async fn stop_recording(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Option<StopRequest>>,
+) -> Result<Json<String>, StatusCode> {
+    // Update token if provided
+    if let Some(req) = payload {
+        if let Some(token) = req.token {
+            let mut config = state.config.lock().unwrap();
+            config.api_token = token;
+        }
+    }
+
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Idle;
+        
+        // Reset timing
+        let mut start_time = state.recording_start_time.lock().unwrap();
+        *start_time = None;
+        let mut acc = state.accumulated_duration.lock().unwrap();
+        *acc = std::time::Duration::new(0, 0);
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
     Ok(Json("Stopped".to_string()))
@@ -107,6 +167,16 @@ async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<Stri
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Paused;
+        
+        // Accumulate time
+        let mut start_time = state.recording_start_time.lock().unwrap();
+        if let Some(s) = *start_time {
+            if let Ok(elapsed) = s.elapsed() {
+                let mut acc = state.accumulated_duration.lock().unwrap();
+                *acc += elapsed;
+            }
+        }
+        *start_time = None;
     }
     state.audio_command_tx.send(AudioCommand::Pause).unwrap();
     Ok(Json("Paused".to_string()))
@@ -118,6 +188,10 @@ async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<Str
         *status = AppStatus::Recording;
         let mut seq = state.current_sequence.lock().unwrap();
         *seq += 1;
+        
+        // Resume timing
+        let mut start_time = state.recording_start_time.lock().unwrap();
+        *start_time = Some(SystemTime::now());
     }
     state.audio_command_tx.send(AudioCommand::Resume).unwrap();
     Ok(Json("Resumed".to_string()))

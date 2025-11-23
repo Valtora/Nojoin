@@ -68,15 +68,29 @@ async def update_recording_speaker(
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # 2. Find or Create Global Speaker
+    # Prevent creating a Global Speaker named "UNKNOWN"
+    if update.global_speaker_name.upper() == "UNKNOWN":
+        raise HTTPException(status_code=400, detail="Cannot create a Global Speaker named 'UNKNOWN'. Please choose a different name.")
+
     statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
     
     if not global_speaker:
-        global_speaker = GlobalSpeaker(name=update.global_speaker_name)
-        db.add(global_speaker)
-        await db.commit()
-        await db.refresh(global_speaker)
+        # Double check if it exists (race condition)
+        try:
+            global_speaker = GlobalSpeaker(name=update.global_speaker_name)
+            db.add(global_speaker)
+            await db.commit()
+            await db.refresh(global_speaker)
+        except Exception:
+            await db.rollback()
+            # Try fetching again
+            statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
+            result = await db.execute(statement)
+            global_speaker = result.scalar_one_or_none()
+            if not global_speaker:
+                raise HTTPException(status_code=500, detail="Failed to create or find global speaker")
         
     # 3. Update RecordingSpeakers
     # Find all segments with this label for this recording
@@ -90,9 +104,35 @@ async def update_recording_speaker(
     if not recording_speakers:
         raise HTTPException(status_code=404, detail=f"No speakers found with label {update.diarization_label} in this recording")
         
+    import numpy as np
+
     for rs in recording_speakers:
         rs.global_speaker_id = global_speaker.id
         db.add(rs)
+        
+        # Update Global Speaker embedding
+        if rs.embedding:
+            if global_speaker.embedding is None:
+                global_speaker.embedding = rs.embedding
+            else:
+                # Update centroid
+                try:
+                    g_emb = np.array(global_speaker.embedding)
+                    r_emb = np.array(rs.embedding)
+                    
+                    # Simple average for now
+                    new_emb = (g_emb + r_emb) / 2.0
+                    
+                    # Normalize
+                    norm = np.linalg.norm(new_emb)
+                    if norm > 0:
+                        new_emb = new_emb / norm
+                        
+                    global_speaker.embedding = new_emb.tolist()
+                    db.add(global_speaker)
+                except Exception as e:
+                    # Log error but don't fail request
+                    print(f"Failed to update global speaker embedding: {e}")
         
     await db.commit()
     

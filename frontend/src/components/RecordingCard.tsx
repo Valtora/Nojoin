@@ -1,6 +1,12 @@
+'use client';
+
 import Link from 'next/link';
 import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, MoreVertical, RefreshCw, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import ContextMenu from './ContextMenu';
+import { retryProcessing, deleteRecording } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 interface RecordingCardProps {
   recording: Recording;
@@ -57,27 +63,83 @@ const StatusBadge = ({ status }: { status: RecordingStatus }) => {
 };
 
 export default function RecordingCard({ recording }: RecordingCardProps) {
+  const router = useRouter();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleRetry = async () => {
+    try {
+      await retryProcessing(recording.id);
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to retry processing", e);
+      alert("Failed to retry processing.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this recording?")) return;
+    try {
+      await deleteRecording(recording.id);
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to delete recording", e);
+      alert("Failed to delete recording.");
+    }
+  };
+
   return (
-    <Link href={`/recordings/${recording.id}`} className="block">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1">
-            {recording.name}
-          </h3>
-          <StatusBadge status={recording.status} />
-        </div>
-        
-        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
-          <div className="flex items-center">
-            <Calendar className="w-4 h-4 mr-1" />
-            {formatDate(recording.created_at)}
+    <>
+      <Link href={`/recordings/${recording.id}`} className="block">
+        <div 
+          className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
+          onContextMenu={handleContextMenu}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1">
+              {recording.name}
+            </h3>
+            <StatusBadge status={recording.status} />
           </div>
-          <div className="flex items-center">
-            <Clock className="w-4 h-4 mr-1" />
-            {formatDuration(recording.duration_seconds)}
+          
+          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
+            <div className="flex items-center">
+              <Calendar className="w-4 h-4 mr-1" />
+              {formatDate(recording.created_at)}
+            </div>
+            <div className="flex items-center">
+              <Clock className="w-4 h-4 mr-1" />
+              {formatDuration(recording.duration_seconds)}
+            </div>
           </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Retry Processing',
+              onClick: handleRetry,
+              icon: <RefreshCw className="w-4 h-4" />,
+              className: 'text-blue-600 dark:text-blue-400'
+            },
+            {
+              label: 'Delete Recording',
+              onClick: handleDelete,
+              icon: <Trash2 className="w-4 h-4" />,
+              className: 'text-red-600 dark:text-red-400'
+            }
+          ]}
+        />
+      )}
+    </>
   );
 }

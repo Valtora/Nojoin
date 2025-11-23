@@ -175,6 +175,59 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
             from ..db import database as db_ops
             db_ops.add_diarization_labels(recording_id, speaker_labels, snippet_segments)
 
+            # --- NEW: Speaker Embedding & Identification ---
+            try:
+                if stage_update_callback:
+                    stage_update_callback("Identifying speakers...")
+                
+                from .embedding import extract_embeddings, cosine_similarity
+                from backend.core.db import get_sync_session
+                from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+                from sqlmodel import select
+
+                device_str = config_manager.get("processing_device", "cpu")
+                embeddings = extract_embeddings(processed_audio_path, diarization_result, device_str=device_str)
+                
+                if embeddings:
+                    with get_sync_session() as session:
+                        # Get RecordingSpeakers for this recording
+                        statement = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == int(recording_id))
+                        rec_speakers = session.exec(statement).all()
+                        rec_speaker_map = {rs.diarization_label: rs for rs in rec_speakers}
+                        
+                        # Get all GlobalSpeakers with embeddings
+                        global_speakers = session.exec(select(GlobalSpeaker)).all()
+                        
+                        for label, embedding in embeddings.items():
+                            if label in rec_speaker_map:
+                                rs = rec_speaker_map[label]
+                                rs.embedding = embedding
+                                session.add(rs)
+                                
+                                # Match against Global Speakers
+                                best_match = None
+                                best_score = 0.0
+                                threshold = 0.75 
+                                
+                                for gs in global_speakers:
+                                    if gs.embedding:
+                                        score = cosine_similarity(embedding, gs.embedding)
+                                        if score > best_score:
+                                            best_score = score
+                                            best_match = gs
+                                
+                                if best_match and best_score >= threshold:
+                                    logger.info(f"Matched {label} to Global Speaker {best_match.name} (Score: {best_score:.2f})")
+                                    rs.global_speaker_id = best_match.id
+                                    session.add(rs)
+                        
+                        session.commit()
+                        logger.info(f"Saved embeddings and updated speaker links for recording {recording_id}")
+
+            except Exception as e:
+                logger.error(f"Speaker identification failed: {e}", exc_info=True)
+                # Continue processing
+
         except Exception as e:
             logger.error(f"Diarization step failed for recording ID: {recording_id}: {e}", exc_info=True)
             database.update_recording_status(recording_id, 'Error')

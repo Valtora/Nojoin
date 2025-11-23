@@ -9,6 +9,18 @@ from dotenv import load_dotenv
 import pathlib
 import traceback
 
+# Add project root to sys.path to allow imports from backend
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Ensure HF patch is applied
+try:
+    import backend.utils.hf_patch
+except ImportError:
+    print("Warning: Could not import backend.utils.hf_patch in subprocess", file=sys.stderr)
+
 # Setup logging to stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)

@@ -4,6 +4,9 @@ import logging
 import os
 import torch
 from pyannote.audio import Pipeline
+from backend.utils import config_manager
+# Ensure HF patch is applied for compatibility
+import backend.utils.hf_patch
 from pyannote.core import Annotation
 import pandas as pd # Optional, useful if manipulating results
 from dotenv import load_dotenv
@@ -16,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Default diarization pipeline
 DEFAULT_PIPELINE = "pyannote/speaker-diarization-3.1"
+OFFLINE_DIARIZATION_CONFIG = "backend/processing/offline_diarization_config.yaml"
 
 # Cache for loaded pipelines
 _pipeline_cache = {}
@@ -57,6 +61,8 @@ def load_diarization_pipeline(device_str: str):
         if not hf_token:
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
+        # use_auth_token is deprecated in favor of token, but pyannote 3.1 still expects use_auth_token.
+        # The hf_patch.py will intercept this and convert it to 'token' for huggingface_hub if needed.
         pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, use_auth_token=hf_token)
         pipeline.to(torch.device(device_str))
         return pipeline
@@ -98,41 +104,30 @@ def diarize_audio(audio_path: str) -> Annotation | None:
         except Exception as e:
             logger.warning(f"Could not read audio file info for logging: {e}")
 
-        # Perform diarization
-        logger.info(f"Running diarization pipeline on {audio_path}...")
+        # Run diarization
+        logger.info("Running diarization inference...")
         diarization_result = pipeline(audio_path)
-
-        # The result is a pyannote.core.Annotation object
+        
+        # Check results
+        num_segments = len(list(diarization_result.itersegments()))
         num_speakers = len(diarization_result.labels())
-        logger.info(f"Diarization completed for {audio_path}. Found {num_speakers} speakers.")
-        logger.info(f"Speaker labels: {list(diarization_result.labels())}")
-        segments = list(diarization_result.itersegments())
-        logger.info(f"Diarization result contains {len(segments)} segments.")
-        # Log first few segments for inspection
-        for i, (start, end) in enumerate(segments[:5]):
-            seg_crop = diarization_result.crop(start, end)
-            if seg_crop is not None and seg_crop.labels():
-                label = seg_crop.labels()
-                logger.info(f"Segment {i}: [{start:.2f}s - {end:.2f}s], labels: {label}")
-            else:
-                logger.info(f"Segment {i}: [{start:.2f}s - {end:.2f}s], no label found.")
-        if not diarization_result.labels():
-            logger.warning(f"Diarization result has no speaker labels for {audio_path}.")
-
+        logger.info(f"Diarization complete. Found {num_segments} segments and {num_speakers} speakers.")
+        
+        if num_segments == 0:
+            logger.warning("Diarization returned 0 segments! This explains why speakers are UNKNOWN.")
+            
         return _filter_short_segments(diarization_result, min_duration_s=1.0)
 
-    except RuntimeError as e:
-        logger.error(f"User-facing error: {e}")
-        # Show user-friendly error (UI should catch this and display)
-        return None
     except Exception as e:
-        logger.error(f"Error during diarization for {audio_path}: {e}", exc_info=True)
-        cache_key = (DEFAULT_PIPELINE, device_str)
-        if cache_key in _pipeline_cache and isinstance(e, RuntimeError):
-            logger.warning(f"Clearing pipeline cache for pipeline on {device_str} due to error.")
-            del _pipeline_cache[cache_key]
-            if device_str == "cuda":
-                torch.cuda.empty_cache()
+        logger.error(f"Diarization failed with error: {e}", exc_info=True)
+        # Clear cache if it's a runtime error (e.g. CUDA OOM or device issue)
+        if isinstance(e, RuntimeError):
+             cache_key = (DEFAULT_PIPELINE, device_str)
+             if cache_key in _pipeline_cache:
+                logger.warning(f"Clearing pipeline cache for pipeline on {device_str} due to error.")
+                del _pipeline_cache[cache_key]
+                if device_str == "cuda":
+                    torch.cuda.empty_cache()
         return None
 
 def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_check=None) -> Annotation | None:
@@ -203,4 +198,3 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
         except Exception:
             pass
 
- 
