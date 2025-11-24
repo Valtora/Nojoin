@@ -27,7 +27,11 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
     } else {
       return acc;
     }
-  }, [] as RecordingSpeaker[]);
+  }, [] as RecordingSpeaker[]).sort((a, b) => {
+    const nameA = a.global_speaker?.name || a.diarization_label;
+    const nameB = b.global_speaker?.name || b.diarization_label;
+    return nameA.localeCompare(nameB);
+  });
 
   const handlePlaySnippet = (label: string) => {
     const speakerSegments = segments.filter(s => s.speaker === label);

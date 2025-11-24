@@ -113,16 +113,14 @@ def transcribe_audio(audio_path: str) -> dict | None:
         use_fp16 = device == "cuda" 
         
         # Check environment variable for word timestamps
-        # If not explicitly set, auto-detect environment:
-        # - Linux/Docker: Default to True (Triton works)
-        # - Windows: Default to False (Triton crashes)
+        # Default to True now that we have triton-windows support
         env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
         
         if env_var is not None:
             enable_word_timestamps = env_var.lower() == "true"
             logger.info(f"Word timestamps set via env var: {enable_word_timestamps}")
         else:
-            # Auto-detect
+            # Fallback to False on Windows if Triton is not working
             import platform
             is_windows = platform.system().lower() == "windows"
             enable_word_timestamps = not is_windows
@@ -195,6 +193,7 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None, canc
                 # Perform transcription with progress tracking
                 
                 # Check environment variable for word timestamps
+                # Default to True now that we have triton-windows support
                 env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
                 if env_var is not None:
                     enable_word_timestamps = env_var.lower() == "true"

@@ -467,103 +467,173 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
         segments = transcription['segments']
         speaker_turns = diarization
         combined = []
-        # Keep track of the last known speaker to attribute short, unassigned segments
-        last_known_speaker = "UNKNOWN"
-        last_segment_end_time = 0.0
-
-        for segment in segments:
-            start_time = segment['start']
-            end_time = segment['end']
-            text = segment['text'].strip()
-
-            # --- Clamping and Hallucination Filtering ---
-            if audio_duration is not None:
-                # 1. Skip segments that start after the audio ends
-                if start_time >= audio_duration:
-                    logger.warning(f"Skipping segment starting after audio end: {start_time:.2f}s >= {audio_duration:.2f}s. Text: '{text}'")
-                    continue
-                
-                # 2. Clamp end time to audio duration
-                if end_time > audio_duration:
-                    logger.info(f"Clamping segment end from {end_time:.2f}s to {audio_duration:.2f}s")
-                    end_time = audio_duration
-                
-                # 3. Filter specific hallucinations near the end
-                # "Thank you" is a very common Whisper hallucination at the end of files
-                if start_time > (audio_duration - 10.0): # Check last 10 seconds
-                    cleaned_text = text.lower().strip(".,!? ")
-                    hallucinations = ["thank you", "thanks", "bye", "you", "thank you.", "thank you very much", "t and e"]
-                    if any(h in cleaned_text for h in hallucinations):
-                        logger.warning(f"Removing likely hallucination at end: '{text}' at {start_time:.2f}s")
-                        continue
-
-            if start_time >= end_time:
-                continue
-            # --------------------------------------------
-
-            active_speaker = "UNKNOWN"
+        
+        # Helper to find speaker for a time range
+        def get_speaker_for_range(start, end, default="UNKNOWN"):
+            seg = Segment(start, end)
+            best_speaker = default
             max_overlap = 0.0
-            speaker_overlap = {}
-            transcript_seg = Segment(start_time, end_time)
-            try:
-                # Iterate over all diarization segments and compute overlap
-                for turn, _, label in speaker_turns.itertracks(yield_label=True):
-                    overlap_seg = transcript_seg & turn  # intersection segment
-                    overlap = overlap_seg.duration if overlap_seg else 0.0
-                    if overlap > 0:
-                        if label not in speaker_overlap:
-                            speaker_overlap[label] = 0.0
-                        speaker_overlap[label] += overlap
-                        if speaker_overlap[label] > max_overlap:
-                            max_overlap = speaker_overlap[label]
-                            active_speaker = label
-
-                if max_overlap == 0.0:
-                    time_since_last_segment = start_time - last_segment_end_time
-                    # If no overlap, try to assign to the last known speaker if the gap is small
-                    if last_known_speaker != "UNKNOWN" and time_since_last_segment < 2.0:
-                        active_speaker = last_known_speaker
-                        logger.info(
-                            f"Segment [{start_time:.2f}s - {end_time:.2f}s] had no direct overlap. "
-                            f"Attributed to recent speaker '{active_speaker}' (gap: {time_since_last_segment:.2f}s)."
-                        )
-                    else:
-                        logger.warning(
-                            f"No speaker turn found overlapping with segment [{start_time:.2f}s - {end_time:.2f}s]. "
-                            f"Assigning UNKNOWN. (Time since last speaker: {time_since_last_segment:.2f}s)"
-                        )
-
-            except Exception as e:
-                logger.error(f"Error assigning speaker for segment [{start_time:.2f}s - {end_time:.2f}s]: {e}", exc_info=True)
             
-            if text: # Only add segments with actual text
-                combined.append({
-                    "start": start_time,
-                    "end": end_time,
-                    "speaker": active_speaker,
-                    "text": text
-                })
-                # Update the last known speaker if we found one
-                if active_speaker != "UNKNOWN":
-                    last_known_speaker = active_speaker
-                last_segment_end_time = end_time
+            # Check overlap with all speaker turns
+            # Optimization: In a real scenario, we might want to use an interval tree or similar
+            # but for typical meeting lengths, iterating is acceptable or we can rely on pyannote's efficiency
+            for turn, _, label in speaker_turns.itertracks(yield_label=True):
+                overlap_seg = seg & turn
+                if overlap_seg:
+                    overlap_dur = overlap_seg.duration
+                    if overlap_dur > max_overlap:
+                        max_overlap = overlap_dur
+                        best_speaker = label
+            return best_speaker
+
+        # Check if we have word-level timestamps
+        has_word_timestamps = any('words' in s for s in segments)
+        
+        if has_word_timestamps:
+            logger.info("Using word-level timestamps for precise speaker attribution.")
+            current_segment = None
+            
+            for segment in segments:
+                # Some segments might not have words if they are empty or silence, skip them
+                if 'words' not in segment:
+                    continue
+                    
+                for word_info in segment['words']:
+                    w_start = word_info['start']
+                    w_end = word_info['end']
+                    w_text = word_info['word'].strip()
+                    
+                    if not w_text:
+                        continue
+                        
+                    # Clamp to audio duration if needed
+                    if audio_duration is not None:
+                        if w_start >= audio_duration:
+                            continue
+                        if w_end > audio_duration:
+                            w_end = audio_duration
+                            
+                    # Find speaker for this word
+                    speaker = get_speaker_for_range(w_start, w_end)
+                    
+                    # Grouping logic
+                    if current_segment and current_segment['speaker'] == speaker:
+                        # Append to current segment
+                        # Add a space if needed (simple heuristic)
+                        current_segment['text'] += " " + w_text
+                        current_segment['end'] = w_end
+                    else:
+                        # Close previous segment
+                        if current_segment:
+                            combined.append(current_segment)
+                        
+                        # Start new segment
+                        current_segment = {
+                            "start": w_start,
+                            "end": w_end,
+                            "speaker": speaker,
+                            "text": w_text
+                        }
+            
+            # Append the last segment
+            if current_segment:
+                combined.append(current_segment)
+                
+        else:
+            logger.info("No word-level timestamps found. Falling back to segment-level attribution.")
+            # Keep track of the last known speaker to attribute short, unassigned segments
+            last_known_speaker = "UNKNOWN"
+            last_segment_end_time = 0.0
+
+            for segment in segments:
+                start_time = segment['start']
+                end_time = segment['end']
+                text = segment['text'].strip()
+
+                # --- Clamping and Hallucination Filtering ---
+                if audio_duration is not None:
+                    # 1. Skip segments that start after the audio ends
+                    if start_time >= audio_duration:
+                        logger.warning(f"Skipping segment starting after audio end: {start_time:.2f}s >= {audio_duration:.2f}s. Text: '{text}'")
+                        continue
+                    
+                    # 2. Clamp end time to audio duration
+                    if end_time > audio_duration:
+                        logger.info(f"Clamping segment end from {end_time:.2f}s to {audio_duration:.2f}s")
+                        end_time = audio_duration
+                    
+                    # 3. Filter specific hallucinations near the end
+                    # "Thank you" is a very common Whisper hallucination at the end of files
+                    # We rely on the dynamic UNKNOWN trimming at the end of the function
+                    # to catch these, but we can still log if we see them.
+                    pass
+
+                if start_time >= end_time:
+                    continue
+                # --------------------------------------------
+
+                active_speaker = "UNKNOWN"
+                max_overlap = 0.0
+                speaker_overlap = {}
+                transcript_seg = Segment(start_time, end_time)
+                try:
+                    # Iterate over all diarization segments and compute overlap
+                    for turn, _, label in speaker_turns.itertracks(yield_label=True):
+                        overlap_seg = transcript_seg & turn  # intersection segment
+                        overlap = overlap_seg.duration if overlap_seg else 0.0
+                        if overlap > 0:
+                            if label not in speaker_overlap:
+                                speaker_overlap[label] = 0.0
+                            speaker_overlap[label] += overlap
+                            if speaker_overlap[label] > max_overlap:
+                                max_overlap = speaker_overlap[label]
+                                active_speaker = label
+
+                    if max_overlap == 0.0:
+                        time_since_last_segment = start_time - last_segment_end_time
+                        # If no overlap, try to assign to the last known speaker if the gap is small
+                        if last_known_speaker != "UNKNOWN" and time_since_last_segment < 2.0:
+                            active_speaker = last_known_speaker
+                            logger.info(
+                                f"Segment [{start_time:.2f}s - {end_time:.2f}s] had no direct overlap. "
+                                f"Attributed to recent speaker '{active_speaker}' (gap: {time_since_last_segment:.2f}s)."
+                            )
+                        else:
+                            logger.warning(
+                                f"No speaker turn found overlapping with segment [{start_time:.2f}s - {end_time:.2f}s]. "
+                                f"Assigning UNKNOWN. (Time since last speaker: {time_since_last_segment:.2f}s)"
+                            )
+
+                except Exception as e:
+                    logger.error(f"Error assigning speaker for segment [{start_time:.2f}s - {end_time:.2f}s]: {e}", exc_info=True)
+                
+                if text: # Only add segments with actual text
+                    combined.append({
+                        "start": start_time,
+                        "end": end_time,
+                        "speaker": active_speaker,
+                        "text": text
+                    })
+                    # Update the last known speaker if we found one
+                    if active_speaker != "UNKNOWN":
+                        last_known_speaker = active_speaker
+                    last_segment_end_time = end_time
 
         logger.info(f"Successfully combined {len(segments)} transcription segments with speaker turns.")
         
-        # --- Final Safety Check: Remove trailing UNKNOWN segments that look like hallucinations ---
-        # This catches cases where audio_duration might have been missing or slightly off
-        if combined:
-            last_seg = combined[-1]
-            if last_seg['speaker'] == "UNKNOWN":
-                cleaned_text = last_seg['text'].lower().strip(".,!? ")
-                hallucinations = ["thank you", "thanks", "bye", "you", "thank you.", "thank you very much", "t and e"]
-                # Also check if it's very short (< 2s) and isolated
-                duration = last_seg['end'] - last_seg['start']
-                is_hallucination = any(h in cleaned_text for h in hallucinations)
-                
-                if is_hallucination or (duration < 2.0 and len(cleaned_text) < 10):
-                    logger.warning(f"Removing trailing UNKNOWN segment (safety check): '{last_seg['text']}'")
-                    combined.pop()
+        # --- Dynamic Hallucination Removal: Trim UNKNOWN segments from start and end ---
+        # Whisper often hallucinates during silence at the start/end of recordings.
+        # Pyannote correctly identifies these as having no speaker (UNKNOWN).
+        
+        # Trim from end
+        while combined and combined[-1]['speaker'] == "UNKNOWN":
+            removed = combined.pop()
+            logger.info(f"Trimming trailing UNKNOWN segment (likely hallucination): '{removed['text']}'")
+            
+        # Trim from start
+        while combined and combined[0]['speaker'] == "UNKNOWN":
+            removed = combined.pop(0)
+            logger.info(f"Trimming leading UNKNOWN segment (likely hallucination): '{removed['text']}'")
         
         return combined
     except Exception as e:

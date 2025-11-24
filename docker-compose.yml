@@ -44,7 +44,7 @@ services:
     command: celery -A backend.celery_app.celery_app worker --loglevel=info
     volumes:
       - .:/app
-      - ./data/recordings:/app/recordings
+      - ./data:/app/data
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
@@ -52,7 +52,7 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - WHISPER_ENABLE_WORD_TIMESTAMPS=True
+      - WHISPER_ENABLE_WORD_TIMESTAMPS=true
     deploy:
       resources:
         reservations:

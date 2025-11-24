@@ -43,8 +43,8 @@ def mute_non_speech_segments(
     min_silence_duration_ms: int = 100,
     fade_duration_ms: int = 50,
     silence_method: str = "mute",  # "mute" or "fade"
-    start_mute_ms: int = 200,      # Mute first X ms to remove recording artifacts
-    end_mute_ms: int = 200         # Mute last X ms to remove recording artifacts
+    start_mute_ms: int = 1000,      # Mute first X ms to remove recording artifacts
+    end_mute_ms: int = 1000         # Mute last X ms to remove recording artifacts
 ) -> bool:
     """
     Uses Silero VAD to mute non-speech segments in a WAV file with enhanced metrics and quality improvements.

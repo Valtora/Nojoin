@@ -28,7 +28,7 @@ async def list_global_speakers(
     """
     List all global speakers.
     """
-    statement = select(GlobalSpeaker).offset(skip).limit(limit)
+    statement = select(GlobalSpeaker).order_by(GlobalSpeaker.name).offset(skip).limit(limit)
     result = await db.execute(statement)
     return result.scalars().all()
 
