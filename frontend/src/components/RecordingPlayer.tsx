@@ -13,18 +13,26 @@ interface RecordingPlayerProps {
 
 export default function RecordingPlayer({ recording, audioRef }: RecordingPlayerProps) {
   const [currentTime, setCurrentTime] = useState(0);
+  const [stopTime, setStopTime] = useState<number | null>(null);
   // const audioRef = useRef<HTMLAudioElement>(null); // Removed local ref
   const router = useRouter();
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+      const current = audioRef.current.currentTime;
+      setCurrentTime(current);
+      
+      if (stopTime !== null && current >= stopTime) {
+        audioRef.current.pause();
+        setStopTime(null);
+      }
     }
   };
 
-  const handleSeek = (time: number) => {
+  const handlePlaySegment = (start: number, end: number) => {
     if (audioRef.current) {
-      audioRef.current.currentTime = time;
+      audioRef.current.currentTime = start;
+      setStopTime(end);
       audioRef.current.play();
     }
   };
@@ -85,7 +93,7 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
           <TranscriptView
             segments={segments}
             currentTime={currentTime}
-            onSeek={handleSeek}
+            onPlaySegment={handlePlaySegment}
             speakerMap={speakerMap}
             onRenameSpeaker={handleRenameSpeaker}
             onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}

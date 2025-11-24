@@ -1,6 +1,7 @@
 import os
 import shutil
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,9 +23,45 @@ os.makedirs(RECORDINGS_DIR, exist_ok=True)
 TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+def generate_default_meeting_name() -> str:
+    now = datetime.now()
+    day_name = now.strftime("%A")
+    hour = now.hour
+    
+    time_of_day = ""
+    
+    if 5 <= hour < 12:
+        if hour < 8:
+            time_of_day = "Early Morning"
+        elif hour >= 10:
+            time_of_day = "Late Morning"
+        else:
+            time_of_day = "Morning"
+    elif 12 <= hour < 17:
+        if hour < 14:
+            time_of_day = "Early Afternoon"
+        elif hour >= 16:
+            time_of_day = "Late Afternoon"
+        else:
+            time_of_day = "Afternoon"
+    elif 17 <= hour < 21:
+        if hour < 18:
+            time_of_day = "Early Evening"
+        elif hour >= 20:
+            time_of_day = "Late Evening"
+        else:
+            time_of_day = "Evening"
+    else:
+        if 21 <= hour < 24:
+            time_of_day = "Night"
+        else: # 0-5
+            time_of_day = "Late Night" 
+
+    return f"{day_name} {time_of_day} Meeting"
+
 @router.post("/init", response_model=Recording)
 async def init_upload(
-    name: str = Query(..., description="Name of the recording"),
+    name: Optional[str] = Query(None, description="Name of the recording"),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -33,6 +70,9 @@ async def init_upload(
     # Create a placeholder file path (will be used after finalization)
     unique_filename = f"{uuid4()}.wav"
     file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    
+    if not name:
+        name = generate_default_meeting_name()
     
     recording = Recording(
         name=name,
@@ -198,17 +238,60 @@ async def upload_recording(
     
     return recording
 
+from sqlalchemy.orm import selectinload
+from sqlmodel import select, or_, col, distinct
+from backend.models.transcript import Transcript
+from backend.models.speaker import RecordingSpeaker
+from backend.models.tag import RecordingTag, Tag
+
 @router.get("/", response_model=List[Recording])
 async def list_recordings(
     skip: int = 0,
     limit: int = 100,
+    q: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    speaker_ids: Optional[List[int]] = Query(None),
+    tag_ids: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List all recordings.
+    List all recordings with optional search and filtering.
     """
-    statement = select(Recording).offset(skip).limit(limit).order_by(Recording.created_at.desc())
-    result = await db.execute(statement)
+    query = select(Recording).distinct()
+    
+    # Joins for filtering and searching
+    if q or speaker_ids or tag_ids:
+        query = query.join(Transcript, isouter=True)
+        query = query.join(RecordingSpeaker, isouter=True)
+        query = query.join(RecordingTag, isouter=True).join(Tag, isouter=True)
+
+    # 1. Text Search (OR condition across fields)
+    if q:
+        search_filter = or_(
+            col(Recording.name).ilike(f"%{q}%"),
+            col(Transcript.text).ilike(f"%{q}%"),
+            col(RecordingSpeaker.name).ilike(f"%{q}%"),
+            col(Tag.name).ilike(f"%{q}%")
+        )
+        query = query.where(search_filter)
+
+    # 2. Filters (AND conditions)
+    if start_date:
+        query = query.where(Recording.created_at >= start_date)
+    if end_date:
+        query = query.where(Recording.created_at <= end_date)
+
+    if speaker_ids:
+        query = query.where(RecordingSpeaker.global_speaker_id.in_(speaker_ids))
+
+    if tag_ids:
+        query = query.where(Tag.id.in_(tag_ids))
+
+    # Order and pagination
+    query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
+    
+    result = await db.execute(query)
     recordings = result.scalars().all()
     return recordings
 

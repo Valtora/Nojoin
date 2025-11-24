@@ -89,7 +89,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         temp_files.append(vad_processed_mp3)
         vad_progress_callback(100)  # 100% - VAD stage complete
 
-        processed_audio_path = vad_processed_mp3
+        processed_audio_path = vad_processed_wav
         logger.info(f"Using VAD-processed audio for pipeline: {processed_audio_path}")
 
         # Get audio duration for clamping

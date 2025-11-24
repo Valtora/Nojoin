@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     volumes:
       - .:/app
       - ./data/recordings:/app/recordings
@@ -41,7 +41,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
+    command: sh -c "python3 backend/preload_models.py && celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo"
     volumes:
       - .:/app
       - ./data:/app/data

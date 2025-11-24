@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
@@ -45,9 +45,30 @@ export const login = async (username: string, password: string): Promise<{ acces
   return response.data;
 };
 
-export const getRecordings = async (): Promise<Recording[]> => {
+export interface RecordingFilters {
+  q?: string;
+  start_date?: string;
+  end_date?: string;
+  speaker_ids?: number[];
+  tag_ids?: number[];
+}
 
-  const response = await api.get<Recording[]>('/recordings/');
+export const getRecordings = async (filters?: RecordingFilters): Promise<Recording[]> => {
+  const params = new URLSearchParams();
+  
+  if (filters) {
+    if (filters.q) params.append('q', filters.q);
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    if (filters.speaker_ids) {
+      filters.speaker_ids.forEach(id => params.append('speaker_ids', id.toString()));
+    }
+    if (filters.tag_ids) {
+      filters.tag_ids.forEach(id => params.append('tag_ids', id.toString()));
+    }
+  }
+
+  const response = await api.get<Recording[]>(`/recordings/?${params.toString()}`);
   return response.data;
 };
 
@@ -117,6 +138,11 @@ export const updateTranscriptSegmentSpeaker = async (recordingId: number, segmen
 };
 
 // Tags
+export const getTags = async (): Promise<Tag[]> => {
+  const response = await api.get<Tag[]>('/tags/');
+  return response.data;
+};
+
 export const addTagToRecording = async (recordingId: number, tagName: string): Promise<void> => {
   await api.post(`/tags/recordings/${recordingId}`, { name: tagName });
 };

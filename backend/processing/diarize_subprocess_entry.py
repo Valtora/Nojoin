@@ -51,7 +51,7 @@ def main():
 
     try:
         device = torch.device(device_str)
-        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=hf_token)
+        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=hf_token)
         pipeline.to(device)
         file = {"audio": audio_path}
         hook = StdoutProgressHook()

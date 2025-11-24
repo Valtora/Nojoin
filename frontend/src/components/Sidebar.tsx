@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, MoreVertical, Trash2, Edit2, RefreshCw } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, MoreVertical, Trash2, Edit2, RefreshCw, Search, Filter, X } from 'lucide-react';
 import MeetingControls from './MeetingControls';
-import { useState, useEffect } from 'react';
-import { getRecordings, deleteRecording, renameRecording, retryProcessing } from '@/lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { getRecordings, deleteRecording, renameRecording, retryProcessing, getGlobalSpeakers, getTags, RecordingFilters } from '@/lib/api';
 import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
+import { GlobalSpeaker, Tag } from '@/types';
 
 interface SidebarProps {
   recordings: Recording[];
@@ -21,9 +22,9 @@ const formatDurationString = (seconds?: number) => {
   const minutes = Math.floor((seconds % 3600) / 60);
   
   if (hours > 0) {
-      return `${hours}hr ${minutes}mins`;
+      return `${hours}hr ${minutes}${minutes === 1 ? 'min' : 'mins'}`;
   }
-  return `${minutes}mins`;
+  return `${minutes}${minutes === 1 ? 'min' : 'mins'}`;
 };
 
 const formatDate = (dateString: string) => {
@@ -61,6 +62,15 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
+  const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<number[]>([]);
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -75,20 +85,33 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
     onConfirm: () => {},
   });
 
-  const fetchRecordings = async () => {
+  const fetchRecordings = useCallback(async () => {
     try {
-      const data = await getRecordings();
+      const filters: RecordingFilters = {};
+      if (searchQuery) filters.q = searchQuery;
+      if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
+      if (dateRange.end) filters.end_date = new Date(dateRange.end).toISOString();
+      if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
+      if (selectedTags.length > 0) filters.tag_ids = selectedTags;
+
+      const data = await getRecordings(filters);
       setRecordings(data);
     } catch (error) {
       console.error("Failed to fetch recordings:", error);
     }
-  };
+  }, [searchQuery, dateRange, selectedSpeakers, selectedTags]);
 
   useEffect(() => {
     fetchRecordings();
     // Poll for updates every 5 seconds
     const interval = setInterval(fetchRecordings, 5000);
     return () => clearInterval(interval);
+  }, [fetchRecordings]);
+
+  useEffect(() => {
+    // Load global speakers and tags for filter
+    getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
+    getTags().then(setAllTags).catch(console.error);
   }, []);
 
   // Also update if initialRecordings changes (e.g. from server refresh)
@@ -151,11 +174,110 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
     <aside className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
       <MeetingControls onMeetingEnd={fetchRecordings} />
       <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <input 
-          type="text" 
-          placeholder="Search meetings..." 
-          className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search recordings..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
+            />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${showFilters ? 'text-orange-500' : 'text-gray-400'}`}
+            >
+              <Filter className="w-4 h-4" />
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="p-3 bg-gray-100 dark:bg-gray-900/50 rounded-lg space-y-3 text-sm">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500">Date Range</label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                  />
+                  <input
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500">Speakers</label>
+                <div className="flex flex-wrap gap-1">
+                  {globalSpeakers.map(speaker => (
+                    <button
+                      key={speaker.id}
+                      onClick={() => {
+                        setSelectedSpeakers(prev => 
+                          prev.includes(speaker.id) 
+                            ? prev.filter(id => id !== speaker.id)
+                            : [...prev, speaker.id]
+                        );
+                      }}
+                      className={`px-2 py-1 rounded-full text-xs border ${
+                        selectedSpeakers.includes(speaker.id)
+                          ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
+                          : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                      }`}
+                    >
+                      {speaker.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500">Tags</label>
+                <div className="flex flex-wrap gap-1">
+                  {allTags.map(tag => (
+                    <button
+                      key={tag.id}
+                      onClick={() => {
+                        setSelectedTags(prev => 
+                          prev.includes(tag.id) 
+                            ? prev.filter(id => id !== tag.id)
+                            : [...prev, tag.id]
+                        );
+                      }}
+                      className={`px-2 py-1 rounded-full text-xs border ${
+                        selectedTags.includes(tag.id)
+                          ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
+                          : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                      }`}
+                    >
+                      {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {(searchQuery || dateRange.start || dateRange.end || selectedSpeakers.length > 0 || selectedTags.length > 0) && (
+                 <button 
+                    onClick={() => {
+                        setSearchQuery("");
+                        setDateRange({ start: "", end: "" });
+                        setSelectedSpeakers([]);
+                        setSelectedTags([]);
+                    }}
+                    className="text-xs text-red-500 hover:underline flex items-center gap-1"
+                 >
+                    <X className="w-3 h-3" /> Clear Filters
+                 </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="p-2 space-y-2">
         {recordings.length === 0 && (

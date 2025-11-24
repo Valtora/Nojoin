@@ -123,7 +123,7 @@ export default function RecordingPage({ params }: PageProps) {
         <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
            <span>{new Date(recording.created_at).toLocaleString()}</span>
            <span>•</span>
-           <span>{recording.duration_seconds ? `${Math.floor(recording.duration_seconds / 60)} mins` : 'Unknown'}</span>
+           <span>{recording.duration_seconds ? `${Math.floor(recording.duration_seconds / 60)} ${Math.floor(recording.duration_seconds / 60) === 1 ? 'min' : 'mins'}` : 'Unknown'}</span>
         </div>
       </header>
 

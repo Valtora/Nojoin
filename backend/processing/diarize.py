@@ -3,6 +3,7 @@
 import logging
 import os
 import torch
+import huggingface_hub
 from pyannote.audio import Pipeline
 from backend.utils import config_manager
 # Ensure HF patch is applied for compatibility
@@ -18,7 +19,7 @@ from ..utils.config_manager import config_manager
 logger = logging.getLogger(__name__)
 
 # Default diarization pipeline
-DEFAULT_PIPELINE = "pyannote/speaker-diarization-3.1"
+DEFAULT_PIPELINE = "pyannote/speaker-diarization-community-1"
 OFFLINE_DIARIZATION_CONFIG = "backend/processing/offline_diarization_config.yaml"
 
 # Cache for loaded pipelines
@@ -61,11 +62,10 @@ def load_diarization_pipeline(device_str: str):
         if not hf_token:
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
-        # use_auth_token is deprecated in favor of token, but pyannote 3.1 still expects use_auth_token.
-        # The hf_patch.py will intercept this and convert it to 'token' for huggingface_hub if needed.
-        # However, newer versions of huggingface_hub might strictly reject use_auth_token.
-        # We try 'token' first, and fallback if needed, or rely on the patch.
-        # Given the error "unexpected keyword argument 'use_auth_token'", we should switch to 'token'.
+        # Login to Hugging Face to ensure internal calls (like Inference) have access
+        huggingface_hub.login(token=hf_token)
+
+        # Pyannote 3.1+ and HuggingFace Hub use 'token' instead of 'use_auth_token'
         pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, token=hf_token)
         pipeline.to(torch.device(device_str))
         return pipeline
@@ -91,6 +91,11 @@ def diarize_audio(audio_path: str) -> Annotation | None:
     logger.info(f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}")
     try:
         device = torch.device(device_str)
+        
+        # Clear CUDA cache before loading to ensure maximum available memory
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+            
         cache_key = (DEFAULT_PIPELINE, device_str)
         if cache_key not in _pipeline_cache:
             logger.info(f"Loading pyannote pipeline from Hugging Face onto device {device_str}")
