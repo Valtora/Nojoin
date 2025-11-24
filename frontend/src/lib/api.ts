@@ -110,6 +110,12 @@ export const updateSpeaker = async (recordingId: number, diarizationLabel: strin
   });
 };
 
+export const updateTranscriptSegmentSpeaker = async (recordingId: number, segmentIndex: number, newSpeakerName: string): Promise<void> => {
+  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}`, {
+    new_speaker_name: newSpeakerName,
+  });
+};
+
 // Tags
 export const addTagToRecording = async (recordingId: number, tagName: string): Promise<void> => {
   await api.post(`/tags/recordings/${recordingId}`, { name: tagName });

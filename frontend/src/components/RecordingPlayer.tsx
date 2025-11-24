@@ -1,7 +1,7 @@
 'use client';
 
 import { Recording, TranscriptSegment } from '@/types';
-import { getRecordingStreamUrl, updateSpeaker } from '@/lib/api';
+import { getRecordingStreamUrl, updateSpeaker, updateTranscriptSegmentSpeaker } from '@/lib/api';
 import { useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TranscriptView from './TranscriptView';
@@ -36,6 +36,16 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
     } catch (error) {
       console.error("Failed to rename speaker:", error);
       alert("Failed to rename speaker. Please try again.");
+    }
+  };
+
+  const handleUpdateSegmentSpeaker = async (index: number, newSpeakerName: string) => {
+    try {
+      await updateTranscriptSegmentSpeaker(recording.id, index, newSpeakerName);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to update segment speaker:", error);
+      alert("Failed to update segment speaker. Please try again.");
     }
   };
 
@@ -78,6 +88,7 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
             onSeek={handleSeek}
             speakerMap={speakerMap}
             onRenameSpeaker={handleRenameSpeaker}
+            onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
           />
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">

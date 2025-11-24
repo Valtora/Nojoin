@@ -8,7 +8,8 @@ interface TranscriptViewProps {
   currentTime: number;
   onSeek: (time: number) => void;
   speakerMap: Record<string, string>;
-  onRenameSpeaker: (label: string, newName: string) => void;
+  onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onUpdateSegmentSpeaker: (index: number, newSpeakerName: string) => void | Promise<void>;
 }
 
 const formatTime = (seconds: number) => {
@@ -22,11 +23,14 @@ export default function TranscriptView({
   currentTime, 
   onSeek,
   speakerMap,
-  onRenameSpeaker
+  onRenameSpeaker,
+  onUpdateSegmentSpeaker
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [editingSegmentIndex, setEditingSegmentIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (activeSegmentRef.current) {
@@ -41,13 +45,42 @@ export default function TranscriptView({
     e.stopPropagation();
     setEditingSpeaker(label);
     setEditValue(currentName);
+    setEditingSegmentIndex(null);
   };
 
-  const handleSpeakerSubmit = (label: string) => {
-    if (editValue.trim()) {
-      onRenameSpeaker(label, editValue.trim());
-    }
+  const handleSpeakerDoubleClick = (index: number, currentName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingSegmentIndex(index);
+    setEditValue(currentName);
     setEditingSpeaker(null);
+  };
+
+  const handleSpeakerSubmit = async (label: string) => {
+    if (editValue.trim() && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        await onRenameSpeaker(label, editValue.trim());
+      } finally {
+        setIsSubmitting(false);
+        setEditingSpeaker(null);
+      }
+    } else if (!editValue.trim()) {
+        setEditingSpeaker(null);
+    }
+  };
+
+  const handleSegmentSpeakerSubmit = async (index: number) => {
+    if (editValue.trim() && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        await onUpdateSegmentSpeaker(index, editValue.trim());
+      } finally {
+        setIsSubmitting(false);
+        setEditingSegmentIndex(null);
+      }
+    } else if (!editValue.trim()) {
+        setEditingSegmentIndex(null);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, label: string) => {
@@ -55,6 +88,14 @@ export default function TranscriptView({
       handleSpeakerSubmit(label);
     } else if (e.key === 'Escape') {
       setEditingSpeaker(null);
+    }
+  };
+
+  const handleSegmentKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'Enter') {
+      handleSegmentSpeakerSubmit(index);
+    } else if (e.key === 'Escape') {
+      setEditingSegmentIndex(null);
     }
   };
 
@@ -72,6 +113,7 @@ export default function TranscriptView({
         const isActive = currentTime >= segment.start && currentTime < segment.end;
         const speakerName = speakerMap[segment.speaker] || segment.speaker;
         const isEditing = editingSpeaker === segment.speaker;
+        const isEditingSegment = editingSegmentIndex === index;
 
         return (
           <div
@@ -91,11 +133,23 @@ export default function TranscriptView({
                   onClick={(e) => e.stopPropagation()}
                   className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              ) : isEditingSegment ? (
+                <input
+                  autoFocus
+                  type="text"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => handleSegmentSpeakerSubmit(index)}
+                  onKeyDown={(e) => handleSegmentKeyDown(e, index)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
               ) : (
                 <span 
                   className="text-sm font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
                   onClick={(e) => handleSpeakerClick(segment.speaker, speakerName, e)}
-                  title="Click to rename speaker"
+                  onDoubleClick={(e) => handleSpeakerDoubleClick(index, speakerName, e)}
+                  title="Click to rename speaker globally, Double-click to reassign this segment"
                 >
                   {speakerName}
                 </span>

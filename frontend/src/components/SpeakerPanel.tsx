@@ -1,7 +1,7 @@
 'use client';
 
 import { RecordingSpeaker, TranscriptSegment } from '@/types';
-import { Play, User, MoreVertical, Edit2 } from 'lucide-react';
+import { Play, User } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
 import { updateSpeaker } from '@/lib/api';
@@ -18,6 +18,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
   const [renamingSpeaker, setRenamingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Deduplicate speakers based on diarization_label
   const uniqueSpeakers = speakers.reduce((acc, current) => {
@@ -56,7 +57,9 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
   };
 
   const handleRenameSubmit = async () => {
-    if (!renamingSpeaker || !renameValue.trim()) return;
+    if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
     try {
         await updateSpeaker(renamingSpeaker.recording_id, renamingSpeaker.diarization_label, renameValue.trim());
         setRenamingSpeaker(null);
@@ -64,6 +67,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
     } catch (e) {
         console.error("Failed to rename speaker", e);
         alert("Failed to rename speaker.");
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -126,15 +131,6 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
                         >
                         <Play className="w-3 h-3 fill-current" />
                         </button>
-                        <button
-                            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setContextMenu({ x: e.clientX, y: e.clientY, speaker });
-                            }}
-                        >
-                            <MoreVertical className="w-3 h-3" />
-                        </button>
                     </div>
                 </div>
                 );
@@ -149,7 +145,6 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
             items={[
                 { 
                     label: 'Rename / Assign', 
-                    icon: <Edit2 />, 
                     onClick: () => handleRenameStart(contextMenu.speaker) 
                 },
             ]}
