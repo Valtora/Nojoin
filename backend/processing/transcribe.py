@@ -96,30 +96,9 @@ def transcribe_audio(audio_path: str) -> dict | None:
 
     logger.info(f"Starting transcription for {audio_path} using model: {model_size}, device: {device}")
 
-    # --- DIAGNOSTIC: Check for ffmpeg ---
-    import shutil
-    ffmpeg_path = shutil.which("ffmpeg")
-    if ffmpeg_path:
-        logger.info(f"Found ffmpeg at: {ffmpeg_path}")
-        # Ensure the directory is in PATH (just in case)
-        ffmpeg_dir = os.path.dirname(ffmpeg_path)
-        if ffmpeg_dir not in os.environ["PATH"]:
-            logger.info(f"Adding ffmpeg directory to PATH: {ffmpeg_dir}")
-            os.environ["PATH"] += os.pathsep + ffmpeg_dir
-    else:
-        logger.error("CRITICAL: ffmpeg not found in PATH! Whisper will likely fail.")
-        # Try to find it in common locations or current directory
-        possible_paths = [
-            os.path.join(os.getcwd(), "ffmpeg.exe"),
-            r"C:\ffmpeg\bin\ffmpeg.exe",
-            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"
-        ]
-        for p in possible_paths:
-            if os.path.exists(p):
-                logger.info(f"Found ffmpeg at alternative path: {p}. Adding to PATH.")
-                os.environ["PATH"] += os.pathsep + os.path.dirname(p)
-                break
-    # ------------------------------------
+    # Ensure ffmpeg is in PATH
+    from backend.utils.audio import ensure_ffmpeg_in_path
+    ensure_ffmpeg_in_path()
 
     try:
         # Load model (use cache)
@@ -149,7 +128,14 @@ def transcribe_audio(audio_path: str) -> dict | None:
             enable_word_timestamps = not is_windows
             logger.info(f"Word timestamps auto-detected (Windows={is_windows}): {enable_word_timestamps}")
 
-        result = model.transcribe(audio_path, fp16=use_fp16, word_timestamps=enable_word_timestamps)
+        # condition_on_previous_text=False helps prevent hallucinations (e.g. "Thank you")
+        # especially when there are silence gaps or non-speech segments.
+        result = model.transcribe(
+            audio_path, 
+            fp16=use_fp16, 
+            word_timestamps=enable_word_timestamps,
+            condition_on_previous_text=False
+        )
 
         logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")
         # logger.debug(f"Transcription result: {result}") # Can be very verbose
@@ -177,30 +163,9 @@ def transcribe_audio_with_progress(audio_path: str, progress_callback=None, canc
 
     logger.info(f"Starting transcription for {audio_path} using model: {model_size}, device: {device}")
 
-    # --- DIAGNOSTIC: Check for ffmpeg ---
-    import shutil
-    ffmpeg_path = shutil.which("ffmpeg")
-    if ffmpeg_path:
-        logger.info(f"Found ffmpeg at: {ffmpeg_path}")
-        # Ensure the directory is in PATH (just in case)
-        ffmpeg_dir = os.path.dirname(ffmpeg_path)
-        if ffmpeg_dir not in os.environ["PATH"]:
-            logger.info(f"Adding ffmpeg directory to PATH: {ffmpeg_dir}")
-            os.environ["PATH"] += os.pathsep + ffmpeg_dir
-    else:
-        logger.error("CRITICAL: ffmpeg not found in PATH! Whisper will likely fail.")
-        # Try to find it in common locations or current directory
-        possible_paths = [
-            os.path.join(os.getcwd(), "ffmpeg.exe"),
-            r"C:\ffmpeg\bin\ffmpeg.exe",
-            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"
-        ]
-        for p in possible_paths:
-            if os.path.exists(p):
-                logger.info(f"Found ffmpeg at alternative path: {p}. Adding to PATH.")
-                os.environ["PATH"] += os.pathsep + os.path.dirname(p)
-                break
-    # ------------------------------------
+    # Ensure ffmpeg is in PATH
+    from backend.utils.audio import ensure_ffmpeg_in_path
+    ensure_ffmpeg_in_path()
 
     try:
         # Load model (use cache)

@@ -1,12 +1,41 @@
 import subprocess
 import json
 import os
+import shutil
+import logging
 from typing import List
+
+logger = logging.getLogger(__name__)
+
+def ensure_ffmpeg_in_path():
+    """
+    Ensures ffmpeg and ffprobe are in the system PATH.
+    Checks common locations if not found.
+    """
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+
+    possible_paths = [
+        os.path.join(os.getcwd(), "ffmpeg.exe"),
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        # Add other common paths if needed
+    ]
+    
+    for p in possible_paths:
+        if os.path.exists(p):
+            ffmpeg_dir = os.path.dirname(p)
+            if ffmpeg_dir not in os.environ["PATH"]:
+                logger.info(f"Adding ffmpeg directory to PATH: {ffmpeg_dir}")
+                os.environ["PATH"] += os.pathsep + ffmpeg_dir
+            return
 
 def get_audio_duration(file_path: str) -> float:
     """
     Get the duration of an audio file in seconds using ffprobe.
     """
+    ensure_ffmpeg_in_path()
+    
     cmd = [
         "ffprobe",
         "-v", "error",
@@ -18,13 +47,16 @@ def get_audio_duration(file_path: str) -> float:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         return float(data["format"]["duration"])
-    except (subprocess.CalledProcessError, KeyError, ValueError) as e:
+    except (subprocess.CalledProcessError, KeyError, ValueError, FileNotFoundError) as e:
+        # FileNotFoundError can happen if ffprobe is still not found
         raise RuntimeError(f"Failed to get audio duration for {file_path}: {e}")
 
 def concatenate_wavs(segment_paths: List[str], output_path: str):
     """
     Concatenate multiple WAV files into a single file using ffmpeg.
     """
+    ensure_ffmpeg_in_path()
+    
     # Create a temporary file list for ffmpeg
     list_file_path = output_path + ".list.txt"
     with open(list_file_path, "w") as f:
@@ -59,6 +91,8 @@ def convert_to_mono_16k(input_path: str, output_path: str):
     """
     Convert audio to mono 16kHz WAV using ffmpeg.
     """
+    ensure_ffmpeg_in_path()
+    
     cmd = [
         "ffmpeg",
         "-y",

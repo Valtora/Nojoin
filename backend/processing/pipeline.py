@@ -24,6 +24,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     from .vad import mute_non_speech_segments
     from backend.processing.LLM_Services import get_llm_backend
     from backend.utils.speaker_label_manager import SpeakerLabelManager
+    from backend.utils.audio import get_audio_duration
 
     recording_id = str(recording_id)  # Defensive: always use string
     # Always resolve audio_path to absolute for file access
@@ -90,6 +91,14 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
 
         processed_audio_path = vad_processed_mp3
         logger.info(f"Using VAD-processed audio for pipeline: {processed_audio_path}")
+
+        # Get audio duration for clamping
+        try:
+            audio_duration = get_audio_duration(processed_audio_path)
+            logger.info(f"Audio duration: {audio_duration:.2f}s")
+        except Exception as e:
+            logger.warning(f"Could not get audio duration: {e}")
+            audio_duration = None
 
         # 1. Transcription
         if stage_callback:
@@ -296,7 +305,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                 ]
             else:
                 combined_transcript = combine_transcription_diarization(
-                    transcription_result, diarization_result
+                    transcription_result, diarization_result, audio_duration=audio_duration
                 )
                 if combined_transcript is None:
                     logger.error("Combining transcription and diarization failed. Saving transcript with all speakers as 'UNKNOWN'.")
@@ -436,12 +445,13 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                 logger.warning(f"Failed to delete temp file {f}: {e}", exc_info=True)
 
 
-def combine_transcription_diarization(transcription: dict, diarization: 'Annotation') -> list | None:
+def combine_transcription_diarization(transcription: dict, diarization: 'Annotation', audio_duration: float = None) -> list | None:
     """Combines Whisper segments with Pyannote diarization.
 
     Args:
         transcription: The result dictionary from whisper.transcribe().
         diarization: The pyannote.core.Annotation object from diarization.
+        audio_duration: Optional total duration of the audio in seconds. Used for clamping.
 
     Returns:
         A list of dictionaries, each representing a segment with start, end,
@@ -465,6 +475,31 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
             start_time = segment['start']
             end_time = segment['end']
             text = segment['text'].strip()
+
+            # --- Clamping and Hallucination Filtering ---
+            if audio_duration is not None:
+                # 1. Skip segments that start after the audio ends
+                if start_time >= audio_duration:
+                    logger.warning(f"Skipping segment starting after audio end: {start_time:.2f}s >= {audio_duration:.2f}s. Text: '{text}'")
+                    continue
+                
+                # 2. Clamp end time to audio duration
+                if end_time > audio_duration:
+                    logger.info(f"Clamping segment end from {end_time:.2f}s to {audio_duration:.2f}s")
+                    end_time = audio_duration
+                
+                # 3. Filter specific hallucinations near the end
+                # "Thank you" is a very common Whisper hallucination at the end of files
+                if start_time > (audio_duration - 10.0): # Check last 10 seconds
+                    cleaned_text = text.lower().strip(".,!? ")
+                    hallucinations = ["thank you", "thanks", "bye", "you", "thank you.", "thank you very much", "t and e"]
+                    if any(h in cleaned_text for h in hallucinations):
+                        logger.warning(f"Removing likely hallucination at end: '{text}' at {start_time:.2f}s")
+                        continue
+
+            if start_time >= end_time:
+                continue
+            # --------------------------------------------
 
             active_speaker = "UNKNOWN"
             max_overlap = 0.0
@@ -514,6 +549,22 @@ def combine_transcription_diarization(transcription: dict, diarization: 'Annotat
                 last_segment_end_time = end_time
 
         logger.info(f"Successfully combined {len(segments)} transcription segments with speaker turns.")
+        
+        # --- Final Safety Check: Remove trailing UNKNOWN segments that look like hallucinations ---
+        # This catches cases where audio_duration might have been missing or slightly off
+        if combined:
+            last_seg = combined[-1]
+            if last_seg['speaker'] == "UNKNOWN":
+                cleaned_text = last_seg['text'].lower().strip(".,!? ")
+                hallucinations = ["thank you", "thanks", "bye", "you", "thank you.", "thank you very much", "t and e"]
+                # Also check if it's very short (< 2s) and isolated
+                duration = last_seg['end'] - last_seg['start']
+                is_hallucination = any(h in cleaned_text for h in hallucinations)
+                
+                if is_hallucination or (duration < 2.0 and len(cleaned_text) < 10):
+                    logger.warning(f"Removing trailing UNKNOWN segment (safety check): '{last_seg['text']}'")
+                    combined.pop()
+        
         return combined
     except Exception as e:
         logger.error(f"Error combining transcription and diarization: {e}", exc_info=True)

@@ -58,9 +58,17 @@ export default function TranscriptView({
     }
   };
 
+  // Filter out UNKNOWN speakers if there are other identified speakers
+  // This prevents "phantom" UNKNOWN segments (artifacts) from cluttering the view
+  // while preserving the transcript if diarization failed completely (all UNKNOWN).
+  const hasKnownSpeakers = segments.some(s => s.speaker !== 'UNKNOWN');
+  const displaySegments = hasKnownSpeakers 
+    ? segments.filter(s => s.speaker !== 'UNKNOWN')
+    : segments;
+
   return (
     <div className="space-y-6">
-      {segments.map((segment, index) => {
+      {displaySegments.map((segment, index) => {
         const isActive = currentTime >= segment.start && currentTime < segment.end;
         const speakerName = speakerMap[segment.speaker] || segment.speaker;
         const isEditing = editingSpeaker === segment.speaker;

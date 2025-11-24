@@ -39,10 +39,12 @@ def mute_non_speech_segments(
     sampling_rate: int = 16000, 
     threshold: float = 0.5, 
     window_size_samples: int = 512,
-    min_speech_duration_ms: int = 250,
+    min_speech_duration_ms: int = 300,
     min_silence_duration_ms: int = 100,
     fade_duration_ms: int = 50,
-    silence_method: str = "mute"  # "mute" or "fade"
+    silence_method: str = "mute",  # "mute" or "fade"
+    start_mute_ms: int = 200,      # Mute first X ms to remove recording artifacts
+    end_mute_ms: int = 200         # Mute last X ms to remove recording artifacts
 ) -> bool:
     """
     Uses Silero VAD to mute non-speech segments in a WAV file with enhanced metrics and quality improvements.
@@ -53,10 +55,12 @@ def mute_non_speech_segments(
         sampling_rate: Audio sampling rate (default: 16000)
         threshold: VAD threshold for speech detection (default: 0.5)
         window_size_samples: Window size for VAD processing (default: 512)
-        min_speech_duration_ms: Minimum speech segment duration to keep (default: 250ms)
+        min_speech_duration_ms: Minimum speech segment duration to keep (default: 300ms)
         min_silence_duration_ms: Minimum silence gap to preserve (default: 100ms)
         fade_duration_ms: Fade duration for smooth transitions (default: 50ms)
         silence_method: Method for handling non-speech ("mute" or "fade")
+        start_mute_ms: Duration in ms to forcibly mute at the start (default: 200ms)
+        end_mute_ms: Duration in ms to forcibly mute at the end (default: 200ms)
     
     Returns:
         True on success, False on failure
@@ -66,7 +70,8 @@ def mute_non_speech_segments(
         logger.info(f"[VAD] Input: {input_wav_path}")
         logger.info(f"[VAD] Output: {output_wav_path}")
         logger.info(f"[VAD] Parameters: threshold={threshold}, min_speech={min_speech_duration_ms}ms, "
-                   f"min_silence={min_silence_duration_ms}ms, fade={fade_duration_ms}ms, method={silence_method}")
+                   f"min_silence={min_silence_duration_ms}ms, fade={fade_duration_ms}ms, method={silence_method}, "
+                   f"start_mute={start_mute_ms}ms, end_mute={end_mute_ms}ms")
         
         if not os.path.exists(input_wav_path):
             logger.error(f"[VAD] Input file does not exist: {input_wav_path}")
@@ -108,7 +113,8 @@ def mute_non_speech_segments(
         # Process audio based on VAD results
         processed_audio = _apply_vad_processing(
             wav_np, speech_timestamps, sampling_rate, 
-            fade_duration_ms, silence_method
+            fade_duration_ms, silence_method,
+            start_mute_ms, end_mute_ms
         )
         
         # Convert back to torch tensor for saving
@@ -223,7 +229,9 @@ def _apply_vad_processing(
     speech_timestamps: list, 
     sampling_rate: int,
     fade_duration_ms: int,
-    silence_method: str
+    silence_method: str,
+    start_mute_ms: int = 0,
+    end_mute_ms: int = 0
 ) -> np.ndarray:
     """Apply VAD processing with improved quality handling."""
     if not speech_timestamps:
@@ -232,10 +240,25 @@ def _apply_vad_processing(
     
     processed_audio = np.zeros_like(wav_np)
     fade_samples = int((fade_duration_ms / 1000.0) * sampling_rate)
+    start_mute_samples = int((start_mute_ms / 1000.0) * sampling_rate)
+    end_mute_samples = int((end_mute_ms / 1000.0) * sampling_rate)
+    total_samples = len(wav_np)
     
     for i, seg in enumerate(speech_timestamps):
         start_sample = seg['start']
         end_sample = seg['end']
+        
+        # Apply start/end mute constraints
+        # If a segment overlaps with the mute zone, trim it
+        original_start = start_sample
+        original_end = end_sample
+        
+        start_sample = max(start_sample, start_mute_samples)
+        end_sample = min(end_sample, total_samples - end_mute_samples)
+        
+        if start_sample >= end_sample:
+            logger.debug(f"[VAD] Segment {i+1} fully muted by start/end padding ({original_start}-{original_end})")
+            continue
         
         # Ensure we don't go out of bounds
         start_sample = max(0, start_sample)
