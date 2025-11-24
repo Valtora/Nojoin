@@ -13,6 +13,7 @@ class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
     whisper_model_size: Optional[str] = None
     theme: Optional[str] = None
+    hf_token: Optional[str] = None
 
 @router.get("/")
 async def get_settings():

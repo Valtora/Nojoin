@@ -65,5 +65,6 @@ export interface Settings {
   gemini_model?: string;
   openai_model?: string;
   anthropic_model?: string;
+  hf_token?: string;
   [key: string]: any;
 }

@@ -41,7 +41,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: celery -A backend.celery_app.celery_app worker --loglevel=info
+    command: celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
     volumes:
       - .:/app
       - ./data:/app/data

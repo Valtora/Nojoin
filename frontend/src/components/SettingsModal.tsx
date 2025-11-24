@@ -12,6 +12,7 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [settings, setSettings] = useState<Settings>({});
+  const [companionConfig, setCompanionConfig] = useState<{ api_url: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -23,9 +24,19 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           setSettings(data);
         } catch (e) {
           console.error("Failed to load settings", e);
-        } finally {
-          setLoading(false);
         }
+
+        try {
+            const res = await fetch('http://localhost:12345/config');
+            if (res.ok) {
+                const data = await res.json();
+                setCompanionConfig(data);
+            }
+        } catch (e) {
+            console.error("Failed to load companion config", e);
+        }
+
+        setLoading(false);
       };
       load();
     }
@@ -35,6 +46,15 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setSaving(true);
     try {
       await updateSettings(settings);
+      
+      if (companionConfig) {
+          await fetch('http://localhost:12345/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ api_url: companionConfig.api_url })
+          });
+      }
+
       onClose();
     } catch (e) {
       console.error("Failed to save settings", e);
@@ -84,10 +104,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
               </div>
 
-              {/* LLM / AI Provider */}
+              {/* AI Services */}
               <div>
                 <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
-                    LLM / AI Provider
+                    AI Services
                 </h3>
                 <div className="space-y-4">
                     <div>
@@ -149,6 +169,20 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             />
                         </div>
                     )}
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Hugging Face Token (for Pyannote Diarization)
+                        </label>
+                        <input
+                            type="password"
+                            value={settings.hf_token || ''}
+                            onChange={(e) => setSettings({ ...settings, hf_token: e.target.value })}
+                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                            placeholder="hf_..."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Required for speaker diarization. You must accept Pyannote user conditions on Hugging Face.</p>
+                    </div>
                     
                     <div className="flex items-center gap-2">
                         <input
@@ -190,6 +224,32 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     </div>
                 </div>
               </div>
+
+              {/* Companion App */}
+              {companionConfig && (
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
+                        Companion App Configuration
+                    </h3>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Backend API URL
+                            </label>
+                            <input
+                                type="text"
+                                value={companionConfig.api_url}
+                                onChange={(e) => setCompanionConfig({ ...companionConfig, api_url: e.target.value })}
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                placeholder="http://localhost:8000/api/v1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                The URL where the Companion App sends audio. Change this if your backend is on a different machine.
+                            </p>
+                        </div>
+                    </div>
+                  </div>
+              )}
             </>
           )}
         </div>

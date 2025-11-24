@@ -29,6 +29,7 @@ The primary user interface for interacting with the system.
 *   **Framework:** Next.js (React) with TypeScript.
 *   **Styling:** Tailwind CSS for a responsive, modern design.
 *   **Functionality:** Dashboard, playback, transcript editing, speaker management, and system configuration.
+*   **Companion Status:** Visual indicator (warning bubble) when the Companion App is not detected.
 
 ### 2.3 The Companion App (Rust)
 A lightweight, cross-platform system tray application responsible for audio capture.
@@ -54,7 +55,10 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   Audio is sent to the server.
     *   If pauses occur, the audio may be sent as multiple segments.
     *   **Server-Side Concatenation:** The server immediately concatenates these segments upon receipt/completion.
-*   **Visual Feedback:** Tray icon changes color/shape based on status. Notifications for errors.
+*   **Visual Feedback:** Tray icon changes color/shape based on status. Native system notifications for status changes (Recording Started, Stopped, Paused) and errors.
+*   **Resilience:**
+    *   **Auto-Reconnect:** Retry logic for audio uploads with exponential backoff.
+    *   **Config Loading:** robust search for `config.json` in executable directory.
 
 ### 3.2 Transcription & Diarization (Server-Side)
 *   **Async Processing:** Audio processing is decoupled from the UI. Users can close the browser or companion app immediately after recording; the server handles the rest.

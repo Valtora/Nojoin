@@ -5,10 +5,13 @@ use axum::{
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use crate::state::{AppState, AppStatus, AudioCommand};
+use crate::notifications;
+use crate::config::Config;
 
 pub async fn start_server(state: Arc<AppState>) {
     let app = Router::new()
         .route("/status", get(get_status))
+        .route("/config", get(get_config).post(update_config))
         .route("/start", post(start_recording))
         .route("/stop", post(stop_recording))
         .route("/pause", post(pause_recording))
@@ -126,6 +129,8 @@ async fn start_recording(
     // 3. Send Command to Audio Thread
     state.audio_command_tx.send(AudioCommand::Start(recording_id)).unwrap();
     
+    notifications::show_notification("Recording Started", &format!("Recording ID: {}", recording_id));
+
     Ok(Json(StartResponse {
         id: recording_id,
         message: "Started".to_string(),
@@ -160,6 +165,7 @@ async fn stop_recording(
         *acc = std::time::Duration::new(0, 0);
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
+    notifications::show_notification("Recording Stopped", "Uploading final segment...");
     Ok(Json("Stopped".to_string()))
 }
 
@@ -179,6 +185,7 @@ async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<Stri
         *start_time = None;
     }
     state.audio_command_tx.send(AudioCommand::Pause).unwrap();
+    notifications::show_notification("Recording Paused", "Recording paused.");
     Ok(Json("Paused".to_string()))
 }
 
@@ -194,5 +201,38 @@ async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<Str
         *start_time = Some(SystemTime::now());
     }
     state.audio_command_tx.send(AudioCommand::Resume).unwrap();
+    notifications::show_notification("Recording Resumed", "Recording resumed.");
     Ok(Json("Resumed".to_string()))
+}
+
+async fn get_config(State(state): State<Arc<AppState>>) -> Json<Config> {
+    let config = state.config.lock().unwrap().clone();
+    Json(config)
+}
+
+#[derive(serde::Deserialize)]
+struct ConfigUpdate {
+    api_url: Option<String>,
+    api_token: Option<String>,
+}
+
+async fn update_config(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ConfigUpdate>,
+) -> Result<Json<Config>, StatusCode> {
+    let mut config = state.config.lock().unwrap();
+    
+    if let Some(url) = payload.api_url {
+        config.api_url = url;
+    }
+    if let Some(token) = payload.api_token {
+        config.api_token = token;
+    }
+    
+    if let Err(e) = config.save() {
+        eprintln!("Failed to save config: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    
+    Ok(Json(config.clone()))
 }

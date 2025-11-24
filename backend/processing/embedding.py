@@ -21,6 +21,9 @@ def load_embedding_model(device_str: str):
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
         # use_auth_token is deprecated in favor of token, but pyannote requires use_auth_token
+        # We revert to use_auth_token here because the installed version of pyannote.audio.Inference
+        # seems to NOT accept 'token' yet, based on the logs.
+        # Our monkeypatch in hf_patch.py will handle the translation if needed deeper down.
         model = Inference(DEFAULT_EMBEDDING_MODEL, use_auth_token=hf_token)
         model.to(torch.device(device_str))
         return model

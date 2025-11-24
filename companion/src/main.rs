@@ -9,6 +9,7 @@ mod audio;
 mod state;
 mod uploader;
 mod config;
+mod notifications;
 
 use state::{AppState, AppStatus};
 use config::Config;

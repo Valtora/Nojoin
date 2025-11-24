@@ -63,7 +63,10 @@ def load_diarization_pipeline(device_str: str):
 
         # use_auth_token is deprecated in favor of token, but pyannote 3.1 still expects use_auth_token.
         # The hf_patch.py will intercept this and convert it to 'token' for huggingface_hub if needed.
-        pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, use_auth_token=hf_token)
+        # However, newer versions of huggingface_hub might strictly reject use_auth_token.
+        # We try 'token' first, and fallback if needed, or rely on the patch.
+        # Given the error "unexpected keyword argument 'use_auth_token'", we should switch to 'token'.
+        pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, token=hf_token)
         pipeline.to(torch.device(device_str))
         return pipeline
     except Exception as e:

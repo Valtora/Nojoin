@@ -17,6 +17,41 @@ def _patched_hf_hub_download(*args, **kwargs):
             
     return _original_hf_hub_download(*args, **kwargs)
 
+# --- Pyannote Inference Patch ---
+# Pyannote's Inference class (used for embeddings) might still be using use_auth_token internally
+# or passing it to other functions that reject it. We need to patch Inference.__init__
+try:
+    from pyannote.audio import Inference
+    _original_inference_init = Inference.__init__
+
+    def _patched_inference_init(self, model, window="sliding", duration=None, step=None, batch_size=32, device=None, use_auth_token=None, token=None, **kwargs):
+        # Normalize token argument
+        actual_token = token or use_auth_token
+        
+        # Call original with 'use_auth_token' if it expects it, or 'token' if it expects that.
+        # Since we don't know exactly what the installed version expects, we try to be smart.
+        # But based on the error "unexpected keyword argument 'token'", it seems the installed 
+        # version of Inference.__init__ DOES NOT accept 'token' but DOES accept 'use_auth_token' 
+        # (or neither, but likely the former if it's an older version, or the latter if newer).
+        
+        # Wait, the error was: TypeError: Inference.__init__() got an unexpected keyword argument 'token'
+        # This means we passed 'token' (from my previous fix) but it didn't like it.
+        # So it probably WANTS 'use_auth_token'.
+        
+        # Let's try to pass 'use_auth_token' if 'token' was provided.
+        if token and not use_auth_token:
+            use_auth_token = token
+            
+        # We will try calling the original with use_auth_token.
+        # If the original signature doesn't have it, it might be in **kwargs.
+        
+        return _original_inference_init(self, model, window=window, duration=duration, step=step, batch_size=batch_size, device=device, use_auth_token=use_auth_token, **kwargs)
+
+except ImportError:
+    _patched_inference_init = None
+    logger.warning("Could not import pyannote.audio.Inference for patching")
+
+
 # --- Torchaudio Patch ---
 def _patched_list_audio_backends():
     """
@@ -120,6 +155,13 @@ def apply_patch():
     if huggingface_hub.hf_hub_download != _patched_hf_hub_download:
         huggingface_hub.hf_hub_download = _patched_hf_hub_download
         logger.info("Patched huggingface_hub.hf_hub_download for compatibility")
+
+    # Patch Pyannote Inference
+    if _patched_inference_init:
+        from pyannote.audio import Inference
+        if Inference.__init__ != _patched_inference_init:
+            Inference.__init__ = _patched_inference_init
+            logger.info("Patched pyannote.audio.Inference.__init__ for compatibility")
 
     # Patch Torchaudio list_audio_backends
     if not hasattr(torchaudio, 'list_audio_backends'):

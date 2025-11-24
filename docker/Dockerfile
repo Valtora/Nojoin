@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
     libpq-dev \
+    libssl-dev \
+    libffi-dev \
+    libsndfile1 \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
