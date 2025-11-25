@@ -7,6 +7,10 @@ pub struct Config {
     pub api_token: String,
     #[serde(default = "default_web_app_url")]
     pub web_app_url: String,
+    #[serde(default)]
+    pub input_device_name: Option<String>,
+    #[serde(default)]
+    pub output_device_name: Option<String>,
 }
 
 fn default_web_app_url() -> String {
@@ -40,6 +44,8 @@ impl Config {
                 api_url: "http://localhost:8000/api/v1".to_string(),
                 api_token: "".to_string(),
                 web_app_url: default_web_app_url(),
+                input_device_name: None,
+                output_device_name: None,
             };
             
             // Try to write to current directory

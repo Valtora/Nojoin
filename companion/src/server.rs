@@ -4,6 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use cpal::traits::{DeviceTrait, HostTrait};
 use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::notifications;
 use crate::config::Config;
@@ -12,6 +13,7 @@ pub async fn start_server(state: Arc<AppState>) {
     let app = Router::new()
         .route("/status", get(get_status))
         .route("/config", get(get_config).post(update_config))
+        .route("/devices", get(get_devices))
         .route("/start", post(start_recording))
         .route("/stop", post(stop_recording))
         .route("/pause", post(pause_recording))
@@ -212,10 +214,66 @@ async fn get_config(State(state): State<Arc<AppState>>) -> Json<Config> {
     Json(config)
 }
 
+#[derive(serde::Serialize)]
+struct AudioDevice {
+    name: String,
+    is_default: bool,
+}
+
+#[derive(serde::Serialize)]
+struct DevicesResponse {
+    input_devices: Vec<AudioDevice>,
+    output_devices: Vec<AudioDevice>,
+    selected_input: Option<String>,
+    selected_output: Option<String>,
+}
+
+async fn get_devices(State(state): State<Arc<AppState>>) -> Json<DevicesResponse> {
+    let host = cpal::default_host();
+    
+    let default_input_name = host.default_input_device()
+        .and_then(|d| d.name().ok());
+    let default_output_name = host.default_output_device()
+        .and_then(|d| d.name().ok());
+    
+    let input_devices: Vec<AudioDevice> = host.input_devices()
+        .map(|devices| {
+            devices.filter_map(|d| {
+                d.name().ok().map(|name| AudioDevice {
+                    is_default: Some(&name) == default_input_name.as_ref(),
+                    name,
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+    
+    let output_devices: Vec<AudioDevice> = host.output_devices()
+        .map(|devices| {
+            devices.filter_map(|d| {
+                d.name().ok().map(|name| AudioDevice {
+                    is_default: Some(&name) == default_output_name.as_ref(),
+                    name,
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+    
+    let config = state.config.lock().unwrap();
+    
+    Json(DevicesResponse {
+        input_devices,
+        output_devices,
+        selected_input: config.input_device_name.clone(),
+        selected_output: config.output_device_name.clone(),
+    })
+}
+
 #[derive(serde::Deserialize)]
 struct ConfigUpdate {
     api_url: Option<String>,
     api_token: Option<String>,
+    input_device_name: Option<String>,
+    output_device_name: Option<String>,
 }
 
 async fn update_config(
@@ -229,6 +287,12 @@ async fn update_config(
     }
     if let Some(token) = payload.api_token {
         config.api_token = token;
+    }
+    if payload.input_device_name.is_some() {
+        config.input_device_name = payload.input_device_name;
+    }
+    if payload.output_device_name.is_some() {
+        config.output_device_name = payload.output_device_name;
     }
     
     if let Err(e) = config.save() {

@@ -71,3 +71,15 @@ export interface Settings {
   companion_url?: string;
   [key: string]: any;
 }
+
+export interface AudioDevice {
+  name: string;
+  is_default: boolean;
+}
+
+export interface CompanionDevices {
+  input_devices: AudioDevice[];
+  output_devices: AudioDevice[];
+  selected_input: string | null;
+  selected_output: string | null;
+}

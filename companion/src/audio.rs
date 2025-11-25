@@ -1,10 +1,46 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::Device;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use crossbeam_channel::Receiver;
 use crate::state::{AppState, AudioCommand, AppStatus};
 use crate::uploader;
+use crate::config::Config;
 use std::thread;
 use hound;
+
+fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
+    if let Some(ref name) = config.input_device_name {
+        if let Ok(devices) = host.input_devices() {
+            for device in devices {
+                if let Ok(device_name) = device.name() {
+                    if &device_name == name {
+                        println!("Using configured input device: {}", device_name);
+                        return Some(device);
+                    }
+                }
+            }
+        }
+        println!("Warning: Configured input device '{}' not found, using default", name);
+    }
+    host.default_input_device()
+}
+
+fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
+    if let Some(ref name) = config.output_device_name {
+        if let Ok(devices) = host.output_devices() {
+            for device in devices {
+                if let Ok(device_name) = device.name() {
+                    if &device_name == name {
+                        println!("Using configured output device: {}", device_name);
+                        return Some(device);
+                    }
+                }
+            }
+        }
+        println!("Warning: Configured output device '{}' not found, using default", name);
+    }
+    host.default_output_device()
+}
 
 pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) {
     let host = cpal::default_host();
@@ -99,14 +135,14 @@ fn start_segment(
     thread::spawn(move || {
         let host = cpal::default_host();
         
-        // 1. Setup Microphone (Input)
-        let mic_device = host.default_input_device().expect("No input device available");
+        // 1. Setup Microphone (Input) - use configured or default
+        let mic_device = find_input_device(&host, &config).expect("No input device available");
         let mic_config = mic_device.default_input_config().expect("Failed to get mic config");
         let mic_channels = mic_config.channels();
         
-        // 2. Setup System Audio (Loopback)
-        // On Windows WASAPI, we use the default output device for loopback
-        let sys_device = host.default_output_device().expect("No output device available");
+        // 2. Setup System Audio (Loopback) - use configured or default
+        // On Windows WASAPI, we use the output device for loopback
+        let sys_device = find_output_device(&host, &config).expect("No output device available");
         let sys_config = sys_device.default_output_config().expect("Failed to get sys config");
         let sys_channels = sys_config.channels();
 

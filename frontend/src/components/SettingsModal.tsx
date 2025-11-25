@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { getSettings, updateSettings } from '@/lib/api';
-import { Settings } from '@/types';
-import { Save, Loader2, X, Eye, EyeOff } from 'lucide-react';
+import { Settings, CompanionDevices } from '@/types';
+import { Save, Loader2, X, Eye, EyeOff, Mic, Speaker } from 'lucide-react';
 import { useTheme, Theme } from '@/lib/ThemeProvider';
 
 interface SettingsModalProps {
@@ -15,6 +15,9 @@ interface SettingsModalProps {
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [settings, setSettings] = useState<Settings>({});
   const [companionConfig, setCompanionConfig] = useState<{ api_url: string } | null>(null);
+  const [companionDevices, setCompanionDevices] = useState<CompanionDevices | null>(null);
+  const [selectedInputDevice, setSelectedInputDevice] = useState<string | null>(null);
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
@@ -45,8 +48,18 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   const companionData = await res.json();
                   setCompanionConfig(companionData);
               }
+              
+              // Fetch available devices
+              const devicesRes = await fetch(`${companionUrl}/devices`);
+              if (devicesRes.ok) {
+                  const devicesData: CompanionDevices = await devicesRes.json();
+                  setCompanionDevices(devicesData);
+                  setSelectedInputDevice(devicesData.selected_input);
+                  setSelectedOutputDevice(devicesData.selected_output);
+              }
           } catch (e) {
-              console.error("Failed to load companion config", e);
+              console.error("Failed to load companion config/devices", e);
+              setCompanionDevices(null);
           }
         } catch (e) {
           console.error("Failed to load settings", e);
@@ -64,11 +77,25 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await updateSettings(settings);
       
       const companionUrl = settings.companion_url || 'http://localhost:12345';
+      
+      // Save companion config (api_url) if available
       if (companionConfig) {
           await fetch(`${companionUrl}/config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ api_url: companionConfig.api_url })
+          });
+      }
+      
+      // Save device selections if companion is connected
+      if (companionDevices) {
+          await fetch(`${companionUrl}/config`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  input_device_name: selectedInputDevice,
+                  output_device_name: selectedOutputDevice
+              })
           });
       }
 
@@ -275,6 +302,60 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     Audio & Recording
                 </h3>
                 <div className="space-y-4">
+                    {/* Audio Device Selection */}
+                    {companionDevices ? (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <div className="flex items-center gap-2">
+                              <Mic className="w-4 h-4" />
+                              Input Device (Microphone)
+                            </div>
+                          </label>
+                          <select
+                            value={selectedInputDevice || ''}
+                            onChange={(e) => setSelectedInputDevice(e.target.value || null)}
+                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          >
+                            <option value="">System Default</option>
+                            {companionDevices.input_devices.map((device) => (
+                              <option key={device.name} value={device.name}>
+                                {device.name}{device.is_default ? ' (Default)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">The microphone to capture your voice.</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <div className="flex items-center gap-2">
+                              <Speaker className="w-4 h-4" />
+                              Output Device (System Audio)
+                            </div>
+                          </label>
+                          <select
+                            value={selectedOutputDevice || ''}
+                            onChange={(e) => setSelectedOutputDevice(e.target.value || null)}
+                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          >
+                            <option value="">System Default</option>
+                            {companionDevices.output_devices.map((device) => (
+                              <option key={device.name} value={device.name}>
+                                {device.name}{device.is_default ? ' (Default)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">The audio output to capture system sounds (loopback).</p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                          Companion app not connected. Start the Companion app to configure audio devices.
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Whisper Model Size
