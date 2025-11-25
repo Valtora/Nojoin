@@ -27,8 +27,8 @@ else:
     ASYNC_DATABASE_URL = DATABASE_URL
     SYNC_DATABASE_URL = DATABASE_URL
 
-engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=True, future=True)
+engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, future=True)
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=False, future=True)
 
 async_session_maker = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False

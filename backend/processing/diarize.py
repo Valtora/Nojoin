@@ -4,6 +4,7 @@ import logging
 import os
 import torch
 import huggingface_hub
+import warnings
 from pyannote.audio import Pipeline
 from backend.utils import config_manager
 from pyannote.core import Annotation
@@ -15,6 +16,10 @@ import contextlib
 from ..utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
+
+# Suppress specific warnings
+warnings.filterwarnings("ignore", message="TensorFloat-32")
+warnings.filterwarnings("ignore", message="std(): degrees of freedom is <= 0")
 
 # Default diarization pipeline
 DEFAULT_PIPELINE = "pyannote/speaker-diarization-community-1"

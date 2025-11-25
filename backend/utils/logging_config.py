@@ -74,8 +74,20 @@ def setup_logging(log_level=None):
     # Silence verbose loggers from dependencies
     sb_logger = logging.getLogger('speechbrain.utils.checkpoints')
     sb_logger.setLevel(logging.DEBUG)
-    # You can add other noisy loggers here if needed
-    # e.g., logging.getLogger('numba').setLevel(logging.WARNING)
+    
+    # Silence SQLAlchemy engine logs (redundant if echo=False, but good practice)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+    
+    # Silence other potentially noisy libraries
+    logging.getLogger('multipart').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('huggingface_hub').setLevel(logging.WARNING)
+    logging.getLogger('requests').setLevel(logging.WARNING)
+
+    # Silence Celery's default task logging to allow custom pretty logs
+    logging.getLogger('celery.worker.strategy').setLevel(logging.WARNING)
+    logging.getLogger('celery.app.trace').setLevel(logging.WARNING)
+    logging.getLogger('celery.worker.job').setLevel(logging.WARNING)
 
     logging.info("Logging configured.")
 

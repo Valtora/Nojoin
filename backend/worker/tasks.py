@@ -1,5 +1,7 @@
 import os
 import logging
+import time
+import warnings
 from celery import Task
 from sqlmodel import select
 from backend.celery_app import celery_app
@@ -17,6 +19,9 @@ from backend.utils.transcript_utils import combine_transcription_diarization, co
 from backend.utils.audio import get_audio_duration
 
 logger = logging.getLogger(__name__)
+
+# Suppress specific warnings in the worker process
+warnings.filterwarnings("ignore", message=".*std\(\): degrees of freedom is <= 0.*")
 
 class DatabaseTask(Task):
     _session = None
@@ -36,6 +41,7 @@ def process_recording_task(self, recording_id: int):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
+    start_time = time.time()
     session = self.session
     
     # 1. Fetch Recording
@@ -250,6 +256,8 @@ def process_recording_task(self, recording_id: int):
         except Exception as cleanup_error:
             logger.warning(f"Failed to cleanup temp files: {cleanup_error}")
         
+        elapsed_time = time.time() - start_time
+        logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         return {"status": "success", "recording_id": recording_id}
 
     except Exception as e:
