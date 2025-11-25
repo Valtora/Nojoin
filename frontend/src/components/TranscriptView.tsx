@@ -2,7 +2,7 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X, ArrowRightLeft, Download } from 'lucide-react';
+import { Play, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown } from 'lucide-react';
 import { exportTranscript } from '@/lib/api';
 
 interface TranscriptViewProps {
@@ -51,6 +51,114 @@ export default function TranscriptView({
   const [showReplace, setShowReplace] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+
+  // Search Matches State
+  const [matches, setMatches] = useState<{segmentIndex: number, startIndex: number, length: number}[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const prevFindTextRef = useRef(findText);
+
+  // Calculate matches when findText or segments change
+  useEffect(() => {
+    if (!findText.trim() || !showSearch) {
+        setMatches([]);
+        setCurrentMatchIndex(-1);
+        return;
+    }
+
+    const newMatches: {segmentIndex: number, startIndex: number, length: number}[] = [];
+    const lowerFind = findText.toLowerCase();
+
+    segments.forEach((segment, sIndex) => {
+        const text = segment.text.toLowerCase();
+        let pos = 0;
+        while (pos < text.length) {
+            const index = text.indexOf(lowerFind, pos);
+            if (index === -1) break;
+            newMatches.push({
+                segmentIndex: sIndex,
+                startIndex: index,
+                length: lowerFind.length
+            });
+            pos = index + 1;
+        }
+    });
+
+    setMatches(newMatches);
+    
+    // Smart index management
+    setCurrentMatchIndex(prevIndex => {
+        // If search term changed, reset to first match
+        if (findText !== prevFindTextRef.current) {
+            return newMatches.length > 0 ? 0 : -1;
+        }
+        
+        // If segments updated (e.g. replace), try to maintain relative position
+        if (newMatches.length === 0) return -1;
+        if (prevIndex >= newMatches.length) return newMatches.length - 1;
+        // If we just replaced the current match, the next one slides into this index (or close to it)
+        return prevIndex;
+    });
+    
+    prevFindTextRef.current = findText;
+  }, [findText, segments, showSearch]);
+
+  // Scroll to current match
+  useEffect(() => {
+      if (currentMatchIndex >= 0 && matches[currentMatchIndex]) {
+          const match = matches[currentMatchIndex];
+          const element = document.getElementById(`segment-${match.segmentIndex}`);
+          if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+      }
+  }, [currentMatchIndex, matches]);
+
+  const nextMatch = () => {
+      if (matches.length === 0) return;
+      setCurrentMatchIndex((prev) => (prev + 1) % matches.length);
+  };
+
+  const prevMatch = () => {
+      if (matches.length === 0) return;
+      setCurrentMatchIndex((prev) => (prev - 1 + matches.length) % matches.length);
+  };
+
+  const renderHighlightedText = (text: string, segmentIndex: number) => {
+      if (!findText || !showSearch || matches.length === 0) return text;
+
+      const segmentMatches = matches.filter(m => m.segmentIndex === segmentIndex);
+      if (segmentMatches.length === 0) return text;
+
+      let lastIndex = 0;
+      const parts = [];
+
+      segmentMatches.forEach((match, i) => {
+          // Text before match
+          if (match.startIndex > lastIndex) {
+              parts.push(text.substring(lastIndex, match.startIndex));
+          }
+
+          // The match itself
+          const isCurrent = matches[currentMatchIndex] === match;
+          parts.push(
+              <mark 
+                key={`${segmentIndex}-${match.startIndex}`}
+                className={`${isCurrent ? 'bg-orange-400 text-white' : 'bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100'} rounded-sm px-0.5`}
+              >
+                  {text.substring(match.startIndex, match.startIndex + match.length)}
+              </mark>
+          );
+
+          lastIndex = match.startIndex + match.length;
+      });
+
+      // Remaining text
+      if (lastIndex < text.length) {
+          parts.push(text.substring(lastIndex));
+      }
+
+      return parts;
+  };
 
   const getSpeakerColor = (speakerName: string) => {
       // Fallback color if not found (e.g. gray)
@@ -116,6 +224,27 @@ export default function TranscriptView({
       }
   };
 
+  const handleReplaceCurrent = async () => {
+      if (matches.length === 0 || currentMatchIndex === -1 || isSubmitting) return;
+      
+      const match = matches[currentMatchIndex];
+      const segment = segments[match.segmentIndex];
+      
+      // Calculate new text
+      const prefix = segment.text.substring(0, match.startIndex);
+      const suffix = segment.text.substring(match.startIndex + match.length);
+      const newText = prefix + replaceText + suffix;
+      
+      setIsSubmitting(true);
+      try {
+          await onUpdateSegmentText(match.segmentIndex, newText);
+      } catch (e) {
+          console.error("Failed to replace text", e);
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent, type: 'segmentSpeaker' | 'text', indexOrLabel: number | string) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -134,24 +263,39 @@ export default function TranscriptView({
     : segments;
 
   return (
-    <div className="flex flex-col h-full relative">
-      {/* Sticky Toolbar */}
-      <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-sm">
+    <div className="flex flex-col h-full relative min-h-0">
+      {/* Toolbar */}
+      <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-sm z-10">
         <div className="flex items-center gap-4 flex-1">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transcript</h2>
             
             {/* Search Bar */}
             {(showSearch || showReplace) && (
-                <div className="flex items-center gap-2 flex-1 max-w-md animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input 
-                            placeholder="Find..." 
-                            value={findText} 
-                            onChange={e => setFindText(e.target.value)}
-                            className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
-                            autoFocus
-                        />
+                <div className="flex items-center gap-2 flex-1 max-w-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="relative flex-1 flex items-center gap-1">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                placeholder="Find..." 
+                                value={findText} 
+                                onChange={e => setFindText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        if (e.shiftKey) prevMatch();
+                                        else nextMatch();
+                                    }
+                                }}
+                                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
+                                autoFocus
+                            />
+                        </div>
+                        {matches.length > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap px-1">
+                                <span>{currentMatchIndex + 1} of {matches.length}</span>
+                                <button onClick={prevMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronUp className="w-3 h-3" /></button>
+                                <button onClick={nextMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronDown className="w-3 h-3" /></button>
+                            </div>
+                        )}
                     </div>
                     {showReplace && (
                         <div className="relative flex-1">
@@ -165,13 +309,29 @@ export default function TranscriptView({
                         </div>
                     )}
                     {showReplace && (
-                        <button 
-                            onClick={handleFindReplaceSubmit}
-                            disabled={!findText || isSubmitting}
-                            className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
-                        >
-                            Replace All
-                        </button>
+                        <>
+                            <button 
+                                onClick={nextMatch}
+                                disabled={matches.length === 0}
+                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                            >
+                                Find Next
+                            </button>
+                            <button 
+                                onClick={handleReplaceCurrent}
+                                disabled={matches.length === 0 || isSubmitting}
+                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                            >
+                                Replace
+                            </button>
+                            <button 
+                                onClick={handleFindReplaceSubmit}
+                                disabled={!findText || isSubmitting}
+                                className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                            >
+                                Replace All
+                            </button>
+                        </>
                     )}
                 </div>
             )}
@@ -198,22 +358,25 @@ export default function TranscriptView({
             </button>
             <button 
                 onClick={() => {
-                    const newState = !showReplace;
-                    setShowReplace(newState);
-                    if (newState) setShowSearch(true);
+                    if (showReplace) {
+                        setShowReplace(false);
+                        setShowSearch(false);
+                    } else {
+                        setShowReplace(true);
+                        setShowSearch(true);
+                    }
                 }}
                 className={`p-2 rounded-md transition-colors ${showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
                 title="Find & Replace"
             >
                 <ArrowRightLeft className="w-4 h-4" />
             </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
         </div>
       </div>
 
 
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-6 overflow-y-auto flex-1 min-h-0">
         {displaySegments.map((segment, index) => {
           const isActive = currentTime >= segment.start && currentTime < segment.end;
           const speakerName = speakerMap[segment.speaker] || segment.speaker;
@@ -288,6 +451,7 @@ export default function TranscriptView({
                 
                 {/* Transcript Text */}
                 <div
+                    id={`segment-${index}`}
                     className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
                         isEditingText ? 'ring-2 ring-blue-500' : ''
                     }`}
@@ -308,7 +472,7 @@ export default function TranscriptView({
                             onClick={(e) => handleTextClick(index, segment.text, e)}
                             title="Click to edit text"
                         >
-                            {segment.text}
+                            {renderHighlightedText(segment.text, index)}
                         </p>
                     )}
                 </div>

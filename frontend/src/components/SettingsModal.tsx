@@ -234,19 +234,6 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </div>
                         <p className="text-xs text-gray-500 mt-1">Required for speaker diarization. You must accept Pyannote user conditions on Hugging Face.</p>
                     </div>
-                    
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="infer_meeting_title"
-                            checked={settings.infer_meeting_title ?? true}
-                            onChange={(e) => setSettings({ ...settings, infer_meeting_title: e.target.checked })}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                        />
-                        <label htmlFor="infer_meeting_title" className="text-sm text-gray-700 dark:text-gray-300">
-                            Infer Meeting Name Automatically
-                        </label>
-                    </div>
                 </div>
               </div>
 

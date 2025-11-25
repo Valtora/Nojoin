@@ -172,7 +172,7 @@ export const updateTranscriptSegmentText = async (recordingId: number, segmentIn
 };
 
 export const findAndReplace = async (recordingId: number, find: string, replace: string): Promise<void> => {
-  await api.post(`/transcripts/${recordingId}/find-replace`, { find, replace });
+  await api.post(`/transcripts/${recordingId}/replace`, { find_text: find, replace_text: replace });
 };
 
 export const exportTranscript = async (recordingId: number): Promise<void> => {

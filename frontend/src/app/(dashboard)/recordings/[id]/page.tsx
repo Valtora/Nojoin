@@ -330,8 +330,8 @@ export default function RecordingPage({ params }: PageProps) {
             </div>
         ) : (
             <>
-                <div className="flex-1 overflow-y-auto p-6">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div className="flex-1 flex flex-col min-h-0 p-6">
+                    <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden min-h-0">
                         {(recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
                             <TranscriptView
                                 recordingId={recording.id}

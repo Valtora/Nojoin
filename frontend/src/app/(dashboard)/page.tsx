@@ -12,7 +12,7 @@ export default function Home() {
         Welcome to Nojoin
       </h1>
       <p className="text-gray-500 dark:text-gray-400 max-w-md mb-8">
-        Your distributed meeting intelligence platform.
+        Your meeting intelligence platform.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl w-full text-left">
@@ -22,7 +22,7 @@ export default function Home() {
                 <h3 className="font-semibold">Record a Meeting</h3>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-                Use the controls in the sidebar to start recording system audio and microphone input via the Companion App.
+                Use the controls in the sidebar to start recording a meeting or call.
             </p>
         </div>
 

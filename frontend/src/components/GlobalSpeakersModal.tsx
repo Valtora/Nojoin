@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { GlobalSpeaker } from '@/types';
 import { getGlobalSpeakers, updateGlobalSpeaker, mergeSpeakers, deleteGlobalSpeaker } from '@/lib/api';
 import { X, Edit2, Merge, Save, Trash2 } from 'lucide-react';
@@ -18,6 +19,12 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
   const [editValue, setEditValue] = useState("");
   const [mergeSource, setMergeSource] = useState<GlobalSpeaker | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
   
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -107,15 +114,15 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
     });
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const filteredSpeakers = speakers.filter(speaker => 
     speaker.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  return (
+  return createPortal(
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-200 dark:border-gray-800">
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Global Speakers</h2>
@@ -234,6 +241,7 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
         message={confirmModal.message}
         isDangerous={confirmModal.isDangerous}
     />
-    </>
+    </>,
+    document.body
   );
 }
