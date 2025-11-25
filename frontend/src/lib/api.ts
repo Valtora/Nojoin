@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
@@ -270,6 +270,54 @@ export const getSupportedAudioFormats = (): string[] => {
 
 export const getMaxUploadSizeMB = (): number => {
   return 500;
+};
+
+// Voiceprint Management
+export const extractVoiceprint = async (
+  recordingId: number,
+  diarizationLabel: string
+): Promise<VoiceprintExtractResult> => {
+  const response = await api.post<VoiceprintExtractResult>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint/extract`
+  );
+  return response.data;
+};
+
+export type VoiceprintAction = 'create_new' | 'link_existing' | 'local_only' | 'force_link';
+
+export const applyVoiceprintAction = async (
+  recordingId: number,
+  diarizationLabel: string,
+  action: VoiceprintAction,
+  options?: { globalSpeakerId?: number; newSpeakerName?: string }
+): Promise<VoiceprintApplyResult> => {
+  const response = await api.post<VoiceprintApplyResult>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint/apply`,
+    {
+      action,
+      global_speaker_id: options?.globalSpeakerId,
+      new_speaker_name: options?.newSpeakerName,
+    }
+  );
+  return response.data;
+};
+
+export const deleteVoiceprint = async (
+  recordingId: number,
+  diarizationLabel: string
+): Promise<void> => {
+  await api.delete(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint`
+  );
+};
+
+export const extractAllVoiceprints = async (
+  recordingId: number
+): Promise<BatchVoiceprintResponse> => {
+  const response = await api.post<BatchVoiceprintResponse>(
+    `/speakers/recordings/${recordingId}/voiceprints/extract-all`
+  );
+  return response.data;
 };
 
 export default api;

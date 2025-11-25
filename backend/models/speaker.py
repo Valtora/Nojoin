@@ -2,6 +2,7 @@ from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
 from sqlalchemy import Column, BigInteger
 from sqlalchemy.dialects.postgresql import JSONB
+from pydantic import computed_field
 from .base import BaseDBModel
 
 if TYPE_CHECKING:
@@ -13,6 +14,12 @@ class GlobalSpeaker(BaseDBModel, table=True):
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
     
     recording_speakers: List["RecordingSpeaker"] = Relationship(back_populates="global_speaker")
+    
+    @computed_field
+    @property
+    def has_voiceprint(self) -> bool:
+        """Returns True if this speaker has a voiceprint (embedding) stored."""
+        return self.embedding is not None and len(self.embedding) > 0
 
 class RecordingSpeaker(BaseDBModel, table=True):
     __tablename__ = "recording_speakers"
@@ -34,3 +41,9 @@ class RecordingSpeaker(BaseDBModel, table=True):
 
     recording: "Recording" = Relationship(back_populates="speakers")
     global_speaker: Optional["GlobalSpeaker"] = Relationship(back_populates="recording_speakers")
+    
+    @computed_field
+    @property
+    def has_voiceprint(self) -> bool:
+        """Returns True if this speaker has a voiceprint (embedding) stored."""
+        return self.embedding is not None and len(self.embedding) > 0

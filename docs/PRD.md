@@ -83,6 +83,16 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Visual Identification:**
     *   Color-coded speaker chips in the transcript view.
     *   Filter transcripts by specific speakers.
+*   **Voiceprint Management:**
+    *   **Optional Auto-Extraction:** Speaker voiceprints (embeddings) can be automatically extracted during processing. This can be disabled in Settings for faster processing.
+    *   **On-Demand Creation:** Users can create voiceprints for individual speakers via the "Create Voiceprint" context menu option in the Speaker Panel.
+    *   **Batch Creation:** "Create All Voiceprints" button allows extracting voiceprints for all speakers in a recording at once.
+    *   **Voiceprint Modal:** When creating a voiceprint, users are presented with options:
+        *   Link to a matched Global Speaker (if similarity is detected).
+        *   Create a new Global Speaker with the voiceprint.
+        *   Force-link to a different Global Speaker (for training/correction).
+        *   Keep the voiceprint local to the recording only.
+    *   **Visual Indicator:** Speakers with voiceprints display a fingerprint icon, indicating they can be recognized in future recordings.
 
 ### 3.4 Meeting Intelligence
 *   **LLM-Powered Notes:**

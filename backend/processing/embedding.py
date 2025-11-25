@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from pyannote.audio import Inference, Model
 from pyannote.core import Segment
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from backend.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
@@ -143,3 +143,116 @@ def merge_embeddings(current_embedding: List[float], new_embedding: List[float],
     merged = (1 - alpha) * curr_arr + alpha * new_arr
     
     return merged.tolist()
+
+
+def extract_embedding_for_segments(
+    audio_path: str,
+    segments: List[Tuple[float, float]],
+    device_str: str = "cpu"
+) -> Optional[List[float]]:
+    """
+    Extract a single aggregated embedding from specific time segments.
+    
+    This is used for on-demand voiceprint creation when a user manually
+    triggers voiceprint extraction for a specific speaker.
+    
+    Args:
+        audio_path: Path to the audio file.
+        segments: List of (start_time, end_time) tuples in seconds.
+        device_str: Device to use for inference ("cpu" or "cuda").
+        
+    Returns:
+        Aggregated embedding vector as a list of floats, or None if extraction fails.
+    """
+    if not segments:
+        logger.warning("No segments provided for embedding extraction")
+        return None
+    
+    logger.info(f"Extracting embedding from {len(segments)} segments in {audio_path}")
+    
+    try:
+        cache_key = (DEFAULT_EMBEDDING_MODEL, device_str)
+        if cache_key not in _embedding_model_cache:
+            _embedding_model_cache[cache_key] = load_embedding_model(device_str)
+        model = _embedding_model_cache[cache_key]
+        
+        # Sort segments by duration (longest first) and take top segments
+        sorted_segments = sorted(segments, key=lambda s: s[1] - s[0], reverse=True)
+        top_segments = sorted_segments[:5]  # Use up to 5 best segments
+        
+        speaker_embeddings = []
+        
+        for start, end in top_segments:
+            # Skip very short segments (< 0.5 seconds)
+            if end - start < 0.5:
+                continue
+                
+            try:
+                seg = Segment(start, end)
+                emb = model.crop(audio_path, seg)
+                
+                if hasattr(emb, 'data'):
+                    emb = emb.data
+                    
+                emb = np.array(emb)
+                
+                # Average over frames if multi-dimensional
+                if len(emb.shape) == 2:
+                    emb = np.mean(emb, axis=0)
+                    
+                speaker_embeddings.append(emb)
+                
+            except Exception as e:
+                logger.warning(f"Failed to extract embedding for segment ({start:.2f}, {end:.2f}): {e}")
+                continue
+        
+        if not speaker_embeddings:
+            logger.warning("No embeddings could be extracted from the provided segments")
+            return None
+            
+        # Average all extracted embeddings
+        avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
+        return avg_embedding.tolist()
+        
+    except Exception as e:
+        logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
+        return None
+
+
+def find_matching_global_speaker(
+    embedding: List[float],
+    global_speakers: List,
+    threshold: float = 0.65
+) -> Tuple[Optional[object], float]:
+    """
+    Find the best matching GlobalSpeaker for a given embedding.
+    
+    Args:
+        embedding: The embedding vector to match.
+        global_speakers: List of GlobalSpeaker objects with embeddings.
+        threshold: Minimum similarity score to consider a match.
+        
+    Returns:
+        Tuple of (best_matching_speaker, similarity_score).
+        Returns (None, 0.0) if no match above threshold.
+    """
+    import re
+    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE)
+    
+    best_match = None
+    best_score = 0.0
+    
+    for gs in global_speakers:
+        # Skip placeholder names and speakers without embeddings
+        if not gs.embedding or placeholder_pattern.match(gs.name):
+            continue
+            
+        score = cosine_similarity(embedding, gs.embedding)
+        if score > best_score:
+            best_score = score
+            best_match = gs
+    
+    if best_match and best_score >= threshold:
+        return best_match, best_score
+    
+    return None, best_score

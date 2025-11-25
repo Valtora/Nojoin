@@ -40,7 +40,10 @@ const StatusBadge = ({ status }: { status: RecordingStatus }) => {
       );
     case RecordingStatus.PROCESSING:
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+        <span 
+          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-help"
+          title="Processing audio: transcription, diarization, and voiceprint extraction. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing if you prefer manual speaker management."
+        >
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
           Processing
         </span>

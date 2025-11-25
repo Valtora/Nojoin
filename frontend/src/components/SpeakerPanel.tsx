@@ -1,10 +1,11 @@
 'use client';
 
-import { RecordingSpeaker, TranscriptSegment } from '@/types';
-import { Play, User, Merge, Palette } from 'lucide-react';
+import { RecordingSpeaker, TranscriptSegment, VoiceprintExtractResult, BatchVoiceprintResponse } from '@/types';
+import { Play, User, Fingerprint, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
-import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker } from '@/lib/api';
+import VoiceprintModal from './VoiceprintModal';
+import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker, extractVoiceprint, extractAllVoiceprints } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
 interface SpeakerPanelProps {
@@ -33,6 +34,13 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Voiceprint State
+  const [extractingVoiceprint, setExtractingVoiceprint] = useState<string | null>(null); // diarization_label
+  const [voiceprintModalOpen, setVoiceprintModalOpen] = useState(false);
+  const [voiceprintExtractResult, setVoiceprintExtractResult] = useState<VoiceprintExtractResult | null>(null);
+  const [batchVoiceprintResults, setBatchVoiceprintResults] = useState<BatchVoiceprintResponse | null>(null);
+  const [extractingAllVoiceprints, setExtractingAllVoiceprints] = useState(false);
 
   // Deduplicate speakers based on diarization_label
   const uniqueSpeakers = speakers.reduce((acc, current) => {
@@ -129,8 +137,71 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     }
   };
 
+  const handleCreateVoiceprint = async (speaker: RecordingSpeaker) => {
+    setContextMenu(null);
+    setExtractingVoiceprint(speaker.diarization_label);
+    
+    try {
+      const result = await extractVoiceprint(recordingId, speaker.diarization_label);
+      setVoiceprintExtractResult(result);
+      setBatchVoiceprintResults(null);
+      setVoiceprintModalOpen(true);
+    } catch (e: any) {
+      console.error("Failed to extract voiceprint", e);
+      alert(e.response?.data?.detail || "Failed to extract voiceprint.");
+    } finally {
+      setExtractingVoiceprint(null);
+    }
+  };
+
+  const handleCreateAllVoiceprints = async () => {
+    setExtractingAllVoiceprints(true);
+    
+    try {
+      const result = await extractAllVoiceprints(recordingId);
+      if (result.speakers_processed === 0) {
+        alert("All speakers already have voiceprints.");
+        return;
+      }
+      setBatchVoiceprintResults(result);
+      setVoiceprintExtractResult(null);
+      setVoiceprintModalOpen(true);
+    } catch (e: any) {
+      console.error("Failed to extract voiceprints", e);
+      alert(e.response?.data?.detail || "Failed to extract voiceprints.");
+    } finally {
+      setExtractingAllVoiceprints(false);
+    }
+  };
+
+  const handleVoiceprintModalComplete = () => {
+    router.refresh();
+  };
+
+  // Check if any speakers are missing voiceprints
+  const speakersWithoutVoiceprints = uniqueSpeakers.filter(s => !s.has_voiceprint);
+
   return (
     <aside className="w-64 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-200 dark:bg-gray-900 h-full overflow-y-auto">
+      {/* Header with batch voiceprint action */}
+      {uniqueSpeakers.length > 0 && speakersWithoutVoiceprints.length > 0 && (
+        <div className="p-2 border-b border-gray-300 dark:border-gray-700">
+          <button
+            onClick={handleCreateAllVoiceprints}
+            disabled={extractingAllVoiceprints}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors disabled:opacity-50"
+            title="Create voice fingerprints for all speakers without one. This enables automatic speaker recognition in future recordings."
+          >
+            {extractingAllVoiceprints ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Fingerprint className="w-3.5 h-3.5" />
+            )}
+            <span>Create All Voiceprints ({speakersWithoutVoiceprints.length})</span>
+          </button>
+        </div>
+      )}
+      
       <div className="p-2 space-y-2 mt-2">
         {uniqueSpeakers.length === 0 ? (
             <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
@@ -198,6 +269,21 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                         >
                              <User className="w-4 h-4 opacity-50" />
                         </button>
+                        {/* Voiceprint indicator */}
+                        {speaker.has_voiceprint && (
+                          <div 
+                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800"
+                            title="Has voiceprint - can be recognized in future recordings"
+                          >
+                            <Fingerprint className="w-2 h-2 text-white" />
+                          </div>
+                        )}
+                        {/* Extracting indicator */}
+                        {extractingVoiceprint === speaker.diarization_label && (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                            <Loader2 className="w-2 h-2 text-white animate-spin" />
+                          </div>
+                        )}
                         {openColorPicker === (speaker.name || speaker.global_speaker?.name || speaker.diarization_label) && (
                             <div className="absolute left-0 top-full mt-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 grid grid-cols-4 gap-1 z-50 w-32">
                                 {availableColors.map((color, i) => (
@@ -269,6 +355,13 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                     label: 'Merge into...',
                     onClick: () => handleMergeStart(contextMenu.speaker)
                 },
+                // Voiceprint option - only show if speaker doesn't have one
+                ...(!contextMenu.speaker.has_voiceprint ? [{
+                    label: 'Create Voiceprint',
+                    onClick: () => handleCreateVoiceprint(contextMenu.speaker),
+                    icon: <Fingerprint className="w-4 h-4" />,
+                    className: 'text-blue-600 dark:text-blue-400'
+                }] : []),
                 {
                     label: 'Delete',
                     onClick: () => handleDelete(contextMenu.speaker),
@@ -277,6 +370,21 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
             ]}
         />
       )}
+      
+      {/* Voiceprint Modal */}
+      <VoiceprintModal
+        isOpen={voiceprintModalOpen}
+        onClose={() => {
+          setVoiceprintModalOpen(false);
+          setVoiceprintExtractResult(null);
+          setBatchVoiceprintResults(null);
+        }}
+        onComplete={handleVoiceprintModalComplete}
+        recordingId={recordingId}
+        extractResult={voiceprintExtractResult ?? undefined}
+        batchResults={batchVoiceprintResults?.results}
+        allGlobalSpeakers={batchVoiceprintResults?.all_global_speakers || voiceprintExtractResult?.all_global_speakers}
+      />
     </aside>
   );
 }

@@ -40,7 +40,14 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
     case RecordingStatus.PROCESSED:
       return <CheckCircle className="w-3 h-3 text-green-500" />;
     case RecordingStatus.PROCESSING:
-      return <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />;
+      return (
+        <span 
+          className="cursor-help" 
+          title="Processing: transcription, diarization, voiceprints. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing."
+        >
+          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+        </span>
+      );
     case RecordingStatus.UPLOADING:
       return <UploadCloud className="w-3 h-3 text-orange-500 animate-pulse" />;
     case RecordingStatus.ERROR:

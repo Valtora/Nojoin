@@ -20,6 +20,7 @@ class SettingsUpdate(BaseModel):
     openai_model: Optional[str] = None
     anthropic_model: Optional[str] = None
     infer_meeting_title: Optional[bool] = None
+    enable_auto_voiceprints: Optional[bool] = None
 
 @router.get("/")
 async def get_settings():

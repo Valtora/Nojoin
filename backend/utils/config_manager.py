@@ -51,6 +51,7 @@ DEFAULT_CONFIG = {
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "notes_font_size": "Medium",  # Font size for meeting notes display
     "infer_meeting_title": True,  # Automatically infer meeting name from transcript using LLM
+    "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
     "companion_url": "http://localhost:12345", # Default Companion App URL
     "llm_user_context": "", # Custom user context/instructions for LLM (Meeting Generation)
@@ -211,6 +212,11 @@ class ConfigManager:
         # Re-ensure directories if a path was changed
         if key == "recordings_directory":
             self._ensure_dirs_exist(self.config)
+
+    def reload(self):
+        """Reloads configuration from disk. Call this to pick up changes made by other processes."""
+        self.config = self._load_config()
+        logger.info("Configuration reloaded from disk")
 
     def get_all(self):
         """Returns the entire configuration dictionary."""

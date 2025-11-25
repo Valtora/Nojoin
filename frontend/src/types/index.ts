@@ -14,6 +14,7 @@ export interface BaseDBModel {
 
 export interface GlobalSpeaker extends BaseDBModel {
   name: string;
+  has_voiceprint?: boolean;
 }
 
 export interface RecordingSpeaker extends BaseDBModel {
@@ -24,6 +25,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   snippet_start?: number;
   snippet_end?: number;
   voice_snippet_path?: string;
+  has_voiceprint?: boolean;
   global_speaker?: GlobalSpeaker;
 }
 
@@ -69,7 +71,46 @@ export interface Settings {
   hf_token?: string;
   worker_url?: string;
   companion_url?: string;
+  enable_auto_voiceprints?: boolean;
   [key: string]: any;
+}
+
+// Voiceprint-related types
+export interface VoiceprintMatchInfo {
+  id: number;
+  name: string;
+  similarity_score: number;
+  is_strong_match: boolean;
+}
+
+export interface VoiceprintExtractResult {
+  embedding_extracted: boolean;
+  matched_speaker: VoiceprintMatchInfo | null;
+  all_global_speakers: Array<{ id: number; name: string; has_voiceprint: boolean }>;
+  speaker_id: number;
+  diarization_label: string;
+}
+
+export interface VoiceprintApplyResult {
+  success: boolean;
+  has_voiceprint: boolean;
+  matched_speaker: { id: number; name: string } | null;
+  message: string | null;
+}
+
+export interface BatchVoiceprintResult {
+  diarization_label: string;
+  speaker_name: string;
+  speaker_id?: number;
+  success: boolean;
+  error?: string;
+  matched_speaker?: VoiceprintMatchInfo | null;
+}
+
+export interface BatchVoiceprintResponse {
+  speakers_processed: number;
+  results: BatchVoiceprintResult[];
+  all_global_speakers: Array<{ id: number; name: string; has_voiceprint: boolean }>;
 }
 
 export interface AudioDevice {

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from pydantic import BaseModel
@@ -8,7 +8,8 @@ from backend.api.deps import get_db
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
-from backend.processing.embedding import merge_embeddings
+from backend.processing.embedding import merge_embeddings, extract_embedding_for_segments, find_matching_global_speaker, cosine_similarity
+from backend.utils.config_manager import config_manager
 
 router = APIRouter()
 
@@ -30,6 +31,19 @@ class MergeRequest(BaseModel):
 class MergeRequestLabels(BaseModel):
     target_speaker_label: str
     source_speaker_label: str
+
+class VoiceprintAction(BaseModel):
+    """Request body for voiceprint creation/linking actions."""
+    action: str  # "create_new", "link_existing", "local_only", "force_link"
+    global_speaker_id: Optional[int] = None  # Required for "link_existing" and "force_link"
+    new_speaker_name: Optional[str] = None  # Required for "create_new"
+
+class VoiceprintResult(BaseModel):
+    """Response for voiceprint operations."""
+    success: bool
+    has_voiceprint: bool
+    matched_speaker: Optional[dict] = None  # {id, name, similarity_score}
+    message: Optional[str] = None
 
 @router.get("/", response_model=List[GlobalSpeaker])
 async def list_global_speakers(
@@ -379,3 +393,384 @@ async def delete_recording_speaker(
 
     await db.commit()
     return {"ok": True}
+
+
+# ============================================================================
+# Voiceprint (Embedding) Management Endpoints
+# ============================================================================
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/extract")
+async def extract_voiceprint(
+    recording_id: int,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Extract a voiceprint (embedding) for a specific speaker in a recording.
+    
+    This is the first step of voiceprint creation. It extracts the embedding
+    and returns potential matches from Global Speakers. The client then
+    calls the /voiceprint/apply endpoint with the user's chosen action.
+    
+    Returns:
+        - embedding_extracted: Whether extraction was successful
+        - matched_speaker: Best matching GlobalSpeaker (if any)
+        - all_speakers: List of all GlobalSpeakers for force-link option
+    """
+    # 1. Verify recording exists
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    # 2. Find the RecordingSpeaker
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(statement)
+    rec_speaker = result.scalar_one_or_none()
+    
+    if not rec_speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found in recording")
+    
+    # 3. Get transcript segments for this speaker
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript or not transcript.segments:
+        raise HTTPException(status_code=400, detail="No transcript segments found for this recording")
+    
+    # Find segments belonging to this speaker (match by diarization_label or resolved name)
+    speaker_segments = []
+    speaker_name = rec_speaker.name or diarization_label
+    
+    for seg in transcript.segments:
+        seg_speaker = seg.get("speaker", "")
+        if seg_speaker == diarization_label or seg_speaker == speaker_name:
+            speaker_segments.append((seg["start"], seg["end"]))
+    
+    if not speaker_segments:
+        raise HTTPException(status_code=400, detail="No audio segments found for this speaker")
+    
+    # 4. Extract embedding
+    device_str = config_manager.get("processing_device", "cpu")
+    embedding = extract_embedding_for_segments(recording.audio_path, speaker_segments, device_str)
+    
+    if not embedding:
+        raise HTTPException(status_code=500, detail="Failed to extract voiceprint from audio segments")
+    
+    # 5. Store embedding temporarily on the RecordingSpeaker
+    rec_speaker.embedding = embedding
+    db.add(rec_speaker)
+    await db.commit()
+    await db.refresh(rec_speaker)
+    
+    # 6. Find potential matches
+    all_global_stmt = select(GlobalSpeaker)
+    all_global_result = await db.execute(all_global_stmt)
+    all_global_speakers = all_global_result.scalars().all()
+    
+    # Find best match
+    matched_speaker = None
+    best_score = 0.0
+    
+    for gs in all_global_speakers:
+        if gs.embedding:
+            score = cosine_similarity(embedding, gs.embedding)
+            if score > best_score:
+                best_score = score
+                matched_speaker = gs
+    
+    # Prepare response
+    match_info = None
+    if matched_speaker and best_score >= 0.5:  # Lower threshold for showing potential matches
+        match_info = {
+            "id": matched_speaker.id,
+            "name": matched_speaker.name,
+            "similarity_score": round(best_score, 3),
+            "is_strong_match": best_score >= 0.65  # Strong match threshold
+        }
+    
+    # Return all global speakers for force-link dropdown
+    all_speakers_list = [
+        {"id": gs.id, "name": gs.name, "has_voiceprint": gs.embedding is not None}
+        for gs in all_global_speakers
+    ]
+    
+    return {
+        "embedding_extracted": True,
+        "matched_speaker": match_info,
+        "all_global_speakers": all_speakers_list,
+        "speaker_id": rec_speaker.id,
+        "diarization_label": diarization_label
+    }
+
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply")
+async def apply_voiceprint_action(
+    recording_id: int,
+    diarization_label: str,
+    action: VoiceprintAction,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Apply a voiceprint action after extraction.
+    
+    Actions:
+        - "create_new": Create a new GlobalSpeaker with the extracted embedding
+        - "link_existing": Link to an existing GlobalSpeaker (merges embeddings)
+        - "local_only": Keep the embedding only on RecordingSpeaker (no GlobalSpeaker)
+        - "force_link": Force link to a GlobalSpeaker (user override, trains the embedding)
+    """
+    # 1. Verify recording and speaker exist
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(statement)
+    rec_speaker = result.scalar_one_or_none()
+    
+    if not rec_speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found in recording")
+    
+    if not rec_speaker.embedding:
+        raise HTTPException(status_code=400, detail="No voiceprint extracted. Call /voiceprint/extract first.")
+    
+    embedding = rec_speaker.embedding
+    
+    if action.action == "create_new":
+        # Create a new GlobalSpeaker
+        if not action.new_speaker_name:
+            raise HTTPException(status_code=400, detail="new_speaker_name is required for create_new action")
+        
+        # Check for placeholder names
+        import re
+        placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
+        if placeholder_pattern.match(action.new_speaker_name):
+            raise HTTPException(status_code=400, detail="Cannot use a placeholder name for Global Speaker")
+        
+        # Check if name already exists
+        existing_stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == action.new_speaker_name)
+        existing_result = await db.execute(existing_stmt)
+        if existing_result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="A Global Speaker with this name already exists")
+        
+        new_gs = GlobalSpeaker(name=action.new_speaker_name, embedding=embedding)
+        db.add(new_gs)
+        await db.commit()
+        await db.refresh(new_gs)
+        
+        # Link RecordingSpeaker to the new GlobalSpeaker
+        rec_speaker.global_speaker_id = new_gs.id
+        rec_speaker.name = new_gs.name
+        db.add(rec_speaker)
+        await db.commit()
+        
+        return VoiceprintResult(
+            success=True,
+            has_voiceprint=True,
+            matched_speaker={"id": new_gs.id, "name": new_gs.name},
+            message=f"Created new Global Speaker: {new_gs.name}"
+        )
+    
+    elif action.action == "link_existing" or action.action == "force_link":
+        # Link to existing GlobalSpeaker
+        if not action.global_speaker_id:
+            raise HTTPException(status_code=400, detail="global_speaker_id is required")
+        
+        gs = await db.get(GlobalSpeaker, action.global_speaker_id)
+        if not gs:
+            raise HTTPException(status_code=404, detail="Global Speaker not found")
+        
+        # Merge embeddings (if GlobalSpeaker has one)
+        # Use higher alpha for force_link as it's explicit user correction
+        alpha = 0.4 if action.action == "force_link" else 0.3
+        if gs.embedding:
+            gs.embedding = merge_embeddings(gs.embedding, embedding, alpha=alpha)
+        else:
+            gs.embedding = embedding
+        db.add(gs)
+        
+        # Link RecordingSpeaker
+        rec_speaker.global_speaker_id = gs.id
+        rec_speaker.name = gs.name
+        db.add(rec_speaker)
+        await db.commit()
+        
+        action_verb = "Force-linked" if action.action == "force_link" else "Linked"
+        return VoiceprintResult(
+            success=True,
+            has_voiceprint=True,
+            matched_speaker={"id": gs.id, "name": gs.name},
+            message=f"{action_verb} to Global Speaker: {gs.name}"
+        )
+    
+    elif action.action == "local_only":
+        # Keep embedding on RecordingSpeaker only
+        # The embedding is already saved from the extract step
+        return VoiceprintResult(
+            success=True,
+            has_voiceprint=True,
+            matched_speaker=None,
+            message="Voiceprint saved locally (not linked to Global Speaker)"
+        )
+    
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action.action}")
+
+
+@router.delete("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint")
+async def delete_voiceprint(
+    recording_id: int,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete the voiceprint (embedding) from a RecordingSpeaker.
+    Does NOT affect the linked GlobalSpeaker's embedding.
+    """
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(statement)
+    rec_speaker = result.scalar_one_or_none()
+    
+    if not rec_speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found in recording")
+    
+    rec_speaker.embedding = None
+    db.add(rec_speaker)
+    await db.commit()
+    
+    return {"ok": True, "message": "Voiceprint deleted"}
+
+
+@router.post("/recordings/{recording_id}/voiceprints/extract-all")
+async def extract_all_voiceprints(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Extract voiceprints for all speakers in a recording that don't have one.
+    Returns extraction results for each speaker, to be processed by the client.
+    """
+    # 1. Verify recording exists
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    # 2. Get all speakers without voiceprints
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id
+    )
+    result = await db.execute(statement)
+    all_speakers = result.scalars().all()
+    
+    speakers_needing_voiceprint = [s for s in all_speakers if not s.embedding]
+    
+    if not speakers_needing_voiceprint:
+        return {
+            "message": "All speakers already have voiceprints",
+            "speakers_processed": 0,
+            "results": []
+        }
+    
+    # 3. Get transcript
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript or not transcript.segments:
+        raise HTTPException(status_code=400, detail="No transcript segments found")
+    
+    # 4. Get all global speakers for matching
+    all_global_stmt = select(GlobalSpeaker)
+    all_global_result = await db.execute(all_global_stmt)
+    all_global_speakers = list(all_global_result.scalars().all())
+    
+    device_str = config_manager.get("processing_device", "cpu")
+    results = []
+    
+    # 5. Extract voiceprint for each speaker
+    for rec_speaker in speakers_needing_voiceprint:
+        speaker_name = rec_speaker.name or rec_speaker.diarization_label
+        
+        # Find segments for this speaker
+        speaker_segments = []
+        for seg in transcript.segments:
+            seg_speaker = seg.get("speaker", "")
+            if seg_speaker == rec_speaker.diarization_label or seg_speaker == speaker_name:
+                speaker_segments.append((seg["start"], seg["end"]))
+        
+        if not speaker_segments:
+            results.append({
+                "diarization_label": rec_speaker.diarization_label,
+                "speaker_name": speaker_name,
+                "success": False,
+                "error": "No audio segments found"
+            })
+            continue
+        
+        # Extract embedding
+        embedding = extract_embedding_for_segments(recording.audio_path, speaker_segments, device_str)
+        
+        if not embedding:
+            results.append({
+                "diarization_label": rec_speaker.diarization_label,
+                "speaker_name": speaker_name,
+                "success": False,
+                "error": "Extraction failed"
+            })
+            continue
+        
+        # Save embedding
+        rec_speaker.embedding = embedding
+        db.add(rec_speaker)
+        
+        # Find best match
+        matched_speaker = None
+        best_score = 0.0
+        
+        for gs in all_global_speakers:
+            if gs.embedding:
+                score = cosine_similarity(embedding, gs.embedding)
+                if score > best_score:
+                    best_score = score
+                    matched_speaker = gs
+        
+        match_info = None
+        if matched_speaker and best_score >= 0.5:
+            match_info = {
+                "id": matched_speaker.id,
+                "name": matched_speaker.name,
+                "similarity_score": round(best_score, 3),
+                "is_strong_match": best_score >= 0.65
+            }
+        
+        results.append({
+            "diarization_label": rec_speaker.diarization_label,
+            "speaker_name": speaker_name,
+            "speaker_id": rec_speaker.id,
+            "success": True,
+            "matched_speaker": match_info
+        })
+    
+    await db.commit()
+    
+    # Return all global speakers for UI dropdown
+    all_speakers_list = [
+        {"id": gs.id, "name": gs.name, "has_voiceprint": gs.embedding is not None}
+        for gs in all_global_speakers
+    ]
+    
+    return {
+        "speakers_processed": len(results),
+        "results": results,
+        "all_global_speakers": all_speakers_list
+    }

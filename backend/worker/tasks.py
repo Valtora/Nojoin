@@ -17,6 +17,7 @@ from backend.processing.diarize import diarize_audio
 from backend.processing.embedding import extract_embeddings, cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
+from backend.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ def process_recording_task(self, recording_id: int):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
+    # Reload config to pick up any changes made via the API
+    config_manager.reload()
+    
     start_time = time.time()
     session = self.session
     
@@ -168,12 +172,17 @@ def process_recording_task(self, recording_id: int):
                 ordered_speakers.append(spk)
                 seen_speakers.add(spk)
         
-        # Extract embeddings for all speakers in the diarization result
-        # We use the processed_audio_path (MP3) which pyannote can handle
-        if diarization_result:
+        # Extract embeddings for all speakers in the diarization result (if enabled)
+        # Voiceprint extraction can be disabled to speed up processing
+        enable_auto_voiceprints = config_manager.get("enable_auto_voiceprints", True)
+        speaker_embeddings = {}
+        
+        if enable_auto_voiceprints and diarization_result:
+            self.update_state(state='PROCESSING', meta={'progress': 85, 'stage': 'Voiceprints'})
+            logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
             speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
-        else:
-            speaker_embeddings = {}
+        elif not enable_auto_voiceprints:
+            logger.info("Skipping voiceprint extraction (enable_auto_voiceprints=False)")
         
         # Map local labels (SPEAKER_00) to resolved names (John Doe or Speaker 1)
         label_map = {} 
