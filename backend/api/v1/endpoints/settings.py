@@ -14,6 +14,12 @@ class SettingsUpdate(BaseModel):
     whisper_model_size: Optional[str] = None
     theme: Optional[str] = None
     hf_token: Optional[str] = None
+    worker_url: Optional[str] = None
+    companion_url: Optional[str] = None
+    gemini_model: Optional[str] = None
+    openai_model: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    infer_meeting_title: Optional[bool] = None
 
 @router.get("/")
 async def get_settings():

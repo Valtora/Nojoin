@@ -66,5 +66,8 @@ export interface Settings {
   openai_model?: string;
   anthropic_model?: string;
   hf_token?: string;
+  worker_url?: string;
+  companion_url?: string;
+  infer_meeting_title?: boolean;
   [key: string]: any;
 }

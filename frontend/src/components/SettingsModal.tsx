@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getSettings, updateSettings } from '@/lib/api';
 import { Settings } from '@/types';
-import { Save, Loader2, X } from 'lucide-react';
+import { Save, Loader2, X, Eye, EyeOff } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,6 +15,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [companionConfig, setCompanionConfig] = useState<{ api_url: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  
+  // Visibility toggles
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [showHfToken, setShowHfToken] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -22,18 +28,20 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         try {
           const data = await getSettings();
           setSettings(data);
+
+          // Try to load companion config using the loaded settings or default
+          const companionUrl = data.companion_url || 'http://localhost:12345';
+          try {
+              const res = await fetch(`${companionUrl}/config`);
+              if (res.ok) {
+                  const companionData = await res.json();
+                  setCompanionConfig(companionData);
+              }
+          } catch (e) {
+              console.error("Failed to load companion config", e);
+          }
         } catch (e) {
           console.error("Failed to load settings", e);
-        }
-
-        try {
-            const res = await fetch('http://localhost:12345/config');
-            if (res.ok) {
-                const data = await res.json();
-                setCompanionConfig(data);
-            }
-        } catch (e) {
-            console.error("Failed to load companion config", e);
         }
 
         setLoading(false);
@@ -47,8 +55,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     try {
       await updateSettings(settings);
       
+      const companionUrl = settings.companion_url || 'http://localhost:12345';
       if (companionConfig) {
-          await fetch('http://localhost:12345/config', {
+          await fetch(`${companionUrl}/config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ api_url: companionConfig.api_url })
@@ -125,62 +134,92 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </select>
                     </div>
 
-                    {settings.llm_provider === 'gemini' && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Gemini API Key
-                            </label>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Gemini API Key
+                        </label>
+                        <div className="relative">
                             <input
-                                type="password"
+                                type={showGeminiKey ? "text" : "password"}
                                 value={settings.gemini_api_key || ''}
                                 onChange={(e) => setSettings({ ...settings, gemini_api_key: e.target.value })}
-                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10"
                                 placeholder="AIza..."
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowGeminiKey(!showGeminiKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                                {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                    )}
+                    </div>
 
-                    {settings.llm_provider === 'openai' && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                OpenAI API Key
-                            </label>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            OpenAI API Key
+                        </label>
+                        <div className="relative">
                             <input
-                                type="password"
+                                type={showOpenAIKey ? "text" : "password"}
                                 value={settings.openai_api_key || ''}
                                 onChange={(e) => setSettings({ ...settings, openai_api_key: e.target.value })}
-                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10"
                                 placeholder="sk-..."
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                                {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                    )}
+                    </div>
 
-                    {settings.llm_provider === 'anthropic' && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Anthropic API Key
-                            </label>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Anthropic API Key
+                        </label>
+                        <div className="relative">
                             <input
-                                type="password"
+                                type={showAnthropicKey ? "text" : "password"}
                                 value={settings.anthropic_api_key || ''}
                                 onChange={(e) => setSettings({ ...settings, anthropic_api_key: e.target.value })}
-                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10"
                                 placeholder="sk-ant-..."
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowAnthropicKey(!showAnthropicKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                                {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                    )}
+                    </div>
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Hugging Face Token (for Pyannote Diarization)
                         </label>
-                        <input
-                            type="password"
-                            value={settings.hf_token || ''}
-                            onChange={(e) => setSettings({ ...settings, hf_token: e.target.value })}
-                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                            placeholder="hf_..."
-                        />
+                        <div className="relative">
+                            <input
+                                type={showHfToken ? "text" : "password"}
+                                value={settings.hf_token || ''}
+                                onChange={(e) => setSettings({ ...settings, hf_token: e.target.value })}
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10"
+                                placeholder="hf_..."
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowHfToken(!showHfToken)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                                {showHfToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                        </div>
                         <p className="text-xs text-gray-500 mt-1">Required for speaker diarization. You must accept Pyannote user conditions on Hugging Face.</p>
                     </div>
                     
@@ -195,6 +234,39 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <label htmlFor="infer_meeting_title" className="text-sm text-gray-700 dark:text-gray-300">
                             Infer Meeting Name Automatically
                         </label>
+                    </div>
+                </div>
+              </div>
+
+              {/* System Configuration */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
+                    System Configuration
+                </h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Worker URL (Redis)
+                        </label>
+                        <input
+                            type="text"
+                            value={settings.worker_url || ''}
+                            onChange={(e) => setSettings({ ...settings, worker_url: e.target.value })}
+                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                            placeholder="redis://localhost:6379/0"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Companion App URL
+                        </label>
+                        <input
+                            type="text"
+                            value={settings.companion_url || ''}
+                            onChange={(e) => setSettings({ ...settings, companion_url: e.target.value })}
+                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                            placeholder="http://localhost:12345"
+                        />
                     </div>
                 </div>
               </div>
