@@ -130,7 +130,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   };
 
   return (
-    <aside className="w-64 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full overflow-y-auto">
+    <aside className="w-64 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-200 dark:bg-gray-900 h-full overflow-y-auto">
       <div className="p-2 space-y-2 mt-2">
         {uniqueSpeakers.length === 0 ? (
             <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
@@ -182,7 +182,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 return (
                 <div 
                     key={speaker.id} 
-                    className="relative group flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 hover:border-blue-200 dark:hover:border-blue-800 transition-colors"
+                    className="relative group flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
                     onContextMenu={(e) => handleContextMenu(e, speaker)}
                 >
                     <div className="flex items-center gap-3 min-w-0 flex-1">

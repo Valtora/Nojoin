@@ -184,7 +184,7 @@ export default function TranscriptView({
 
   const getSpeakerColor = (speakerName: string) => {
       // Fallback color if not found (e.g. gray)
-      return speakerColors[speakerName] || 'bg-gray-50 dark:bg-gray-900/20 border-gray-100 dark:border-gray-800';
+      return speakerColors[speakerName] || 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700';
   };
 
   useEffect(() => {
@@ -287,7 +287,7 @@ export default function TranscriptView({
   return (
     <div className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-sm z-10">
+      <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-md z-10">
         <div className="flex items-center gap-4 flex-1">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transcript</h2>
             
@@ -425,7 +425,7 @@ export default function TranscriptView({
           
           // Determine bubble color
           const bubbleColor = isActive 
-            ? 'border-2 border-green-500 dark:border-green-400 bg-green-50/10 dark:bg-green-900/10' 
+            ? 'border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20' 
             : getSpeakerColor(speakerName);
 
           return (

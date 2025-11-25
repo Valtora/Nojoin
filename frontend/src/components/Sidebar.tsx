@@ -215,9 +215,9 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
+    <aside className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
       <MeetingControls onMeetingEnd={fetchRecordings} />
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+      <div className="p-4 border-b border-gray-400 dark:border-gray-800">
         <div className="space-y-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -237,7 +237,7 @@ export default function Sidebar() {
           </div>
 
           {showFilters && (
-            <div className="p-3 bg-gray-100 dark:bg-gray-900/50 rounded-lg space-y-3 text-sm">
+            <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500">Date Filter</label>
                 <div className="flex gap-2 mb-2">
@@ -267,7 +267,7 @@ export default function Sidebar() {
                     type="date"
                     value={dateRange.start}
                     onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
                     placeholder="Start Date"
                   />
                   )}
@@ -276,7 +276,7 @@ export default function Sidebar() {
                     type="date"
                     value={dateRange.end}
                     onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
                     placeholder="End Date"
                   />
                   )}
@@ -397,10 +397,10 @@ export default function Sidebar() {
             <Link 
               href={`/recordings/${recording.id}`}
               onContextMenu={(e) => handleContextMenu(e, recording.id)}
-              className={`block p-3 rounded-lg border transition-all ${
+              className={`block p-3 rounded-lg border transition-all shadow-sm ${
                 isActive 
-                  ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500 shadow-sm' 
-                  : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-orange-300 dark:hover:border-orange-700'
+                  ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
+                  : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-400 dark:hover:border-orange-700'
               }`}
             >
               <div className="flex justify-between items-start mb-1">

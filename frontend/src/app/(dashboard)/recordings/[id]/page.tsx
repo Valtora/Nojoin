@@ -373,7 +373,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="p-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
+      <header className="p-6 border-b-2 border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
         <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
                 {isEditingTitle ? (

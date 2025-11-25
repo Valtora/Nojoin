@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { getSettings, updateSettings } from '@/lib/api';
 import { Settings } from '@/types';
 import { Save, Loader2, X, Eye, EyeOff } from 'lucide-react';
+import { useTheme, Theme } from '@/lib/ThemeProvider';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-200 dark:border-gray-800">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-300 dark:border-gray-800">
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
@@ -98,28 +99,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           ) : (
             <>
               {/* Appearance */}
-              <div>
-                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
-                    Appearance
-                </h3>
-                <div className="grid grid-cols-1 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Theme
-                        </label>
-                        <select
-                            value={settings.theme || 'system'}
-                            onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
-                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                        >
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
-                            <option value="system">System Default</option>
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">Choose your preferred visual theme.</p>
-                    </div>
-                </div>
-              </div>
+              <ThemeSection />
 
               {/* AI Services */}
               <div>
@@ -338,5 +318,39 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       </div>
     </div>,
     document.body
+  );
+}
+
+// Separate component to use the useTheme hook
+function ThemeSection() {
+  const { theme, setTheme } = useTheme();
+  
+  const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setTheme(e.target.value as Theme);
+  };
+
+  return (
+    <div>
+      <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
+        Appearance
+      </h3>
+      <div className="grid grid-cols-1 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Theme
+          </label>
+          <select
+            value={theme}
+            onChange={handleThemeChange}
+            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="system">System Default</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">Choose your preferred visual theme.</p>
+        </div>
+      </div>
+    </div>
   );
 }

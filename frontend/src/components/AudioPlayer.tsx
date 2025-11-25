@@ -120,7 +120,7 @@ export default function AudioPlayer({
   };
 
   return (
-    <div className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-center gap-4 shadow-sm">
+    <div className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center gap-4 shadow-sm">
       <audio
         ref={audioRef}
         src={getRecordingStreamUrl(recording.id)}

@@ -14,8 +14,8 @@ export default function ChatPanel() {
   const recordingId = params?.id;
 
   return (
-    <aside className="w-80 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-end space-x-2">
+    <aside className="w-80 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
+      <div className="p-4 border-b border-gray-400 dark:border-gray-800 flex justify-end space-x-2">
         <button
             onClick={() => setIsSpeakersModalOpen(true)}
             className="p-2 bg-orange-600 text-white rounded-full hover:bg-orange-700 shadow-lg transition-colors"
@@ -46,7 +46,7 @@ export default function ChatPanel() {
         </p>
       </div>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+      <div className="p-4 border-t border-gray-400 dark:border-gray-800">
         <div className="flex gap-2">
             <input 
             type="text" 
