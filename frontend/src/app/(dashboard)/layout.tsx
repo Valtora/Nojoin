@@ -1,7 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ChatPanel from "@/components/ChatPanel";
-import CompanionStatusAlert from "@/components/CompanionStatusAlert";
+import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
 
 export default function DashboardLayout({
   children,
@@ -15,7 +15,7 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">
         <TopBar />
         {children}
-        <CompanionStatusAlert />
+        <ServiceStatusAlerts />
       </main>
       
       <ChatPanel />
