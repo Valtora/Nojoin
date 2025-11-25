@@ -89,6 +89,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
         temp_files.append(vad_processed_mp3)
         vad_progress_callback(100)  # 100% - VAD stage complete
 
+        # CRITICAL FIX: Use WAV for processing to avoid sample count mismatches in Pyannote
         processed_audio_path = vad_processed_wav
         logger.info(f"Using VAD-processed audio for pipeline: {processed_audio_path}")
 

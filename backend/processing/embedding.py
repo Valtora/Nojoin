@@ -37,6 +37,10 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "c
     Extracts embeddings for each speaker in the diarization result.
     Returns a dictionary mapping speaker label to embedding vector (list of floats).
     """
+    if diarization_result is None:
+        logger.warning("Diarization result is None, skipping embedding extraction")
+        return {}
+
     logger.info(f"Starting embedding extraction for {audio_path}")
     
     try:

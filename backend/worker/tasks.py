@@ -84,11 +84,12 @@ def process_recording_task(self, recording_id: int):
         mp3_success = convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
         if not mp3_success:
              logger.warning("MP3 conversion failed, falling back to WAV")
-             processed_audio_path = vad_output_path
-        else:
-             processed_audio_path = vad_processed_mp3
+             # processed_audio_path = vad_output_path # Already WAV
+        
+        # CRITICAL FIX: Use WAV for processing to avoid sample count mismatches in Pyannote
+        processed_audio_path = vad_output_path
 
-        logger.info(f"Using processed audio for transcription: {processed_audio_path}")
+        logger.info(f"Using processed audio for transcription/diarization: {processed_audio_path}")
         if not os.path.exists(processed_audio_path):
              raise FileNotFoundError(f"Processed audio file missing: {processed_audio_path}")
         
@@ -156,7 +157,10 @@ def process_recording_task(self, recording_id: int):
         
         # Extract embeddings for all speakers in the diarization result
         # We use the processed_audio_path (MP3) which pyannote can handle
-        speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
+        if diarization_result:
+            speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
+        else:
+            speaker_embeddings = {}
         
         # Map local labels (SPEAKER_00) to resolved names (John Doe)
         label_map = {} 

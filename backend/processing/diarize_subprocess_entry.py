@@ -15,9 +15,14 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Ensure HF patch is applied
+# Ensure audio environment is setup
 try:
-    import backend.utils.hf_patch
+    from backend.core.audio_setup import setup_audio_environment
+    setup_audio_environment()
+except ImportError:
+    # Fallback if running in a context where backend package isn't fully resolvable
+    # This might happen if PYTHONPATH isn't set correctly, but the sys.path insert above should fix it.
+    print("Warning: Could not import backend.core.audio_setup")
 except ImportError:
     print("Warning: Could not import backend.utils.hf_patch in subprocess", file=sys.stderr)
 

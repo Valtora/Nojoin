@@ -6,8 +6,6 @@ import torch
 import huggingface_hub
 from pyannote.audio import Pipeline
 from backend.utils import config_manager
-# Ensure HF patch is applied for compatibility
-import backend.utils.hf_patch
 from pyannote.core import Annotation
 import pandas as pd # Optional, useful if manipulating results
 from dotenv import load_dotenv
@@ -86,6 +84,9 @@ def diarize_audio(audio_path: str) -> Annotation | None:
         logger.error(f"Audio file not found for diarization: {audio_path}")
         return None
 
+    if not audio_path.lower().endswith('.wav'):
+        logger.warning(f"Diarization input {audio_path} is not a WAV file. Compressed formats like MP3 can cause sample count mismatches.")
+
     device_str = config_manager.get("processing_device", "cpu")
     
     logger.info(f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}")
@@ -115,6 +116,11 @@ def diarize_audio(audio_path: str) -> Annotation | None:
         # Run diarization
         logger.info("Running diarization inference...")
         diarization_result = pipeline(audio_path)
+        
+        # Handle different return types (Annotation vs DiarizeOutput dataclass)
+        if hasattr(diarization_result, 'speaker_diarization'):
+            logger.info("Detected DiarizeOutput object, extracting 'speaker_diarization' annotation.")
+            diarization_result = diarization_result.speaker_diarization
         
         # Check results
         num_segments = len(list(diarization_result.itersegments()))

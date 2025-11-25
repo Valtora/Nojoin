@@ -1,7 +1,9 @@
 import os
-# Apply HuggingFace patch for Pyannote compatibility
-import backend.utils.hf_patch
+from backend.core.audio_setup import setup_audio_environment
 from celery import Celery
+
+# Setup audio environment (patches torchaudio)
+setup_audio_environment()
 
 # Redis Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

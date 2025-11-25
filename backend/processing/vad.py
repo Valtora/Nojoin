@@ -14,13 +14,7 @@ def safe_read_audio(path: str, sampling_rate: int = 16000):
     Replicates silero_vad.read_audio functionality.
     """
     # In newer torchaudio versions, set_audio_backend is deprecated/removed.
-    # We can rely on the 'backend' argument in load() or use set_audio_backend if available.
-    if hasattr(torchaudio, 'set_audio_backend'):
-        try:
-            if torchaudio.get_audio_backend() != 'soundfile':
-                torchaudio.set_audio_backend("soundfile")
-        except (RuntimeError, AttributeError):
-            pass # Ignore if backend setting fails, rely on load argument
+    # We rely on the 'backend' argument in load().
 
     wav, sr = torchaudio.load(path, backend="soundfile")
     

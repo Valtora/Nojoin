@@ -1,15 +1,9 @@
-import huggingface_hub
 import logging
 import torchaudio
 import os
 
 logger = logging.getLogger(__name__)
 
-# --- HuggingFace Patch ---
-# Removed deprecated patch for use_auth_token -> token. 
-# The codebase now uses 'token' directly.
-
-# --- Torchaudio Patch ---
 def _patched_list_audio_backends():
     """
     Mock implementation of list_audio_backends for compatibility with older libraries (like speechbrain).
@@ -17,7 +11,7 @@ def _patched_list_audio_backends():
     """
     return ['ffmpeg', 'soundfile']
 
-def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True, channels_first=True, *args, **kwargs):
+def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True, channels_first=True, format=None, *args, **kwargs):
     """
     Replacement for torchaudio.load that forces usage of soundfile directly,
     bypassing the broken torchcodec backend in PyTorch 2.9.1+.
@@ -31,16 +25,20 @@ def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True,
     
     # soundfile.read returns (data, samplerate)
     # data is (frames, channels) for multi-channel, or (frames,) for mono
-    data, sr = sf.read(uri, start=start, stop=stop, always_2d=False)
+    data, sr = sf.read(uri, start=start, stop=stop, format=format, always_2d=False)
     
     # Convert to tensor
     tensor = torch.from_numpy(data).float()
     
     # Ensure (channels, frames) format which torchaudio expects
     if tensor.ndim == 1:
-        tensor = tensor.unsqueeze(0) # (1, frames)
+        if channels_first:
+            tensor = tensor.unsqueeze(0) # (1, frames)
+        else:
+            tensor = tensor.unsqueeze(1) # (frames, 1)
     else:
-        tensor = tensor.t() # (channels, frames)
+        if channels_first:
+            tensor = tensor.t() # (channels, frames)
         
     return tensor, sr
 
@@ -52,8 +50,9 @@ def _patched_torchaudio_info(uri, backend=None):
     import torchaudio
     
     # Ensure AudioMetaData is available (it might be patched above)
-    AudioMetaData = getattr(torchaudio, 'AudioMetaData', None)
-    if AudioMetaData is None:
+    _AudioMetaData = getattr(torchaudio, 'AudioMetaData', None)
+    
+    if _AudioMetaData is None:
          from dataclasses import dataclass
          @dataclass
          class AudioMetaData:
@@ -62,6 +61,8 @@ def _patched_torchaudio_info(uri, backend=None):
             num_channels: int
             bits_per_sample: int
             encoding: str
+    else:
+        AudioMetaData = _AudioMetaData
     
     with sf.SoundFile(uri) as f:
         return AudioMetaData(
@@ -100,19 +101,15 @@ def _patched_torchaudio_save(uri, src, sample_rate, channels_first=True, format=
         
     sf.write(uri, data, sample_rate, subtype=subtype, format=format)
 
-def apply_patch():
+def setup_audio_environment():
     """
+    Configures the audio environment to ensure compatibility and stability.
+    
     Monkeypatches:
-    1. huggingface_hub.hf_hub_download to accept 'use_auth_token'
-    2. torchaudio.list_audio_backends to exist (for speechbrain compatibility)
-    3. torchaudio.load to use soundfile directly (to bypass torchcodec issues)
-    4. torchaudio.save to use soundfile directly (to bypass torchcodec issues)
+    1. torchaudio.list_audio_backends to exist (for speechbrain compatibility)
+    2. torchaudio.load to use soundfile directly (to bypass torchcodec issues)
+    3. torchaudio.save to use soundfile directly (to bypass torchcodec issues)
     """
-    # Patch HuggingFace
-    # if huggingface_hub.hf_hub_download != _patched_hf_hub_download:
-    #     huggingface_hub.hf_hub_download = _patched_hf_hub_download
-    #     logger.info("Patched huggingface_hub.hf_hub_download for compatibility")
-
     # Patch Torchaudio list_audio_backends
     if not hasattr(torchaudio, 'list_audio_backends'):
         torchaudio.list_audio_backends = _patched_list_audio_backends
@@ -146,6 +143,3 @@ def apply_patch():
     if not hasattr(torchaudio, 'save') or torchaudio.save != _patched_torchaudio_save:
         torchaudio.save = _patched_torchaudio_save
         logger.info("Patched torchaudio.save to force soundfile backend")
-
-# Apply patch automatically on import
-apply_patch()

@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-# Apply HuggingFace patch for Pyannote compatibility
-import backend.utils.hf_patch
+from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import SQLModel
 from backend.core.db import sync_engine
 from backend.api.v1.api import api_router
+
+# Setup audio environment (patches torchaudio)
+setup_audio_environment()
 
 # Import models to register them with SQLModel
 from backend.models.recording import Recording
