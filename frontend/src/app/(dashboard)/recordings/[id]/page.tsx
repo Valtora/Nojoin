@@ -334,6 +334,7 @@ export default function RecordingPage({ params }: PageProps) {
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                         {(recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
                             <TranscriptView
+                                recordingId={recording.id}
                                 segments={recording.transcript.segments}
                                 currentTime={currentTime}
                                 onPlaySegment={handlePlaySegment}

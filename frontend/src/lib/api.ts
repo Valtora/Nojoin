@@ -175,6 +175,40 @@ export const findAndReplace = async (recordingId: number, find: string, replace:
   await api.post(`/transcripts/${recordingId}/find-replace`, { find, replace });
 };
 
+export const exportTranscript = async (recordingId: number): Promise<void> => {
+  const response = await api.get(`/transcripts/${recordingId}/export`, {
+    responseType: 'blob',
+  });
+  
+  // Create a link and click it to download
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  
+  // Extract filename from header if possible, or generate one
+  const contentDisposition = response.headers['content-disposition'];
+  let filename = `transcript-${recordingId}.txt`;
+  if (contentDisposition) {
+    // Try to match filename="name"
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    if (filenameMatch && filenameMatch.length === 2) {
+        filename = filenameMatch[1];
+    } else {
+        // Try to match filename=name
+        const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
+        if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
+            filename = filenameSimpleMatch[1].trim();
+        }
+    }
+  }
+  
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerLabel: string, sourceSpeakerLabel: string): Promise<Recording> => {
   const response = await api.post<Recording>(`/speakers/recordings/${recordingId}/merge`, {
     target_speaker_label: targetSpeakerLabel,

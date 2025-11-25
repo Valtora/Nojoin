@@ -70,6 +70,8 @@ A lightweight, cross-platform system tray application responsible for audio capt
     3.  **Diarization:** Pyannote processing.
     4.  **Alignment:** Merging transcript segments with speaker timestamps.
 *   **Progress Tracking:** Real-time status updates (Queued, Processing, Completed, Failed) pushed to the Web Client.
+*   **Export:**
+    *   Export transcripts to `.txt` format via the Web Client.
 
 ### 3.3 Speaker Management
 *   **Global Speaker Library:**

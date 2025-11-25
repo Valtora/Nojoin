@@ -1,7 +1,9 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
 import uuid
@@ -17,6 +19,73 @@ import numpy as np
 from pyannote.core import Segment
 
 router = APIRouter()
+
+@router.get("/{recording_id}/export")
+async def export_transcript(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Export the transcript as a text file.
+    """
+    # 1. Fetch Recording with Speakers (for name resolution)
+    stmt = select(Recording).where(Recording.id == recording_id).options(
+        selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
+    )
+    result = await db.execute(stmt)
+    recording = result.scalar_one_or_none()
+    
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # 2. Fetch Transcript
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    # 3. Create Speaker Map
+    speaker_map = {}
+    for rs in recording.speakers:
+        name = rs.name or (rs.global_speaker.name if rs.global_speaker else rs.diarization_label)
+        speaker_map[rs.diarization_label] = name
+
+    # 4. Format Text
+    lines = []
+    # Add Header
+    lines.append(f"{recording.name} - Transcript")
+    lines.append("-" * 50)
+    lines.append("")
+
+    for segment in transcript.segments:
+        start = segment.get('start', 0)
+        # Format time MM:SS
+        minutes = int(start // 60)
+        seconds = int(start % 60)
+        time_str = f"[{minutes:02d}:{seconds:02d}]"
+        
+        label = segment.get('speaker', 'Unknown')
+        name = speaker_map.get(label, label)
+        text = segment.get('text', '').strip()
+        
+        lines.append(f"{time_str} {name}: {text}")
+    
+    content = "\n".join(lines)
+    
+    # 5. Return File Response
+    filename = f"{recording.name} - Transcript.txt"
+    # Sanitize filename
+    filename = "".join([c for c in filename if c.isalpha() or c.isdigit() or c in (' ', '-', '_', '.')]).strip()
+    
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 @router.put("/{recording_id}/segments/{segment_index}")
 async def update_segment_speaker(
