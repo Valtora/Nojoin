@@ -8,6 +8,7 @@ pub enum AppStatus {
     Idle,
     Recording,
     Paused,
+    Uploading,
     Error(String),
 }
 

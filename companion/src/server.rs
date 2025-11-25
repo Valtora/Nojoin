@@ -126,14 +126,14 @@ async fn start_recording(
         *acc = std::time::Duration::new(0, 0);
     }
     
-    // 3. Send Command to Audio Thread
+    // 2. Send Start Command to Audio Thread
     state.audio_command_tx.send(AudioCommand::Start(recording_id)).unwrap();
     
-    notifications::show_notification("Recording Started", &format!("Recording ID: {}", recording_id));
+    notifications::show_notification("Recording Started", "Nojoin is now recording.");
 
     Ok(Json(StartResponse {
         id: recording_id,
-        message: "Started".to_string(),
+        message: "Recording started".to_string(),
     }))
 }
 
@@ -156,16 +156,18 @@ async fn stop_recording(
 
     {
         let mut status = state.status.lock().unwrap();
-        *status = AppStatus::Idle;
+        *status = AppStatus::Uploading;
         
         // Reset timing
         let mut start_time = state.recording_start_time.lock().unwrap();
         *start_time = None;
         let mut acc = state.accumulated_duration.lock().unwrap();
         *acc = std::time::Duration::new(0, 0);
+        
+        // Do NOT clear current_recording_id here. Audio thread needs it.
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
-    notifications::show_notification("Recording Stopped", "Uploading final segment...");
+    notifications::show_notification("Recording Stopped", "Processing audio...");
     Ok(Json("Stopped".to_string()))
 }
 

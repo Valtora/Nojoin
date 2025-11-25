@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent}, Icon};
+use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}, Icon};
 use tao::event_loop::{EventLoop, ControlFlow};
 
 mod server;
@@ -32,7 +32,23 @@ fn main() {
     
     // Tray Setup
     let tray_menu = Menu::new();
+    
+    let status_i = MenuItem::new("Status: Ready to Record", false, None);
+    let open_web_i = MenuItem::new("Open Web App", true, None);
+    let check_updates_i = MenuItem::new("Check for Updates", true, None);
+    let help_i = MenuItem::new("Help", true, None);
+    let about_i = MenuItem::new("About", true, None);
+    let restart_i = MenuItem::new("Restart", true, None);
     let quit_i = MenuItem::new("Quit", true, None);
+
+    tray_menu.append(&status_i).unwrap();
+    tray_menu.append(&PredefinedMenuItem::separator()).unwrap();
+    tray_menu.append(&open_web_i).unwrap();
+    tray_menu.append(&check_updates_i).unwrap();
+    tray_menu.append(&help_i).unwrap();
+    tray_menu.append(&about_i).unwrap();
+    tray_menu.append(&PredefinedMenuItem::separator()).unwrap();
+    tray_menu.append(&restart_i).unwrap();
     tray_menu.append(&quit_i).unwrap();
     
     let _tray_icon = TrayIconBuilder::new()
@@ -72,11 +88,37 @@ fn main() {
     let menu_channel = MenuEvent::receiver();
     
     event_loop.run(move |_event, _, control_flow| {
-        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(50));
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+
+        // Update Status
+        if let Ok(status) = state.status.try_lock() {
+             let status_text = match *status {
+                 AppStatus::Idle => "Status: Ready to Record",
+                 AppStatus::Recording => "Status: Recording",
+                 AppStatus::Paused => "Status: Recording Paused",
+                 AppStatus::Uploading => "Status: Uploading Recording",
+                 AppStatus::Error(_) => "Status: Error",
+             };
+             let _ = status_i.set_text(status_text);
+        }
 
         if let Ok(event) = menu_channel.try_recv() {
             if event.id == quit_i.id() {
                 *control_flow = ControlFlow::Exit;
+            } else if event.id == open_web_i.id() {
+                 let url = {
+                     let config = state.config.lock().unwrap();
+                     config.web_app_url.clone()
+                 };
+                 let _ = open::that(url);
+            } else if event.id == check_updates_i.id() {
+                 notifications::show_notification("Updates", "You are on the latest version.");
+            } else if event.id == help_i.id() {
+                 let _ = open::that("https://github.com/Valtora/Nojoin"); 
+            } else if event.id == about_i.id() {
+                 notifications::show_notification("About", "Nojoin Companion v0.1.0");
+            } else if event.id == restart_i.id() {
+                 notifications::show_notification("Restart", "Please restart the application manually.");
             }
         }
     });

@@ -1,7 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use crossbeam_channel::Receiver;
-use crate::state::{AppState, AudioCommand};
+use crate::state::{AppState, AudioCommand, AppStatus};
 use crate::uploader;
 use std::thread;
 use hound;
@@ -50,7 +50,9 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                 // Trigger finalize
                 let id = *state.current_recording_id.lock().unwrap();
                 let config = state.config.lock().unwrap().clone();
+                
                 if let Some(rec_id) = id {
+                    let state_finalize = state.clone();
                     // Create a new runtime for the async task since we are in a sync thread
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -61,8 +63,24 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                                 Ok(_) => println!("Recording finalized"),
                                 Err(e) => eprintln!("Failed to finalize: {}", e),
                             }
+                            
+                            // Cleanup State
+                            {
+                                let mut status = state_finalize.status.lock().unwrap();
+                                *status = AppStatus::Idle;
+                                
+                                let mut id = state_finalize.current_recording_id.lock().unwrap();
+                                *id = None;
+                                
+                                let mut seq = state_finalize.current_sequence.lock().unwrap();
+                                *seq = 1;
+                            }
                         });
                     });
+                } else {
+                    // If no ID, just reset status
+                    let mut status = state.status.lock().unwrap();
+                    *status = AppStatus::Idle;
                 }
             }
         }

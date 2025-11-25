@@ -16,7 +16,7 @@ pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, 
     let url = format!("{}/recordings/{}/segment?sequence={}", config.api_url, recording_id, sequence);
     
     let mut attempts = 0;
-    const MAX_ATTEMPTS: u32 = 5;
+    const MAX_ATTEMPTS: u32 = 60; // Retry for ~5 minutes
     
     loop {
         attempts += 1;
@@ -49,7 +49,7 @@ pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, 
             return Err(anyhow::anyhow!("Upload failed after {} attempts", MAX_ATTEMPTS));
         }
 
-        let wait_time = 2u64.pow(attempts);
+        let wait_time = std::cmp::min(2u64.pow(attempts), 5);
         tokio::time::sleep(tokio::time::Duration::from_secs(wait_time)).await;
     }
 }
@@ -59,7 +59,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
     let url = format!("{}/recordings/{}/finalize", config.api_url, recording_id);
     
     let mut attempts = 0;
-    const MAX_ATTEMPTS: u32 = 5;
+    const MAX_ATTEMPTS: u32 = 60;
 
     loop {
         attempts += 1;
@@ -85,7 +85,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
             return Err(anyhow::anyhow!("Finalize failed after {} attempts", MAX_ATTEMPTS));
         }
 
-        let wait_time = 2u64.pow(attempts);
+        let wait_time = std::cmp::min(2u64.pow(attempts), 5);
         tokio::time::sleep(tokio::time::Duration::from_secs(wait_time)).await;
     }
 }

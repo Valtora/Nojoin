@@ -5,6 +5,12 @@ use std::fs;
 pub struct Config {
     pub api_url: String,
     pub api_token: String,
+    #[serde(default = "default_web_app_url")]
+    pub web_app_url: String,
+}
+
+fn default_web_app_url() -> String {
+    "http://localhost:14141".to_string()
 }
 
 impl Config {
@@ -33,6 +39,7 @@ impl Config {
             let default_config = Config {
                 api_url: "http://localhost:8000/api/v1".to_string(),
                 api_token: "".to_string(),
+                web_app_url: default_web_app_url(),
             };
             
             // Try to write to current directory
