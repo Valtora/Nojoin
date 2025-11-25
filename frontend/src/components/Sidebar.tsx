@@ -182,6 +182,7 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
   const handleRetry = async (id: number) => {
     try {
       await retryProcessing(id);
+      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id } }));
       fetchRecordings();
     } catch (e) {
       console.error("Failed to retry", e);

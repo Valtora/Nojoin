@@ -2,7 +2,7 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
+import { Play, Pause, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { exportTranscript } from '@/lib/api';
 
 interface TranscriptViewProps {
@@ -10,6 +10,9 @@ interface TranscriptViewProps {
   segments: TranscriptSegment[];
   currentTime: number;
   onPlaySegment: (start: number, end: number) => void;
+  isPlaying: boolean;
+  onPause: () => void;
+  onResume: () => void;
   speakerMap: Record<string, string>;
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (index: number, newSpeakerName: string) => void | Promise<void>;
@@ -33,6 +36,9 @@ export default function TranscriptView({
   segments, 
   currentTime, 
   onPlaySegment,
+  isPlaying,
+  onPause,
+  onResume,
   speakerMap,
   onRenameSpeaker,
   onUpdateSegmentSpeaker,
@@ -426,15 +432,26 @@ export default function TranscriptView({
                       {formatTime(segment.start)}
                   </span>
                   <button 
-                      onClick={() => onPlaySegment(segment.start, segment.end)}
+                      onClick={() => {
+                        if (isActive) {
+                          if (isPlaying) onPause();
+                          else onResume();
+                        } else {
+                          onPlaySegment(segment.start, segment.end);
+                        }
+                      }}
                       className={`p-1.5 rounded-full transition-colors shadow-sm ${
                           isActive 
                           ? 'bg-green-500 text-white hover:bg-green-600' 
                           : 'bg-gray-100 text-gray-500 hover:bg-orange-500 hover:text-white dark:bg-gray-800 dark:text-gray-400'
                       }`}
-                      title="Play segment"
+                      title={isActive && isPlaying ? "Pause segment" : "Play segment"}
                   >
-                      <Play className="w-3 h-3 fill-current" />
+                      {isActive && isPlaying ? (
+                        <Pause className="w-3 h-3 fill-current" />
+                      ) : (
+                        <Play className="w-3 h-3 fill-current" />
+                      )}
                   </button>
               </div>
 

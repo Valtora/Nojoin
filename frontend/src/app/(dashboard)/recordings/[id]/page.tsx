@@ -39,6 +39,7 @@ export default function RecordingPage({ params }: PageProps) {
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
   const [stopTime, setStopTime] = useState<number | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -81,6 +82,18 @@ export default function RecordingPage({ params }: PageProps) {
     
     return () => clearInterval(interval);
   }, [params, recording?.status, isEditingTitle]);
+
+  // Listen for recording updates (e.g. from Sidebar retry)
+  useEffect(() => {
+    const handleUpdate = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        if (recording && customEvent.detail?.id === recording.id) {
+            getRecording(recording.id).then(setRecording).catch(console.error);
+        }
+    };
+    window.addEventListener('recording-updated', handleUpdate);
+    return () => window.removeEventListener('recording-updated', handleUpdate);
+  }, [recording]);
 
   // Initialize speaker colors
   useEffect(() => {
@@ -153,6 +166,18 @@ export default function RecordingPage({ params }: PageProps) {
         audioRef.current.currentTime = start;
         if (end) setStopTime(end);
         else setStopTime(null);
+        audioRef.current.play();
+    }
+  };
+
+  const handlePause = () => {
+    if (audioRef.current) {
+        audioRef.current.pause();
+    }
+  };
+
+  const handleResume = () => {
+    if (audioRef.current) {
         audioRef.current.play();
     }
   };
@@ -390,6 +415,8 @@ export default function RecordingPage({ params }: PageProps) {
                 audioRef={audioRef} 
                 currentTime={currentTime}
                 onTimeUpdate={handleTimeUpdate}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
             />
         )}
       </header>
@@ -417,6 +444,9 @@ export default function RecordingPage({ params }: PageProps) {
                                 segments={recording.transcript.segments}
                                 currentTime={currentTime}
                                 onPlaySegment={handlePlaySegment}
+                                isPlaying={isPlaying}
+                                onPause={handlePause}
+                                onResume={handleResume}
                                 speakerMap={speakerMap}
                                 onRenameSpeaker={handleRenameSpeaker}
                                 onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}

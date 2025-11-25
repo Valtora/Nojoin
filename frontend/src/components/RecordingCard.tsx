@@ -74,6 +74,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
   const handleRetry = async () => {
     try {
       await retryProcessing(recording.id);
+      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id: recording.id } }));
       router.refresh();
     } catch (e) {
       console.error("Failed to retry processing", e);

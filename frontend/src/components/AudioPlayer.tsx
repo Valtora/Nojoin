@@ -11,6 +11,8 @@ interface AudioPlayerProps {
   currentTime: number;
   onTimeUpdate: () => void;
   onEnded?: () => void;
+  onPlay?: () => void;
+  onPause?: () => void;
 }
 
 const formatTime = (seconds: number) => {
@@ -25,7 +27,9 @@ export default function AudioPlayer({
   audioRef, 
   currentTime, 
   onTimeUpdate,
-  onEnded 
+  onEnded,
+  onPlay,
+  onPause
 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(recording.duration_seconds || 0);
@@ -38,8 +42,14 @@ export default function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
+    const handlePlay = () => {
+      setIsPlaying(true);
+      onPlay?.();
+    };
+    const handlePause = () => {
+      setIsPlaying(false);
+      onPause?.();
+    };
     const handleLoadedMetadata = () => {
         if (audio.duration && !isNaN(audio.duration)) {
             setDuration(audio.duration);
@@ -59,7 +69,7 @@ export default function AudioPlayer({
       audio.removeEventListener('timeupdate', onTimeUpdate);
       if (onEnded) audio.removeEventListener('ended', onEnded);
     };
-  }, [audioRef, onTimeUpdate, onEnded]);
+  }, [audioRef, onTimeUpdate, onEnded, onPlay, onPause]);
 
   const togglePlay = () => {
     if (audioRef.current) {
