@@ -2,7 +2,7 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown } from 'lucide-react';
+import { Play, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { exportTranscript } from '@/lib/api';
 
 interface TranscriptViewProps {
@@ -16,6 +16,10 @@ interface TranscriptViewProps {
   onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
   onFindAndReplace: (find: string, replace: string) => void | Promise<void>;
   speakerColors: Record<string, string>;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const formatTime = (seconds: number) => {
@@ -34,7 +38,11 @@ export default function TranscriptView({
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
-  speakerColors
+  speakerColors,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   
@@ -338,6 +346,23 @@ export default function TranscriptView({
         </div>
 
         <div className="flex items-center gap-1">
+            <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Undo"
+            >
+                <Undo2 className="w-4 h-4" />
+            </button>
+            <button
+                onClick={onRedo}
+                disabled={!canRedo}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Redo"
+            >
+                <Redo2 className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
             <button
                 onClick={() => exportTranscript(recordingId)}
                 className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"

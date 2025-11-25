@@ -351,3 +351,38 @@ async def find_and_replace(
         await db.refresh(transcript)
         
     return transcript
+
+class TranscriptSegmentsUpdate(BaseModel):
+    segments: List[dict]
+
+@router.put("/{recording_id}/segments", response_model=Transcript)
+async def update_transcript_segments(
+    recording_id: int,
+    update: TranscriptSegmentsUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk update all segments of a transcript.
+    Useful for Undo/Redo operations involving multiple segments.
+    """
+    # 1. Fetch Transcript
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+        
+    # 2. Update Segments
+    transcript.segments = update.segments
+    flag_modified(transcript, "segments")
+    
+    # 3. Reconstruct Full Text
+    full_text = " ".join([s.get('text', '') for s in transcript.segments])
+    transcript.text = full_text
+    
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
+    
+    return transcript

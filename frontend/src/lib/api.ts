@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
@@ -219,6 +219,10 @@ export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerL
 
 export const deleteRecordingSpeaker = async (recordingId: number, diarizationLabel: string): Promise<void> => {
   await api.delete(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}`);
+};
+
+export const updateTranscriptSegments = async (recordingId: number, segments: TranscriptSegment[]): Promise<void> => {
+  await api.put(`/transcripts/${recordingId}/segments`, { segments });
 };
 
 export default api;

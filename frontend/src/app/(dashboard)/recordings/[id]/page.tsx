@@ -1,13 +1,13 @@
 'use client';
 
-import { getRecording, addTagToRecording, removeTagFromRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording } from '@/lib/api';
+import { getRecording, addTagToRecording, removeTagFromRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments } from '@/lib/api';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
 import TagsInput from '@/components/TagsInput';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, TranscriptSegment } from '@/types';
 import { useRouter } from 'next/navigation';
 import { SPEAKER_COLORS } from '@/lib/constants';
@@ -18,6 +18,12 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+// History Stack Item
+interface HistoryItem {
+    segments: TranscriptSegment[];
+    description: string;
+}
+
 export default function RecordingPage({ params }: PageProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +31,11 @@ export default function RecordingPage({ params }: PageProps) {
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
   
+  // Undo/Redo State
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [future, setFuture] = useState<HistoryItem[]>([]);
+  const [isUndoing, setIsUndoing] = useState(false);
+
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
   const [stopTime, setStopTime] = useState<number | null>(null);
@@ -146,9 +157,74 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
+  // History Management
+  const pushToHistory = useCallback((description: string) => {
+      if (!recording?.transcript?.segments) return;
+      
+      // Deep copy segments
+      const segmentsSnapshot = JSON.parse(JSON.stringify(recording.transcript.segments));
+      
+      setHistory(prev => [...prev, { segments: segmentsSnapshot, description }]);
+      setFuture([]); // Clear redo stack on new action
+  }, [recording]);
+
+  const handleUndo = async () => {
+      if (history.length === 0 || !recording?.transcript?.segments || isUndoing) return;
+      
+      setIsUndoing(true);
+      try {
+          const previousState = history[history.length - 1];
+          const currentSegments = JSON.parse(JSON.stringify(recording.transcript.segments));
+          
+          // Push current state to future
+          setFuture(prev => [{ segments: currentSegments, description: "Undo" }, ...prev]);
+          
+          // Restore previous state
+          await updateTranscriptSegments(recording.id, previousState.segments);
+          
+          // Update local state
+          setHistory(prev => prev.slice(0, -1));
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Undo failed", e);
+          alert("Undo failed.");
+      } finally {
+          setIsUndoing(false);
+      }
+  };
+
+  const handleRedo = async () => {
+      if (future.length === 0 || !recording?.transcript?.segments || isUndoing) return;
+      
+      setIsUndoing(true);
+      try {
+          const nextState = future[0];
+          const currentSegments = JSON.parse(JSON.stringify(recording.transcript.segments));
+          
+          // Push current state to history
+          setHistory(prev => [...prev, { segments: currentSegments, description: "Redo" }]);
+          
+          // Restore next state
+          await updateTranscriptSegments(recording.id, nextState.segments);
+          
+          // Update local state
+          setFuture(prev => prev.slice(1));
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Redo failed", e);
+          alert("Redo failed.");
+      } finally {
+          setIsUndoing(false);
+      }
+  };
+
   // Transcript Handlers
   const handleRenameSpeaker = async (label: string, newName: string) => {
     if (!recording) return;
+    // Note: Global speaker rename is not currently undoable via segment history
+    // as it affects the global speaker table, not just segments.
     try {
       await updateSpeaker(recording.id, label, newName);
       router.refresh();
@@ -162,6 +238,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   const handleUpdateSegmentSpeaker = async (index: number, newSpeakerName: string) => {
     if (!recording) return;
+    pushToHistory(`Change speaker segment ${index}`);
     try {
       await updateTranscriptSegmentSpeaker(recording.id, index, newSpeakerName);
       router.refresh();
@@ -175,6 +252,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   const handleUpdateSegmentText = async (index: number, text: string) => {
     if (!recording) return;
+    pushToHistory(`Edit text segment ${index}`);
     try {
       await updateTranscriptSegmentText(recording.id, index, text);
       router.refresh();
@@ -188,6 +266,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   const handleFindAndReplace = async (find: string, replace: string) => {
     if (!recording) return;
+    pushToHistory(`Replace "${find}" with "${replace}"`);
     try {
       await findAndReplace(recording.id, find, replace);
       router.refresh();
@@ -344,6 +423,10 @@ export default function RecordingPage({ params }: PageProps) {
                                 onUpdateSegmentText={handleUpdateSegmentText}
                                 onFindAndReplace={handleFindAndReplace}
                                 speakerColors={speakerColors}
+                                onUndo={handleUndo}
+                                onRedo={handleRedo}
+                                canUndo={history.length > 0 && !isUndoing}
+                                canRedo={future.length > 0 && !isUndoing}
                             />
                         ) : (
                             <p className="text-gray-500 dark:text-gray-400 italic p-6">
