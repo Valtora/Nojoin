@@ -17,6 +17,7 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [mergeSource, setMergeSource] = useState<GlobalSpeaker | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -108,6 +109,10 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
 
   if (!isOpen) return null;
 
+  const filteredSpeakers = speakers.filter(speaker => 
+    speaker.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -117,6 +122,16 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
             <X className="w-6 h-6" />
           </button>
+        </div>
+        
+        <div className="px-6 pt-4">
+            <input
+                type="text"
+                placeholder="Search speakers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+            />
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -138,7 +153,7 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
                 </div>
               )}
 
-              {speakers.map((speaker) => (
+              {filteredSpeakers.map((speaker) => (
                 <div key={speaker.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
                   {editingId === speaker.id ? (
                     <div className="flex items-center gap-2 flex-1">

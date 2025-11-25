@@ -6,7 +6,7 @@ import { Recording, RecordingStatus } from '@/types';
 import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, MoreVertical, Trash2, Edit2, RefreshCw, Search, Filter, X } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback } from 'react';
-import { getRecordings, deleteRecording, renameRecording, retryProcessing, getGlobalSpeakers, getTags, RecordingFilters } from '@/lib/api';
+import { getRecordings, deleteRecording, renameRecording, retryProcessing, getGlobalSpeakers, getTags, deleteTag, RecordingFilters } from '@/lib/api';
 import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
 import { GlobalSpeaker, Tag } from '@/types';
@@ -64,12 +64,22 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
   
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTags, setSelectedTags] = useState<number[]>([]);
+  const [dateMode, setDateMode] = useState<'range' | 'before' | 'after'>('range');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -88,9 +98,17 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
   const fetchRecordings = useCallback(async () => {
     try {
       const filters: RecordingFilters = {};
-      if (searchQuery) filters.q = searchQuery;
-      if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
-      if (dateRange.end) filters.end_date = new Date(dateRange.end).toISOString();
+      if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
+      
+      if (dateMode === 'range') {
+        if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
+        if (dateRange.end) filters.end_date = new Date(dateRange.end).toISOString();
+      } else if (dateMode === 'before') {
+        if (dateRange.end) filters.end_date = new Date(dateRange.end).toISOString();
+      } else if (dateMode === 'after') {
+        if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
+      }
+
       if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
       if (selectedTags.length > 0) filters.tag_ids = selectedTags;
 
@@ -99,7 +117,7 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
     } catch (error) {
       console.error("Failed to fetch recordings:", error);
     }
-  }, [searchQuery, dateRange, selectedSpeakers, selectedTags]);
+  }, [debouncedSearchQuery, dateRange, dateMode, selectedSpeakers, selectedTags]);
 
   useEffect(() => {
     fetchRecordings();
@@ -170,6 +188,29 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
     }
   };
 
+  const handleDeleteTag = (tag: Tag) => {
+    setConfirmModal({
+        isOpen: true,
+        title: "Delete Tag",
+        message: `Are you sure you want to delete the tag "${tag.name}"? This will remove it from all recordings.`,
+        isDangerous: true,
+        onConfirm: async () => {
+            try {
+                await deleteTag(tag.id);
+                // Refresh tags
+                const tags = await getTags();
+                setAllTags(tags);
+                // Remove from selection if selected
+                setSelectedTags(prev => prev.filter(id => id !== tag.id));
+                fetchRecordings();
+            } catch (e) {
+                console.error("Failed to delete tag", e);
+                alert("Failed to delete tag.");
+            }
+        }
+    });
+  };
+
   return (
     <aside className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
       <MeetingControls onMeetingEnd={fetchRecordings} />
@@ -179,7 +220,7 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search recordings..."
+              placeholder="Search meetings..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
@@ -195,20 +236,47 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
           {showFilters && (
             <div className="p-3 bg-gray-100 dark:bg-gray-900/50 rounded-lg space-y-3 text-sm">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500">Date Range</label>
+                <label className="text-xs font-medium text-gray-500">Date Filter</label>
+                <div className="flex gap-2 mb-2">
+                    <button 
+                        onClick={() => setDateMode('range')}
+                        className={`text-xs px-2 py-1 rounded ${dateMode === 'range' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                    >
+                        Range
+                    </button>
+                    <button 
+                        onClick={() => setDateMode('after')}
+                        className={`text-xs px-2 py-1 rounded ${dateMode === 'after' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                    >
+                        After
+                    </button>
+                    <button 
+                        onClick={() => setDateMode('before')}
+                        className={`text-xs px-2 py-1 rounded ${dateMode === 'before' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                    >
+                        Before
+                    </button>
+                </div>
+                
                 <div className="flex gap-2">
+                  {(dateMode === 'range' || dateMode === 'after') && (
                   <input
                     type="date"
                     value={dateRange.start}
                     onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
                     className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                    placeholder="Start Date"
                   />
+                  )}
+                  {(dateMode === 'range' || dateMode === 'before') && (
                   <input
                     type="date"
                     value={dateRange.end}
                     onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
                     className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-xs"
+                    placeholder="End Date"
                   />
+                  )}
                 </div>
               </div>
 
@@ -241,23 +309,36 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
                 <label className="text-xs font-medium text-gray-500">Tags</label>
                 <div className="flex flex-wrap gap-1">
                   {allTags.map(tag => (
-                    <button
-                      key={tag.id}
-                      onClick={() => {
-                        setSelectedTags(prev => 
-                          prev.includes(tag.id) 
-                            ? prev.filter(id => id !== tag.id)
-                            : [...prev, tag.id]
-                        );
-                      }}
-                      className={`px-2 py-1 rounded-full text-xs border ${
-                        selectedTags.includes(tag.id)
-                          ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
-                          : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
-                      }`}
+                    <div 
+                        key={tag.id}
+                        className={`flex items-center rounded-full text-xs border ${
+                            selectedTags.includes(tag.id)
+                              ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
+                              : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                          }`}
                     >
-                      {tag.name}
-                    </button>
+                        <button
+                          onClick={() => {
+                            setSelectedTags(prev => 
+                              prev.includes(tag.id) 
+                                ? prev.filter(id => id !== tag.id)
+                                : [...prev, tag.id]
+                            );
+                          }}
+                          className="px-2 py-1"
+                        >
+                          {tag.name}
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTag(tag);
+                            }}
+                            className="pr-2 pl-1 hover:text-red-500"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
                   ))}
                 </div>
               </div>

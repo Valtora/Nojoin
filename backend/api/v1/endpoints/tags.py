@@ -116,3 +116,20 @@ async def remove_tag_from_recording(
         await db.commit()
         
     return {"ok": True}
+
+@router.delete("/{tag_id}")
+async def delete_tag(
+    tag_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a global tag.
+    """
+    tag = await db.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+        
+    await db.delete(tag)
+    await db.commit()
+    
+    return {"ok": True}

@@ -151,6 +151,10 @@ export const removeTagFromRecording = async (recordingId: number, tagName: strin
   await api.delete(`/tags/recordings/${recordingId}/${tagName}`);
 };
 
+export const deleteTag = async (id: number): Promise<void> => {
+  await api.delete(`/tags/${id}`);
+};
+
 // Settings
 export const getSettings = async (): Promise<Settings> => {
   const response = await api.get<Settings>('/settings');
