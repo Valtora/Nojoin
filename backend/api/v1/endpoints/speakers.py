@@ -237,18 +237,20 @@ async def delete_global_speaker(
     # Let's just delete and let the DB handle the foreign key set null if configured,
     # or we manually nullify.
     
-    # Manually nullify to be safe
+    # Manually nullify to be safe and preserve name
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
     result = await db.execute(stmt)
     recording_speakers = result.scalars().all()
     
     for rs in recording_speakers:
+        # If the local name is missing, snapshot the global name so the transcript doesn't revert to SPEAKER_XX
+        if not rs.name:
+            rs.name = speaker.name
         rs.global_speaker_id = None
         db.add(rs)
         
     await db.delete(speaker)
     await db.commit()
-    return {"ok": True}
 
 @router.post("/recordings/{recording_id}/merge", response_model=Recording)
 async def merge_recording_speakers(
@@ -328,3 +330,52 @@ async def merge_recording_speakers(
     await db.commit()
     await db.refresh(recording)
     return recording
+
+@router.delete("/recordings/{recording_id}/speakers/{diarization_label}")
+async def delete_recording_speaker(
+    recording_id: int,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a speaker from a recording.
+    Sets all segments associated with this speaker to 'UNKNOWN'.
+    """
+    # 1. Verify recording exists
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # 2. Update Transcript Segments
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+
+    if transcript and transcript.segments:
+        updated_segments = []
+        changed = False
+        for segment in transcript.segments:
+            if segment.get("speaker") == diarization_label:
+                segment["speaker"] = "UNKNOWN"
+                changed = True
+            updated_segments.append(segment)
+        
+        if changed:
+            transcript.segments = updated_segments
+            db.add(transcript)
+
+    # 3. Delete RecordingSpeaker entry
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(statement)
+    speaker_entry = result.scalar_one_or_none()
+
+    if speaker_entry:
+        await db.delete(speaker_entry)
+    else:
+        raise HTTPException(status_code=404, detail="Speaker not found in recording")
+
+    await db.commit()
+    return {"ok": True}

@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Recording, RecordingStatus, TranscriptSegment } from '@/types';
 import { useRouter } from 'next/navigation';
+import { SPEAKER_COLORS } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,9 @@ export default function RecordingPage({ params }: PageProps) {
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
+
+  // Speaker Colors State
+  const [speakerColors, setSpeakerColors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const fetchRecording = async () => {
@@ -66,6 +70,35 @@ export default function RecordingPage({ params }: PageProps) {
     
     return () => clearInterval(interval);
   }, [params, recording?.status, isEditingTitle]);
+
+  // Initialize speaker colors
+  useEffect(() => {
+    if (!recording?.transcript?.segments) return;
+    
+    const newColors = { ...speakerColors };
+    const segments = recording.transcript.segments;
+    
+    // Get all unique speakers
+    const speakers = new Set<string>();
+    segments.forEach(s => {
+        // Resolve name using the recording speakers list if possible, or fallback to segment speaker label
+        const speakerObj = recording.speakers?.find(rs => rs.diarization_label === s.speaker);
+        const name = speakerObj?.name || speakerObj?.global_speaker?.name || s.speaker;
+        speakers.add(name);
+    });
+
+    speakers.forEach(speaker => {
+        if (!newColors[speaker]) {
+            let hash = 0;
+            for (let i = 0; i < speaker.length; i++) {
+                hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % SPEAKER_COLORS.length;
+            newColors[speaker] = SPEAKER_COLORS[index];
+        }
+    });
+    setSpeakerColors(newColors);
+  }, [recording]);
 
   const handleAddTag = async (tagName: string) => {
     if (!recording) return;
@@ -190,6 +223,13 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
+  const handleColorChange = (speakerName: string, colorClass: string) => {
+      setSpeakerColors(prev => ({
+          ...prev,
+          [speakerName]: colorClass
+      }));
+  };
+
   const speakerMap = useMemo(() => {
     const map: Record<string, string> = {};
     if (recording?.speakers) {
@@ -302,6 +342,7 @@ export default function RecordingPage({ params }: PageProps) {
                                 onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
                                 onUpdateSegmentText={handleUpdateSegmentText}
                                 onFindAndReplace={handleFindAndReplace}
+                                speakerColors={speakerColors}
                             />
                         ) : (
                             <p className="text-gray-500 dark:text-gray-400 italic p-6">
@@ -315,6 +356,9 @@ export default function RecordingPage({ params }: PageProps) {
                     segments={recording.transcript?.segments || []}
                     onPlaySegment={handlePlaySegment}
                     recordingId={recording.id}
+                    speakerColors={speakerColors}
+                    onColorChange={handleColorChange}
+                    availableColors={SPEAKER_COLORS}
                 />
             </>
         )}

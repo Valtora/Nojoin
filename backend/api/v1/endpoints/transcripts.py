@@ -46,6 +46,7 @@ async def update_segment_speaker(
         raise HTTPException(status_code=400, detail="Invalid segment index")
         
     segment = transcript.segments[segment_index]
+    old_label = segment.get('speaker')
     
     # 2. Resolve Target Speaker
     # We need to find the diarization_label to use for the segment.
@@ -172,6 +173,28 @@ async def update_segment_speaker(
         # Log error but don't fail the request
         print(f"Failed to update embeddings: {e}")
         
+    # 5. Cleanup Old Speaker (if unused)
+    if old_label and old_label != target_label:
+        # Check if old_label is still used in any segment
+        is_used = False
+        for s in transcript.segments:
+            if s.get('speaker') == old_label:
+                is_used = True
+                break
+        
+        if not is_used:
+            # Delete the RecordingSpeaker entry
+            stmt = select(RecordingSpeaker).where(
+                RecordingSpeaker.recording_id == recording_id,
+                RecordingSpeaker.diarization_label == old_label
+            )
+            result = await db.execute(stmt)
+            old_speaker_entry = result.scalar_one_or_none()
+            
+            if old_speaker_entry:
+                await db.delete(old_speaker_entry)
+                # Note: We don't delete the GlobalSpeaker, just the local association
+    
     await db.commit()
     
     return {"status": "success", "speaker": target_label}

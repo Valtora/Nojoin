@@ -1,10 +1,10 @@
 'use client';
 
 import { RecordingSpeaker, TranscriptSegment } from '@/types';
-import { Play, User, Merge } from 'lucide-react';
+import { Play, User, Merge, Palette } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
-import { updateSpeaker, mergeRecordingSpeakers } from '@/lib/api';
+import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
 interface SpeakerPanelProps {
@@ -12,9 +12,12 @@ interface SpeakerPanelProps {
   segments: TranscriptSegment[];
   onPlaySegment: (time: number) => void;
   recordingId: number;
+  speakerColors: Record<string, string>;
+  onColorChange: (speakerName: string, colorClass: string) => void;
+  availableColors: string[];
 }
 
-export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId }: SpeakerPanelProps) {
+export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, availableColors }: SpeakerPanelProps) {
   const router = useRouter();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
   
@@ -25,6 +28,9 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   // Merge State
   const [mergingSpeaker, setMergingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [mergeTargetLabel, setMergeTargetLabel] = useState("");
+
+  // Color Picker State
+  const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -105,6 +111,24 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     }
   };
 
+  const handleDelete = async (speaker: RecordingSpeaker) => {
+    if (!confirm(`Are you sure you want to delete ${speaker.name || speaker.diarization_label}? All their segments will be marked as UNKNOWN.`)) {
+        return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+        await deleteRecordingSpeaker(recordingId, speaker.diarization_label);
+        setContextMenu(null);
+        router.refresh();
+    } catch (e) {
+        console.error("Failed to delete speaker", e);
+        alert("Failed to delete speaker.");
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
   return (
     <aside className="w-64 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full overflow-y-auto">
       <div className="p-2 space-y-2 mt-2">
@@ -162,8 +186,34 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                     onContextMenu={(e) => handleContextMenu(e, speaker)}
                 >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                        <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <div className="relative flex-shrink-0">
+                        <button 
+                            className={`w-8 h-8 rounded-full border flex items-center justify-center transition-transform hover:scale-105 ${speakerColors[speaker.name || speaker.global_speaker?.name || speaker.diarization_label] || 'bg-gray-200 border-gray-300'}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const name = speaker.name || speaker.global_speaker?.name || speaker.diarization_label;
+                                setOpenColorPicker(openColorPicker === name ? null : name);
+                            }}
+                            title="Change color"
+                        >
+                             <User className="w-4 h-4 opacity-50" />
+                        </button>
+                        {openColorPicker === (speaker.name || speaker.global_speaker?.name || speaker.diarization_label) && (
+                            <div className="absolute left-0 top-full mt-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 grid grid-cols-4 gap-1 z-50 w-32">
+                                {availableColors.map((color, i) => (
+                                    <button
+                                        key={i}
+                                        className={`w-6 h-6 rounded-full border ${color} hover:scale-110 transition-transform`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const name = speaker.name || speaker.global_speaker?.name || speaker.diarization_label;
+                                            onColorChange(name, color);
+                                            setOpenColorPicker(null);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="min-w-0 flex-1">
                         {isRenaming ? (
@@ -218,6 +268,11 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 {
                     label: 'Merge into...',
                     onClick: () => handleMergeStart(contextMenu.speaker)
+                },
+                {
+                    label: 'Delete',
+                    onClick: () => handleDelete(contextMenu.speaker),
+                    className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
                 }
             ]}
         />

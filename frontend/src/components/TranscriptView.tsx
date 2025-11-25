@@ -2,8 +2,7 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X, ArrowRightLeft, Users, Palette } from 'lucide-react';
-import SpeakerManagementModal from './SpeakerManagementModal';
+import { Play, Search, X, ArrowRightLeft } from 'lucide-react';
 
 interface TranscriptViewProps {
   segments: TranscriptSegment[];
@@ -14,6 +13,7 @@ interface TranscriptViewProps {
   onUpdateSegmentSpeaker: (index: number, newSpeakerName: string) => void | Promise<void>;
   onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
   onFindAndReplace: (find: string, replace: string) => void | Promise<void>;
+  speakerColors: Record<string, string>;
 }
 
 const formatTime = (seconds: number) => {
@@ -21,16 +21,6 @@ const formatTime = (seconds: number) => {
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
-
-const SPEAKER_COLORS = [
-  'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-800',
-  'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-800',
-  'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800',
-  'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800',
-  'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800',
-  'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800',
-  'bg-gray-50 dark:bg-gray-900/20 border-gray-100 dark:border-gray-800',
-];
 
 export default function TranscriptView({ 
   segments, 
@@ -40,7 +30,8 @@ export default function TranscriptView({
   onRenameSpeaker,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
-  onFindAndReplace
+  onFindAndReplace,
+  speakerColors
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   
@@ -58,45 +49,9 @@ export default function TranscriptView({
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
 
-  // Speaker Management State
-  const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false);
-  const [speakerColors, setSpeakerColors] = useState<Record<string, string>>({});
-
-  // Initialize speaker colors
-  useEffect(() => {
-    const newColors = { ...speakerColors };
-    let colorIndex = 0;
-    
-    // Get all unique speakers
-    const speakers = new Set<string>();
-    segments.forEach(s => {
-        const name = speakerMap[s.speaker] || s.speaker;
-        speakers.add(name);
-    });
-
-    speakers.forEach(speaker => {
-        if (!newColors[speaker]) {
-            // Deterministic assignment based on name hash if not set
-            let hash = 0;
-            for (let i = 0; i < speaker.length; i++) {
-                hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const index = Math.abs(hash) % SPEAKER_COLORS.length;
-            newColors[speaker] = SPEAKER_COLORS[index];
-        }
-    });
-    setSpeakerColors(newColors);
-  }, [segments, speakerMap]); // Re-run when segments/speakers change
-
   const getSpeakerColor = (speakerName: string) => {
-      return speakerColors[speakerName] || SPEAKER_COLORS[0];
-  };
-
-  const handleColorChange = (speakerName: string, colorClass: string) => {
-      setSpeakerColors(prev => ({
-          ...prev,
-          [speakerName]: colorClass
-      }));
+      // Fallback color if not found (e.g. gray)
+      return speakerColors[speakerName] || 'bg-gray-50 dark:bg-gray-900/20 border-gray-100 dark:border-gray-800';
   };
 
   useEffect(() => {
@@ -243,26 +198,10 @@ export default function TranscriptView({
                 <ArrowRightLeft className="w-4 h-4" />
             </button>
             <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
-            <button 
-                onClick={() => setIsSpeakerModalOpen(true)}
-                className="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500 transition-colors"
-                title="Manage Speakers"
-            >
-                <Users className="w-4 h-4" />
-            </button>
         </div>
       </div>
 
-      <SpeakerManagementModal
-        isOpen={isSpeakerModalOpen}
-        onClose={() => setIsSpeakerModalOpen(false)}
-        speakers={Array.from(new Set(segments.map(s => s.speaker)))}
-        speakerMap={speakerMap}
-        colorMap={speakerColors}
-        onRename={onRenameSpeaker}
-        onColorChange={handleColorChange}
-        availableColors={SPEAKER_COLORS}
-      />
+
 
       <div className="space-y-6 p-6">
         {displaySegments.map((segment, index) => {

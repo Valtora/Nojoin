@@ -179,4 +179,8 @@ export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerL
   return response.data;
 };
 
+export const deleteRecordingSpeaker = async (recordingId: number, diarizationLabel: string): Promise<void> => {
+  await api.delete(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}`);
+};
+
 export default api;
