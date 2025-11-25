@@ -1,17 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, FileInput, MessageSquare, Users, Upload } from 'lucide-react';
+import { Settings, FileInput, MessageSquare, Users, FilePlus } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import GlobalSpeakersModal from './GlobalSpeakersModal';
 import SettingsModal from './SettingsModal';
+import ImportAudioModal from './ImportAudioModal';
 
 export default function ChatPanel() {
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const params = useParams();
+  const router = useRouter();
   const recordingId = params?.id;
+
+  const handleImportSuccess = () => {
+    // Trigger a refresh by using router.refresh()
+    router.refresh();
+  };
 
   return (
     <aside className="w-80 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
@@ -24,11 +32,11 @@ export default function ChatPanel() {
             <Users className="w-5 h-5" />
         </button>
         <button
-            onClick={() => alert("Import Audio coming soon!")}
+            onClick={() => setIsImportModalOpen(true)}
             className="p-2 bg-orange-600 text-white rounded-full hover:bg-orange-700 shadow-lg transition-colors"
             title="Import Audio"
         >
-            <Upload className="w-5 h-5" />
+            <FilePlus className="w-5 h-5" />
         </button>
         <button
             onClick={() => setIsSettingsModalOpen(true)}
@@ -71,6 +79,12 @@ export default function ChatPanel() {
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
+      />
+
+      <ImportAudioModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={handleImportSuccess}
       />
     </aside>
   );

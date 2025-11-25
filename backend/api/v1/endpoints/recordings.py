@@ -207,13 +207,103 @@ async def finalize_upload(
     
     return recording
 
+# Supported audio formats for import
+SUPPORTED_AUDIO_FORMATS = {'.wav', '.mp3', '.m4a', '.aac', '.webm', '.ogg', '.flac', '.mp4', '.wma', '.opus'}
+MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+@router.post("/import", response_model=Recording)
+async def import_audio(
+    file: UploadFile = File(...),
+    name: Optional[str] = Query(None, description="Custom name for the recording"),
+    recorded_at: Optional[datetime] = Query(None, description="Original recording timestamp"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
+    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+    """
+    # Validate file extension
+    file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
+    if file_ext not in SUPPORTED_AUDIO_FORMATS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}"
+        )
+    
+    # Generate a unique filename to prevent collisions
+    unique_filename = f"{uuid4()}{file_ext}"
+    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    
+    # Save the file with size validation
+    try:
+        total_size = 0
+        async with aiofiles.open(file_path, 'wb') as out_file:
+            while chunk := await file.read(1024 * 1024):  # Read in 1MB chunks
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE_BYTES:
+                    await out_file.close()
+                    os.remove(file_path)
+                    raise HTTPException(
+                        status_code=413, 
+                        detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB"
+                    )
+                await out_file.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Get file stats
+    file_stats = os.stat(file_path)
+    
+    # Get duration
+    duration = 0.0
+    try:
+        duration = get_audio_duration(file_path)
+    except Exception as e:
+        print(f"Failed to get duration: {e}")
+    
+    # Determine recording name
+    if name:
+        recording_name = name
+    else:
+        recording_name = os.path.splitext(file.filename)[0] if file.filename else ""
+        if not recording_name or recording_name == "blob":
+            recording_name = generate_default_meeting_name()
+
+    recording = Recording(
+        id=generate_timestamp_id(),
+        name=recording_name,
+        audio_path=file_path,
+        file_size_bytes=file_stats.st_size,
+        duration_seconds=duration,
+        status=RecordingStatus.RECORDED
+    )
+    
+    # Override created_at if recorded_at is provided
+    if recorded_at:
+        recording.created_at = recorded_at
+    
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    # Trigger processing task
+    process_recording_task.delay(recording.id)
+    
+    return recording
+
+
 @router.post("/upload", response_model=Recording)
 async def upload_recording(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Upload a new audio recording.
+    Upload a new audio recording (used by Companion app).
     """
     # Generate a unique filename to prevent collisions
     file_ext = os.path.splitext(file.filename)[1]

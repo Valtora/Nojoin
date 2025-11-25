@@ -225,4 +225,51 @@ export const updateTranscriptSegments = async (recordingId: number, segments: Tr
   await api.put(`/transcripts/${recordingId}/segments`, { segments });
 };
 
+export interface ImportAudioOptions {
+  name?: string;
+  recordedAt?: Date;
+  onUploadProgress?: (progress: number) => void;
+}
+
+export const importAudio = async (
+  file: File, 
+  options?: ImportAudioOptions
+): Promise<Recording> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const params = new URLSearchParams();
+  if (options?.name) {
+    params.append('name', options.name);
+  }
+  if (options?.recordedAt) {
+    params.append('recorded_at', options.recordedAt.toISOString());
+  }
+  
+  const queryString = params.toString();
+  const url = `/recordings/import${queryString ? `?${queryString}` : ''}`;
+  
+  const response = await api.post<Recording>(url, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    onUploadProgress: (progressEvent) => {
+      if (options?.onUploadProgress && progressEvent.total) {
+        const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        options.onUploadProgress(progress);
+      }
+    },
+  });
+  
+  return response.data;
+};
+
+export const getSupportedAudioFormats = (): string[] => {
+  return ['.wav', '.mp3', '.m4a', '.aac', '.webm', '.ogg', '.flac', '.mp4', '.wma', '.opus'];
+};
+
+export const getMaxUploadSizeMB = (): number => {
+  return 500;
+};
+
 export default api;
