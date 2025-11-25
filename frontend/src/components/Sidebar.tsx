@@ -11,10 +11,6 @@ import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
 import { GlobalSpeaker, Tag } from '@/types';
 
-interface SidebarProps {
-  recordings: Recording[];
-}
-
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return '0s';
   if (seconds < 60) return `${Math.floor(seconds)}s`;
@@ -54,10 +50,10 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
   }
 };
 
-export default function Sidebar({ recordings: initialRecordings }: SidebarProps) {
+export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [recordings, setRecordings] = useState<Recording[]>(initialRecordings);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recordingId: number } | null>(null);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -132,11 +128,6 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
     getTags().then(setAllTags).catch(console.error);
   }, []);
 
-  // Also update if initialRecordings changes (e.g. from server refresh)
-  useEffect(() => {
-    setRecordings(initialRecordings);
-  }, [initialRecordings]);
-
   const handleContextMenu = (e: React.MouseEvent, recordingId: number) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, recordingId });
@@ -149,14 +140,18 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
         message: "Are you sure you want to delete this recording? This action cannot be undone.",
         isDangerous: true,
         onConfirm: async () => {
+            // Optimistic update
+            setRecordings(prev => prev.filter(r => r.id !== id));
+            
             try {
                 await deleteRecording(id);
-                fetchRecordings();
+                // fetchRecordings(); // No need to fetch immediately if optimistic update works
                 if (pathname === `/recordings/${id}`) {
                     router.push('/');
                 }
             } catch (e) {
                 console.error("Failed to delete", e);
+                fetchRecordings(); // Revert on error
             }
         }
     });
@@ -170,12 +165,19 @@ export default function Sidebar({ recordings: initialRecordings }: SidebarProps)
 
   const handleRenameSubmit = async (id: number) => {
     if (!renameValue.trim()) return;
+    
+    // Optimistic update
+    setRecordings(prev => prev.map(r => 
+        r.id === id ? { ...r, name: renameValue } : r
+    ));
+    setRenamingId(null);
+
     try {
       await renameRecording(id, renameValue);
-      setRenamingId(null);
-      fetchRecordings();
+      // fetchRecordings(); // No need to fetch immediately
     } catch (e) {
       console.error("Failed to rename", e);
+      fetchRecordings(); // Revert on error
     }
   };
 

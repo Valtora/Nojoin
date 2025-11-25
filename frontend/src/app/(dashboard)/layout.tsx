@@ -10,7 +10,7 @@ export default function DashboardLayout({
 }>) {
   return (
     <div className="flex h-screen w-full">
-      <Sidebar recordings={[]} />
+      <Sidebar />
       
       <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">
         <TopBar />
