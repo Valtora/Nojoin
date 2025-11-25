@@ -11,9 +11,16 @@ from backend.processing.embedding import merge_embeddings
 
 router = APIRouter()
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class SpeakerUpdate(BaseModel):
     diarization_label: str
     global_speaker_name: str
+
+    class Config:
+        extra = "ignore"
 
 class MergeRequest(BaseModel):
     source_speaker_id: int
@@ -63,15 +70,24 @@ async def update_recording_speaker(
     Update a speaker label in a recording to map to a Global Speaker.
     If the Global Speaker name doesn't exist, it will be created.
     """
+    logger.info(f"Updating speaker for recording {recording_id}: {update}")
+    
     # 1. Verify recording exists
     recording = await db.get(Recording, recording_id)
     if not recording:
+        logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # 2. Find or Create Global Speaker
-    # Prevent creating a Global Speaker named "UNKNOWN"
-    if update.global_speaker_name.upper() == "UNKNOWN":
-        raise HTTPException(status_code=400, detail="Cannot create a Global Speaker named 'UNKNOWN'. Please choose a different name.")
+    # Prevent creating a Global Speaker with placeholder names
+    import re
+    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
+    
+    if placeholder_pattern.match(update.global_speaker_name):
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot create a Global Speaker with a placeholder name (e.g., 'Speaker 1', 'SPEAKER_00'). Please use a real name."
+        )
 
     statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
     result = await db.execute(statement)
@@ -84,7 +100,8 @@ async def update_recording_speaker(
             db.add(global_speaker)
             await db.commit()
             await db.refresh(global_speaker)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error creating global speaker: {e}")
             await db.rollback()
             # Try fetching again
             statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
@@ -107,6 +124,7 @@ async def update_recording_speaker(
         
     for rs in recording_speakers:
         rs.global_speaker_id = global_speaker.id
+        rs.name = global_speaker.name
         db.add(rs)
         
         # Active Learning: Update Global Speaker embedding from user feedback
@@ -150,6 +168,7 @@ async def merge_speakers(
     
     for rs in recording_speakers:
         rs.global_speaker_id = target.id
+        rs.name = target.name
         db.add(rs)
         
     # 3. Delete source speaker
@@ -181,6 +200,15 @@ async def update_global_speaker(
         
     speaker.name = name
     db.add(speaker)
+    
+    # Propagate to RecordingSpeakers
+    stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
+    result = await db.execute(stmt)
+    linked_speakers = result.scalars().all()
+    for rs in linked_speakers:
+        rs.name = name
+        db.add(rs)
+
     await db.commit()
     await db.refresh(speaker)
     return speaker

@@ -76,7 +76,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
     <aside className="w-64 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full overflow-y-auto">
       <div className="p-4 border-b border-gray-200 dark:border-gray-800">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
-          Speakers
+          Speaker Management
         </h2>
       </div>
       <div className="p-2 space-y-2">

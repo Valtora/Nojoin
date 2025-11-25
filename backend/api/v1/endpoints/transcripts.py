@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from sqlalchemy.orm.attributes import flag_modified
+from pydantic import BaseModel
 import uuid
 import os
 
@@ -111,7 +112,7 @@ async def update_segment_speaker(
     # 4. Update Embeddings (Active Learning)
     # Extract embedding for this segment
     try:
-        if recording.audio_path and os.path.exists(recording.audio_path):
+        if recording.audio_path and os.path.exists(recording.audio_path) and target_recording_speaker:
             # Load model
             device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
             model = load_embedding_model(device)
@@ -128,19 +129,28 @@ async def update_segment_speaker(
                 # Extract
                 emb = model.crop(recording.audio_path, seg)
                 
-                # Convert to list
+                # Handle potential Tuple return (some pyannote versions)
+                if isinstance(emb, tuple):
+                    emb = emb[0]
+
+                # Handle pyannote SlidingWindowFeature
                 if hasattr(emb, 'data'):
-                    emb = emb.data
-                emb = np.array(emb)
-                if len(emb.shape) == 2:
-                    emb = np.mean(emb, axis=0)
+                    emb_data = emb.data
+                else:
+                    emb_data = emb
                 
-                new_embedding = emb.tolist()
+                emb_array = np.array(emb_data)
+                if len(emb_array.shape) == 2:
+                    emb_array = np.mean(emb_array, axis=0)
+                
+                new_embedding = emb_array.tolist()
                 
                 # Merge into RecordingSpeaker
                 # Use high alpha (0.5) because this is explicit user correction
+                current_emb = target_recording_speaker.embedding if target_recording_speaker.embedding is not None else []
+                
                 target_recording_speaker.embedding = merge_embeddings(
-                    target_recording_speaker.embedding, 
+                    current_emb, 
                     new_embedding, 
                     alpha=0.5
                 )
@@ -150,8 +160,9 @@ async def update_segment_speaker(
                 if target_recording_speaker.global_speaker_id:
                     gs = await db.get(GlobalSpeaker, target_recording_speaker.global_speaker_id)
                     if gs:
+                        gs_emb = gs.embedding if gs.embedding is not None else []
                         gs.embedding = merge_embeddings(
-                            gs.embedding,
+                            gs_emb,
                             new_embedding,
                             alpha=0.5
                         )
@@ -164,3 +175,87 @@ async def update_segment_speaker(
     await db.commit()
     
     return {"status": "success", "speaker": target_label}
+
+class TranscriptSegmentTextUpdate(BaseModel):
+    text: str
+
+class FindReplaceRequest(BaseModel):
+    find_text: str
+    replace_text: str
+
+@router.put("/{recording_id}/segments/{segment_index}/text", response_model=Transcript)
+async def update_transcript_segment_text(
+    recording_id: int,
+    segment_index: int,
+    update: TranscriptSegmentTextUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update the text content of a specific transcript segment.
+    """
+    # 1. Fetch Transcript
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+        
+    if segment_index < 0 or segment_index >= len(transcript.segments):
+        raise HTTPException(status_code=400, detail="Invalid segment index")
+        
+    # 2. Update Segment
+    transcript.segments[segment_index]['text'] = update.text
+    flag_modified(transcript, "segments")
+    
+    # 3. Reconstruct Full Text
+    full_text = " ".join([s['text'] for s in transcript.segments])
+    transcript.text = full_text
+    
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
+    
+    return transcript
+
+@router.post("/{recording_id}/replace", response_model=Transcript)
+async def find_and_replace(
+    recording_id: int,
+    replace_request: FindReplaceRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Find and replace text across the entire transcript.
+    """
+    # 1. Fetch Transcript
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    
+    find_text = replace_request.find_text
+    replace_text = replace_request.replace_text
+    
+    if not find_text:
+        raise HTTPException(status_code=400, detail="Find text cannot be empty")
+
+    count = 0
+    for segment in transcript.segments:
+        if find_text in segment['text']:
+            segment['text'] = segment['text'].replace(find_text, replace_text)
+            count += 1
+    
+    if count > 0:
+        flag_modified(transcript, "segments")
+        
+        # Reconstruct Full Text
+        full_text = " ".join([s['text'] for s in transcript.segments])
+        transcript.text = full_text
+        
+        db.add(transcript)
+        await db.commit()
+        await db.refresh(transcript)
+        
+    return transcript

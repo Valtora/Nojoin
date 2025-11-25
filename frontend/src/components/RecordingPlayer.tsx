@@ -1,7 +1,7 @@
 'use client';
 
 import { Recording, TranscriptSegment } from '@/types';
-import { getRecordingStreamUrl, updateSpeaker, updateTranscriptSegmentSpeaker } from '@/lib/api';
+import { getRecordingStreamUrl, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace } from '@/lib/api';
 import { useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TranscriptView from './TranscriptView';
@@ -57,6 +57,26 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
     }
   };
 
+  const handleUpdateSegmentText = async (index: number, text: string) => {
+    try {
+      await updateTranscriptSegmentText(recording.id, index, text);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to update segment text:", error);
+      alert("Failed to update segment text.");
+    }
+  };
+
+  const handleFindAndReplace = async (find: string, replace: string) => {
+    try {
+      await findAndReplace(recording.id, find, replace);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to find and replace:", error);
+      alert("Failed to find and replace.");
+    }
+  };
+
   const segments: TranscriptSegment[] = recording.transcript?.segments || [];
 
   const speakerMap = useMemo(() => {
@@ -100,6 +120,8 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
             speakerMap={speakerMap}
             onRenameSpeaker={handleRenameSpeaker}
             onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
+            onUpdateSegmentText={handleUpdateSegmentText}
+            onFindAndReplace={handleFindAndReplace}
           />
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">

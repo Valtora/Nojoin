@@ -195,7 +195,16 @@ def process_recording_task(self, recording_id: int):
             # Try to identify speaker using embedding
             if embedding:
                 # Fetch all global speakers with embeddings
-                global_speakers = session.exec(select(GlobalSpeaker).where(GlobalSpeaker.embedding != None)).all()
+                # Filter out any potential placeholder names from the global list to prevent bad linking
+                all_global_speakers = session.exec(select(GlobalSpeaker).where(GlobalSpeaker.embedding != None)).all()
+                
+                import re
+                placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
+                
+                global_speakers = [
+                    gs for gs in all_global_speakers 
+                    if not placeholder_pattern.match(gs.name)
+                ]
                 
                 best_match = None
                 best_score = 0.0

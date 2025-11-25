@@ -34,7 +34,9 @@ class GlobalSpeakerRead(BaseDBModel):
     name: str
 
 class RecordingSpeakerRead(BaseDBModel):
+    recording_id: int
     diarization_label: str
+    name: Optional[str] = None
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 class TranscriptRead(BaseDBModel):

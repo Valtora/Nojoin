@@ -162,4 +162,18 @@ export const updateSettings = async (settings: Settings): Promise<Settings> => {
   return response.data;
 };
 
+// Transcript Text
+export const updateTranscriptSegmentText = async (recordingId: number, segmentIndex: number, text: string): Promise<void> => {
+  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, {
+    text: text,
+  });
+};
+
+export const findAndReplace = async (recordingId: number, findText: string, replaceText: string): Promise<void> => {
+  await api.post(`/transcripts/${recordingId}/replace`, {
+    find_text: findText,
+    replace_text: replaceText,
+  });
+};
+
 export default api;
