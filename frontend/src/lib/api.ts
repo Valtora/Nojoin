@@ -164,7 +164,7 @@ export const updateSettings = async (settings: Settings): Promise<Settings> => {
 
 // Transcript Text
 export const updateTranscriptSegmentText = async (recordingId: number, segmentIndex: number, text: string): Promise<void> => {
-  await api.patch(`/transcripts/${recordingId}/segments/${segmentIndex}`, { text });
+  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, { text });
 };
 
 export const findAndReplace = async (recordingId: number, find: string, replace: string): Promise<void> => {

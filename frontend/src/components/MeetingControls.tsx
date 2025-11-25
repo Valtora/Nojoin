@@ -134,7 +134,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   };
 
   const handleStart = async () => {
-    const name = `Meeting ${new Date().toLocaleString()}`;
+    const name = "";
     const token = localStorage.getItem('token');
     const response = await sendCommand('start', { name, token });
     if (response && response.id) {

@@ -23,9 +23,18 @@ os.makedirs(RECORDINGS_DIR, exist_ok=True)
 TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+def get_ordinal_suffix(day: int) -> str:
+    if 11 <= day <= 13:
+        return "th"
+    else:
+        return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
 def generate_default_meeting_name() -> str:
     now = datetime.now()
     day_name = now.strftime("%A")
+    day_num = now.day
+    suffix = get_ordinal_suffix(day_num)
+    short_month = now.strftime("%b")
     hour = now.hour
     
     time_of_day = ""
@@ -57,7 +66,7 @@ def generate_default_meeting_name() -> str:
         else: # 0-5
             time_of_day = "Late Night" 
 
-    return f"{day_name} {time_of_day} Meeting"
+    return f"{day_name} {day_num}{suffix} {short_month}, {time_of_day} Meeting"
 
 def generate_timestamp_id() -> int:
     """

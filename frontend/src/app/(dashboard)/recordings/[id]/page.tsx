@@ -254,17 +254,12 @@ export default function RecordingPage({ params }: PageProps) {
                     </h1>
                 )}
                 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col items-start gap-2">
                     <TagsInput 
                         tags={recording.tags || []} 
                         onAddTag={handleAddTag} 
                         onRemoveTag={handleRemoveTag} 
                     />
-                    <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
-                        <span>{new Date(recording.created_at).toLocaleString()}</span>
-                        <span>•</span>
-                        <span>{recording.duration_seconds ? `${Math.floor(recording.duration_seconds / 60)} ${Math.floor(recording.duration_seconds / 60) === 1 ? 'min' : 'mins'}` : 'Unknown'}</span>
-                    </div>
                 </div>
             </div>
         </div>
