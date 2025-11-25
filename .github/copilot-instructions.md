@@ -21,6 +21,18 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Frontend Dev**: `cd frontend && npm run dev`.
 - **Companion Dev**: `cd companion && cargo run`.
 
+### 🐧 Hybrid Environment (WSL2 + Windows)
+The user develops in a **Hybrid Environment** to maximize performance and compatibility:
+1.  **WSL2 (Linux)**: Hosts the "Brain".
+    - Runs **Docker** (DB, Redis).
+    - Runs **Backend** (FastAPI, Celery, PyTorch/GPU).
+    - Runs **Frontend** (Next.js).
+    - **Why?** Native Docker performance, reliable hot-reloading, Linux-first AI libraries.
+2.  **Windows (Native)**: Hosts the "Ears".
+    - Runs **Companion App** (Rust).
+    - **Why?** Access to Windows Audio Loopback (WASAPI) to capture system sound.
+    - **Connection**: The Windows Companion connects to `localhost:8000`, which Windows forwards to the WSL2 Backend.
+
 ## 🐍 Backend (Python/FastAPI)
 - **Models**: Defined in `backend/models/`. Use `SQLModel`.
 - **Migrations**: Currently using `SQLModel.metadata.create_all` in `lifespan` (no Alembic yet).

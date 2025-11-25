@@ -49,16 +49,6 @@ node_modules/
 *.sqlite
 *.sqlite3
 
-# SSL/Security
-*.pem
-*.key
-*.p12
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Editor directories
-.idea/
-.vscode/
-*.wav
+# Personal Documentation
+docs/PERSONAL_SETUP.md
+.github/copilot-instructions.md

@@ -11,9 +11,11 @@ aiofiles
 requests
 httpx
 python-dotenv
-torch --index-url https://download.pytorch.org/whl/cu124
-torchaudio --index-url https://download.pytorch.org/whl/cu124
-openai-whisper --index-url https://pypi.org/simple
+torch --index-url https://download.pytorch.org/whl/cu126
+torchvision --index-url https://download.pytorch.org/whl/cu126
+torchaudio --index-url https://download.pytorch.org/whl/cu126
+torchcodec --index-url https://download.pytorch.org/whl/cu126
+openai-whisper
 pyannote.audio
 silero-vad
 numpy
