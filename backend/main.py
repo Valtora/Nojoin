@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import redis.asyncio as redis
+import os
 from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import SQLModel, Session, text
 from backend.core.db import sync_engine
@@ -75,22 +77,37 @@ async def health_check():
         health_status["status"] = "error"
 
     # Check Worker
+    worker_status = "unknown"
+    
+    # 1. Check Heartbeat (Fast, non-blocking)
     try:
-        # inspect().ping() returns a dict of nodes { 'celery@hostname': {'ok': 'pong'} } or None
-        inspector = celery_app.control.inspect()
-        # Set a short timeout so we don't block the health check too long
-        active_workers = inspector.ping()
-        
-        if active_workers:
-            health_status["components"]["worker"] = "active"
-        else:
-            health_status["components"]["worker"] = "inactive"
-            if health_status["status"] == "ok":
-                health_status["status"] = "warning"
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        r = redis.from_url(redis_url)
+        if await r.get("nojoin:worker:heartbeat"):
+            worker_status = "active"
+        await r.close()
     except Exception:
-        health_status["components"]["worker"] = "error"
-        if health_status["status"] == "ok":
-            health_status["status"] = "warning"
+        pass
+
+    # 2. Fallback to Ping if Heartbeat missing (e.g. startup or thread died)
+    if worker_status != "active":
+        try:
+            # inspect().ping() returns a dict of nodes { 'celery@hostname': {'ok': 'pong'} } or None
+            inspector = celery_app.control.inspect()
+            # Set a short timeout so we don't block the health check too long
+            active_workers = inspector.ping()
+            
+            if active_workers:
+                worker_status = "active"
+            else:
+                worker_status = "inactive"
+        except Exception:
+            worker_status = "error"
+            
+    health_status["components"]["worker"] = worker_status
+    
+    if worker_status in ["inactive", "error"] and health_status["status"] == "ok":
+        health_status["status"] = "warning"
 
     return health_status
 
