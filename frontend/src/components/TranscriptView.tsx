@@ -1,9 +1,10 @@
 'use client';
 
-import { TranscriptSegment } from '@/types';
+import { TranscriptSegment, RecordingSpeaker, GlobalSpeaker } from '@/types';
 import { useRef, useEffect, useState } from 'react';
 import { Play, Pause, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { exportTranscript } from '@/lib/api';
+import SpeakerAssignmentPopover from './SpeakerAssignmentPopover';
 
 interface TranscriptViewProps {
   recordingId: number;
@@ -14,6 +15,8 @@ interface TranscriptViewProps {
   onPause: () => void;
   onResume: () => void;
   speakerMap: Record<string, string>;
+  speakers: RecordingSpeaker[];
+  globalSpeakers: GlobalSpeaker[];
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (index: number, newSpeakerName: string) => void | Promise<void>;
   onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
@@ -40,6 +43,8 @@ export default function TranscriptView({
   onPause,
   onResume,
   speakerMap,
+  speakers,
+  globalSpeakers,
   onRenameSpeaker,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
@@ -57,6 +62,9 @@ export default function TranscriptView({
   const [editingSegmentSpeakerIndex, setEditingSegmentSpeakerIndex] = useState<number | null>(null);
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null);
   
+  // Popover State
+  const [activePopoverIndex, setActivePopoverIndex] = useState<number | null>(null);
+
   const [editValue, setEditValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -482,12 +490,31 @@ export default function TranscriptView({
                         className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
                         />
                     ) : (
-                        <span 
-                        className="text-base font-bold text-gray-700 dark:text-gray-300 cursor-default"
-                        title="Speaker label"
-                        >
-                        {speakerName}
-                        </span>
+                        <div className="relative">
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActivePopoverIndex(activePopoverIndex === index ? null : index);
+                                }}
+                                className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-600 dark:hover:text-orange-400 transition-colors text-left"
+                                title="Click to change speaker"
+                            >
+                                {speakerName}
+                            </button>
+                            {activePopoverIndex === index && (
+                                <SpeakerAssignmentPopover
+                                    currentSpeakerName={speakerName}
+                                    availableSpeakers={speakers}
+                                    globalSpeakers={globalSpeakers}
+                                    speakerColors={speakerColors}
+                                    onSelect={(name) => {
+                                        onUpdateSegmentSpeaker(index, name);
+                                        setActivePopoverIndex(null);
+                                    }}
+                                    onClose={() => setActivePopoverIndex(null)}
+                                />
+                            )}
+                        </div>
                     )}
                 </div>
                 

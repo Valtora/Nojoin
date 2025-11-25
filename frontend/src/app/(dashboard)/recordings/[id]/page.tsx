@@ -1,6 +1,6 @@
 'use client';
 
-import { getRecording, addTagToRecording, removeTagFromRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments } from '@/lib/api';
+import { getRecording, addTagToRecording, removeTagFromRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers } from '@/lib/api';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
@@ -8,7 +8,7 @@ import TagsInput from '@/components/TagsInput';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Recording, RecordingStatus, TranscriptSegment } from '@/types';
+import { Recording, RecordingStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
 import { SPEAKER_COLORS } from '@/lib/constants';
 
@@ -26,6 +26,7 @@ interface HistoryItem {
 
 export default function RecordingPage({ params }: PageProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
+  const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -52,9 +53,13 @@ export default function RecordingPage({ params }: PageProps) {
     const fetchRecording = async () => {
       try {
         const { id } = await params;
-        const data = await getRecording(parseInt(id));
-        setRecording(data);
-        setTitleValue(data.name);
+        const [recData, gsData] = await Promise.all([
+            getRecording(parseInt(id)),
+            getGlobalSpeakers()
+        ]);
+        setRecording(recData);
+        setGlobalSpeakers(gsData);
+        setTitleValue(recData.name);
       } catch (e) {
         console.error("Failed to fetch recording:", e);
         setError("Failed to load recording.");
@@ -448,6 +453,8 @@ export default function RecordingPage({ params }: PageProps) {
                                 onPause={handlePause}
                                 onResume={handleResume}
                                 speakerMap={speakerMap}
+                                speakers={recording.speakers || []}
+                                globalSpeakers={globalSpeakers}
                                 onRenameSpeaker={handleRenameSpeaker}
                                 onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
                                 onUpdateSegmentText={handleUpdateSegmentText}
