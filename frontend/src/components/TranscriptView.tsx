@@ -2,7 +2,8 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X } from 'lucide-react';
+import { Play, Search, X, ArrowRightLeft, Users, Palette } from 'lucide-react';
+import SpeakerManagementModal from './SpeakerManagementModal';
 
 interface TranscriptViewProps {
   segments: TranscriptSegment[];
@@ -22,24 +23,14 @@ const formatTime = (seconds: number) => {
 };
 
 const SPEAKER_COLORS = [
-  'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800',
-  'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800',
   'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-800',
   'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-800',
-  'bg-pink-50 dark:bg-pink-900/20 border-pink-100 dark:border-pink-800',
-  'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800',
+  'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800',
+  'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800',
+  'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800',
   'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800',
-  'bg-teal-50 dark:bg-teal-900/20 border-teal-100 dark:border-teal-800',
+  'bg-gray-50 dark:bg-gray-900/20 border-gray-100 dark:border-gray-800',
 ];
-
-const getSpeakerColor = (speaker: string) => {
-  let hash = 0;
-  for (let i = 0; i < speaker.length; i++) {
-    hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % SPEAKER_COLORS.length;
-  return SPEAKER_COLORS[index];
-};
 
 export default function TranscriptView({ 
   segments, 
@@ -62,9 +53,51 @@ export default function TranscriptView({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Find & Replace State
-  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showReplace, setShowReplace] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+
+  // Speaker Management State
+  const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false);
+  const [speakerColors, setSpeakerColors] = useState<Record<string, string>>({});
+
+  // Initialize speaker colors
+  useEffect(() => {
+    const newColors = { ...speakerColors };
+    let colorIndex = 0;
+    
+    // Get all unique speakers
+    const speakers = new Set<string>();
+    segments.forEach(s => {
+        const name = speakerMap[s.speaker] || s.speaker;
+        speakers.add(name);
+    });
+
+    speakers.forEach(speaker => {
+        if (!newColors[speaker]) {
+            // Deterministic assignment based on name hash if not set
+            let hash = 0;
+            for (let i = 0; i < speaker.length; i++) {
+                hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % SPEAKER_COLORS.length;
+            newColors[speaker] = SPEAKER_COLORS[index];
+        }
+    });
+    setSpeakerColors(newColors);
+  }, [segments, speakerMap]); // Re-run when segments/speakers change
+
+  const getSpeakerColor = (speakerName: string) => {
+      return speakerColors[speakerName] || SPEAKER_COLORS[0];
+  };
+
+  const handleColorChange = (speakerName: string, colorClass: string) => {
+      setSpeakerColors(prev => ({
+          ...prev,
+          [speakerName]: colorClass
+      }));
+  };
 
   useEffect(() => {
     if (activeSegmentRef.current) {
@@ -118,7 +151,8 @@ export default function TranscriptView({
           await onFindAndReplace(findText, replaceText);
           setFindText("");
           setReplaceText("");
-          setShowFindReplace(false);
+          setShowReplace(false);
+          setShowSearch(false);
       } finally {
           setIsSubmitting(false);
       }
@@ -143,49 +177,94 @@ export default function TranscriptView({
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Floating Find & Replace Button */}
-      <div className="absolute top-0 right-0 z-10 p-2">
-        <button 
-            onClick={() => setShowFindReplace(!showFindReplace)}
-            className="flex items-center justify-center w-8 h-8 bg-orange-500 text-white hover:bg-orange-600 rounded-full shadow-md transition-all hover:scale-105"
-            title="Find & Replace"
-        >
-            <Search className="w-4 h-4" />
-        </button>
+      {/* Sticky Toolbar */}
+      <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-4 flex-1">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transcript</h2>
+            
+            {/* Search Bar */}
+            {(showSearch || showReplace) && (
+                <div className="flex items-center gap-2 flex-1 max-w-md animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input 
+                            placeholder="Find..." 
+                            value={findText} 
+                            onChange={e => setFindText(e.target.value)}
+                            className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
+                            autoFocus
+                        />
+                    </div>
+                    {showReplace && (
+                        <div className="relative flex-1">
+                            <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                placeholder="Replace..." 
+                                value={replaceText} 
+                                onChange={e => setReplaceText(e.target.value)}
+                                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
+                            />
+                        </div>
+                    )}
+                    {showReplace && (
+                        <button 
+                            onClick={handleFindReplaceSubmit}
+                            disabled={!findText || isSubmitting}
+                            className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                        >
+                            Replace All
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+
+        <div className="flex items-center gap-1">
+            <button 
+                onClick={() => {
+                    const newState = !showSearch;
+                    setShowSearch(newState);
+                    if (!newState) setShowReplace(false);
+                }}
+                className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
+                title="Search"
+            >
+                <Search className="w-4 h-4" />
+            </button>
+            <button 
+                onClick={() => {
+                    const newState = !showReplace;
+                    setShowReplace(newState);
+                    if (newState) setShowSearch(true);
+                }}
+                className={`p-2 rounded-md transition-colors ${showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
+                title="Find & Replace"
+            >
+                <ArrowRightLeft className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <button 
+                onClick={() => setIsSpeakerModalOpen(true)}
+                className="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500 transition-colors"
+                title="Manage Speakers"
+            >
+                <Users className="w-4 h-4" />
+            </button>
+        </div>
       </div>
 
-      {/* Find & Replace Bar */}
-      {showFindReplace && (
-          <div className="sticky top-0 z-20 flex items-center gap-2 mb-4 p-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-lg border border-gray-200 dark:border-gray-700 mx-2 shadow-lg">
-              <input 
-                  placeholder="Find..." 
-                  value={findText} 
-                  onChange={e => setFindText(e.target.value)}
-                  className="flex-1 text-sm p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-              <input 
-                  placeholder="Replace with..." 
-                  value={replaceText} 
-                  onChange={e => setReplaceText(e.target.value)}
-                  className="flex-1 text-sm p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-              <button 
-                  onClick={handleFindReplaceSubmit}
-                  disabled={!findText || isSubmitting}
-                  className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                  Replace All
-              </button>
-              <button 
-                  onClick={() => setShowFindReplace(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >
-                  <X className="w-4 h-4" />
-              </button>
-          </div>
-      )}
+      <SpeakerManagementModal
+        isOpen={isSpeakerModalOpen}
+        onClose={() => setIsSpeakerModalOpen(false)}
+        speakers={Array.from(new Set(segments.map(s => s.speaker)))}
+        speakerMap={speakerMap}
+        colorMap={speakerColors}
+        onRename={onRenameSpeaker}
+        onColorChange={handleColorChange}
+        availableColors={SPEAKER_COLORS}
+      />
 
-      <div className="space-y-6 pt-2">
+      <div className="space-y-6 p-6">
         {displaySegments.map((segment, index) => {
           const isActive = currentTime >= segment.start && currentTime < segment.end;
           const speakerName = speakerMap[segment.speaker] || segment.speaker;
@@ -195,8 +274,8 @@ export default function TranscriptView({
           
           // Determine bubble color
           const bubbleColor = isActive 
-            ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' 
-            : getSpeakerColor(segment.speaker);
+            ? 'border-2 border-green-500 dark:border-green-400 bg-green-50/10 dark:bg-green-900/10' 
+            : getSpeakerColor(speakerName);
 
           return (
             <div
@@ -213,7 +292,7 @@ export default function TranscriptView({
                       onClick={() => onPlaySegment(segment.start, segment.end)}
                       className={`p-1.5 rounded-full transition-colors shadow-sm ${
                           isActive 
-                          ? 'bg-orange-500 text-white hover:bg-orange-600' 
+                          ? 'bg-green-500 text-white hover:bg-green-600' 
                           : 'bg-gray-100 text-gray-500 hover:bg-orange-500 hover:text-white dark:bg-gray-800 dark:text-gray-400'
                       }`}
                       title="Play segment"
@@ -221,6 +300,7 @@ export default function TranscriptView({
                       <Play className="w-3 h-3 fill-current" />
                   </button>
               </div>
+
 
               {/* Content */}
               <div className="flex-1 min-w-0">

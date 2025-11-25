@@ -107,12 +107,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
   return (
     <aside className="w-64 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full overflow-y-auto">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
-          Speaker Management
-        </h2>
-      </div>
-      <div className="p-2 space-y-2">
+      <div className="p-2 space-y-2 mt-2">
         {uniqueSpeakers.length === 0 ? (
             <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
                 No speakers detected.

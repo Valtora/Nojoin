@@ -291,10 +291,7 @@ export default function RecordingPage({ params }: PageProps) {
         ) : (
             <>
                 <div className="flex-1 overflow-y-auto p-6">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
-                        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-                            Transcript
-                        </h2>
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                         {(recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
                             <TranscriptView
                                 segments={recording.transcript.segments}
@@ -307,7 +304,7 @@ export default function RecordingPage({ params }: PageProps) {
                                 onFindAndReplace={handleFindAndReplace}
                             />
                         ) : (
-                            <p className="text-gray-500 dark:text-gray-400 italic">
+                            <p className="text-gray-500 dark:text-gray-400 italic p-6">
                                 No transcript available yet.
                             </p>
                         )}
