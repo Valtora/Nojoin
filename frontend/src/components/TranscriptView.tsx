@@ -2,7 +2,7 @@
 
 import { TranscriptSegment } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Search, X, Check } from 'lucide-react';
+import { Play, Search, X } from 'lucide-react';
 
 interface TranscriptViewProps {
   segments: TranscriptSegment[];
@@ -19,6 +19,26 @@ const formatTime = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const SPEAKER_COLORS = [
+  'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800',
+  'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800',
+  'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-800',
+  'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-800',
+  'bg-pink-50 dark:bg-pink-900/20 border-pink-100 dark:border-pink-800',
+  'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800',
+  'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800',
+  'bg-teal-50 dark:bg-teal-900/20 border-teal-100 dark:border-teal-800',
+];
+
+const getSpeakerColor = (speaker: string) => {
+  let hash = 0;
+  for (let i = 0; i < speaker.length; i++) {
+    hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % SPEAKER_COLORS.length;
+  return SPEAKER_COLORS[index];
 };
 
 export default function TranscriptView({ 
@@ -55,9 +75,6 @@ export default function TranscriptView({
     }
   }, [currentTime]);
 
-  // --- Speaker Renaming Handlers (Removed as per requirements) ---
-  // User must use Speaker Management panel.
-
   const handleSegmentSpeakerSubmit = async (index: number) => {
     if (editValue.trim() && !isSubmitting) {
       setIsSubmitting(true);
@@ -72,8 +89,6 @@ export default function TranscriptView({
     }
   };
 
-  // --- Text Editing Handlers ---
-
   const handleTextClick = (index: number, text: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingTextIndex(index);
@@ -83,7 +98,6 @@ export default function TranscriptView({
   };
 
   const handleTextSubmit = async (index: number) => {
-    // Only submit if changed
     if (editValue !== segments[index].text && !isSubmitting) {
         setIsSubmitting(true);
         try {
@@ -96,8 +110,6 @@ export default function TranscriptView({
         setEditingTextIndex(null);
     }
   };
-
-  // --- Find & Replace Handlers ---
 
   const handleFindReplaceSubmit = async () => {
       if (!findText || isSubmitting) return;
@@ -112,8 +124,6 @@ export default function TranscriptView({
       }
   };
 
-  // --- Key Handlers ---
-
   const handleKeyDown = (e: React.KeyboardEvent, type: 'segmentSpeaker' | 'text', indexOrLabel: number | string) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -126,7 +136,6 @@ export default function TranscriptView({
     }
   };
 
-  // Filter out UNKNOWN speakers if there are other identified speakers
   const hasKnownSpeakers = segments.some(s => s.speaker !== 'UNKNOWN');
   const displaySegments = hasKnownSpeakers 
     ? segments.filter(s => s.speaker !== 'UNKNOWN')
@@ -183,6 +192,11 @@ export default function TranscriptView({
           const isEditingSpeaker = editingSpeaker === segment.speaker;
           const isEditingSegmentSpeaker = editingSegmentSpeakerIndex === index;
           const isEditingText = editingTextIndex === index;
+          
+          // Determine bubble color
+          const bubbleColor = isActive 
+            ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' 
+            : getSpeakerColor(segment.speaker);
 
           return (
             <div
@@ -218,8 +232,6 @@ export default function TranscriptView({
                         type="text"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        // onBlur={() => handleSpeakerSubmit(segment.speaker)} // Removed
-                        // onKeyDown={(e) => handleKeyDown(e, 'speaker', segment.speaker)} // Removed
                         onClick={(e) => e.stopPropagation()}
                         className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled
@@ -237,7 +249,7 @@ export default function TranscriptView({
                         />
                     ) : (
                         <span 
-                        className="text-base font-bold text-blue-600 dark:text-blue-400 cursor-default"
+                        className="text-base font-bold text-gray-700 dark:text-gray-300 cursor-default"
                         title="Speaker label"
                         >
                         {speakerName}
@@ -247,10 +259,8 @@ export default function TranscriptView({
                 
                 {/* Transcript Text */}
                 <div
-                    className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${
-                    isActive
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800'
-                        : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
+                    className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
+                        isEditingText ? 'ring-2 ring-blue-500' : ''
                     }`}
                 >
                     {isEditingText ? (

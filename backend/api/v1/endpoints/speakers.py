@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from backend.api.deps import get_db
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.recording import Recording
+from backend.models.transcript import Transcript
 from backend.processing.embedding import merge_embeddings
 
 router = APIRouter()
@@ -25,6 +26,10 @@ class SpeakerUpdate(BaseModel):
 class MergeRequest(BaseModel):
     source_speaker_id: int
     target_speaker_id: int
+
+class MergeRequestLabels(BaseModel):
+    target_speaker_label: str
+    source_speaker_label: str
 
 @router.get("/", response_model=List[GlobalSpeaker])
 async def list_global_speakers(
@@ -244,3 +249,82 @@ async def delete_global_speaker(
     await db.delete(speaker)
     await db.commit()
     return {"ok": True}
+
+@router.post("/recordings/{recording_id}/merge", response_model=Recording)
+async def merge_recording_speakers(
+    recording_id: int,
+    merge_data: MergeRequestLabels,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Merge two speakers in a recording.
+    All segments belonging to source_speaker_label will be reassigned to target_speaker_label.
+    The source_speaker_label will be removed from the recording's speaker list.
+    """
+    # 1. Verify recording exists
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # 2. Update Transcript Segments
+    # We need to fetch the transcript first
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+
+    if transcript and transcript.segments:
+        updated_segments = []
+        changed = False
+        for segment in transcript.segments:
+            if segment.get("speaker") == merge_data.source_speaker_label:
+                segment["speaker"] = merge_data.target_speaker_label
+                changed = True
+            updated_segments.append(segment)
+        
+        if changed:
+            transcript.segments = updated_segments
+            db.add(transcript)
+
+    # 3. Update RecordingSpeaker entries
+    # Find the source speaker entry
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == merge_data.source_speaker_label
+    )
+    result = await db.execute(statement)
+    source_speaker = result.scalar_one_or_none()
+
+    # Find the target speaker entry
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == merge_data.target_speaker_label
+    )
+    result = await db.execute(statement)
+    target_speaker = result.scalar_one_or_none()
+
+    if source_speaker:
+        # If target speaker doesn't exist (edge case?), we might want to rename source instead?
+        # But assuming target exists or is a valid label we want to use.
+        
+        # If target speaker entry exists, we can delete the source speaker entry
+        # If target speaker entry does NOT exist (e.g. we are merging into a new label?), 
+        # we should probably rename source to target.
+        # But the UI will likely provide a list of existing speakers.
+        
+        if target_speaker:
+            # Merge logic: Delete source. 
+            # (Optional: Merge embeddings? For now, just keep target's embedding)
+            await db.delete(source_speaker)
+        else:
+            # Target label doesn't have a RecordingSpeaker entry yet.
+            # Rename source to target.
+            source_speaker.diarization_label = merge_data.target_speaker_label
+            # Reset name if it was specific to the old label? Or keep it?
+            # Let's keep the name if it exists, or maybe not.
+            # If we are merging "SPEAKER_01" into "SPEAKER_00", and SPEAKER_00 didn't exist...
+            # That's a rename.
+            db.add(source_speaker)
+
+    await db.commit()
+    await db.refresh(recording)
+    return recording

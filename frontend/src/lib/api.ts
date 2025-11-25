@@ -164,16 +164,19 @@ export const updateSettings = async (settings: Settings): Promise<Settings> => {
 
 // Transcript Text
 export const updateTranscriptSegmentText = async (recordingId: number, segmentIndex: number, text: string): Promise<void> => {
-  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, {
-    text: text,
-  });
+  await api.patch(`/transcripts/${recordingId}/segments/${segmentIndex}`, { text });
 };
 
-export const findAndReplace = async (recordingId: number, findText: string, replaceText: string): Promise<void> => {
-  await api.post(`/transcripts/${recordingId}/replace`, {
-    find_text: findText,
-    replace_text: replaceText,
+export const findAndReplace = async (recordingId: number, find: string, replace: string): Promise<void> => {
+  await api.post(`/transcripts/${recordingId}/find-replace`, { find, replace });
+};
+
+export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerLabel: string, sourceSpeakerLabel: string): Promise<Recording> => {
+  const response = await api.post<Recording>(`/speakers/recordings/${recordingId}/merge`, {
+    target_speaker_label: targetSpeakerLabel,
+    source_speaker_label: sourceSpeakerLabel,
   });
+  return response.data;
 };
 
 export default api;

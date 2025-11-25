@@ -1,23 +1,31 @@
 'use client';
 
 import { RecordingSpeaker, TranscriptSegment } from '@/types';
-import { Play, User } from 'lucide-react';
+import { Play, User, Merge } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
-import { updateSpeaker } from '@/lib/api';
+import { updateSpeaker, mergeRecordingSpeakers } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
   segments: TranscriptSegment[];
   onPlaySegment: (time: number) => void;
+  recordingId: number;
 }
 
-export default function SpeakerPanel({ speakers, segments, onPlaySegment }: SpeakerPanelProps) {
+export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId }: SpeakerPanelProps) {
   const router = useRouter();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
+  
+  // Rename State
   const [renamingSpeaker, setRenamingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  
+  // Merge State
+  const [mergingSpeaker, setMergingSpeaker] = useState<RecordingSpeaker | null>(null);
+  const [mergeTargetLabel, setMergeTargetLabel] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Deduplicate speakers based on diarization_label
@@ -40,7 +48,6 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
         alert("No audio segments found for this speaker.");
         return;
     }
-    // Pick a random segment
     const randomSegment = speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
     onPlaySegment(randomSegment.start);
   };
@@ -56,17 +63,43 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
     setContextMenu(null);
   };
 
+  const handleMergeStart = (speaker: RecordingSpeaker) => {
+    setMergingSpeaker(speaker);
+    setMergeTargetLabel("");
+    setContextMenu(null);
+  };
+
   const handleRenameSubmit = async () => {
     if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
     
     setIsSubmitting(true);
     try {
-        await updateSpeaker(renamingSpeaker.recording_id, renamingSpeaker.diarization_label, renameValue.trim());
+        await updateSpeaker(recordingId, renamingSpeaker.diarization_label, renameValue.trim());
         setRenamingSpeaker(null);
         router.refresh();
     } catch (e) {
         console.error("Failed to rename speaker", e);
         alert("Failed to rename speaker.");
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const handleMergeSubmit = async () => {
+    if (!mergingSpeaker || !mergeTargetLabel || isSubmitting) return;
+
+    if (!confirm(`Are you sure you want to merge ${mergingSpeaker.name || mergingSpeaker.diarization_label} into the selected speaker? This cannot be undone.`)) {
+        return;
+    }
+
+    setIsSubmitting(true);
+    try {
+        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, mergingSpeaker.diarization_label);
+        setMergingSpeaker(null);
+        router.refresh();
+    } catch (e) {
+        console.error("Failed to merge speakers", e);
+        alert("Failed to merge speakers.");
     } finally {
         setIsSubmitting(false);
     }
@@ -87,6 +120,46 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
         ) : (
             uniqueSpeakers.map((speaker) => {
                 const isRenaming = renamingSpeaker?.diarization_label === speaker.diarization_label;
+                const isMerging = mergingSpeaker?.diarization_label === speaker.diarization_label;
+
+                if (isMerging) {
+                    const otherSpeakers = uniqueSpeakers.filter(s => s.diarization_label !== speaker.diarization_label);
+                    return (
+                        <div key={speaker.id} className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                            <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
+                                Merge {speaker.name || speaker.diarization_label} into:
+                            </p>
+                            <select 
+                                className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                value={mergeTargetLabel}
+                                onChange={(e) => setMergeTargetLabel(e.target.value)}
+                            >
+                                <option value="">Select Speaker...</option>
+                                {otherSpeakers.map(s => (
+                                    <option key={s.diarization_label} value={s.diarization_label}>
+                                        {s.name || s.global_speaker?.name || s.diarization_label}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handleMergeSubmit}
+                                    disabled={!mergeTargetLabel}
+                                    className="flex-1 px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 disabled:opacity-50"
+                                >
+                                    Confirm
+                                </button>
+                                <button 
+                                    onClick={() => setMergingSpeaker(null)}
+                                    className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+
                 return (
                 <div 
                     key={speaker.id} 
@@ -116,9 +189,9 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
                                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={speaker.name || speaker.global_speaker?.name || speaker.diarization_label}>
                                 {speaker.name || speaker.global_speaker?.name || speaker.diarization_label}
                                 </p>
-                                {speaker.global_speaker && (
+                                {/* {speaker.global_speaker && (
                                     <p className="text-xs text-gray-500 truncate">{speaker.diarization_label}</p>
-                                )}
+                                )} */}
                             </>
                         )}
                     </div>
@@ -147,6 +220,10 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
                     label: 'Rename / Assign', 
                     onClick: () => handleRenameStart(contextMenu.speaker) 
                 },
+                {
+                    label: 'Merge into...',
+                    onClick: () => handleMergeStart(contextMenu.speaker)
+                }
             ]}
         />
       )}
