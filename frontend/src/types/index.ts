@@ -20,6 +20,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   recording_id: number;
   global_speaker_id?: number;
   diarization_label: string;
+  name?: string;
   snippet_start?: number;
   snippet_end?: number;
   voice_snippet_path?: string;

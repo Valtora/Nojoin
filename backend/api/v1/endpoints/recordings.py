@@ -59,6 +59,17 @@ def generate_default_meeting_name() -> str:
 
     return f"{day_name} {time_of_day} Meeting"
 
+def generate_timestamp_id() -> int:
+    """
+    Generates a unique ID based on the current timestamp with centisecond precision (10ms).
+    Format: YYYYMMDDHHMMSSmm (16 digits)
+    This ensures the ID fits within JavaScript's Number.MAX_SAFE_INTEGER (2^53 - 1).
+    """
+    now = datetime.now()
+    # mm is microseconds // 10000 (0-99)
+    timestamp_str = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 10000:02d}"
+    return int(timestamp_str)
+
 @router.post("/init", response_model=Recording)
 async def init_upload(
     name: Optional[str] = Query(None, description="Name of the recording"),
@@ -75,6 +86,7 @@ async def init_upload(
         name = generate_default_meeting_name()
     
     recording = Recording(
+        id=generate_timestamp_id(),
         name=name,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING
@@ -221,8 +233,13 @@ async def upload_recording(
         print(f"Failed to get duration: {e}")
     
     # Create DB entry
+    name = os.path.splitext(file.filename)[0]
+    if name == "blob": # Common default name from blobs
+        name = generate_default_meeting_name()
+
     recording = Recording(
-        name=file.filename,
+        id=generate_timestamp_id(),
+        name=name,
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,

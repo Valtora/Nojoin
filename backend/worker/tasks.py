@@ -21,7 +21,7 @@ from backend.utils.audio import get_audio_duration
 logger = logging.getLogger(__name__)
 
 # Suppress specific warnings in the worker process
-warnings.filterwarnings("ignore", message=".*std\(\): degrees of freedom is <= 0.*")
+warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
 
 class DatabaseTask(Task):
     _session = None
@@ -159,7 +159,14 @@ def process_recording_task(self, recording_id: int):
         
         # Save Speakers & Embeddings
         # Extract unique speakers from the final segments
-        unique_speakers = set(seg['speaker'] for seg in final_segments)
+        # We want to process them in order of appearance to assign "Speaker 1", "Speaker 2", etc.
+        ordered_speakers = []
+        seen_speakers = set()
+        for seg in final_segments:
+            spk = seg['speaker']
+            if spk not in seen_speakers:
+                ordered_speakers.append(spk)
+                seen_speakers.add(spk)
         
         # Extract embeddings for all speakers in the diarization result
         # We use the processed_audio_path (MP3) which pyannote can handle
@@ -168,10 +175,11 @@ def process_recording_task(self, recording_id: int):
         else:
             speaker_embeddings = {}
         
-        # Map local labels (SPEAKER_00) to resolved names (John Doe)
+        # Map local labels (SPEAKER_00) to resolved names (John Doe or Speaker 1)
         label_map = {} 
+        speaker_counter = 1
         
-        for label in unique_speakers:
+        for label in ordered_speakers:
             # Check if speaker already exists for this recording (idempotency)
             existing_speaker = session.exec(
                 select(RecordingSpeaker)
@@ -180,8 +188,9 @@ def process_recording_task(self, recording_id: int):
             ).first()
             
             embedding = speaker_embeddings.get(label)
-            resolved_name = label
+            resolved_name = label # Default fallback
             global_speaker_id = None
+            is_identified = False
             
             # Try to identify speaker using embedding
             if embedding:
@@ -202,6 +211,7 @@ def process_recording_task(self, recording_id: int):
                     logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
                     resolved_name = best_match.name
                     global_speaker_id = best_match.id
+                    is_identified = True
                     
                     # Active Learning: Update Global Speaker embedding with new data
                     # This keeps the profile up-to-date with latest voice samples
@@ -212,9 +222,12 @@ def process_recording_task(self, recording_id: int):
                     except Exception as e:
                         logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
                 else:
-                    logger.info(f"No match found for {label} (Best score: {best_score:.2f}). Keeping as new/unknown.")
-                    # Optional: Auto-create Global Speaker? 
-                    # For now, we just store the embedding in RecordingSpeaker so we can identify them later.
+                    logger.info(f"No match found for {label} (Best score: {best_score:.2f}).")
+
+            # If not identified as a global speaker, assign a friendly sequential name
+            if not is_identified:
+                resolved_name = f"Speaker {speaker_counter}"
+                speaker_counter += 1
 
             label_map[label] = resolved_name
 

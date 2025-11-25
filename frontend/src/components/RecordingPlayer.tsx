@@ -63,7 +63,10 @@ export default function RecordingPlayer({ recording, audioRef }: RecordingPlayer
     const map: Record<string, string> = {};
     if (recording.speakers) {
       recording.speakers.forEach((s) => {
-        if (s.global_speaker) {
+        // Prioritize the resolved name (which handles both Global Speaker and "Speaker X")
+        if (s.name) {
+          map[s.diarization_label] = s.name;
+        } else if (s.global_speaker) {
           map[s.diarization_label] = s.global_speaker.name;
         }
       });

@@ -28,7 +28,13 @@ else:
     SYNC_DATABASE_URL = DATABASE_URL
 
 engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, future=True)
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=False, future=True)
+sync_engine = create_engine(
+    SYNC_DATABASE_URL, 
+    echo=False, 
+    future=True,
+    pool_pre_ping=True,  # Check connection validity before using
+    pool_recycle=3600    # Recycle connections every hour
+)
 
 async_session_maker = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False

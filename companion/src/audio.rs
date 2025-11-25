@@ -70,7 +70,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
 }
 
 fn start_segment(
-    recording_id: i32,
+    recording_id: i64,
     sequence: i32,
     state: Arc<AppState>,
     is_recording: Arc<AtomicBool>

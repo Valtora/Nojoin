@@ -69,7 +69,7 @@ struct StartRequest {
 
 #[derive(serde::Serialize)]
 struct StartResponse {
-    id: i32,
+    id: i64,
     message: String,
 }
 
@@ -108,7 +108,7 @@ async fn start_recording(
     }
     
     let json: serde_json::Value = res.json().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let recording_id = json["id"].as_i64().ok_or(StatusCode::INTERNAL_SERVER_ERROR)? as i32;
+    let recording_id = json["id"].as_i64().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     
     // 2. Update State
     {

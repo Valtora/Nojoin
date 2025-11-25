@@ -1,5 +1,6 @@
 from typing import List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
+from sqlalchemy import BigInteger
 from .base import BaseDBModel
 
 if TYPE_CHECKING:
@@ -7,8 +8,8 @@ if TYPE_CHECKING:
 
 class RecordingTag(BaseDBModel, table=True):
     __tablename__ = "recording_tags"
-    recording_id: int = Field(foreign_key="recordings.id")
-    tag_id: int = Field(foreign_key="tags.id")
+    recording_id: int = Field(foreign_key="recordings.id", sa_type=BigInteger)
+    tag_id: int = Field(foreign_key="tags.id", sa_type=BigInteger)
     
     recording: "Recording" = Relationship(back_populates="tags")
     tag: "Tag" = Relationship(back_populates="recordings")

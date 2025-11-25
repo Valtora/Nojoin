@@ -5,7 +5,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use crate::config::Config;
 
-pub async fn upload_segment(recording_id: i32, sequence: i32, file_path: &Path, config: &Config) -> Result<()> {
+pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, config: &Config) -> Result<()> {
     let client = reqwest::Client::new();
     
     // Read file manually to avoid issues with Form::file
@@ -54,7 +54,7 @@ pub async fn upload_segment(recording_id: i32, sequence: i32, file_path: &Path, 
     }
 }
 
-pub async fn finalize_recording(recording_id: i32, config: &Config) -> Result<()> {
+pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()> {
     let client = reqwest::Client::new();
     let url = format!("{}/recordings/{}/finalize", config.api_url, recording_id);
     

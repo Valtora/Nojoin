@@ -1,6 +1,6 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column
+from sqlalchemy import Column, BigInteger
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import BaseDBModel
 
@@ -17,8 +17,8 @@ class GlobalSpeaker(BaseDBModel, table=True):
 class RecordingSpeaker(BaseDBModel, table=True):
     __tablename__ = "recording_speakers"
     
-    recording_id: int = Field(foreign_key="recordings.id")
-    global_speaker_id: Optional[int] = Field(default=None, foreign_key="global_speakers.id")
+    recording_id: int = Field(foreign_key="recordings.id", sa_type=BigInteger)
+    global_speaker_id: Optional[int] = Field(default=None, foreign_key="global_speakers.id", sa_type=BigInteger)
     
     diarization_label: str # e.g. SPEAKER_00
     

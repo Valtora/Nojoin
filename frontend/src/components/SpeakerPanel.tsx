@@ -29,8 +29,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
       return acc;
     }
   }, [] as RecordingSpeaker[]).sort((a, b) => {
-    const nameA = a.global_speaker?.name || a.diarization_label;
-    const nameB = b.global_speaker?.name || b.diarization_label;
+    const nameA = a.name || a.global_speaker?.name || a.diarization_label;
+    const nameB = b.name || b.global_speaker?.name || b.diarization_label;
     return nameA.localeCompare(nameB);
   });
 
@@ -52,7 +52,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
 
   const handleRenameStart = (speaker: RecordingSpeaker) => {
     setRenamingSpeaker(speaker);
-    setRenameValue(speaker.global_speaker?.name || speaker.diarization_label);
+    setRenameValue(speaker.name || speaker.global_speaker?.name || speaker.diarization_label);
     setContextMenu(null);
   };
 
@@ -113,8 +113,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment }: Spea
                             />
                         ) : (
                             <>
-                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={speaker.global_speaker?.name || speaker.diarization_label}>
-                                {speaker.global_speaker?.name || speaker.diarization_label}
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={speaker.name || speaker.global_speaker?.name || speaker.diarization_label}>
+                                {speaker.name || speaker.global_speaker?.name || speaker.diarization_label}
                                 </p>
                                 {speaker.global_speaker && (
                                     <p className="text-xs text-gray-500 truncate">{speaker.diarization_label}</p>

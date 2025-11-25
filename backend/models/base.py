@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlmodel import Field, SQLModel
 import sqlalchemy as sa
+from sqlalchemy import BigInteger
 
 class TimestampMixin(SQLModel):
     created_at: datetime = Field(
@@ -17,4 +18,4 @@ class TimestampMixin(SQLModel):
     )
 
 class BaseDBModel(TimestampMixin):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True, sa_type=BigInteger)
