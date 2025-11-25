@@ -51,6 +51,8 @@ DEFAULT_CONFIG = {
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "notes_font_size": "Medium",  # Font size for meeting notes display
     "infer_meeting_title": True,  # Automatically infer meeting name from transcript using LLM
+    "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
+    "companion_url": "http://localhost:12345", # Default Companion App URL
     "llm_user_context": "", # Custom user context/instructions for LLM (Meeting Generation)
     "llm_qa_context": "", # Custom user context/instructions for LLM (Q&A Chat)
     "llm_templates": {}, # Custom overrides for LLM prompt templates

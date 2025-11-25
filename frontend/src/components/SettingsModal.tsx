@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { getSettings, updateSettings } from '@/lib/api';
 import { Settings } from '@/types';
 import { Save, Loader2, X, Eye, EyeOff } from 'lucide-react';
@@ -21,6 +22,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showHfToken, setShowHfToken] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -73,10 +80,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-200 dark:border-gray-800">
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
@@ -109,6 +116,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <option value="dark">Dark</option>
                             <option value="system">System Default</option>
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">Choose your preferred visual theme.</p>
                     </div>
                 </div>
               </div>
@@ -132,6 +140,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">Select the AI provider for generating notes and chat.</p>
                     </div>
 
                     <div>
@@ -154,6 +163,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
+                        <p className="text-xs text-gray-500 mt-1">Your secret API key for Google Gemini.</p>
                     </div>
 
                     <div>
@@ -176,6 +186,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
+                        <p className="text-xs text-gray-500 mt-1">Your secret API key for OpenAI.</p>
                     </div>
 
                     <div>
@@ -198,6 +209,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
+                        <p className="text-xs text-gray-500 mt-1">Your secret API key for Anthropic.</p>
                     </div>
 
                     <div>
@@ -255,6 +267,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                             placeholder="redis://localhost:6379/0"
                         />
+                        <p className="text-xs text-gray-500 mt-1">Connection string for the Redis broker used by the background worker.</p>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -267,7 +280,25 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                             placeholder="http://localhost:12345"
                         />
+                        <p className="text-xs text-gray-500 mt-1">The address where the local Companion App is running.</p>
                     </div>
+                    {companionConfig && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Backend API URL
+                            </label>
+                            <input
+                                type="text"
+                                value={companionConfig.api_url}
+                                onChange={(e) => setCompanionConfig({ ...companionConfig, api_url: e.target.value })}
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                placeholder="http://localhost:8000/api/v1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                The URL where the Companion App sends audio. Change this if your backend is on a different machine.
+                            </p>
+                        </div>
+                    )}
                 </div>
               </div>
 
@@ -293,35 +324,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <option value="large-v3">Large v3 (Slowest, Best Accuracy)</option>
                             <option value="turbo">Turbo (Balanced)</option>
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">Select the size of the transcription model. Larger models are more accurate but slower.</p>
                     </div>
                 </div>
               </div>
-
-              {/* Companion App */}
-              {companionConfig && (
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
-                        Companion App Configuration
-                    </h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Backend API URL
-                            </label>
-                            <input
-                                type="text"
-                                value={companionConfig.api_url}
-                                onChange={(e) => setCompanionConfig({ ...companionConfig, api_url: e.target.value })}
-                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                                placeholder="http://localhost:8000/api/v1"
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                                The URL where the Companion App sends audio. Change this if your backend is on a different machine.
-                            </p>
-                        </div>
-                    </div>
-                  </div>
-              )}
             </>
           )}
         </div>
@@ -343,6 +349,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
