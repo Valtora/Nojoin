@@ -21,7 +21,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    # Added --reload for hot reloading during development
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
       - ./data/recordings:/app/recordings
@@ -76,6 +77,8 @@ services:
       - /app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Enable polling for hot reloading on Windows file systems
+      - WATCHPACK_POLLING=true
     restart: always
 
 volumes:

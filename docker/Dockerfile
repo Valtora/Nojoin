@@ -1,5 +1,6 @@
-# Use Nvidia CUDA base image for GPU support
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# Use PyTorch base image with CUDA 12.4 support
+# This image includes PyTorch 2.5.1, CUDA 12.4, and cuDNN 9
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -7,9 +8,9 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
+# We need ffmpeg for audio processing, git for installing some pip packages,
+# and build-essential/libsndfile1 for audio libraries.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
     libpq-dev \
@@ -26,7 +27,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# We filter out torch and torchaudio because they are already included in the base image.
+# This saves massive amounts of space and download time.
+RUN grep -vE "^torch|^torchaudio" requirements.txt > requirements.docker.txt && \
+    pip install --no-cache-dir -r requirements.docker.txt
 
 # Copy the rest of the application code
 COPY . .

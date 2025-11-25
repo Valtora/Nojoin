@@ -1,55 +1,54 @@
 # Nojoin AI Agent Instructions
 
-## 🔍 Project Overview
-Nojoin is a distributed meeting intelligence platform with a **FastAPI backend**, **Next.js frontend**, and **Rust companion app**.
-- **Core Philosophy:** Local-first processing (Whisper/Pyannote) on a GPU server, accessed via web.
-- **Architecture:** Monorepo. Docker for infra (Postgres, Redis). Local processes for dev.
+## 🧠 Project Overview
+Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app, processes it on a GPU-enabled Docker backend (Whisper/Pyannote), and presents insights via a Next.js web interface.
 
-## 🏗️ Architecture & Patterns
+## 🏗️ Architecture & Data Flow
+- **Backend (`backend/`)**: FastAPI service + Celery worker.
+  - **API**: Handles metadata, user auth, and serves audio.
+  - **Worker**: Performs VAD, Transcription (Whisper), and Diarization (Pyannote).
+  - **DB**: PostgreSQL (SQLModel).
+  - **Broker**: Redis.
+- **Frontend (`frontend/`)**: Next.js (App Router) + Tailwind CSS.
+- **Companion (`companion/`)**: Rust system tray app. Captures audio (cpal) and uploads to backend.
+- **Infrastructure**: Docker Compose orchestrates all services.
 
-### Backend (`backend/`)
-- **Framework:** FastAPI with `SQLModel` (SQLAlchemy + Pydantic).
-- **Async/Sync Split:**
-  - **API Endpoints:** Use `async` functions and `AsyncSession` (`backend/api/deps.py`).
-  - **Celery Tasks:** Use **synchronous** sessions via `DatabaseTask` base class (`backend/worker/tasks.py`).
-- **Processing Pipeline:** `VAD -> Transcribe (Whisper) -> Diarize (Pyannote)`. Logic in `backend/processing/`.
-- **Database:** PostgreSQL. Tables created on startup via `lifespan` in `main.py`.
-- **Auth:** OAuth2 with JWT. First user created automatically on startup.
+## 💻 Development Workflow
+- **Start Stack**: `docker-compose up -d` (starts DB, Redis, API, Worker, Frontend).
+- **Backend Dev**:
+  - Run locally: `uvicorn backend.main:app --reload` (requires local DB/Redis).
+  - Worker: `celery -A backend.celery_app.celery_app worker --pool=solo` (Windows) or `prefork` (Linux).
+- **Frontend Dev**: `cd frontend && npm run dev`.
+- **Companion Dev**: `cd companion && cargo run`.
 
-### Frontend (`frontend/`)
-- **Framework:** Next.js (App Router) with TypeScript and Tailwind CSS.
-- **API Client:** `axios` instance in `src/lib/api.ts`.
-  - **Auth:** Interceptors inject `Bearer` token from `localStorage`.
-  - **Base URL:** Currently hardcoded to `http://localhost:8000/api/v1`.
-- **State:** React hooks. No global state library (Redux/Zustand) observed yet; relies on component state and API refetching.
+## 🐍 Backend (Python/FastAPI)
+- **Models**: Defined in `backend/models/`. Use `SQLModel`.
+- **Migrations**: Currently using `SQLModel.metadata.create_all` in `lifespan` (no Alembic yet).
+- **Tasks**: Heavy processing logic is in `backend/worker/tasks.py`.
+  - **Pipeline**: VAD -> Preprocess (16k mono) -> Whisper -> Pyannote -> Alignment.
+- **Dependency Injection**: Use `backend.api.deps` for DB sessions and current user.
+- **Pattern**: Service layer pattern is partially implemented; complex logic often resides in `backend/processing/`.
 
-### Companion App (`companion/`)
-- **Language:** Rust.
-- **Role:** System tray app for audio capture.
-- **Communication:** Uploads audio segments to Backend API.
+## ⚛️ Frontend (Next.js/TypeScript)
+- **API Client**: `src/lib/api.ts` uses Axios with interceptors for JWT auth.
+- **State**: React Query (implied) or local state.
+- **Components**: `src/components/` contains functional components.
+- **Routing**: App Router (`src/app/`).
+- **Styling**: Tailwind CSS.
 
-## 🛠️ Development Workflow
-- **Primary Script:** `dev.ps1` (PowerShell).
-  - Checks Docker.
-  - Starts Infra (Postgres/Redis) via `docker-compose`.
-  - Starts API, Worker, Frontend, and Companion in separate windows.
-- **Ports:**
-  - API: `8000`
-  - Frontend: `14141`
-  - Companion: `12345`
-  - Postgres: `5432`
-  - Redis: `6379`
+## 🦀 Companion App (Rust)
+- **Concurrency**: Uses `crossbeam_channel` for audio thread <-> main thread communication.
+- **Tray**: `tray-icon` and `tao` for system tray management.
+- **Audio**: `cpal` for capture.
+- **Server**: Local HTTP server (Tokio) to receive commands from the Frontend.
 
-## 🚨 Critical Guidelines
-1.  **Testing:** The user performs manual testing. **Do not write automated tests** unless explicitly requested.
-2.  **Database Changes:** When modifying models (`backend/models/`), ensure `SQLModel.metadata.create_all` in `main.py` will pick them up.
-3.  **Celery Tasks:** Always inherit from `DatabaseTask` when needing DB access to ensure proper session cleanup.
-4.  **Frontend API:** Update `src/types/index.ts` when backend models change.
-5.  **Environment:** Assume Windows/PowerShell environment for all shell commands.
+## ⚠️ Critical Implementation Details
+- **GPU Support**: The worker container requires NVIDIA Container Toolkit.
+- **Audio Format**: Internal processing standard is **16kHz Mono WAV**.
+- **Auth**: JWT-based. Default admin user created on startup.
+- **File Paths**: Docker volumes map `./data` to `/app/data`. Ensure paths are consistent across host/container.
 
-## 📂 Key Files
-- `dev.ps1`: **READ THIS** to understand how the app starts.
-- `backend/main.py`: App entry & lifespan logic.
-- `backend/worker/tasks.py`: Background processing logic.
-- `frontend/src/lib/api.ts`: Frontend API communication layer.
-- `docs/PRD.md`: Detailed feature specifications.
+## 🧪 Testing
+- **Backend**: `pytest` (if available).
+- **Frontend**: Manual testing via browser.
+- **Companion**: Manual testing via system tray and audio capture verification.

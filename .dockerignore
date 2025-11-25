@@ -22,3 +22,5 @@ README.md
 LICENSE
 .venv/
 .wav
+companion/target/
+data/
