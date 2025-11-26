@@ -168,7 +168,8 @@ def _combine_word_level(segments, speaker_turns):
         if i == 0:
             current_segment["start"] = w_start
             current_segment["speaker"] = speaker
-            current_segment["text"] = w_text
+            # Strip leading space from first word if present
+            current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
             continue
         
@@ -181,12 +182,17 @@ def _combine_word_level(segments, speaker_turns):
                 "start": w_start,
                 "end": w_end,
                 "speaker": speaker,
-                "text": w_text,
+                # Strip leading space from first word of new segment
+                "text": w_text.lstrip(),
                 "words": []
             }
         else:
-            # Whisper word tokens already include spacing, just concatenate
-            current_segment["text"] += w_text
+            # Whisper word tokens include leading space (e.g., " hello")
+            # Add space if the word doesn't already have one
+            if w_text.startswith(' '):
+                current_segment["text"] += w_text
+            else:
+                current_segment["text"] += ' ' + w_text
             current_segment["end"] = w_end
             
     final_segments.append(current_segment)

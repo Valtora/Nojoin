@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
   segments: TranscriptSegment[];
-  onPlaySegment: (time: number) => void;
+  onPlaySegment: (time: number, end?: number) => void;
   recordingId: number;
   speakerColors: Record<string, string>; // Now stores color keys, not full classes
   onColorChange: (speakerName: string, colorKey: string) => void;
@@ -63,7 +63,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
         return;
     }
     const randomSegment = speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
-    onPlaySegment(randomSegment.start);
+    onPlaySegment(randomSegment.start, randomSegment.end);
   };
 
   const handleContextMenu = (e: React.MouseEvent, speaker: RecordingSpeaker) => {

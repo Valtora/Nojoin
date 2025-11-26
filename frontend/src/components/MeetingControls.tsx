@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Pause, Mic } from 'lucide-react';
+import { Play, Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 type RecordingStatus = 'idle' | 'recording' | 'paused';
@@ -194,7 +194,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
                 className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 title="Resume Recording"
               >
-                <Play className="w-5 h-5" />
+                <Circle className="w-5 h-5 fill-red-500" />
               </button>
             )}
             
