@@ -156,11 +156,19 @@ async def update_recording_speaker(
     if not recording_speakers:
         raise HTTPException(status_code=404, detail=f"No speakers found with label {update.diarization_label} in this recording")
         
+    # Capture old names for transcript repair
+    old_names = set()
+    for rs in recording_speakers:
+        if rs.local_name: old_names.add(rs.local_name)
+        if rs.name: old_names.add(rs.name)
+        # We also want to catch if the transcript has the *new* name stored directly
+        old_names.add(update.global_speaker_name)
+
     for rs in recording_speakers:
         if global_speaker:
             # Link to existing global speaker
             rs.global_speaker_id = global_speaker.id
-            rs.local_name = None  # Clear local name
+            rs.local_name = None  # Clear local name to enforce global precedence
             rs.name = None  # Deprecated field
             
             # Active Learning: Update Global Speaker embedding from user feedback
@@ -177,6 +185,30 @@ async def update_recording_speaker(
             rs.name = None  # Deprecated field
         
         db.add(rs)
+
+    # 4. Transcript Repair: Ensure segments use diarization_label
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+
+    if transcript and transcript.segments:
+        segments_updated = False
+        new_segments = []
+        for segment in transcript.segments:
+            segment_copy = dict(segment)
+            current_speaker = segment_copy.get("speaker")
+            
+            # If the segment uses one of the old names (or the new name), revert to label
+            if current_speaker in old_names:
+                segment_copy["speaker"] = update.diarization_label
+                segments_updated = True
+            
+            new_segments.append(segment_copy)
+        
+        if segments_updated:
+            transcript.segments = new_segments
+            flag_modified(transcript, "segments")
+            db.add(transcript)
 
     await db.commit()
     
@@ -283,10 +315,18 @@ async def merge_speakers(
     
     for rs in recording_speakers:
         rs.global_speaker_id = target.id
-        rs.name = target.name
+        rs.name = None # Clear deprecated name
+        rs.local_name = None # Clear local name to ensure target global name takes precedence
         db.add(rs)
         
-    # 3. Delete source speaker
+    # 3. Merge embeddings
+    if source.embedding and target.embedding:
+        target.embedding = merge_embeddings(target.embedding, source.embedding, alpha=0.5)
+    elif source.embedding and not target.embedding:
+        target.embedding = source.embedding
+    db.add(target)
+
+    # 4. Delete source speaker
     await db.delete(source)
     
     await db.commit()
@@ -403,6 +443,18 @@ async def merge_recording_speakers(
     if not target_speaker:
         raise HTTPException(status_code=404, detail=f"Target speaker '{merge_data.target_speaker_label}' not found")
 
+    # Identify all aliases for the source speaker to catch in transcript
+    source_aliases = {merge_data.source_speaker_label}
+    if source_speaker.local_name:
+        source_aliases.add(source_speaker.local_name)
+    if source_speaker.name:
+        source_aliases.add(source_speaker.name)
+    # Also check if it was linked to a global speaker
+    if source_speaker.global_speaker_id:
+        gs = await db.get(GlobalSpeaker, source_speaker.global_speaker_id)
+        if gs:
+            source_aliases.add(gs.name)
+
     # 4. Update Transcript Segments
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(statement)
@@ -414,7 +466,8 @@ async def merge_recording_speakers(
         new_segments = []
         for segment in transcript.segments:
             segment_copy = dict(segment)
-            if segment_copy.get("speaker") == merge_data.source_speaker_label:
+            # Check if segment speaker matches any source alias
+            if segment_copy.get("speaker") in source_aliases:
                 segment_copy["speaker"] = merge_data.target_speaker_label
                 segments_updated = True
             new_segments.append(segment_copy)

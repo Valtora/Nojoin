@@ -15,7 +15,7 @@ interface SpeakerPanelProps {
   onPlaySegment: (time: number, end?: number) => void;
   recordingId: number;
   speakerColors: Record<string, string>; // Now stores color keys, not full classes
-  onColorChange: (speakerName: string, colorKey: string) => void;
+  onColorChange: (speakerLabel: string, colorKey: string) => void;
 }
 
 export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, availableColors }: SpeakerPanelProps) {
@@ -285,9 +285,9 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                             </div>
                             <div className="absolute -bottom-1 -right-1">
                                 <InlineColorPicker
-                                    selectedColor={speakerColors[getSpeakerName(speaker)]}
+                                    selectedColor={speakerColors[speaker.diarization_label]}
                                     onColorSelect={(colorKey) => {
-                                        onColorChange(getSpeakerName(speaker), colorKey);
+                                        onColorChange(speaker.diarization_label, colorKey);
                                     }}
                                 />
                             </div>

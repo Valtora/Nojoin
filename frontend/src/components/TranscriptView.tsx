@@ -183,9 +183,9 @@ export default function TranscriptView({
       return parts;
   };
 
-  const getSpeakerColor = (speakerName: string) => {
+  const getSpeakerColor = (speakerLabel: string) => {
       // Get the color key from speakerColors, default to 'gray' if not found
-      const colorKey = speakerColors[speakerName] || 'gray';
+      const colorKey = speakerColors[speakerLabel] || 'gray';
       const colorOption = getColorByKey(colorKey);
       // Return combined bg, border classes for the chat bubble
       return `${colorOption.bg} ${colorOption.border}`;
@@ -430,7 +430,7 @@ export default function TranscriptView({
           // Determine bubble color
           const bubbleColor = isActive 
             ? 'border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20' 
-            : getSpeakerColor(speakerName);
+            : getSpeakerColor(segment.speaker);
 
           return (
             <div

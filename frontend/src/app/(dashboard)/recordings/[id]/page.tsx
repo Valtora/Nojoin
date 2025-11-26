@@ -107,24 +107,21 @@ export default function RecordingPage({ params }: PageProps) {
     const newColors = { ...speakerColors };
     const segments = recording.transcript.segments;
     
-    // Get all unique speakers
-    const speakers = new Set<string>();
+    // Get all unique speaker labels (diarization labels)
+    const speakerLabels = new Set<string>();
     segments.forEach(s => {
-        // Resolve name using the recording speakers list if possible, or fallback to segment speaker label
-        const speakerObj = recording.speakers?.find(rs => rs.diarization_label === s.speaker);
-        const name = speakerObj?.local_name || speakerObj?.global_speaker?.name || speakerObj?.name || s.speaker;
-        speakers.add(name);
+        speakerLabels.add(s.speaker);
     });
 
-    speakers.forEach(speaker => {
-        if (!newColors[speaker]) {
-            // Use a stable hash function to assign colors
+    speakerLabels.forEach(label => {
+        if (!newColors[label]) {
+            // Use a stable hash function to assign colors based on the label
             let hash = 0;
-            for (let i = 0; i < speaker.length; i++) {
-                hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+            for (let i = 0; i < label.length; i++) {
+                hash = label.charCodeAt(i) + ((hash << 5) - hash);
             }
             const index = Math.abs(hash) % COLOR_PALETTE.length;
-            newColors[speaker] = COLOR_PALETTE[index].key;
+            newColors[label] = COLOR_PALETTE[index].key;
         }
     });
     setSpeakerColors(newColors);
@@ -309,10 +306,10 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
-  const handleColorChange = (speakerName: string, colorKey: string) => {
+  const handleColorChange = (speakerLabel: string, colorKey: string) => {
       setSpeakerColors(prev => ({
           ...prev,
-          [speakerName]: colorKey
+          [speakerLabel]: colorKey
       }));
   };
 

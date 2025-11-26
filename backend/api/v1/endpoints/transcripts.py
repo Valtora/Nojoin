@@ -132,15 +132,15 @@ async def update_segment_speaker(
     # Try to find match
     for rs in recording_speakers:
         # Check explicit name on RecordingSpeaker
+        if rs.local_name and rs.local_name.lower() == new_speaker_name.lower():
+            target_label = rs.diarization_label
+            target_recording_speaker = rs
+            break
         if rs.name and rs.name.lower() == new_speaker_name.lower():
             target_label = rs.diarization_label
             target_recording_speaker = rs
             break
         # Check linked GlobalSpeaker name
-        # Note: We need to ensure global_speaker is loaded. 
-        # In async, we might need to explicit join or lazy load. 
-        # For now, let's assume we can query it if needed or it's eager loaded?
-        # SQLModel relationships are lazy by default.
         if rs.global_speaker_id:
             gs = await db.get(GlobalSpeaker, rs.global_speaker_id)
             if gs and gs.name.lower() == new_speaker_name.lower():
@@ -168,13 +168,14 @@ async def update_segment_speaker(
             recording_id=recording_id,
             diarization_label=target_label,
             global_speaker_id=global_speaker.id,
-            name=new_speaker_name # Optional, but good for display
+            name=None # Deprecated, use global link
         )
         db.add(target_recording_speaker)
         await db.commit()
         await db.refresh(target_recording_speaker)
 
     # 3. Update Transcript Segment
+    # CRITICAL: Store the LABEL, not the name
     transcript.segments[segment_index]['speaker'] = target_label
     flag_modified(transcript, "segments")
     db.add(transcript)
