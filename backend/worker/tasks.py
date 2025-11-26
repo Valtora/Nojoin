@@ -120,6 +120,7 @@ def process_recording_task(self, recording_id: int):
         
         # Combine Transcription and Diarization
         combined_segments = combine_transcription_diarization(transcription_result, diarization_result)
+        logger.info(f"Combined segments count: {len(combined_segments) if combined_segments else 0}")
         
         if not combined_segments:
             # Fallback if combination fails (e.g. no diarization segments)
@@ -142,6 +143,7 @@ def process_recording_task(self, recording_id: int):
 
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
+        logger.info(f"Final segments after consolidation: {len(final_segments)}")
         
         # Create or Update Transcript Record
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
@@ -171,6 +173,8 @@ def process_recording_task(self, recording_id: int):
             if spk not in seen_speakers:
                 ordered_speakers.append(spk)
                 seen_speakers.add(spk)
+        
+        logger.info(f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}")
         
         # Extract embeddings for all speakers in the diarization result (if enabled)
         # Voiceprint extraction can be disabled to speed up processing
@@ -248,6 +252,7 @@ def process_recording_task(self, recording_id: int):
                 speaker_counter += 1
 
             label_map[label] = resolved_name
+            logger.info(f"Mapped {label} -> {resolved_name}")
 
             if existing_speaker:
                 existing_speaker.embedding = embedding
@@ -271,6 +276,13 @@ def process_recording_task(self, recording_id: int):
             original_label = seg['speaker']
             seg['speaker'] = label_map.get(original_label, original_label)
             updated_segments.append(seg)
+        
+        # Log final speaker distribution in updated segments
+        final_speaker_counts = {}
+        for seg in updated_segments:
+            spk = seg['speaker']
+            final_speaker_counts[spk] = final_speaker_counts.get(spk, 0) + 1
+        logger.info(f"Final transcript speaker distribution: {final_speaker_counts}")
             
         transcript.segments = updated_segments
         session.add(transcript)

@@ -133,6 +133,8 @@ def _combine_word_level(segments, speaker_turns):
     for seg in segments:
         if 'words' in seg:
             all_words.extend(seg['words'])
+    
+    logger.info(f"_combine_word_level: Processing {len(all_words)} words")
             
     final_segments = []
     current_segment = {
@@ -183,10 +185,19 @@ def _combine_word_level(segments, speaker_turns):
                 "words": []
             }
         else:
-            current_segment["text"] += "" + w_text
+            # Whisper word tokens already include spacing, just concatenate
+            current_segment["text"] += w_text
             current_segment["end"] = w_end
             
     final_segments.append(current_segment)
+    
+    # Log speaker distribution
+    speaker_counts = {}
+    for seg in final_segments:
+        spk = seg['speaker']
+        speaker_counts[spk] = speaker_counts.get(spk, 0) + 1
+    logger.info(f"_combine_word_level: Created {len(final_segments)} segments with speaker distribution: {speaker_counts}")
+    
     return final_segments 
 
 def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
@@ -245,4 +256,13 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
                         f"duration {(curr_end - curr_start):.2f}s < {min_duration_s}s")
             
         i = j
+    
+    # Log final consolidation results
+    speaker_counts = {}
+    for seg in consolidated:
+        spk = seg['speaker']
+        speaker_counts[spk] = speaker_counts.get(spk, 0) + 1
+    logger.info(f"consolidate_diarized_transcript: Consolidated {len(segments)} segments into {len(consolidated)} segments")
+    logger.info(f"consolidate_diarized_transcript: Final speaker distribution: {speaker_counts}")
+    
     return consolidated
