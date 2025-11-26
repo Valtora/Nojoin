@@ -25,8 +25,7 @@ interface ServiceStatus {
 }
 
 interface AudioWarnings {
-  noInput: boolean;
-  noOutput: boolean;
+  noAudio: boolean;
 }
 
 // Threshold below which we consider the audio "silent" (0-100 scale)
@@ -43,8 +42,7 @@ export default function ServiceStatusAlerts() {
   });
   
   const [audioWarnings, setAudioWarnings] = useState<AudioWarnings>({
-    noInput: false,
-    noOutput: false,
+    noAudio: false,
   });
   
   // Track consecutive silence counts
@@ -134,20 +132,22 @@ export default function ServiceStatusAlerts() {
               silenceCountRef.current.output = 0;
             }
             
+            const isInputSilent = silenceCountRef.current.input >= SILENCE_CHECK_COUNT;
+            const isOutputSilent = silenceCountRef.current.output >= SILENCE_CHECK_COUNT;
+
             setAudioWarnings({
-              noInput: silenceCountRef.current.input >= SILENCE_CHECK_COUNT,
-              noOutput: silenceCountRef.current.output >= SILENCE_CHECK_COUNT,
+              noAudio: isInputSilent && isOutputSilent,
             });
           } else {
             // Reset when not recording
             silenceCountRef.current = { input: 0, output: 0 };
-            setAudioWarnings({ noInput: false, noOutput: false });
+            setAudioWarnings({ noAudio: false });
           }
         }
       } catch (error) {
         // Companion not available, reset warnings
         silenceCountRef.current = { input: 0, output: 0 };
-        setAudioWarnings({ noInput: false, noOutput: false });
+        setAudioWarnings({ noAudio: false });
       }
     };
 
@@ -216,7 +216,7 @@ export default function ServiceStatusAlerts() {
 
   // Check if there are any alerts to show
   const hasServiceAlerts = !status.backend || !status.db || !status.worker || !status.companion;
-  const hasAudioWarnings = audioWarnings.noInput || audioWarnings.noOutput;
+  const hasAudioWarnings = audioWarnings.noAudio;
   
   if (!hasServiceAlerts && !hasAudioWarnings) {
     return null;
@@ -233,13 +233,9 @@ export default function ServiceStatusAlerts() {
       {!status.companion && renderAlert("Companion App Disconnected", "Start the app to record audio.")}
       
       {/* Audio warnings (only show when companion is connected and recording) */}
-      {status.companion && audioWarnings.noInput && renderWarning(
-        "No Microphone Audio Detected", 
-        "Check if your mic is muted or disconnected."
-      )}
-      {status.companion && audioWarnings.noOutput && renderWarning(
-        "No System Audio Detected", 
-        "Check your volume settings or audio output device."
+      {status.companion && audioWarnings.noAudio && renderWarning(
+        "No Audio Detected", 
+        "No sound detected from microphone or system."
       )}
     </div>
   );
