@@ -56,6 +56,8 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   If pauses occur, the audio may be sent as multiple segments.
     *   **Server-Side Concatenation:** The server immediately concatenates these segments upon receipt/completion.
 *   **Visual Feedback:** Tray icon changes color/shape based on status. Native system notifications for status changes (Recording Started, Stopped, Paused) and errors.
+*   **Audio Monitoring:**
+    *   **Peak Hold Logic:** The Companion App tracks the maximum audio level (peak) between polling intervals. This ensures that even brief speech is detected by the Web Client's health check, preventing false "No Audio" warnings during quiet moments.
 *   **Resilience:**
     *   **Auto-Reconnect:** Retry logic for audio uploads with exponential backoff.
     *   **Config Loading:** robust search for `config.json` in executable directory.

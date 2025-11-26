@@ -199,7 +199,7 @@ fn start_segment(
                 let mono = to_mono(data, mic_channels);
                 // Update input level (always, for monitoring)
                 let rms = calculate_rms(&mono);
-                state_mic.set_input_level(rms);
+                state_mic.record_input_level(rms);
                 
                 if is_recording_mic.load(Ordering::SeqCst) {
                     mic_tx.send(mono).unwrap();
@@ -218,7 +218,7 @@ fn start_segment(
                 let mono = to_mono(data, sys_channels);
                 // Update output level (always, for monitoring)
                 let rms = calculate_rms(&mono);
-                state_sys.set_output_level(rms);
+                state_sys.record_output_level(rms);
                 
                 if is_recording_sys.load(Ordering::SeqCst) {
                     sys_tx.send(mono).unwrap();

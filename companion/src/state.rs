@@ -27,23 +27,23 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn set_input_level(&self, level: f32) {
+    pub fn record_input_level(&self, level: f32) {
         // Convert 0.0-1.0 to 0-100
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
-        self.input_level.store(scaled, Ordering::Relaxed);
+        self.input_level.fetch_max(scaled, Ordering::Relaxed);
     }
     
-    pub fn set_output_level(&self, level: f32) {
+    pub fn record_output_level(&self, level: f32) {
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
-        self.output_level.store(scaled, Ordering::Relaxed);
+        self.output_level.fetch_max(scaled, Ordering::Relaxed);
     }
     
-    pub fn get_input_level(&self) -> u32 {
-        self.input_level.load(Ordering::Relaxed)
+    pub fn take_input_level(&self) -> u32 {
+        self.input_level.swap(0, Ordering::Relaxed)
     }
     
-    pub fn get_output_level(&self) -> u32 {
-        self.output_level.load(Ordering::Relaxed)
+    pub fn take_output_level(&self) -> u32 {
+        self.output_level.swap(0, Ordering::Relaxed)
     }
 }
 

@@ -76,8 +76,8 @@ async fn get_audio_levels(State(state): State<Arc<AppState>>) -> Json<AudioLevel
     let is_recording = matches!(status, AppStatus::Recording);
     
     Json(AudioLevelsResponse {
-        input_level: state.get_input_level(),
-        output_level: state.get_output_level(),
+        input_level: state.take_input_level(),
+        output_level: state.take_output_level(),
         is_recording,
     })
 }
