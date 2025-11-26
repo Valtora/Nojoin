@@ -56,6 +56,9 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
     // Shared flag to stop the stream thread
     let is_recording = Arc::new(AtomicBool::new(false));
     
+    // Track the recording thread handle to ensure we wait for uploads
+    let mut recording_handle: Option<std::thread::JoinHandle<()>> = None;
+    
     // We need to keep the device alive or clone it. 
     // Since we can't easily clone Device in a generic way without knowing the backend,
     // we will just re-acquire it inside the thread or move it if possible.
@@ -69,20 +72,29 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
         
         match command {
             AudioCommand::Start(id) => {
-                start_segment(id, 1, state.clone(), is_recording.clone());
+                recording_handle = Some(start_segment(id, 1, state.clone(), is_recording.clone()));
             }
             AudioCommand::Resume => {
                 let id = *state.current_recording_id.lock().unwrap();
                 let seq = *state.current_sequence.lock().unwrap();
                 if let Some(rec_id) = id {
-                    start_segment(rec_id, seq, state.clone(), is_recording.clone());
+                    recording_handle = Some(start_segment(rec_id, seq, state.clone(), is_recording.clone()));
                 }
             }
             AudioCommand::Pause => {
                 is_recording.store(false, Ordering::SeqCst);
+                // Wait for the current segment to finish uploading
+                if let Some(handle) = recording_handle.take() {
+                    let _ = handle.join();
+                }
             }
             AudioCommand::Stop => {
                 is_recording.store(false, Ordering::SeqCst);
+                // Wait for the current segment to finish uploading
+                if let Some(handle) = recording_handle.take() {
+                    let _ = handle.join();
+                }
+
                 // Trigger finalize
                 let id = *state.current_recording_id.lock().unwrap();
                 let config = state.config.lock().unwrap().clone();
@@ -93,8 +105,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
-                            // Wait a bit for the upload to finish
-                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; 
+                            // No sleep needed anymore, we know upload is done
                             match uploader::finalize_recording(rec_id, &config).await {
                                 Ok(_) => println!("Recording finalized"),
                                 Err(e) => eprintln!("Failed to finalize: {}", e),
@@ -128,7 +139,7 @@ fn start_segment(
     sequence: i32,
     state: Arc<AppState>,
     is_recording: Arc<AtomicBool>
-) {
+) -> std::thread::JoinHandle<()> {
     is_recording.store(true, Ordering::SeqCst);
     let config = state.config.lock().unwrap().clone();
     
