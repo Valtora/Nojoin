@@ -89,3 +89,19 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
         tokio::time::sleep(tokio::time::Duration::from_secs(wait_time)).await;
     }
 }
+
+pub async fn update_client_status(recording_id: i64, status: &str, config: &Config) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/recordings/{}/client_status?status={}", config.api_url, recording_id, status);
+    
+    let res = client.put(&url)
+        .header("Authorization", format!("Bearer {}", config.api_token))
+        .send()
+        .await?;
+        
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
+    }
+    
+    Ok(())
+}

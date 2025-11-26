@@ -6,6 +6,13 @@ export enum RecordingStatus {
   ERROR = "ERROR",
 }
 
+export enum ClientStatus {
+  RECORDING = "RECORDING",
+  PAUSED = "PAUSED",
+  UPLOADING = "UPLOADING",
+  IDLE = "IDLE",
+}
+
 export interface BaseDBModel {
   id: number;
   created_at: string;
@@ -55,10 +62,12 @@ export interface Recording extends BaseDBModel {
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
-  is_archived?: boolean;
-  is_deleted?: boolean;
-  speakers?: RecordingSpeaker[];
+  client_status?: ClientStatus;
+  processing_step?: string;
+  is_archived: boolean;
+  is_deleted: boolean;
   transcript?: Transcript;
+  speakers?: RecordingSpeaker[];
   tags?: Tag[];
 }
 

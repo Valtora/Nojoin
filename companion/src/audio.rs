@@ -299,5 +299,5 @@ fn start_segment(
         
         // Cleanup
         let _ = std::fs::remove_file(path);
-    });
+    })
 }

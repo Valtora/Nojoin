@@ -10,7 +10,7 @@ import aiofiles
 from uuid import uuid4
 
 from backend.api.deps import get_db
-from backend.models.recording import Recording, RecordingStatus, RecordingRead, RecordingUpdate
+from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.worker.tasks import process_recording_task
 from backend.utils.audio import concatenate_wavs, get_audio_duration
 
@@ -744,3 +744,22 @@ async def batch_permanently_delete_recordings(
             
     await db.commit()
     return {"ok": True, "count": len(recordings)}
+
+@router.put("/{recording_id}/client_status", response_model=Recording)
+async def update_client_status(
+    recording_id: int,
+    status: ClientStatus = Query(..., description="Current status of the client"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update the client status (e.g. RECORDING, PAUSED) for a recording.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    recording.client_status = status
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    return recording

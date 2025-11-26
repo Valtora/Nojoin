@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import Field, Relationship, SQLModel
 from enum import Enum
 from .base import BaseDBModel
+from datetime import datetime
 
 if TYPE_CHECKING:
     from .speaker import RecordingSpeaker
@@ -15,6 +16,12 @@ class RecordingStatus(str, Enum):
     PROCESSED = "PROCESSED"
     ERROR = "ERROR"
 
+class ClientStatus(str, Enum):
+    RECORDING = "RECORDING"
+    PAUSED = "PAUSED"
+    UPLOADING = "UPLOADING"
+    IDLE = "IDLE"
+
 class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"
 
@@ -23,6 +30,8 @@ class Recording(BaseDBModel, table=True):
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
+    client_status: Optional[ClientStatus] = Field(default=None)
+    processing_step: Optional[str] = Field(default=None)
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     
@@ -56,6 +65,8 @@ class RecordingRead(BaseDBModel):
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
+    client_status: Optional[ClientStatus] = None
+    processing_step: Optional[str] = None
     is_archived: bool = False
     is_deleted: bool = False
     

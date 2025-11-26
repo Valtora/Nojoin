@@ -8,9 +8,22 @@ import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Recording, RecordingStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
+import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
 import { COLOR_PALETTE, getColorByKey } from '@/lib/constants';
+
+const getStatusMessage = (recording: Recording) => {
+    if (recording.status === RecordingStatus.UPLOADING) {
+        if (recording.client_status === ClientStatus.RECORDING) return "Meeting is in progress...";
+        if (recording.client_status === ClientStatus.PAUSED) return "Meeting is paused...";
+        if (recording.client_status === ClientStatus.UPLOADING) return "Meeting is being uploaded...";
+        return "Recording is active or finalizing upload...";
+    }
+    if (recording.status === RecordingStatus.PROCESSING) {
+        return recording.processing_step || "Processing...";
+    }
+    return "";
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -68,14 +81,23 @@ export default function RecordingPage({ params }: PageProps) {
       }
     };
     fetchRecording();
-    
+  }, [params]);
+
+  useEffect(() => {
+    if (!recording) return;
+
     // Poll for updates if processing
     const interval = setInterval(async () => {
-        if (recording && (recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.UPLOADING)) {
+        if (recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.UPLOADING) {
              try {
                 const { id } = await params;
                 const data = await getRecording(parseInt(id));
-                if (data.status !== recording.status) {
+                
+                if (
+                    data.status !== recording.status || 
+                    data.client_status !== recording.client_status ||
+                    data.processing_step !== recording.processing_step
+                ) {
                     setRecording(data);
                     if (!isEditingTitle) setTitleValue(data.name);
                 }
@@ -83,10 +105,10 @@ export default function RecordingPage({ params }: PageProps) {
                 console.error("Polling failed", e);
             }
         }
-    }, 5000);
+    }, 1000);
     
     return () => clearInterval(interval);
-  }, [params, recording?.status, isEditingTitle]);
+  }, [params, recording, isEditingTitle]);
 
   // Listen for recording updates (e.g. from Sidebar retry)
   useEffect(() => {
@@ -414,9 +436,7 @@ export default function RecordingPage({ params }: PageProps) {
                     {recording.status === RecordingStatus.UPLOADING ? "Meeting in Progress" : "Processing Recording..."}
                 </h2>
                 <p className="text-gray-500 dark:text-gray-400">
-                    {recording.status === RecordingStatus.UPLOADING 
-                        ? "Recording is active or finalizing upload..." 
-                        : "This may take a few minutes depending on the recording length."}
+                    {getStatusMessage(recording)}
                 </p>
             </div>
         ) : (

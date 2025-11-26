@@ -77,6 +77,9 @@ def process_recording_task(self, recording_id: int):
 
         # --- VAD Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 10, 'stage': 'VAD'})
+        recording.processing_step = "Filtering silence and noise..."
+        session.add(recording)
+        session.commit()
         
         # Preprocess for VAD (resample to 16k mono)
         vad_input_path = preprocess_audio_for_vad(audio_path)
@@ -105,12 +108,18 @@ def process_recording_task(self, recording_id: int):
         
         # --- Transcription Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 30, 'stage': 'Transcription'})
+        recording.processing_step = "Transcribing audio..."
+        session.add(recording)
+        session.commit()
         
         # Run Whisper
         transcription_result = transcribe_audio(processed_audio_path)
         
         # --- Diarization Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 60, 'stage': 'Diarization'})
+        recording.processing_step = "Determining who said what..."
+        session.add(recording)
+        session.commit()
         
         # Run Pyannote
         diarization_result = diarize_audio(processed_audio_path)
@@ -183,6 +192,9 @@ def process_recording_task(self, recording_id: int):
         
         if enable_auto_voiceprints and diarization_result:
             self.update_state(state='PROCESSING', meta={'progress': 85, 'stage': 'Voiceprints'})
+            recording.processing_step = "Learning voiceprints..."
+            session.add(recording)
+            session.commit()
             logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
             speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
         elif not enable_auto_voiceprints:
@@ -289,6 +301,7 @@ def process_recording_task(self, recording_id: int):
 
         # Update Recording Status
         recording.status = RecordingStatus.PROCESSED
+        recording.processing_step = "Completed"
         session.add(recording)
         session.commit()
         

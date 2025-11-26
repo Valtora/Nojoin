@@ -8,6 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::notifications;
 use crate::config::Config;
+use crate::uploader;
 
 pub async fn start_server(state: Arc<AppState>) {
     let app = Router::new()
@@ -150,6 +151,14 @@ async fn start_recording(
     // 2. Send Start Command to Audio Thread
     state.audio_command_tx.send(AudioCommand::Start(recording_id)).unwrap();
     
+    // Notify Backend of Status
+    let config_clone = state.config.lock().unwrap().clone();
+    tokio::spawn(async move {
+        if let Err(e) = uploader::update_client_status(recording_id, "RECORDING", &config_clone).await {
+            eprintln!("Failed to update client status: {}", e);
+        }
+    });
+    
     notifications::show_notification("Recording Started", "Nojoin is now recording.");
 
     Ok(Json(StartResponse {
@@ -175,6 +184,8 @@ async fn stop_recording(
         }
     }
 
+    let recording_id = *state.current_recording_id.lock().unwrap();
+
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Uploading;
@@ -188,11 +199,22 @@ async fn stop_recording(
         // Do NOT clear current_recording_id here. Audio thread needs it.
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
+    
+    if let Some(id) = recording_id {
+        let config_clone = state.config.lock().unwrap().clone();
+        tokio::spawn(async move {
+            if let Err(e) = uploader::update_client_status(id, "UPLOADING", &config_clone).await {
+                eprintln!("Failed to update client status: {}", e);
+            }
+        });
+    }
+
     notifications::show_notification("Recording Stopped", "Processing audio...");
     Ok(Json("Stopped".to_string()))
 }
 
 async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+    let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Paused;
@@ -208,11 +230,22 @@ async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<Stri
         *start_time = None;
     }
     state.audio_command_tx.send(AudioCommand::Pause).unwrap();
+    
+    if let Some(id) = recording_id {
+        let config_clone = state.config.lock().unwrap().clone();
+        tokio::spawn(async move {
+            if let Err(e) = uploader::update_client_status(id, "PAUSED", &config_clone).await {
+                eprintln!("Failed to update client status: {}", e);
+            }
+        });
+    }
+    
     notifications::show_notification("Recording Paused", "Recording paused.");
     Ok(Json("Paused".to_string()))
 }
 
 async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+    let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Recording;
@@ -224,6 +257,16 @@ async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<Str
         *start_time = Some(SystemTime::now());
     }
     state.audio_command_tx.send(AudioCommand::Resume).unwrap();
+    
+    if let Some(id) = recording_id {
+        let config_clone = state.config.lock().unwrap().clone();
+        tokio::spawn(async move {
+            if let Err(e) = uploader::update_client_status(id, "RECORDING", &config_clone).await {
+                eprintln!("Failed to update client status: {}", e);
+            }
+        });
+    }
+
     notifications::show_notification("Recording Resumed", "Recording resumed.");
     Ok(Json("Resumed".to_string()))
 }

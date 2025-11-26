@@ -71,7 +71,10 @@ A lightweight, cross-platform system tray application responsible for audio capt
     2.  **Transcription:** Whisper (Turbo/Large models supported).
     3.  **Diarization:** Pyannote processing.
     4.  **Alignment:** Merging transcript segments with speaker timestamps.
-*   **Progress Tracking:** Real-time status updates (Queued, Processing, Completed, Failed) pushed to the Web Client.
+*   **Progress Tracking:**
+    *   **Granular Status:** Real-time status updates pushed to the Web Client, including:
+        *   **Client State:** "Meeting in Progress", "Meeting Paused", "Uploading...".
+        *   **Processing Steps:** "Filtering silence...", "Transcribing...", "Determining speakers...", "Learning voiceprints...".
 *   **Export:**
     *   Export transcripts to `.txt` format via the Web Client.
 
