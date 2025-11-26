@@ -1,3 +1,4 @@
+import MainNav from "@/components/MainNav";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ChatPanel from "@/components/ChatPanel";
@@ -10,6 +11,7 @@ export default function DashboardLayout({
 }>) {
   return (
     <div className="flex h-screen w-full">
+      <MainNav />
       <Sidebar />
       
       <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">

@@ -44,6 +44,7 @@ export interface Transcript extends BaseDBModel {
 
 export interface Tag extends BaseDBModel {
   name: string;
+  color?: string;
 }
 
 export interface Recording extends BaseDBModel {
@@ -52,6 +53,8 @@ export interface Recording extends BaseDBModel {
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
+  is_archived?: boolean;
+  is_deleted?: boolean;
   speakers?: RecordingSpeaker[];
   transcript?: Transcript;
   tags?: Tag[];

@@ -26,6 +26,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showHfToken, setShowHfToken] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -356,24 +357,43 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </div>
                     )}
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Whisper Model Size
+                    {/* Advanced Section Toggle */}
+                    <div className="flex items-center gap-2 pt-2">
+                        <input
+                            type="checkbox"
+                            id="show-advanced"
+                            checked={showAdvanced}
+                            onChange={(e) => setShowAdvanced(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <label htmlFor="show-advanced" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                            Show Advanced Settings
                         </label>
-                        <select
-                            value={settings.whisper_model_size || 'turbo'}
-                            onChange={(e) => setSettings({ ...settings, whisper_model_size: e.target.value })}
-                            className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                        >
-                            <option value="tiny">Tiny (Fastest, Low Accuracy)</option>
-                            <option value="base">Base</option>
-                            <option value="small">Small</option>
-                            <option value="medium">Medium</option>
-                            <option value="large-v3">Large v3 (Slowest, Best Accuracy)</option>
-                            <option value="turbo">Turbo (Balanced)</option>
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">Select the size of the transcription model. Larger models are more accurate but slower.</p>
                     </div>
+
+                    {/* Advanced Settings (Collapsible) */}
+                    {showAdvanced && (
+                      <div className="space-y-4 pl-4 border-l-2 border-orange-200 dark:border-orange-800">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Whisper Model Size
+                            </label>
+                            <select
+                                value={settings.whisper_model_size || 'turbo'}
+                                onChange={(e) => setSettings({ ...settings, whisper_model_size: e.target.value })}
+                                className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                            >
+                                <option value="tiny">Tiny (Fastest, Low Accuracy)</option>
+                                <option value="base">Base</option>
+                                <option value="small">Small</option>
+                                <option value="medium">Medium</option>
+                                <option value="large-v3">Large v3 (Slowest, Best Accuracy)</option>
+                                <option value="turbo">Turbo (Balanced)</option>
+                            </select>
+                            <p className="text-xs text-gray-500 mt-1">Select the size of the transcription model. Larger models are more accurate but slower.</p>
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                         <div className="flex-1">

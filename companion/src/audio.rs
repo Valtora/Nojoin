@@ -180,14 +180,28 @@ fn start_segment(
             }
             mono
         };
+        
+        // Helper to calculate RMS level (0.0 to 1.0)
+        fn calculate_rms(data: &[f32]) -> f32 {
+            if data.is_empty() {
+                return 0.0;
+            }
+            let sum_squares: f32 = data.iter().map(|s| s * s).sum();
+            (sum_squares / data.len() as f32).sqrt()
+        }
 
         // 3. Build Mic Stream
         let is_recording_mic = is_recording.clone();
+        let state_mic = state.clone();
         let mic_stream = mic_device.build_input_stream(
             &mic_config.into(),
             move |data: &[f32], _: &_| {
+                let mono = to_mono(data, mic_channels);
+                // Update input level (always, for monitoring)
+                let rms = calculate_rms(&mono);
+                state_mic.set_input_level(rms);
+                
                 if is_recording_mic.load(Ordering::SeqCst) {
-                    let mono = to_mono(data, mic_channels);
                     mic_tx.send(mono).unwrap();
                 }
             },
@@ -197,11 +211,16 @@ fn start_segment(
 
         // 4. Build System Stream
         let is_recording_sys = is_recording.clone();
+        let state_sys = state.clone();
         let sys_stream = sys_device.build_input_stream(
             &sys_config.into(),
             move |data: &[f32], _: &_| {
+                let mono = to_mono(data, sys_channels);
+                // Update output level (always, for monitoring)
+                let rms = calculate_rms(&mono);
+                state_sys.set_output_level(rms);
+                
                 if is_recording_sys.load(Ordering::SeqCst) {
-                    let mono = to_mono(data, sys_channels);
                     sys_tx.send(mono).unwrap();
                 }
             },

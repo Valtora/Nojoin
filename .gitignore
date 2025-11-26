@@ -6,15 +6,8 @@
 # Environment
 /.venv
 
-# Recordings and transcripts directory
+# User data directory, also contains the config.json file which may have sensitive info
 /data
-/recordings/
-
-# Database file, should be regenerated on first run
-nojoin_data.db
-
-# Config file, generated on first run - contains API keys and other sensitive data
-config.json
 
 # IDE files
 *.mdc
@@ -25,13 +18,6 @@ config.json
 # Dist and Output Folders and Files
 /output/
 /dist
-
-# Scripts
-*.ps1
-
-# Added by cargo
-
-/target
 
 # Companion App (Rust)
 companion/target/
@@ -44,11 +30,7 @@ companion/target/
 # Node modules
 node_modules/
 
-# Database files (generic)
-*.db
-*.sqlite
-*.sqlite3
-
 # Personal Documentation
 docs/PERSONAL_SETUP.md
 .github/copilot-instructions.md
+companion/config.json

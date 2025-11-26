@@ -14,6 +14,7 @@ pub async fn start_server(state: Arc<AppState>) {
         .route("/status", get(get_status))
         .route("/config", get(get_config).post(update_config))
         .route("/devices", get(get_devices))
+        .route("/levels", get(get_audio_levels))
         .route("/start", post(start_recording))
         .route("/stop", post(stop_recording))
         .route("/pause", post(pause_recording))
@@ -60,6 +61,24 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
     Json(StatusResponse {
         status,
         duration_seconds: duration.as_secs(),
+    })
+}
+
+#[derive(serde::Serialize)]
+struct AudioLevelsResponse {
+    input_level: u32,
+    output_level: u32,
+    is_recording: bool,
+}
+
+async fn get_audio_levels(State(state): State<Arc<AppState>>) -> Json<AudioLevelsResponse> {
+    let status = state.status.lock().unwrap().clone();
+    let is_recording = matches!(status, AppStatus::Recording);
+    
+    Json(AudioLevelsResponse {
+        input_level: state.get_input_level(),
+        output_level: state.get_output_level(),
+        is_recording,
     })
 }
 

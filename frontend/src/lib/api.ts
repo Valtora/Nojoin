@@ -51,6 +51,10 @@ export interface RecordingFilters {
   end_date?: string;
   speaker_ids?: number[];
   tag_ids?: number[];
+  include_archived?: boolean;
+  include_deleted?: boolean;
+  only_archived?: boolean;
+  only_deleted?: boolean;
 }
 
 export const getRecordings = async (filters?: RecordingFilters): Promise<Recording[]> => {
@@ -66,6 +70,10 @@ export const getRecordings = async (filters?: RecordingFilters): Promise<Recordi
     if (filters.tag_ids) {
       filters.tag_ids.forEach(id => params.append('tag_ids', id.toString()));
     }
+    if (filters.include_archived) params.append('include_archived', 'true');
+    if (filters.include_deleted) params.append('include_deleted', 'true');
+    if (filters.only_archived) params.append('only_archived', 'true');
+    if (filters.only_deleted) params.append('only_deleted', 'true');
   }
 
   const response = await api.get<Recording[]>(`/recordings/?${params.toString()}`);
@@ -143,6 +151,16 @@ export const getTags = async (): Promise<Tag[]> => {
   return response.data;
 };
 
+export const createTag = async (name: string, color?: string): Promise<Tag> => {
+  const response = await api.post<Tag>('/tags/', { name, color });
+  return response.data;
+};
+
+export const updateTag = async (tagId: number, data: { name?: string; color?: string }): Promise<Tag> => {
+  const response = await api.patch<Tag>(`/tags/${tagId}`, data);
+  return response.data;
+};
+
 export const addTagToRecording = async (recordingId: number, tagName: string): Promise<void> => {
   await api.post(`/tags/recordings/${recordingId}`, { name: tagName });
 };
@@ -153,6 +171,26 @@ export const removeTagFromRecording = async (recordingId: number, tagName: strin
 
 export const deleteTag = async (id: number): Promise<void> => {
   await api.delete(`/tags/${id}`);
+};
+
+// Archive & Delete Management
+export const archiveRecording = async (id: number): Promise<Recording> => {
+  const response = await api.post<Recording>(`/recordings/${id}/archive`);
+  return response.data;
+};
+
+export const restoreRecording = async (id: number): Promise<Recording> => {
+  const response = await api.post<Recording>(`/recordings/${id}/restore`);
+  return response.data;
+};
+
+export const softDeleteRecording = async (id: number): Promise<Recording> => {
+  const response = await api.post<Recording>(`/recordings/${id}/soft-delete`);
+  return response.data;
+};
+
+export const permanentlyDeleteRecording = async (id: number): Promise<void> => {
+  await api.delete(`/recordings/${id}/permanent`);
 };
 
 // Settings

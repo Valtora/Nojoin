@@ -369,12 +369,28 @@ async def list_recordings(
     end_date: Optional[datetime] = None,
     speaker_ids: Optional[List[int]] = Query(None),
     tag_ids: Optional[List[int]] = Query(None),
+    include_archived: bool = Query(False, description="Include archived recordings"),
+    include_deleted: bool = Query(False, description="Include deleted recordings"),
+    only_archived: bool = Query(False, description="Only show archived recordings"),
+    only_deleted: bool = Query(False, description="Only show deleted recordings"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     List all recordings with optional search and filtering.
+    By default, excludes archived and deleted recordings.
     """
     query = select(Recording).distinct()
+    
+    # Archive/Delete filtering
+    if only_deleted:
+        query = query.where(Recording.is_deleted == True)
+    elif only_archived:
+        query = query.where(Recording.is_archived == True, Recording.is_deleted == False)
+    else:
+        if not include_deleted:
+            query = query.where(Recording.is_deleted == False)
+        if not include_archived:
+            query = query.where(Recording.is_archived == False)
     
     # Joins for filtering and searching
     if q or speaker_ids or tag_ids:
@@ -547,3 +563,95 @@ async def retry_processing(
     process_recording_task.delay(recording.id)
     
     return recording
+
+
+@router.post("/{recording_id}/archive", response_model=Recording)
+async def archive_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Archive a recording. Archived recordings are hidden from the main list.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    if recording.is_deleted:
+        raise HTTPException(status_code=400, detail="Cannot archive a deleted recording")
+        
+    recording.is_archived = True
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    return recording
+
+
+@router.post("/{recording_id}/restore", response_model=Recording)
+async def restore_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Restore an archived or soft-deleted recording back to the main list.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    recording.is_archived = False
+    recording.is_deleted = False
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    return recording
+
+
+@router.post("/{recording_id}/soft-delete", response_model=Recording)
+async def soft_delete_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Soft-delete a recording. It moves to the trash/deleted view.
+    The recording can be restored or permanently deleted later.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    recording.is_deleted = True
+    recording.is_archived = False  # Remove from archived if it was there
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    return recording
+
+
+@router.delete("/{recording_id}/permanent")
+async def permanently_delete_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permanently delete a recording and its associated file.
+    This action cannot be undone.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    # Delete file from disk
+    if recording.audio_path and os.path.exists(recording.audio_path):
+        try:
+            os.remove(recording.audio_path)
+        except OSError:
+            pass  # Log error but continue to delete DB entry
+            
+    await db.delete(recording)
+    await db.commit()
+    
+    return {"ok": True}

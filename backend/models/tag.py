@@ -1,4 +1,4 @@
-from typing import List, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 from sqlmodel import Field, Relationship
 from sqlalchemy import BigInteger
 from .base import BaseDBModel
@@ -17,5 +17,6 @@ class RecordingTag(BaseDBModel, table=True):
 class Tag(BaseDBModel, table=True):
     __tablename__ = "tags"
     name: str = Field(unique=True, index=True)
+    color: Optional[str] = Field(default=None, description="Color key for UI display")
     
     recordings: List["RecordingTag"] = Relationship(back_populates="tag")

@@ -9,13 +9,13 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-nojoin}
     ports:
       - "5432:5432"
-    restart: always
+    restart: unless-stopped
 
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
-    restart: always
+    restart: unless-stopped
 
   api:
     build:
@@ -36,7 +36,7 @@ services:
     depends_on:
       - db
       - redis
-    restart: always
+    restart: unless-stopped
 
   worker:
     build:
@@ -64,7 +64,7 @@ services:
     depends_on:
       - db
       - redis
-    restart: always
+    restart: unless-stopped
 
   frontend:
     build:
@@ -79,7 +79,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       # Enable polling for hot reloading on Windows file systems
       - WATCHPACK_POLLING=true
-    restart: always
+    restart: unless-stopped
 
 volumes:
   postgres_data:

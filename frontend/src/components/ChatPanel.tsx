@@ -1,50 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, FileInput, MessageSquare, Users, FilePlus } from 'lucide-react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import GlobalSpeakersModal from './GlobalSpeakersModal';
-import SettingsModal from './SettingsModal';
-import ImportAudioModal from './ImportAudioModal';
+import { MessageSquare } from 'lucide-react';
+import { useParams } from 'next/navigation';
 
 export default function ChatPanel() {
-  const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const params = useParams();
-  const router = useRouter();
   const recordingId = params?.id;
-
-  const handleImportSuccess = () => {
-    // Trigger a refresh by using router.refresh()
-    router.refresh();
-  };
 
   return (
     <aside className="w-80 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
-      <div className="p-4 border-b border-gray-400 dark:border-gray-800 flex justify-end space-x-2">
-        <button
-            onClick={() => setIsSpeakersModalOpen(true)}
-            className="p-2 bg-orange-600 text-white rounded-full hover:bg-orange-700 shadow-lg transition-colors"
-            title="Global Speakers"
-        >
-            <Users className="w-5 h-5" />
-        </button>
-        <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="p-2 bg-orange-600 text-white rounded-full hover:bg-orange-700 shadow-lg transition-colors"
-            title="Import Audio"
-        >
-            <FilePlus className="w-5 h-5" />
-        </button>
-        <button
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="p-2 bg-orange-600 text-white rounded-full hover:bg-orange-700 shadow-lg transition-colors"
-            title="Settings"
-        >
-            <Settings className="w-5 h-5" />
-        </button>
+      <div className="p-4 border-b border-gray-400 dark:border-gray-800">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          Chat with Meeting
+        </h2>
       </div>
       
       <div className="flex-1 p-4 flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
@@ -70,22 +39,6 @@ export default function ChatPanel() {
             </button>
         </div>
       </div>
-
-      <GlobalSpeakersModal 
-        isOpen={isSpeakersModalOpen} 
-        onClose={() => setIsSpeakersModalOpen(false)} 
-      />
-      
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-      />
-
-      <ImportAudioModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onSuccess={handleImportSuccess}
-      />
     </aside>
   );
 }

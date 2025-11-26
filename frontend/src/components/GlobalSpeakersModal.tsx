@@ -125,7 +125,7 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-300 dark:border-gray-800">
         <div className="p-6 border-b border-gray-300 dark:border-gray-800 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Global Speakers</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Speaker Library</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
             <X className="w-6 h-6" />
           </button>
@@ -224,7 +224,7 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
               
               {speakers.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
-                    No global speakers found.
+                    No speakers in library.
                 </div>
               )}
             </div>

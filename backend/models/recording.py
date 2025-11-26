@@ -23,6 +23,8 @@ class Recording(BaseDBModel, table=True):
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
+    is_archived: bool = Field(default=False, index=True)
+    is_deleted: bool = Field(default=False, index=True)
     
     # Relationships
     speakers: List["RecordingSpeaker"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -45,6 +47,7 @@ class TranscriptRead(BaseDBModel):
 
 class TagRead(BaseDBModel):
     name: str
+    color: Optional[str] = None
 
 class RecordingRead(BaseDBModel):
     name: str
@@ -52,6 +55,8 @@ class RecordingRead(BaseDBModel):
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
+    is_archived: bool = False
+    is_deleted: bool = False
     
     transcript: Optional[TranscriptRead] = None
     speakers: List[RecordingSpeakerRead] = []

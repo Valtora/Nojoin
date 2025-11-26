@@ -3,13 +3,24 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, MoreVertical, Trash2, Edit2, RefreshCw, Search, Filter, X } from 'lucide-react';
+import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2 } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback } from 'react';
-import { getRecordings, deleteRecording, renameRecording, retryProcessing, getGlobalSpeakers, getTags, deleteTag, RecordingFilters } from '@/lib/api';
+import { 
+  getRecordings, 
+  renameRecording, 
+  retryProcessing, 
+  getGlobalSpeakers, 
+  RecordingFilters,
+  archiveRecording,
+  restoreRecording,
+  softDeleteRecording,
+  permanentlyDeleteRecording
+} from '@/lib/api';
 import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
-import { GlobalSpeaker, Tag } from '@/types';
+import { GlobalSpeaker } from '@/types';
+import { useNavigationStore } from '@/lib/store';
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return '0s';
@@ -60,8 +71,10 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { currentView, selectedTagIds, clearTagFilters } = useNavigationStore();
+  
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recordingId: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recording: Recording } | null>(null);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   
@@ -71,8 +84,6 @@ export default function Sidebar() {
   const [showFilters, setShowFilters] = useState(false);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [selectedTags, setSelectedTags] = useState<number[]>([]);
   const [dateMode, setDateMode] = useState<'range' | 'before' | 'after'>('range');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
 
@@ -113,54 +124,95 @@ export default function Sidebar() {
       }
 
       if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
-      if (selectedTags.length > 0) filters.tag_ids = selectedTags;
+      if (selectedTagIds.length > 0) filters.tag_ids = selectedTagIds;
+
+      // Apply view-based filters
+      if (currentView === 'archived') {
+        filters.only_archived = true;
+      } else if (currentView === 'deleted') {
+        filters.only_deleted = true;
+      }
 
       const data = await getRecordings(filters);
       setRecordings(data);
     } catch (error) {
       console.error("Failed to fetch recordings:", error);
     }
-  }, [debouncedSearchQuery, dateRange, dateMode, selectedSpeakers, selectedTags]);
+  }, [debouncedSearchQuery, dateRange, dateMode, selectedSpeakers, selectedTagIds, currentView]);
 
   useEffect(() => {
     fetchRecordings();
-    // Poll for updates every 5 seconds
     const interval = setInterval(fetchRecordings, 5000);
     return () => clearInterval(interval);
   }, [fetchRecordings]);
 
   useEffect(() => {
-    // Load global speakers and tags for filter
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
-    getTags().then(setAllTags).catch(console.error);
   }, []);
 
-  const handleContextMenu = (e: React.MouseEvent, recordingId: number) => {
+  // Listen for recording-updated events
+  useEffect(() => {
+    const handleUpdate = () => fetchRecordings();
+    window.addEventListener('recording-updated', handleUpdate);
+    return () => window.removeEventListener('recording-updated', handleUpdate);
+  }, [fetchRecordings]);
+
+  const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, recordingId });
+    setContextMenu({ x: e.clientX, y: e.clientY, recording });
   };
 
-  const handleDelete = async (id: number) => {
+  const handleArchive = async (id: number) => {
+    setRecordings(prev => prev.filter(r => r.id !== id));
+    try {
+      await archiveRecording(id);
+    } catch (e) {
+      console.error("Failed to archive", e);
+      fetchRecordings();
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    setRecordings(prev => prev.filter(r => r.id !== id));
+    try {
+      await restoreRecording(id);
+    } catch (e) {
+      console.error("Failed to restore", e);
+      fetchRecordings();
+    }
+  };
+
+  const handleSoftDelete = async (id: number) => {
+    setRecordings(prev => prev.filter(r => r.id !== id));
+    try {
+      await softDeleteRecording(id);
+      if (pathname === `/recordings/${id}`) {
+        router.push('/');
+      }
+    } catch (e) {
+      console.error("Failed to delete", e);
+      fetchRecordings();
+    }
+  };
+
+  const handlePermanentDelete = async (id: number) => {
     setConfirmModal({
-        isOpen: true,
-        title: "Delete Recording",
-        message: "Are you sure you want to delete this recording? This action cannot be undone.",
-        isDangerous: true,
-        onConfirm: async () => {
-            // Optimistic update
-            setRecordings(prev => prev.filter(r => r.id !== id));
-            
-            try {
-                await deleteRecording(id);
-                // fetchRecordings(); // No need to fetch immediately if optimistic update works
-                if (pathname === `/recordings/${id}`) {
-                    router.push('/');
-                }
-            } catch (e) {
-                console.error("Failed to delete", e);
-                fetchRecordings(); // Revert on error
-            }
+      isOpen: true,
+      title: "Permanently Delete Recording",
+      message: "Are you sure you want to permanently delete this recording? This action cannot be undone.",
+      isDangerous: true,
+      onConfirm: async () => {
+        setRecordings(prev => prev.filter(r => r.id !== id));
+        try {
+          await permanentlyDeleteRecording(id);
+          if (pathname === `/recordings/${id}`) {
+            router.push('/');
+          }
+        } catch (e) {
+          console.error("Failed to permanently delete", e);
+          fetchRecordings();
         }
+      }
     });
   };
 
@@ -173,7 +225,6 @@ export default function Sidebar() {
   const handleRenameSubmit = async (id: number) => {
     if (!renameValue.trim()) return;
     
-    // Optimistic update
     setRecordings(prev => prev.map(r => 
         r.id === id ? { ...r, name: renameValue } : r
     ));
@@ -181,10 +232,9 @@ export default function Sidebar() {
 
     try {
       await renameRecording(id, renameValue);
-      // fetchRecordings(); // No need to fetch immediately
     } catch (e) {
       console.error("Failed to rename", e);
-      fetchRecordings(); // Revert on error
+      fetchRecordings();
     }
   };
 
@@ -198,39 +248,95 @@ export default function Sidebar() {
     }
   };
 
-  const handleDeleteTag = (tag: Tag) => {
-    setConfirmModal({
-        isOpen: true,
-        title: "Delete Tag",
-        message: `Are you sure you want to delete the tag "${tag.name}"? This will remove it from all recordings.`,
-        isDangerous: true,
-        onConfirm: async () => {
-            try {
-                await deleteTag(tag.id);
-                // Refresh tags
-                const tags = await getTags();
-                setAllTags(tags);
-                // Remove from selection if selected
-                setSelectedTags(prev => prev.filter(id => id !== tag.id));
-                fetchRecordings();
-            } catch (e) {
-                console.error("Failed to delete tag", e);
-                alert("Failed to delete tag.");
-            }
-        }
-    });
+  const getContextMenuItems = (recording: Recording) => {
+    const items = [];
+
+    if (currentView === 'recordings') {
+      items.push(
+        { 
+          label: 'Rename', 
+          onClick: () => handleRenameStart(recording.id, recording.name) 
+        },
+        {
+          label: 'Retry Processing',
+          onClick: () => handleRetry(recording.id)
+        },
+        { 
+          label: 'Archive',
+          icon: <Archive className="w-4 h-4" />,
+          onClick: () => handleArchive(recording.id)
+        },
+        { 
+          label: 'Delete', 
+          className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
+          onClick: () => handleSoftDelete(recording.id)
+        },
+      );
+    } else if (currentView === 'archived') {
+      items.push(
+        { 
+          label: 'Restore',
+          icon: <RotateCcw className="w-4 h-4" />,
+          onClick: () => handleRestore(recording.id)
+        },
+        { 
+          label: 'Delete', 
+          className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
+          onClick: () => handleSoftDelete(recording.id)
+        },
+      );
+    } else if (currentView === 'deleted') {
+      items.push(
+        { 
+          label: 'Restore',
+          icon: <RotateCcw className="w-4 h-4" />,
+          onClick: () => handleRestore(recording.id)
+        },
+        { 
+          label: 'Delete Permanently', 
+          icon: <Trash2 className="w-4 h-4" />,
+          className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
+          onClick: () => handlePermanentDelete(recording.id)
+        },
+      );
+    }
+
+    return items;
   };
+
+  const getViewTitle = () => {
+    switch (currentView) {
+      case 'archived': return 'Archived Recordings';
+      case 'deleted': return 'Deleted Recordings';
+      default: return 'Recordings';
+    }
+  };
+
+  const getEmptyMessage = () => {
+    switch (currentView) {
+      case 'archived': return { main: 'No archived recordings.', sub: 'Archived recordings will appear here.' };
+      case 'deleted': return { main: 'No deleted recordings.', sub: 'Deleted recordings will appear here.' };
+      default: return { main: 'No recordings found.', sub: 'Start a new meeting or import audio to get started.' };
+    }
+  };
+
+  const hasActiveFilters = searchQuery || dateRange.start || dateRange.end || selectedSpeakers.length > 0 || selectedTagIds.length > 0;
 
   return (
     <aside className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
-      <MeetingControls onMeetingEnd={fetchRecordings} />
+      {currentView === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
+      
+      {/* Header */}
       <div className="p-4 border-b border-gray-400 dark:border-gray-800">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+          {getViewTitle()}
+        </h2>
         <div className="space-y-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search meetings..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
@@ -312,54 +418,19 @@ export default function Sidebar() {
                       {speaker.name}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500">Tags</label>
-                <div className="flex flex-wrap gap-1">
-                  {allTags.map(tag => (
-                    <div 
-                        key={tag.id}
-                        className={`flex items-center rounded-full text-xs border ${
-                            selectedTags.includes(tag.id)
-                              ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
-                              : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
-                          }`}
-                    >
-                        <button
-                          onClick={() => {
-                            setSelectedTags(prev => 
-                              prev.includes(tag.id) 
-                                ? prev.filter(id => id !== tag.id)
-                                : [...prev, tag.id]
-                            );
-                          }}
-                          className="px-2 py-1"
-                        >
-                          {tag.name}
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteTag(tag);
-                            }}
-                            className="pr-2 pl-1 hover:text-red-500"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                    </div>
-                  ))}
+                  {globalSpeakers.length === 0 && (
+                    <span className="text-xs text-gray-400">No speakers yet</span>
+                  )}
                 </div>
               </div>
               
-              {(searchQuery || dateRange.start || dateRange.end || selectedSpeakers.length > 0 || selectedTags.length > 0) && (
+              {hasActiveFilters && (
                  <button 
                     onClick={() => {
                         setSearchQuery("");
                         setDateRange({ start: "", end: "" });
                         setSelectedSpeakers([]);
-                        setSelectedTags([]);
+                        clearTagFilters();
                     }}
                     className="text-xs text-red-500 hover:underline flex items-center gap-1"
                  >
@@ -368,13 +439,28 @@ export default function Sidebar() {
               )}
             </div>
           )}
+
+          {/* Active tag filter indicators */}
+          {selectedTagIds.length > 0 && (
+            <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
+              <span>Filtered by {selectedTagIds.length} tag{selectedTagIds.length > 1 ? 's' : ''}</span>
+              <button 
+                onClick={clearTagFilters}
+                className="hover:underline"
+              >
+                (clear)
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Recording List */}
       <div className="p-2 space-y-2">
         {recordings.length === 0 && (
             <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
-                <p>No recordings found.</p>
-                <p className="mt-1 text-xs">Start a new meeting or import audio to get started.</p>
+                <p>{getEmptyMessage().main}</p>
+                <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
             </div>
         )}
         {recordings.map((recording) => {
@@ -403,7 +489,7 @@ export default function Sidebar() {
             ) : (
             <Link 
               href={`/recordings/${recording.id}`}
-              onContextMenu={(e) => handleContextMenu(e, recording.id)}
+              onContextMenu={(e) => handleContextMenu(e, recording)}
               className={`block p-3 rounded-lg border transition-all shadow-sm ${
                 isActive 
                   ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
@@ -436,24 +522,7 @@ export default function Sidebar() {
             x={contextMenu.x}
             y={contextMenu.y}
             onClose={() => setContextMenu(null)}
-            items={[
-                { 
-                    label: 'Rename', 
-                    onClick: () => {
-                        const rec = recordings.find(r => r.id === contextMenu.recordingId);
-                        if (rec) handleRenameStart(rec.id, rec.name);
-                    } 
-                },
-                {
-                    label: 'Retry Processing',
-                    onClick: () => handleRetry(contextMenu.recordingId)
-                },
-                { 
-                    label: 'Delete', 
-                    className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
-                    onClick: () => handleDelete(contextMenu.recordingId) 
-                },
-            ]}
+            items={getContextMenuItems(contextMenu.recording)}
         />
       )}
       

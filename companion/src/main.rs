@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicU32;
 use std::thread;
 use std::time::{Duration, Instant};
 use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}, Icon};
@@ -69,6 +70,8 @@ fn main() {
         config: Mutex::new(config),
         recording_start_time: Mutex::new(None),
         accumulated_duration: Mutex::new(Duration::new(0, 0)),
+        input_level: AtomicU32::new(0),
+        output_level: AtomicU32::new(0),
     });
 
     // Audio Thread
