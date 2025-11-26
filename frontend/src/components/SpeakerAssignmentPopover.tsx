@@ -138,7 +138,7 @@ export default function SpeakerAssignmentPopover({
                     className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center gap-2"
                 >
                     <Plus className="w-3 h-3" />
-                    <span className="truncate">Create "{search}"</span>
+                    <span className="truncate">Create &quot;{search}&quot;</span>
                 </button>
             </div>
         )}

@@ -18,6 +18,10 @@ class TagUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
 
+class BatchTagOperation(BaseModel):
+    recording_ids: List[int]
+    tag_name: str
+
 @router.get("/", response_model=List[TagRead])
 async def list_tags(
     skip: int = 0,
@@ -167,3 +171,79 @@ async def delete_tag(
     await db.commit()
     
     return {"ok": True}
+
+@router.post("/batch/add")
+async def batch_add_tag(
+    batch: BatchTagOperation,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Add a tag to multiple recordings. Creates the tag if it doesn't exist.
+    """
+    # 1. Find or Create Tag
+    statement = select(Tag).where(Tag.name == batch.tag_name)
+    result = await db.execute(statement)
+    tag = result.scalar_one_or_none()
+    
+    if not tag:
+        tag = Tag(name=batch.tag_name)
+        db.add(tag)
+        await db.commit()
+        await db.refresh(tag)
+    
+    # 2. Add to recordings
+    # Get all recordings that don't already have this tag
+    # This is a bit complex in SQLModel/SQLAlchemy async, so we'll iterate for simplicity 
+    # given the likely scale (batch size usually < 100)
+    
+    count = 0
+    for recording_id in batch.recording_ids:
+        # Check if recording exists
+        rec_stmt = select(Recording).where(Recording.id == recording_id)
+        rec_result = await db.execute(rec_stmt)
+        if not rec_result.scalar_one_or_none():
+            continue
+
+        # Check if link exists
+        link_stmt = select(RecordingTag).where(
+            RecordingTag.recording_id == recording_id,
+            RecordingTag.tag_id == tag.id
+        )
+        link_result = await db.execute(link_stmt)
+        if not link_result.scalar_one_or_none():
+            link = RecordingTag(recording_id=recording_id, tag_id=tag.id)
+            db.add(link)
+            count += 1
+            
+    await db.commit()
+    return {"ok": True, "count": count, "tag": tag}
+
+@router.post("/batch/remove")
+async def batch_remove_tag(
+    batch: BatchTagOperation,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Remove a tag from multiple recordings.
+    """
+    # 1. Find Tag
+    statement = select(Tag).where(Tag.name == batch.tag_name)
+    result = await db.execute(statement)
+    tag = result.scalar_one_or_none()
+    
+    if not tag:
+        return {"ok": True, "count": 0} # Tag doesn't exist, so nothing to remove
+        
+    # 2. Remove links
+    stmt = select(RecordingTag).where(
+        RecordingTag.recording_id.in_(batch.recording_ids),
+        RecordingTag.tag_id == tag.id
+    )
+    result = await db.execute(stmt)
+    links = result.scalars().all()
+    
+    for link in links:
+        await db.delete(link)
+        
+    await db.commit()
+    return {"ok": True, "count": len(links)}

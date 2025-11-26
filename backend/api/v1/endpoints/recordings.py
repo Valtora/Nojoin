@@ -655,3 +655,92 @@ async def permanently_delete_recording(
     await db.commit()
     
     return {"ok": True}
+
+from pydantic import BaseModel
+
+class BatchRecordingIds(BaseModel):
+    recording_ids: List[int]
+
+@router.post("/batch/archive")
+async def batch_archive_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Archive multiple recordings.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    for recording in recordings:
+        if not recording.is_deleted:
+            recording.is_archived = True
+            db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.post("/batch/restore")
+async def batch_restore_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Restore multiple recordings from archive or trash.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    for recording in recordings:
+        recording.is_archived = False
+        recording.is_deleted = False
+        db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.post("/batch/soft-delete")
+async def batch_soft_delete_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Soft-delete multiple recordings.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    for recording in recordings:
+        recording.is_deleted = True
+        recording.is_archived = False
+        db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.delete("/batch/permanent")
+async def batch_permanently_delete_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permanently delete multiple recordings and their files.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    for recording in recordings:
+        # Delete file from disk
+        if recording.audio_path and os.path.exists(recording.audio_path):
+            try:
+                os.remove(recording.audio_path)
+            except OSError:
+                pass
+        await db.delete(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}

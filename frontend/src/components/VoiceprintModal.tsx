@@ -233,7 +233,7 @@ export default function VoiceprintModal({
                 <Link className="w-4 h-4" />
                 <span className="font-medium">Link to different speaker</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">Override the match and train the selected speaker's voice profile.</p>
+              <p className="text-xs text-gray-500 mt-1">Override the match and train the selected speaker&apos;s voice profile.</p>
               {selectedAction === 'force_link' && (
                 <select
                   value={selectedGlobalSpeakerId ?? ''}
@@ -265,7 +265,7 @@ export default function VoiceprintModal({
                 <HardDrive className="w-4 h-4" />
                 <span className="font-medium">Keep local only</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">Save the voiceprint for this recording only. Won't be used for future recognition.</p>
+              <p className="text-xs text-gray-500 mt-1">Save the voiceprint for this recording only. Won&apos;t be used for future recognition.</p>
             </div>
           </label>
         </div>

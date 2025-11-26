@@ -17,6 +17,15 @@ interface NavigationState {
   isNavCollapsed: boolean;
   toggleNavCollapse: () => void;
   setNavCollapsed: (collapsed: boolean) => void;
+
+  // Selection State
+  selectionMode: boolean;
+  selectedRecordingIds: number[];
+  setSelectionMode: (enabled: boolean) => void;
+  toggleSelectionMode: () => void;
+  toggleRecordingSelection: (id: number) => void;
+  selectAllRecordings: (ids: number[]) => void;
+  clearSelection: () => void;
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -39,6 +48,27 @@ export const useNavigationStore = create<NavigationState>()(
       isNavCollapsed: false,
       toggleNavCollapse: () => set((state) => ({ isNavCollapsed: !state.isNavCollapsed })),
       setNavCollapsed: (collapsed) => set({ isNavCollapsed: collapsed }),
+
+      // Selection State
+      selectionMode: false,
+      selectedRecordingIds: [],
+      setSelectionMode: (enabled) => set({ selectionMode: enabled }),
+      toggleSelectionMode: () => set((state) => ({ 
+        selectionMode: !state.selectionMode,
+        selectedRecordingIds: [] // Clear selection when toggling mode
+      })),
+      toggleRecordingSelection: (id) => set((state) => {
+        const newSelectedIds = state.selectedRecordingIds.includes(id)
+          ? state.selectedRecordingIds.filter(rid => rid !== id)
+          : [...state.selectedRecordingIds, id];
+        
+        return {
+          selectedRecordingIds: newSelectedIds,
+          selectionMode: newSelectedIds.length > 0
+        };
+      }),
+      selectAllRecordings: (ids) => set({ selectedRecordingIds: ids, selectionMode: ids.length > 0 }),
+      clearSelection: () => set({ selectedRecordingIds: [], selectionMode: false }),
     }),
     {
       name: 'nojoin-navigation',

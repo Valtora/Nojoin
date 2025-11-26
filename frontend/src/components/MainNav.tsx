@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Mic, 
   Archive, 
@@ -206,23 +206,29 @@ export default function MainNav() {
     onConfirm: () => {},
   });
 
-  useEffect(() => {
-    loadTags();
-  }, []);
-
-  const loadTags = async () => {
+  const loadTags = useCallback(async () => {
     try {
       const data = await getTags();
       setTags(data);
     } catch (error) {
       console.error('Failed to load tags:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadTags();
+    
+    // Listen for global tag updates
+    const handleTagsUpdated = () => { void loadTags(); };
+    window.addEventListener('tags-updated', handleTagsUpdated);
+    return () => window.removeEventListener('tags-updated', handleTagsUpdated);
+  }, [loadTags]);
 
   const handleColorChange = async (tagId: number, colorKey: string) => {
     try {
       await updateTag(tagId, { color: colorKey });
       setTags(prev => prev.map(t => t.id === tagId ? { ...t, color: colorKey } : t));
+      window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to update tag color:', error);
     }
@@ -233,6 +239,7 @@ export default function MainNav() {
       await updateTag(tagId, { name: newName });
       setTags(prev => prev.map(t => t.id === tagId ? { ...t, name: newName } : t));
       setEditingTagId(null);
+      window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to rename tag:', error);
     }
@@ -248,6 +255,7 @@ export default function MainNav() {
         try {
           await deleteTag(tag.id);
           setTags(prev => prev.filter(t => t.id !== tag.id));
+          window.dispatchEvent(new CustomEvent('tags-updated'));
         } catch (error) {
           console.error('Failed to delete tag:', error);
         }
@@ -264,6 +272,7 @@ export default function MainNav() {
       setTags(prev => [...prev, newTag]);
       setNewTagName('');
       setIsAddingTag(false);
+      window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to create tag:', error);
     }

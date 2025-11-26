@@ -358,4 +358,29 @@ export const extractAllVoiceprints = async (
   return response.data;
 };
 
+// Batch Operations
+export const batchArchiveRecordings = async (ids: number[]): Promise<void> => {
+  await api.post('/recordings/batch/archive', { recording_ids: ids });
+};
+
+export const batchRestoreRecordings = async (ids: number[]): Promise<void> => {
+  await api.post('/recordings/batch/restore', { recording_ids: ids });
+};
+
+export const batchSoftDeleteRecordings = async (ids: number[]): Promise<void> => {
+  await api.post('/recordings/batch/soft-delete', { recording_ids: ids });
+};
+
+export const batchPermanentlyDeleteRecordings = async (ids: number[]): Promise<void> => {
+  await api.delete('/recordings/batch/permanent', { data: { recording_ids: ids } });
+};
+
+export const batchAddTagToRecordings = async (ids: number[], tagName: string): Promise<void> => {
+  await api.post('/tags/batch/add', { recording_ids: ids, tag_name: tagName });
+};
+
+export const batchRemoveTagFromRecordings = async (ids: number[], tagName: string): Promise<void> => {
+  await api.post('/tags/batch/remove', { recording_ids: ids, tag_name: tagName });
+};
+
 export default api;

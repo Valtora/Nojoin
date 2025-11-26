@@ -1,10 +1,10 @@
 'use client';
 
-import { getRecording, addTagToRecording, removeTagFromRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers } from '@/lib/api';
+import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers } from '@/lib/api';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
-import TagsInput from '@/components/TagsInput';
+import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -128,30 +128,6 @@ export default function RecordingPage({ params }: PageProps) {
     });
     setSpeakerColors(newColors);
   }, [recording]);
-
-  const handleAddTag = async (tagName: string) => {
-    if (!recording) return;
-    try {
-      await addTagToRecording(recording.id, tagName);
-      const updated = await getRecording(recording.id);
-      setRecording(updated);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to add tag:", e);
-    }
-  };
-
-  const handleRemoveTag = async (tagName: string) => {
-    if (!recording) return;
-    try {
-      await removeTagFromRecording(recording.id, tagName);
-      const updated = await getRecording(recording.id);
-      setRecording(updated);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to remove tag:", e);
-    }
-  };
 
   // Player Handlers
   const handleTimeUpdate = () => {
@@ -404,10 +380,13 @@ export default function RecordingPage({ params }: PageProps) {
                 )}
                 
                 <div className="flex flex-col items-start gap-2">
-                    <TagsInput 
+                    <RecordingTagEditor 
+                        recordingId={recording.id}
                         tags={recording.tags || []} 
-                        onAddTag={handleAddTag} 
-                        onRemoveTag={handleRemoveTag} 
+                        onTagsUpdated={() => {
+                            // Refresh recording to get updated tags
+                            getRecording(recording.id).then(setRecording).catch(console.error);
+                        }}
                     />
                 </div>
             </div>

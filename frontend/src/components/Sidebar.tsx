@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
-import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2 } from 'lucide-react';
+import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback } from 'react';
 import { 
@@ -19,6 +19,7 @@ import {
 } from '@/lib/api';
 import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
+import BatchActionBar from './BatchActionBar';
 import { GlobalSpeaker } from '@/types';
 import { useNavigationStore } from '@/lib/store';
 
@@ -71,9 +72,19 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentView, selectedTagIds, clearTagFilters } = useNavigationStore();
+  const { 
+    currentView, 
+    selectedTagIds, 
+    clearTagFilters,
+    selectionMode,
+    selectedRecordingIds,
+    toggleRecordingSelection,
+    selectAllRecordings,
+    clearSelection
+  } = useNavigationStore();
   
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recording: Recording } | null>(null);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -154,11 +165,21 @@ export default function Sidebar() {
   useEffect(() => {
     const handleUpdate = () => fetchRecordings();
     window.addEventListener('recording-updated', handleUpdate);
-    return () => window.removeEventListener('recording-updated', handleUpdate);
+    window.addEventListener('tags-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('recording-updated', handleUpdate);
+      window.removeEventListener('tags-updated', handleUpdate);
+    };
   }, [fetchRecordings]);
+
+  // Clear selection when view changes
+  useEffect(() => {
+    clearSelection();
+  }, [currentView, clearSelection]);
 
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
+    if (selectionMode) return; // Disable context menu in selection mode
     setContextMenu({ x: e.clientX, y: e.clientY, recording });
   };
 
@@ -248,6 +269,37 @@ export default function Sidebar() {
     }
   };
 
+  const handleRecordingClick = (e: React.MouseEvent, recording: Recording, index: number) => {
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+
+    if (isCtrl || isShift) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    if (isCtrl) {
+      toggleRecordingSelection(recording.id);
+      setLastSelectedIndex(index);
+      return;
+    }
+
+    if (isShift && lastSelectedIndex !== null) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      const rangeIds = recordings.slice(start, end + 1).map(r => r.id);
+      
+      const newSelection = Array.from(new Set([...selectedRecordingIds, ...rangeIds]));
+      selectAllRecordings(newSelection);
+      return;
+    }
+
+    if (selectionMode) {
+        clearSelection();
+    }
+    setLastSelectedIndex(index);
+  };
+
   const getContextMenuItems = (recording: Recording) => {
     const items = [];
 
@@ -304,14 +356,6 @@ export default function Sidebar() {
     return items;
   };
 
-  const getViewTitle = () => {
-    switch (currentView) {
-      case 'archived': return 'Archived Recordings';
-      case 'deleted': return 'Deleted Recordings';
-      default: return 'Recordings';
-    }
-  };
-
   const getEmptyMessage = () => {
     switch (currentView) {
       case 'archived': return { main: 'No archived recordings.', sub: 'Archived recordings will appear here.' };
@@ -328,29 +372,48 @@ export default function Sidebar() {
       
       {/* Header */}
       <div className="p-4 border-b border-gray-400 dark:border-gray-800">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-          {getViewTitle()}
-        </h2>
-        <div className="space-y-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
-            />
+        {selectionMode ? (
+          <div className="flex items-center justify-between mb-2 px-1">
+            <span className="text-xs text-gray-500">
+              {selectedRecordingIds.length} selected
+            </span>
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${showFilters ? 'text-orange-500' : 'text-gray-400'}`}
+              onClick={() => {
+                if (selectedRecordingIds.length === recordings.length) {
+                  clearSelection();
+                } else {
+                  selectAllRecordings(recordings.map(r => r.id));
+                }
+              }}
+              className="text-xs text-orange-600 hover:underline"
             >
-              <Filter className="w-4 h-4" />
+              {selectedRecordingIds.length === recordings.length ? 'Deselect All' : 'Select All'}
             </button>
           </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
+              />
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${showFilters ? 'text-orange-500' : 'text-gray-400'}`}
+              >
+                <Filter className="w-4 h-4" />
+              </button>
+            </div>
+            {/* ... filters ... */}
+          </div>
+        )}
 
-          {showFilters && (
-            <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm">
+        {showFilters && !selectionMode && (
+            <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm mt-2">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500">Date Filter</label>
                 <div className="flex gap-2 mb-2">
@@ -452,7 +515,6 @@ export default function Sidebar() {
               </button>
             </div>
           )}
-        </div>
       </div>
 
       {/* Recording List */}
@@ -463,11 +525,12 @@ export default function Sidebar() {
                 <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
             </div>
         )}
-        {recordings.map((recording) => {
+        {recordings.map((recording, index) => {
           const isActive = pathname === `/recordings/${recording.id}`;
           const startDate = new Date(recording.created_at);
           const endDate = new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000);
           const isRenaming = renamingId === recording.id;
+          const isSelected = selectedRecordingIds.includes(recording.id);
           
           return (
             <div key={recording.id} className="relative group">
@@ -487,35 +550,49 @@ export default function Sidebar() {
                     />
                 </div>
             ) : (
-            <Link 
-              href={`/recordings/${recording.id}`}
-              onContextMenu={(e) => handleContextMenu(e, recording)}
-              className={`block p-3 rounded-lg border transition-all shadow-sm ${
-                isActive 
-                  ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
-                  : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-400 dark:hover:border-orange-700'
-              }`}
-            >
-              <div className="flex justify-between items-start mb-1">
-                  <h3 className={`text-sm font-semibold truncate pr-6 ${isActive ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}>
-                    {recording.name}
-                  </h3>
-                  <StatusIcon status={recording.status} />
-              </div>
-              
-              <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2">
-                <span>{formatDate(recording.created_at)}</span>
-                <span className="text-gray-300 dark:text-gray-700">|</span>
-                <span>{formatTime(startDate)} - {formatTime(endDate)}</span>
-                <span className="text-gray-300 dark:text-gray-700">|</span>
-                <span>{formatDurationString(recording.duration_seconds)}</span>
-              </div>
-            </Link>
+            <div>
+              <Link 
+                href={`/recordings/${recording.id}`}
+                onClick={(e) => handleRecordingClick(e, recording, index)}
+                onContextMenu={(e) => handleContextMenu(e, recording)}
+                className={`block p-3 rounded-lg border transition-all shadow-sm ${
+                  isActive && !selectionMode
+                    ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
+                    : isSelected
+                      ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
+                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-400 dark:hover:border-orange-700'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {selectionMode && (
+                        <div className={`flex-shrink-0 ${isSelected ? 'text-orange-600' : 'text-gray-300'}`}>
+                          {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                        </div>
+                      )}
+                      <h3 className={`text-sm font-semibold truncate ${isActive && !selectionMode ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {recording.name}
+                      </h3>
+                    </div>
+                    <StatusIcon status={recording.status} />
+                </div>
+                
+                <div className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode ? 'pl-6' : ''}`}>
+                  <span>{formatDate(recording.created_at)}</span>
+                  <span className="text-gray-300 dark:text-gray-700">|</span>
+                  <span>{formatTime(startDate)} - {formatTime(endDate)}</span>
+                  <span className="text-gray-300 dark:text-gray-700">|</span>
+                  <span>{formatDurationString(recording.duration_seconds)}</span>
+                </div>
+              </Link>
+            </div>
             )}
             </div>
           );
         })}
       </div>
+
+      <BatchActionBar onActionComplete={fetchRecordings} />
 
       {contextMenu && (
         <ContextMenu
