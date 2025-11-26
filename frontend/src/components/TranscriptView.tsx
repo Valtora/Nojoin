@@ -415,7 +415,7 @@ export default function TranscriptView({
 
 
 
-      <div className="space-y-6 p-6 overflow-y-auto flex-1 min-h-0">
+      <div className="space-y-4 px-4 py-3 overflow-y-auto flex-1 min-h-0">
         {displaySegments.map((segment, index) => {
           const isActive = currentTime >= segment.start && currentTime < segment.end;
           const speakerName = speakerMap[segment.speaker] || segment.speaker;
