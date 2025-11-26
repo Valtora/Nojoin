@@ -459,6 +459,10 @@ export default function RecordingPage({ params }: PageProps) {
                     recordingId={recording.id}
                     speakerColors={speakerColors}
                     onColorChange={handleColorChange}
+                    currentTime={currentTime}
+                    isPlaying={isPlaying}
+                    onPause={handlePause}
+                    onResume={handleResume}
                 />
             </>
         )}

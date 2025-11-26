@@ -1,7 +1,7 @@
 'use client';
 
 import { RecordingSpeaker, TranscriptSegment, VoiceprintExtractResult, BatchVoiceprintResponse } from '@/types';
-import { Play, User, Fingerprint, Loader2 } from 'lucide-react';
+import { Play, Pause, ArrowRightToLine, User, Fingerprint, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
 import VoiceprintModal from './VoiceprintModal';
@@ -16,9 +16,13 @@ interface SpeakerPanelProps {
   recordingId: number;
   speakerColors: Record<string, string>; // Now stores color keys, not full classes
   onColorChange: (speakerLabel: string, colorKey: string) => void;
+  currentTime: number;
+  isPlaying: boolean;
+  onPause: () => void;
+  onResume: () => void;
 }
 
-export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, availableColors }: SpeakerPanelProps) {
+export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, currentTime, isPlaying, onPause, onResume }: SpeakerPanelProps) {
   const router = useRouter();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
   
@@ -56,13 +60,40 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     return getSpeakerName(a).localeCompare(getSpeakerName(b));
   });
 
-  const handlePlaySnippet = (label: string) => {
+  const handlePlaySnippet = (label: string, isSpeakerActive: boolean) => {
+    if (isSpeakerActive) {
+        if (isPlaying) {
+            onPause();
+        } else {
+            onResume();
+        }
+        return;
+    }
+
     const speakerSegments = segments.filter(s => s.speaker === label);
     if (speakerSegments.length === 0) {
         alert("No audio segments found for this speaker.");
         return;
     }
     const randomSegment = speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
+    onPlaySegment(randomSegment.start, randomSegment.end);
+  };
+
+  const handleNextSnippet = (label: string) => {
+    const speakerSegments = segments.filter(s => s.speaker === label);
+    if (speakerSegments.length === 0) {
+        alert("No audio segments found for this speaker.");
+        return;
+    }
+    
+    // Try to find a segment that is not currently playing
+    let candidates = speakerSegments;
+    if (speakerSegments.length > 1) {
+        candidates = speakerSegments.filter(s => !(currentTime >= s.start && currentTime < s.end));
+        if (candidates.length === 0) candidates = speakerSegments;
+    }
+
+    const randomSegment = candidates[Math.floor(Math.random() * candidates.length)];
     onPlaySegment(randomSegment.start, randomSegment.end);
   };
 
@@ -271,6 +302,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                     );
                 }
 
+                const isSpeakerActive = segments.some(s => s.speaker === speaker.diarization_label && currentTime >= s.start && currentTime < s.end);
+
                 return (
                 <div 
                     key={speaker.id} 
@@ -334,14 +367,31 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                         )}
                     </div>
                     </div>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-1">
                         <button 
-                        className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
-                        title="Preview Voice"
-                        onClick={() => handlePlaySnippet(speaker.diarization_label)}
+                        className={`p-1.5 rounded-full transition-colors ${
+                            isSpeakerActive && isPlaying
+                            ? 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'
+                            : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                        }`}
+                        title={isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"}
+                        onClick={() => handlePlaySnippet(speaker.diarization_label, isSpeakerActive)}
                         >
-                        <Play className="w-3 h-3 fill-current" />
+                        {isSpeakerActive && isPlaying ? (
+                            <Pause className="w-3 h-3 fill-current" />
+                        ) : (
+                            <Play className="w-3 h-3 fill-current" />
+                        )}
                         </button>
+                        {isSpeakerActive && isPlaying && (
+                            <button 
+                            className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+                            title="Next Snippet"
+                            onClick={() => handleNextSnippet(speaker.diarization_label)}
+                            >
+                            <ArrowRightToLine className="w-3 h-3 fill-current" />
+                            </button>
+                        )}
                     </div>
                 </div>
                 );
