@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from pydantic import BaseModel
 
@@ -45,18 +46,57 @@ class VoiceprintResult(BaseModel):
     matched_speaker: Optional[dict] = None  # {id, name, similarity_score}
     message: Optional[str] = None
 
-@router.get("/", response_model=List[GlobalSpeaker])
+class GlobalSpeakerWithCount(BaseModel):
+    """Global speaker with recording count."""
+    id: int
+    name: str
+    has_voiceprint: bool
+    recording_count: int
+    created_at: str
+    updated_at: str
+
+@router.get("/", response_model=List[GlobalSpeakerWithCount])
 async def list_global_speakers(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List all global speakers.
+    List all global speakers with their recording association counts.
     """
-    statement = select(GlobalSpeaker).order_by(GlobalSpeaker.name).offset(skip).limit(limit)
+    from sqlalchemy import func
+    
+    # Query with left join to count recordings
+    statement = (
+        select(
+            GlobalSpeaker,
+            func.count(RecordingSpeaker.id).label('recording_count')
+        )
+        .outerjoin(RecordingSpeaker, GlobalSpeaker.id == RecordingSpeaker.global_speaker_id)
+        .group_by(GlobalSpeaker.id)
+        .order_by(GlobalSpeaker.name)
+        .offset(skip)
+        .limit(limit)
+    )
+    
     result = await db.execute(statement)
-    return result.scalars().all()
+    rows = result.all()
+    
+    # Build response
+    speakers_with_counts = []
+    for row in rows:
+        speaker = row[0]
+        count = row[1]
+        speakers_with_counts.append(GlobalSpeakerWithCount(
+            id=speaker.id,
+            name=speaker.name,
+            has_voiceprint=speaker.has_voiceprint,
+            recording_count=count,
+            created_at=speaker.created_at.isoformat(),
+            updated_at=speaker.updated_at.isoformat()
+        ))
+    
+    return speakers_with_counts
 
 @router.post("/", response_model=GlobalSpeaker)
 async def create_global_speaker(
@@ -86,8 +126,11 @@ async def update_recording_speaker(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Update a speaker label in a recording to map to a Global Speaker.
-    If the Global Speaker name doesn't exist, it will be created.
+    Update a speaker label in a recording with a name.
+    
+    - If the name matches an existing Global Speaker, link to it
+    - Otherwise, set as local_name (local to this recording only)
+    - Does NOT auto-create global speakers
     """
     logger.info(f"Updating speaker for recording {recording_id}: {update}")
     
@@ -97,40 +140,12 @@ async def update_recording_speaker(
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    # 2. Find or Create Global Speaker
-    # Prevent creating a Global Speaker with placeholder names
-    import re
-    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
-    
-    if placeholder_pattern.match(update.global_speaker_name):
-        raise HTTPException(
-            status_code=400, 
-            detail="Cannot create a Global Speaker with a placeholder name (e.g., 'Speaker 1', 'SPEAKER_00'). Please use a real name."
-        )
-
+    # 2. Check if a Global Speaker with this name already exists
     statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
-    
-    if not global_speaker:
-        # Double check if it exists (race condition)
-        try:
-            global_speaker = GlobalSpeaker(name=update.global_speaker_name)
-            db.add(global_speaker)
-            await db.commit()
-            await db.refresh(global_speaker)
-        except Exception as e:
-            logger.error(f"Error creating global speaker: {e}")
-            await db.rollback()
-            # Try fetching again
-            statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
-            result = await db.execute(statement)
-            global_speaker = result.scalar_one_or_none()
-            if not global_speaker:
-                raise HTTPException(status_code=500, detail="Failed to create or find global speaker")
         
     # 3. Update RecordingSpeakers
-    # Find all segments with this label for this recording
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == update.diarization_label
@@ -142,24 +157,105 @@ async def update_recording_speaker(
         raise HTTPException(status_code=404, detail=f"No speakers found with label {update.diarization_label} in this recording")
         
     for rs in recording_speakers:
-        rs.global_speaker_id = global_speaker.id
-        rs.name = global_speaker.name
-        db.add(rs)
+        if global_speaker:
+            # Link to existing global speaker
+            rs.global_speaker_id = global_speaker.id
+            rs.local_name = None  # Clear local name
+            rs.name = None  # Deprecated field
+            
+            # Active Learning: Update Global Speaker embedding from user feedback
+            if rs.embedding:
+                if global_speaker.embedding:
+                    global_speaker.embedding = merge_embeddings(global_speaker.embedding, rs.embedding, alpha=0.3)
+                else:
+                    global_speaker.embedding = rs.embedding
+                db.add(global_speaker)
+        else:
+            # Set as local name only (not promoted to global)
+            rs.local_name = update.global_speaker_name
+            rs.global_speaker_id = None
+            rs.name = None  # Deprecated field
         
-        # Active Learning: Update Global Speaker embedding from user feedback
-        if rs.embedding:
-            if global_speaker.embedding:
-                # Use a higher alpha (e.g., 0.3) because this is explicit user feedback
-                global_speaker.embedding = merge_embeddings(global_speaker.embedding, rs.embedding, alpha=0.3)
-            else:
-                # Initialize if empty
-                global_speaker.embedding = rs.embedding
-            db.add(global_speaker)
+        db.add(rs)
 
     await db.commit()
     
     # Return updated list
     return recording_speakers
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/promote", response_model=RecordingSpeaker)
+async def promote_speaker_to_global(
+    recording_id: int,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Promote a recording speaker to the global speaker library.
+    
+    - Creates a new Global Speaker with the speaker's current name
+    - Links the recording speaker to the new global speaker
+    - Copies the embedding to the global speaker if available
+    """
+    # 1. Find the recording speaker
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(statement)
+    recording_speaker = result.scalar_one_or_none()
+    
+    if not recording_speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found in this recording")
+    
+    # 2. Get the name to use (local_name, deprecated name, or diarization_label)
+    speaker_name = recording_speaker.local_name or recording_speaker.name or recording_speaker.diarization_label
+    
+    # Validate name is not a placeholder
+    import re
+    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
+    if placeholder_pattern.match(speaker_name):
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot promote a speaker with a placeholder name. Please rename them first."
+        )
+    
+    # 3. Check if global speaker already exists
+    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == speaker_name)
+    result = await db.execute(statement)
+    existing_global = result.scalar_one_or_none()
+    
+    if existing_global:
+        # Already exists, just link to it
+        recording_speaker.global_speaker_id = existing_global.id
+        recording_speaker.local_name = None
+        recording_speaker.name = None
+        
+        # Merge embeddings
+        if recording_speaker.embedding:
+            if existing_global.embedding:
+                existing_global.embedding = merge_embeddings(existing_global.embedding, recording_speaker.embedding, alpha=0.5)
+            else:
+                existing_global.embedding = recording_speaker.embedding
+            db.add(existing_global)
+    else:
+        # Create new global speaker
+        global_speaker = GlobalSpeaker(
+            name=speaker_name,
+            embedding=recording_speaker.embedding
+        )
+        db.add(global_speaker)
+        await db.flush()  # Get the ID
+        
+        # Link the recording speaker
+        recording_speaker.global_speaker_id = global_speaker.id
+        recording_speaker.local_name = None
+        recording_speaker.name = None
+    
+    db.add(recording_speaker)
+    await db.commit()
+    await db.refresh(recording_speaker)
+    
+    return recording_speaker
 
 @router.post("/merge", response_model=GlobalSpeaker)
 async def merge_speakers(
@@ -282,27 +378,11 @@ async def merge_recording_speakers(
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    # 2. Update Transcript Segments
-    # We need to fetch the transcript first
-    statement = select(Transcript).where(Transcript.recording_id == recording_id)
-    result = await db.execute(statement)
-    transcript = result.scalar_one_or_none()
+    # 2. Validate that source and target are different
+    if merge_data.source_speaker_label == merge_data.target_speaker_label:
+        raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
 
-    if transcript and transcript.segments:
-        updated_segments = []
-        changed = False
-        for segment in transcript.segments:
-            if segment.get("speaker") == merge_data.source_speaker_label:
-                segment["speaker"] = merge_data.target_speaker_label
-                changed = True
-            updated_segments.append(segment)
-        
-        if changed:
-            transcript.segments = updated_segments
-            db.add(transcript)
-
-    # 3. Update RecordingSpeaker entries
-    # Find the source speaker entry
+    # 3. Find the source and target speaker entries
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == merge_data.source_speaker_label
@@ -310,7 +390,6 @@ async def merge_recording_speakers(
     result = await db.execute(statement)
     source_speaker = result.scalar_one_or_none()
 
-    # Find the target speaker entry
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == merge_data.target_speaker_label
@@ -318,30 +397,55 @@ async def merge_recording_speakers(
     result = await db.execute(statement)
     target_speaker = result.scalar_one_or_none()
 
-    if source_speaker:
-        # If target speaker doesn't exist (edge case?), we might want to rename source instead?
-        # But assuming target exists or is a valid label we want to use.
-        
-        # If target speaker entry exists, we can delete the source speaker entry
-        # If target speaker entry does NOT exist (e.g. we are merging into a new label?), 
-        # we should probably rename source to target.
-        # But the UI will likely provide a list of existing speakers.
-        
-        if target_speaker:
-            # Merge logic: Delete source. 
-            # (Optional: Merge embeddings? For now, just keep target's embedding)
-            await db.delete(source_speaker)
-        else:
-            # Target label doesn't have a RecordingSpeaker entry yet.
-            # Rename source to target.
-            source_speaker.diarization_label = merge_data.target_speaker_label
-            # Reset name if it was specific to the old label? Or keep it?
-            # Let's keep the name if it exists, or maybe not.
-            # If we are merging "SPEAKER_01" into "SPEAKER_00", and SPEAKER_00 didn't exist...
-            # That's a rename.
-            db.add(source_speaker)
+    if not source_speaker:
+        raise HTTPException(status_code=404, detail=f"Source speaker '{merge_data.source_speaker_label}' not found")
+    
+    if not target_speaker:
+        raise HTTPException(status_code=404, detail=f"Target speaker '{merge_data.target_speaker_label}' not found")
 
+    # 4. Update Transcript Segments
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+
+    if transcript and transcript.segments:
+        segments_updated = False
+        # Create a new list to ensure SQLAlchemy detects the change
+        new_segments = []
+        for segment in transcript.segments:
+            segment_copy = dict(segment)
+            if segment_copy.get("speaker") == merge_data.source_speaker_label:
+                segment_copy["speaker"] = merge_data.target_speaker_label
+                segments_updated = True
+            new_segments.append(segment_copy)
+        
+        if segments_updated:
+            # Explicitly set the segments to trigger SQLAlchemy change detection
+            transcript.segments = new_segments
+            flag_modified(transcript, "segments")
+            db.add(transcript)
+
+    # 5. Merge embeddings if both speakers have them
+    if source_speaker.embedding and target_speaker.embedding:
+        target_speaker.embedding = merge_embeddings(
+            target_speaker.embedding, 
+            source_speaker.embedding, 
+            alpha=0.5  # Equal weight for merge
+        )
+        db.add(target_speaker)
+    elif source_speaker.embedding and not target_speaker.embedding:
+        # Target has no embedding, copy from source
+        target_speaker.embedding = source_speaker.embedding
+        db.add(target_speaker)
+
+    # 6. Delete the source speaker entry
+    await db.delete(source_speaker)
+
+    # 7. Flush to ensure changes are written before commit
+    await db.flush()
     await db.commit()
+    
+    # 8. Refresh recording to get updated relationships
     await db.refresh(recording)
     return recording
 
@@ -352,8 +456,11 @@ async def delete_recording_speaker(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Delete a speaker from a recording.
-    Sets all segments associated with this speaker to 'UNKNOWN'.
+    Remove a speaker from a recording.
+    
+    - Sets all transcript segments to 'UNKNOWN'
+    - Deletes the RecordingSpeaker entry
+    - If linked to a Global Speaker, only removes the association (does NOT delete the global speaker)
     """
     # 1. Verify recording exists
     recording = await db.get(Recording, recording_id)

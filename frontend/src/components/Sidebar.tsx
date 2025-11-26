@@ -50,7 +50,7 @@ const formatTime = (date: Date) => {
 const StatusIcon = ({ status }: { status: RecordingStatus }) => {
   switch (status) {
     case RecordingStatus.PROCESSED:
-      return <CheckCircle className="w-3 h-3 text-green-500" />;
+      return null;
     case RecordingStatus.PROCESSING:
       return (
         <span 
@@ -315,7 +315,6 @@ export default function Sidebar() {
         },
         { 
           label: 'Archive',
-          icon: <Archive className="w-4 h-4" />,
           onClick: () => handleArchive(recording.id)
         },
         { 

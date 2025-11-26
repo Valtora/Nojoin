@@ -3,6 +3,7 @@
 import { GlobalSpeaker, RecordingSpeaker } from '@/types';
 import { Search, User, Plus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import { getColorByKey } from '@/lib/constants';
 
 interface SpeakerAssignmentPopoverProps {
   currentSpeakerName: string;
@@ -39,9 +40,14 @@ export default function SpeakerAssignmentPopover({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
+  // Helper to get speaker name
+  const getSpeakerName = (s: RecordingSpeaker): string => {
+    return s.local_name || s.global_speaker?.name || s.name || s.diarization_label;
+  };
+
   // Filter speakers
   const filteredAvailable = availableSpeakers.filter(s => {
-    const name = s.name || s.global_speaker?.name || s.diarization_label;
+    const name = getSpeakerName(s);
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
@@ -61,18 +67,10 @@ export default function SpeakerAssignmentPopover({
     }
   };
 
-  // Helper to extract a color for the dot
-  const getDotColor = (fullClass: string) => {
-      // Extract bg-X-Y
-      const match = fullClass.match(/bg-([a-z]+)-(\d+)/);
-      if (match) return `bg-${match[1]}-500`;
-      return 'bg-gray-400';
-  };
-
   return (
     <div 
         ref={containerRef}
-        className="absolute z-50 mt-1 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 left-0 top-full"
+        className="absolute z-[60] mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 left-0 top-full"
         style={{ minWidth: '200px' }}
     >
       <div className="p-2 border-b border-gray-100 dark:border-gray-700">
@@ -95,9 +93,9 @@ export default function SpeakerAssignmentPopover({
             <div className="px-2 py-1">
                 <div className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">In this recording</div>
                 {filteredAvailable.map(s => {
-                    const name = s.name || s.global_speaker?.name || s.diarization_label;
-                    const colorClass = speakerColors[name] || '';
-                    const dotColor = getDotColor(colorClass);
+                    const name = getSpeakerName(s);
+                    const colorKey = speakerColors[name] || 'gray';
+                    const colorOption = getColorByKey(colorKey);
                     
                     return (
                         <button
@@ -105,7 +103,7 @@ export default function SpeakerAssignmentPopover({
                             onClick={() => onSelect(name)}
                             className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
                         >
-                            <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+                            <div className={`w-2 h-2 rounded-full ${colorOption.dot}`} />
                             <span className="truncate">{name}</span>
                         </button>
                     );
@@ -131,7 +129,7 @@ export default function SpeakerAssignmentPopover({
         )}
 
         {/* Create New */}
-        {search.trim() && !filteredAvailable.some(s => (s.name || s.diarization_label) === search) && !filteredGlobal.some(s => s.name === search) && (
+        {search.trim() && !filteredAvailable.some(s => getSpeakerName(s) === search) && !filteredGlobal.some(s => s.name === search) && (
             <div className="px-2 py-1 border-t border-gray-100 dark:border-gray-700 mt-1 pt-2">
                 <button
                     onClick={() => onSelect(search.trim())}

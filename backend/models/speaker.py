@@ -29,7 +29,11 @@ class RecordingSpeaker(BaseDBModel, table=True):
     
     diarization_label: str # e.g. SPEAKER_00
     
-    # The resolved name for this speaker in this recording (e.g. "John Doe" or "SPEAKER_00")
+    # Local name for this speaker in this recording only (not promoted to global)
+    local_name: Optional[str] = None
+    
+    # DEPRECATED: The resolved name for this speaker (kept for backward compatibility)
+    # New code should use local_name or global_speaker.name
     name: Optional[str] = None
 
     # Optional snippet for identification

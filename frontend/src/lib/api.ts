@@ -259,6 +259,11 @@ export const deleteRecordingSpeaker = async (recordingId: number, diarizationLab
   await api.delete(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}`);
 };
 
+export const promoteToGlobalSpeaker = async (recordingId: number, diarizationLabel: string): Promise<RecordingSpeaker> => {
+  const response = await api.post<RecordingSpeaker>(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/promote`);
+  return response.data;
+};
+
 export const updateTranscriptSegments = async (recordingId: number, segments: TranscriptSegment[]): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments`, { segments });
 };

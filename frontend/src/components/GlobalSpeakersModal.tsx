@@ -71,10 +71,14 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
   };
 
   const handleDelete = (speaker: GlobalSpeaker) => {
+    const countText = speaker.recording_count 
+        ? ` This will remove them from ${speaker.recording_count} recording${speaker.recording_count !== 1 ? 's' : ''}.`
+        : '';
+    
     setConfirmModal({
         isOpen: true,
-        title: "Delete Speaker",
-        message: `Are you sure you want to delete "${speaker.name}"? This will remove the global speaker association from all recordings.`,
+        title: "Delete Global Speaker",
+        message: `Are you sure you want to permanently delete "${speaker.name}" from your Speaker Library?${countText} This action cannot be undone.`,
         isDangerous: true,
         onConfirm: async () => {
             try {
@@ -180,7 +184,17 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
                     </div>
                   ) : (
                     <>
-                        <span className="font-medium text-gray-900 dark:text-gray-100">{speaker.name}</span>
+                        <div className="flex items-center gap-2 flex-1">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">{speaker.name}</span>
+                            {speaker.recording_count !== undefined && speaker.recording_count > 0 && (
+                                <span 
+                                    className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full"
+                                    title={`Appears in ${speaker.recording_count} recording${speaker.recording_count !== 1 ? 's' : ''}`}
+                                >
+                                    {speaker.recording_count} meeting{speaker.recording_count !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
                         <div className="flex items-center gap-1">
                             {mergeSource ? (
                                 mergeSource.id !== speaker.id && (

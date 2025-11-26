@@ -5,7 +5,8 @@ import { Play, User, Fingerprint, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
 import VoiceprintModal from './VoiceprintModal';
-import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker, extractVoiceprint, extractAllVoiceprints } from '@/lib/api';
+import { InlineColorPicker } from './ColorPicker';
+import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker, extractVoiceprint, extractAllVoiceprints, promoteToGlobalSpeaker } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
 interface SpeakerPanelProps {
@@ -13,9 +14,8 @@ interface SpeakerPanelProps {
   segments: TranscriptSegment[];
   onPlaySegment: (time: number) => void;
   recordingId: number;
-  speakerColors: Record<string, string>;
-  onColorChange: (speakerName: string, colorClass: string) => void;
-  availableColors: string[];
+  speakerColors: Record<string, string>; // Now stores color keys, not full classes
+  onColorChange: (speakerName: string, colorKey: string) => void;
 }
 
 export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, availableColors }: SpeakerPanelProps) {
@@ -30,9 +30,6 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const [mergingSpeaker, setMergingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [mergeTargetLabel, setMergeTargetLabel] = useState("");
 
-  // Color Picker State
-  const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Voiceprint State
@@ -41,6 +38,11 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const [voiceprintExtractResult, setVoiceprintExtractResult] = useState<VoiceprintExtractResult | null>(null);
   const [batchVoiceprintResults, setBatchVoiceprintResults] = useState<BatchVoiceprintResponse | null>(null);
   const [extractingAllVoiceprints, setExtractingAllVoiceprints] = useState(false);
+
+  // Helper to get the display name for a speaker
+  const getSpeakerName = (speaker: RecordingSpeaker): string => {
+    return speaker.local_name || speaker.global_speaker?.name || speaker.name || speaker.diarization_label;
+  };
 
   // Deduplicate speakers based on diarization_label
   const uniqueSpeakers = speakers.reduce((acc, current) => {
@@ -51,9 +53,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
       return acc;
     }
   }, [] as RecordingSpeaker[]).sort((a, b) => {
-    const nameA = a.name || a.global_speaker?.name || a.diarization_label;
-    const nameB = b.name || b.global_speaker?.name || b.diarization_label;
-    return nameA.localeCompare(nameB);
+    return getSpeakerName(a).localeCompare(getSpeakerName(b));
   });
 
   const handlePlaySnippet = (label: string) => {
@@ -73,7 +73,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
   const handleRenameStart = (speaker: RecordingSpeaker) => {
     setRenamingSpeaker(speaker);
-    setRenameValue(speaker.name || speaker.global_speaker?.name || speaker.diarization_label);
+    setRenameValue(getSpeakerName(speaker));
     setContextMenu(null);
   };
 
@@ -102,14 +102,14 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const handleMergeSubmit = async () => {
     if (!mergingSpeaker || !mergeTargetLabel || isSubmitting) return;
 
-    if (!confirm(`Are you sure you want to merge ${mergingSpeaker.name || mergingSpeaker.diarization_label} into the selected speaker? This cannot be undone.`)) {
-        return;
-    }
-
     setIsSubmitting(true);
     try {
         await mergeRecordingSpeakers(recordingId, mergeTargetLabel, mergingSpeaker.diarization_label);
         setMergingSpeaker(null);
+        
+        // Dispatch custom event to notify parent components of the merge
+        window.dispatchEvent(new CustomEvent('recording-updated', { detail: { recordingId } }));
+        
         router.refresh();
     } catch (e) {
         console.error("Failed to merge speakers", e);
@@ -120,7 +120,13 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   };
 
   const handleDelete = async (speaker: RecordingSpeaker) => {
-    if (!confirm(`Are you sure you want to delete ${speaker.name || speaker.diarization_label}? All their segments will be marked as UNKNOWN.`)) {
+    const speakerName = getSpeakerName(speaker);
+    const isGlobal = !!speaker.global_speaker_id;
+    const message = isGlobal
+        ? `Remove ${speakerName} from this recording? Their segments will be marked as UNKNOWN. They will remain in your Speaker Library.`
+        : `Delete ${speakerName} from this recording? Their segments will be marked as UNKNOWN.`;
+    
+    if (!confirm(message)) {
         return;
     }
     
@@ -174,6 +180,21 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     }
   };
 
+  const handlePromoteToGlobal = async (speaker: RecordingSpeaker) => {
+    setContextMenu(null);
+    setIsSubmitting(true);
+    
+    try {
+      await promoteToGlobalSpeaker(recordingId, speaker.diarization_label);
+      router.refresh();
+    } catch (e: any) {
+      console.error("Failed to promote speaker", e);
+      alert(e.response?.data?.detail || "Failed to promote speaker to global library.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleVoiceprintModalComplete = () => {
     router.refresh();
   };
@@ -217,7 +238,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                     return (
                         <div key={speaker.id} className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
                             <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
-                                Merge {speaker.name || speaker.diarization_label} into:
+                                Merge {getSpeakerName(speaker)} into:
                             </p>
                             <select 
                                 className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
@@ -227,7 +248,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                                 <option value="">Select Speaker...</option>
                                 {otherSpeakers.map(s => (
                                     <option key={s.diarization_label} value={s.diarization_label}>
-                                        {s.name || s.global_speaker?.name || s.diarization_label}
+                                        {getSpeakerName(s)}
                                     </option>
                                 ))}
                             </select>
@@ -258,21 +279,23 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative flex-shrink-0">
-                        <button 
-                            className={`w-8 h-8 rounded-full border flex items-center justify-center transition-transform hover:scale-105 ${speakerColors[speaker.name || speaker.global_speaker?.name || speaker.diarization_label] || 'bg-gray-200 border-gray-300'}`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const name = speaker.name || speaker.global_speaker?.name || speaker.diarization_label;
-                                setOpenColorPicker(openColorPicker === name ? null : name);
-                            }}
-                            title="Change color"
-                        >
-                             <User className="w-4 h-4 opacity-50" />
-                        </button>
+                        <div className="relative">
+                            <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
+                                <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1">
+                                <InlineColorPicker
+                                    selectedColor={speakerColors[getSpeakerName(speaker)]}
+                                    onColorSelect={(colorKey) => {
+                                        onColorChange(getSpeakerName(speaker), colorKey);
+                                    }}
+                                />
+                            </div>
+                        </div>
                         {/* Voiceprint indicator */}
                         {speaker.has_voiceprint && (
                           <div 
-                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800"
+                            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800"
                             title="Has voiceprint - can be recognized in future recordings"
                           >
                             <Fingerprint className="w-2 h-2 text-white" />
@@ -280,25 +303,9 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                         )}
                         {/* Extracting indicator */}
                         {extractingVoiceprint === speaker.diarization_label && (
-                          <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                          <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
                             <Loader2 className="w-2 h-2 text-white animate-spin" />
                           </div>
-                        )}
-                        {openColorPicker === (speaker.name || speaker.global_speaker?.name || speaker.diarization_label) && (
-                            <div className="absolute left-0 top-full mt-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 grid grid-cols-4 gap-1 z-50 w-32">
-                                {availableColors.map((color, i) => (
-                                    <button
-                                        key={i}
-                                        className={`w-6 h-6 rounded-full border ${color} hover:scale-110 transition-transform`}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            const name = speaker.name || speaker.global_speaker?.name || speaker.diarization_label;
-                                            onColorChange(name, color);
-                                            setOpenColorPicker(null);
-                                        }}
-                                    />
-                                ))}
-                            </div>
                         )}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -317,8 +324,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                             />
                         ) : (
                             <>
-                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={speaker.name || speaker.global_speaker?.name || speaker.diarization_label}>
-                                {speaker.name || speaker.global_speaker?.name || speaker.diarization_label}
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={getSpeakerName(speaker)}>
+                                {getSpeakerName(speaker)}
                                 </p>
                                 {/* {speaker.global_speaker && (
                                     <p className="text-xs text-gray-500 truncate">{speaker.diarization_label}</p>
@@ -358,9 +365,12 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 // Voiceprint option - only show if speaker doesn't have one
                 ...(!contextMenu.speaker.has_voiceprint ? [{
                     label: 'Create Voiceprint',
-                    onClick: () => handleCreateVoiceprint(contextMenu.speaker),
-                    icon: <Fingerprint className="w-4 h-4" />,
-                    className: 'text-blue-600 dark:text-blue-400'
+                    onClick: () => handleCreateVoiceprint(contextMenu.speaker)
+                }] : []),
+                // Add to Speaker Library option - only show if not already global
+                ...(!contextMenu.speaker.global_speaker_id ? [{
+                    label: 'Add to Speaker Library',
+                    onClick: () => handlePromoteToGlobal(contextMenu.speaker)
                 }] : []),
                 {
                     label: 'Delete',

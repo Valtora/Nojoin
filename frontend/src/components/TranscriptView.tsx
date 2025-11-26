@@ -4,6 +4,7 @@ import { TranscriptSegment, RecordingSpeaker, GlobalSpeaker } from '@/types';
 import { useRef, useEffect, useState } from 'react';
 import { Play, Pause, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { exportTranscript } from '@/lib/api';
+import { getColorByKey } from '@/lib/constants';
 import SpeakerAssignmentPopover from './SpeakerAssignmentPopover';
 
 interface TranscriptViewProps {
@@ -183,8 +184,11 @@ export default function TranscriptView({
   };
 
   const getSpeakerColor = (speakerName: string) => {
-      // Fallback color if not found (e.g. gray)
-      return speakerColors[speakerName] || 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700';
+      // Get the color key from speakerColors, default to 'gray' if not found
+      const colorKey = speakerColors[speakerName] || 'gray';
+      const colorOption = getColorByKey(colorKey);
+      // Return combined bg, border classes for the chat bubble
+      return `${colorOption.bg} ${colorOption.border}`;
   };
 
   useEffect(() => {

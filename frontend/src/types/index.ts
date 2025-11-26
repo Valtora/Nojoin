@@ -15,13 +15,15 @@ export interface BaseDBModel {
 export interface GlobalSpeaker extends BaseDBModel {
   name: string;
   has_voiceprint?: boolean;
+  recording_count?: number; // Number of recordings this speaker is associated with
 }
 
 export interface RecordingSpeaker extends BaseDBModel {
   recording_id: number;
   global_speaker_id?: number;
   diarization_label: string;
-  name?: string;
+  local_name?: string; // Name local to this recording only
+  name?: string; // Deprecated: kept for backward compatibility
   snippet_start?: number;
   snippet_end?: number;
   voice_snippet_path?: string;
