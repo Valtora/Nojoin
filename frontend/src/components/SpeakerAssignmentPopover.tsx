@@ -3,6 +3,7 @@
 import { GlobalSpeaker, RecordingSpeaker } from '@/types';
 import { Search, User, Plus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getColorByKey } from '@/lib/constants';
 
 interface SpeakerAssignmentPopoverProps {
@@ -12,6 +13,7 @@ interface SpeakerAssignmentPopoverProps {
   onSelect: (name: string) => void;
   onClose: () => void;
   speakerColors: Record<string, string>;
+  targetElement: HTMLElement | null;
 }
 
 export default function SpeakerAssignmentPopover({
@@ -20,25 +22,71 @@ export default function SpeakerAssignmentPopover({
   globalSpeakers,
   onSelect,
   onClose,
-  speakerColors
+  speakerColors,
+  targetElement
 }: SpeakerAssignmentPopoverProps) {
   const [search, setSearch] = useState("");
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    if (targetElement) {
+      const updatePosition = () => {
+        const rect = targetElement.getBoundingClientRect();
+        // Check if we're close to the bottom of the viewport
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        const popoverHeight = 300; // Approximate max height
+
+        let top = rect.bottom + window.scrollY;
+        
+        // If not enough space below, show above
+        if (spaceBelow < popoverHeight && spaceAbove > popoverHeight) {
+            top = rect.top + window.scrollY - popoverHeight; // This is rough, better to let it flow or measure
+            // Actually, let's just stick to below for now unless requested, 
+            // but to be safe let's just use rect.bottom + scrollY
+        }
+
+        setPosition({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+        });
+      };
+      
+      updatePosition();
+      // We need to update position on scroll/resize to keep it attached visually
+      // although with a portal it might detach if we don't track it perfectly.
+      // A simpler approach for a modal-like popover is to close it on scroll, 
+      // but let's try to track it.
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
+
+      return () => {
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
+      };
+    }
+  }, [targetElement]);
+
+  useEffect(() => {
+    // Focus input after a short delay to ensure render
+    setTimeout(() => inputRef.current?.focus(), 50);
     
     // Click outside to close
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        // Also check if the click was on the target element itself (to avoid immediate reopen/close loop if handled in parent)
+        if (targetElement && targetElement.contains(event.target as Node)) {
+            return;
+        }
         onClose();
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+  }, [onClose, targetElement]);
 
   // Helper to get speaker name
   const getSpeakerName = (s: RecordingSpeaker): string => {
@@ -67,11 +115,17 @@ export default function SpeakerAssignmentPopover({
     }
   };
 
-  return (
+  if (!targetElement) return null;
+
+  return createPortal(
     <div 
         ref={containerRef}
-        className="absolute z-[60] mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 left-0 top-full"
-        style={{ minWidth: '200px' }}
+        className="absolute z-[9999] mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+        style={{ 
+            top: position.top, 
+            left: position.left,
+            minWidth: '200px' 
+        }}
     >
       <div className="p-2 border-b border-gray-100 dark:border-gray-700">
         <div className="relative">
@@ -147,6 +201,7 @@ export default function SpeakerAssignmentPopover({
              </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

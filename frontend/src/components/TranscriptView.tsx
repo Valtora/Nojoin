@@ -64,7 +64,7 @@ export default function TranscriptView({
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null);
   
   // Popover State
-  const [activePopoverIndex, setActivePopoverIndex] = useState<number | null>(null);
+  const [activePopover, setActivePopover] = useState<{ index: number; target: HTMLElement } | null>(null);
 
   const [editValue, setEditValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -498,24 +498,29 @@ export default function TranscriptView({
                             <button 
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    setActivePopoverIndex(activePopoverIndex === index ? null : index);
+                                    if (activePopover?.index === index) {
+                                        setActivePopover(null);
+                                    } else {
+                                        setActivePopover({ index, target: e.currentTarget });
+                                    }
                                 }}
                                 className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-600 dark:hover:text-orange-400 transition-colors text-left"
                                 title="Click to change speaker"
                             >
                                 {speakerName}
                             </button>
-                            {activePopoverIndex === index && (
+                            {activePopover?.index === index && (
                                 <SpeakerAssignmentPopover
                                     currentSpeakerName={speakerName}
                                     availableSpeakers={speakers}
                                     globalSpeakers={globalSpeakers}
                                     speakerColors={speakerColors}
+                                    targetElement={activePopover.target}
                                     onSelect={(name) => {
                                         onUpdateSegmentSpeaker(index, name);
-                                        setActivePopoverIndex(null);
+                                        setActivePopover(null);
                                     }}
-                                    onClose={() => setActivePopoverIndex(null)}
+                                    onClose={() => setActivePopover(null)}
                                 />
                             )}
                         </div>
