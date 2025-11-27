@@ -1,6 +1,6 @@
 'use client';
 
-import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers } from '@/lib/api';
+import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor } from '@/lib/api';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
@@ -136,6 +136,19 @@ export default function RecordingPage({ params }: PageProps) {
     });
 
     speakerLabels.forEach(label => {
+        // Check if color is already set in recording speakers
+        const speaker = recording.speakers?.find(s => s.diarization_label === label);
+        if (speaker) {
+            if (speaker.global_speaker?.color) {
+                newColors[label] = speaker.global_speaker.color;
+                return;
+            }
+            if (speaker.color) {
+                newColors[label] = speaker.color;
+                return;
+            }
+        }
+
         if (!newColors[label]) {
             // Use a stable hash function to assign colors based on the label
             let hash = 0;
@@ -328,11 +341,22 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
-  const handleColorChange = (speakerLabel: string, colorKey: string) => {
+  const handleColorChange = async (speakerLabel: string, colorKey: string) => {
       setSpeakerColors(prev => ({
           ...prev,
           [speakerLabel]: colorKey
       }));
+      
+      if (recording) {
+          try {
+              await updateSpeakerColor(recording.id, speakerLabel, colorKey);
+              // Refresh recording to get updated speaker data
+              const updated = await getRecording(recording.id);
+              setRecording(updated);
+          } catch (e) {
+              console.error("Failed to update speaker color", e);
+          }
+      }
   };
 
   const speakerMap = useMemo(() => {

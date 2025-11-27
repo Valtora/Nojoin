@@ -23,6 +23,7 @@ export interface GlobalSpeaker extends BaseDBModel {
   name: string;
   has_voiceprint?: boolean;
   recording_count?: number; // Number of recordings this speaker is associated with
+  color?: string;
 }
 
 export interface RecordingSpeaker extends BaseDBModel {
@@ -36,6 +37,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   voice_snippet_path?: string;
   has_voiceprint?: boolean;
   global_speaker?: GlobalSpeaker;
+  color?: string;
 }
 
 export interface TranscriptSegment {

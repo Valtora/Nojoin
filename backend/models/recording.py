@@ -43,12 +43,14 @@ class Recording(BaseDBModel, table=True):
 # Read Models
 class GlobalSpeakerRead(BaseDBModel):
     name: str
+    color: Optional[str] = None
 
 class RecordingSpeakerRead(BaseDBModel):
     recording_id: int
     diarization_label: str
     local_name: Optional[str] = None
     name: Optional[str] = None
+    color: Optional[str] = None
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 class TranscriptRead(BaseDBModel):

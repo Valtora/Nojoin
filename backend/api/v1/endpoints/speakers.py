@@ -55,6 +55,9 @@ class GlobalSpeakerWithCount(BaseModel):
     created_at: str
     updated_at: str
 
+class SpeakerColorUpdate(BaseModel):
+    color: str
+
 @router.get("/", response_model=List[GlobalSpeakerWithCount])
 async def list_global_speakers(
     skip: int = 0,
@@ -934,3 +937,47 @@ async def extract_all_voiceprints(
         "results": results,
         "all_global_speakers": all_speakers_list
     }
+
+@router.put("/recordings/{recording_id}/speakers/{label}/color", response_model=dict)
+async def update_speaker_color(
+    recording_id: int,
+    label: str,
+    update: SpeakerColorUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update the color for a speaker.
+    If the speaker is linked to a Global Speaker, updates the Global Speaker's color.
+    Otherwise, updates the Recording Speaker's color.
+    """
+    # 1. Verify recording exists
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # 2. Find the RecordingSpeaker
+    stmt = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == label
+    )
+    result = await db.execute(stmt)
+    recording_speaker = result.scalar_one_or_none()
+    
+    if not recording_speaker:
+        raise HTTPException(status_code=404, detail=f"Speaker {label} not found in recording")
+
+    # 3. Update color
+    if recording_speaker.global_speaker_id:
+        # Update Global Speaker
+        global_speaker = await db.get(GlobalSpeaker, recording_speaker.global_speaker_id)
+        if global_speaker:
+            global_speaker.color = update.color
+            db.add(global_speaker)
+    else:
+        # Update Recording Speaker
+        recording_speaker.color = update.color
+        db.add(recording_speaker)
+        
+    await db.commit()
+    
+    return {"status": "success", "color": update.color}

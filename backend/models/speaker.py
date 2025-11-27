@@ -12,6 +12,7 @@ class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
     name: str = Field(unique=True, index=True)
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    color: Optional[str] = None
     
     recording_speakers: List["RecordingSpeaker"] = Relationship(back_populates="global_speaker")
     
@@ -42,6 +43,7 @@ class RecordingSpeaker(BaseDBModel, table=True):
     voice_snippet_path: Optional[str] = None
     
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    color: Optional[str] = None
 
     recording: "Recording" = Relationship(back_populates="speakers")
     global_speaker: Optional["GlobalSpeaker"] = Relationship(back_populates="recording_speakers")

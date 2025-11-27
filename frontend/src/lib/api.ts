@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
@@ -136,6 +136,12 @@ export const updateSpeaker = async (recordingId: number, diarizationLabel: strin
   await api.put(`/speakers/recordings/${recordingId}`, {
     diarization_label: diarizationLabel,
     global_speaker_name: newName,
+  });
+};
+
+export const updateSpeakerColor = async (recordingId: number, label: string, color: string): Promise<void> => {
+  await api.put(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(label)}/color`, {
+    color,
   });
 };
 
