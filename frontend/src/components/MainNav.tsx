@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Mic, 
   Archive, 
@@ -20,7 +21,6 @@ import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
 import { InlineColorPicker } from './ColorPicker';
 import GlobalSpeakersModal from './GlobalSpeakersModal';
-import SettingsModal from './SettingsModal';
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -175,6 +175,7 @@ function TagItem({
 }
 
 export default function MainNav() {
+  const router = useRouter();
   const { 
     currentView, 
     setCurrentView, 
@@ -191,7 +192,6 @@ export default function MainNav() {
   
   // Modal states
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -429,7 +429,7 @@ export default function MainNav() {
           <NavItem
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
-            onClick={() => setIsSettingsModalOpen(true)}
+            onClick={() => router.push('/settings')}
             collapsed={isNavCollapsed}
           />
         </div>
@@ -441,11 +441,6 @@ export default function MainNav() {
         onClose={() => setIsSpeakersModalOpen(false)} 
       />
       
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-      />
-
       <ImportAudioModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}

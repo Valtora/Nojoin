@@ -1,3 +1,6 @@
+'use client';
+
+import { usePathname } from 'next/navigation';
 import MainNav from "@/components/MainNav";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
@@ -9,10 +12,13 @@ export default function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pathname = usePathname();
+  const isSettingsPage = pathname?.startsWith('/settings');
+
   return (
     <div className="flex h-screen w-full">
       <MainNav />
-      <Sidebar />
+      {!isSettingsPage && <Sidebar />}
       
       <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">
         <TopBar />
@@ -20,7 +26,7 @@ export default function DashboardLayout({
         <ServiceStatusAlerts />
       </main>
       
-      <ChatPanel />
+      {!isSettingsPage && <ChatPanel />}
     </div>
   );
 }
