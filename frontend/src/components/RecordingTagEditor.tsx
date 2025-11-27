@@ -89,20 +89,20 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }:
   );
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-4 relative">
+    <div className="flex flex-wrap items-center gap-3 mb-4 relative">
       {tags.map((tag) => {
         const color = getColorByKey(tag.color);
         return (
           <span 
             key={tag.id || tag.name} 
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${color.bg} ${color.text} ${color.border}`}
+            className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${color.bg} ${color.text} ${color.border}`}
           >
             {tag.name}
             <button
               onClick={() => handleRemoveTag(tag.name)}
-              className={`ml-1.5 inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none`}
+              className={`ml-2 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none`}
             >
-              <X className="w-2.5 h-2.5" />
+              <X className="w-3 h-3" />
             </button>
           </span>
         );
@@ -111,9 +111,9 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }:
       <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
         >
-          <Plus className="w-3 h-3 mr-1" />
+          <Plus className="w-4 h-4 mr-1.5" />
           Add Tag
         </button>
 
