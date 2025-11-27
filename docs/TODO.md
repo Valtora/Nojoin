@@ -1,14 +1,17 @@
 # Nojoin To-Do List
 Let's continue the development of Nojoin. Read the PRD.md and the Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project and my development workflow. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
-## Alembic Migrations
-- Currently every time I spin up a new development environment I have to manually create the initial admin user by running a script. This is because Alembic does not support seeding data during the migration process. Research and implement a solution to this problem so that the initial admin user is created automatically during the migration process.
-
 ## Multi-Tenant User System
-- Implement a multi-tenant user system with authentication and authorization.
-- Though Nojoin will be self-hosted the multi-tenant system will allow the hoster to have different accounts for different teams or users.
-- Each user should have their own recordings, settings, and data isolated from other users.
-- We need to have one main admin user who can create and manage other users. The admin account created by default is a user with username 'admin' and password 'admin' which the hoster should be forced to change on first login.
+- Remove the 'Email' field from the first-run setup wizard and user creation forms. It is not required for now.
+
+- Implement a 'Log Out' button in the frontend UI that logs the user out and redirects them to the login page.
+
+## Security
+- Audit the authentication and authorization mechanisms to ensure that users can only access their own data.
+- Implement password hashing and secure storage of user credentials.
+- Ensure that all API endpoints are protected and require proper authentication.
+- Ensure website security best practices are followed to prevent common vulnerabilities such as SQL injection, XSS, CSRF, etc.
+- Ensure SSL is supported and properly configured for secure communication between the frontend, backend, and companion app. Use a library like Let's Encrypt (or better) for managing SSL certificates.
 
 ## Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.

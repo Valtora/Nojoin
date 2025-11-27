@@ -16,9 +16,19 @@ export const SYSTEM_KEYWORDS = [
   'companion', 'app', 'backend', 'api', 'port', 'address'
 ];
 
+export const ACCOUNT_KEYWORDS = [
+  'profile', 'username', 'email', 'password', 'change password', 'account', 'user'
+];
+
+export const ADMIN_KEYWORDS = [
+  'admin', 'users', 'manage', 'create user', 'delete user', 'role', 'superuser'
+];
+
 export const TAB_KEYWORDS: Record<string, string[]> = {
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
   audio: AUDIO_KEYWORDS,
   system: SYSTEM_KEYWORDS,
+  account: ACCOUNT_KEYWORDS,
+  admin: ADMIN_KEYWORDS,
 };

@@ -1,19 +1,22 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column, BigInteger
+from sqlalchemy import Column, BigInteger, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from pydantic import computed_field
 from .base import BaseDBModel
 
 if TYPE_CHECKING:
     from .recording import Recording
+    from .user import User
 
 class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
-    name: str = Field(unique=True, index=True)
+    name: str = Field(index=True) # Removed unique=True to allow same name for different users
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
     color: Optional[str] = None
     
+    user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
+
     recording_speakers: List["RecordingSpeaker"] = Relationship(back_populates="global_speaker")
     
     @computed_field
@@ -21,6 +24,18 @@ class GlobalSpeaker(BaseDBModel, table=True):
     def has_voiceprint(self) -> bool:
         """Returns True if this speaker has a voiceprint (embedding) stored."""
         return self.embedding is not None and len(self.embedding) > 0
+
+class GlobalSpeakerRead(BaseDBModel):
+    name: str
+    color: Optional[str] = None
+    has_voiceprint: bool = False
+
+class GlobalSpeakerUpdate(BaseDBModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+class GlobalSpeakerWithCount(GlobalSpeakerRead):
+    recording_count: int = 0
 
 class RecordingSpeaker(BaseDBModel, table=True):
     __tablename__ = "recording_speakers"

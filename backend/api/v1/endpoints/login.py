@@ -37,4 +37,7 @@ async def login_access_token(
             user.username, expires_delta=access_token_expires
         ),
         "token_type": "bearer",
+        "force_password_change": user.force_password_change,
+        "is_superuser": user.is_superuser,
+        "username": user.username,
     }

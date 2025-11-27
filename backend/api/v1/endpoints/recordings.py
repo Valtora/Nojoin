@@ -9,8 +9,9 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_db
+from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
+from backend.models.user import User
 from backend.worker.tasks import process_recording_task
 from backend.utils.audio import concatenate_wavs, get_audio_duration
 
@@ -82,7 +83,8 @@ def generate_timestamp_id() -> int:
 @router.post("/init", response_model=Recording)
 async def init_upload(
     name: Optional[str] = Query(None, description="Name of the recording"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Initialize a multipart upload.
@@ -98,7 +100,8 @@ async def init_upload(
         id=generate_timestamp_id(),
         name=name,
         audio_path=file_path,
-        status=RecordingStatus.UPLOADING
+        status=RecordingStatus.UPLOADING,
+        user_id=current_user.id
     )
     
     db.add(recording)
@@ -217,7 +220,8 @@ async def import_audio(
     file: UploadFile = File(...),
     name: Optional[str] = Query(None, description="Custom name for the recording"),
     recorded_at: Optional[datetime] = Query(None, description="Original recording timestamp"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
@@ -280,7 +284,8 @@ async def import_audio(
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
-        status=RecordingStatus.QUEUED
+        status=RecordingStatus.QUEUED,
+        user_id=current_user.id
     )
     
     # Override created_at if recorded_at is provided
@@ -300,7 +305,8 @@ async def import_audio(
 @router.post("/upload", response_model=Recording)
 async def upload_recording(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Upload a new audio recording (used by Companion app).
@@ -342,7 +348,8 @@ async def upload_recording(
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
-        status=RecordingStatus.QUEUED
+        status=RecordingStatus.QUEUED,
+        user_id=current_user.id
     )
     
     db.add(recording)
@@ -360,6 +367,32 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag, Tag
 
+@router.get("", response_model=List[Recording])
+async def list_recordings_root(
+    skip: int = 0,
+    limit: int = 100,
+    q: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    speaker_ids: Optional[List[int]] = Query(None),
+    tag_ids: Optional[List[int]] = Query(None),
+    include_archived: bool = Query(False, description="Include archived recordings"),
+    include_deleted: bool = Query(False, description="Include deleted recordings"),
+    only_archived: bool = Query(False, description="Only show archived recordings"),
+    only_deleted: bool = Query(False, description="Only show deleted recordings"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all recordings (root path).
+    """
+    return await list_recordings(
+        skip=skip, limit=limit, q=q, start_date=start_date, end_date=end_date,
+        speaker_ids=speaker_ids, tag_ids=tag_ids, include_archived=include_archived,
+        include_deleted=include_deleted, only_archived=only_archived, only_deleted=only_deleted,
+        db=db, current_user=current_user
+    )
+
 @router.get("/", response_model=List[Recording])
 async def list_recordings(
     skip: int = 0,
@@ -373,13 +406,14 @@ async def list_recordings(
     include_deleted: bool = Query(False, description="Include deleted recordings"),
     only_archived: bool = Query(False, description="Only show archived recordings"),
     only_deleted: bool = Query(False, description="Only show deleted recordings"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     List all recordings with optional search and filtering.
     By default, excludes archived and deleted recordings.
     """
-    query = select(Recording).distinct()
+    query = select(Recording).where(Recording.user_id == current_user.id).distinct()
     
     # Archive/Delete filtering
     if only_deleted:
@@ -434,7 +468,8 @@ from backend.models.tag import RecordingTag
 @router.get("/{recording_id}", response_model=RecordingRead)
 async def get_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get a specific recording by ID with all relationships loaded.
@@ -442,6 +477,7 @@ async def get_recording(
     statement = (
         select(Recording)
         .where(Recording.id == recording_id)
+        .where(Recording.user_id == current_user.id)
         .options(
             selectinload(Recording.transcript),
             selectinload(Recording.speakers).selectinload(RecordingSpeaker.global_speaker),
@@ -481,13 +517,14 @@ async def get_recording(
 async def update_recording(
     recording_id: int,
     recording_update: RecordingUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update a recording.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     if recording_update.name is not None:
@@ -502,13 +539,14 @@ async def update_recording(
 @router.delete("/{recording_id}")
 async def delete_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete a recording and its associated file.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
     # Delete file from disk
@@ -526,13 +564,14 @@ async def delete_recording(
 @router.get("/{recording_id}/stream")
 async def stream_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Stream the audio file for a recording.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     if not recording.audio_path or not os.path.exists(recording.audio_path):
@@ -543,14 +582,15 @@ async def stream_recording(
 @router.post("/{recording_id}/retry", response_model=Recording)
 async def retry_processing(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retry processing for a recording that is in ERROR or COMPLETED state.
     Useful if the pipeline failed or if code has been updated.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     # Reset status
@@ -568,13 +608,14 @@ async def retry_processing(
 @router.post("/{recording_id}/archive", response_model=Recording)
 async def archive_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Archive a recording. Archived recordings are hidden from the main list.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
     if recording.is_deleted:
@@ -591,13 +632,14 @@ async def archive_recording(
 @router.post("/{recording_id}/restore", response_model=Recording)
 async def restore_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Restore an archived or soft-deleted recording back to the main list.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     recording.is_archived = False
@@ -612,14 +654,15 @@ async def restore_recording(
 @router.post("/{recording_id}/soft-delete", response_model=Recording)
 async def soft_delete_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Soft-delete a recording. It moves to the trash/deleted view.
     The recording can be restored or permanently deleted later.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     recording.is_deleted = True
@@ -634,14 +677,15 @@ async def soft_delete_recording(
 @router.delete("/{recording_id}/permanent")
 async def permanently_delete_recording(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Permanently delete a recording and its associated file.
     This action cannot be undone.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
     # Delete file from disk
@@ -664,12 +708,13 @@ class BatchRecordingIds(BaseModel):
 @router.post("/batch/archive")
 async def batch_archive_recordings(
     batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Archive multiple recordings.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
     result = await db.execute(stmt)
     recordings = result.scalars().all()
     
@@ -684,12 +729,13 @@ async def batch_archive_recordings(
 @router.post("/batch/restore")
 async def batch_restore_recordings(
     batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Restore multiple recordings from archive or trash.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
     result = await db.execute(stmt)
     recordings = result.scalars().all()
     
@@ -704,12 +750,13 @@ async def batch_restore_recordings(
 @router.post("/batch/soft-delete")
 async def batch_soft_delete_recordings(
     batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Soft-delete multiple recordings.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
     result = await db.execute(stmt)
     recordings = result.scalars().all()
     
@@ -724,12 +771,13 @@ async def batch_soft_delete_recordings(
 @router.delete("/batch/permanent")
 async def batch_permanently_delete_recordings(
     batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Permanently delete multiple recordings and their files.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids))
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
     result = await db.execute(stmt)
     recordings = result.scalars().all()
     
@@ -749,13 +797,14 @@ async def batch_permanently_delete_recordings(
 async def update_client_status(
     recording_id: int,
     status: ClientStatus = Query(..., description="Current status of the client"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update the client status (e.g. RECORDING, PAUSED) for a recording.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
     recording.client_status = status

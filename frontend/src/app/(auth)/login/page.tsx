@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { login } from '@/lib/api';
+import { login, getSystemStatus } from '@/lib/api';
 import { Lock, User } from 'lucide-react';
 
 export default function LoginPage() {
@@ -12,14 +12,42 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    // Clear any existing token when visiting login page
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+    }
+
+    const checkStatus = async () => {
+      try {
+        const status = await getSystemStatus();
+        if (!status.initialized) {
+          router.push('/setup');
+        }
+      } catch (e) {
+        console.error('Failed to check system status', e);
+      }
+    };
+    checkStatus();
+  }, [router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const { access_token } = await login(username, password);
-      localStorage.setItem('token', access_token);
+      const response = await login(username, password);
+      localStorage.setItem('token', response.access_token);
+      
+      if (response.force_password_change) {
+        // Redirect to settings with a query param or hash to open account tab
+        // Since we don't have a dedicated change password page yet, we'll send them to settings
+        // Ideally we would have a forced change password screen.
+        // For now, let's just go to dashboard, but maybe we can store a flag in local storage to show a modal.
+        localStorage.setItem('force_password_change', 'true');
+      }
+      
       router.push('/');
     } catch (err) {
       setError('Invalid username or password');

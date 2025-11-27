@@ -1,18 +1,20 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { getSettings, updateSettings } from '@/lib/api';
+import { getSettings, updateSettings, getUserMe } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
-import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search } from 'lucide-react';
+import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield } from 'lucide-react';
 import { getMatchScore } from '@/lib/searchUtils';
 import { TAB_KEYWORDS } from './keywords';
 import GeneralSettings from './GeneralSettings';
 import AISettings from './AISettings';
 import AudioSettings from './AudioSettings';
 import SystemSettings from './SystemSettings';
+import AccountSettings from './AccountSettings';
+import AdminSettings from './AdminSettings';
 import { useNotificationStore } from '@/lib/notificationStore';
 
-type Tab = 'general' | 'ai' | 'audio' | 'system';
+type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
@@ -25,6 +27,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const { addNotification } = useNotificationStore();
 
   // Determine which tabs have matches and their scores
@@ -36,10 +39,12 @@ export default function SettingsPage() {
       ai: getMatchScore(searchQuery, TAB_KEYWORDS.ai),
       audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
       system: getMatchScore(searchQuery, TAB_KEYWORDS.system),
+      account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
+      admin: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.admin) : 1,
     };
 
     return matches;
-  }, [searchQuery]);
+  }, [searchQuery, isAdmin]);
 
   // Auto-switch tab if current one has no matches but others do
   useEffect(() => {
@@ -80,11 +85,18 @@ export default function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getSettings();
-        setSettings(data);
+        const [settingsData, userData] = await Promise.all([
+          getSettings(),
+          getUserMe()
+        ]);
+        
+        // Ensure settingsData is an object (API might return null)
+        const safeSettings = settingsData || {};
+        setSettings(safeSettings);
+        setIsAdmin(userData.is_superuser);
 
         // Try to load companion config using the loaded settings or default
-        const companionUrl = data.companion_url || 'http://localhost:12345';
+        const companionUrl = safeSettings.companion_url || 'http://localhost:12345';
         try {
             const res = await fetch(`${companionUrl}/config`);
             if (res.ok) {
@@ -152,14 +164,25 @@ export default function SettingsPage() {
     }
   };
 
-  if (!mounted) return null;
+  const tabs = useMemo(() => {
+    const baseTabs = [
+      { id: 'account', label: 'Account', icon: User },
+      { id: 'ai', label: 'AI Services', icon: Cpu },
+      { id: 'audio', label: 'Audio & Recording', icon: Mic },
+      { id: 'general', label: 'General', icon: SettingsIcon },
+      { id: 'system', label: 'System', icon: Server },
+    ] as const;
 
-  const tabs = [
-    { id: 'ai', label: 'AI Services', icon: Cpu },
-    { id: 'audio', label: 'Audio & Recording', icon: Mic },
-    { id: 'general', label: 'General', icon: SettingsIcon },
-    { id: 'system', label: 'System', icon: Server },
-  ] as const;
+    if (isAdmin) {
+      return [
+        ...baseTabs,
+        { id: 'admin', label: 'Admin Panel', icon: Shield },
+      ];
+    }
+    return baseTabs;
+  }, [isAdmin]);
+
+  if (!mounted) return null;
 
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
@@ -191,11 +214,13 @@ export default function SettingsPage() {
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              // @ts-ignore
               const hasMatch = tabMatches && tabMatches[tab.id] < 0.6;
 
               return (
                 <button
                   key={tab.id}
+                  // @ts-ignore
                   onClick={() => setActiveTab(tab.id)}
                   className={`
                     w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
@@ -238,6 +263,8 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
+              {activeTab === 'account' && <AccountSettings />}
+              {activeTab === 'admin' && isAdmin && <AdminSettings />}
               {activeTab === 'general' && <GeneralSettings searchQuery={searchQuery} />}
               {activeTab === 'ai' && (
                 <AISettings 

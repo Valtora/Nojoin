@@ -5,10 +5,11 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from pydantic import BaseModel
 
-from backend.api.deps import get_db
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.api.deps import get_db, get_current_user
+from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeakerUpdate, GlobalSpeakerWithCount, RecordingSpeaker
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
+from backend.models.user import User
 from backend.processing.embedding import merge_embeddings, extract_embedding_for_segments, find_matching_global_speaker, cosine_similarity
 from backend.utils.config_manager import config_manager
 
@@ -58,11 +59,24 @@ class GlobalSpeakerWithCount(BaseModel):
 class SpeakerColorUpdate(BaseModel):
     color: str
 
+@router.get("", response_model=List[GlobalSpeakerWithCount])
+async def read_speakers_root(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieve global speakers (root path).
+    """
+    return await read_speakers(skip=skip, limit=limit, db=db, current_user=current_user)
+
 @router.get("/", response_model=List[GlobalSpeakerWithCount])
 async def list_global_speakers(
     skip: int = 0,
     limit: int = 100,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     List all global speakers with their recording association counts.
@@ -76,6 +90,7 @@ async def list_global_speakers(
             func.count(RecordingSpeaker.id).label('recording_count')
         )
         .outerjoin(RecordingSpeaker, GlobalSpeaker.id == RecordingSpeaker.global_speaker_id)
+        .where(GlobalSpeaker.user_id == current_user.id)
         .group_by(GlobalSpeaker.id)
         .order_by(GlobalSpeaker.name)
         .offset(skip)
@@ -104,19 +119,20 @@ async def list_global_speakers(
 @router.post("/", response_model=GlobalSpeaker)
 async def create_global_speaker(
     name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Create a new global speaker manually.
     """
     # Check if exists
-    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == name)
+    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
     existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=400, detail="Speaker already exists")
         
-    speaker = GlobalSpeaker(name=name)
+    speaker = GlobalSpeaker(name=name, user_id=current_user.id)
     db.add(speaker)
     await db.commit()
     await db.refresh(speaker)
@@ -126,7 +142,8 @@ async def create_global_speaker(
 async def update_recording_speaker(
     recording_id: int,
     update: SpeakerUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update a speaker label in a recording with a name.
@@ -139,12 +156,12 @@ async def update_recording_speaker(
     
     # 1. Verify recording exists
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # 2. Check if a Global Speaker with this name already exists
-    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name)
+    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
         
@@ -222,7 +239,8 @@ async def update_recording_speaker(
 async def promote_speaker_to_global(
     recording_id: int,
     diarization_label: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Promote a recording speaker to the global speaker library.
@@ -232,6 +250,11 @@ async def promote_speaker_to_global(
     - Copies the embedding to the global speaker if available
     """
     # 1. Find the recording speaker
+    # Ensure recording belongs to user
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == diarization_label
@@ -255,7 +278,7 @@ async def promote_speaker_to_global(
         )
     
     # 3. Check if global speaker already exists
-    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == speaker_name)
+    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == speaker_name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
     existing_global = result.scalar_one_or_none()
     
@@ -276,7 +299,8 @@ async def promote_speaker_to_global(
         # Create new global speaker
         global_speaker = GlobalSpeaker(
             name=speaker_name,
-            embedding=recording_speaker.embedding
+            embedding=recording_speaker.embedding,
+            user_id=current_user.id
         )
         db.add(global_speaker)
         await db.flush()  # Get the ID
@@ -295,7 +319,8 @@ async def promote_speaker_to_global(
 @router.post("/merge", response_model=GlobalSpeaker)
 async def merge_speakers(
     request: MergeRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Merge source speaker into target speaker.
@@ -306,6 +331,9 @@ async def merge_speakers(
     target = await db.get(GlobalSpeaker, request.target_speaker_id)
     
     if not source or not target:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+        
+    if source.user_id != current_user.id or target.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
     if source.id == target.id:
@@ -340,17 +368,18 @@ async def merge_speakers(
 async def update_global_speaker(
     speaker_id: int,
     name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Rename a global speaker.
     """
     speaker = await db.get(GlobalSpeaker, speaker_id)
-    if not speaker:
+    if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
     # Check name uniqueness
-    stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == name)
+    stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
     if existing and existing.id != speaker_id:
@@ -374,14 +403,15 @@ async def update_global_speaker(
 @router.delete("/{speaker_id}")
 async def delete_global_speaker(
     speaker_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete a global speaker.
     Sets global_speaker_id to NULL for all associated recording speakers.
     """
     speaker = await db.get(GlobalSpeaker, speaker_id)
-    if not speaker:
+    if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
     # The relationship is set to nullify on delete by default in SQLModel/SQLAlchemy 
@@ -409,7 +439,8 @@ async def delete_global_speaker(
 async def merge_recording_speakers(
     recording_id: int,
     merge_data: MergeRequestLabels,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Merge two speakers in a recording.
@@ -418,7 +449,7 @@ async def merge_recording_speakers(
     """
     # 1. Verify recording exists
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # 2. Validate that source and target are different

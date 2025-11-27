@@ -4,52 +4,59 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from pydantic import BaseModel
 
-from backend.api.deps import get_db
-from backend.models.tag import Tag, RecordingTag
-from backend.models.recording import Recording, TagRead
+from backend.api.deps import get_db, get_current_user
+from backend.models.tag import Tag, TagCreate, TagRead, TagUpdate, RecordingTag
+from backend.models.recording import Recording
+from backend.models.user import User
 
 router = APIRouter()
-
-class TagCreate(BaseModel):
-    name: str
-    color: Optional[str] = None
-
-class TagUpdate(BaseModel):
-    name: Optional[str] = None
-    color: Optional[str] = None
 
 class BatchTagOperation(BaseModel):
     recording_ids: List[int]
     tag_name: str
 
-@router.get("/", response_model=List[TagRead])
-async def list_tags(
+@router.get("", response_model=List[TagRead])
+async def read_tags_root(
     skip: int = 0,
     limit: int = 100,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieve tags (root path).
+    """
+    return await read_tags(skip=skip, limit=limit, db=db, current_user=current_user)
+
+@router.get("/", response_model=List[TagRead])
+async def read_tags(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     List all available tags.
     """
-    statement = select(Tag).offset(skip).limit(limit)
+    statement = select(Tag).where(Tag.user_id == current_user.id).offset(skip).limit(limit)
     result = await db.execute(statement)
     return result.scalars().all()
 
 @router.post("/", response_model=TagRead)
 async def create_tag(
     tag_in: TagCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Create a new tag.
     """
-    statement = select(Tag).where(Tag.name == tag_in.name)
+    statement = select(Tag).where(Tag.name == tag_in.name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     existing = result.scalar_one_or_none()
     if existing:
         return existing
         
-    tag = Tag(name=tag_in.name, color=tag_in.color)
+    tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id)
     db.add(tag)
     await db.commit()
     await db.refresh(tag)
@@ -59,19 +66,20 @@ async def create_tag(
 async def update_tag(
     tag_id: int,
     tag_update: TagUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update a tag's name and/or color.
     """
     tag = await db.get(Tag, tag_id)
-    if not tag:
+    if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
     
     if tag_update.name is not None:
         # Check for duplicate name
         if tag_update.name != tag.name:
-            stmt = select(Tag).where(Tag.name == tag_update.name)
+            stmt = select(Tag).where(Tag.name == tag_update.name, Tag.user_id == current_user.id)
             result = await db.execute(stmt)
             if result.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="Tag with this name already exists")
@@ -88,23 +96,24 @@ async def update_tag(
 async def add_tag_to_recording(
     recording_id: int,
     tag_in: TagCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Add a tag to a recording. Creates the tag if it doesn't exist.
     """
     # 1. Verify recording exists
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # 2. Find or Create Tag
-    statement = select(Tag).where(Tag.name == tag_in.name)
+    statement = select(Tag).where(Tag.name == tag_in.name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     tag = result.scalar_one_or_none()
     
     if not tag:
-        tag = Tag(name=tag_in.name, color=tag_in.color)
+        tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id)
         db.add(tag)
         await db.commit()
         await db.refresh(tag)
@@ -128,13 +137,19 @@ async def add_tag_to_recording(
 async def remove_tag_from_recording(
     recording_id: int,
     tag_name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Remove a tag from a recording.
     """
+    # Verify recording ownership
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
     # 1. Find Tag
-    statement = select(Tag).where(Tag.name == tag_name)
+    statement = select(Tag).where(Tag.name == tag_name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     tag = result.scalar_one_or_none()
     
@@ -158,13 +173,14 @@ async def remove_tag_from_recording(
 @router.delete("/{tag_id}")
 async def delete_tag(
     tag_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete a global tag.
     """
     tag = await db.get(Tag, tag_id)
-    if not tag:
+    if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
         
     await db.delete(tag)
@@ -175,18 +191,19 @@ async def delete_tag(
 @router.post("/batch/add")
 async def batch_add_tag(
     batch: BatchTagOperation,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Add a tag to multiple recordings. Creates the tag if it doesn't exist.
     """
     # 1. Find or Create Tag
-    statement = select(Tag).where(Tag.name == batch.tag_name)
+    statement = select(Tag).where(Tag.name == batch.tag_name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     tag = result.scalar_one_or_none()
     
     if not tag:
-        tag = Tag(name=batch.tag_name)
+        tag = Tag(name=batch.tag_name, user_id=current_user.id)
         db.add(tag)
         await db.commit()
         await db.refresh(tag)
@@ -198,8 +215,8 @@ async def batch_add_tag(
     
     count = 0
     for recording_id in batch.recording_ids:
-        # Check if recording exists
-        rec_stmt = select(Recording).where(Recording.id == recording_id)
+        # Check if recording exists and belongs to user
+        rec_stmt = select(Recording).where(Recording.id == recording_id, Recording.user_id == current_user.id)
         rec_result = await db.execute(rec_stmt)
         if not rec_result.scalar_one_or_none():
             continue
@@ -221,13 +238,14 @@ async def batch_add_tag(
 @router.post("/batch/remove")
 async def batch_remove_tag(
     batch: BatchTagOperation,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Remove a tag from multiple recordings.
     """
     # 1. Find Tag
-    statement = select(Tag).where(Tag.name == batch.tag_name)
+    statement = select(Tag).where(Tag.name == batch.tag_name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     tag = result.scalar_one_or_none()
     
@@ -235,9 +253,11 @@ async def batch_remove_tag(
         return {"ok": True, "count": 0} # Tag doesn't exist, so nothing to remove
         
     # 2. Remove links
-    stmt = select(RecordingTag).where(
+    # Ensure we only remove from recordings owned by the user
+    stmt = select(RecordingTag).join(Recording).where(
         RecordingTag.recording_id.in_(batch.recording_ids),
-        RecordingTag.tag_id == tag.id
+        RecordingTag.tag_id == tag.id,
+        Recording.user_id == current_user.id
     )
     result = await db.execute(stmt)
     links = result.scalars().all()

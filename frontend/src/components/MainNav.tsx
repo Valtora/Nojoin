@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Plus,
   X,
-  Bell
+  Bell,
+  LogOut
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -212,6 +213,11 @@ export default function MainNav() {
     message: '',
     onConfirm: () => {},
   });
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    router.push('/login');
+  };
 
   const loadTags = useCallback(async () => {
     try {
@@ -455,6 +461,12 @@ export default function MainNav() {
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
             onClick={() => router.push('/settings')}
+            collapsed={collapsed}
+          />
+          <NavItem
+            icon={<LogOut className="w-5 h-5" />}
+            label="Log Out"
+            onClick={handleLogout}
             collapsed={collapsed}
           />
         </div>

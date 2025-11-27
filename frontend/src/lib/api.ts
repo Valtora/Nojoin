@@ -32,12 +32,12 @@ api.interceptors.response.use(
   }
 );
 
-export const login = async (username: string, password: string): Promise<{ access_token: string }> => {
+export const login = async (username: string, password: string): Promise<{ access_token: string, force_password_change: boolean, is_superuser: boolean, username: string }> => {
   const formData = new FormData();
   formData.append('username', username);
   formData.append('password', password);
   
-  const response = await api.post<{ access_token: string }>('/login/access-token', formData, {
+  const response = await api.post<{ access_token: string, force_password_change: boolean, is_superuser: boolean, username: string }>('/login/access-token', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
@@ -392,6 +392,53 @@ export const batchAddTagToRecordings = async (ids: number[], tagName: string): P
 
 export const batchRemoveTagFromRecordings = async (ids: number[], tagName: string): Promise<void> => {
   await api.post('/tags/batch/remove', { recording_ids: ids, tag_name: tagName });
+};
+
+// System Setup
+export const getSystemStatus = async (): Promise<{ initialized: boolean }> => {
+  const response = await api.get<{ initialized: boolean }>('/system/status');
+  return response.data;
+};
+
+export const setupSystem = async (data: any): Promise<any> => {
+  const response = await api.post('/system/setup', data);
+  return response.data;
+};
+
+// User Management
+export const getUsers = async (): Promise<any[]> => {
+  const response = await api.get<any[]>('/users/');
+  return response.data;
+};
+
+export const createUser = async (data: any): Promise<any> => {
+  const response = await api.post('/users/', data);
+  return response.data;
+};
+
+export const updateUser = async (id: number, data: any): Promise<any> => {
+  const response = await api.put(`/users/${id}`, data);
+  return response.data;
+};
+
+export const deleteUser = async (id: number): Promise<any> => {
+  const response = await api.delete(`/users/${id}`);
+  return response.data;
+};
+
+export const updateUserMe = async (data: any): Promise<any> => {
+  const response = await api.put('/users/me', data);
+  return response.data;
+};
+
+export const getUserMe = async (): Promise<any> => {
+  const response = await api.get('/users/me');
+  return response.data;
+};
+
+export const updatePasswordMe = async (data: any): Promise<any> => {
+  const response = await api.put('/users/me/password', data);
+  return response.data;
 };
 
 export default api;

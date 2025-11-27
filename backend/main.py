@@ -8,6 +8,8 @@ from sqlmodel import SQLModel, Session, text
 from backend.core.db import sync_engine
 from backend.api.v1.api import api_router
 from backend.celery_app import celery_app
+from alembic.config import Config
+from alembic import command
 
 # Setup audio environment (patches torchaudio)
 setup_audio_environment()
@@ -19,14 +21,19 @@ from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 
+def run_migrations():
+    try:
+        import subprocess
+        import sys
+        # Use the same python interpreter to run alembic module
+        subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
+    except Exception as e:
+        print(f"Error running migrations: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create default user (admin/admin) if not exists
-    from backend.create_first_user import create_first_user
-    try:
-        await create_first_user()
-    except Exception as e:
-        print(f"Error creating first user: {e}")
+    # Run database migrations
+    # run_migrations()
         
     yield
 

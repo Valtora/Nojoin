@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import BigInteger, ForeignKey, Column
 from enum import Enum
 from .base import BaseDBModel
 from datetime import datetime
@@ -8,6 +9,7 @@ if TYPE_CHECKING:
     from .speaker import RecordingSpeaker
     from .tag import RecordingTag
     from .transcript import Transcript
+    from .user import User
 
 class RecordingStatus(str, Enum):
     UPLOADING = "UPLOADING"
@@ -36,15 +38,24 @@ class Recording(BaseDBModel, table=True):
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     
+    user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
+
     # Relationships
     speakers: List["RecordingSpeaker"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     tags: List["RecordingTag"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     transcript: Optional["Transcript"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 # Read Models
-class GlobalSpeakerRead(BaseDBModel):
-    name: str
-    color: Optional[str] = None
+# GlobalSpeakerRead is imported from .speaker to avoid circular imports if possible, 
+# but here we need it for RecordingSpeakerRead.
+# Ideally, we should import it. 
+# However, due to potential circular imports (speaker imports recording for type checking), 
+# we might need to be careful. 
+# Let's try importing it inside the file or at top if not circular.
+# Actually, speaker.py only imports Recording for TYPE_CHECKING.
+# So we can import GlobalSpeakerRead from .speaker here.
+
+from .speaker import GlobalSpeakerRead
 
 class RecordingSpeakerRead(BaseDBModel):
     recording_id: int

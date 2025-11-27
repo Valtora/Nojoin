@@ -60,6 +60,16 @@ export default function ServiceStatusAlerts() {
     audio: null
   });
 
+  // Track startup grace period
+  const isStartupRef = useRef(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      isStartupRef.current = false;
+    }, 10000); // 10 seconds grace period
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     const checkServices = async () => {
       const newStatus = { ...status };
@@ -80,6 +90,8 @@ export default function ServiceStatusAlerts() {
           newStatus.backend = true;
           newStatus.db = data.components.db === 'connected';
           newStatus.worker = data.components.worker === 'active';
+          // Backend is reachable, end grace period immediately
+          isStartupRef.current = false;
         } else {
           newStatus.backend = false;
           newStatus.db = false; 
@@ -160,11 +172,14 @@ export default function ServiceStatusAlerts() {
     const updateNotifications = (currentStatus: ServiceStatus) => {
       // Backend
       if (!currentStatus.backend && !notificationIds.current.backend) {
-        notificationIds.current.backend = addNotification({
-          type: 'error',
-          message: 'Server Unreachable: Cannot connect to Nojoin Backend API.',
-          persistent: true
-        });
+        // Only show error if not in startup grace period
+        if (!isStartupRef.current) {
+          notificationIds.current.backend = addNotification({
+            type: 'error',
+            message: 'Server Unreachable: Cannot connect to Nojoin Backend API.',
+            persistent: true
+          });
+        }
       } else if (currentStatus.backend && notificationIds.current.backend) {
         removeActiveNotification(notificationIds.current.backend);
         notificationIds.current.backend = null;

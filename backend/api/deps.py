@@ -50,12 +50,18 @@ async def get_current_user(
         )
     
     # token_data is the username (subject)
+    # print(f"DEBUG: Validating token for user: {token_data}")
     query = select(User).where(User.username == token_data)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        print(f"DEBUG: User {token_data} not found in DB")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
