@@ -1,18 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { getSettings } from '@/lib/api';
 
 export default function ChatPanel() {
   const params = useParams();
   const recordingId = params?.id;
+  const [provider, setProvider] = useState<string>('AI');
+
+  useEffect(() => {
+    getSettings().then(settings => {
+      if (settings.llm_provider) {
+        // Capitalize first letter
+        const p = settings.llm_provider;
+        setProvider(p.charAt(0).toUpperCase() + p.slice(1));
+      }
+    }).catch(console.error);
+  }, []);
 
   return (
     <aside className="w-80 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 h-screen sticky top-0 flex flex-col">
-      <div className="p-4 border-b border-gray-400 dark:border-gray-800">
+      <div className="p-4 border-b border-gray-400 dark:border-gray-800 text-center">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          Chat with Meeting
+          Powered By {provider}
         </h2>
       </div>
       
