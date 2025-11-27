@@ -10,6 +10,7 @@ import GeneralSettings from './GeneralSettings';
 import AISettings from './AISettings';
 import AudioSettings from './AudioSettings';
 import SystemSettings from './SystemSettings';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 type Tab = 'general' | 'ai' | 'audio' | 'system';
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const { addNotification } = useNotificationStore();
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
@@ -134,9 +136,10 @@ export default function SettingsPage() {
 
       // Show success feedback (could be a toast, but for now just console)
       console.log("Settings saved successfully");
+      addNotification({ type: 'success', message: 'Settings saved successfully' });
     } catch (e) {
       console.error("Failed to save settings", e);
-      alert("Failed to save settings.");
+      addNotification({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
     }

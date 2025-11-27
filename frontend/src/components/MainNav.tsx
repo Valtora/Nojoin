@@ -13,9 +13,11 @@ import {
   ChevronLeft, 
   ChevronRight,
   Plus,
-  X
+  X,
+  Bell
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
+import { useNotificationStore } from '@/lib/notificationStore';
 import { getTags, updateTag, deleteTag, createTag } from '@/lib/api';
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
@@ -23,6 +25,7 @@ import { InlineColorPicker } from './ColorPicker';
 import GlobalSpeakersModal from './GlobalSpeakersModal';
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
+import NotificationHistoryModal from './NotificationHistoryModal';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -185,6 +188,7 @@ export default function MainNav() {
     isNavCollapsed, 
     toggleNavCollapse 
   } = useNavigationStore();
+  const { unreadCount } = useNotificationStore();
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -195,6 +199,7 @@ export default function MainNav() {
   // Modal states
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -307,7 +312,9 @@ export default function MainNav() {
         {/* Header with collapse toggle */}
         <div className="p-3 flex items-center justify-between border-b border-gray-400 dark:border-gray-800">
           {!collapsed && (
-            <span className="font-semibold text-gray-900 dark:text-gray-100">Nojoin</span>
+            <div className="flex-1 text-center">
+              <span className="font-semibold text-orange-600">Nojoin</span>
+            </div>
           )}
           <button
             onClick={toggleNavCollapse}
@@ -438,6 +445,13 @@ export default function MainNav() {
             collapsed={collapsed}
           />
           <NavItem
+            icon={<Bell className="w-5 h-5" />}
+            label="Notifications"
+            onClick={() => setIsNotificationModalOpen(true)}
+            collapsed={collapsed}
+            badge={unreadCount}
+          />
+          <NavItem
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
             onClick={() => router.push('/settings')}
@@ -447,6 +461,10 @@ export default function MainNav() {
       </aside>
 
       {/* Modals */}
+      <NotificationHistoryModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+      />
       <GlobalSpeakersModal 
         isOpen={isSpeakersModalOpen} 
         onClose={() => setIsSpeakersModalOpen(false)} 

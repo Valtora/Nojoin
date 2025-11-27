@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface HealthStatus {
   status: string;
@@ -34,6 +35,8 @@ const SILENCE_THRESHOLD = 2;
 const SILENCE_CHECK_COUNT = 3;
 
 export default function ServiceStatusAlerts() {
+  const { addNotification, removeActiveNotification } = useNotificationStore();
+  
   const [status, setStatus] = useState<ServiceStatus>({
     backend: true,
     db: true,
@@ -47,6 +50,15 @@ export default function ServiceStatusAlerts() {
   
   // Track consecutive silence counts
   const silenceCountRef = useRef({ input: 0, output: 0 });
+  
+  // Track active notification IDs
+  const notificationIds = useRef<{ [key: string]: string | null }>({
+    backend: null,
+    db: null,
+    worker: null,
+    companion: null,
+    audio: null
+  });
 
   useEffect(() => {
     const checkServices = async () => {
@@ -69,16 +81,12 @@ export default function ServiceStatusAlerts() {
           newStatus.db = data.components.db === 'connected';
           newStatus.worker = data.components.worker === 'active';
         } else {
-          // Backend responded but with error code
           newStatus.backend = false;
-          // Assume others are unknown/down if backend is erroring
           newStatus.db = false; 
           newStatus.worker = false;
         }
       } catch (error) {
-        // Network error / timeout -> Backend unreachable
         newStatus.backend = false;
-        // Cannot know status of others
         newStatus.db = false; 
         newStatus.worker = false;
       }
@@ -100,6 +108,7 @@ export default function ServiceStatusAlerts() {
       }
 
       setStatus(newStatus);
+      updateNotifications(newStatus);
     };
     
     const checkAudioLevels = async () => {
@@ -116,16 +125,13 @@ export default function ServiceStatusAlerts() {
         if (res.ok) {
           const data: AudioLevels = await res.json();
           
-          // Only check levels when recording
           if (data.is_recording) {
-            // Check input (microphone)
             if (data.input_level < SILENCE_THRESHOLD) {
               silenceCountRef.current.input++;
             } else {
               silenceCountRef.current.input = 0;
             }
             
-            // Check output (system audio)
             if (data.output_level < SILENCE_THRESHOLD) {
               silenceCountRef.current.output++;
             } else {
@@ -135,108 +141,94 @@ export default function ServiceStatusAlerts() {
             const isInputSilent = silenceCountRef.current.input >= SILENCE_CHECK_COUNT;
             const isOutputSilent = silenceCountRef.current.output >= SILENCE_CHECK_COUNT;
 
-            setAudioWarnings({
-              noAudio: isInputSilent && isOutputSilent,
-            });
+            const newWarnings = { noAudio: isInputSilent && isOutputSilent };
+            setAudioWarnings(newWarnings);
+            updateAudioNotifications(newWarnings);
           } else {
-            // Reset when not recording
             silenceCountRef.current = { input: 0, output: 0 };
             setAudioWarnings({ noAudio: false });
+            updateAudioNotifications({ noAudio: false });
           }
         }
       } catch (error) {
-        // Companion not available, reset warnings
         silenceCountRef.current = { input: 0, output: 0 };
         setAudioWarnings({ noAudio: false });
+        updateAudioNotifications({ noAudio: false });
       }
     };
 
-    // Check immediately
-    checkServices();
+    const updateNotifications = (currentStatus: ServiceStatus) => {
+      // Backend
+      if (!currentStatus.backend && !notificationIds.current.backend) {
+        notificationIds.current.backend = addNotification({
+          type: 'error',
+          message: 'Server Unreachable: Cannot connect to Nojoin Backend API.',
+          persistent: true
+        });
+      } else if (currentStatus.backend && notificationIds.current.backend) {
+        removeActiveNotification(notificationIds.current.backend);
+        notificationIds.current.backend = null;
+      }
 
-    // Poll every 5 seconds for service status
+      // DB (only if backend is up)
+      if (currentStatus.backend && !currentStatus.db && !notificationIds.current.db) {
+        notificationIds.current.db = addNotification({
+          type: 'error',
+          message: 'Database Error: Connection to PostgreSQL failed.',
+          persistent: true
+        });
+      } else if ((!currentStatus.backend || currentStatus.db) && notificationIds.current.db) {
+        removeActiveNotification(notificationIds.current.db);
+        notificationIds.current.db = null;
+      }
+
+      // Worker (only if backend is up)
+      if (currentStatus.backend && !currentStatus.worker && !notificationIds.current.worker) {
+        notificationIds.current.worker = addNotification({
+          type: 'error',
+          message: 'Worker Offline: Background processing is paused.',
+          persistent: true
+        });
+      } else if ((!currentStatus.backend || currentStatus.worker) && notificationIds.current.worker) {
+        removeActiveNotification(notificationIds.current.worker);
+        notificationIds.current.worker = null;
+      }
+
+      // Companion
+      if (!currentStatus.companion && !notificationIds.current.companion) {
+        notificationIds.current.companion = addNotification({
+          type: 'error',
+          message: 'Companion App Disconnected: Start the app to record audio.',
+          persistent: true
+        });
+      } else if (currentStatus.companion && notificationIds.current.companion) {
+        removeActiveNotification(notificationIds.current.companion);
+        notificationIds.current.companion = null;
+      }
+    };
+
+    const updateAudioNotifications = (warnings: AudioWarnings) => {
+      if (warnings.noAudio && !notificationIds.current.audio) {
+        notificationIds.current.audio = addNotification({
+          type: 'warning',
+          message: 'No Audio Detected: No sound detected from microphone or system.',
+          persistent: true
+        });
+      } else if (!warnings.noAudio && notificationIds.current.audio) {
+        removeActiveNotification(notificationIds.current.audio);
+        notificationIds.current.audio = null;
+      }
+    };
+
+    checkServices();
     const serviceInterval = setInterval(checkServices, 5000);
-    
-    // Poll every 2 seconds for audio levels (more responsive)
     const audioInterval = setInterval(checkAudioLevels, 2000);
 
     return () => {
       clearInterval(serviceInterval);
       clearInterval(audioInterval);
     };
-  }, []);
+  }, [addNotification, removeActiveNotification, status]);
 
-  // Helper to render an alert bubble (error style)
-  const renderAlert = (message: string, subMessage?: string) => (
-    <div className="mb-2 last:mb-0 w-full max-w-sm bg-red-50 border-l-4 border-red-500 p-4 shadow-lg rounded-r-md animate-pulse">
-      <div className="flex items-center">
-        <div className="flex-shrink-0">
-          <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-          </svg>
-        </div>
-        <div className="ml-3">
-          <p className="text-sm text-red-700">
-            <span className="font-medium">{message}</span>
-            {subMessage && (
-              <>
-                <br />
-                {subMessage}
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-  
-  // Helper to render a warning bubble (amber style for audio warnings)
-  const renderWarning = (message: string, subMessage?: string) => (
-    <div className="mb-2 last:mb-0 w-full max-w-sm bg-amber-50 border-l-4 border-amber-500 p-4 shadow-lg rounded-r-md">
-      <div className="flex items-center">
-        <div className="flex-shrink-0">
-          <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-        </div>
-        <div className="ml-3">
-          <p className="text-sm text-amber-700">
-            <span className="font-medium">{message}</span>
-            {subMessage && (
-              <>
-                <br />
-                {subMessage}
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Check if there are any alerts to show
-  const hasServiceAlerts = !status.backend || !status.db || !status.worker || !status.companion;
-  const hasAudioWarnings = audioWarnings.noAudio;
-  
-  if (!hasServiceAlerts && !hasAudioWarnings) {
-    return null;
-  }
-
-  return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
-      {!status.backend && renderAlert("Server Unreachable", "Cannot connect to Nojoin Backend API.")}
-      
-      {/* Only show DB/Worker errors if backend is UP, otherwise it's redundant/unknown */}
-      {status.backend && !status.db && renderAlert("Database Error", "Connection to PostgreSQL failed.")}
-      {status.backend && !status.worker && renderAlert("Worker Offline", "Background processing is paused.")}
-      
-      {!status.companion && renderAlert("Companion App Disconnected", "Start the app to record audio.")}
-      
-      {/* Audio warnings (only show when companion is connected and recording) */}
-      {status.companion && audioWarnings.noAudio && renderWarning(
-        "No Audio Detected", 
-        "No sound detected from microphone or system."
-      )}
-    </div>
-  );
+  return null;
 }
