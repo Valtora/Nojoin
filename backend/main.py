@@ -21,9 +21,6 @@ from backend.models.user import User
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup
-    SQLModel.metadata.create_all(sync_engine)
-    
     # Create default user (admin/admin) if not exists
     from backend.create_first_user import create_first_user
     try:

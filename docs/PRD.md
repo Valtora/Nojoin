@@ -141,6 +141,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Framework:** FastAPI
 *   **Task Queue:** Celery
 *   **Database:** PostgreSQL 16 (accessed via SQLModel/SQLAlchemy)
+*   **Migrations:** Alembic
 *   **Broker:** Redis
 *   **Container Runtime:** Docker (with NVIDIA Container Toolkit support)
 

@@ -12,7 +12,7 @@ export default function Home() {
         Welcome to Nojoin
       </h1>
       <p className="text-gray-500 dark:text-gray-400 max-w-md mb-10 text-lg">
-        Your distributed meeting intelligence platform.
+        Your meeting intelligence platform.
       </p>
 
       <div className="max-w-3xl w-full text-left bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
