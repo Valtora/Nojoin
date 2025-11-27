@@ -34,3 +34,4 @@ node_modules/
 docs/SETUP.md
 .github/copilot-instructions.md
 companion/config.json
+docs/TODO_USER_SYSTEM_REFACTOR.md

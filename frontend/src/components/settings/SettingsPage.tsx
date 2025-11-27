@@ -102,7 +102,7 @@ export default function SettingsPage() {
       setLoading(false);
     };
     load();
-  }, []);
+  }, [activeTab]);
 
   const handleSave = async () => {
     setSaving(true);

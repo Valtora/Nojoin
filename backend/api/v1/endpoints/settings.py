@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from backend.utils.config_manager import ConfigManager
+from backend.utils.config_manager import config_manager
 
 router = APIRouter()
-config_manager = ConfigManager()
 
 class SettingsUpdate(BaseModel):
     openai_api_key: Optional[str] = None
@@ -27,6 +26,7 @@ async def get_settings():
     """
     Get current application settings.
     """
+    config_manager.reload()
     return config_manager.config
 
 @router.post("/")
