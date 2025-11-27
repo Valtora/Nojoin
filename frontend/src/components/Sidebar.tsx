@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
 import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   getRecordings, 
   renameRecording, 
@@ -22,6 +22,7 @@ import ConfirmationModal from './ConfirmationModal';
 import BatchActionBar from './BatchActionBar';
 import { GlobalSpeaker } from '@/types';
 import { useNavigationStore } from '@/lib/store';
+import { createFuse } from '@/lib/searchUtils';
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return '0s';
@@ -98,6 +99,20 @@ export default function Sidebar() {
   const [dateMode, setDateMode] = useState<'range' | 'before' | 'after'>('range');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
 
+  const filteredRecordings = useMemo(() => {
+    if (!debouncedSearchQuery) return recordings;
+    
+    const fuse = createFuse(recordings, [
+      'name', 
+      'status',
+      'tags.name',
+      'speakers.local_name',
+      'speakers.global_speaker.name'
+    ]);
+    
+    return fuse.search(debouncedSearchQuery).map(result => result.item);
+  }, [recordings, debouncedSearchQuery]);
+
   // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -123,7 +138,8 @@ export default function Sidebar() {
   const fetchRecordings = useCallback(async () => {
     try {
       const filters: RecordingFilters = {};
-      if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
+      // Client-side search is now used, so we don't send 'q' to the backend
+      // if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
       
       if (dateMode === 'range') {
         if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
@@ -287,7 +303,7 @@ export default function Sidebar() {
     if (isShift && lastSelectedIndex !== null) {
       const start = Math.min(lastSelectedIndex, index);
       const end = Math.max(lastSelectedIndex, index);
-      const rangeIds = recordings.slice(start, end + 1).map(r => r.id);
+      const rangeIds = filteredRecordings.slice(start, end + 1).map(r => r.id);
       
       const newSelection = Array.from(new Set([...selectedRecordingIds, ...rangeIds]));
       selectAllRecordings(newSelection);
@@ -378,15 +394,15 @@ export default function Sidebar() {
             </span>
             <button
               onClick={() => {
-                if (selectedRecordingIds.length === recordings.length) {
+                if (selectedRecordingIds.length === filteredRecordings.length && filteredRecordings.length > 0) {
                   clearSelection();
                 } else {
-                  selectAllRecordings(recordings.map(r => r.id));
+                  selectAllRecordings(filteredRecordings.map(r => r.id));
                 }
               }}
               className="text-xs text-orange-600 hover:underline"
             >
-              {selectedRecordingIds.length === recordings.length ? 'Deselect All' : 'Select All'}
+              {selectedRecordingIds.length === filteredRecordings.length && filteredRecordings.length > 0 ? 'Deselect All' : 'Select All'}
             </button>
           </div>
         ) : (
@@ -518,13 +534,13 @@ export default function Sidebar() {
 
       {/* Recording List */}
       <div className="p-2 space-y-2">
-        {recordings.length === 0 && (
+        {filteredRecordings.length === 0 && (
             <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
                 <p>{getEmptyMessage().main}</p>
                 <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
             </div>
         )}
-        {recordings.map((recording, index) => {
+        {filteredRecordings.map((recording, index) => {
           const isActive = pathname === `/recordings/${recording.id}`;
           const startDate = new Date(recording.created_at);
           const endDate = new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000);

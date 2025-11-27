@@ -9,7 +9,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - **Worker**: Performs VAD, Transcription (Whisper), and Diarization (Pyannote).
   - **DB**: PostgreSQL (SQLModel).
   - **Broker**: Redis.
-- **Frontend (`frontend/`)**: Next.js (App Router) + Tailwind CSS.
+- **Frontend (`frontend/`)**: Next.js (App Router) + Tailwind CSS. Install and manage NPM packages here.
 - **Companion (`companion/`)**: Rust system tray app. Captures audio (cpal) and uploads to backend.
 - **Infrastructure**: Docker Compose orchestrates all services.
 

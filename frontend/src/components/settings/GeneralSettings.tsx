@@ -1,6 +1,8 @@
 'use client';
 
 import { useTheme, Theme } from '@/lib/ThemeProvider';
+import { fuzzyMatch } from '@/lib/searchUtils';
+import { GENERAL_KEYWORDS } from './keywords';
 
 interface GeneralSettingsProps {
   searchQuery?: string;
@@ -13,11 +15,7 @@ export default function GeneralSettings({ searchQuery = '' }: GeneralSettingsPro
     setTheme(e.target.value as Theme);
   };
 
-  const matchesSearch = (text: string) => {
-    return text.toLowerCase().includes(searchQuery.toLowerCase());
-  };
-
-  const showAppearance = matchesSearch('appearance') || matchesSearch('theme') || matchesSearch('light') || matchesSearch('dark');
+  const showAppearance = fuzzyMatch(searchQuery, GENERAL_KEYWORDS);
 
   if (!showAppearance && searchQuery) return <div className="text-gray-500">No matching settings found.</div>;
 

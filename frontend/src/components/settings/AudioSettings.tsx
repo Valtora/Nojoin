@@ -2,6 +2,8 @@
 
 import { Settings, CompanionDevices } from '@/types';
 import { Mic, Speaker } from 'lucide-react';
+import { fuzzyMatch } from '@/lib/searchUtils';
+import { AUDIO_KEYWORDS } from './keywords';
 
 interface AudioSettingsProps {
   settings: Settings;
@@ -28,11 +30,7 @@ export default function AudioSettings({
   onSelectOutputDevice,
   searchQuery = '',
 }: AudioSettingsProps) {
-  const matchesSearch = (text: string) => {
-    return text.toLowerCase().includes(searchQuery.toLowerCase());
-  };
-
-  const showDevices = matchesSearch('device') || matchesSearch('input') || matchesSearch('output') || matchesSearch('microphone') || matchesSearch('speaker') || matchesSearch('audio');
+  const showDevices = fuzzyMatch(searchQuery, AUDIO_KEYWORDS);
 
   if (!showDevices && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;

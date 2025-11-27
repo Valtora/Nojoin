@@ -1,6 +1,8 @@
 'use client';
 
 import { Settings } from '@/types';
+import { fuzzyMatch } from '@/lib/searchUtils';
+import { SYSTEM_KEYWORDS } from './keywords';
 
 interface SystemSettingsProps {
   settings: Settings;
@@ -17,12 +19,8 @@ export default function SystemSettings({
   onUpdateCompanionConfig, 
   searchQuery = '' 
 }: SystemSettingsProps) {
-  const matchesSearch = (text: string) => {
-    return text.toLowerCase().includes(searchQuery.toLowerCase());
-  };
-
-  const showInfrastructure = matchesSearch('infrastructure') || matchesSearch('worker') || matchesSearch('redis') || matchesSearch('url');
-  const showCompanion = matchesSearch('companion') || matchesSearch('app') || matchesSearch('backend') || matchesSearch('api');
+  const showInfrastructure = fuzzyMatch(searchQuery, ['infrastructure', 'worker', 'redis', 'url', 'broker', 'connection']);
+  const showCompanion = fuzzyMatch(searchQuery, ['companion', 'app', 'backend', 'api', 'port', 'address']);
 
   if (!showInfrastructure && !showCompanion && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;

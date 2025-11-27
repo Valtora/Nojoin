@@ -114,7 +114,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Advanced Search:**
     *   Full-text search across meeting titles, notes, and transcript content.
     *   Filter by Date Range, Tags, and Speakers.
-    *   Fuzzy matching for typo tolerance.
+    *   **Fuzzy Search:** Client-side fuzzy matching (using Fuse.js) for recordings and settings, allowing for typo tolerance and semantic-like discovery.
 
 ### 3.6 Web Playback & Transcript Interface
 *   **Layout:**

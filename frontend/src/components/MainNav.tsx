@@ -323,8 +323,13 @@ export default function MainNav() {
               key={view}
               icon={icon}
               label={label}
-              isActive={currentView === view}
-              onClick={() => setCurrentView(view)}
+              isActive={currentView === view && window.location.pathname === '/'}
+              onClick={() => {
+                setCurrentView(view);
+                if (window.location.pathname !== '/') {
+                  router.push('/');
+                }
+              }}
               collapsed={isNavCollapsed}
             />
           ))}

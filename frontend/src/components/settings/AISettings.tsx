@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Settings } from '@/types';
 import { Eye, EyeOff } from 'lucide-react';
+import { fuzzyMatch } from '@/lib/searchUtils';
+import { AI_KEYWORDS } from './keywords';
 
 interface AISettingsProps {
   settings: Settings;
@@ -16,17 +18,14 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showHfToken, setShowHfToken] = useState(false);
 
-  const matchesSearch = (text: string) => {
-    return text.toLowerCase().includes(searchQuery.toLowerCase());
-  };
-
-  const showProvider = matchesSearch('provider') || matchesSearch('llm') || matchesSearch('gemini') || matchesSearch('openai') || matchesSearch('anthropic');
-  const showGemini = matchesSearch('gemini') || matchesSearch('api key');
-  const showOpenAI = matchesSearch('openai') || matchesSearch('api key');
-  const showAnthropic = matchesSearch('anthropic') || matchesSearch('api key');
-  const showHf = matchesSearch('hugging face') || matchesSearch('token') || matchesSearch('diarization') || matchesSearch('pyannote');
-  const showVoiceprints = matchesSearch('voiceprint') || matchesSearch('auto-create') || matchesSearch('speaker');
-  const showWhisper = matchesSearch('whisper') || matchesSearch('model') || matchesSearch('transcription');
+  // We use the centralized keywords for the main section check, but specific checks for subsections
+  const showProvider = fuzzyMatch(searchQuery, ['provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai']);
+  const showGemini = fuzzyMatch(searchQuery, ['gemini', 'api key', 'google']);
+  const showOpenAI = fuzzyMatch(searchQuery, ['openai', 'api key', 'gpt']);
+  const showAnthropic = fuzzyMatch(searchQuery, ['anthropic', 'api key', 'claude']);
+  const showHf = fuzzyMatch(searchQuery, ['hugging face', 'token', 'diarization', 'pyannote', 'speaker', 'separation']);
+  const showVoiceprints = fuzzyMatch(searchQuery, ['voiceprint', 'auto-create', 'speaker', 'identification', 'recognition']);
+  const showWhisper = fuzzyMatch(searchQuery, ['whisper', 'model', 'transcription', 'speech to text']);
 
   const showLLMSection = showProvider;
   const showAPIKeysSection = showGemini || showOpenAI || showAnthropic;

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getSettings, updateSettings } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
 import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search } from 'lucide-react';
+import { getMatchScore } from '@/lib/searchUtils';
+import { TAB_KEYWORDS } from './keywords';
 import GeneralSettings from './GeneralSettings';
 import AISettings from './AISettings';
 import AudioSettings from './AudioSettings';
@@ -22,6 +24,44 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Determine which tabs have matches and their scores
+  const tabMatches = useMemo(() => {
+    if (!searchQuery) return null;
+
+    const matches: Record<Tab, number> = {
+      general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
+      ai: getMatchScore(searchQuery, TAB_KEYWORDS.ai),
+      audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
+      system: getMatchScore(searchQuery, TAB_KEYWORDS.system),
+    };
+
+    return matches;
+  }, [searchQuery]);
+
+  // Auto-switch tab if current one has no matches but others do
+  useEffect(() => {
+    if (!tabMatches) return;
+
+    const currentScore = tabMatches[activeTab];
+    // If current tab is a bad match (score 1.0 means no match found)
+    if (currentScore >= 0.8) {
+      // Find best matching tab
+      let bestTab: Tab | null = null;
+      let bestScore = 1.0;
+
+      (Object.entries(tabMatches) as [Tab, number][]).forEach(([tab, score]) => {
+        if (score < bestScore) {
+          bestScore = score;
+          bestTab = tab;
+        }
+      });
+
+      if (bestTab && bestScore < 0.6) {
+        setActiveTab(bestTab);
+      }
+    }
+  }, [tabMatches, activeTab]);
 
   useEffect(() => {
     setMounted(true);
@@ -119,53 +159,64 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and configurations.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search settings..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="flex items-center justify-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-            Save Changes
-          </button>
-        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
-          <nav className="p-4 space-y-1">
+        <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search settings..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          
+          <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              const hasMatch = tabMatches && tabMatches[tab.id] < 0.6;
+
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`
-                    w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                    w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
                     ${isActive 
                       ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400' 
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
                     }
                   `}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                  {tab.label}
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                    {tab.label}
+                  </div>
+                  {hasMatch && (
+                    <span className="w-2 h-2 rounded-full bg-orange-500" />
+                  )}
                 </button>
               );
             })}
           </nav>
+
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleSave}
+              disabled={saving || loading}
+              className="w-full flex items-center justify-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Changes
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}
