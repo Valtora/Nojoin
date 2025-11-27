@@ -1,9 +1,6 @@
 # Nojoin To-Do List
 Let's continue the development of Nojoin. Read the PRD.md and the Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project and my development workflow. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
-## Multi-Tenant User System
-- Remove the 'Email' field from the first-run setup wizard and user creation forms. It is not required for now. Consider the downstream and upstream impacts so we don't break anything.
-
 ## Security Audits & Improvements
 - Conduct a thorough security audit of the entire application, including frontend, backend, and companion app
 - Audit the authentication and authorization mechanisms to ensure that users can only access their own data.

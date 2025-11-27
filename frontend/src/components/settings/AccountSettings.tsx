@@ -6,7 +6,6 @@ import { useNotificationStore } from '@/lib/notificationStore';
 export default function AccountSettings() {
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const { addNotification } = useNotificationStore();
   
   const [passwordData, setPasswordData] = useState({
@@ -20,7 +19,6 @@ export default function AccountSettings() {
       try {
         const data = await getUserMe();
         setUsername(data.username);
-        setEmail(data.email || '');
       } catch (e: any) {
         console.error(e);
         addNotification({ 
@@ -36,7 +34,7 @@ export default function AccountSettings() {
     e.preventDefault();
     setLoading(true);
     try {
-      await updateUserMe({ username, email: email || null });
+      await updateUserMe({ username });
       addNotification({ message: 'Profile updated successfully', type: 'success' });
       // Update local storage if username changed
       localStorage.setItem('username', username);
@@ -86,15 +84,6 @@ export default function AccountSettings() {
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
               required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
             />
           </div>
           <button

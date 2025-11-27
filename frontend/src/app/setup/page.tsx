@@ -14,8 +14,7 @@ export default function SetupPage() {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
-    confirmPassword: '',
-    email: ''
+    confirmPassword: ''
   });
 
   useEffect(() => {
@@ -60,7 +59,6 @@ export default function SetupPage() {
       await setupSystem({
         username: formData.username,
         password: formData.password,
-        email: formData.email || null,
         is_superuser: true
       });
       router.push('/login');
@@ -105,16 +103,6 @@ export default function SetupPage() {
               onChange={(e) => setFormData({...formData, username: e.target.value})}
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
               required
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Email (Optional)</label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
             />
           </div>
 

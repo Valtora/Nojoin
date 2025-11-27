@@ -18,7 +18,7 @@ export default function AdminSettings() {
   
   // Create User State
   const [isCreating, setIsCreating] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', username: '', password: '', is_superuser: false });
+  const [newUser, setNewUser] = useState({ username: '', password: '', is_superuser: false });
 
   // Edit User State
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -46,7 +46,7 @@ export default function AdminSettings() {
       await createUser(newUser);
       addNotification({ message: 'User created successfully', type: 'success' });
       setIsCreating(false);
-      setNewUser({ email: '', username: '', password: '', is_superuser: false });
+      setNewUser({ username: '', password: '', is_superuser: false });
       fetchUsers();
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to create user', type: 'error' });
@@ -66,7 +66,7 @@ export default function AdminSettings() {
 
   const startEdit = (user: UserData) => {
     setEditingId(user.id);
-    setEditForm({ email: user.email, username: user.username, is_superuser: user.is_superuser, is_active: user.is_active });
+    setEditForm({ username: user.username, is_superuser: user.is_superuser, is_active: user.is_active });
   };
 
   const cancelEdit = () => {
@@ -113,14 +113,6 @@ export default function AdminSettings() {
               required
             />
             <input
-              placeholder="Email"
-              type="email"
-              value={newUser.email}
-              onChange={e => setNewUser({...newUser, email: e.target.value})}
-              className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-              required
-            />
-            <input
               placeholder="Password"
               type="password"
               value={newUser.password}
@@ -152,7 +144,6 @@ export default function AdminSettings() {
             <tr>
               <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">Username</th>
-              <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Role</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -160,7 +151,7 @@ export default function AdminSettings() {
           </thead>
           <tbody className="divide-y divide-gray-700">
             {loading ? (
-              <tr><td colSpan={6} className="p-4 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={5} className="p-4 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
             ) : users.map(user => (
               <tr key={user.id} className="hover:bg-gray-700/30">
                 <td className="px-4 py-3">{user.id}</td>
@@ -174,17 +165,6 @@ export default function AdminSettings() {
                       className="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-full"
                     />
                   ) : user.username}
-                </td>
-
-                {/* Email */}
-                <td className="px-4 py-3">
-                  {editingId === user.id ? (
-                    <input 
-                      value={editForm.email} 
-                      onChange={e => setEditForm({...editForm, email: e.target.value})}
-                      className="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-full"
-                    />
-                  ) : user.email}
                 </td>
 
                 {/* Role */}
