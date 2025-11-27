@@ -291,130 +291,131 @@ export default function TranscriptView({
   return (
     <div className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 px-6 py-4 flex items-center justify-between gap-2 shadow-md z-10">
-        <div className="flex items-center gap-4 flex-1">
+      <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
+        {/* Row 1: Header & Global Actions */}
+        <div className="px-6 py-3 flex items-center justify-between gap-2">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transcript</h2>
-            
-            {/* Search Bar */}
-            {(showSearch || showReplace) && (
-                <div className="flex items-center gap-2 flex-1 max-w-2xl animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="relative flex-1 flex items-center gap-1">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input 
-                                placeholder="Find..." 
-                                value={findText} 
-                                onChange={e => setFindText(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        if (e.shiftKey) prevMatch();
-                                        else nextMatch();
-                                    }
-                                }}
-                                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
-                                autoFocus
-                            />
-                        </div>
-                        {matches.length > 0 && (
-                            <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap px-1">
-                                <span>{currentMatchIndex + 1} of {matches.length}</span>
-                                <button onClick={prevMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronUp className="w-3 h-3" /></button>
-                                <button onClick={nextMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronDown className="w-3 h-3" /></button>
-                            </div>
-                        )}
-                    </div>
-                    {showReplace && (
-                        <div className="relative flex-1">
-                            <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input 
-                                placeholder="Replace..." 
-                                value={replaceText} 
-                                onChange={e => setReplaceText(e.target.value)}
-                                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
-                            />
-                        </div>
-                    )}
-                    {showReplace && (
-                        <>
-                            <button 
-                                onClick={nextMatch}
-                                disabled={matches.length === 0}
-                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
-                            >
-                                Find Next
-                            </button>
-                            <button 
-                                onClick={handleReplaceCurrent}
-                                disabled={matches.length === 0 || isSubmitting}
-                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
-                            >
-                                Replace
-                            </button>
-                            <button 
-                                onClick={handleFindReplaceSubmit}
-                                disabled={!findText || isSubmitting}
-                                className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
-                            >
-                                Replace All
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
+
+            <div className="flex items-center gap-1">
+                <button
+                    onClick={onUndo}
+                    disabled={!canUndo}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Undo"
+                >
+                    <Undo2 className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={onRedo}
+                    disabled={!canRedo}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Redo"
+                >
+                    <Redo2 className="w-4 h-4" />
+                </button>
+                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <button
+                    onClick={() => exportTranscript(recordingId)}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    title="Export Transcript"
+                >
+                    <Download className="w-4 h-4" />
+                </button>
+                <button 
+                    onClick={() => {
+                        const newState = !showSearch;
+                        setShowSearch(newState);
+                        if (!newState) setShowReplace(false);
+                    }}
+                    className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
+                    title="Search"
+                >
+                    <Search className="w-4 h-4" />
+                </button>
+                <button 
+                    onClick={() => {
+                        if (showReplace) {
+                            setShowReplace(false);
+                            setShowSearch(false);
+                        } else {
+                            setShowReplace(true);
+                            setShowSearch(true);
+                        }
+                    }}
+                    className={`p-2 rounded-md transition-colors ${showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
+                    title="Find & Replace"
+                >
+                    <ArrowRightLeft className="w-4 h-4" />
+                </button>
+            </div>
         </div>
 
-        <div className="flex items-center gap-1">
-            <button
-                onClick={onUndo}
-                disabled={!canUndo}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Undo"
-            >
-                <Undo2 className="w-4 h-4" />
-            </button>
-            <button
-                onClick={onRedo}
-                disabled={!canRedo}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Redo"
-            >
-                <Redo2 className="w-4 h-4" />
-            </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
-            <button
-                onClick={() => exportTranscript(recordingId)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                title="Export Transcript"
-            >
-                <Download className="w-4 h-4" />
-            </button>
-            <button 
-                onClick={() => {
-                    const newState = !showSearch;
-                    setShowSearch(newState);
-                    if (!newState) setShowReplace(false);
-                }}
-                className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
-                title="Search"
-            >
-                <Search className="w-4 h-4" />
-            </button>
-            <button 
-                onClick={() => {
-                    if (showReplace) {
-                        setShowReplace(false);
-                        setShowSearch(false);
-                    } else {
-                        setShowReplace(true);
-                        setShowSearch(true);
-                    }
-                }}
-                className={`p-2 rounded-md transition-colors ${showReplace ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500'}`}
-                title="Find & Replace"
-            >
-                <ArrowRightLeft className="w-4 h-4" />
-            </button>
-        </div>
+        {/* Row 2: Search & Replace Controls */}
+        {(showSearch || showReplace) && (
+            <div className="px-6 pb-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
+                <div className="relative flex-1 flex items-center gap-1">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input 
+                            placeholder="Find..." 
+                            value={findText} 
+                            onChange={e => setFindText(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    if (e.shiftKey) prevMatch();
+                                    else nextMatch();
+                                }
+                            }}
+                            className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
+                            autoFocus
+                        />
+                    </div>
+                    {matches.length > 0 && (
+                        <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap px-1">
+                            <span>{currentMatchIndex + 1} of {matches.length}</span>
+                            <button onClick={prevMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronUp className="w-3 h-3" /></button>
+                            <button onClick={nextMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronDown className="w-3 h-3" /></button>
+                        </div>
+                    )}
+                </div>
+                {showReplace && (
+                    <div className="relative flex-1">
+                        <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input 
+                            placeholder="Replace..." 
+                            value={replaceText} 
+                            onChange={e => setReplaceText(e.target.value)}
+                            className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
+                        />
+                    </div>
+                )}
+                {showReplace && (
+                    <>
+                        <button 
+                            onClick={nextMatch}
+                            disabled={matches.length === 0}
+                            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                        >
+                            Find Next
+                        </button>
+                        <button 
+                            onClick={handleReplaceCurrent}
+                            disabled={matches.length === 0 || isSubmitting}
+                            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                        >
+                            Replace
+                        </button>
+                        <button 
+                            onClick={handleFindReplaceSubmit}
+                            disabled={!findText || isSubmitting}
+                            className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                        >
+                            Replace All
+                        </button>
+                    </>
+                )}
+            </div>
+        )}
       </div>
 
 
