@@ -1,11 +1,5 @@
 # Nojoin To-Do List
-Let's continue the development of Nojoin. Read the PRD.md and the Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project and my development workflow. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
-
-## UI/UX Enhancements
-- When deleting another user as an admin, prompt the admin with a confirmation modal to prevent accidental deletions. Currently there is a modal but it is the browser's default confirm dialog which is not very user friendly.
-
-## Multi-Tenant User System
-- Do not let the last admin account be deleted. There must always be at least one admin account in the system.
+Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
 ## Security Audits & Improvements
 - Conduct a thorough security audit of the entire application, including frontend, backend, and companion app

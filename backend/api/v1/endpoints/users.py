@@ -1,6 +1,7 @@
 from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlmodel import select
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
@@ -193,6 +194,17 @@ async def delete_user(
             detail="Users cannot delete themselves",
         )
         
+    if user.is_superuser:
+        # Check if this is the last superuser
+        query = select(func.count(User.id)).where(User.is_superuser == True)
+        result = await db.execute(query)
+        admin_count = result.scalar_one()
+        if admin_count <= 1:
+             raise HTTPException(
+                status_code=400,
+                detail="Cannot delete the last admin account",
+            )
+
     await db.delete(user)
     await db.commit()
     return user

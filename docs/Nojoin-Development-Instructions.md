@@ -86,5 +86,3 @@ cargo run
 ### 4.2 Frontend
 *   **State**: Zustand (`src/lib/store.ts`)
 *   **Styling**: Tailwind CSS
-
-# DO NOT IMPLEMENT ANYTHING WITHOUT FIRST PRODUCING A PLAN AND GETTING APPROVAL.

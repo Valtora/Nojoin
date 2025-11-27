@@ -99,7 +99,13 @@ A lightweight, cross-platform system tray application responsible for audio capt
         *   Keep the voiceprint local to the recording only.
     *   **Visual Indicator:** Speakers with voiceprints display a fingerprint icon, indicating they can be recognized in future recordings.
 
-### 3.4 Meeting Intelligence
+### 3.4 User Management
+*   **Multi-Tenant System:** Supports multiple users with role-based access control (Admin/User).
+*   **Admin Safeguards:**
+    *   **Last Admin Protection:** The system prevents the deletion of the last remaining administrator account to ensure system accessibility.
+    *   **Deletion Confirmation:** Critical actions like deleting a user require explicit confirmation via a custom modal dialog to prevent accidental data loss.
+
+### 3.5 Meeting Intelligence
 *   **LLM-Powered Notes:**
     *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, or Local LLMs via API).
     *   Notes are stored in the database and rendered as rich Markdown in the Web UI.
@@ -107,7 +113,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   "Chat with your meeting" feature allowing users to ask questions about specific recordings.
     *   Uses transcript context to provide accurate answers.
 
-### 3.5 Search & Organization
+### 3.6 Search & Organization
 *   **Tagging System:**
     *   Global tag management.
     *   Apply tags to recordings for categorization (e.g., "Daily Standup", "Client X").
@@ -116,7 +122,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   Filter by Date Range, Tags, and Speakers.
     *   **Fuzzy Search:** Client-side fuzzy matching (using Fuse.js) for recordings and settings, allowing for typo tolerance and semantic-like discovery.
 
-### 3.6 Web Playback & Transcript Interface
+### 3.7 Web Playback & Transcript Interface
 *   **Layout:**
     *   **Four-Pane Dashboard:**
         *   **Left Sidebar:** Scrollable list of recordings (Meeting Cards) with status indicators. Always visible.
@@ -128,7 +134,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Edit Mode:** Allow users to correct transcript text and speaker assignment directly in the browser.
 *   **Responsive Design:** Fully functional on desktop, tablet, and mobile browsers.
 
-### 3.7 Settings & Configuration
+### 3.8 Settings & Configuration
 *   **Server Settings:** Manage API keys, model selection (Whisper size), and storage paths via the Web UI.
 *   **User Preferences:** Theme selection (Dark/Light), default playback speed.
 

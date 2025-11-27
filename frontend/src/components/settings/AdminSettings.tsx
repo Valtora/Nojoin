@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getUsers, createUser, deleteUser, updateUser } from '@/lib/api';
 import { Loader2, Shield, Trash2, UserPlus, Edit2, X, Check } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
+import ConfirmationModal from '../ConfirmationModal';
 
 interface UserData {
   id: number;
@@ -23,6 +24,10 @@ export default function AdminSettings() {
   // Edit User State
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<UserData>>({});
+
+  // Delete User State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<number | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -53,14 +58,22 @@ export default function AdminSettings() {
     }
   };
 
-  const handleDeleteUser = async (id: number) => {
-    if (!confirm('Are you sure? This will delete all data associated with this user.')) return;
+  const handleDeleteUser = (id: number) => {
+    setUserToDelete(id);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
     try {
-      await deleteUser(id);
+      await deleteUser(userToDelete);
       addNotification({ message: 'User deleted successfully', type: 'success' });
-      setUsers(users.filter(u => u.id !== id));
+      setUsers(users.filter(u => u.id !== userToDelete));
     } catch (err: any) {
-      addNotification({ message: 'Failed to delete user', type: 'error' });
+      addNotification({ message: err.response?.data?.detail || 'Failed to delete user', type: 'error' });
+    } finally {
+      setDeleteModalOpen(false);
+      setUserToDelete(null);
     }
   };
 
@@ -220,6 +233,16 @@ export default function AdminSettings() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Delete User"
+        message="Are you sure you want to delete this user? This action cannot be undone and will delete all data associated with this user."
+        confirmText="Delete"
+        isDangerous={true}
+      />
     </div>
   );
 }

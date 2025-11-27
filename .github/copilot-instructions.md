@@ -1,64 +1,86 @@
 # Nojoin AI Agent Instructions
 
 ## 🧠 Project Overview
-Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app, processes it on a GPU-enabled Docker backend (Whisper/Pyannote), and presents insights via a Next.js web interface.
+Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app (Windows), processes it on a GPU-enabled Docker backend (WSL2/Linux), and presents insights via a Next.js web interface.
+**Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Privacy First (Self-hosted).
 
 ## 🏗️ Architecture & Data Flow
 - **Backend (`backend/`)**: FastAPI service + Celery worker.
   - **API**: Handles metadata, user auth, and serves audio.
-  - **Worker**: Performs VAD, Transcription (Whisper), and Diarization (Pyannote).
+  - **Worker**: Performs VAD (Silero), Transcription (Whisper Turbo/Large), and Diarization (Pyannote).
   - **DB**: PostgreSQL (SQLModel).
   - **Broker**: Redis.
-- **Frontend (`frontend/`)**: Next.js (App Router) + Tailwind CSS. Install and manage NPM packages here.
+- **Frontend (`frontend/`)**: Next.js (App Router) + Tailwind CSS.
+  - **Search**: Client-side fuzzy search (Fuse.js).
 - **Companion (`companion/`)**: Rust system tray app. Captures audio (cpal) and uploads to backend.
+  - **Runtime**: Tokio async runtime.
 - **Infrastructure**: Docker Compose orchestrates all services.
 
-## 💻 Development Workflow
-- **Start Stack**: `docker-compose up -d` (starts DB, Redis, API, Worker, Frontend).
-- **Backend Dev**:
-  - Run locally: `uvicorn backend.main:app --reload` (requires local DB/Redis).
-  - Worker: `celery -A backend.celery_app.celery_app worker --pool=solo` (Windows) or `prefork` (Linux).
-- **Frontend Dev**: `cd frontend && npm run dev`.
-- **Companion Dev**: `cd companion && cargo run`.
+## 💻 Development Workflow (Hybrid Environment)
+The project is designed for a **Hybrid Environment** to maximize performance and compatibility:
+1.  **WSL2 (Linux)**: Hosts the "Brain" (Docker, Backend, Frontend).
+2.  **Windows (Native)**: Hosts the "Ears" (Companion App) to access WASAPI loopback.
 
-### 🐧 Hybrid Environment (WSL2 + Windows)
-The user develops in a **Hybrid Environment** to maximize performance and compatibility:
-1.  **WSL2 (Linux)**: Hosts the "Brain".
-    - Runs **Docker** (DB, Redis).
-    - Runs **Backend** (FastAPI, Celery, PyTorch/GPU).
-    - Runs **Frontend** (Next.js).
-    - **Why?** Native Docker performance, reliable hot-reloading, Linux-first AI libraries.
-2.  **Windows (Native)**: Hosts the "Ears".
-    - Runs **Companion App** (Rust).
-    - **Why?** Access to Windows Audio Loopback (WASAPI) to capture system sound.
-    - **Connection**: The Windows Companion connects to `localhost:8000`, which Windows forwards to the WSL2 Backend.
+### Critical Commands
+- **Start Infrastructure**: `docker-compose up -d db redis`
+- **Backend (WSL2)**:
+  - Run API: `uvicorn backend.main:app --reload --host 0.0.0.0`
+  - Run Worker: `celery -A backend.celery_app.celery_app worker --pool=solo --loglevel=info`
+- **Frontend (WSL2)**: `cd frontend && npm run dev` (Runs on port 14141)
+- **Companion (Windows)**: `cd companion && cargo run`
+
+## 🤖 Agent Interaction Rules (CRITICAL)
+You are a world-class Full-Stack Software Engineer and Systems Architect.
+
+### 1. The Workflow Loop
+We follow this strict loop for every task:
+1.  **REQUIREMENT**: User states a feature or function.
+2.  **PLANNING**: You **MUST** produce a detailed implementation plan.
+    *   Consider signal propagation, logic flow, and dependencies.
+    *   Suggest unit tests where appropriate.
+    *   Flag suboptimal user approaches if necessary.
+3.  **APPROVAL**: Wait for user confirmation. **Do not write code until approved.**
+4.  **IMPLEMENTATION**: Generate robust, production-ready code.
+    *   Use design patterns (Singleton, Observer, Factory, etc.) where appropriate.
+    *   **Do not delete existing functionality** unless explicitly planned.
+5.  **TESTING**: User performs manual testing. Do not assume success.
+6.  **COMPLETION**: Once confirmed:
+    *   **Update the PRD** (`docs/PRD.md`) with changes.
+    *   **Update the gitmessage.md** (`docs/gitmessage.md`) to capture the commit message. Include a concise summary and detailed description of changes made.
+
+### 2. Constraints & Style
+- **NO GIT COMMANDS**: Never push, pull, or commit automatically. If asked for a "git message", provide text only.
+- **NO EMOJIS**: Do not use emojis in output unless explicitly requested.
+- **TONE**: Strict, objective, and results-oriented. No sycophancy ("I hope this helps") or apologies.
+- **COMMENTS**: Sparse. Only comment on complex logic or non-obvious intent.
 
 ## 🐍 Backend (Python/FastAPI)
-- **Models**: Defined in `backend/models/`. Use `SQLModel`.
-- **Migrations**: Currently using `SQLModel.metadata.create_all` in `lifespan` (no Alembic yet).
-- **Tasks**: Heavy processing logic is in `backend/worker/tasks.py`.
+- **Models**: Defined in `backend/models/` using `SQLModel`.
+- **Migrations**: Managed by **Alembic**.
+  - Apply: `alembic upgrade head`
+  - Create: `alembic revision --autogenerate -m "message"`
+- **Tasks**: Heavy processing logic in `backend/worker/tasks.py`.
   - **Pipeline**: VAD -> Preprocess (16k mono) -> Whisper -> Pyannote -> Alignment.
 - **Dependency Injection**: Use `backend.api.deps` for DB sessions and current user.
-- **Pattern**: Service layer pattern is partially implemented; complex logic often resides in `backend/processing/`.
 
 ## ⚛️ Frontend (Next.js/TypeScript)
+- **State Management**: **Zustand** (`src/lib/store.ts`).
 - **API Client**: `src/lib/api.ts` uses Axios with interceptors for JWT auth.
-- **State**: React Query (implied) or local state.
-- **Components**: `src/components/` contains functional components.
+- **Components**: Functional components in `src/components/`.
 - **Routing**: App Router (`src/app/`).
 - **Styling**: Tailwind CSS.
 
 ## 🦀 Companion App (Rust)
-- **Concurrency**: Uses `crossbeam_channel` for audio thread <-> main thread communication.
-- **Tray**: `tray-icon` and `tao` for system tray management.
+- **Concurrency**: `crossbeam_channel` for audio thread <-> main thread communication.
+- **Tray**: `tray-icon` and `tao`.
 - **Audio**: `cpal` for capture.
-- **Server**: Local HTTP server (Tokio) to receive commands from the Frontend.
+- **Server**: Local HTTP server (Tokio) receives commands from Frontend.
 
 ## ⚠️ Critical Implementation Details
-- **GPU Support**: The worker container requires NVIDIA Container Toolkit.
+- **GPU Support**: Worker container requires NVIDIA Container Toolkit.
 - **Audio Format**: Internal processing standard is **16kHz Mono WAV**.
-- **Auth**: JWT-based. Default admin user created on startup.
-- **File Paths**: Docker volumes map `./data` to `/app/data`. Ensure paths are consistent across host/container.
+- **Auth**: JWT-based. Default admin user created on startup via Setup Wizard.
+- **File Paths**: Docker volumes map `./data` to `/app/data`. Ensure paths are consistent.
 
 ## 🧪 Testing
 - **Backend**: `pytest` (if available).
