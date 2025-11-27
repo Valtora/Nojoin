@@ -31,7 +31,7 @@ async def get_settings_root(
     """
     Get current user settings (root path).
     """
-    return current_user.settings or {}
+    return current_user.settings
 
 @router.get("/", response_model=Any)
 async def get_settings(
@@ -40,7 +40,7 @@ async def get_settings(
     """
     Get current user settings.
     """
-    return current_user.settings or {}
+    return current_user.settings
 
 @router.post("", response_model=Any)
 async def update_settings_root(

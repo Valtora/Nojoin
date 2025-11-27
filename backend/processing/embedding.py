@@ -13,10 +13,12 @@ DEFAULT_EMBEDDING_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
 
 _embedding_model_cache = {}
 
-def load_embedding_model(device_str: str):
+def load_embedding_model(device_str: str, hf_token: str = None):
     """Load pyannote embedding model."""
     try:
-        hf_token = config_manager.get("hf_token")
+        if not hf_token:
+            hf_token = config_manager.get("hf_token")
+            
         if not hf_token:
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
@@ -32,7 +34,7 @@ def load_embedding_model(device_str: str):
         logger.error(f"Failed to load embedding model: {e}", exc_info=True)
         raise RuntimeError("Could not load embedding model.") from e
 
-def extract_embeddings(audio_path: str, diarization_result, device_str: str = "cpu") -> Dict[str, List[float]]:
+def extract_embeddings(audio_path: str, diarization_result, device_str: str = "cpu", config: dict = None) -> Dict[str, List[float]]:
     """
     Extracts embeddings for each speaker in the diarization result.
     Returns a dictionary mapping speaker label to embedding vector (list of floats).
@@ -43,10 +45,14 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "c
 
     logger.info(f"Starting embedding extraction for {audio_path}")
     
+    # Use provided config or fall back to system config
+    get_config = config.get if config else config_manager.get
+    hf_token = get_config("hf_token")
+    
     try:
         cache_key = (DEFAULT_EMBEDDING_MODEL, device_str)
         if cache_key not in _embedding_model_cache:
-            _embedding_model_cache[cache_key] = load_embedding_model(device_str)
+            _embedding_model_cache[cache_key] = load_embedding_model(device_str, hf_token)
         model = _embedding_model_cache[cache_key]
         
         embeddings = {}

@@ -11,6 +11,7 @@ from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
+from backend.models.user import User
 from backend.processing.vad import mute_non_speech_segments
 from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad
 from backend.processing.transcribe import transcribe_audio
@@ -54,6 +55,18 @@ def process_recording_task(self, recording_id: int):
     if not recording:
         logger.error(f"Recording {recording_id} not found.")
         return
+    
+    # Fetch User Settings & Merge with System Config
+    user_settings = {}
+    if recording.user_id:
+        user = session.get(User, recording.user_id)
+        if user and user.settings:
+            user_settings = user.settings
+            logger.info(f"Loaded settings for user {user.username}: {list(user_settings.keys())}")
+            
+    system_config = config_manager.get_all()
+    merged_config = system_config.copy()
+    merged_config.update(user_settings)
     
     # Update status to PROCESSING
     recording.status = RecordingStatus.PROCESSING
@@ -120,7 +133,7 @@ def process_recording_task(self, recording_id: int):
         session.commit()
         
         # Run Whisper
-        transcription_result = transcribe_audio(processed_audio_path)
+        transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
         
         # --- Diarization Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 60, 'stage': 'Diarization'})
@@ -129,7 +142,7 @@ def process_recording_task(self, recording_id: int):
         session.commit()
         
         # Run Pyannote
-        diarization_result = diarize_audio(processed_audio_path)
+        diarization_result = diarize_audio(processed_audio_path, config=merged_config)
         
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 80, 'stage': 'Saving'})
@@ -194,7 +207,7 @@ def process_recording_task(self, recording_id: int):
         
         # Extract embeddings for all speakers in the diarization result (if enabled)
         # Voiceprint extraction can be disabled to speed up processing
-        enable_auto_voiceprints = config_manager.get("enable_auto_voiceprints", True)
+        enable_auto_voiceprints = merged_config.get("enable_auto_voiceprints", True)
         speaker_embeddings = {}
         
         if enable_auto_voiceprints and diarization_result:
@@ -203,7 +216,7 @@ def process_recording_task(self, recording_id: int):
             session.add(recording)
             session.commit()
             logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
-            speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result)
+            speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result, device_str=merged_config.get("processing_device", "cpu"), config=merged_config)
         elif not enable_auto_voiceprints:
             logger.info("Skipping voiceprint extraction (enable_auto_voiceprints=False)")
         

@@ -32,19 +32,8 @@ export default function SystemSettings({
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Infrastructure</h3>
           <div className="max-w-xl space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Worker URL (Redis)
-              </label>
-              <input
-                type="text"
-                value={settings.worker_url || ''}
-                onChange={(e) => onUpdate({ ...settings, worker_url: e.target.value })}
-                className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="redis://localhost:6379/0"
-              />
-              <p className="text-xs text-gray-500 mt-1">Connection string for the Redis broker used by the background worker.</p>
-            </div>
+            {/* Worker URL removed as it is configured via ENV */}
+
           </div>
         </div>
       )}

@@ -77,11 +77,12 @@ def unregister_thread_local_progress_listener(progress_listener):
 def create_progress_listener_handle(progress_listener):
     return ProgressListenerHandle(progress_listener)
 
-def transcribe_audio(audio_path: str) -> dict | None:
+def transcribe_audio(audio_path: str, config: dict = None) -> dict | None:
     """Transcribes the given audio file using OpenAI Whisper.
 
     Args:
         audio_path: Path to the audio file (e.g., MP3).
+        config: Optional configuration dictionary to override defaults.
 
     Returns:
         A dictionary containing the transcription result (including text, segments, language)
@@ -91,8 +92,10 @@ def transcribe_audio(audio_path: str) -> dict | None:
         logger.error(f"Audio file not found for transcription: {audio_path}")
         return None
 
-    model_size = config_manager.get("whisper_model_size", "base")
-    device = config_manager.get("processing_device", "cpu")
+    # Use provided config or fall back to system config
+    get_config = config.get if config else config_manager.get
+    model_size = get_config("whisper_model_size", "base")
+    device = get_config("processing_device", "cpu")
 
     logger.info(f"Starting transcription for {audio_path} using model: {model_size}, device: {device}")
 

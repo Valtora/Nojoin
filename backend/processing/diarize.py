@@ -58,10 +58,12 @@ def _filter_short_segments(annotation: Annotation, min_duration_s: float = 0.3) 
 
     return filtered_annotation
 
-def load_diarization_pipeline(device_str: str):
+def load_diarization_pipeline(device_str: str, hf_token: str = None):
     """Load pyannote diarization pipeline from Hugging Face and move to device."""
     try:
-        hf_token = config_manager.get("hf_token")
+        if not hf_token:
+            hf_token = config_manager.get("hf_token")
+        
         if not hf_token:
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
@@ -76,11 +78,12 @@ def load_diarization_pipeline(device_str: str):
         logger.error(f"Failed to load diarization pipeline: {e}", exc_info=True)
         raise RuntimeError("Could not load diarization pipeline. Please check your HF token and internet connection.") from e
 
-def diarize_audio(audio_path: str) -> Annotation | None:
+def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
     """Performs speaker diarization on the given audio file using pyannote.audio.
 
     Args:
         audio_path: Path to the audio file (e.g., MP3).
+        config: Optional configuration dictionary to override defaults.
 
     Returns:
         A pyannote.core.Annotation object containing speaker segments, or None on failure.
@@ -92,23 +95,22 @@ def diarize_audio(audio_path: str) -> Annotation | None:
     if not audio_path.lower().endswith('.wav'):
         logger.warning(f"Diarization input {audio_path} is not a WAV file. Compressed formats like MP3 can cause sample count mismatches.")
 
-    device_str = config_manager.get("processing_device", "cpu")
+    # Use provided config or fall back to system config
+    get_config = config.get if config else config_manager.get
+    device_str = get_config("processing_device", "cpu")
+    hf_token = get_config("hf_token")
     
     logger.info(f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}")
     try:
         device = torch.device(device_str)
         
-        # Clear CUDA cache before loading to ensure maximum available memory
-        if device.type == 'cuda':
-            torch.cuda.empty_cache()
-            
-        cache_key = (DEFAULT_PIPELINE, device_str)
-        if cache_key not in _pipeline_cache:
-            logger.info(f"Loading pyannote pipeline from Hugging Face onto device {device_str}")
-            pipeline = load_diarization_pipeline(device_str)
+        # Check cache first
+        cache_key = f"{DEFAULT_PIPELINE}_{device_str}"
+        if cache_key in _pipeline_cache:
+            pipeline = _pipeline_cache[cache_key]
+        else:
+            pipeline = load_diarization_pipeline(device_str, hf_token)
             _pipeline_cache[cache_key] = pipeline
-            logger.info(f"Pipeline loaded successfully to {device}.")
-        pipeline = _pipeline_cache[cache_key]
 
         # Log audio file info
         try:

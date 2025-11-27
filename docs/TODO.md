@@ -2,11 +2,10 @@
 Let's continue the development of Nojoin. Read the PRD.md and the Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project and my development workflow. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
 ## Multi-Tenant User System
-- Remove the 'Email' field from the first-run setup wizard and user creation forms. It is not required for now.
+- Remove the 'Email' field from the first-run setup wizard and user creation forms. It is not required for now. Consider the downstream and upstream impacts so we don't break anything.
 
-- Implement a 'Log Out' button in the frontend UI that logs the user out and redirects them to the login page.
-
-## Security
+## Security Audits & Improvements
+- Conduct a thorough security audit of the entire application, including frontend, backend, and companion app
 - Audit the authentication and authorization mechanisms to ensure that users can only access their own data.
 - Implement password hashing and secure storage of user credentials.
 - Ensure that all API endpoints are protected and require proper authentication.
@@ -28,13 +27,17 @@ I'm going to share some high level requirements below and I want to discuss and 
 - The changes made by the search and replace function should apply to both the diarized transcript and the meeting notes.
 - A very high quality and detailed prompt needs to be generated for the purposes of creating high quality meeting notes. The meeting notes need to contain the following sections: Topics Discussed, Summary, [Notes on each topic, including decisions, rationales, debates, etc. that are logically displayed], Tasks, Misc. It is critical that the prompt produces consistently formatted notes so the prompt should specify strict formatting guidelines. The notes can be as lengthy as required.
 
+## Backup/Restore Feature
 - Implement a backup/restore feature.
 
 ## Companion App Deployment
-- Create a proper installer (e.g., MSI/NSIS for Windows, DMG for macOS, Deb/RPM for Linux).
+- Create an installer (e.g., MSI/NSIS for Windows, DMG for macOS, Deb/RPM for Linux).
 
 - Implement "Run on System Startup" functionality.
 
 - Add logic to create Desktop and Start Menu shortcuts on Windows and equivalents on MacOS and Linux that start the companion app if its not already running and launches the web app.
 
 - Consider packaging the Companion App it as a Windows service and equivalent on other platforms so the user doesn't have to worry about managing the application in the system tray.
+
+## Configuration Cleanup
+- Review `config.json` and `config_manager.py` to remove unused keys and defaults (e.g., "llm_user_context", "llm_qa_context", "ui_scale", "min_meeting_length_seconds", "update_preferences").

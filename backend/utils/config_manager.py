@@ -40,7 +40,6 @@ DEFAULT_CONFIG = {
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
     "theme": "dark", # Default theme (dark, light)
-    "auto_transcribe_on_recording_finish": False, # Automatically transcribe new recordings when finished
     "llm_provider": "gemini",  # LLM provider selection
     "gemini_api_key": None,     # Google Gemini API key
     "openai_api_key": None,     # OpenAI API key
@@ -49,8 +48,6 @@ DEFAULT_CONFIG = {
     "gemini_model": _default_models["gemini_model"],     # Default Gemini model
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
-    "notes_font_size": "Medium",  # Font size for meeting notes display
-    "infer_meeting_title": True,  # Automatically infer meeting name from transcript using LLM
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
     "companion_url": "http://localhost:12345", # Default Companion App URL
@@ -93,37 +90,7 @@ def get_available_processing_devices():
         devices.append("cuda")
     return devices
 
-def get_available_notes_font_sizes():
-    """
-    Returns available font size options for meeting notes.
-    
-    Returns:
-        list: List of available font size options
-    """
-    return ["Small", "Medium", "Large"]
 
-def get_available_ui_scale_modes():
-    """Returns available UI scale modes."""
-    return ["auto", "manual"]
-
-
-
-def get_notes_font_size_pixels(size_setting):
-    """
-    Maps font size setting to actual pixel size for meeting notes.
-    
-    Args:
-        size_setting (str): Font size setting ("Small", "Medium", "Large")
-        
-    Returns:
-        int: Font size in pixels
-    """
-    font_size_map = {
-        "Small": 9,
-        "Medium": 12,
-        "Large": 15
-    }
-    return font_size_map.get(size_setting, 12)  # Default to Medium (12px)
 
 class ConfigManager:
     def __init__(self, config_path=None):

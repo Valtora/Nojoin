@@ -394,20 +394,23 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                     logger.info(f"Diarized transcript saved to database for recording {recording_id}")
 
                     # --- New: Infer meeting title using LLM ---
-                    if is_llm_available() and config_manager.get("infer_meeting_title", True):
-                        try:
-                            if stage_update_callback:
-                                stage_update_callback("Inferring meeting title...")
-                            from backend.utils.transcript_store import TranscriptStore
-                            if is_llm_available():
-                                transcript_for_title = diarized_transcript_text or TranscriptStore.get(recording_id, "raw")
-                                if transcript_for_title:
-                                    inferred_title = backend.infer_meeting_title(transcript_for_title)
-                                    if inferred_title:
-                                        # Trim very long titles to DB-friendly length
-                                        inferred_title = inferred_title[:255]
-                                        database.update_recording_name(recording_id, inferred_title)
-                                        logger.info(f"Inferred meeting title '{inferred_title}' for recording {recording_id}")
+                    # Disabled as per user request (feature not fully implemented/enabled)
+                    # if is_llm_available() and config_manager.get("infer_meeting_title", True):
+                    #     try:
+                    #         if stage_update_callback:
+                    #             stage_update_callback("Inferring meeting title...")
+                    #         from backend.utils.transcript_store import TranscriptStore
+                    #         if is_llm_available():
+                    #             transcript_for_title = diarized_transcript_text or TranscriptStore.get(recording_id, "raw")
+                    #             if transcript_for_title:
+                    #                 inferred_title = backend.infer_meeting_title(transcript_for_title)
+                    #                 if inferred_title:
+                    #                     # Trim very long titles to DB-friendly length
+                    #                     inferred_title = inferred_title[:255]
+                    #                     database.update_recording_name(recording_id, inferred_title)
+                    #                     logger.info(f"Inferred meeting title '{inferred_title}' for recording {recording_id}")
+                    #     except Exception as e:
+                    #         logger.error(f"Failed to infer meeting title: {e}")
                         except Exception as e:
                             logger.error(f"Failed to infer meeting title for recording {recording_id}: {e}", exc_info=True)
 
