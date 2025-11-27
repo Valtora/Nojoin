@@ -1,26 +1,14 @@
 # Nojoin To-Do List
 Let's continue the development of Nojoin. Read the PRD.md and the Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project and my development workflow. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
-## Housekeeping/Chores
-- 
+## Alembic Migrations
+- Currently every time I spin up a new development environment I have to manually create the initial admin user by running a script. This is because Alembic does not support seeding data during the migration process. Research and implement a solution to this problem so that the initial admin user is created automatically during the migration process.
 
-## Configuration
-- 
-
-## UI/UX
-- Implement a reusable notification system and unify the existing notifications such as the currently in-use warnings and health checks. Then also implement a notification for when user settings are successfully saved when the user pressed 'Save Changes' in the settings page.
-- Centre the 'Nojoin' text in the main nav bar and change the colour to the same orange as the 'Start Meeting' button.
-- In the frontend meeting status spinner screen implement a 'Meeting is in queue to be processed...' in the case where the celery worker is busy with another task and its running in solo mode (which it will be most of the time).
-- The settings page's Search feature is good at fuzzy matching but it fails on exact matches sometimes. Improve the search algorithm to ensure exact matches are always found first before fuzzy matches. Investigate and report back.
-
-## Meeting Recording and Management
-- 
-
-## Diarization Pipeline/Process
-- 
-
-## Companion App Enhancements
-- 
+## Multi-Tenant User System
+- Implement a multi-tenant user system with authentication and authorization.
+- Though Nojoin will be self-hosted the multi-tenant system will allow the hoster to have different accounts for different teams or users.
+- Each user should have their own recordings, settings, and data isolated from other users.
+- We need to have one main admin user who can create and manage other users. The admin account created by default is a user with username 'admin' and password 'admin' which the hoster should be forced to change on first login.
 
 ## Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.

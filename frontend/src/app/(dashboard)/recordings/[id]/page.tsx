@@ -19,6 +19,9 @@ const getStatusMessage = (recording: Recording) => {
         if (recording.client_status === ClientStatus.UPLOADING) return "Meeting is being uploaded...";
         return "Recording is active or finalizing upload...";
     }
+    if (recording.status === RecordingStatus.QUEUED) {
+        return "Meeting is in queue to be processed...";
+    }
     if (recording.status === RecordingStatus.PROCESSING) {
         return recording.processing_step || "Processing...";
     }
@@ -88,7 +91,7 @@ export default function RecordingPage({ params }: PageProps) {
 
     // Poll for updates if processing
     const interval = setInterval(async () => {
-        if (recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.UPLOADING) {
+        if (recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.QUEUED) {
              try {
                 const { id } = await params;
                 const data = await getRecording(parseInt(id));
@@ -440,7 +443,7 @@ export default function RecordingPage({ params }: PageProps) {
         </div>
 
         {/* Audio Player in Header */}
-        {(recording.status !== RecordingStatus.UPLOADING && recording.status !== RecordingStatus.PROCESSING) && (
+        {(recording.status !== RecordingStatus.UPLOADING && recording.status !== RecordingStatus.PROCESSING && recording.status !== RecordingStatus.QUEUED) && (
             <AudioPlayer 
                 recording={recording} 
                 audioRef={audioRef} 
@@ -453,11 +456,12 @@ export default function RecordingPage({ params }: PageProps) {
       </header>
 
       <div className="flex-1 flex min-h-0">
-        {(recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PROCESSING) ? (
+        {(recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.QUEUED) ? (
              <div className="flex-1 flex flex-col items-center justify-center space-y-4">
                 <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    {recording.status === RecordingStatus.UPLOADING ? "Meeting in Progress" : "Processing Recording..."}
+                    {recording.status === RecordingStatus.UPLOADING ? "Meeting in Progress" : 
+                     recording.status === RecordingStatus.QUEUED ? "Queued for Processing" : "Processing Recording..."}
                 </h2>
                 <p className="text-gray-500 dark:text-gray-400">
                     {getStatusMessage(recording)}

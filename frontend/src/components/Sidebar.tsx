@@ -52,6 +52,15 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
   switch (status) {
     case RecordingStatus.PROCESSED:
       return null;
+    case RecordingStatus.QUEUED:
+      return (
+        <span 
+          className="cursor-help" 
+          title="Meeting is in queue to be processed..."
+        >
+          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+        </span>
+      );
     case RecordingStatus.PROCESSING:
       return (
         <span 

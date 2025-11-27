@@ -46,20 +46,27 @@ export default function SettingsPage() {
     if (!tabMatches) return;
 
     const currentScore = tabMatches[activeTab];
-    // If current tab is a bad match (score 1.0 means no match found)
-    if (currentScore >= 0.8) {
-      // Find best matching tab
-      let bestTab: Tab | null = null;
-      let bestScore = 1.0;
+    
+    // Find best matching tab
+    let bestTab: Tab | null = null;
+    let bestScore = 1.0;
 
-      (Object.entries(tabMatches) as [Tab, number][]).forEach(([tab, score]) => {
-        if (score < bestScore) {
-          bestScore = score;
-          bestTab = tab;
-        }
-      });
+    (Object.entries(tabMatches) as [Tab, number][]).forEach(([tab, score]) => {
+      if (score < bestScore) {
+        bestScore = score;
+        bestTab = tab;
+      }
+    });
 
-      if (bestTab && bestScore < 0.6) {
+    if (bestTab && bestTab !== activeTab) {
+      // Priority switch: If we found an exact match (score 0) and current is not exact
+      if (bestScore === 0 && currentScore > 0) {
+        setActiveTab(bestTab);
+        return;
+      }
+
+      // Fallback switch: If current tab is a bad match, switch to best available
+      if (currentScore >= 0.8 && bestScore < 0.6) {
         setActiveTab(bestTab);
       }
     }

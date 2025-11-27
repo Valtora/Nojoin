@@ -3,6 +3,7 @@ import logging
 import time
 import warnings
 from celery import Task
+from celery.signals import worker_ready
 from sqlmodel import select
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
@@ -53,6 +54,12 @@ def process_recording_task(self, recording_id: int):
     if not recording:
         logger.error(f"Recording {recording_id} not found.")
         return
+    
+    # Update status to PROCESSING
+    recording.status = RecordingStatus.PROCESSING
+    session.add(recording)
+    session.commit()
+    session.refresh(recording)
     
     # Fix missing duration if needed
     if (not recording.duration_seconds or recording.duration_seconds == 0) and os.path.exists(recording.audio_path):
@@ -325,3 +332,30 @@ def process_recording_task(self, recording_id: int):
             session.add(recording)
             session.commit()
         raise e
+
+@worker_ready.connect
+def check_queued_recordings(sender, **kwargs):
+    """
+    On worker startup, check for any recordings that are stuck in QUEUED state
+    and re-queue them.
+    """
+    logger.info("Checking for pending QUEUED recordings...")
+    session = get_sync_session()
+    try:
+        statement = select(Recording).where(Recording.status == RecordingStatus.QUEUED)
+        recordings = session.exec(statement).all()
+        
+        if not recordings:
+            logger.info("No pending recordings found.")
+            return
+
+        logger.info(f"Found {len(recordings)} pending recordings. Re-queueing...")
+        
+        for recording in recordings:
+            logger.info(f"Re-queueing recording {recording.id}: {recording.name}")
+            process_recording_task.delay(recording.id)
+            
+    except Exception as e:
+        logger.error(f"Failed to check pending recordings: {e}", exc_info=True)
+    finally:
+        session.close()

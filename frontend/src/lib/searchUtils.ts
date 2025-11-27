@@ -19,9 +19,32 @@ export const fuzzyMatch = (query: string, keywords: string[], threshold = 0.3): 
 /**
  * Returns the best match score for a query against a list of keywords.
  * Lower score is better. Returns 1.0 if no match.
+ * 
+ * Scoring hierarchy:
+ * 0.0: Exact match
+ * 0.1: Starts with match
+ * 0.2: Substring match
+ * 0.3+: Fuzzy match (scaled from Fuse.js score)
  */
 export const getMatchScore = (query: string, keywords: string[]): number => {
   if (!query) return 0;
+
+  const lowerQuery = query.toLowerCase();
+
+  // 1. Exact match
+  if (keywords.some(k => k.toLowerCase() === lowerQuery)) {
+    return 0;
+  }
+
+  // 2. Starts with match
+  if (keywords.some(k => k.toLowerCase().startsWith(lowerQuery))) {
+    return 0.1;
+  }
+
+  // 3. Substring match
+  if (keywords.some(k => k.toLowerCase().includes(lowerQuery))) {
+    return 0.2;
+  }
 
   const fuse = new Fuse(keywords, {
     threshold: 0.4,
@@ -33,7 +56,9 @@ export const getMatchScore = (query: string, keywords: string[]): number => {
   if (results.length === 0) return 1.0;
   
   // Return the lowest (best) score
-  return Math.min(...results.map(r => r.score || 1.0));
+  // Map Fuse score [0, 1] to [0.3, 1.0] to ensure manual matches are prioritized
+  const bestFuseScore = Math.min(...results.map(r => r.score || 1.0));
+  return 0.3 + (bestFuseScore * 0.7);
 };
 
 /**

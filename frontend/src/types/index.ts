@@ -1,6 +1,7 @@
 export enum RecordingStatus {
   UPLOADING = "UPLOADING",
   RECORDED = "RECORDED",
+  QUEUED = "QUEUED",
   PROCESSING = "PROCESSING",
   PROCESSED = "PROCESSED",
   ERROR = "ERROR",

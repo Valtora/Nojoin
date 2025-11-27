@@ -196,7 +196,7 @@ async def finalize_upload(
     # Update recording status
     file_stats = os.stat(recording.audio_path)
     recording.file_size_bytes = file_stats.st_size
-    recording.status = RecordingStatus.RECORDED
+    recording.status = RecordingStatus.QUEUED
     
     db.add(recording)
     await db.commit()
@@ -280,7 +280,7 @@ async def import_audio(
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
-        status=RecordingStatus.RECORDED
+        status=RecordingStatus.QUEUED
     )
     
     # Override created_at if recorded_at is provided
@@ -342,7 +342,7 @@ async def upload_recording(
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
-        status=RecordingStatus.RECORDED
+        status=RecordingStatus.QUEUED
     )
     
     db.add(recording)

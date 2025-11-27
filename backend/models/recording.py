@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 class RecordingStatus(str, Enum):
     UPLOADING = "UPLOADING"
     RECORDED = "RECORDED"
+    QUEUED = "QUEUED"
     PROCESSING = "PROCESSING"
     PROCESSED = "PROCESSED"
     ERROR = "ERROR"
