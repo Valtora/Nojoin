@@ -189,7 +189,6 @@ export default function MainNav() {
     isNavCollapsed, 
     toggleNavCollapse 
   } = useNavigationStore();
-  const { unreadCount } = useNotificationStore();
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -455,7 +454,6 @@ export default function MainNav() {
             label="Notifications"
             onClick={() => setIsNotificationModalOpen(true)}
             collapsed={collapsed}
-            badge={unreadCount}
           />
           <NavItem
             icon={<Settings className="w-5 h-5" />}

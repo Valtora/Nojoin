@@ -10,7 +10,7 @@ interface NotificationHistoryModalProps {
 }
 
 export default function NotificationHistoryModal({ isOpen, onClose }: NotificationHistoryModalProps) {
-  const { history, clearHistory, markAllAsRead } = useNotificationStore();
+  const { history, clearHistory } = useNotificationStore();
 
   if (!isOpen) return null;
 
@@ -40,13 +40,6 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
           </span>
           <div className="flex gap-2">
             <button
-              onClick={markAllAsRead}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-            >
-              <CheckCheck className="w-3.5 h-3.5" />
-              Mark all read
-            </button>
-            <button
               onClick={clearHistory}
               className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
             >
@@ -67,13 +60,7 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
             history.map((notification) => (
               <div
                 key={notification.id}
-                className={`
-                  p-3 rounded-lg border transition-colors
-                  ${notification.read 
-                    ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800' 
-                    : 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30'
-                  }
-                `}
+                className="p-3 rounded-lg border transition-colors bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
               >
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex-1">
