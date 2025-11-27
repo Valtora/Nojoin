@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { 
   Mic, 
   Archive, 
@@ -176,6 +176,7 @@ function TagItem({
 
 export default function MainNav() {
   const router = useRouter();
+  const pathname = usePathname();
   const { 
     currentView, 
     setCurrentView, 
@@ -189,6 +190,7 @@ export default function MainNav() {
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
   
   // Modal states
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
@@ -216,6 +218,7 @@ export default function MainNav() {
   }, []);
 
   useEffect(() => {
+    setMounted(true);
     void loadTags();
     
     // Listen for global tag updates
@@ -282,6 +285,9 @@ export default function MainNav() {
     window.dispatchEvent(new CustomEvent('recording-updated'));
   };
 
+  // Prevent hydration mismatch by using default state until mounted
+  const collapsed = mounted ? isNavCollapsed : false;
+
   const navItems: { view: ViewType; icon: React.ReactNode; label: string }[] = [
     { view: 'recordings', icon: <Mic className="w-5 h-5" />, label: 'Recordings' },
     { view: 'archived', icon: <Archive className="w-5 h-5" />, label: 'Archived' },
@@ -295,20 +301,20 @@ export default function MainNav() {
           flex-shrink-0 border-r border-gray-400 dark:border-gray-800 
           bg-gray-200 dark:bg-gray-900 h-screen sticky top-0 
           flex flex-col transition-all duration-300
-          ${isNavCollapsed ? 'w-16' : 'w-56'}
+          ${collapsed ? 'w-16' : 'w-56'}
         `}
       >
         {/* Header with collapse toggle */}
         <div className="p-3 flex items-center justify-between border-b border-gray-400 dark:border-gray-800">
-          {!isNavCollapsed && (
+          {!collapsed && (
             <span className="font-semibold text-gray-900 dark:text-gray-100">Nojoin</span>
           )}
           <button
             onClick={toggleNavCollapse}
             className="p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
-            title={isNavCollapsed ? 'Expand' : 'Collapse'}
+            title={collapsed ? 'Expand' : 'Collapse'}
           >
-            {isNavCollapsed ? (
+            {collapsed ? (
               <ChevronRight className="w-4 h-4" />
             ) : (
               <ChevronLeft className="w-4 h-4" />
@@ -323,14 +329,14 @@ export default function MainNav() {
               key={view}
               icon={icon}
               label={label}
-              isActive={currentView === view && window.location.pathname === '/'}
+              isActive={currentView === view && pathname === '/'}
               onClick={() => {
                 setCurrentView(view);
-                if (window.location.pathname !== '/') {
+                if (pathname !== '/') {
                   router.push('/');
                 }
               }}
-              collapsed={isNavCollapsed}
+              collapsed={collapsed}
             />
           ))}
         </nav>
@@ -340,7 +346,7 @@ export default function MainNav() {
 
         {/* Tags Section */}
         <div className="flex-1 overflow-y-auto p-2">
-          {!isNavCollapsed && (
+          {!collapsed && (
             <div className="flex items-center justify-between px-3 py-2">
               <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1">
                 <TagIcon className="w-3 h-3" />
@@ -356,14 +362,14 @@ export default function MainNav() {
             </div>
           )}
           
-          {isNavCollapsed && (
+          {collapsed && (
             <div className="flex justify-center py-2">
               <TagIcon className="w-4 h-4 text-gray-500" />
             </div>
           )}
 
           {/* Add Tag Input */}
-          {isAddingTag && !isNavCollapsed && (
+          {isAddingTag && !collapsed && (
             <div className="px-2 pb-2">
               <input
                 type="text"
@@ -402,12 +408,12 @@ export default function MainNav() {
                 isEditing={editingTagId === tag.id}
                 onStartEdit={() => setEditingTagId(tag.id)}
                 onCancelEdit={() => setEditingTagId(null)}
-                collapsed={isNavCollapsed}
+                collapsed={collapsed}
               />
             ))}
           </div>
 
-          {tags.length === 0 && !isNavCollapsed && (
+          {tags.length === 0 && !collapsed && (
             <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
               No tags yet. Create one to organize your recordings.
             </p>
@@ -423,19 +429,19 @@ export default function MainNav() {
             icon={<Users className="w-5 h-5" />}
             label="Speaker Library"
             onClick={() => setIsSpeakersModalOpen(true)}
-            collapsed={isNavCollapsed}
+            collapsed={collapsed}
           />
           <NavItem
             icon={<FilePlus className="w-5 h-5" />}
             label="Import Audio"
             onClick={() => setIsImportModalOpen(true)}
-            collapsed={isNavCollapsed}
+            collapsed={collapsed}
           />
           <NavItem
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
             onClick={() => router.push('/settings')}
-            collapsed={isNavCollapsed}
+            collapsed={collapsed}
           />
         </div>
       </aside>

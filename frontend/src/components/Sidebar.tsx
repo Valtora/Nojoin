@@ -84,6 +84,7 @@ export default function Sidebar() {
     clearSelection
   } = useNavigationStore();
   
+  const [mounted, setMounted] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recording: Recording } | null>(null);
@@ -174,6 +175,7 @@ export default function Sidebar() {
   }, [fetchRecordings]);
 
   useEffect(() => {
+    setMounted(true);
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
   }, []);
 
@@ -319,7 +321,7 @@ export default function Sidebar() {
   const getContextMenuItems = (recording: Recording) => {
     const items = [];
 
-    if (currentView === 'recordings') {
+    if (view === 'recordings') {
       items.push(
         { 
           label: 'Rename', 
@@ -339,7 +341,7 @@ export default function Sidebar() {
           onClick: () => handleSoftDelete(recording.id)
         },
       );
-    } else if (currentView === 'archived') {
+    } else if (view === 'archived') {
       items.push(
         { 
           label: 'Restore',
@@ -352,7 +354,7 @@ export default function Sidebar() {
           onClick: () => handleSoftDelete(recording.id)
         },
       );
-    } else if (currentView === 'deleted') {
+    } else if (view === 'deleted') {
       items.push(
         { 
           label: 'Restore',
@@ -372,7 +374,7 @@ export default function Sidebar() {
   };
 
   const getEmptyMessage = () => {
-    switch (currentView) {
+    switch (view) {
       case 'archived': return { main: 'No archived recordings.', sub: 'Archived recordings will appear here.' };
       case 'deleted': return { main: 'No deleted recordings.', sub: 'Deleted recordings will appear here.' };
       default: return { main: 'No recordings found.', sub: 'Start a new meeting or import audio to get started.' };
@@ -380,10 +382,13 @@ export default function Sidebar() {
   };
 
   const hasActiveFilters = searchQuery || dateRange.start || dateRange.end || selectedSpeakers.length > 0 || selectedTagIds.length > 0;
+  
+  // Prevent hydration mismatch
+  const view = mounted ? currentView : 'recordings';
 
   return (
     <aside className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
-      {currentView === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
+      {view === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
       
       {/* Header */}
       <div className="p-4 border-b border-gray-400 dark:border-gray-800">
