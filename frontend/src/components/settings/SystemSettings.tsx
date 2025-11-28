@@ -50,7 +50,7 @@ export default function SystemSettings({
                 type="text"
                 value={settings.companion_url || ''}
                 onChange={(e) => onUpdate({ ...settings, companion_url: e.target.value })}
-                className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 placeholder="http://localhost:12345"
               />
               <p className="text-xs text-gray-500 mt-1">The address where the local Companion App is running.</p>
@@ -65,7 +65,7 @@ export default function SystemSettings({
                   type="text"
                   value={companionConfig.api_url}
                   onChange={(e) => onUpdateCompanionConfig({ ...companionConfig, api_url: e.target.value })}
-                  className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   placeholder="http://localhost:8000/api/v1"
                 />
                 <p className="text-xs text-gray-500 mt-1">

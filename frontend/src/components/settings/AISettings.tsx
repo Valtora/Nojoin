@@ -49,7 +49,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
               <select
                 value={settings.llm_provider || 'gemini'}
                 onChange={(e) => onUpdate({ ...settings, llm_provider: e.target.value })}
-                className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               >
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI</option>
@@ -75,7 +75,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     type={showGeminiKey ? "text" : "password"}
                     value={settings.gemini_api_key || ''}
                     onChange={(e) => onUpdate({ ...settings, gemini_api_key: e.target.value })}
-                    className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     placeholder="AIza..."
                   />
                   <button
@@ -100,7 +100,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     type={showOpenAIKey ? "text" : "password"}
                     value={settings.openai_api_key || ''}
                     onChange={(e) => onUpdate({ ...settings, openai_api_key: e.target.value })}
-                    className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     placeholder="sk-..."
                   />
                   <button
@@ -125,7 +125,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     type={showAnthropicKey ? "text" : "password"}
                     value={settings.anthropic_api_key || ''}
                     onChange={(e) => onUpdate({ ...settings, anthropic_api_key: e.target.value })}
-                    className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     placeholder="sk-ant-..."
                   />
                   <button
@@ -156,7 +156,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                   type={showHfToken ? "text" : "password"}
                   value={settings.hf_token || ''}
                   onChange={(e) => onUpdate({ ...settings, hf_token: e.target.value })}
-                  className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   placeholder="hf_..."
                 />
                 <button
@@ -207,7 +207,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                 <select
                   value={settings.whisper_model_size || 'turbo'}
                   onChange={(e) => onUpdate({ ...settings, whisper_model_size: e.target.value })}
-                  className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="tiny">Tiny (Fastest, Low Accuracy)</option>
                   <option value="base">Base</option>

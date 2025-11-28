@@ -54,7 +54,7 @@ export default function AudioSettings({
                   <select
                     value={selectedInputDevice || ''}
                     onChange={(e) => onSelectInputDevice(e.target.value || null)}
-                    className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   >
                     <option value="">System Default</option>
                     {companionDevices.input_devices.map((device) => (
@@ -75,7 +75,7 @@ export default function AudioSettings({
                   <select
                     value={selectedOutputDevice || ''}
                     onChange={(e) => onSelectOutputDevice(e.target.value || null)}
-                    className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   >
                     <option value="">System Default</option>
                     {companionDevices.output_devices.map((device) => (

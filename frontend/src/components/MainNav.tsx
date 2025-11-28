@@ -46,7 +46,7 @@ function NavItem({ icon, label, isActive, onClick, collapsed, badge }: NavItemPr
         w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
         ${isActive 
           ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' 
-          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-gray-800'
         }
         ${collapsed ? 'justify-center' : ''}
       `}

@@ -32,7 +32,7 @@ export default function GeneralSettings({ searchQuery = '' }: GeneralSettingsPro
               <select
                 value={theme}
                 onChange={handleThemeChange}
-                className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               >
                 <option value="system">System Default</option>
                 <option value="light">Light</option>

@@ -589,7 +589,7 @@ export default function Sidebar() {
                     ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
                     : isSelected
                       ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
-                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-400 dark:hover:border-orange-700'
+                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-50 dark:hover:border-orange-700 dark:hover:bg-gray-800'
                 }`}
               >
                 <div className="flex justify-between items-start mb-1">

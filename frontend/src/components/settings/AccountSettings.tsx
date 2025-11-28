@@ -70,19 +70,19 @@ export default function AccountSettings() {
   return (
     <div className="space-y-8">
       {/* Profile Section */}
-      <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
-          <User className="w-5 h-5 text-blue-400" />
+      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           Profile Information
         </h3>
         <form onSubmit={handleProfileUpdate} className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Username</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
               required
             />
           </div>
@@ -98,40 +98,40 @@ export default function AccountSettings() {
       </div>
 
       {/* Password Section */}
-      <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
-          <Lock className="w-5 h-5 text-blue-400" />
+      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           Change Password
         </h3>
         <form onSubmit={handlePasswordUpdate} className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Current Password</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Current Password</label>
             <input
               type="password"
               value={passwordData.current_password}
               onChange={(e) => setPasswordData({...passwordData, current_password: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">New Password</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">New Password</label>
             <input
               type="password"
               value={passwordData.new_password}
               onChange={(e) => setPasswordData({...passwordData, new_password: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
               required
               minLength={8}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Confirm New Password</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Confirm New Password</label>
             <input
               type="password"
               value={passwordData.confirm_password}
               onChange={(e) => setPasswordData({...passwordData, confirm_password: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-white"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
               required
               minLength={8}
             />

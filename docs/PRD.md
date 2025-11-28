@@ -144,6 +144,11 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Server Settings:** Manage API keys, model selection (Whisper size), and storage paths via the Web UI.
 *   **User Preferences:** Theme selection (Dark/Light), default playback speed.
 
+### 3.9 UI/UX Standards
+*   **Accessibility:** High contrast ratios for text and interactive elements to ensure readability.
+*   **Theme Support:** Full support for both Light and Dark modes with consistent styling and visibility.
+*   **Visual Clarity:** Distinct borders and clear separation of UI components.
+
 ---
 
 ## 4. Technical Requirements

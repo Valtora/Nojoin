@@ -41,13 +41,6 @@ export const COLOR_PALETTE: ColorOption[] = [
   { key: 'violet', name: 'Violet', bg: 'bg-violet-100 dark:bg-violet-900/30', border: 'border-violet-300 dark:border-violet-700', text: 'text-violet-700 dark:text-violet-400', dot: 'bg-violet-500' },
   { key: 'purple', name: 'Purple', bg: 'bg-purple-100 dark:bg-purple-900/30', border: 'border-purple-300 dark:border-purple-700', text: 'text-purple-700 dark:text-purple-400', dot: 'bg-purple-500' },
   { key: 'fuchsia', name: 'Fuchsia', bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30', border: 'border-fuchsia-300 dark:border-fuchsia-700', text: 'text-fuchsia-700 dark:text-fuchsia-400', dot: 'bg-fuchsia-500' },
-  
-  // Neutrals
-  { key: 'slate', name: 'Slate', bg: 'bg-slate-100 dark:bg-slate-900/30', border: 'border-slate-300 dark:border-slate-700', text: 'text-slate-700 dark:text-slate-400', dot: 'bg-slate-500' },
-  { key: 'gray', name: 'Gray', bg: 'bg-gray-100 dark:bg-gray-800/30', border: 'border-gray-300 dark:border-gray-700', text: 'text-gray-700 dark:text-gray-400', dot: 'bg-gray-500' },
-  { key: 'zinc', name: 'Zinc', bg: 'bg-zinc-100 dark:bg-zinc-900/30', border: 'border-zinc-300 dark:border-zinc-700', text: 'text-zinc-700 dark:text-zinc-400', dot: 'bg-zinc-500' },
-  { key: 'neutral', name: 'Neutral', bg: 'bg-neutral-100 dark:bg-neutral-900/30', border: 'border-neutral-300 dark:border-neutral-700', text: 'text-neutral-700 dark:text-neutral-400', dot: 'bg-neutral-500' },
-  { key: 'stone', name: 'Stone', bg: 'bg-stone-100 dark:bg-stone-900/30', border: 'border-stone-300 dark:border-stone-700', text: 'text-stone-700 dark:text-stone-400', dot: 'bg-stone-500' },
 ];
 
 // Helper function to get a color option by key
