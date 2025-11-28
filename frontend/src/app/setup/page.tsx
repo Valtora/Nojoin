@@ -14,7 +14,12 @@ export default function SetupPage() {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    llm_provider: 'gemini',
+    gemini_api_key: '',
+    openai_api_key: '',
+    anthropic_api_key: '',
+    hf_token: ''
   });
 
   useEffect(() => {
@@ -59,7 +64,12 @@ export default function SetupPage() {
       await setupSystem({
         username: formData.username,
         password: formData.password,
-        is_superuser: true
+        is_superuser: true,
+        llm_provider: formData.llm_provider,
+        gemini_api_key: formData.gemini_api_key || undefined,
+        openai_api_key: formData.openai_api_key || undefined,
+        anthropic_api_key: formData.anthropic_api_key || undefined,
+        hf_token: formData.hf_token || undefined
       });
       router.push('/login');
     } catch (err: any) {
@@ -126,6 +136,77 @@ export default function SetupPage() {
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
               required
             />
+          </div>
+
+          <div className="pt-4 border-t border-gray-700">
+            <h3 className="text-lg font-medium mb-4">Configuration</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">LLM Provider</label>
+                <select
+                  value={formData.llm_provider}
+                  onChange={(e) => setFormData({...formData, llm_provider: e.target.value})}
+                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </div>
+
+              {formData.llm_provider === 'gemini' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Gemini API Key</label>
+                  <input
+                    type="password"
+                    value={formData.gemini_api_key}
+                    onChange={(e) => setFormData({...formData, gemini_api_key: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                    placeholder="AIza..."
+                  />
+                </div>
+              )}
+
+              {formData.llm_provider === 'openai' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">OpenAI API Key</label>
+                  <input
+                    type="password"
+                    value={formData.openai_api_key}
+                    onChange={(e) => setFormData({...formData, openai_api_key: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                    placeholder="sk-..."
+                  />
+                </div>
+              )}
+
+              {formData.llm_provider === 'anthropic' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Anthropic API Key</label>
+                  <input
+                    type="password"
+                    value={formData.anthropic_api_key}
+                    onChange={(e) => setFormData({...formData, anthropic_api_key: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                    placeholder="sk-ant-..."
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">
+                  HuggingFace Token <span className="text-gray-500 text-xs">(Required for Pyannote)</span>
+                </label>
+                <input
+                  type="password"
+                  value={formData.hf_token}
+                  onChange={(e) => setFormData({...formData, hf_token: e.target.value})}
+                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                  placeholder="hf_..."
+                />
+              </div>
+            </div>
           </div>
 
           <button

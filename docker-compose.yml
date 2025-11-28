@@ -42,7 +42,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
-    command: sh -c "python3 backend/preload_models.py && celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo"
+    # Use watchmedo to auto-restart Celery on code changes
+    command: sh -c "python3 backend/preload_models.py && watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo"
     volumes:
       - .:/app
       - ./data:/app/data
@@ -76,7 +77,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - NEXT_PUBLIC_API_URL=https://localhost/api
+      - NEXT_PUBLIC_API_URL=https://localhost:14443/api
       # Enable polling for hot reloading on Windows file systems
       - WATCHPACK_POLLING=true
     restart: unless-stopped

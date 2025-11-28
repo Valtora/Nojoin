@@ -152,7 +152,10 @@ def process_recording_task(self, recording_id: int):
         self.update_state(state='PROCESSING', meta={'progress': 80, 'stage': 'Saving'})
         
         # Combine Transcription and Diarization
-        combined_segments = combine_transcription_diarization(transcription_result, diarization_result)
+        combined_segments = []
+        if transcription_result:
+            combined_segments = combine_transcription_diarization(transcription_result, diarization_result)
+        
         logger.info(f"Combined segments count: {len(combined_segments) if combined_segments else 0}")
         
         if not combined_segments:

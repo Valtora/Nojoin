@@ -24,3 +24,4 @@ openai
 anthropic
 gemini-api
 alembic
+watchdog

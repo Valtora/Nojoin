@@ -48,6 +48,14 @@ cargo run
 
 ### 4.1 Database (Alembic)
 *   **Apply Migrations**: `alembic upgrade head`
+
+### 4.2 Worker Development
+The worker container is configured with `watchmedo` to automatically restart when you modify Python files in `backend/`.
+*   **Code Changes**: Edit files in `backend/` -> Worker restarts automatically.
+*   **Dependency Changes**: If you edit `requirements.txt`, you must rebuild:
+    ```bash
+    docker-compose up -d --build worker
+    ```
 *   **Create Migration**: `alembic revision --autogenerate -m "message"`
 
 ### 4.2 Frontend

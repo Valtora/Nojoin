@@ -1,13 +1,21 @@
-from typing import Any
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from backend.api.deps import get_db
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 
 router = APIRouter()
+
+class SetupRequest(UserCreate):
+    llm_provider: str = "gemini"
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    hf_token: Optional[str] = None
 
 @router.get("/status")
 async def get_system_status(
@@ -25,10 +33,10 @@ async def get_system_status(
 async def setup_system(
     *,
     db: AsyncSession = Depends(get_db),
-    user_in: UserCreate,
+    setup_in: SetupRequest,
 ) -> Any:
     """
-    Initialize the system with the first admin user.
+    Initialize the system with the first admin user and initial configuration.
     Only works if no users exist.
     """
     query = select(User).limit(1)
@@ -39,12 +47,25 @@ async def setup_system(
             detail="System is already initialized.",
         )
     
+    # Construct settings dict
+    settings = {
+        "llm_provider": setup_in.llm_provider,
+        "hf_token": setup_in.hf_token
+    }
+    if setup_in.gemini_api_key:
+        settings["gemini_api_key"] = setup_in.gemini_api_key
+    if setup_in.openai_api_key:
+        settings["openai_api_key"] = setup_in.openai_api_key
+    if setup_in.anthropic_api_key:
+        settings["anthropic_api_key"] = setup_in.anthropic_api_key
+
     user = User(
-        username=user_in.username,
-        email=user_in.email,
-        hashed_password=get_password_hash(user_in.password),
+        username=setup_in.username,
+        email=setup_in.email,
+        hashed_password=get_password_hash(setup_in.password),
         is_superuser=True,
         force_password_change=False, # First user sets their own password, so no need to force change
+        settings=settings
     )
     db.add(user)
     await db.commit()

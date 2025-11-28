@@ -44,6 +44,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Unified Strategy:** Configuration is split between system-wide infrastructure settings and user-specific preferences.
 *   **System Config:** Stored in `data/config.json` (Server) and `config.json` (Companion). Includes infrastructure URLs, device paths, and hardware settings.
 *   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences, and AI settings.
+*   **Initial Setup:** The Setup Wizard collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account, ensuring immediate system readiness without manual restarts.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
 
 ### 2.5 Security
