@@ -19,6 +19,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Nojoin",
   description: "Self-hosted meeting intelligence platform",
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Image from 'next/image';
 import { 
   Mic, 
   Archive, 
@@ -317,7 +318,14 @@ export default function MainNav() {
         {/* Header with collapse toggle */}
         <div className="p-3 flex items-center justify-between border-b border-gray-400 dark:border-gray-800">
           {!collapsed && (
-            <div className="flex-1 text-center">
+            <div className="flex-1 text-center flex items-center justify-center gap-2">
+              <Image 
+                src="/assets/NojoinLogo.png" 
+                alt="Nojoin Logo" 
+                width={24} 
+                height={24} 
+                className="object-contain"
+              />
               <span className="font-semibold text-orange-600">Nojoin</span>
             </div>
           )}
