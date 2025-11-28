@@ -177,11 +177,18 @@ async def delete_tag(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Delete a global tag.
+    Delete a global tag. This will also remove the tag from all recordings.
     """
     tag = await db.get(Tag, tag_id)
     if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # First, delete all RecordingTag associations for this tag
+    stmt = select(RecordingTag).where(RecordingTag.tag_id == tag_id)
+    result = await db.execute(stmt)
+    links = result.scalars().all()
+    for link in links:
+        await db.delete(link)
         
     await db.delete(tag)
     await db.commit()
