@@ -445,7 +445,7 @@ def check_queued_recordings(sender, **kwargs):
         
         for recording in recordings:
             logger.info(f"Re-queueing recording {recording.id}: {recording.name}")
-            process_recording_task.delay(recording.id)
+            process_recording_task.delay(recording.id) # type: ignore
             
     except Exception as e:
         logger.error(f"Failed to check pending recordings: {e}", exc_info=True)

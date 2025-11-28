@@ -1,8 +1,13 @@
 # Nojoin To-Do List
+
+## Prompt Engineering - Unsupervised
+Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to achieve the goals and/or tasks and/or TODO items set out below after the colons. Since you are a cloud agent running independently you may make decisions on my behalf, this new instruction overrides the prior instructions about always waiting for my approval on your plans. As long as you make a plan. This is also true for unit tests. Since I am delegating this task to you I will not be here to manually test. You must therefore test everything yourself.
+
+## Prompt Engineering - Supervised
 Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
-## First Run (Setup Wizard) Improvements
-- Improve the Setup Wizard to download and setup necessary models and dependencies like the whisper turbo model. This means that when the user actually gets through to the application they can start using it straight away without having to wait for models to download in the background. Show progress bars and status updates during the setup process to inform the user of the current step and estimated time remaining.
+## Tag System
+- Investigate the error that occurs when the user attempts to delete a tag that is currently assigned to one or more meetings.
 
 ## Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
