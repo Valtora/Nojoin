@@ -90,7 +90,11 @@ A lightweight, cross-platform system tray application responsible for audio capt
         *   **Client State:** "Meeting in Progress", "Meeting Paused", "Uploading...".
         *   **Processing Steps:** "Filtering silence...", "Transcribing...", "Determining speakers...", "Learning voiceprints...".
 *   **Export:**
-    *   Export transcripts to `.txt` format via the Web Client.
+    *   Export to `.txt` format via the Web Client with flexible options:
+        *   **Transcript Only:** Export the diarized transcript with timestamps
+        *   **Notes Only:** Export AI-generated meeting notes
+        *   **Both:** Combined export with transcript and notes in a single file
+    *   Export modal allows users to choose their preferred export option
 
 ### 3.3 Speaker Management
 *   **Global Speaker Library:**
@@ -121,8 +125,17 @@ A lightweight, cross-platform system tray application responsible for audio capt
 
 ### 3.5 Meeting Intelligence
 *   **LLM-Powered Notes:**
-    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, or Local LLMs via API).
+    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, or Gemini).
     *   Notes are stored in the database and rendered as rich Markdown in the Web UI.
+    *   **Comprehensive Meeting Notes:** AI-generated notes include:
+        *   **Topics Discussed:** List of major themes covered
+        *   **Summary:** Comprehensive overview of the meeting
+        *   **Detailed Notes:** Per-topic breakdown including key points, discussions, decisions, rationales, and open questions
+        *   **Action Items/Tasks:** Assigned tasks with ownership and due dates
+        *   **Miscellaneous:** Additional important information
+    *   **Panel Switching:** Users can toggle between Transcript and Notes views using tab navigation
+    *   **Context-Aware Tools:** Search, find/replace, undo/redo, and export are available in both views
+    *   **Unified Find/Replace:** Changes made via find/replace apply to both transcript and notes to maintain consistency
 *   **Chat Q&A:**
     *   "Chat with your meeting" feature allowing users to ask questions about specific recordings.
     *   Uses transcript context to provide accurate answers.

@@ -487,7 +487,7 @@ export default function NotesView({
             </div>
           ) : (
             <div 
-              className="prose prose-gray dark:prose-invert max-w-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg p-4 transition-colors group"
+              className="prose prose-gray dark:prose-invert max-w-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg p-4 transition-colors group relative"
               onClick={() => setIsEditing(true)}
               title="Click to edit"
             >

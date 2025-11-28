@@ -66,6 +66,32 @@ def _sanitize_filename(filename: str) -> str:
     return "".join([c for c in filename if c.isalpha() or c.isdigit() or c in (' ', '-', '_', '.')]).strip()
 
 
+def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: str) -> int:
+    """
+    Apply find and replace to both transcript segments and notes.
+    Returns the number of segment replacements made.
+    """
+    segment_count = 0
+    
+    # Replace in transcript segments
+    for segment in transcript.segments:
+        if find_text in segment['text']:
+            segment['text'] = segment['text'].replace(find_text, replace_text)
+            segment_count += 1
+    
+    if segment_count > 0:
+        flag_modified(transcript, "segments")
+        # Reconstruct full text
+        full_text = " ".join([s['text'] for s in transcript.segments])
+        transcript.text = full_text
+    
+    # Replace in notes
+    if transcript.notes and find_text in transcript.notes:
+        transcript.notes = transcript.notes.replace(find_text, replace_text)
+    
+    return segment_count
+
+
 # --- Export Endpoint ---
 
 @router.get("/{recording_id}/export")
@@ -340,7 +366,8 @@ async def find_and_replace(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Find and replace text across the entire transcript.
+    Find and replace text across the entire transcript AND meeting notes.
+    This ensures consistency between the diarized transcript and generated notes.
     """
     # 0. Check Ownership
     recording = await db.get(Recording, recording_id)
@@ -361,22 +388,12 @@ async def find_and_replace(
     if not find_text:
         raise HTTPException(status_code=400, detail="Find text cannot be empty")
 
-    count = 0
-    for segment in transcript.segments:
-        if find_text in segment['text']:
-            segment['text'] = segment['text'].replace(find_text, replace_text)
-            count += 1
-    
-    if count > 0:
-        flag_modified(transcript, "segments")
+    # 2. Apply find/replace to both transcript and notes
+    _apply_find_replace(transcript, find_text, replace_text)
         
-        # Reconstruct Full Text
-        full_text = " ".join([s['text'] for s in transcript.segments])
-        transcript.text = full_text
-        
-        db.add(transcript)
-        await db.commit()
-        await db.refresh(transcript)
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
         
     return transcript
 
@@ -551,7 +568,8 @@ async def find_and_replace_notes(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Find and replace text in the meeting notes.
+    Find and replace text in the meeting notes AND transcript.
+    This ensures consistency between the diarized transcript and generated notes.
     """
     recording = await db.get(Recording, recording_id)
     if not recording or recording.user_id != current_user.id:
@@ -570,10 +588,11 @@ async def find_and_replace_notes(
     if not find_text:
         raise HTTPException(status_code=400, detail="Find text cannot be empty")
     
-    if transcript.notes and find_text in transcript.notes:
-        transcript.notes = transcript.notes.replace(find_text, replace_text)
-        db.add(transcript)
-        await db.commit()
-        await db.refresh(transcript)
+    # Apply find/replace to both transcript and notes
+    _apply_find_replace(transcript, find_text, replace_text)
+        
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
     
     return {"notes": transcript.notes, "status": "success"}

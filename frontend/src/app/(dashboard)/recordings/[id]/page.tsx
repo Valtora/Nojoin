@@ -225,6 +225,22 @@ export default function RecordingPage({ params }: PageProps) {
       setFuture([]); // Clear redo stack on new action
   }, [recording]);
 
+  // Helper to push both transcript and notes history for unified operations
+  const pushBothHistories = useCallback((description: string) => {
+      if (!recording?.transcript?.segments) return;
+      
+      // Push transcript history
+      const segmentsSnapshot = JSON.parse(JSON.stringify(recording.transcript.segments));
+      setHistory(prev => [...prev, { segments: segmentsSnapshot, description }]);
+      setFuture([]);
+      
+      // Push notes history
+      if (recording.transcript?.notes) {
+          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
+          setNotesFuture([]);
+      }
+  }, [recording]);
+
   const handleUndo = async () => {
       if (history.length === 0 || !recording?.transcript?.segments || isUndoing) return;
       
@@ -323,7 +339,8 @@ export default function RecordingPage({ params }: PageProps) {
 
   const handleFindAndReplace = async (find: string, replace: string) => {
     if (!recording) return;
-    pushToHistory(`Replace "${find}" with "${replace}"`);
+    // Push both transcript and notes to history since this affects both
+    pushBothHistories(`Replace "${find}" with "${replace}"`);
     try {
       await findAndReplace(recording.id, find, replace);
       router.refresh();
@@ -416,11 +433,8 @@ export default function RecordingPage({ params }: PageProps) {
   const handleNotesFindAndReplace = async (find: string, replace: string) => {
       if (!recording) return;
       
-      // Push current notes to history
-      if (recording.transcript?.notes) {
-          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
-          setNotesFuture([]);
-      }
+      // Push both transcript and notes to history since this affects both
+      pushBothHistories(`Replace "${find}" with "${replace}" (from Notes)`);
       
       try {
           await findAndReplaceNotes(recording.id, find, replace);
