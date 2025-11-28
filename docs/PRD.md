@@ -23,6 +23,7 @@ The core processing unit hosted on a machine with NVIDIA GPU capabilities.
 *   **Database:** PostgreSQL serving as the single source of truth for all metadata, transcripts, and speaker profiles.
 *   **Broker:** Redis for task queue management and caching.
 *   **Storage:** Docker Volumes for persistent storage of raw audio and model artifacts.
+*   **Reverse Proxy:** Nginx handling SSL termination and routing (Port 14443).
 
 ### 2.2 The Web Client (Next.js)
 The primary user interface for interacting with the system.
@@ -44,6 +45,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **System Config:** Stored in `data/config.json` (Server) and `config.json` (Companion). Includes infrastructure URLs, device paths, and hardware settings.
 *   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences, and AI settings.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
+
+### 2.5 Security
+*   **SSL/TLS:** All communication between components (Frontend, Backend, Companion) is encrypted via HTTPS using Nginx as a reverse proxy.
+*   **Authentication:** JWT-based authentication for API access.
+*   **Authorization:** Strict ownership checks ensure users can only access their own data.
+*   **CORS:** Restricted to allowed origins.
 
 ---
 

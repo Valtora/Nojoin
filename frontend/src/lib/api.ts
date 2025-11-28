@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker } from '@/types';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
+  ? `${process.env.NEXT_PUBLIC_API_URL}/v1` 
+  : 'https://localhost:14443/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

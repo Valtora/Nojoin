@@ -5,28 +5,26 @@ This guide covers the complete setup and workflow for developing Nojoin in a **H
 ## 1. Project Setup
 
 ### 1.1 Infrastructure (Docker)
-Start the database and broker services.
+Start the entire stack (Database, Redis, API, Worker, Frontend, Nginx).
 ```bash
-docker-compose up -d db redis
+docker-compose up -d --build
 ```
+*Note: The API container currently includes heavy ML dependencies. The initial download will be large (~5GB).*
 
 ### 1.2 Backend (WSL2)
-Set up the Python environment and database.
+Run database migrations inside the container.
 ```bash
-# Setup Virtual Environment
+docker-compose exec api alembic upgrade head
+```
+*(Optional)* Set up a local virtual environment for IDE autocompletion:
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install Dependencies
 pip install -r requirements.txt
-sudo apt-get install -y ffmpeg
-
-# Run Migrations
-alembic upgrade head
 ```
 
 ### 1.3 Frontend (WSL2)
-Install Node.js dependencies.
+*(Optional)* Install Node.js dependencies locally for IDE intellisense.
 ```bash
 cd frontend
 npm install
@@ -40,36 +38,25 @@ cargo build
 ```
 
 ## 2. First Run (Setup Wizard)
-Once the services are running (see Section 3), you must initialize the system:
-1.  Open `http://localhost:14141` in your browser.
+Once the services are running, you must initialize the system:
+1.  Open `https://localhost:14443` in your browser.
+    *   **Note:** You will see a security warning because we are using a self-signed certificate for development. Please accept/proceed (e.g., "Advanced" -> "Proceed to localhost").
 2.  You will be redirected to the **Setup Wizard** (`/setup`).
 3.  Create your initial Admin account.
 
 ## 3. Development Workflow (The "Daily Drive")
-You need **3 Terminals in WSL2** and **1 Terminal in Windows**.
+You need **1 Terminal in WSL2** and **1 Terminal in Windows**.
 
-### Terminal 1: API (WSL2)
+### Terminal 1: Infrastructure Logs (WSL2)
+View logs for the Backend, Worker, and Frontend (running in Docker).
 ```bash
-source .venv/bin/activate
-uvicorn backend.main:app --reload --host 0.0.0.0
+docker-compose logs -f
 ```
-*   **Health**: `http://localhost:8000/health`
-*   **Docs**: `http://localhost:8000/docs`
+*   **App**: `https://localhost:14443`
+*   **API Docs**: `https://localhost:14443/api/v1/docs`
+*   **Health**: `https://localhost:14443/api/health`
 
-### Terminal 2: Worker (WSL2)
-```bash
-source .venv/bin/activate
-celery -A backend.celery_app.celery_app worker --pool=solo --loglevel=info
-```
-
-### Terminal 3: Frontend (WSL2)
-```bash
-cd frontend
-npm run dev
-```
-*   **App**: `http://localhost:14141`
-
-### Terminal 4: Companion (Windows PowerShell)
+### Terminal 2: Companion (Windows PowerShell)
 **CRITICAL**: Must run in Windows to access system audio.
 ```powershell
 cd companion

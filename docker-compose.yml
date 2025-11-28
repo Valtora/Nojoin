@@ -76,9 +76,19 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=https://localhost/api
       # Enable polling for hot reloading on Windows file systems
       - WATCHPACK_POLLING=true
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "14443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/cert.crt:/etc/nginx/certs/cert.crt:ro
+      - ./nginx/cert.key:/etc/nginx/certs/cert.key:ro
     restart: unless-stopped
 
 volumes:

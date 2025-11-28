@@ -14,7 +14,7 @@ pub struct Config {
 }
 
 fn default_web_app_url() -> String {
-    "http://localhost:14141".to_string()
+    "https://localhost:14443".to_string()
 }
 
 impl Config {
@@ -41,7 +41,7 @@ impl Config {
         } else {
             println!("Info: config.json not found. Creating default config.");
             let default_config = Config {
-                api_url: "http://localhost:8000/api/v1".to_string(),
+                api_url: "https://localhost:14443/api/v1".to_string(),
                 api_token: "".to_string(),
                 web_app_url: default_web_app_url(),
                 input_device_name: None,

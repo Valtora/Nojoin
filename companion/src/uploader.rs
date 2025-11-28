@@ -6,7 +6,10 @@ use tokio::io::AsyncReadExt;
 use crate::config::Config;
 
 pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, config: &Config) -> Result<()> {
-    let client = reqwest::Client::new();
+    // Allow invalid certs for self-signed SSL (development)
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
     
     // Read file manually to avoid issues with Form::file
     let mut file = File::open(file_path).await?;

@@ -9,10 +9,11 @@ from pydantic import BaseModel
 import uuid
 import os
 
-from backend.api.deps import get_db
+from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
+from backend.models.user import User
 from backend.processing.embedding import load_embedding_model, merge_embeddings
 from backend.utils.config_manager import config_manager
 import numpy as np
@@ -23,13 +24,14 @@ router = APIRouter()
 @router.get("/{recording_id}/export")
 async def export_transcript(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Export the transcript as a text file.
     """
     # 1. Fetch Recording with Speakers (for name resolution)
-    stmt = select(Recording).where(Recording.id == recording_id).options(
+    stmt = select(Recording).where(Recording.id == recording_id).where(Recording.user_id == current_user.id).options(
         selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
     )
     result = await db.execute(stmt)
@@ -92,7 +94,8 @@ async def update_segment_speaker(
     recording_id: int,
     segment_index: int,
     new_speaker_name: str = Body(..., embed=True),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update the speaker for a specific transcript segment.
@@ -101,6 +104,9 @@ async def update_segment_speaker(
     # 1. Fetch Recording and Transcript
     recording = await db.get(Recording, recording_id)
     if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    if recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     # Fetch transcript with segments
@@ -281,11 +287,17 @@ async def update_transcript_segment_text(
     recording_id: int,
     segment_index: int,
     update: TranscriptSegmentTextUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update the text content of a specific transcript segment.
     """
+    # 0. Check Ownership
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
     # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(stmt)
@@ -315,11 +327,17 @@ async def update_transcript_segment_text(
 async def find_and_replace(
     recording_id: int,
     replace_request: FindReplaceRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Find and replace text across the entire transcript.
     """
+    # 0. Check Ownership
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
     # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(stmt)
@@ -360,12 +378,18 @@ class TranscriptSegmentsUpdate(BaseModel):
 async def update_transcript_segments(
     recording_id: int,
     update: TranscriptSegmentsUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Bulk update all segments of a transcript.
     Useful for Undo/Redo operations involving multiple segments.
     """
+    # 0. Check Ownership
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
     # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(stmt)

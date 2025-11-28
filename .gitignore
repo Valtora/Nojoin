@@ -34,3 +34,11 @@ node_modules/
 .github/copilot-instructions.md
 companion/config.json
 docs/gitmessage.md
+
+# Security / Certificates
+nginx/*.key
+nginx/*.crt
+nginx/*.pem
+*.pfx
+*.p12
+
