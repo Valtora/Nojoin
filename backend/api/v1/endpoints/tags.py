@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
 from sqlmodel import select
 from pydantic import BaseModel
 
@@ -183,12 +184,8 @@ async def delete_tag(
     if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
     
-    # First, delete all RecordingTag associations for this tag
-    stmt = select(RecordingTag).where(RecordingTag.tag_id == tag_id)
-    result = await db.execute(stmt)
-    links = result.scalars().all()
-    for link in links:
-        await db.delete(link)
+    # First, bulk delete all RecordingTag associations for this tag
+    await db.execute(delete(RecordingTag).where(RecordingTag.tag_id == tag_id))
         
     await db.delete(tag)
     await db.commit()
