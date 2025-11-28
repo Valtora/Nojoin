@@ -407,6 +407,16 @@ export const setupSystem = async (data: any): Promise<any> => {
   return response.data;
 };
 
+export const downloadModels = async (data: { hf_token?: string, whisper_model_size?: string }): Promise<{ task_id: string }> => {
+  const response = await api.post('/system/download-models', null, { params: data });
+  return response.data;
+};
+
+export const getTaskStatus = async (taskId: string): Promise<any> => {
+  const response = await api.get(`/system/tasks/${taskId}`);
+  return response.data;
+};
+
 // User Management
 export const getUsers = async (): Promise<any[]> => {
   const response = await api.get<any[]>('/users/');

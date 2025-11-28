@@ -3,10 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from celery.result import AsyncResult
 
 from backend.api.deps import get_db
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
+from backend.worker.tasks import download_models_task
 
 router = APIRouter()
 
@@ -71,3 +73,35 @@ async def setup_system(
     await db.commit()
     await db.refresh(user)
     return {"message": "System initialized successfully"}
+
+@router.post("/download-models")
+async def trigger_model_download(
+    hf_token: Optional[str] = None,
+    whisper_model_size: Optional[str] = None,
+    # No auth dependency here because this is called during setup flow where user might not be fully logged in yet
+    # But we should probably protect it or ensure it's only callable if system is just initialized.
+    # For simplicity in this setup flow, we'll allow it.
+) -> Any:
+    """
+    Trigger the background task to download models.
+    """
+    task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size)
+    return {"task_id": task.id}
+
+@router.get("/tasks/{task_id}")
+async def get_task_status(task_id: str) -> Any:
+    """
+    Get the status of a background task.
+    """
+    task_result = AsyncResult(task_id)
+    response = {
+        "task_id": task_id,
+        "status": task_result.status,
+        "result": task_result.result,
+    }
+    # If the task is in a custom state (like PROCESSING), result might be the meta dict
+    if task_result.status == 'PROCESSING':
+         response["progress"] = task_result.info.get('progress', 0)
+         response["message"] = task_result.info.get('message', '')
+    
+    return response

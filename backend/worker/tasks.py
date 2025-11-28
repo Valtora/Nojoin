@@ -470,3 +470,23 @@ def get_worker_device_status(self):
         return {"device": "cpu", "error": "torch not installed"}
     except Exception as e:
         return {"device": "unknown", "error": str(e)}
+
+@celery_app.task(bind=True)
+def download_models_task(self, hf_token: str | None = None, whisper_model_size: str | None = None):
+    """
+    Task to download models in the background.
+    """
+    from backend.preload_models import download_models
+    
+    # Reload config to ensure we have the latest settings
+    config_manager.reload()
+    
+    def progress_callback(msg, percent):
+        self.update_state(state='PROCESSING', meta={'progress': percent, 'message': msg})
+    
+    try:
+        download_models(progress_callback=progress_callback, hf_token=hf_token, whisper_model_size=whisper_model_size)
+        return {"status": "success", "message": "All models downloaded successfully."}
+    except Exception as e:
+        logger.error(f"Model download failed: {e}", exc_info=True)
+        raise e

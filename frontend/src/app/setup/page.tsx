@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSystemStatus, setupSystem } from '@/lib/api';
-import { Loader2, Server } from 'lucide-react';
+import { getSystemStatus, setupSystem, downloadModels, getTaskStatus } from '@/lib/api';
+import { Loader2, Server, CheckCircle, Download } from 'lucide-react';
 
 export default function SetupPage() {
   const router = useRouter();
@@ -11,6 +11,12 @@ export default function SetupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   
+  // Model Download State
+  const [downloadingModels, setDownloadingModels] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadMessage, setDownloadMessage] = useState('Initializing download...');
+  const [downloadComplete, setDownloadComplete] = useState(false);
+
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -45,6 +51,46 @@ export default function SetupPage() {
     checkStatus();
   }, [router]);
 
+  const startModelDownload = async () => {
+    setDownloadingModels(true);
+    try {
+      const { task_id } = await downloadModels({
+        hf_token: formData.hf_token || undefined,
+        // Default to turbo if not specified, though backend handles default too
+        whisper_model_size: 'turbo' 
+      });
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await getTaskStatus(task_id);
+          
+          if (status.status === 'SUCCESS') {
+            clearInterval(pollInterval);
+            setDownloadProgress(100);
+            setDownloadMessage('All models ready!');
+            setDownloadComplete(true);
+            setTimeout(() => router.push('/login'), 2000);
+          } else if (status.status === 'FAILURE') {
+            clearInterval(pollInterval);
+            setError('Model download failed. Please check logs.');
+            setDownloadingModels(false); // Allow retry or manual skip?
+          } else if (status.status === 'PROCESSING') {
+            setDownloadProgress(status.progress || 0);
+            setDownloadMessage(status.message || 'Downloading...');
+          }
+        } catch (e) {
+          console.error("Polling error", e);
+        }
+      }, 1000);
+
+    } catch (err: any) {
+      console.error("Failed to start download", err);
+      setError('Failed to start model download. You can try logging in anyway.');
+      setDownloadingModels(false);
+      // Optional: allow skipping
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -71,10 +117,13 @@ export default function SetupPage() {
         anthropic_api_key: formData.anthropic_api_key || undefined,
         hf_token: formData.hf_token || undefined
       });
-      router.push('/login');
+      
+      // Instead of redirecting, start download
+      setSubmitting(false);
+      await startModelDownload();
+
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Setup failed');
-    } finally {
       setSubmitting(false);
     }
   };
@@ -83,6 +132,43 @@ export default function SetupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (downloadingModels || downloadComplete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
+        <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-700 text-center">
+          <div className="flex justify-center mb-6">
+            {downloadComplete ? (
+              <div className="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-8 h-8 text-white" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
+                <Download className="w-8 h-8 text-white" />
+              </div>
+            )}
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-2">
+            {downloadComplete ? 'Setup Complete!' : 'Setting Up AI Models'}
+          </h2>
+          <p className="text-gray-400 mb-6">
+            {downloadComplete 
+              ? 'Redirecting you to login...' 
+              : 'Please wait while we download the necessary AI models. This may take a few minutes.'}
+          </p>
+
+          <div className="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
+            <div 
+              className="bg-blue-500 h-4 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${downloadProgress}%` }}
+            />
+          </div>
+          <p className="text-sm text-gray-400 font-mono">{downloadMessage}</p>
+        </div>
       </div>
     );
   }

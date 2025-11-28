@@ -2,9 +2,7 @@
 Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
 ## First Run (Setup Wizard) Improvements
-- Improve the Setup Wizard to include additional configuration options for LLM providers, allowing users to set up their preferred LLM service during the initial setup process. This should include options for popular LLM providers, API key input fields, and any necessary configuration settings
-- The setup wizard needs to also collect the user's HF token for use with HuggingFace for the pyannote models.
-- Currently the worker requires a restart after the setup wizard is completed in order to pick up the new configuration settings. This needs to be resolved so that the worker picks up the new settings without requiring a restart OR the worker is automatically restarted as part of the setup wizard completion process.
+- Improve the Setup Wizard to download and setup necessary models and dependencies like the whisper turbo model. This means that when the user actually gets through to the application they can start using it straight away without having to wait for models to download in the background. Show progress bars and status updates during the setup process to inform the user of the current step and estimated time remaining.
 
 ## Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
