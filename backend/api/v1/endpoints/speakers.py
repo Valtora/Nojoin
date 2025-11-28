@@ -10,8 +10,9 @@ from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeak
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.processing.embedding import merge_embeddings, extract_embedding_for_segments, find_matching_global_speaker, cosine_similarity
+from backend.processing.embedding import merge_embeddings, find_matching_global_speaker, cosine_similarity
 from backend.utils.config_manager import config_manager
+from backend.celery_app import celery_app
 
 router = APIRouter()
 
@@ -649,7 +650,12 @@ async def extract_voiceprint(
     
     # 4. Extract embedding
     device_str = config_manager.get("processing_device", "cpu")
-    embedding = extract_embedding_for_segments(recording.audio_path, speaker_segments, device_str)
+    # Offload to worker
+    task = celery_app.send_task(
+        "backend.worker.tasks.extract_embedding_task",
+        args=[recording.audio_path, speaker_segments, device_str]
+    )
+    embedding = task.get()
     
     if not embedding:
         raise HTTPException(status_code=500, detail="Failed to extract voiceprint from audio segments")
@@ -912,7 +918,12 @@ async def extract_all_voiceprints(
             continue
         
         # Extract embedding
-        embedding = extract_embedding_for_segments(recording.audio_path, speaker_segments, device_str)
+        # Offload to worker
+        task = celery_app.send_task(
+            "backend.worker.tasks.extract_embedding_task",
+            args=[recording.audio_path, speaker_segments, device_str]
+        )
+        embedding = task.get()
         
         if not embedding:
             results.append({

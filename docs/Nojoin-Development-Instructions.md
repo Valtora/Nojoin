@@ -9,28 +9,8 @@ Start the entire stack (Database, Redis, API, Worker, Frontend, Nginx).
 ```bash
 docker-compose up -d --build
 ```
-*Note: The API container currently includes heavy ML dependencies. The initial download will be large (~5GB).*
 
-### 1.2 Backend (WSL2)
-Run database migrations inside the container.
-```bash
-docker-compose exec api alembic upgrade head
-```
-*(Optional)* Set up a local virtual environment for IDE autocompletion:
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 1.3 Frontend (WSL2)
-*(Optional)* Install Node.js dependencies locally for IDE intellisense.
-```bash
-cd frontend
-npm install
-```
-
-### 1.4 Companion App (Windows)
+### 1.2 Companion App (Windows)
 Build the Rust client.
 ```powershell
 cd companion

@@ -97,7 +97,11 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
 
     # Use provided config or fall back to system config
     get_config = config.get if config else config_manager.get
-    device_str = get_config("processing_device", "cpu")
+    device_str = get_config("processing_device", "auto")
+    
+    if device_str == "auto":
+        device_str = "cuda" if torch.cuda.is_available() else "cpu"
+
     hf_token = get_config("hf_token")
     
     logger.info(f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}")

@@ -86,13 +86,33 @@ def mute_non_speech_segments(
 
         # Load Silero VAD model
         logger.info("[VAD] Loading Silero VAD model...")
+        # Use CPU for VAD as it's lightweight and avoids potential CUDA issues with small models
+        # Or check config if we really want GPU
+        from backend.utils.config_manager import config_manager
+        device_str = config_manager.get("processing_device", "auto")
+        if device_str == "auto":
+            device_str = "cuda" if torch.cuda.is_available() else "cpu"
+            
+        # Silero VAD usually runs fine on CPU, but let's respect the config if possible.
+        # Note: silero_vad.load_silero_vad() loads to CPU by default.
+        # If we want GPU, we might need to move the model.
         model = silero_vad.load_silero_vad()
-        logger.info("[VAD] Model loaded successfully")
+        if device_str == "cuda":
+             model.to(torch.device("cuda"))
+             
+        logger.info(f"[VAD] Model loaded successfully on {device_str}")
 
         # Run VAD
         logger.info(f"[VAD] Running speech detection...")
+        
+        # Ensure wav is on the correct device
+        if device_str == "cuda":
+             wav_tensor = torch.from_numpy(wav_np).to(torch.device("cuda"))
+        else:
+             wav_tensor = torch.from_numpy(wav_np)
+
         speech_timestamps = silero_vad.get_speech_timestamps(
-            wav_np, model, 
+            wav_tensor, model, 
             sampling_rate=sampling_rate, 
             threshold=threshold, 
             window_size_samples=window_size_samples,

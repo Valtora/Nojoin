@@ -23,4 +23,4 @@ LICENSE
 .venv/
 .wav
 companion/target/
-data/
+data/data

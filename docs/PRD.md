@@ -18,8 +18,8 @@ The application is composed of three distinct subsystems:
 
 ### 2.1 The Server (Dockerized)
 The core processing unit hosted on a machine with NVIDIA GPU capabilities.
-*   **API Service:** FastAPI-based REST API for data management and client communication.
-*   **Worker Service:** Celery-based background worker handling resource-intensive tasks (transcription, diarization) using the NVIDIA Runtime.
+*   **API Service:** FastAPI-based REST API for data management and client communication. Runs in a lightweight container (Python Slim) without heavy ML dependencies.
+*   **Worker Service:** Celery-based background worker handling resource-intensive tasks (transcription, diarization) using the NVIDIA Runtime. Runs in a heavy container with PyTorch and CUDA support.
 *   **Database:** PostgreSQL serving as the single source of truth for all metadata, transcripts, and speaker profiles.
 *   **Broker:** Redis for task queue management and caching.
 *   **Storage:** Docker Volumes for persistent storage of raw audio and model artifacts.

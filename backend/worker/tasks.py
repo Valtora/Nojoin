@@ -12,11 +12,8 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
 from backend.models.user import User
-from backend.processing.vad import mute_non_speech_segments
-from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad
-from backend.processing.transcribe import transcribe_audio
-from backend.processing.diarize import diarize_audio
-from backend.processing.embedding import extract_embeddings, cosine_similarity, merge_embeddings
+# Heavy processing imports moved inside tasks to avoid loading torch in API
+from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
 from backend.utils.config_manager import config_manager
@@ -44,6 +41,13 @@ def process_recording_task(self, recording_id: int):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
+    # Local imports to avoid loading torch in API
+    from backend.processing.vad import mute_non_speech_segments
+    from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad
+    from backend.processing.transcribe import transcribe_audio
+    from backend.processing.diarize import diarize_audio
+    from backend.processing.embedding_core import extract_embeddings
+
     # Reload config to pick up any changes made via the API
     config_manager.reload()
     
@@ -346,6 +350,78 @@ def process_recording_task(self, recording_id: int):
             session.commit()
         raise e
 
+@celery_app.task(base=DatabaseTask, bind=True)
+def update_speaker_embedding_task(self, recording_id: int, start: float, end: float, recording_speaker_id: int):
+    """
+    Update the speaker embedding for a specific segment (Active Learning).
+    """
+    from backend.processing.embedding_core import extract_embedding_for_segments
+    session = self.session
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording or not recording.audio_path or not os.path.exists(recording.audio_path):
+            logger.warning(f"Recording {recording_id} not found or audio missing.")
+            return
+
+        target_recording_speaker = session.get(RecordingSpeaker, recording_speaker_id)
+        if not target_recording_speaker:
+            logger.warning(f"RecordingSpeaker {recording_speaker_id} not found.")
+            return
+
+        device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
+        
+        # Extract embedding for this segment
+        # We pass a list of segments [(start, end)]
+        new_embedding = extract_embedding_for_segments(
+            recording.audio_path, 
+            [(start, end)], 
+            device_str=device
+        )
+
+        if new_embedding:
+            # Merge into RecordingSpeaker
+            current_emb = target_recording_speaker.embedding if target_recording_speaker.embedding is not None else []
+            
+            target_recording_speaker.embedding = merge_embeddings(
+                current_emb, 
+                new_embedding, 
+                alpha=0.5
+            )
+            session.add(target_recording_speaker)
+            
+            # Merge into GlobalSpeaker
+            if target_recording_speaker.global_speaker_id:
+                gs = session.get(GlobalSpeaker, target_recording_speaker.global_speaker_id)
+                if gs:
+                    gs_emb = gs.embedding if gs.embedding is not None else []
+                    gs.embedding = merge_embeddings(
+                        gs_emb,
+                        new_embedding,
+                        alpha=0.5
+                    )
+                    session.add(gs)
+            
+            session.commit()
+            logger.info(f"Updated embedding for speaker {target_recording_speaker.diarization_label}")
+        else:
+            logger.warning("Failed to extract embedding for update.")
+
+    except Exception as e:
+        logger.error(f"Failed to update speaker embedding: {e}", exc_info=True)
+        session.rollback()
+
+@celery_app.task(bind=True)
+def extract_embedding_task(self, audio_path: str, segments: list, device_str: str = "cpu"):
+    """
+    Extract embedding from segments. Used by API for synchronous-like operations.
+    """
+    from backend.processing.embedding_core import extract_embedding_for_segments
+    try:
+        return extract_embedding_for_segments(audio_path, segments, device_str)
+    except Exception as e:
+        logger.error(f"Failed to extract embedding task: {e}", exc_info=True)
+        return None
+
 @worker_ready.connect
 def check_queued_recordings(sender, **kwargs):
     """
@@ -372,3 +448,22 @@ def check_queued_recordings(sender, **kwargs):
         logger.error(f"Failed to check pending recordings: {e}", exc_info=True)
     finally:
         session.close()
+
+@celery_app.task(bind=True)
+def get_worker_device_status(self):
+    """
+    Check the worker's available processing device (CUDA/CPU).
+    """
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        gpu_name = torch.cuda.get_device_name(0) if device == "cuda" else None
+        return {
+            "device": device,
+            "gpu_name": gpu_name,
+            "torch_version": torch.__version__
+        }
+    except ImportError:
+        return {"device": "cpu", "error": "torch not installed"}
+    except Exception as e:
+        return {"device": "unknown", "error": str(e)}

@@ -1,5 +1,4 @@
 import logging
-import torchaudio
 import os
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,13 @@ def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True,
     bypassing the broken torchcodec backend in PyTorch 2.9.1+.
     """
     import soundfile as sf
-    import torch
+    try:
+        import torch
+    except ImportError:
+        # If torch is not available (e.g. in API container), we can't return a tensor.
+        # This function shouldn't be called in the API container anyway.
+        raise ImportError("torch is required for audio loading but is not installed.")
+
     
     # Map arguments to soundfile
     start = frame_offset
@@ -110,6 +115,12 @@ def setup_audio_environment():
     2. torchaudio.load to use soundfile directly (to bypass torchcodec issues)
     3. torchaudio.save to use soundfile directly (to bypass torchcodec issues)
     """
+    try:
+        import torchaudio
+    except ImportError:
+        logger.info("Torchaudio not found. Skipping audio environment setup (API mode).")
+        return
+
     # Patch Torchaudio list_audio_backends
     if not hasattr(torchaudio, 'list_audio_backends'):
         torchaudio.list_audio_backends = _patched_list_audio_backends

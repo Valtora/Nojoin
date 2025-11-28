@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import torch
 from .path_manager import path_manager
 
 logger = logging.getLogger(__name__)
@@ -11,6 +10,14 @@ logger = logging.getLogger(__name__)
 CONFIG_FILENAME = 'config.json'
 # Use PathManager for configuration file location
 CONFIG_PATH = str(path_manager.config_path)
+
+def _get_default_device():
+    """Determine default processing device safely."""
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
 
 def _get_default_models():
     """Get default models from LLM_Services to avoid circular imports."""
@@ -36,7 +43,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
     "companion_url": "http://localhost:12345", # Default Companion App URL
     "recordings_directory": "recordings",  # Relative to user data directory
-    "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
+    "processing_device": _get_default_device(), # Default to GPU if available
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
 }

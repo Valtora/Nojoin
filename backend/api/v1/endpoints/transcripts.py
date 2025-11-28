@@ -14,10 +14,8 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.user import User
-from backend.processing.embedding import load_embedding_model, merge_embeddings
 from backend.utils.config_manager import config_manager
-import numpy as np
-from pyannote.core import Segment
+from backend.celery_app import celery_app
 
 router = APIRouter()
 
@@ -187,67 +185,26 @@ async def update_segment_speaker(
     db.add(transcript)
     
     # 4. Update Embeddings (Active Learning)
-    # Extract embedding for this segment
+    # Dispatch task to worker
     try:
-        if recording.audio_path and os.path.exists(recording.audio_path) and target_recording_speaker:
-            # Load model
-            device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
-            model = load_embedding_model(device)
-            
-            # Crop segment
+        if recording.audio_path and target_recording_speaker:
             start = segment['start']
             end = segment['end']
             duration = end - start
             
-            if duration > 0.5: # Only extract if segment is long enough
-                # Pyannote Segment
-                seg = Segment(start, end)
-                
-                # Extract
-                emb = model.crop(recording.audio_path, seg)
-                
-                # Handle potential Tuple return (some pyannote versions)
-                if isinstance(emb, tuple):
-                    emb = emb[0]
-
-                # Handle pyannote SlidingWindowFeature
-                if hasattr(emb, 'data'):
-                    emb_data = emb.data
-                else:
-                    emb_data = emb
-                
-                emb_array = np.array(emb_data)
-                if len(emb_array.shape) == 2:
-                    emb_array = np.mean(emb_array, axis=0)
-                
-                new_embedding = emb_array.tolist()
-                
-                # Merge into RecordingSpeaker
-                # Use high alpha (0.5) because this is explicit user correction
-                current_emb = target_recording_speaker.embedding if target_recording_speaker.embedding is not None else []
-                
-                target_recording_speaker.embedding = merge_embeddings(
-                    current_emb, 
-                    new_embedding, 
-                    alpha=0.5
+            if duration > 0.5:
+                celery_app.send_task(
+                    "backend.worker.tasks.update_speaker_embedding_task",
+                    args=[
+                        recording_id,
+                        start,
+                        end,
+                        target_recording_speaker.id
+                    ]
                 )
-                db.add(target_recording_speaker)
-                
-                # Merge into GlobalSpeaker
-                if target_recording_speaker.global_speaker_id:
-                    gs = await db.get(GlobalSpeaker, target_recording_speaker.global_speaker_id)
-                    if gs:
-                        gs_emb = gs.embedding if gs.embedding is not None else []
-                        gs.embedding = merge_embeddings(
-                            gs_emb,
-                            new_embedding,
-                            alpha=0.5
-                        )
-                        db.add(gs)
-                        
     except Exception as e:
         # Log error but don't fail the request
-        print(f"Failed to update embeddings: {e}")
+        print(f"Failed to dispatch embedding update task: {e}")
         
     # 5. Cleanup Old Speaker (if unused)
     if old_label and old_label != target_label:

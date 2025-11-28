@@ -22,6 +22,10 @@ def preload_models():
     hf_token = config_manager.get("hf_token")
     whisper_model_size = config_manager.get("whisper_model_size", "base")
     
+    device = config_manager.get("processing_device", "auto")
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     if not hf_token:
         logger.warning("HF_TOKEN not found in config. Pyannote model download might fail if not already cached.")
     else:

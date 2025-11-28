@@ -20,7 +20,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.api
     # Added --reload for hot reloading during development
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
@@ -41,7 +41,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.worker
     command: sh -c "python3 backend/preload_models.py && celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo"
     volumes:
       - .:/app

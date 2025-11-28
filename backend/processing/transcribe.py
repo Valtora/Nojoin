@@ -95,7 +95,10 @@ def transcribe_audio(audio_path: str, config: dict = None) -> dict | None:
     # Use provided config or fall back to system config
     get_config = config.get if config else config_manager.get
     model_size = get_config("whisper_model_size", "base")
-    device = get_config("processing_device", "cpu")
+    device = get_config("processing_device", "auto")
+    
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     logger.info(f"Starting transcription for {audio_path} using model: {model_size}, device: {device}")
 

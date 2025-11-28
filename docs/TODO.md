@@ -1,24 +1,6 @@
 # Nojoin To-Do List
 Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
-## Refactor: Decouple API from Heavy ML Dependencies
-- **Objective**: Split the monolithic Docker image into a lightweight `api` image (Python slim) and a heavy `worker` image (PyTorch/CUDA).
-- **Current Issue**: The API container downloads 5GB+ of PyTorch/CUDA dependencies because it shares the `Dockerfile` with the worker and imports `backend.processing.embedding` (which imports `torch` and `pyannote`).
-- **Plan**:
-    1.  **Refactor `backend/processing/embedding.py`**:
-        -   Move heavy imports (`torch`, `pyannote`, `numpy`) inside functions or into a separate module that is ONLY imported by the worker.
-        -   Create an interface/abstraction for embedding operations.
-    2.  **Offload Embedding Tasks**:
-        -   Identify API endpoints that trigger embedding logic (e.g., `update_segment_speaker` in `transcripts.py`).
-        -   Move the actual embedding calculation/merging logic to a Celery task (`backend/worker/tasks.py`).
-        -   Update the API to dispatch this task asynchronously instead of running it in-process.
-    3.  **Create Separate Dockerfiles**:
-        -   `docker/Dockerfile.api`: Base `python:3.11-slim`. Install only `fastapi`, `sqlmodel`, `celery`, etc.
-        -   `docker/Dockerfile.worker`: Base `pytorch/pytorch...`. Install full ML stack.
-    4.  **Update `docker-compose.yml`**:
-        -   Point `api` service to `Dockerfile.api`.
-        -   Point `worker` service to `Dockerfile.worker`.
-
 ## Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
 
