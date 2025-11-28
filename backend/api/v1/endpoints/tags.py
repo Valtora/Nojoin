@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
 from sqlmodel import select
 from pydantic import BaseModel
 
@@ -177,11 +178,14 @@ async def delete_tag(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Delete a global tag.
+    Delete a global tag. This will also remove the tag from all recordings.
     """
     tag = await db.get(Tag, tag_id)
     if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # First, bulk delete all RecordingTag associations for this tag
+    await db.execute(delete(RecordingTag).where(RecordingTag.tag_id == tag_id))
         
     await db.delete(tag)
     await db.commit()
