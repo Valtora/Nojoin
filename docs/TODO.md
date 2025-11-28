@@ -1,6 +1,20 @@
 # Nojoin To-Do List
 Let's continue the development of Nojoin. Read Nojoin-Development-Instructions.md in the docs directory to get an understanding of the project. Your goal is now to present a plan for me to approve in order to achieve the goals and/or tasks and/or TODO items set out below after the colons:
 
+## UI/UX Improvements
+- In Light mode:
+  - The 'Account' tab in the Settings page has text that is hard to read due to low contrast. Improve the contrast for better readability.
+  - The entry fields and drop down menus in every tab of the Settings page have borders that are not very visible. Enhance the visibility of these borders.
+  - The 'Admin Panel' tab in the Settings page has contrast problems with the colours used for the user list table and buttons. Improve the contrast for better readability.
+
+## Settings and Configuration Storage Refactor
+- Review current settings and configuration storage mechanisms in the frontend, backend, and companion app.
+- Design a unified and consistent approach for storing and managing settings across all components.
+- User settings should be stored in a secure and efficient manner, perhaps in the backend database with appropriate encryption for sensitive data.
+- The existing `config.json` file in the backend should be refactored to only contain application-wide settings that are not user-specific.
+- You will need to update the `config_manager.py` module to support loading and saving user-specific settings as well as application-wide settings.
+- The `SettingsPage` component in the frontend should be updated to interact with the new settings management and storage mechanism.
+
 ## Security Audits & Improvements
 - Conduct a thorough security audit of the entire application, including frontend, backend, and companion app
 - Audit the authentication and authorization mechanisms to ensure that users can only access their own data.

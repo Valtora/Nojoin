@@ -39,6 +39,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 *   **UI:** Minimalist system tray menu for status indication, updates, help, and exit. **No recording controls in the tray.**
 
+### 2.4 Configuration Management
+*   **Unified Strategy:** Configuration is split between system-wide infrastructure settings and user-specific preferences.
+*   **System Config:** Stored in `data/config.json` (Server) and `config.json` (Companion). Includes infrastructure URLs, device paths, and hardware settings.
+*   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences, and AI settings.
+*   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
+
 ---
 
 ## 3. Core Features

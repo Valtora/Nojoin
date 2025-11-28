@@ -67,38 +67,16 @@ You are an expert meeting assistant. Using the mapping of speaker labels to real
         )
 
     @staticmethod
-    def _inject_user_context(template: str) -> str:
-        user_context = config_manager.get("llm_user_context", "").strip()
-        if not user_context:
-            return template
-        
-        if "{user_context}" in template:
-            return template.format(user_context=user_context, transcript="{transcript}", mapping_table="{mapping_table}")
-            # Wait, if I format here, I need to be careful about other placeholders.
-            # If I use .format(), I must provide all keys or escape them.
-            # But the other keys are not known yet.
-            # So I should probably just replace {user_context} string manually.
-        else:
-            # Append context if not present
-            return template + f"\n\nHere is some additional context about the user and their preferences:\n{user_context}\n"
-
-    @staticmethod
     def get_speaker_prompt_template() -> str:
-        custom = config_manager.get("llm_templates", {}).get("speaker_prompt")
-        template = custom if custom else LLMBackend.get_default_speaker_prompt_template()
-        return LLMBackend._inject_user_context(template)
+        return LLMBackend.get_default_speaker_prompt_template()
 
     @staticmethod
     def get_notes_prompt_template() -> str:
-        custom = config_manager.get("llm_templates", {}).get("notes_prompt")
-        template = custom if custom else LLMBackend.get_default_notes_prompt_template()
-        return LLMBackend._inject_user_context(template)
+        return LLMBackend.get_default_notes_prompt_template()
 
     @staticmethod
     def get_title_prompt_template() -> str:
-        custom = config_manager.get("llm_templates", {}).get("title_prompt")
-        template = custom if custom else LLMBackend.get_default_title_prompt_template()
-        return LLMBackend._inject_user_context(template)
+        return LLMBackend.get_default_title_prompt_template()
 
     @staticmethod
     def parse_mapping_table(response_text: str) -> Dict[str, str]:
@@ -267,12 +245,9 @@ class GeminiLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        qa_context = config_manager.get("llm_qa_context", "").strip()
-        context_section = f"\n\nHere is some additional context about the user and their preferences:\n{qa_context}\n" if qa_context else ""
-
         prompt = f"""
 You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-{context_section}
+
 # Meeting Notes:
 {meeting_notes}
 
@@ -376,12 +351,9 @@ class OpenAILLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        qa_context = config_manager.get("llm_qa_context", "").strip()
-        context_section = f"\n\nHere is some additional context about the user and their preferences:\n{qa_context}\n" if qa_context else ""
-
         prompt = f"""
 You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-{context_section}
+
 # Meeting Notes:
 {meeting_notes}
 
@@ -491,12 +463,9 @@ class AnthropicLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        qa_context = config_manager.get("llm_qa_context", "").strip()
-        context_section = f"\n\nHere is some additional context about the user and their preferences:\n{qa_context}\n" if qa_context else ""
-
         prompt = f"""
 You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-{context_section}
+
 # Meeting Notes:
 {meeting_notes}
 

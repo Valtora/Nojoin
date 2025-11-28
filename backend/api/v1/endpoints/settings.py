@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
+from backend.utils.config_manager import get_default_user_settings, config_manager
 
 router = APIRouter()
 
@@ -16,13 +17,30 @@ class SettingsUpdate(BaseModel):
     whisper_model_size: Optional[str] = None
     theme: Optional[str] = None
     hf_token: Optional[str] = None
-    worker_url: Optional[str] = None
-    companion_url: Optional[str] = None
     gemini_model: Optional[str] = None
     openai_model: Optional[str] = None
     anthropic_model: Optional[str] = None
-    infer_meeting_title: Optional[bool] = None
     enable_auto_voiceprints: Optional[bool] = None
+    # System settings that might be passed but should be ignored or handled separately if we allowed admin to change them
+    # For now, we only allow user settings update here.
+
+def _merge_settings(user_settings: dict) -> dict:
+    """
+    Merges system config, default user settings, and user-specific settings.
+    Priority: User Settings > Default User Settings > System Config
+    """
+    # 1. Start with System Config (read-only for users)
+    merged = config_manager.get_all()
+    
+    # 2. Apply Default User Settings
+    default_user_settings = get_default_user_settings()
+    merged.update(default_user_settings)
+    
+    # 3. Apply User Specific Settings
+    if user_settings:
+        merged.update(user_settings)
+        
+    return merged
 
 @router.get("", response_model=Any)
 async def get_settings_root(
@@ -30,8 +48,9 @@ async def get_settings_root(
 ) -> Any:
     """
     Get current user settings (root path).
+    Returns a merged view of system config, defaults, and user overrides.
     """
-    return current_user.settings
+    return _merge_settings(current_user.settings)
 
 @router.get("/", response_model=Any)
 async def get_settings(
@@ -39,8 +58,9 @@ async def get_settings(
 ) -> Any:
     """
     Get current user settings.
+    Returns a merged view of system config, defaults, and user overrides.
     """
-    return current_user.settings
+    return _merge_settings(current_user.settings)
 
 @router.post("", response_model=Any)
 async def update_settings_root(
@@ -52,7 +72,8 @@ async def update_settings_root(
     Update user settings (root path).
     """
     # Update user settings
-    current_settings = current_user.settings or {}
+    # Create a copy to ensure SQLAlchemy detects the change
+    current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
     # Merge new settings
@@ -62,7 +83,8 @@ async def update_settings_root(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
-    return current_user.settings
+    
+    return _merge_settings(current_user.settings)
 
 @router.post("/", response_model=Any)
 async def update_settings(
@@ -74,7 +96,8 @@ async def update_settings(
     Update user settings.
     """
     # Update user settings
-    current_settings = current_user.settings or {}
+    # Create a copy to ensure SQLAlchemy detects the change
+    current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
     # Merge new settings
@@ -84,4 +107,5 @@ async def update_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
-    return current_user.settings
+    
+    return _merge_settings(current_user.settings)

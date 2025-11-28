@@ -32,13 +32,16 @@ def _get_default_models():
 # Get default models
 _default_models = _get_default_models()
 
-DEFAULT_CONFIG = {
-    "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
-    "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
+DEFAULT_SYSTEM_CONFIG = {
+    "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
+    "companion_url": "http://localhost:12345", # Default Companion App URL
     "recordings_directory": "recordings",  # Relative to user data directory
-    # Add other settings as needed, e.g., default input/output devices
+    "processing_device": "cuda" if torch.cuda.is_available() else "cpu", # Default to GPU if available
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
+}
+
+DEFAULT_USER_SETTINGS = {
     "theme": "dark", # Default theme (dark, light)
     "llm_provider": "gemini",  # LLM provider selection
     "gemini_api_key": None,     # Google Gemini API key
@@ -49,27 +52,7 @@ DEFAULT_CONFIG = {
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
-    "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
-    "companion_url": "http://localhost:12345", # Default Companion App URL
-    "llm_user_context": "", # Custom user context/instructions for LLM (Meeting Generation)
-    "llm_qa_context": "", # Custom user context/instructions for LLM (Q&A Chat)
-    "llm_templates": {}, # Custom overrides for LLM prompt templates
-    "advanced": {
-        "log_verbosity": "INFO"
-    },
-    "min_meeting_length_seconds": 1, # Always at least 1 second
-    "ui_scale": {
-        "mode": "auto",  # "auto", "manual"
-        "scale_factor": 1.0,  # Manual scale factor override (when mode is "manual")
-        "tier": None  # Auto-detected tier (for display purposes)
-    },
-    "update_preferences": {
-        "check_on_startup": True,
-        "last_check": None,
-        "last_reminded": None,
-        "reminder_preference": "one_week",
-        "skip_version": None
-    }
+    "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
@@ -90,6 +73,9 @@ def get_available_processing_devices():
         devices.append("cuda")
     return devices
 
+def get_default_user_settings():
+    """Returns the default user settings."""
+    return DEFAULT_USER_SETTINGS.copy()
 
 
 class ConfigManager:
@@ -104,7 +90,7 @@ class ConfigManager:
 
     def _load_config(self):
         """Loads configuration from file, applying defaults for missing keys."""
-        config = DEFAULT_CONFIG.copy()
+        config = DEFAULT_SYSTEM_CONFIG.copy()
         try:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -113,8 +99,13 @@ class ConfigManager:
                     loaded_config.pop("save_raw_transcript", None)
                     loaded_config.pop("save_diarized_transcript", None)
                     loaded_config.pop("transcripts_directory", None)  # Remove deprecated transcripts directory
-                    # Update default config with loaded values, preserving defaults for missing keys
-                    config.update(loaded_config) 
+                    
+                    # Filter out keys that are not in DEFAULT_SYSTEM_CONFIG
+                    # This ensures config.json only contains system settings
+                    filtered_config = {k: v for k, v in loaded_config.items() if k in DEFAULT_SYSTEM_CONFIG}
+                    
+                    # Update default config with loaded values
+                    config.update(filtered_config) 
                     logger.info(f"Configuration loaded from {self.config_path}")
             else:
                 logger.info(f"Configuration file not found at {self.config_path}. Using default settings.")
@@ -124,19 +115,13 @@ class ConfigManager:
             # Ensure necessary directories exist
             self._ensure_dirs_exist(config)
 
-            # --- Ensure min_meeting_length_seconds is always an int >= 1 ---
-            min_length = config.get("min_meeting_length_seconds", 1)
-            if not isinstance(min_length, int) or min_length < 1:
-                min_length = 1
-            config["min_meeting_length_seconds"] = min_length
-
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from {self.config_path}: {e}. Using default settings.", exc_info=True)
-            config = DEFAULT_CONFIG.copy() # Reset to defaults on error
+            config = DEFAULT_SYSTEM_CONFIG.copy() # Reset to defaults on error
             self._ensure_dirs_exist(config)
         except Exception as e:
             logger.error(f"Error loading configuration: {e}. Using default settings.", exc_info=True)
-            config = DEFAULT_CONFIG.copy() # Reset to defaults on error
+            config = DEFAULT_SYSTEM_CONFIG.copy() # Reset to defaults on error
             self._ensure_dirs_exist(config)
         return config
 
