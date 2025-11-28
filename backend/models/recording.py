@@ -68,6 +68,7 @@ class RecordingSpeakerRead(BaseDBModel):
 class TranscriptRead(BaseDBModel):
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = []
+    notes: Optional[str] = None
 
 class TagRead(BaseDBModel):
     name: str

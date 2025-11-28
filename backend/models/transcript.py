@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column, BigInteger
+from sqlalchemy import Column, BigInteger, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import BaseDBModel
 
@@ -14,5 +14,6 @@ class Transcript(BaseDBModel, table=True):
     
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSONB))
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     
     recording: "Recording" = Relationship(back_populates="transcript")

@@ -1,16 +1,20 @@
 'use client';
 
-import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor } from '@/lib/api';
+import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor, generateNotes, updateNotes, findAndReplaceNotes, exportContent, ExportContentType } from '@/lib/api';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
+import NotesView from '@/components/NotesView';
+import ExportModal from '@/components/ExportModal';
 import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Edit2, FileText, StickyNote } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
 import { COLOR_PALETTE, getColorByKey } from '@/lib/constants';
+
+type ActivePanel = 'transcript' | 'notes';
 
 const getStatusMessage = (recording: Recording) => {
     if (recording.status === RecordingStatus.UPLOADING) {
@@ -64,6 +68,17 @@ export default function RecordingPage({ params }: PageProps) {
 
   // Speaker Colors State
   const [speakerColors, setSpeakerColors] = useState<Record<string, string>>({});
+
+  // Panel State (Transcript or Notes)
+  const [activePanel, setActivePanel] = useState<ActivePanel>('transcript');
+  const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  
+  // Export Modal State
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  // Notes History (separate from transcript history)
+  const [notesHistory, setNotesHistory] = useState<string[]>([]);
+  const [notesFuture, setNotesFuture] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchRecording = async () => {
@@ -362,6 +377,102 @@ export default function RecordingPage({ params }: PageProps) {
       }
   };
 
+  // Notes Handlers
+  const handleGenerateNotes = async () => {
+      if (!recording) return;
+      setIsGeneratingNotes(true);
+      try {
+          const result = await generateNotes(recording.id);
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+          setActivePanel('notes'); // Switch to notes panel after generation
+      } catch (e: any) {
+          console.error("Failed to generate notes:", e);
+          alert(e.response?.data?.detail || "Failed to generate notes. Please check your LLM settings.");
+      } finally {
+          setIsGeneratingNotes(false);
+      }
+  };
+
+  const handleNotesChange = async (notes: string) => {
+      if (!recording) return;
+      
+      // Push current notes to history
+      if (recording.transcript?.notes) {
+          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
+          setNotesFuture([]); // Clear redo stack
+      }
+      
+      try {
+          await updateNotes(recording.id, notes);
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Failed to update notes:", e);
+          alert("Failed to update notes.");
+      }
+  };
+
+  const handleNotesFindAndReplace = async (find: string, replace: string) => {
+      if (!recording) return;
+      
+      // Push current notes to history
+      if (recording.transcript?.notes) {
+          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
+          setNotesFuture([]);
+      }
+      
+      try {
+          await findAndReplaceNotes(recording.id, find, replace);
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Failed to find and replace in notes:", e);
+          alert("Failed to find and replace.");
+      }
+  };
+
+  const handleNotesUndo = async () => {
+      if (notesHistory.length === 0 || !recording) return;
+      
+      const previousNotes = notesHistory[notesHistory.length - 1];
+      const currentNotes = recording.transcript?.notes || '';
+      
+      setNotesFuture(prev => [currentNotes, ...prev]);
+      setNotesHistory(prev => prev.slice(0, -1));
+      
+      try {
+          await updateNotes(recording.id, previousNotes);
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Notes undo failed:", e);
+      }
+  };
+
+  const handleNotesRedo = async () => {
+      if (notesFuture.length === 0 || !recording) return;
+      
+      const nextNotes = notesFuture[0];
+      const currentNotes = recording.transcript?.notes || '';
+      
+      setNotesHistory(prev => [...prev, currentNotes]);
+      setNotesFuture(prev => prev.slice(1));
+      
+      try {
+          await updateNotes(recording.id, nextNotes);
+          const updated = await getRecording(recording.id);
+          setRecording(updated);
+      } catch (e) {
+          console.error("Notes redo failed:", e);
+      }
+  };
+
+  const handleExport = (contentType: ExportContentType) => {
+      if (!recording) return;
+      exportContent(recording.id, contentType);
+  };
+
   const speakerMap = useMemo(() => {
     const map: Record<string, string> = {};
     if (recording?.speakers) {
@@ -470,33 +581,82 @@ export default function RecordingPage({ params }: PageProps) {
         ) : (
             <>
                 <div className="flex-1 flex flex-col min-h-0">
+                    {/* Panel Tabs */}
+                    <div className="bg-gray-200 dark:bg-gray-900 border-b-2 border-gray-400 dark:border-gray-700 flex-shrink-0">
+                        <div className="flex">
+                            <button
+                                onClick={() => setActivePanel('transcript')}
+                                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
+                                    activePanel === 'transcript'
+                                        ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
+                                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                }`}
+                            >
+                                <FileText className="w-4 h-4" />
+                                Transcript
+                            </button>
+                            <button
+                                onClick={() => setActivePanel('notes')}
+                                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
+                                    activePanel === 'notes'
+                                        ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
+                                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                }`}
+                            >
+                                <StickyNote className="w-4 h-4" />
+                                Notes
+                                {recording.transcript?.notes && (
+                                    <span className="w-2 h-2 rounded-full bg-green-500" title="Notes available" />
+                                )}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Panel Content */}
                     <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
-                        {(recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
-                            <TranscriptView
-                                recordingId={recording.id}
-                                segments={recording.transcript.segments}
-                                currentTime={currentTime}
-                                onPlaySegment={handlePlaySegment}
-                                isPlaying={isPlaying}
-                                onPause={handlePause}
-                                onResume={handleResume}
-                                speakerMap={speakerMap}
-                                speakers={recording.speakers || []}
-                                globalSpeakers={globalSpeakers}
-                                onRenameSpeaker={handleRenameSpeaker}
-                                onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
-                                onUpdateSegmentText={handleUpdateSegmentText}
-                                onFindAndReplace={handleFindAndReplace}
-                                speakerColors={speakerColors}
-                                onUndo={handleUndo}
-                                onRedo={handleRedo}
-                                canUndo={history.length > 0 && !isUndoing}
-                                canRedo={future.length > 0 && !isUndoing}
-                            />
+                        {activePanel === 'transcript' ? (
+                            (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
+                                <TranscriptView
+                                    recordingId={recording.id}
+                                    segments={recording.transcript.segments}
+                                    currentTime={currentTime}
+                                    onPlaySegment={handlePlaySegment}
+                                    isPlaying={isPlaying}
+                                    onPause={handlePause}
+                                    onResume={handleResume}
+                                    speakerMap={speakerMap}
+                                    speakers={recording.speakers || []}
+                                    globalSpeakers={globalSpeakers}
+                                    onRenameSpeaker={handleRenameSpeaker}
+                                    onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
+                                    onUpdateSegmentText={handleUpdateSegmentText}
+                                    onFindAndReplace={handleFindAndReplace}
+                                    speakerColors={speakerColors}
+                                    onUndo={handleUndo}
+                                    onRedo={handleRedo}
+                                    canUndo={history.length > 0 && !isUndoing}
+                                    canRedo={future.length > 0 && !isUndoing}
+                                    onExport={() => setShowExportModal(true)}
+                                />
+                            ) : (
+                                <p className="text-gray-500 dark:text-gray-400 italic p-6">
+                                    No transcript available yet.
+                                </p>
+                            )
                         ) : (
-                            <p className="text-gray-500 dark:text-gray-400 italic p-6">
-                                No transcript available yet.
-                            </p>
+                            <NotesView
+                                recordingId={recording.id}
+                                notes={recording.transcript?.notes || null}
+                                onNotesChange={handleNotesChange}
+                                onGenerateNotes={handleGenerateNotes}
+                                onFindAndReplace={handleNotesFindAndReplace}
+                                onUndo={handleNotesUndo}
+                                onRedo={handleNotesRedo}
+                                canUndo={notesHistory.length > 0}
+                                canRedo={notesFuture.length > 0}
+                                isGenerating={isGeneratingNotes}
+                                onExport={() => setShowExportModal(true)}
+                            />
                         )}
                     </div>
                 </div>
@@ -515,6 +675,14 @@ export default function RecordingPage({ params }: PageProps) {
             </>
         )}
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          onExport={handleExport}
+          hasNotes={!!recording.transcript?.notes}
+      />
     </div>
   );
 }

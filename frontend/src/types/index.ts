@@ -52,6 +52,7 @@ export interface Transcript extends BaseDBModel {
   recording_id: number;
   text?: string;
   segments: TranscriptSegment[];
+  notes?: string;
 }
 
 export interface Tag extends BaseDBModel {
