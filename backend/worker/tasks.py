@@ -17,6 +17,7 @@ from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
 from backend.utils.config_manager import config_manager
+from backend.utils.status_manager import update_recording_status
 from backend.processing.LLM_Services import get_llm_backend
 
 logger = logging.getLogger(__name__)
@@ -191,14 +192,19 @@ def process_recording_task(self, recording_id: int):
         if transcript:
             transcript.text = full_text
             transcript.segments = final_segments
+            transcript.transcript_status = "completed"
             session.add(transcript)
         else:
             transcript = Transcript(
                 recording_id=recording.id,
                 text=full_text,
-                segments=final_segments
+                segments=final_segments,
+                transcript_status="completed"
             )
             session.add(transcript)
+        
+        session.commit()
+        update_recording_status(session, recording.id)
         
         # Save Speakers & Embeddings
         # Extract unique speakers from the final segments
@@ -350,6 +356,7 @@ def process_recording_task(self, recording_id: int):
                     transcript.notes_status = "generating"
                     session.add(transcript)
                     session.commit()
+                    update_recording_status(session, recording.id)
                     
                     llm = get_llm_backend(provider, api_key=api_key)
                     # We pass empty mapping because names are already resolved in transcript_text
@@ -357,6 +364,8 @@ def process_recording_task(self, recording_id: int):
                     transcript.notes = notes
                     transcript.notes_status = "completed"
                     session.add(transcript)
+                    session.commit()
+                    update_recording_status(session, recording.id)
                     logger.info(f"Generated meeting notes for recording {recording_id}")
                 else:
                     logger.warning(f"Skipping note generation: No API key for {provider}")
@@ -370,10 +379,10 @@ def process_recording_task(self, recording_id: int):
                 # Don't fail the whole process
 
         # Update Recording Status
-        recording.status = RecordingStatus.PROCESSED
         recording.processing_step = "Completed"
         session.add(recording)
         session.commit()
+        update_recording_status(session, recording.id)
         
         # Cleanup temp files
         try:
@@ -557,6 +566,7 @@ def generate_notes_task(self, recording_id: int):
         transcript.notes_status = "generating"
         session.add(transcript)
         session.commit()
+        update_recording_status(session, recording.id)
 
         # Get User Settings
         user_settings = {}
@@ -603,6 +613,7 @@ def generate_notes_task(self, recording_id: int):
         transcript.notes_status = "completed"
         session.add(transcript)
         session.commit()
+        update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
 
     except Exception as e:
@@ -612,3 +623,4 @@ def generate_notes_task(self, recording_id: int):
             transcript.notes_status = "error"
             session.add(transcript)
             session.commit()
+            update_recording_status(session, recording_id)

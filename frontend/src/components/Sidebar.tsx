@@ -86,6 +86,7 @@ export default function Sidebar() {
   const { addNotification } = useNotificationStore();
   const prevRecordingsRef = useRef<Map<number, RecordingStatus>>(new Map());
   const prevNotesStatusRef = useRef<Map<number, string>>(new Map());
+  const prevTranscriptStatusRef = useRef<Map<number, string>>(new Map());
   const { 
     currentView, 
     selectedTagIds, 
@@ -137,6 +138,18 @@ export default function Sidebar() {
           });
         }
         prevNotesStatusRef.current.set(rec.id, currentNotesStatus || 'pending');
+
+        // Check Transcript Status (Specific)
+        const prevTranscriptStatus = prevTranscriptStatusRef.current.get(rec.id);
+        const currentTranscriptStatus = rec.transcript.transcript_status;
+        
+        if (prevTranscriptStatus && prevTranscriptStatus !== 'completed' && currentTranscriptStatus === 'completed') {
+           addNotification({
+            type: 'success',
+            message: `Transcript ready for "${rec.name}"`,
+          });
+        }
+        prevTranscriptStatusRef.current.set(rec.id, currentTranscriptStatus || 'pending');
       }
     });
   }, [recordings, addNotification]);

@@ -69,6 +69,8 @@ class TranscriptRead(BaseDBModel):
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = []
     notes: Optional[str] = None
+    notes_status: str = "pending"
+    transcript_status: str = "pending"
 
 class TagRead(BaseDBModel):
     name: str

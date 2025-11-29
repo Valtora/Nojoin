@@ -534,14 +534,3 @@ async def generate_notes(
     generate_notes_task.delay(recording_id)
     
     return {"status": "success", "message": "Note generation started"}
-        
-        return {"notes": notes, "status": "success"}
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        logger.error(f"LLM error generating notes: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating notes: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error generating notes: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating notes")
