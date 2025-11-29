@@ -498,7 +498,12 @@ export default function NotesView({
                 <Edit2 className="w-4 h-4" />
               </div>
               {showSearch && findText ? (
-                <div className="whitespace-pre-wrap">{renderHighlightedNotes(notes)}</div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-2 italic">
+                    Showing plain text for search. Close search to view formatted notes.
+                  </div>
+                  <div className="whitespace-pre-wrap font-mono text-sm">{renderHighlightedNotes(notes)}</div>
+                </div>
               ) : (
                 renderMarkdown(notes)
               )}
