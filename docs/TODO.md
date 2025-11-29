@@ -1,7 +1,23 @@
 # Nojoin To-Do List
 
-## Prompt For Supervised Agents
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below:
+
+### First-Run Improvements - API Key and HF Token Validation
+- Implement validation for the selected LLM Provider's API key and Hugging Face token entered during the first-run setup process. This validation should check that the provided keys are in the correct format and are able to authenticate with their respective services. If the keys are invalid, provide clear error messages to the user and prompt them to re-enter valid keys before proceeding with the setup.
+
+### Import Existing Recordings Feature
+- Audio recordings fail to import when the user inputs a date it causes an input formatting bug. The date picker is also using the browser's default date picker which is not consistent across browsers and platforms. Implement a more modern date picker component that provides a consistent user experience across all supported browsers and platforms. Ensure that the date input is properly validated and formatted to prevent any input formatting bugs during the import process.
+
+### Speaker Management - Speaker Renaming
+- Implement double click to edit on speaker names as the default action. The user can still use the context menu to rename speakers if they prefer but double clicking should be the primary method for renaming speakers.
+
+### Context Menus - Consistency & Usability
+- Currently all context menus across the app do not have any borders or shadows which makes them blend into the background and hard to see. Add borders and shadows to all context menus across the app to improve their visibility and usability. Ensure that the styling is consistent across all context menus and aligns with the overall design aesthetic of the app. Also ensure that each option/button in the context menus have appropriate hover and active states to provide visual feedback to the user when interacting with the menus as well as clear separation between different options/buttons.
+
+### Meeting Notes - Notes Editor
+- The text editor in the notes panel has a toolbar with formatting controls however the numbering and bullet point buttons don't work. Implement the functionality for the numbering and bullet point buttons in the notes editor toolbar. Ensure that when a user clicks on these buttons, the selected text is formatted accordingly with either numbered lists or bullet points. Test the functionality thoroughly to ensure it works as expected across different browsers and platforms. Similarly the URL link button uses the browser's default modal which is inconsistent across browsers. Implement a custom URL link modal that provides a consistent user experience across all supported browsers and platforms. Ensure that the modal allows users to easily add, edit, and remove hyperlinks in the notes editor. Finally, the created links are invisible (no formatting applied) and attempt to take the user to 'localhost:14443/recordings/ID/URLLINK' instead of the actual URL. Fix this bug so that the links are visible and direct the user to the correct external URL when clicked.
+- Remove the green dot from the 'Notes' tab in the Notes panel when there are unsaved changes. Since the notes are auto-saved, this green dot is misleading and unnecessary. Remove the icons before 'Transcript' and 'Notes' too.
+
 
 ### Meeting Transcription Feature - Translation
 - Use OpenAI's Whisper API to implement a translation feature for meeting transcriptions. This feature should allow users to select a target language for translation after the transcription is complete. The translated text should be displayed alongside the original transcript in the transcript window, with clear labeling to differentiate between the two. Explore how to best integrate this feature into the existing transcription workflow.
@@ -27,7 +43,7 @@ Let's continue the development of Nojoin. Read the PRD.md in the docs directory 
 ### Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
 
-### Settings
+### Settings - Custom Base URL and Ports
 - Implement the ability for the user to change the base URL and ports for the web app in the companion app settings modal. This is useful for users who want to self-host Nojoin on a different domain or port. They may instead need to change this using the docker-compose.yml file but having the option in the companion app settings modal is more user friendly. Explore how we could implement this feature.
 
 ### Security

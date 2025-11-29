@@ -11,9 +11,9 @@ aiofiles
 requests
 httpx
 python-dotenv
-torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
-torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126
-torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+torch==2.9.1 --index-url https://download.pytorch.org/whl/cu126
+torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
+torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu126
 torchcodec==0.7.0 --index-url https://download.pytorch.org/whl/cu126
 openai-whisper
 pyannote.audio

@@ -15,6 +15,13 @@ import contextlib
 
 from ..utils.config_manager import config_manager
 
+# Add safe globals for Pyannote
+try:
+    from pyannote.audio.core.task import Specifications, Problem, Resolution
+    torch.serialization.add_safe_globals([Specifications, Problem, Resolution])
+except ImportError:
+    pass # Should not happen if pyannote is installed, but safe to ignore
+
 logger = logging.getLogger(__name__)
 
 # Suppress specific warnings
@@ -74,6 +81,18 @@ def load_diarization_pipeline(device_str: str, hf_token: str = None):
         pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, token=hf_token)
         pipeline.to(torch.device(device_str))
         return pipeline
+    except OSError as e:
+        error_msg = str(e)
+        if "403" in error_msg or "forbidden" in error_msg.lower():
+             logger.error(f"Permission denied for Pyannote model: {e}")
+             raise RuntimeError(
+                 "Permission denied for Pyannote model. "
+                 "Please ensure you have accepted the terms of use on the Hugging Face model page "
+                 "and that your token has the correct permissions."
+             ) from e
+        else:
+             logger.error(f"Failed to load diarization pipeline (OSError): {e}", exc_info=True)
+             raise RuntimeError(f"Could not load diarization pipeline: {e}") from e
     except Exception as e:
         logger.error(f"Failed to load diarization pipeline: {e}", exc_info=True)
         raise RuntimeError("Could not load diarization pipeline. Please check your HF token and internet connection.") from e

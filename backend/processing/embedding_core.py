@@ -26,11 +26,31 @@ def load_embedding_model(device_str: str, hf_token: str = None):
         # Explicitly load the model first using Model.from_pretrained which accepts 'token'
         # Then pass the loaded model object to Inference, which doesn't accept token arguments in __init__
         logger.info(f"Loading embedding model: {DEFAULT_EMBEDDING_MODEL}")
-        loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
+        
+        # Fix for PyTorch 2.6+ weights_only=True default
+        # We trust the source of the model (pyannote/wespeaker-voxceleb-resnet34-LM)
+        try:
+            with torch.serialization.safe_globals([torch.torch_version.TorchVersion]):
+                loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
+        except AttributeError:
+            # Fallback for older torch versions that don't have safe_globals
+            loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
         
         model = Inference(loaded_model, window="sliding")
         model.to(torch.device(device_str))
         return model
+    except OSError as e:
+        error_msg = str(e)
+        if "403" in error_msg or "forbidden" in error_msg.lower():
+             logger.error(f"Permission denied for Embedding model: {e}")
+             raise RuntimeError(
+                 "Permission denied for Embedding model. "
+                 "Please ensure you have accepted the terms of use on the Hugging Face model page "
+                 "and that your token has the correct permissions."
+             ) from e
+        else:
+             logger.error(f"Failed to load embedding model (OSError): {e}", exc_info=True)
+             raise RuntimeError(f"Could not load embedding model: {e}") from e
     except Exception as e:
         logger.error(f"Failed to load embedding model: {e}", exc_info=True)
         raise RuntimeError("Could not load embedding model.") from e

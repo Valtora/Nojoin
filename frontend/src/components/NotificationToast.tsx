@@ -12,10 +12,10 @@ const icons = {
 };
 
 const bgColors = {
-  success: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900',
-  error: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900',
-  warning: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-900',
-  info: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900',
+  success: 'bg-green-100 dark:bg-green-950 border-green-200 dark:border-green-800',
+  error: 'bg-red-100 dark:bg-red-950 border-red-200 dark:border-red-800',
+  warning: 'bg-yellow-100 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800',
+  info: 'bg-blue-100 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
 };
 
 export default function NotificationToast() {
@@ -35,7 +35,7 @@ export default function NotificationToast() {
           key={notification.id}
           className={`
             pointer-events-auto
-            flex items-start gap-3 p-4 rounded-lg border shadow-lg transition-all duration-300 animate-in slide-in-from-right
+            flex items-start gap-3 p-4 rounded-lg border shadow-lg
             ${bgColors[notification.type]}
           `}
         >
@@ -49,9 +49,9 @@ export default function NotificationToast() {
           </div>
           <button
             onClick={() => dismissToast(notification.id)}
-            className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            className="flex-shrink-0 p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
       ))}

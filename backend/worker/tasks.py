@@ -150,6 +150,13 @@ def process_recording_task(self, recording_id: int):
         # Run Pyannote
         diarization_result = diarize_audio(processed_audio_path, config=merged_config)
         
+        if diarization_result is None:
+             msg = "Diarization failed (check HF token), falling back to single speaker."
+             logger.warning(msg)
+             recording.processing_step = msg
+             session.add(recording)
+             session.commit()
+        
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 80, 'stage': 'Saving'})
         
@@ -347,9 +354,9 @@ def process_recording_task(self, recording_id: int):
                 # Construct transcript text
                 transcript_text = ""
                 for seg in updated_segments:
-                    start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
-                    end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
-                    transcript_text += f"[{start_time} - {end_time}] {seg['speaker']}: {seg['text']}\n"
+                    seg_start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
+                    seg_end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
+                    transcript_text += f"[{seg_start_time} - {seg_end_time}] {seg['speaker']}: {seg['text']}\n"
                 
                 provider = merged_config.get("llm_provider", "gemini")
                 api_key = merged_config.get(f"{provider}_api_key")
@@ -393,7 +400,14 @@ def process_recording_task(self, recording_id: int):
         except Exception as cleanup_error:
             logger.warning(f"Failed to cleanup temp files: {cleanup_error}")
         
-        elapsed_time = time.time() - start_time
+        # Fix for potential string/float mismatch in duration
+        try:
+            duration_val = float(recording.duration_seconds) if recording.duration_seconds else 0.0
+            # Convert to HH:MM:SS for logging if needed, but don't crash on it
+        except (ValueError, TypeError):
+            duration_val = 0.0
+
+        elapsed_time = time.time() - float(start_time)
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         return {"status": "success", "recording_id": recording_id}
 

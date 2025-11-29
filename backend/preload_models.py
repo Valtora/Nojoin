@@ -12,6 +12,13 @@ import time
 # Add project root to path to allow imports from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Add safe globals for Pyannote
+try:
+    from pyannote.audio.core.task import Specifications, Problem, Resolution, Task
+    torch.serialization.add_safe_globals([Specifications, Problem, Resolution, Task])
+except ImportError:
+    pass # Should not happen if pyannote is installed, but safe to ignore
+
 from backend.utils.config_manager import config_manager
 
 logging.basicConfig(level=logging.INFO)
@@ -94,7 +101,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         logger.warning("HF_TOKEN not found. Pyannote model download might fail if not already cached.")
     else:
         report("Logging in to Hugging Face...", 10)
-        huggingface_hub.login(token=hf_token)
+        try:
+            huggingface_hub.login(token=hf_token)
+        except Exception as e:
+            logger.error(f"Hugging Face login failed: {e}")
+            raise ValueError(f"Hugging Face login failed: {str(e)}. Please check your token.")
 
     # 2. Preload Silero VAD
     report("Downloading Silero VAD model...", 20)
@@ -148,6 +159,19 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             # from_pretrained will download and cache it.
             Pipeline.from_pretrained(pipeline_name, token=hf_token)
             report(f"Pyannote pipeline ({pipeline_name}) loaded.", 95)
+        except OSError as e:
+            # This often happens if the user hasn't accepted the terms of use
+            error_msg = str(e)
+            if "403" in error_msg or "forbidden" in error_msg.lower():
+                 logger.error(f"Permission denied for Pyannote model: {e}")
+                 raise ValueError(
+                     f"Permission denied for {pipeline_name}. "
+                     "Please ensure you have accepted the terms of use on the Hugging Face model page "
+                     "and that your token has the correct permissions."
+                 )
+            else:
+                 logger.error(f"Failed to download Pyannote pipeline: {e}")
+                 raise e
         except Exception as e:
             logger.error(f"Failed to load Pyannote pipeline: {e}")
             raise e

@@ -163,14 +163,14 @@ export default function SetupPage() {
                 <CheckCircle className="w-8 h-8 text-white" />
               </div>
             ) : (
-              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
+              <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center animate-pulse">
                 <Download className="w-8 h-8 text-white" />
               </div>
             )}
           </div>
           
           <h2 className="text-2xl font-bold mb-2">
-            {downloadComplete ? 'Setup Complete!' : 'Setting Up Nojoin'}
+            {downloadComplete ? 'Setup Complete!' : <>Setting Up <span className="text-orange-500">Nojoin</span></>}
           </h2>
           <p className="text-gray-400 mb-6">
             {downloadComplete 
@@ -180,7 +180,7 @@ export default function SetupPage() {
 
           <div className="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
             <div 
-              className="bg-blue-500 h-4 rounded-full transition-all duration-500 ease-out"
+              className="bg-orange-500 h-4 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${downloadProgress}%` }}
             />
           </div>

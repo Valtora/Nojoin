@@ -94,14 +94,38 @@ async def get_task_status(task_id: str) -> Any:
     Get the status of a background task.
     """
     task_result = AsyncResult(task_id)
+    
+    # Handle potential serialization errors if result contains exceptions
+    result_data = None
+    if task_result.status == 'FAILURE':
+        result_data = str(task_result.result)
+    elif task_result.status == 'SUCCESS':
+        result_data = task_result.result
+    else:
+        # For PENDING, STARTED, RETRY etc.
+        # If it's an exception object, convert to string
+        if isinstance(task_result.result, Exception):
+             result_data = str(task_result.result)
+        else:
+             result_data = task_result.result
+
     response = {
         "task_id": task_id,
         "status": task_result.status,
-        "result": task_result.result,
+        "result": result_data,
     }
+    
     # If the task is in a custom state (like PROCESSING), result might be the meta dict
+    # Celery stores meta info in .info for custom states
     if task_result.status == 'PROCESSING':
-         response["progress"] = task_result.info.get('progress', 0)
-         response["message"] = task_result.info.get('message', '')
+         # Ensure we're accessing a dict
+         info = task_result.info
+         if isinstance(info, dict):
+            response["progress"] = info.get('progress', 0)
+            response["message"] = info.get('message', '')
+            # Pass through other meta fields like speed/eta if present
+            response["result"] = info 
+         else:
+            response["message"] = str(info)
     
     return response

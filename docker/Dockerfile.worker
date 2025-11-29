@@ -32,5 +32,11 @@ RUN grep -vE "^torch|^torchaudio|^torchvision|^torchcodec" requirements.txt > re
 # Copy the rest of the application code
 COPY . .
 
+# Create a non-root user and switch to it
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
 # Default command for worker
 CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "--loglevel=info", "--pool=solo"]
