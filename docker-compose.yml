@@ -71,8 +71,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "14141:14141"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -85,11 +83,15 @@ services:
   nginx:
     image: nginx:alpine
     ports:
+      - "14141:80"
       - "14443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/cert.crt:/etc/nginx/certs/cert.crt:ro
       - ./nginx/cert.key:/etc/nginx/certs/cert.key:ro
+    depends_on:
+      - frontend
+      - api
     restart: unless-stopped
 
 volumes:

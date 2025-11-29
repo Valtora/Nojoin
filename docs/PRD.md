@@ -49,6 +49,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 
 ### 2.5 Security
 *   **SSL/TLS:** All communication between components (Frontend, Backend, Companion) is encrypted via HTTPS using Nginx as a reverse proxy.
+*   **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 *   **Authentication:** JWT-based authentication for API access.
 *   **Authorization:** Strict ownership checks ensure users can only access their own data.
 *   **CORS:** Restricted to allowed origins.
@@ -62,7 +63,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Local Control Server:** Exposes a local HTTP/WebSocket server (e.g., on `localhost:12345`) to receive commands (`start`, `stop`, `pause`, `resume`) from the Web Client.
 *   **System Tray Resident:**
     *   **Status:** Visual indication of state (Idle, Recording, Paused, Error).
-    *   **Menu:** "Check for Updates", "Help", "Exit".
+    *   **Menu:** "Open Nojoin", "Check for Updates", "Help", "About", "Restart", "Exit".
 *   **Dual-Channel Capture:** Simultaneously records system output (what you hear) and microphone input (what you say).
 *   **Pause & Resume:** Supports pausing via Web Client commands.
 *   **Smart Uploads:**

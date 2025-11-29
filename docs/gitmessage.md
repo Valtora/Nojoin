@@ -1,38 +1,22 @@
-# Meeting Notes Feature Implementation
+# HTTPS Security Enforcement and Companion App Update
 
 ## Summary
-Implement a comprehensive Meeting Notes feature powered by LLM services that allows users to generate, view, and edit AI-powered meeting summaries alongside the transcript.
+Enforce HTTPS-only access to Nojoin by redirecting HTTP (port 14141) to HTTPS (port 14443), and update the companion app's system tray menu for consistent branding.
 
 ## Changes Made
 
-### Backend
-- Added `notes` field to Transcript model for storing generated meeting notes
-- Created database migration for the notes column
-- Enhanced LLM_Services.py with a comprehensive prompt for high-quality meeting notes generation
-- Added new API endpoints:
-  - GET /transcripts/{id}/notes - Retrieve meeting notes
-  - PUT /transcripts/{id}/notes - Update meeting notes
-  - POST /transcripts/{id}/notes/generate - Generate notes using LLM
-  - POST /transcripts/{id}/notes/replace - Find/replace in notes (also updates transcript)
-- Updated export endpoint to support content_type parameter (transcript, notes, or both)
-- Modified find/replace endpoints to apply changes to both transcript and notes for consistency
+### Security (HTTP to HTTPS Redirect)
+- Modified nginx.conf to redirect HTTP requests (port 80) to HTTPS on port 14443
+- Updated docker-compose.yml to:
+  - Route port 14141 through nginx for HTTP redirect instead of exposing frontend directly
+  - Removed direct frontend port exposure to prevent HTTP access bypass
+  - Added nginx dependency on frontend and api services for proper startup order
 
-### Frontend
-- Created NotesView component with:
-  - Markdown rendering support
-  - Search and find/replace functionality
-  - Generate notes button with loading state
-  - Edit mode for manual modifications
-- Created ExportModal component for selecting export type
-- Added tab navigation to switch between Transcript and Notes panels
-- Updated TranscriptView to support export modal integration
-- Added notes-related API functions (getNotes, updateNotes, generateNotes, etc.)
-- Implemented separate undo/redo history for notes
+### Companion App
+- Changed tray menu item from "Open Web App" to "Open Nojoin" for consistent branding
+- Updated config.example.json to use HTTPS URL (https://localhost:14443/api/v1) instead of HTTP
 
-### Meeting Notes Prompt Template
-The new prompt generates structured notes with:
-- Topics Discussed
-- Comprehensive Summary
-- Detailed Notes per topic (key points, discussions, decisions, rationales, open questions)
-- Action Items/Tasks with assignments
-- Miscellaneous information
+### Architecture
+- All web traffic now flows through nginx reverse proxy
+- Port 14141 (HTTP) automatically redirects to port 14443 (HTTPS)
+- Frontend container no longer exposes ports directly, only accessible via nginx
