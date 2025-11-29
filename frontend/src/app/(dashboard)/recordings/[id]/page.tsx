@@ -76,9 +76,9 @@ export default function RecordingPage({ params }: PageProps) {
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Notes History (separate from transcript history)
-  const [notesHistory, setNotesHistory] = useState<string[]>([]);
-  const [notesFuture, setNotesFuture] = useState<string[]>([]);
+  // Notes History (separate from transcript history, can include null values)
+  const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
+  const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
 
   useEffect(() => {
     const fetchRecording = async () => {
@@ -234,11 +234,9 @@ export default function RecordingPage({ params }: PageProps) {
       setHistory(prev => [...prev, { segments: segmentsSnapshot, description }]);
       setFuture([]);
       
-      // Push notes history
-      if (recording.transcript?.notes) {
-          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
-          setNotesFuture([]);
-      }
+      // Always push notes history, even if notes is null/empty
+      setNotesHistory(prev => [...prev, recording.transcript?.notes ?? null]);
+      setNotesFuture([]);
   }, [recording]);
 
   const handleUndo = async () => {
@@ -414,11 +412,9 @@ export default function RecordingPage({ params }: PageProps) {
   const handleNotesChange = async (notes: string) => {
       if (!recording) return;
       
-      // Push current notes to history
-      if (recording.transcript?.notes) {
-          setNotesHistory(prev => [...prev, recording.transcript!.notes!]);
-          setNotesFuture([]); // Clear redo stack
-      }
+      // Always push current notes to history (even if null) before making changes
+      setNotesHistory(prev => [...prev, recording.transcript?.notes ?? null]);
+      setNotesFuture([]); // Clear redo stack
       
       try {
           await updateNotes(recording.id, notes);
@@ -450,13 +446,13 @@ export default function RecordingPage({ params }: PageProps) {
       if (notesHistory.length === 0 || !recording) return;
       
       const previousNotes = notesHistory[notesHistory.length - 1];
-      const currentNotes = recording.transcript?.notes || '';
+      const currentNotes = recording.transcript?.notes ?? null;
       
       setNotesFuture(prev => [currentNotes, ...prev]);
       setNotesHistory(prev => prev.slice(0, -1));
       
       try {
-          await updateNotes(recording.id, previousNotes);
+          await updateNotes(recording.id, previousNotes || '');
           const updated = await getRecording(recording.id);
           setRecording(updated);
       } catch (e) {
@@ -468,13 +464,13 @@ export default function RecordingPage({ params }: PageProps) {
       if (notesFuture.length === 0 || !recording) return;
       
       const nextNotes = notesFuture[0];
-      const currentNotes = recording.transcript?.notes || '';
+      const currentNotes = recording.transcript?.notes ?? null;
       
       setNotesHistory(prev => [...prev, currentNotes]);
       setNotesFuture(prev => prev.slice(1));
       
       try {
-          await updateNotes(recording.id, nextNotes);
+          await updateNotes(recording.id, nextNotes || '');
           const updated = await getRecording(recording.id);
           setRecording(updated);
       } catch (e) {

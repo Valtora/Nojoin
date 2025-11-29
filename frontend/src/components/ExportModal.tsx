@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, FileText, StickyNote, Files, Download } from 'lucide-react';
 import { ExportContentType } from '@/lib/api';
 
@@ -13,6 +13,13 @@ interface ExportModalProps {
 
 export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: ExportModalProps) {
   const [selected, setSelected] = useState<ExportContentType>('transcript');
+
+  // Reset selection when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelected('transcript');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

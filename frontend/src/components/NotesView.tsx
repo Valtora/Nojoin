@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, ReactNode } from 'react';
-import { Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check } from 'lucide-react';
+import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check } from 'lucide-react';
 
 interface NotesViewProps {
   recordingId: number;
@@ -120,6 +120,9 @@ export default function NotesView({
       
       setIsSubmitting(true);
       try {
+          // Clear matches to avoid stale indices until recalculation
+          setMatches([]);
+          setCurrentMatchIndex(-1);
           onNotesChange(newNotes);
       } finally {
           setIsSubmitting(false);

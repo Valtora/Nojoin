@@ -1,5 +1,5 @@
-from typing import List, Optional, Literal
-from fastapi import APIRouter, Depends, HTTPException, Body, Response, Query, BackgroundTasks
+from typing import List, Literal
+from fastapi import APIRouter, Depends, HTTPException, Body, Response, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from sqlalchemy.orm import selectinload
@@ -559,40 +559,3 @@ async def generate_notes(
     except Exception as e:
         logger.error(f"Unexpected error generating notes: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating notes")
-
-@router.post("/{recording_id}/notes/replace")
-async def find_and_replace_notes(
-    recording_id: int,
-    replace_request: FindReplaceRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Find and replace text in the meeting notes AND transcript.
-    This ensures consistency between the diarized transcript and generated notes.
-    """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
-    
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
-    result = await db.execute(stmt)
-    transcript = result.scalar_one_or_none()
-    
-    if not transcript:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-    
-    find_text = replace_request.find_text
-    replace_text = replace_request.replace_text
-    
-    if not find_text:
-        raise HTTPException(status_code=400, detail="Find text cannot be empty")
-    
-    # Apply find/replace to both transcript and notes
-    _apply_find_replace(transcript, find_text, replace_text)
-        
-    db.add(transcript)
-    await db.commit()
-    await db.refresh(transcript)
-    
-    return {"notes": transcript.notes, "status": "success"}
