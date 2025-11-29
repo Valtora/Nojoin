@@ -59,6 +59,7 @@ DEFAULT_USER_SETTINGS = {
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
+    "auto_generate_notes": True, # Automatically generate meeting notes after processing
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
 }
 

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
 import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   getRecordings, 
   renameRecording, 
@@ -22,6 +22,7 @@ import ConfirmationModal from './ConfirmationModal';
 import BatchActionBar from './BatchActionBar';
 import { GlobalSpeaker } from '@/types';
 import { useNavigationStore } from '@/lib/store';
+import { useNotificationStore } from '@/lib/notificationStore';
 import { createFuse } from '@/lib/searchUtils';
 
 const formatDurationString = (seconds?: number) => {
@@ -82,6 +83,9 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { addNotification } = useNotificationStore();
+  const prevRecordingsRef = useRef<Map<number, RecordingStatus>>(new Map());
+  const prevNotesStatusRef = useRef<Map<number, string>>(new Map());
   const { 
     currentView, 
     selectedTagIds, 
@@ -108,6 +112,34 @@ export default function Sidebar() {
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
   const [dateMode, setDateMode] = useState<'range' | 'before' | 'after'>('range');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+
+  useEffect(() => {
+    recordings.forEach(rec => {
+      // Check Recording Status (General Processing)
+      const prevStatus = prevRecordingsRef.current.get(rec.id);
+      if (prevStatus && prevStatus !== RecordingStatus.PROCESSED && rec.status === RecordingStatus.PROCESSED) {
+         addNotification({
+          type: 'success',
+          message: `Processing completed for "${rec.name}"`,
+        });
+      }
+      prevRecordingsRef.current.set(rec.id, rec.status);
+
+      // Check Notes Status (Specific)
+      if (rec.transcript) {
+        const prevNotesStatus = prevNotesStatusRef.current.get(rec.id);
+        const currentNotesStatus = rec.transcript.notes_status;
+        
+        if (prevNotesStatus && prevNotesStatus !== 'completed' && currentNotesStatus === 'completed') {
+           addNotification({
+            type: 'success',
+            message: `Meeting notes generated for "${rec.name}"`,
+          });
+        }
+        prevNotesStatusRef.current.set(rec.id, currentNotesStatus || 'pending');
+      }
+    });
+  }, [recordings, addNotification]);
 
   const filteredRecordings = useMemo(() => {
     if (!debouncedSearchQuery) return recordings;

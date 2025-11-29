@@ -53,6 +53,7 @@ export interface Transcript extends BaseDBModel {
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
+  notes_status?: string; // pending, generating, completed, error
 }
 
 export interface Tag extends BaseDBModel {
@@ -90,6 +91,7 @@ export interface Settings {
   worker_url?: string;
   companion_url?: string;
   enable_auto_voiceprints?: boolean;
+  auto_generate_notes?: boolean;
   [key: string]: any;
 }
 

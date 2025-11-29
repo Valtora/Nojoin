@@ -13,6 +13,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
 import { COLOR_PALETTE, getColorByKey } from '@/lib/constants';
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 type ActivePanel = 'transcript' | 'notes';
 
@@ -589,100 +590,109 @@ export default function RecordingPage({ params }: PageProps) {
                 </p>
             </div>
         ) : (
-            <>
-                <div className="flex-1 flex flex-col min-h-0">
-                    {/* Panel Tabs */}
-                    <div className="bg-gray-200 dark:bg-gray-900 border-b-2 border-gray-400 dark:border-gray-700 flex-shrink-0">
-                        <div className="flex">
-                            <button
-                                onClick={() => setActivePanel('transcript')}
-                                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
-                                    activePanel === 'transcript'
-                                        ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
-                                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                }`}
-                            >
-                                <FileText className="w-4 h-4" />
-                                Transcript
-                            </button>
-                            <button
-                                onClick={() => setActivePanel('notes')}
-                                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
-                                    activePanel === 'notes'
-                                        ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
-                                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                }`}
-                            >
-                                <StickyNote className="w-4 h-4" />
-                                Notes
-                                {recording.transcript?.notes && (
-                                    <span className="w-2 h-2 rounded-full bg-green-500" title="Notes available" />
-                                )}
-                            </button>
+                        <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full w-full">
+                <Panel defaultSize={75} minSize={30}>
+                    <div className="flex-1 flex flex-col min-h-0 h-full">
+                        {/* Panel Tabs */}
+                        <div className="bg-gray-200 dark:bg-gray-900 border-b-2 border-gray-400 dark:border-gray-700 flex-shrink-0">
+                            <div className="flex">
+                                <button
+                                    onClick={() => setActivePanel('transcript')}
+                                    className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
+                                        activePanel === 'transcript'
+                                            ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
+                                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                    }`}
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    Transcript
+                                </button>
+                                <button
+                                    onClick={() => setActivePanel('notes')}
+                                    className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
+                                        activePanel === 'notes'
+                                            ? 'border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800'
+                                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                    }`}
+                                >
+                                    <StickyNote className="w-4 h-4" />
+                                    Notes
+                                    {recording.transcript?.notes && (
+                                        <span className="w-2 h-2 rounded-full bg-green-500" title="Notes available" />
+                                    )}
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Panel Content */}
-                    <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
-                        {activePanel === 'transcript' ? (
-                            (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
-                                <TranscriptView
+                        {/* Panel Content */}
+                        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
+                            {activePanel === 'transcript' ? (
+                                (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
+                                    <TranscriptView
+                                        recordingId={recording.id}
+                                        segments={recording.transcript.segments}
+                                        currentTime={currentTime}
+                                        onPlaySegment={handlePlaySegment}
+                                        isPlaying={isPlaying}
+                                        onPause={handlePause}
+                                        onResume={handleResume}
+                                        speakerMap={speakerMap}
+                                        speakers={recording.speakers || []}
+                                        globalSpeakers={globalSpeakers}
+                                        onRenameSpeaker={handleRenameSpeaker}
+                                        onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
+                                        onUpdateSegmentText={handleUpdateSegmentText}
+                                        onFindAndReplace={handleFindAndReplace}
+                                        speakerColors={speakerColors}
+                                        onUndo={handleUndo}
+                                        onRedo={handleRedo}
+                                        canUndo={history.length > 0 && !isUndoing}
+                                        canRedo={future.length > 0 && !isUndoing}
+                                        onExport={() => setShowExportModal(true)}
+                                    />
+                                ) : (
+                                    <p className="text-gray-500 dark:text-gray-400 italic p-6">
+                                        No transcript available yet.
+                                    </p>
+                                )
+                            ) : (
+                                <NotesView
                                     recordingId={recording.id}
-                                    segments={recording.transcript.segments}
-                                    currentTime={currentTime}
-                                    onPlaySegment={handlePlaySegment}
-                                    isPlaying={isPlaying}
-                                    onPause={handlePause}
-                                    onResume={handleResume}
-                                    speakerMap={speakerMap}
-                                    speakers={recording.speakers || []}
-                                    globalSpeakers={globalSpeakers}
-                                    onRenameSpeaker={handleRenameSpeaker}
-                                    onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
-                                    onUpdateSegmentText={handleUpdateSegmentText}
-                                    onFindAndReplace={handleFindAndReplace}
-                                    speakerColors={speakerColors}
-                                    onUndo={handleUndo}
-                                    onRedo={handleRedo}
-                                    canUndo={history.length > 0 && !isUndoing}
-                                    canRedo={future.length > 0 && !isUndoing}
+                                    notes={recording.transcript?.notes || null}
+                                    onNotesChange={handleNotesChange}
+                                    onGenerateNotes={handleGenerateNotes}
+                                    onFindAndReplace={handleNotesFindAndReplace}
+                                    onUndo={handleNotesUndo}
+                                    onRedo={handleNotesRedo}
+                                    canUndo={notesHistory.length > 0}
+                                    canRedo={notesFuture.length > 0}
+                                    isGenerating={isGeneratingNotes}
                                     onExport={() => setShowExportModal(true)}
                                 />
-                            ) : (
-                                <p className="text-gray-500 dark:text-gray-400 italic p-6">
-                                    No transcript available yet.
-                                </p>
-                            )
-                        ) : (
-                            <NotesView
-                                recordingId={recording.id}
-                                notes={recording.transcript?.notes || null}
-                                onNotesChange={handleNotesChange}
-                                onGenerateNotes={handleGenerateNotes}
-                                onFindAndReplace={handleNotesFindAndReplace}
-                                onUndo={handleNotesUndo}
-                                onRedo={handleNotesRedo}
-                                canUndo={notesHistory.length > 0}
-                                canRedo={notesFuture.length > 0}
-                                isGenerating={isGeneratingNotes}
-                                onExport={() => setShowExportModal(true)}
-                            />
-                        )}
+                            )}
+                        </div>
                     </div>
-                </div>
-                <SpeakerPanel 
-                    speakers={recording.speakers || []} 
-                    segments={recording.transcript?.segments || []}
-                    onPlaySegment={handlePlaySegment}
-                    recordingId={recording.id}
-                    speakerColors={speakerColors}
-                    onColorChange={handleColorChange}
-                    currentTime={currentTime}
-                    isPlaying={isPlaying}
-                    onPause={handlePause}
-                    onResume={handleResume}
-                />
-            </>
+                </Panel>
+                
+                <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                    <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+                </PanelResizeHandle>
+                
+                <Panel defaultSize={25} minSize={15}>
+                    <SpeakerPanel 
+                        speakers={recording.speakers || []} 
+                        segments={recording.transcript?.segments || []}
+                        onPlaySegment={handlePlaySegment}
+                        recordingId={recording.id}
+                        speakerColors={speakerColors}
+                        onColorChange={handleColorChange}
+                        currentTime={currentTime}
+                        isPlaying={isPlaying}
+                        onPause={handlePause}
+                        onResume={handleResume}
+                    />
+                </Panel>
+            </PanelGroup>
         )}
       </div>
 

@@ -25,12 +25,13 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   const showAnthropic = fuzzyMatch(searchQuery, ['anthropic', 'api key', 'claude']);
   const showHf = fuzzyMatch(searchQuery, ['hugging face', 'token', 'diarization', 'pyannote', 'speaker', 'separation']);
   const showVoiceprints = fuzzyMatch(searchQuery, ['voiceprint', 'auto-create', 'speaker', 'identification', 'recognition']);
+  const showNotes = fuzzyMatch(searchQuery, ['notes', 'meeting notes', 'auto-generate', 'summary']);
   const showWhisper = fuzzyMatch(searchQuery, ['whisper', 'model', 'transcription', 'speech to text']);
 
   const showLLMSection = showProvider;
   const showAPIKeysSection = showGemini || showOpenAI || showAnthropic;
   const showDiarizationSection = showHf;
-  const showProcessingSection = showVoiceprints || showWhisper;
+  const showProcessingSection = showVoiceprints || showWhisper || showNotes;
 
   if (!showLLMSection && !showAPIKeysSection && !showDiarizationSection && !showProcessingSection && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;
@@ -65,7 +66,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">API Keys</h3>
           <div className="max-w-xl space-y-4">
-            {showGemini && (
+            {showGemini && (settings.llm_provider === 'gemini' || !settings.llm_provider) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Gemini API Key
@@ -90,7 +91,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
               </div>
             )}
 
-            {showOpenAI && (
+            {showOpenAI && settings.llm_provider === 'openai' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   OpenAI API Key
@@ -115,7 +116,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
               </div>
             )}
 
-            {showAnthropic && (
+            {showAnthropic && settings.llm_provider === 'anthropic' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Anthropic API Key
@@ -175,7 +176,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
 
       {showProcessingSection && (
         <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Processing</h3>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Meeting Processing</h3>
           <div className="max-w-xl space-y-4">
             {showVoiceprints && (
               <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -192,6 +193,28 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     type="checkbox"
                     checked={settings.enable_auto_voiceprints !== false}
                     onChange={(e) => onUpdate({ ...settings, enable_auto_voiceprints: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+                </label>
+              </div>
+            )}
+
+            {(showVoiceprints || showNotes) && (
+              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Auto-generate Meeting Notes
+                  </label>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Automatically generate meeting notes after processing using the selected LLM provider.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer ml-4">
+                  <input
+                    type="checkbox"
+                    checked={settings.auto_generate_notes !== false}
+                    onChange={(e) => onUpdate({ ...settings, auto_generate_notes: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>

@@ -17,6 +17,7 @@ from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
 from backend.utils.config_manager import config_manager
+from backend.processing.LLM_Services import get_llm_backend
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +327,48 @@ def process_recording_task(self, recording_id: int):
         transcript.segments = updated_segments
         session.add(transcript)
 
+        # Auto-generate Meeting Notes
+        auto_generate_notes = merged_config.get("auto_generate_notes", True)
+        if auto_generate_notes:
+            try:
+                self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Generating Notes'})
+                recording.processing_step = "Generating meeting notes..."
+                session.add(recording)
+                session.commit()
+                
+                # Construct transcript text
+                transcript_text = ""
+                for seg in updated_segments:
+                    start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
+                    end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
+                    transcript_text += f"[{start_time} - {end_time}] {seg['speaker']}: {seg['text']}\n"
+                
+                provider = merged_config.get("llm_provider", "gemini")
+                api_key = merged_config.get(f"{provider}_api_key")
+                
+                if api_key:
+                    transcript.notes_status = "generating"
+                    session.add(transcript)
+                    session.commit()
+                    
+                    llm = get_llm_backend(provider, api_key=api_key)
+                    # We pass empty mapping because names are already resolved in transcript_text
+                    notes = llm.generate_meeting_notes(transcript_text, {})
+                    transcript.notes = notes
+                    transcript.notes_status = "completed"
+                    session.add(transcript)
+                    logger.info(f"Generated meeting notes for recording {recording_id}")
+                else:
+                    logger.warning(f"Skipping note generation: No API key for {provider}")
+                    transcript.notes_status = "error" # Or pending?
+                    session.add(transcript)
+
+            except Exception as e:
+                logger.error(f"Failed to generate meeting notes: {e}")
+                transcript.notes_status = "error"
+                session.add(transcript)
+                # Don't fail the whole process
+
         # Update Recording Status
         recording.status = RecordingStatus.PROCESSED
         recording.processing_step = "Completed"
@@ -490,3 +533,82 @@ def download_models_task(self, hf_token: str | None = None, whisper_model_size: 
     except Exception as e:
         logger.error(f"Model download failed: {e}", exc_info=True)
         raise e
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def generate_notes_task(self, recording_id: int):
+    """
+    Generate meeting notes for a recording.
+    """
+    from backend.processing.LLM_Services import get_llm_backend
+    
+    session = self.session
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording:
+            logger.error(f"Recording {recording_id} not found.")
+            return
+
+        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+        if not transcript:
+            logger.error(f"Transcript for recording {recording_id} not found.")
+            return
+
+        # Update status
+        transcript.notes_status = "generating"
+        session.add(transcript)
+        session.commit()
+
+        # Get User Settings
+        user_settings = {}
+        if recording.user_id:
+            user = session.get(User, recording.user_id)
+            if user and user.settings:
+                user_settings = user.settings
+        
+        system_config = config_manager.get_all()
+        merged_config = system_config.copy()
+        merged_config.update(user_settings)
+
+        provider = merged_config.get("llm_provider", "gemini")
+        api_key = merged_config.get(f"{provider}_api_key")
+        model = merged_config.get(f"{provider}_model")
+
+        if not api_key:
+            logger.error(f"No API key configured for {provider}.")
+            transcript.notes_status = "error"
+            session.add(transcript)
+            session.commit()
+            return
+
+        # Build Speaker Map and Transcript Text
+        # We need to fetch speakers
+        speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
+        speaker_map = {s.diarization_label: s.name for s in speakers}
+
+        # Render transcript text for LLM
+        lines = []
+        for seg in transcript.segments:
+            speaker_label = seg.get('speaker', 'Unknown')
+            speaker_name = speaker_map.get(speaker_label, speaker_label)
+            text = seg.get('text', '')
+            lines.append(f"{speaker_name}: {text}")
+        transcript_text = "\n".join(lines)
+
+        # Call LLM Service
+        llm = get_llm_backend(provider, api_key=api_key, model=model)
+        notes = llm.generate_meeting_notes(transcript_text, speaker_map)
+
+        # Save Notes
+        transcript.notes = notes
+        transcript.notes_status = "completed"
+        session.add(transcript)
+        session.commit()
+        logger.info(f"Generated meeting notes for recording {recording_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to generate meeting notes: {e}", exc_info=True)
+        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+        if transcript:
+            transcript.notes_status = "error"
+            session.add(transcript)
+            session.commit()

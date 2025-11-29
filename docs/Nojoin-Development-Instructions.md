@@ -61,3 +61,11 @@ The worker container is configured with `watchmedo` to automatically restart whe
 ### 4.2 Frontend
 *   **State**: Zustand (`src/lib/store.ts`)
 *   **Styling**: Tailwind CSS
+
+### 5. Python
+*   **Virtual Environment**: # Always activate the virtual environment before running any Python scripts.
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # Linux/Mac
+    .venv\Scripts\activate     # Windows
+    ```

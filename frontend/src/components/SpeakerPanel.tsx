@@ -234,7 +234,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const speakersWithoutVoiceprints = uniqueSpeakers.filter(s => !s.has_voiceprint);
 
   return (
-    <aside className="w-64 flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-200 dark:bg-gray-900 h-full overflow-y-auto">
+    <aside className="flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-200 dark:bg-gray-900 h-full overflow-y-auto">
       {/* Header with batch voiceprint action */}
       {uniqueSpeakers.length > 0 && speakersWithoutVoiceprints.length > 0 && (
         <div className="p-2 border-b border-gray-300 dark:border-gray-700">

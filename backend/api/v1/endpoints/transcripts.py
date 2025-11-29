@@ -524,30 +524,16 @@ async def generate_notes(
     if not api_key:
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
     
-    # 4. Build Speaker Map and Transcript Text
-    speaker_map = _build_speaker_map(recording.speakers)
+    # 4. Call Worker Task
+    from backend.worker.tasks import generate_notes_task
     
-    # Render transcript text for LLM
-    lines = []
-    for seg in transcript.segments:
-        speaker_label = seg.get('speaker', 'Unknown')
-        speaker_name = speaker_map.get(speaker_label, speaker_label)
-        text = seg.get('text', '')
-        lines.append(f"{speaker_name}: {text}")
-    transcript_text = "\n".join(lines)
+    transcript.notes_status = "generating"
+    db.add(transcript)
+    await db.commit()
     
-    # 5. Call LLM Service
-    try:
-        from backend.processing.LLM_Services import get_llm_backend
-        
-        llm = get_llm_backend(provider, api_key=api_key, model=model)
-        notes = llm.generate_meeting_notes(transcript_text, speaker_map)
-        
-        # 6. Save Notes
-        transcript.notes = notes
-        db.add(transcript)
-        await db.commit()
-        await db.refresh(transcript)
+    generate_notes_task.delay(recording_id)
+    
+    return {"status": "success", "message": "Note generation started"}
         
         return {"notes": notes, "status": "success"}
         
