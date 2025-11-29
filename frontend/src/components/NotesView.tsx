@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, ReactNode } from 'react';
 import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Link as LinkIcon } from 'lucide-react';
 import { Editor } from '@tiptap/react';
 import RichTextEditor from './RichTextEditor';
+import LinkModal from './LinkModal';
 
 interface NotesViewProps {
   recordingId: number;
@@ -48,6 +49,10 @@ export default function NotesView({
   const [showReplace, setShowReplace] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+
+  // Link Modal State
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkModalUrl, setLinkModalUrl] = useState('');
 
   // Search Matches State
   const [matches, setMatches] = useState<{startIndex: number, length: number}[]>([]);
@@ -380,13 +385,8 @@ export default function NotesView({
                   <button
                     onClick={() => {
                       const previousUrl = editor.getAttributes('link').href;
-                      const url = window.prompt('URL', previousUrl);
-                      if (url === null) return;
-                      if (url === '') {
-                        editor.chain().focus().extendMarkRange('link').unsetLink().run();
-                        return;
-                      }
-                      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+                      setLinkModalUrl(previousUrl || '');
+                      setIsLinkModalOpen(true);
                     }}
                     className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('link') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
                     title="Link"
@@ -569,6 +569,21 @@ export default function NotesView({
           </div>
         )}
       </div>
+
+      {/* Link Modal */}
+      <LinkModal
+        isOpen={isLinkModalOpen}
+        onClose={() => setIsLinkModalOpen(false)}
+        initialUrl={linkModalUrl}
+        onSubmit={(url) => {
+          if (!editor) return;
+          if (url === '') {
+            editor.chain().focus().extendMarkRange('link').unsetLink().run();
+            return;
+          }
+          editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+        }}
+      />
     </div>
   );
 }

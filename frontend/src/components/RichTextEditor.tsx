@@ -21,7 +21,14 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
       StarterKit,
       Underline,
       Link.configure({
-        openOnClick: false,
+        openOnClick: true,
+        autolink: true,
+        linkOnPaste: true,
+        HTMLAttributes: {
+          class: 'text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer',
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
       }),
       Markdown,
     ],

@@ -201,6 +201,20 @@ export default function TranscriptView({
     }
   }, [currentTime]);
 
+  const handleSpeakerRenameSubmit = async () => {
+    if (editingSpeaker && editValue.trim()) {
+      setIsSubmitting(true);
+      try {
+        await onRenameSpeaker(editingSpeaker, editValue.trim());
+      } finally {
+        setIsSubmitting(false);
+        setEditingSpeaker(null);
+      }
+    } else {
+      setEditingSpeaker(null);
+    }
+  };
+
   const handleSegmentSpeakerSubmit = async (index: number) => {
     if (editValue.trim() && !isSubmitting) {
       setIsSubmitting(true);
@@ -480,9 +494,13 @@ export default function TranscriptView({
                         type="text"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={handleSpeakerRenameSubmit}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSpeakerRenameSubmit();
+                            if (e.key === 'Escape') setEditingSpeaker(null);
+                        }}
                         onClick={(e) => e.stopPropagation()}
                         className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        disabled
                         />
                     ) : isEditingSegmentSpeaker ? (
                         <input
@@ -506,8 +524,14 @@ export default function TranscriptView({
                                         setActivePopover({ index, target: e.currentTarget });
                                     }
                                 }}
+                                onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingSpeaker(segment.speaker);
+                                    setEditValue(speakerName);
+                                    setActivePopover(null);
+                                }}
                                 className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-600 dark:hover:text-orange-400 transition-colors text-left"
-                                title="Click to change speaker"
+                                title="Click to change speaker, Double-click to rename"
                             >
                                 {speakerName}
                             </button>

@@ -8,7 +8,7 @@ import NotesView from '@/components/NotesView';
 import ExportModal from '@/components/ExportModal';
 import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Edit2, FileText, StickyNote } from 'lucide-react';
+import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
@@ -657,7 +657,6 @@ export default function RecordingPage({ params }: PageProps) {
                                             : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
                                     }`}
                                 >
-                                    <FileText className="w-4 h-4" />
                                     Transcript
                                 </button>
                                 <button
@@ -668,11 +667,7 @@ export default function RecordingPage({ params }: PageProps) {
                                             : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
                                     }`}
                                 >
-                                    <StickyNote className="w-4 h-4" />
                                     Notes
-                                    {recording.transcript?.notes && (
-                                        <span className="w-2 h-2 rounded-full bg-green-500" title="Notes available" />
-                                    )}
                                 </button>
                             </div>
                         </div>

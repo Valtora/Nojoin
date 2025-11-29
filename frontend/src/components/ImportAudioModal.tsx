@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, FileAudio, Loader2, CheckCircle, AlertCircle, Calendar, FileText } from 'lucide-react';
+import DatePicker from 'react-datepicker';
 import { importAudio, getSupportedAudioFormats, getMaxUploadSizeMB } from '@/lib/api';
 
 interface ImportAudioModalProps {
@@ -30,7 +31,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [mounted, setMounted] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
-  const [recordedAt, setRecordedAt] = useState('');
+  const [recordedAt, setRecordedAt] = useState<Date | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
@@ -50,7 +51,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const resetState = useCallback(() => {
     setSelectedFile(null);
     setMeetingName('');
-    setRecordedAt('');
+    setRecordedAt(null);
     setUploadState('idle');
     setUploadProgress(0);
     setErrorMessage('');
@@ -140,7 +141,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     try {
       await importAudio(selectedFile, {
         name: meetingName || undefined,
-        recordedAt: recordedAt ? new Date(recordedAt) : undefined,
+        recordedAt: recordedAt || undefined,
         onUploadProgress: setUploadProgress,
       });
       
@@ -309,13 +310,18 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                   <Calendar className="w-4 h-4" />
                   Recording Date (optional)
                 </label>
-                <input
-                  type="datetime-local"
-                  value={recordedAt}
-                  onChange={(e) => setRecordedAt(e.target.value)}
-                  disabled={uploadState === 'uploading'}
-                  className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50"
-                />
+                <div className="w-full">
+                  <DatePicker
+                    selected={recordedAt}
+                    onChange={(date) => setRecordedAt(date)}
+                    showTimeSelect
+                    dateFormat="MMMM d, yyyy h:mm aa"
+                    placeholderText="Select date and time"
+                    disabled={uploadState === 'uploading'}
+                    className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    wrapperClassName="w-full"
+                  />
+                </div>
                 <p className="text-xs text-gray-500 mt-1">
                   If not set, the current time will be used.
                 </p>

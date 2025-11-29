@@ -5,6 +5,9 @@ Let's continue the development of Nojoin. Read the PRD.md in the docs directory 
 ### First-Run Improvements - API Key and HF Token Validation
 - Implement validation for the selected LLM Provider's API key and Hugging Face token entered during the first-run setup process. This validation should check that the provided keys are in the correct format and are able to authenticate with their respective services. If the keys are invalid, provide clear error messages to the user and prompt them to re-enter valid keys before proceeding with the setup.
 
+### Companion App - Meetings with multiple segments
+- The companion app creates a temporary .wav file in the /companion/ folder. The temp wav file should be deleted after the meeting ends to prevent accumulation of unnecessary files. Implement a cleanup mechanism in the companion app that deletes the temporary .wav file once the meeting has ended and the recording has been successfully uploaded to the backend.
+
 ### Import Existing Recordings Feature
 - Audio recordings fail to import when the user inputs a date it causes an input formatting bug. The date picker is also using the browser's default date picker which is not consistent across browsers and platforms. Implement a more modern date picker component that provides a consistent user experience across all supported browsers and platforms. Ensure that the date input is properly validated and formatted to prevent any input formatting bugs during the import process.
 

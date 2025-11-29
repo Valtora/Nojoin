@@ -42,3 +42,5 @@ nginx/*.pem
 *.pfx
 *.p12
 
+# Audio Files
+*.wav

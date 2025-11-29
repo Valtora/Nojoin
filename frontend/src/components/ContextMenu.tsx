@@ -42,7 +42,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[9999] w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 py-1"
+      className="fixed z-[9999] w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 overflow-hidden"
       style={style}
     >
       {items.map((item, index) => (
@@ -52,7 +52,9 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
             item.onClick();
             onClose();
           }}
-          className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${item.className || 'text-gray-700 dark:text-gray-200'}`}
+          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors flex items-center gap-2 ${
+            index !== items.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''
+          } ${item.className || 'text-gray-700 dark:text-gray-200'}`}
         >
           {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
           {item.label}

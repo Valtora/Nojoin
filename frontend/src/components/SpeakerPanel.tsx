@@ -357,7 +357,11 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                             />
                         ) : (
                             <>
-                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={getSpeakerName(speaker)}>
+                                <p 
+                                    className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" 
+                                    title="Double-click to rename"
+                                    onDoubleClick={() => handleRenameStart(speaker)}
+                                >
                                 {getSpeakerName(speaker)}
                                 </p>
                                 {/* {speaker.global_speaker && (
@@ -419,7 +423,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 }] : []),
                 // Add to Speaker Library option - only show if not already global
                 ...(!contextMenu.speaker.global_speaker_id ? [{
-                    label: 'Add Voiceprint to Speaker Library',
+                    label: 'Add to Speaker Library',
                     onClick: () => handlePromoteToGlobal(contextMenu.speaker)
                 }] : []),
                 {
