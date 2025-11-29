@@ -54,8 +54,73 @@ You are an expert meeting assistant. Analyze the diarized meeting transcript bel
 
     @staticmethod
     def get_default_notes_prompt_template():
-        return """
-You are an expert meeting assistant. Using the mapping of speaker labels to real names/roles provided below, generate the meeting notes. Use the inferred names/roles in place of the generic labels. Output ONLY the meeting notes in the following strict format, with no extra commentary, introductory text, concluding remarks, or additional sections.\n\n# Speaker Mapping\n{mapping_table}\n\n# Meeting Notes\n\n## Summary\nA concise summary of the key topics discussed, main points raised, and significant conclusions or outcomes. Use bullet points if appropriate.\n\n## Decisions\n*Only include this section if clear decisions were made during the meeting. List each decision as a bullet point. Omit this section if no decisions were made.*\n\n## Tasks\n*Only include this section if clear tasks or follow-up actions were discussed. List each task as a bullet point. Omit this section if no tasks were discussed.*\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
+        return """You are an expert meeting intelligence assistant. Your task is to generate comprehensive, high-quality meeting notes from the provided transcript. Use the speaker mapping to refer to participants by their inferred names/roles instead of generic labels.
+
+# CRITICAL FORMATTING REQUIREMENTS
+You MUST follow these formatting rules EXACTLY. Do not deviate:
+1. Use ONLY the section headers specified below, in the exact order given
+2. Use Markdown formatting throughout
+3. Be thorough and detailed - notes may be as lengthy as required to capture all important content
+4. Do NOT add any introductory text, concluding remarks, or sections not specified below
+5. Start your response with "# Meeting Notes" - nothing before it
+
+# Speaker Mapping
+{mapping_table}
+
+# OUTPUT FORMAT - Follow this EXACT structure:
+
+# Meeting Notes
+
+## Topics Discussed
+List each major topic or theme discussed in the meeting as a bullet point. Be specific and descriptive.
+- Topic 1: Brief description
+- Topic 2: Brief description
+(continue for all topics)
+
+## Summary
+Provide a comprehensive summary of the meeting covering:
+- The main purpose and context of the meeting
+- Key points raised by participants
+- Important information shared
+- Overall conclusions or outcomes reached
+
+## Detailed Notes
+
+### [Topic Name 1]
+Provide detailed notes on this topic including:
+- **Key Points**: Main arguments, information, or ideas presented
+- **Discussion**: What was debated or discussed, including different perspectives
+- **Decisions**: Any decisions made regarding this topic (if applicable)
+- **Rationale**: The reasoning behind decisions or recommendations (if discussed)
+- **Open Questions**: Any unresolved questions or points requiring follow-up
+
+### [Topic Name 2]
+(Follow the same structure for each major topic)
+
+(Continue for all topics discussed)
+
+## Action Items / Tasks
+List all tasks, action items, or follow-ups mentioned, formatted as:
+- [ ] Task description - Assigned to: [Person] - Due: [Date if mentioned, otherwise "TBD"]
+(If no tasks were discussed, write: "No specific action items were identified in this meeting.")
+
+## Miscellaneous
+Capture any additional important information that doesn't fit the above categories:
+- Side discussions or tangential points of interest
+- Announcements or FYIs mentioned
+- References to external documents, resources, or prior meetings
+- Any other noteworthy content
+(If nothing applicable, write: "No additional items.")
+
+---
+
+# Transcript to Analyze:
+
+{transcript}
+
+---
+
+Now generate the meeting notes following the exact format specified above. Be comprehensive and capture all important details."""
 
     @staticmethod
     def get_default_title_prompt_template():
@@ -166,16 +231,24 @@ You are an expert meeting assistant. Using the mapping of speaker labels to real
             
             return "\n".join(lines)
 
-from google import genai
-
 class GeminiLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
+        # Lazy import to avoid errors when google-genai isn't installed
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError(
+                "The 'google-genai' package is required for Gemini support. "
+                "Please install it with: pip install google-genai"
+            )
+        
         if api_key is None:
             api_key = config_manager.get("gemini_api_key")
         if not api_key:
             raise ValueError("Google Gemini API key is not set. Please provide it in settings.")
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("gemini")
+        self.genai = genai  # Store reference for later use
         self.client = genai.Client(api_key=self.api_key)
 
     def _extract_text_from_response(self, response):

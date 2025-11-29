@@ -22,6 +22,6 @@ numpy
 pandas
 openai
 anthropic
-gemini-api
+google-genai
 alembic
 watchdog

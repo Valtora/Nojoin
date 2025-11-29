@@ -221,8 +221,11 @@ export const findAndReplace = async (recordingId: number, find: string, replace:
   await api.post(`/transcripts/${recordingId}/replace`, { find_text: find, replace_text: replace });
 };
 
-export const exportTranscript = async (recordingId: number): Promise<void> => {
+export type ExportContentType = 'transcript' | 'notes' | 'both';
+
+export const exportContent = async (recordingId: number, contentType: ExportContentType = 'transcript'): Promise<void> => {
   const response = await api.get(`/transcripts/${recordingId}/export`, {
+    params: { content_type: contentType },
     responseType: 'blob',
   });
   
@@ -233,7 +236,7 @@ export const exportTranscript = async (recordingId: number): Promise<void> => {
   
   // Extract filename from header if possible, or generate one
   const contentDisposition = response.headers['content-disposition'];
-  let filename = `transcript-${recordingId}.txt`;
+  let filename = `export-${recordingId}.txt`;
   if (contentDisposition) {
     // Try to match filename="name"
     const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
@@ -253,6 +256,32 @@ export const exportTranscript = async (recordingId: number): Promise<void> => {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+};
+
+// Keep for backward compatibility
+export const exportTranscript = async (recordingId: number): Promise<void> => {
+  return exportContent(recordingId, 'transcript');
+};
+
+// Meeting Notes API
+export const getNotes = async (recordingId: number): Promise<{ notes: string | null }> => {
+  const response = await api.get<{ notes: string | null }>(`/transcripts/${recordingId}/notes`);
+  return response.data;
+};
+
+export const updateNotes = async (recordingId: number, notes: string): Promise<{ notes: string; status: string }> => {
+  const response = await api.put<{ notes: string; status: string }>(`/transcripts/${recordingId}/notes`, { notes });
+  return response.data;
+};
+
+export const generateNotes = async (recordingId: number): Promise<{ notes: string; status: string }> => {
+  const response = await api.post<{ notes: string; status: string }>(`/transcripts/${recordingId}/notes/generate`);
+  return response.data;
+};
+
+export const findAndReplaceNotes = async (recordingId: number, find: string, replace: string): Promise<void> => {
+  // Use the main replace endpoint since it applies to both transcript and notes
+  await api.post(`/transcripts/${recordingId}/replace`, { find_text: find, replace_text: replace });
 };
 
 export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerLabel: string, sourceSpeakerLabel: string): Promise<Recording> => {

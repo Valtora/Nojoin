@@ -35,7 +35,7 @@ fn main() {
     let tray_menu = Menu::new();
     
     let status_i = MenuItem::new("Status: Ready to Record", false, None);
-    let open_web_i = MenuItem::new("Open Web App", true, None);
+    let open_web_i = MenuItem::new("Open Nojoin", true, None);
     let check_updates_i = MenuItem::new("Check for Updates", true, None);
     let help_i = MenuItem::new("Help", true, None);
     let about_i = MenuItem::new("About", true, None);

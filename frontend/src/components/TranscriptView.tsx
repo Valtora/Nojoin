@@ -3,7 +3,6 @@
 import { TranscriptSegment, RecordingSpeaker, GlobalSpeaker } from '@/types';
 import { useRef, useEffect, useState } from 'react';
 import { Play, Pause, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
-import { exportTranscript } from '@/lib/api';
 import { getColorByKey } from '@/lib/constants';
 import SpeakerAssignmentPopover from './SpeakerAssignmentPopover';
 
@@ -27,6 +26,7 @@ interface TranscriptViewProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onExport: () => void;
 }
 
 const formatTime = (seconds: number) => {
@@ -54,7 +54,8 @@ export default function TranscriptView({
   onUndo,
   onRedo,
   canUndo,
-  canRedo
+  canRedo,
+  onExport
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   
@@ -315,9 +316,9 @@ export default function TranscriptView({
                 </button>
                 <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
                 <button
-                    onClick={() => exportTranscript(recordingId)}
+                    onClick={onExport}
                     className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    title="Export Transcript"
+                    title="Export"
                 >
                     <Download className="w-4 h-4" />
                 </button>
