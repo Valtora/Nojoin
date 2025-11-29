@@ -231,16 +231,24 @@ Now generate the meeting notes following the exact format specified above. Be co
             
             return "\n".join(lines)
 
-from google import genai
-
 class GeminiLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
+        # Lazy import to avoid errors when google-genai isn't installed
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError(
+                "The 'google-genai' package is required for Gemini support. "
+                "Please install it with: pip install google-genai"
+            )
+        
         if api_key is None:
             api_key = config_manager.get("gemini_api_key")
         if not api_key:
             raise ValueError("Google Gemini API key is not set. Please provide it in settings.")
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("gemini")
+        self.genai = genai  # Store reference for later use
         self.client = genai.Client(api_key=self.api_key)
 
     def _extract_text_from_response(self, response):
