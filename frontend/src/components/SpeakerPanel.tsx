@@ -1,13 +1,14 @@
 'use client';
 
 import { RecordingSpeaker, TranscriptSegment, VoiceprintExtractResult, BatchVoiceprintResponse } from '@/types';
-import { Play, Pause, ArrowRightToLine, User, Fingerprint, Loader2 } from 'lucide-react';
+import { Play, Pause, ArrowRightToLine, User, UserCheck, Fingerprint, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
 import VoiceprintModal from './VoiceprintModal';
 import { InlineColorPicker } from './ColorPicker';
 import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker, extractVoiceprint, extractAllVoiceprints, promoteToGlobalSpeaker } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -20,10 +21,12 @@ interface SpeakerPanelProps {
   isPlaying: boolean;
   onPause: () => void;
   onResume: () => void;
+  onRefresh: () => void;
 }
 
-export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, currentTime, isPlaying, onPause, onResume }: SpeakerPanelProps) {
+export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, currentTime, isPlaying, onPause, onResume, onRefresh }: SpeakerPanelProps) {
   const router = useRouter();
+  const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
   
   // Rename State
@@ -72,7 +75,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
     const speakerSegments = segments.filter(s => s.speaker === label);
     if (speakerSegments.length === 0) {
-        alert("No audio segments found for this speaker.");
+        addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
         return;
     }
     const randomSegment = speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
@@ -82,7 +85,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const handleNextSnippet = (label: string) => {
     const speakerSegments = segments.filter(s => s.speaker === label);
     if (speakerSegments.length === 0) {
-        alert("No audio segments found for this speaker.");
+        addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
         return;
     }
     
@@ -121,10 +124,10 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     try {
         await updateSpeaker(recordingId, renamingSpeaker.diarization_label, renameValue.trim());
         setRenamingSpeaker(null);
-        router.refresh();
+        onRefresh();
     } catch (e) {
         console.error("Failed to rename speaker", e);
-        alert("Failed to rename speaker.");
+        addNotification({ type: 'error', message: "Failed to rename speaker." });
     } finally {
         setIsSubmitting(false);
     }
@@ -141,10 +144,10 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
         // Dispatch custom event to notify parent components of the merge
         window.dispatchEvent(new CustomEvent('recording-updated', { detail: { recordingId } }));
         
-        router.refresh();
+        onRefresh();
     } catch (e) {
         console.error("Failed to merge speakers", e);
-        alert("Failed to merge speakers.");
+        addNotification({ type: 'error', message: "Failed to merge speakers." });
     } finally {
         setIsSubmitting(false);
     }
@@ -165,10 +168,10 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     try {
         await deleteRecordingSpeaker(recordingId, speaker.diarization_label);
         setContextMenu(null);
-        router.refresh();
+        onRefresh();
     } catch (e) {
         console.error("Failed to delete speaker", e);
-        alert("Failed to delete speaker.");
+        addNotification({ type: 'error', message: "Failed to delete speaker." });
     } finally {
         setIsSubmitting(false);
     }
@@ -185,7 +188,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
       setVoiceprintModalOpen(true);
     } catch (e: any) {
       console.error("Failed to extract voiceprint", e);
-      alert(e.response?.data?.detail || "Failed to extract voiceprint.");
+      addNotification({ type: 'error', message: e.response?.data?.detail || "Failed to extract voiceprint." });
     } finally {
       setExtractingVoiceprint(null);
     }
@@ -197,7 +200,8 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     try {
       const result = await extractAllVoiceprints(recordingId);
       if (result.speakers_processed === 0) {
-        alert("All speakers already have voiceprints.");
+        addNotification({ type: 'info', message: "All speakers already have voiceprints." });
+        onRefresh(); // Refresh to ensure UI is in sync
         return;
       }
       setBatchVoiceprintResults(result);
@@ -205,7 +209,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
       setVoiceprintModalOpen(true);
     } catch (e: any) {
       console.error("Failed to extract voiceprints", e);
-      alert(e.response?.data?.detail || "Failed to extract voiceprints.");
+      addNotification({ type: 'error', message: e.response?.data?.detail || "Failed to extract voiceprints." });
     } finally {
       setExtractingAllVoiceprints(false);
     }
@@ -217,17 +221,18 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     
     try {
       await promoteToGlobalSpeaker(recordingId, speaker.diarization_label);
-      router.refresh();
+      onRefresh();
+      addNotification({ type: 'success', message: "Speaker added to Global Library." });
     } catch (e: any) {
       console.error("Failed to promote speaker", e);
-      alert(e.response?.data?.detail || "Failed to promote speaker to global library.");
+      addNotification({ type: 'error', message: e.response?.data?.detail || "Failed to promote speaker to global library." });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleVoiceprintModalComplete = () => {
-    router.refresh();
+    onRefresh();
   };
 
   // Check if any speakers are missing voiceprints
@@ -249,7 +254,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
             ) : (
               <Fingerprint className="w-3.5 h-3.5" />
             )}
-            <span>Create All Voiceprints ({speakersWithoutVoiceprints.length})</span>
+            <span>Add All ({speakersWithoutVoiceprints.length}) Voiceprints to Speaker Library</span>
           </button>
         </div>
       )}
@@ -314,7 +319,11 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                     <div className="relative flex-shrink-0">
                         <div className="relative">
                             <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
-                                <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                                {speaker.has_voiceprint ? (
+                                    <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
+                                ) : (
+                                    <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                                )}
                             </div>
                             <div className="absolute -bottom-1 -right-1">
                                 <InlineColorPicker
@@ -325,15 +334,6 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                                 />
                             </div>
                         </div>
-                        {/* Voiceprint indicator */}
-                        {speaker.has_voiceprint && (
-                          <div 
-                            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800"
-                            title="Has voiceprint - can be recognized in future recordings"
-                          >
-                            <Fingerprint className="w-2 h-2 text-white" />
-                          </div>
-                        )}
                         {/* Extracting indicator */}
                         {extractingVoiceprint === speaker.diarization_label && (
                           <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
@@ -419,7 +419,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                 }] : []),
                 // Add to Speaker Library option - only show if not already global
                 ...(!contextMenu.speaker.global_speaker_id ? [{
-                    label: 'Add to Speaker Library',
+                    label: 'Add Voiceprint to Speaker Library',
                     onClick: () => handlePromoteToGlobal(contextMenu.speaker)
                 }] : []),
                 {

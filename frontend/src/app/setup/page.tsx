@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSystemStatus, setupSystem, downloadModels, getTaskStatus } from '@/lib/api';
-import { Loader2, Server, CheckCircle, Download } from 'lucide-react';
+import Image from 'next/image';
+import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login } from '@/lib/api';
+import { Loader2, CheckCircle, Download } from 'lucide-react';
 
 export default function SetupPage() {
   const router = useRouter();
@@ -15,6 +16,8 @@ export default function SetupPage() {
   const [downloadingModels, setDownloadingModels] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadMessage, setDownloadMessage] = useState('Initializing download...');
+  const [downloadSpeed, setDownloadSpeed] = useState('');
+  const [downloadEta, setDownloadEta] = useState('');
   const [downloadComplete, setDownloadComplete] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -69,14 +72,28 @@ export default function SetupPage() {
             setDownloadProgress(100);
             setDownloadMessage('All models ready!');
             setDownloadComplete(true);
-            setTimeout(() => router.push('/login'), 2000);
+            
+            // Auto-login after setup
+            try {
+              const loginResponse = await login(formData.username, formData.password);
+              localStorage.setItem('token', loginResponse.access_token);
+              setTimeout(() => router.push('/'), 2000);
+            } catch (loginErr) {
+              console.error("Auto-login failed", loginErr);
+              // Fallback to login page if auto-login fails
+              setTimeout(() => router.push('/login'), 2000);
+            }
           } else if (status.status === 'FAILURE') {
             clearInterval(pollInterval);
             setError('Model download failed. Please check logs.');
             setDownloadingModels(false); // Allow retry or manual skip?
           } else if (status.status === 'PROCESSING') {
-            setDownloadProgress(status.progress || 0);
-            setDownloadMessage(status.message || 'Downloading...');
+            // The API returns the meta info in the 'result' field for PROCESSING state
+            const meta = status.result || {};
+            setDownloadProgress(meta.progress || 0);
+            setDownloadMessage(meta.message || 'Downloading...');
+            if (meta.speed) setDownloadSpeed(meta.speed);
+            if (meta.eta) setDownloadEta(meta.eta);
           }
         } catch (e) {
           console.error("Polling error", e);
@@ -153,12 +170,12 @@ export default function SetupPage() {
           </div>
           
           <h2 className="text-2xl font-bold mb-2">
-            {downloadComplete ? 'Setup Complete!' : 'Setting Up AI Models'}
+            {downloadComplete ? 'Setup Complete!' : 'Setting Up Nojoin'}
           </h2>
           <p className="text-gray-400 mb-6">
             {downloadComplete 
-              ? 'Redirecting you to login...' 
-              : 'Please wait while we download the necessary AI models. This may take a few minutes.'}
+              ? 'Redirecting you to the dashboard...' 
+              : 'Please wait while Nojoin downloads and setups the necessary dependencies...'}
           </p>
 
           <div className="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
@@ -167,7 +184,12 @@ export default function SetupPage() {
               style={{ width: `${downloadProgress}%` }}
             />
           </div>
-          <p className="text-sm text-gray-400 font-mono">{downloadMessage}</p>
+          <div className="flex flex-col items-center text-sm text-gray-400 font-mono mt-2">
+            <span className="mb-1">{downloadMessage}</span>
+            {downloadSpeed && !downloadComplete && (
+               <span className="text-xs text-gray-500">{downloadSpeed} • ETA: {downloadEta}</span>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -177,9 +199,13 @@ export default function SetupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
       <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-700">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
-            <Server className="w-8 h-8 text-white" />
-          </div>
+          <Image 
+            src="/assets/NojoinLogo.png" 
+            alt="Nojoin Logo" 
+            width={64} 
+            height={64} 
+            className="mb-4"
+          />
           <h1 className="text-2xl font-bold">Welcome to Nojoin</h1>
           <p className="text-gray-400 mt-2 text-center">Create your admin account to get started</p>
         </div>

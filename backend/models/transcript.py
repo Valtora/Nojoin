@@ -17,5 +17,6 @@ class Transcript(BaseDBModel, table=True):
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     notes_status: str = Field(default="pending") # pending, generating, completed, error
     transcript_status: str = Field(default="pending") # pending, processing, completed, error
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
     
     recording: "Recording" = Relationship(back_populates="transcript")

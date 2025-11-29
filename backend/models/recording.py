@@ -63,6 +63,7 @@ class RecordingSpeakerRead(BaseDBModel):
     local_name: Optional[str] = None
     name: Optional[str] = None
     color: Optional[str] = None
+    has_voiceprint: bool = False
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 class TranscriptRead(BaseDBModel):
@@ -71,6 +72,7 @@ class TranscriptRead(BaseDBModel):
     notes: Optional[str] = None
     notes_status: str = "pending"
     transcript_status: str = "pending"
+    error_message: Optional[str] = None
 
 class TagRead(BaseDBModel):
     name: str

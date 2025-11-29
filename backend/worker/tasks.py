@@ -317,10 +317,12 @@ def process_recording_task(self, recording_id: int):
         
         # Update Transcript Segments with Resolved Names
         # We need to update the 'speaker' field in the JSON segments
+        # CHANGED: We now keep the diarization_label in the segments to maintain the link to RecordingSpeaker
+        # The frontend will resolve the display name using the speaker map
         updated_segments = []
         for seg in final_segments:
-            original_label = seg['speaker']
-            seg['speaker'] = label_map.get(original_label, original_label)
+            # original_label = seg['speaker']
+            # seg['speaker'] = label_map.get(original_label, original_label)
             updated_segments.append(seg)
         
         # Log final speaker distribution in updated segments
@@ -533,8 +535,13 @@ def download_models_task(self, hf_token: str | None = None, whisper_model_size: 
     # Reload config to ensure we have the latest settings
     config_manager.reload()
     
-    def progress_callback(msg, percent):
-        self.update_state(state='PROCESSING', meta={'progress': percent, 'message': msg})
+    def progress_callback(msg, percent, speed=None, eta=None):
+        meta = {'progress': percent, 'message': msg}
+        if speed:
+            meta['speed'] = speed
+        if eta:
+            meta['eta'] = eta
+        self.update_state(state='PROCESSING', meta=meta)
     
     try:
         download_models(progress_callback=progress_callback, hf_token=hf_token, whisper_model_size=whisper_model_size)
@@ -564,7 +571,9 @@ def generate_notes_task(self, recording_id: int):
 
         # Update status
         transcript.notes_status = "generating"
+        recording.processing_step = "Generating meeting notes..."
         session.add(transcript)
+        session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)
 
@@ -611,7 +620,9 @@ def generate_notes_task(self, recording_id: int):
         # Save Notes
         transcript.notes = notes
         transcript.notes_status = "completed"
+        recording.processing_step = "Completed"
         session.add(transcript)
+        session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
@@ -621,6 +632,9 @@ def generate_notes_task(self, recording_id: int):
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
         if transcript:
             transcript.notes_status = "error"
+            transcript.error_message = str(e)
+            recording.processing_step = "Error generating notes"
             session.add(transcript)
+            session.add(recording)
             session.commit()
             update_recording_status(session, recording_id)

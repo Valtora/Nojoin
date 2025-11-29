@@ -6,6 +6,8 @@ import whisper
 import silero_vad
 import huggingface_hub
 from pyannote.audio import Pipeline
+import urllib.request
+import time
 
 # Add project root to path to allow imports from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,15 +17,65 @@ from backend.utils.config_manager import config_manager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _download_file(url, dest_path, progress_callback, description):
+    try:
+        logger.info(f"Downloading {url} to {dest_path}")
+        with urllib.request.urlopen(url) as source, open(dest_path, "wb") as output:
+            total_size = int(source.info().get("Content-Length"))
+            downloaded = 0
+            start_time = time.time()
+            chunk_size = 1024 * 1024 # 1MB chunks
+            
+            last_report_time = 0
+            
+            while True:
+                buffer = source.read(chunk_size)
+                if not buffer:
+                    break
+
+                downloaded += len(buffer)
+                output.write(buffer)
+
+                current_time = time.time()
+                # Report every 0.5 seconds
+                if current_time - last_report_time > 0.5 or downloaded == total_size:
+                    last_report_time = current_time
+                    
+                    # Calculate progress
+                    percent = int(downloaded * 100 / total_size)
+                    
+                    # Calculate speed and ETA
+                    elapsed_time = current_time - start_time
+                    if elapsed_time > 0:
+                        speed_bps = downloaded / elapsed_time
+                        speed_mbps = speed_bps / (1024 * 1024)
+                        remaining_bytes = total_size - downloaded
+                        eta_seconds = remaining_bytes / speed_bps if speed_bps > 0 else 0
+                        
+                        speed_str = f"{speed_mbps:.2f} MB/s"
+                        eta_str = f"{int(eta_seconds)}s"
+                    else:
+                        speed_str = "..."
+                        eta_str = "..."
+
+                    progress_callback(f"{description}", percent, speed_str, eta_str)
+                    
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        raise e
+
 def download_models(progress_callback=None, hf_token=None, whisper_model_size=None):
     """
     Downloads necessary models.
-    progress_callback: function(status_message, percent_complete)
+    progress_callback: function(status_message, percent_complete, speed=None, eta=None)
     """
-    def report(msg, percent):
-        logger.info(msg)
+    def report(msg, percent, speed=None, eta=None):
+        logger.info(f"{msg} ({percent}%)")
         if progress_callback:
-            progress_callback(msg, percent)
+            try:
+                progress_callback(msg, percent, speed, eta)
+            except TypeError:
+                progress_callback(msg, percent)
 
     report("Starting model download...", 0)
 
@@ -54,12 +106,34 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         # Don't fail completely, VAD might be optional or retriable
 
     # 3. Preload Whisper Model
-    report(f"Downloading Whisper model ({whisper_model_size})...", 40)
+    report(f"Checking Whisper model ({whisper_model_size})...", 35)
     try:
-        # This can take a while, unfortunately whisper.load_model doesn't have a callback
-        # We rely on the fact that it caches.
-        whisper.load_model(whisper_model_size)
+        # Determine download path
+        download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+        download_root = os.path.join(download_root, "whisper")
+        os.makedirs(download_root, exist_ok=True)
+        
+        url = whisper._MODELS[whisper_model_size]
+        filename = os.path.basename(url)
+        filepath = os.path.join(download_root, filename)
+        
+        # Check if file exists and is valid (simple check)
+        # whisper.load_model does checksum verification, but we want to avoid re-downloading if possible
+        # or force download if we want to show progress?
+        # If it exists, whisper.load_model will be fast.
+        # If it doesn't, we download it manually to show progress.
+        
+        if not os.path.exists(filepath):
+            report(f"Downloading Whisper model ({whisper_model_size})...", 40)
+            _download_file(url, filepath, report, f"Downloading Whisper ({whisper_model_size})")
+        else:
+            report(f"Whisper model found in cache.", 40)
+
+        # Now load it (this verifies checksum and loads into memory)
+        report(f"Loading Whisper model ({whisper_model_size})...", 60)
+        whisper.load_model(whisper_model_size, download_root=download_root)
         report(f"Whisper model ({whisper_model_size}) loaded.", 70)
+        
     except Exception as e:
         logger.error(f"Failed to load Whisper model: {e}")
         raise e

@@ -55,6 +55,7 @@ export interface Transcript extends BaseDBModel {
   notes?: string;
   notes_status?: string; // pending, generating, completed, error
   transcript_status?: string; // pending, processing, completed, error
+  error_message?: string;
 }
 
 export interface Tag extends BaseDBModel {

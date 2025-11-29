@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
@@ -655,7 +656,7 @@ async def extract_voiceprint(
         "backend.worker.tasks.extract_embedding_task",
         args=[recording.audio_path, speaker_segments, device_str]
     )
-    embedding = task.get()
+    embedding = await run_in_threadpool(task.get)
     
     if not embedding:
         raise HTTPException(status_code=500, detail="Failed to extract voiceprint from audio segments")
@@ -923,7 +924,7 @@ async def extract_all_voiceprints(
             "backend.worker.tasks.extract_embedding_task",
             args=[recording.audio_path, speaker_segments, device_str]
         )
-        embedding = task.get()
+        embedding = await run_in_threadpool(task.get)
         
         if not embedding:
             results.append({

@@ -85,7 +85,7 @@ async def trigger_model_download(
     """
     Trigger the background task to download models.
     """
-    task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size)
+    task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
     return {"task_id": task.id}
 
 @router.get("/tasks/{task_id}")

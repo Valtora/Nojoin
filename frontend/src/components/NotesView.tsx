@@ -16,6 +16,7 @@ interface NotesViewProps {
   canUndo: boolean;
   canRedo: boolean;
   isGenerating: boolean;
+  errorMessage?: string | null;
   onExport: () => void;
 }
 
@@ -30,6 +31,7 @@ export default function NotesView({
   canUndo,
   canRedo,
   isGenerating,
+  errorMessage,
   onExport
 }: NotesViewProps) {
   const displayNotes = notes ? notes.replace(/^#+\s*Meeting Notes\s*/i, '').trim() : null;
@@ -546,6 +548,12 @@ export default function NotesView({
             <Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg mb-2">No meeting notes yet</p>
             <p className="text-sm mb-4">Click "Generate Notes" to create AI-powered meeting notes from the transcript.</p>
+            {errorMessage && (
+                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md text-sm max-w-md">
+                    <p className="font-semibold">Generation Failed</p>
+                    <p>{errorMessage}</p>
+                </div>
+            )}
             <button
               onClick={onGenerateNotes}
               disabled={isGenerating}
