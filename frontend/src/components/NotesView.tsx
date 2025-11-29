@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, ReactNode } from 'react';
-import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check } from 'lucide-react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
+import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Link as LinkIcon } from 'lucide-react';
+import { Editor } from '@tiptap/react';
+import RichTextEditor from './RichTextEditor';
 
 interface NotesViewProps {
   recordingId: number;
@@ -30,11 +32,14 @@ export default function NotesView({
   isGenerating,
   onExport
 }: NotesViewProps) {
+  const displayNotes = notes ? notes.replace(/^#+\s*Meeting Notes\s*/i, '').trim() : null;
+
   // Editing State
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(notes || '');
+  const [localNotes, setLocalNotes] = useState(displayNotes || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const lastSavedNotes = useRef(displayNotes || '');
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Find & Replace State
   const [showSearch, setShowSearch] = useState(false);
@@ -46,16 +51,35 @@ export default function NotesView({
   const [matches, setMatches] = useState<{startIndex: number, length: number}[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
 
-  // Update editValue when notes change
+  // Update localNotes when notes prop changes externally
   useEffect(() => {
-    if (!isEditing) {
-      setEditValue(notes || '');
+    const normalizedProp = displayNotes || '';
+    // If the incoming prop is different from what we have locally
+    if (normalizedProp !== localNotes) {
+        // AND it is different from what we last saved (meaning it's not just an echo)
+        if (normalizedProp !== lastSavedNotes.current) {
+            setLocalNotes(normalizedProp);
+            lastSavedNotes.current = normalizedProp;
+        }
     }
-  }, [notes, isEditing]);
+  }, [displayNotes]);
+
+  const handleEditorChange = (newContent: string) => {
+    setLocalNotes(newContent);
+    
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      lastSavedNotes.current = newContent;
+      onNotesChange(newContent);
+    }, 1000); // 1 second debounce
+  };
 
   // Calculate matches when findText or notes change
   useEffect(() => {
-    if (!findText.trim() || !showSearch || !notes) {
+    if (!findText.trim() || !showSearch || !displayNotes) {
         setMatches([]);
         setCurrentMatchIndex(-1);
         return;
@@ -63,7 +87,7 @@ export default function NotesView({
 
     const newMatches: {startIndex: number, length: number}[] = [];
     const lowerFind = findText.toLowerCase();
-    const lowerNotes = notes.toLowerCase();
+    const lowerNotes = displayNotes.toLowerCase();
     
     let pos = 0;
     while (pos < lowerNotes.length) {
@@ -82,7 +106,7 @@ export default function NotesView({
     } else if (newMatches.length === 0) {
         setCurrentMatchIndex(-1);
     }
-  }, [findText, notes, showSearch]);
+  }, [findText, displayNotes, showSearch]);
 
   const nextMatch = () => {
       if (matches.length === 0) return;
@@ -109,13 +133,13 @@ export default function NotesView({
   };
 
   const handleReplaceCurrent = async () => {
-      if (matches.length === 0 || currentMatchIndex === -1 || isSubmitting || !notes) return;
+      if (matches.length === 0 || currentMatchIndex === -1 || isSubmitting || !localNotes) return;
       
       const match = matches[currentMatchIndex];
       
       // Calculate new notes
-      const prefix = notes.substring(0, match.startIndex);
-      const suffix = notes.substring(match.startIndex + match.length);
+      const prefix = localNotes.substring(0, match.startIndex);
+      const suffix = localNotes.substring(match.startIndex + match.length);
       const newNotes = prefix + replaceText + suffix;
       
       setIsSubmitting(true);
@@ -123,21 +147,10 @@ export default function NotesView({
           // Clear matches to avoid stale indices until recalculation
           setMatches([]);
           setCurrentMatchIndex(-1);
-          onNotesChange(newNotes);
+          handleEditorChange(newNotes);
       } finally {
           setIsSubmitting(false);
       }
-  };
-
-  const handleEditSubmit = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      onNotesChange(editValue);
-      setIsEditing(false);
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const renderHighlightedNotes = (text: string) => {
@@ -318,7 +331,69 @@ export default function NotesView({
       <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
         <div className="px-6 py-3 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Meeting Notes</h2>
+            {/* Formatting Toolbar */}
+            <div className="flex items-center gap-1">
+              {editor && (
+                <>
+                  <button
+                    onClick={() => editor.chain().focus().toggleBold().run()}
+                    disabled={!editor.can().chain().focus().toggleBold().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('bold') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Bold"
+                  >
+                    <Bold className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => editor.chain().focus().toggleItalic().run()}
+                    disabled={!editor.can().chain().focus().toggleItalic().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('italic') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Italic"
+                  >
+                    <Italic className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => editor.chain().focus().toggleUnderline().run()}
+                    disabled={!editor.can().chain().focus().toggleUnderline().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('underline') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Underline"
+                  >
+                    <UnderlineIcon className="w-4 h-4" />
+                  </button>
+                  <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                  <button
+                    onClick={() => editor.chain().focus().toggleBulletList().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('bulletList') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Bullet List"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('orderedList') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Numbered List"
+                  >
+                    <ListOrdered className="w-4 h-4" />
+                  </button>
+                  <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                  <button
+                    onClick={() => {
+                      const previousUrl = editor.getAttributes('link').href;
+                      const url = window.prompt('URL', previousUrl);
+                      if (url === null) return;
+                      if (url === '') {
+                        editor.chain().focus().extendMarkRange('link').unsetLink().run();
+                        return;
+                      }
+                      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+                    }}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive('link') ? 'bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
+                    title="Link"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
 
             <div className="flex items-center gap-1">
                 <button
@@ -332,7 +407,7 @@ export default function NotesView({
                     ) : (
                         <Sparkles className="w-4 h-4" />
                     )}
-                    {isGenerating ? 'Generating...' : 'Generate'}
+                    {isGenerating ? 'Generating...' : (notes ? 'Re-Generate Notes' : 'Generate Notes')}
                 </button>
                 <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
                 <button
@@ -457,63 +532,20 @@ export default function NotesView({
       </div>
 
       {/* Notes Content */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
-        {notes ? (
-          isEditing ? (
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                className="w-full min-h-[500px] p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg resize-none focus:ring-2 focus:ring-orange-500 outline-none text-gray-900 dark:text-gray-100 font-mono text-sm"
-                placeholder="Enter your meeting notes..."
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {localNotes || isGenerating ? (
+            <div className="relative h-full">
+              <RichTextEditor
+                content={localNotes}
+                onChange={handleEditorChange}
+                onEditorReady={setEditor}
               />
-              <div className="flex justify-end gap-2 mt-3">
-                <button
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditValue(notes || '');
-                  }}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleEditSubmit}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50"
-                >
-                  <Check className="w-4 h-4" />
-                  Save
-                </button>
-              </div>
             </div>
-          ) : (
-            <div 
-              className="prose prose-gray dark:prose-invert max-w-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg p-4 transition-colors group relative"
-              onClick={() => setIsEditing(true)}
-              title="Click to edit"
-            >
-              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-50 transition-opacity">
-                <Edit2 className="w-4 h-4" />
-              </div>
-              {showSearch && findText ? (
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-2 italic">
-                    Showing plain text for search. Close search to view formatted notes.
-                  </div>
-                  <div className="whitespace-pre-wrap font-mono text-sm">{renderHighlightedNotes(notes)}</div>
-                </div>
-              ) : (
-                renderMarkdown(notes)
-              )}
-            </div>
-          )
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
             <Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg mb-2">No meeting notes yet</p>
-            <p className="text-sm mb-4">Click "Generate" to create AI-powered meeting notes from the transcript.</p>
+            <p className="text-sm mb-4">Click "Generate Notes" to create AI-powered meeting notes from the transcript.</p>
             <button
               onClick={onGenerateNotes}
               disabled={isGenerating}
