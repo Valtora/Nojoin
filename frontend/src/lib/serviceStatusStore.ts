@@ -152,7 +152,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             backendFailCount: state.backendFailCount + 1 
           }));
         }
-      } catch (error) {
+      } catch {
         set(state => ({ 
           backend: false, 
           db: false, 
@@ -213,7 +213,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companionFailCount: state.companionFailCount + 1 
           }));
         }
-      } catch (error) {
+      } catch {
         set(state => ({ 
           companion: false, 
           companionFailCount: state.companionFailCount + 1 
@@ -242,7 +242,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             } 
           });
         }
-      } catch (error) {
+      } catch {
         // Ignore audio level errors, handled by companion check
       }
       scheduleNextAudio();

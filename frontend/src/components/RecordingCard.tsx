@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, CheckCircle, Loader2, AlertCircle, HelpCircle, MoreVertical, RefreshCw, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Loader2, AlertCircle, HelpCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
 import { retryProcessing, deleteRecording } from '@/lib/api';

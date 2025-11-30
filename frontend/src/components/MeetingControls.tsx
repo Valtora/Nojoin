@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Pause, Mic, Circle } from 'lucide-react';
+import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
-
-type RecordingStatus = 'idle' | 'recording' | 'paused';
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;

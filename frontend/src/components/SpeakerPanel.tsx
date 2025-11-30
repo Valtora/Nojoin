@@ -7,7 +7,6 @@ import ContextMenu from './ContextMenu';
 import VoiceprintModal from './VoiceprintModal';
 import { InlineColorPicker } from './ColorPicker';
 import { updateSpeaker, mergeRecordingSpeakers, deleteRecordingSpeaker, extractVoiceprint, extractAllVoiceprints, promoteToGlobalSpeaker } from '@/lib/api';
-import { useRouter } from 'next/navigation';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 interface SpeakerPanelProps {
@@ -25,7 +24,6 @@ interface SpeakerPanelProps {
 }
 
 export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, currentTime, isPlaying, onPause, onResume, onRefresh }: SpeakerPanelProps) {
-  const router = useRouter();
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
   

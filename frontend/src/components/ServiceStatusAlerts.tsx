@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 
@@ -16,10 +16,6 @@ export default function ServiceStatusAlerts() {
     audioLevels, companionStatus,
     startPolling, stopPolling 
   } = useServiceStatusStore();
-  
-  const [audioWarnings, setAudioWarnings] = useState<{ noAudio: boolean }>({
-    noAudio: false,
-  });
   
   // Track consecutive silence counts
   const silenceCountRef = useRef({ input: 0, output: 0 });
@@ -127,7 +123,6 @@ export default function ServiceStatusAlerts() {
         const isOutputSilent = silenceCountRef.current.output >= SILENCE_CHECK_COUNT;
 
         const newWarnings = { noAudio: isInputSilent && isOutputSilent };
-        setAudioWarnings(newWarnings);
         
         if (newWarnings.noAudio && !notificationIds.current.audio) {
           notificationIds.current.audio = addNotification({
@@ -141,7 +136,6 @@ export default function ServiceStatusAlerts() {
         }
       } else {
         silenceCountRef.current = { input: 0, output: 0 };
-        setAudioWarnings({ noAudio: false });
         if (notificationIds.current.audio) {
           removeActiveNotification(notificationIds.current.audio);
           notificationIds.current.audio = null;

@@ -28,7 +28,7 @@ export default function AccountSettings() {
       }
     };
     fetchUser();
-  }, []);
+  }, [addNotification]);
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();

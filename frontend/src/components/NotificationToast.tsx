@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
-import { useNotificationStore, Notification, NotificationType } from '@/lib/notificationStore';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 const icons = {
   success: <CheckCircle className="w-5 h-5 text-green-500" />,

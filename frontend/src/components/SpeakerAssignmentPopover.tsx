@@ -17,7 +17,6 @@ interface SpeakerAssignmentPopoverProps {
 }
 
 export default function SpeakerAssignmentPopover({
-  currentSpeakerName,
   availableSpeakers,
   globalSpeakers,
   onSelect,
@@ -39,11 +38,9 @@ export default function SpeakerAssignmentPopover({
         const spaceAbove = rect.top;
         const popoverHeight = 300; // Approximate max height
 
-        let top = rect.bottom + window.scrollY;
-        
         // If not enough space below, show above
         if (spaceBelow < popoverHeight && spaceAbove > popoverHeight) {
-            top = rect.top + window.scrollY - popoverHeight; // This is rough, better to let it flow or measure
+            // top = rect.top + window.scrollY - popoverHeight; // This is rough, better to let it flow or measure
             // Actually, let's just stick to below for now unless requested, 
             // but to be safe let's just use rect.bottom + scrollY
         }

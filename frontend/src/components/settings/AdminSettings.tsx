@@ -34,7 +34,7 @@ export default function AdminSettings() {
     try {
       const data = await getUsers();
       setUsers(data);
-    } catch (err: any) {
+    } catch {
       addNotification({ message: 'Failed to fetch users', type: 'error' });
     } finally {
       setLoading(false);
@@ -43,6 +43,7 @@ export default function AdminSettings() {
 
   useEffect(() => {
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -93,7 +94,7 @@ export default function AdminSettings() {
       addNotification({ message: 'User updated successfully', type: 'success' });
       setEditingId(null);
       fetchUsers();
-    } catch (err: any) {
+    } catch {
       addNotification({ message: 'Failed to update user', type: 'error' });
     }
   };

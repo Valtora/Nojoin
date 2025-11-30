@@ -19,10 +19,6 @@ interface AudioSettingsProps {
 }
 
 export default function AudioSettings({
-  settings,
-  onUpdateSettings,
-  companionConfig,
-  onUpdateCompanionConfig,
   companionDevices,
   selectedInputDevice,
   onSelectInputDevice,

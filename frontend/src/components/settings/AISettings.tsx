@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
-import { Eye, EyeOff, Check, X, Loader2, Download, RefreshCw, Trash2, HelpCircle } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { AI_KEYWORDS } from './keywords';
 import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
 

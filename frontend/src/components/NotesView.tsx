@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, ReactNode } from 'react';
-import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Edit2, Check, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Link as LinkIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2, Sparkles, Loader2, Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Link as LinkIcon } from 'lucide-react';
 import { Editor } from '@tiptap/react';
 import RichTextEditor from './RichTextEditor';
 import LinkModal from './LinkModal';
@@ -22,7 +22,6 @@ interface NotesViewProps {
 }
 
 export default function NotesView({ 
-  recordingId,
   notes,
   onNotesChange,
   onGenerateNotes,
@@ -69,6 +68,7 @@ export default function NotesView({
             lastSavedNotes.current = normalizedProp;
         }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayNotes]);
 
   const handleEditorChange = (newContent: string) => {
@@ -113,7 +113,7 @@ export default function NotesView({
     } else if (newMatches.length === 0) {
         setCurrentMatchIndex(-1);
     }
-  }, [findText, displayNotes, showSearch]);
+  }, [findText, displayNotes, showSearch, currentMatchIndex]);
 
   const nextMatch = () => {
       if (matches.length === 0) return;
@@ -158,178 +158,6 @@ export default function NotesView({
       } finally {
           setIsSubmitting(false);
       }
-  };
-
-  const renderHighlightedNotes = (text: string) => {
-    if (!findText || !showSearch || matches.length === 0) {
-      return text;
-    }
-
-    let lastIndex = 0;
-    const parts: ReactNode[] = [];
-
-    matches.forEach((match, i) => {
-      // Text before match
-      if (match.startIndex > lastIndex) {
-        parts.push(text.substring(lastIndex, match.startIndex));
-      }
-
-      // The match itself
-      const isCurrent = i === currentMatchIndex;
-      parts.push(
-        <mark 
-          key={`match-${match.startIndex}`}
-          className={`${isCurrent ? 'bg-orange-400 text-white' : 'bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100'} rounded-sm px-0.5`}
-        >
-          {text.substring(match.startIndex, match.startIndex + match.length)}
-        </mark>
-      );
-
-      lastIndex = match.startIndex + match.length;
-    });
-
-    // Remaining text
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts;
-  };
-
-  // Simple Markdown rendering
-  const renderMarkdown = (text: string) => {
-    if (!text) return null;
-    
-    const lines = text.split('\n');
-    const elements: ReactNode[] = [];
-    let inList = false;
-    let listItems: string[] = [];
-    let listType: 'ul' | 'ol' | 'checkbox' = 'ul';
-    let key = 0;
-
-    const flushList = () => {
-      if (listItems.length > 0) {
-        if (listType === 'checkbox') {
-          elements.push(
-            <ul key={key++} className="list-none space-y-1 ml-0 mb-4">
-              {listItems.map((item, i) => {
-                const checked = item.startsWith('[x]') || item.startsWith('[X]');
-                const text = item.replace(/^\[[ xX]\]\s*/, '');
-                return (
-                  <li key={i} className="flex items-start gap-2">
-                    <input 
-                      type="checkbox" 
-                      checked={checked} 
-                      readOnly 
-                      className="mt-1 accent-orange-500"
-                    />
-                    <span className={checked ? 'line-through text-gray-500' : ''}>{text}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          );
-        } else if (listType === 'ol') {
-          elements.push(
-            <ol key={key++} className="list-decimal list-inside space-y-1 ml-4 mb-4">
-              {listItems.map((item, i) => <li key={i}>{item}</li>)}
-            </ol>
-          );
-        } else {
-          elements.push(
-            <ul key={key++} className="list-disc list-inside space-y-1 ml-4 mb-4">
-              {listItems.map((item, i) => <li key={i}>{item}</li>)}
-            </ul>
-          );
-        }
-        listItems = [];
-        inList = false;
-      }
-    };
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      
-      // Headers
-      if (trimmedLine.startsWith('### ')) {
-        flushList();
-        elements.push(
-          <h3 key={key++} className="text-lg font-bold text-gray-900 dark:text-white mt-6 mb-2">
-            {trimmedLine.substring(4)}
-          </h3>
-        );
-      } else if (trimmedLine.startsWith('## ')) {
-        flushList();
-        elements.push(
-          <h2 key={key++} className="text-xl font-bold text-gray-900 dark:text-white mt-6 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
-            {trimmedLine.substring(3)}
-          </h2>
-        );
-      } else if (trimmedLine.startsWith('# ')) {
-        flushList();
-        elements.push(
-          <h1 key={key++} className="text-2xl font-bold text-gray-900 dark:text-white mt-4 mb-4">
-            {trimmedLine.substring(2)}
-          </h1>
-        );
-      }
-      // Checkbox list items
-      else if (trimmedLine.match(/^[-*]\s*\[[ xX]\]/)) {
-        if (!inList || listType !== 'checkbox') {
-          flushList();
-          inList = true;
-          listType = 'checkbox';
-        }
-        listItems.push(trimmedLine.replace(/^[-*]\s*/, ''));
-      }
-      // Unordered list items
-      else if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
-        if (!inList || listType !== 'ul') {
-          flushList();
-          inList = true;
-          listType = 'ul';
-        }
-        listItems.push(trimmedLine.substring(2));
-      }
-      // Ordered list items
-      else if (trimmedLine.match(/^\d+\.\s/)) {
-        if (!inList || listType !== 'ol') {
-          flushList();
-          inList = true;
-          listType = 'ol';
-        }
-        listItems.push(trimmedLine.replace(/^\d+\.\s/, ''));
-      }
-      // Empty line
-      else if (trimmedLine === '') {
-        flushList();
-        elements.push(<div key={key++} className="h-2" />);
-      }
-      // Bold text (simple handling)
-      else if (trimmedLine.includes('**')) {
-        flushList();
-        const parts = trimmedLine.split(/\*\*(.*?)\*\*/g);
-        elements.push(
-          <p key={key++} className="text-gray-700 dark:text-gray-300 mb-2">
-            {parts.map((part, i) => 
-              i % 2 === 1 ? <strong key={i}>{part}</strong> : part
-            )}
-          </p>
-        );
-      }
-      // Regular paragraph
-      else {
-        flushList();
-        elements.push(
-          <p key={key++} className="text-gray-700 dark:text-gray-300 mb-2">
-            {trimmedLine}
-          </p>
-        );
-      }
-    }
-
-    flushList();
-    return elements;
   };
 
   return (
@@ -547,7 +375,7 @@ export default function NotesView({
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
             <Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg mb-2">No meeting notes yet</p>
-            <p className="text-sm mb-4">Click "Generate Notes" to create AI-powered meeting notes from the transcript.</p>
+            <p className="text-sm mb-4">Click &quot;Generate Notes&quot; to create AI-powered meeting notes from the transcript.</p>
             {errorMessage && (
                 <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md text-sm max-w-md">
                     <p className="font-semibold">Generation Failed</p>

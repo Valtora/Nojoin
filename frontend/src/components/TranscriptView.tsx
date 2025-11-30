@@ -2,7 +2,7 @@
 
 import { TranscriptSegment, RecordingSpeaker, GlobalSpeaker } from '@/types';
 import { useRef, useEffect, useState } from 'react';
-import { Play, Pause, Search, X, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
+import { Play, Pause, Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { getColorByKey } from '@/lib/constants';
 import SpeakerAssignmentPopover from './SpeakerAssignmentPopover';
 
@@ -36,7 +36,6 @@ const formatTime = (seconds: number) => {
 };
 
 export default function TranscriptView({ 
-  recordingId,
   segments, 
   currentTime, 
   onPlaySegment,
@@ -156,7 +155,7 @@ export default function TranscriptView({
       let lastIndex = 0;
       const parts = [];
 
-      segmentMatches.forEach((match, i) => {
+      segmentMatches.forEach((match) => {
           // Text before match
           if (match.startIndex > lastIndex) {
               parts.push(text.substring(lastIndex, match.startIndex));

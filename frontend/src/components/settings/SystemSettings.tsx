@@ -2,7 +2,6 @@
 
 import { Settings } from '@/types';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { SYSTEM_KEYWORDS } from './keywords';
 
 interface SystemSettingsProps {
   settings: Settings;

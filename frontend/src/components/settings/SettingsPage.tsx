@@ -214,13 +214,13 @@ export default function SettingsPage() {
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
-              // @ts-ignore
+              // @ts-expect-error - tabMatches might be undefined or have different index signature
               const hasMatch = tabMatches && tabMatches[tab.id] < 0.6;
 
               return (
                 <button
                   key={tab.id}
-                  // @ts-ignore
+                  // @ts-expect-error - setActiveTab expects specific enum/string
                   onClick={() => setActiveTab(tab.id)}
                   className={`
                     w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors

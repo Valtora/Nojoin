@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus } from '@/types';
-import { CheckCircle, Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, Archive, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
@@ -220,7 +220,7 @@ export default function Sidebar() {
     } catch (error) {
       console.error("Failed to fetch recordings:", error);
     }
-  }, [debouncedSearchQuery, dateRange, dateMode, selectedSpeakers, selectedTagIds, currentView]);
+  }, [dateRange, dateMode, selectedSpeakers, selectedTagIds, currentView]);
 
   useEffect(() => {
     fetchRecordings();

@@ -8,11 +8,11 @@ import NotesView from '@/components/NotesView';
 import ExportModal from '@/components/ExportModal';
 import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Edit2 } from 'lucide-react';
+import { Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
-import { COLOR_PALETTE, getColorByKey } from '@/lib/constants';
+import { COLOR_PALETTE } from '@/lib/constants';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 type ActivePanel = 'transcript' | 'notes';
@@ -217,6 +217,7 @@ export default function RecordingPage({ params }: PageProps) {
         }
     });
     setSpeakerColors(newColors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
 
   // Player Handlers
@@ -451,7 +452,7 @@ export default function RecordingPage({ params }: PageProps) {
       if (!recording) return;
       setIsGeneratingNotes(true);
       try {
-          const result = await generateNotes(recording.id);
+          await generateNotes(recording.id);
           const updated = await getRecording(recording.id);
           setRecording(updated);
           setActivePanel('notes'); // Switch to notes panel after generation

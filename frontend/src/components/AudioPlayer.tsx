@@ -2,8 +2,8 @@
 
 import { Recording } from '@/types';
 import { getRecordingStreamUrl } from '@/lib/api';
-import { Play, Pause, Volume2, VolumeX, Settings } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 interface AudioPlayerProps {
   recording: Recording;

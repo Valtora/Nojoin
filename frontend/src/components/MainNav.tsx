@@ -19,7 +19,6 @@ import {
   LogOut
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
-import { useNotificationStore } from '@/lib/notificationStore';
 import { getTags, updateTag, deleteTag, createTag } from '@/lib/api';
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';

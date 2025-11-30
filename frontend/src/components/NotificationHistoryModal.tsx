@@ -1,7 +1,7 @@
 'use client';
 
-import { X, Trash2, CheckCheck, Bell } from 'lucide-react';
-import { useNotificationStore, Notification } from '@/lib/notificationStore';
+import { X, Trash2, Bell } from 'lucide-react';
+import { useNotificationStore } from '@/lib/notificationStore';
 import { format } from 'date-fns';
 
 interface NotificationHistoryModalProps {
