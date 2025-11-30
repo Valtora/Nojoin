@@ -3,14 +3,21 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login } from '@/lib/api';
-import { Loader2, CheckCircle, Download } from 'lucide-react';
+import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings } from '@/lib/api';
+import { Loader2, CheckCircle, Download, Check, X } from 'lucide-react';
 
 export default function SetupPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [setupSuccess, setSetupSuccess] = useState(false);
+  
+  // Validation State
+  const [validatingLLM, setValidatingLLM] = useState(false);
+  const [validatingHF, setValidatingHF] = useState(false);
+  const [llmValidationMsg, setLlmValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
+  const [hfValidationMsg, setHfValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
   
   // Model Download State
   const [downloadingModels, setDownloadingModels] = useState(false);
@@ -124,24 +131,92 @@ export default function SetupPage() {
 
     setSubmitting(true);
     try {
-      await setupSystem({
-        username: formData.username,
-        password: formData.password,
-        is_superuser: true,
-        llm_provider: formData.llm_provider,
-        gemini_api_key: formData.gemini_api_key || undefined,
-        openai_api_key: formData.openai_api_key || undefined,
-        anthropic_api_key: formData.anthropic_api_key || undefined,
-        hf_token: formData.hf_token || undefined
-      });
+      if (!setupSuccess) {
+        // 1. Initial Setup
+        try {
+          await setupSystem({
+            username: formData.username,
+            password: formData.password,
+            is_superuser: true,
+            llm_provider: formData.llm_provider,
+            gemini_api_key: formData.gemini_api_key || undefined,
+            openai_api_key: formData.openai_api_key || undefined,
+            anthropic_api_key: formData.anthropic_api_key || undefined,
+            hf_token: formData.hf_token || undefined
+          });
+        } catch (err: any) {
+          // If system is already initialized, we might be in a retry state where the page wasn't refreshed
+          if (err.response?.status === 400 && err.response?.data?.detail === "System is already initialized.") {
+             // Proceed to login and update
+             console.log("System already initialized, proceeding to login/update flow");
+          } else {
+             throw err;
+          }
+        }
+
+        // 2. Auto Login
+        const loginResponse = await login(formData.username, formData.password);
+        localStorage.setItem('token', loginResponse.access_token);
+        setSetupSuccess(true);
+      } else {
+        // 3. Update Settings (Retry Flow)
+        await updateSettings({
+            llm_provider: formData.llm_provider,
+            gemini_api_key: formData.gemini_api_key || undefined,
+            openai_api_key: formData.openai_api_key || undefined,
+            anthropic_api_key: formData.anthropic_api_key || undefined,
+            hf_token: formData.hf_token || undefined
+        });
+      }
       
-      // Instead of redirecting, start download
+      // 4. Start Download
       setSubmitting(false);
       await startModelDownload();
 
     } catch (err: any) {
+      console.error(err);
       setError(err.response?.data?.detail || 'Setup failed');
       setSubmitting(false);
+    }
+  };
+
+  const handleValidateLLM = async () => {
+    const provider = formData.llm_provider;
+    const key = provider === 'gemini' ? formData.gemini_api_key : 
+                provider === 'openai' ? formData.openai_api_key : 
+                formData.anthropic_api_key;
+    
+    if (!key) {
+      setLlmValidationMsg({valid: false, msg: 'Please enter an API key'});
+      return;
+    }
+
+    setValidatingLLM(true);
+    setLlmValidationMsg(null);
+    try {
+      const res = await validateLLM(provider, key);
+      setLlmValidationMsg({valid: true, msg: res.message});
+    } catch (err: any) {
+      setLlmValidationMsg({valid: false, msg: err.response?.data?.detail || 'Validation failed'});
+    } finally {
+      setValidatingLLM(false);
+    }
+  };
+
+  const handleValidateHF = async () => {
+    if (!formData.hf_token) {
+      setHfValidationMsg({valid: false, msg: 'Please enter a token'});
+      return;
+    }
+    setValidatingHF(true);
+    setHfValidationMsg(null);
+    try {
+      const res = await validateHF(formData.hf_token);
+      setHfValidationMsg({valid: true, msg: res.message});
+    } catch (err: any) {
+      setHfValidationMsg({valid: false, msg: err.response?.data?.detail || 'Validation failed'});
+    } finally {
+      setValidatingHF(false);
     }
   };
 
@@ -270,39 +345,87 @@ export default function SetupPage() {
               {formData.llm_provider === 'gemini' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Gemini API Key</label>
-                  <input
-                    type="password"
-                    value={formData.gemini_api_key}
-                    onChange={(e) => setFormData({...formData, gemini_api_key: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                    placeholder="AIza..."
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={formData.gemini_api_key}
+                      onChange={(e) => setFormData({...formData, gemini_api_key: e.target.value})}
+                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                      placeholder="AIza..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleValidateLLM}
+                      disabled={validatingLLM || !formData.gemini_api_key}
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
+                    >
+                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                    </button>
+                  </div>
+                  {llmValidationMsg && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
+                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {llmValidationMsg.msg}
+                    </div>
+                  )}
                 </div>
               )}
 
               {formData.llm_provider === 'openai' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">OpenAI API Key</label>
-                  <input
-                    type="password"
-                    value={formData.openai_api_key}
-                    onChange={(e) => setFormData({...formData, openai_api_key: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                    placeholder="sk-..."
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={formData.openai_api_key}
+                      onChange={(e) => setFormData({...formData, openai_api_key: e.target.value})}
+                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                      placeholder="sk-..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleValidateLLM}
+                      disabled={validatingLLM || !formData.openai_api_key}
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
+                    >
+                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                    </button>
+                  </div>
+                  {llmValidationMsg && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
+                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {llmValidationMsg.msg}
+                    </div>
+                  )}
                 </div>
               )}
 
               {formData.llm_provider === 'anthropic' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Anthropic API Key</label>
-                  <input
-                    type="password"
-                    value={formData.anthropic_api_key}
-                    onChange={(e) => setFormData({...formData, anthropic_api_key: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                    placeholder="sk-ant-..."
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={formData.anthropic_api_key}
+                      onChange={(e) => setFormData({...formData, anthropic_api_key: e.target.value})}
+                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                      placeholder="sk-ant-..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleValidateLLM}
+                      disabled={validatingLLM || !formData.anthropic_api_key}
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
+                    >
+                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                    </button>
+                  </div>
+                  {llmValidationMsg && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
+                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {llmValidationMsg.msg}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -310,13 +433,29 @@ export default function SetupPage() {
                 <label className="block text-sm font-medium text-gray-400 mb-1">
                   HuggingFace Token <span className="text-gray-500 text-xs">(Required for Pyannote)</span>
                 </label>
-                <input
-                  type="password"
-                  value={formData.hf_token}
-                  onChange={(e) => setFormData({...formData, hf_token: e.target.value})}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                  placeholder="hf_..."
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={formData.hf_token}
+                    onChange={(e) => setFormData({...formData, hf_token: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                    placeholder="hf_..."
+                  />
+                  <button
+                    type="button"
+                    onClick={handleValidateHF}
+                    disabled={validatingHF || !formData.hf_token}
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
+                  >
+                    {validatingHF ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                  </button>
+                </div>
+                {hfValidationMsg && (
+                  <div className={`text-xs mt-1 flex items-center gap-1 ${hfValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
+                    {hfValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    {hfValidationMsg.msg}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -327,7 +466,7 @@ export default function SetupPage() {
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Create Admin Account
+            {setupSuccess ? 'Update & Retry Download' : 'Create Admin Account'}
           </button>
         </form>
       </div>

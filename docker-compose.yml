@@ -26,6 +26,7 @@ services:
     volumes:
       - .:/app
       - ./data/recordings:/app/recordings
+      - model_cache:/root/.cache
     ports:
       - "8000:8000"
     environment:
@@ -33,6 +34,8 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - XDG_CACHE_HOME=/root/.cache
+      - HF_HOME=/root/.cache/huggingface
     depends_on:
       - db
       - redis
@@ -47,6 +50,7 @@ services:
     volumes:
       - .:/app
       - ./data:/app/data
+      - model_cache:/home/appuser/.cache
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
@@ -55,6 +59,9 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - WHISPER_ENABLE_WORD_TIMESTAMPS=true
+      # Force cache location to match the mounted volume
+      - XDG_CACHE_HOME=/home/appuser/.cache
+      - HF_HOME=/home/appuser/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -96,3 +103,4 @@ services:
 
 volumes:
   postgres_data:
+  model_cache:

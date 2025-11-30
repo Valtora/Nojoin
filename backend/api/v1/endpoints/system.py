@@ -10,6 +10,7 @@ from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager
+from backend.preload_models import check_model_status
 
 router = APIRouter()
 
@@ -138,3 +139,32 @@ async def get_task_status(task_id: str) -> Any:
             response["message"] = str(info)
     
     return response
+
+@router.get("/models/status")
+async def get_models_status() -> Any:
+    """
+    Get the status of all models.
+    """
+    return check_model_status()
+
+@router.delete("/models/{model_name}")
+async def delete_model_endpoint(
+    model_name: str,
+    # db: AsyncSession = Depends(get_db), # Add auth if needed later
+) -> Any:
+    """
+    Delete a specific model from the cache.
+    """
+    from backend.preload_models import delete_model
+    
+    if model_name not in ["whisper", "pyannote", "embedding"]:
+        raise HTTPException(status_code=400, detail="Invalid model name")
+        
+    try:
+        success = delete_model(model_name)
+        if success:
+            return {"message": f"Model {model_name} deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

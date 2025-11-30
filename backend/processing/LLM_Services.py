@@ -47,6 +47,13 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def validate_api_key(self) -> bool:
+        """
+        Validate the API key by making a lightweight API call.
+        Returns True if valid, raises an exception or returns False if invalid.
+        """
+        raise NotImplementedError
+
     @staticmethod
     def get_default_speaker_prompt_template():
         return """
@@ -363,6 +370,19 @@ User Question: {user_question}
             logger.error(f"Gemini API error (meeting title): {e}")
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
 
+    def validate_api_key(self) -> bool:
+        """
+        Validate the API key by making a lightweight API call.
+        Returns True if valid, raises an exception or returns False if invalid.
+        """
+        try:
+            # Simple call to list models to verify key
+            self.client.models.list()
+            return True
+        except Exception as e:
+            logger.error(f"Gemini API validation failed: {e}")
+            raise ValueError(f"Gemini API validation failed: {e}")
+
 class OpenAILLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         if api_key is None:
@@ -371,7 +391,7 @@ class OpenAILLMBackend(LLMBackend):
             raise ValueError("OpenAI API key is not set. Please provide it in settings.")
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("openai")
-        openai.api_key = self.api_key
+        self.client = openai.OpenAI(api_key=self.api_key)
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
@@ -382,13 +402,13 @@ class OpenAILLMBackend(LLMBackend):
             prompt_template = self.get_speaker_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 timeout=timeout
             )
-            text = response["choices"][0]["message"]["content"]
+            text = response.choices[0].message.content
             mapping = self.parse_mapping_table(text)
             return mapping
         except Exception as e:
@@ -404,13 +424,13 @@ class OpenAILLMBackend(LLMBackend):
         mapping_table = self.mapping_to_markdown_table(speaker_mapping)
         prompt = prompt_template.format(transcript=transcript, mapping_table=mapping_table)
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 timeout=timeout
             )
-            text = response["choices"][0]["message"]["content"]
+            text = response.choices[0].message.content
             notes = self.parse_notes(text)
             return notes
         except Exception as e:
@@ -443,13 +463,13 @@ User Question: {user_question}
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.2,
                 timeout=timeout
             )
-            return response["choices"][0]["message"]["content"]
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
@@ -463,17 +483,30 @@ User Question: {user_question}
             prompt_template = self.get_title_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 timeout=timeout
             )
-            title = self.parse_title(response["choices"][0]["message"]["content"])
+            title = self.parse_title(response.choices[0].message.content)
             return title
         except Exception as e:
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
+
+    def validate_api_key(self) -> bool:
+        """
+        Validate the API key by making a lightweight API call.
+        Returns True if valid, raises an exception or returns False if invalid.
+        """
+        try:
+            # Simple call to list models to verify key
+            self.client.models.list()
+            return True
+        except Exception as e:
+            logger.error(f"OpenAI API validation failed: {e}")
+            raise ValueError(f"OpenAI API validation failed: {e}")
 
 class AnthropicLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
@@ -586,6 +619,26 @@ User Question: {user_question}
         except Exception as e:
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
+
+    def validate_api_key(self) -> bool:
+        """
+        Validate the API key by making a lightweight API call.
+        Returns True if valid, raises an exception or returns False if invalid.
+        """
+        try:
+            # Simple call to list models to verify key
+            # Anthropic doesn't have a lightweight list_models in all versions, 
+            # but we can try a very cheap message or just check if client init worked (which it does).
+            # Better to try a minimal generation.
+            self.client.messages.create(
+                model=self.model,
+                max_tokens=1,
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Anthropic API validation failed: {e}")
+            raise ValueError(f"Anthropic API validation failed: {e}")
 
 def _get_default_model_for_provider(provider: str) -> str:
     """Return the hardcoded default model for each provider."""

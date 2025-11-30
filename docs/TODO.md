@@ -2,20 +2,18 @@
 
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below:
 
-### First-Run Improvements
-#### API Key and HF Token Validation
-- Implement validation for the selected LLM Provider's API key and Hugging Face token entered during the first-run setup process. This validation should check that the provided keys are in the correct format and are able to authenticate with their respective services. If the keys are invalid, provide clear error messages to the user and prompt them to re-enter valid keys before proceeding with the setup.
-#### Model Download Robustness
-- Enhance the robustness of the model download process during the first-run setup. This includes implementing retry logic for failed downloads, providing progress indicators to the user, and ensuring that partial downloads are handled gracefully. If a download fails after multiple attempts, inform the user and provide options to retry or skip the download for later.
-- Add the option to allow the user to download models from the Settings page > AI Services tab. They should also be able to check a model is downloaded and ready to use from there too. Do the same for the diarization and voice embedding models.
+### Settings Page > AI Services Tab - 'Local Models' Section
+- Confirm that the 'Download / Update Models' button functions correctly by initiating the download of available local models from the backend when clicked.
+- Confirm where and how the models are stored, look at the docker compose file to see the mounts and volumes used for model storage.
+- Improve the UI/UX of the 'Local Models' section in the AI Services tab of the Settings page. This includes adding clear indicators for which models are currently downloaded and available for use, as well as providing options to download or remove models directly from this section. Implement progress bars for model downloads and ensure that the user receives feedback on the success or failure of these actions.
+- There is a 'refresh' button already there to check which models are downloaded. Ensure this functions correctly and updates the UI accordingly. Use the notification system to inform the user when the refresh is complete.
+
+### Settings - Custom Base URL and Ports
+- Implement the ability for the user to change the base URL and ports for the web app in the companion app settings modal. This is useful for users who want to self-host Nojoin on a different domain or port. They may instead need to change this using the docker-compose.yml file but having the option in the companion app settings modal is more user friendly. Explore how we could implement this feature.
 
 ### Consider Upgrading to Cuda 13
 - See this link: https://www.google.com/search?q=cuda+12.6+vs+12.8+vs+13.0&num=10&client=firefox-b-d&sca_esv=30d2ca42fc4644ef&sxsrf=AE3TifPQ_jdRbNECXpjGm2Ar-AilIFMQyw%3A1764454298783&ei=mm8raYvJL-2jhbIPzv6w-Ag&oq=cuda+12.6+vs&gs_lp=Egxnd3Mtd2l6LXNlcnAiDGN1ZGEgMTIuNiB2cyoCCAIyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIIEAAYFhgKGB4yBhAAGBYYHjIGEAAYFhgeMgYQABgWGB4yCBAAGBYYChgeSKwOUIcBWOMCcAF4AJABAJgBRKABwAGqAQEzuAEByAEA-AEBmAIEoALNAcICDRAAGIAEGLADGEMYigXCAgoQABiABBhDGIoFwgIKEAAYgAQYFBiHApgDAIgGAZAGCpIHATSgB_QWsgcBM7gHyQHCBwUwLjIuMsgHCg&sclient=gws-wiz-serp
 - See this link too: https://pytorch.org/get-started/locally/
-
-
-### Settings - Custom Base URL and Ports
-- Implement the ability for the user to change the base URL and ports for the web app in the companion app settings modal. This is useful for users who want to self-host Nojoin on a different domain or port. They may instead need to change this using the docker-compose.yml file but having the option in the companion app settings modal is more user friendly. Explore how we could implement this feature.
 
 ### Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
@@ -25,6 +23,7 @@ Let's continue the development of Nojoin. Read the PRD.md in the docs directory 
 
 ### Meeting Transcription Feature - Translation
 - Use OpenAI's Whisper API to implement a translation feature for meeting transcriptions. This feature should allow users to select a target language for translation after the transcription is complete. The translated text should be displayed alongside the original transcript in the transcript window, with clear labeling to differentiate between the two. Explore how to best integrate this feature into the existing transcription workflow.
+- See here: https://github.com/openai/whisper/blob/main/model-card.md
 
 ### Backup/Restore Feature
 - Implement a backup/restore feature.

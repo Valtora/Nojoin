@@ -482,4 +482,23 @@ export const updatePasswordMe = async (data: any): Promise<any> => {
   return response.data;
 };
 
+export const validateLLM = async (provider: string, api_key: string, model?: string): Promise<{ valid: boolean, message: string }> => {
+  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-llm', { provider, api_key, model });
+  return response.data;
+};
+
+export const validateHF = async (token: string): Promise<{ valid: boolean, message: string }> => {
+  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-hf', { token });
+  return response.data;
+};
+
+export const getModelStatus = async (): Promise<any> => {
+  const response = await api.get('/system/models/status');
+  return response.data;
+};
+
+export const deleteModel = async (modelName: string): Promise<void> => {
+  await api.delete(`/system/models/${modelName}`);
+};
+
 export default api;

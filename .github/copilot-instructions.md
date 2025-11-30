@@ -1,11 +1,11 @@
 # Nojoin AI Agent Instructions
 
-## 🧠 Project Context
+## Project Context
 Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app (Windows), processes it on a GPU-enabled Docker backend (WSL2/Linux), and presents insights via a Next.js web interface.
 
 **Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Privacy First (Self-hosted).
 
-## 🏗️ Architecture & Patterns
+## Architecture & Patterns
 
 ### Backend (FastAPI + Celery)
 - **Service Boundary**: `backend/` handles API requests and offloads heavy processing to Celery workers via Redis.
@@ -33,7 +33,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - **Retries**: Implemented in `src/uploader.rs` with exponential backoff.
 - **UI**: System tray only (`tray-icon`, `tao`).
 
-## 🔄 Critical Workflows
+## Critical Workflows
 
 ### Hybrid Development (WSL2 + Windows)
 - **Backend/Frontend**: Run in WSL2/Linux (Docker).
@@ -50,7 +50,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
 
-## 📏 Code Style & Conventions
+## Code Style & Conventions
 
 ### Python (Backend)
 - **Type Hints**: Mandatory for all function arguments and return values.
@@ -65,7 +65,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Error Handling**: Use `anyhow::Result` for application code.
 - **Async**: Use `tokio` for I/O bound tasks.
 
-## 🤖 Agent Interaction Rules
+## Agent Interaction Rules
 
 ### The Workflow Loop
 1.  **REQUIREMENT**: User states a feature.
