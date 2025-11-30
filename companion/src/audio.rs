@@ -292,12 +292,15 @@ fn start_segment(
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             match uploader::upload_segment(recording_id, sequence, &path, &config).await {
-                Ok(_) => println!("Segment uploaded successfully"),
-                Err(e) => eprintln!("Failed to upload segment: {}", e),
+                Ok(_) => {
+                    println!("Segment uploaded successfully");
+                    // Only delete file if upload was successful
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        eprintln!("Failed to delete temp file {:?}: {}", path, e);
+                    }
+                },
+                Err(e) => eprintln!("Failed to upload segment: {}. File preserved at {:?}", e, path),
             }
         });
-        
-        // Cleanup
-        let _ = std::fs::remove_file(path);
     })
 }

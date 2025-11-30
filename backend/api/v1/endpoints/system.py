@@ -9,6 +9,7 @@ from backend.api.deps import get_db
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
+from backend.utils.config_manager import config_manager
 
 router = APIRouter()
 
@@ -29,7 +30,15 @@ async def get_system_status(
     query = select(User).limit(1)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-    return {"initialized": user is not None}
+    
+    # Get web_app_url from system config
+    system_config = config_manager.config
+    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+    
+    return {
+        "initialized": user is not None,
+        "web_app_url": web_app_url
+    }
 
 @router.post("/setup")
 async def setup_system(

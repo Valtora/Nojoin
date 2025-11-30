@@ -77,6 +77,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   **Auto-Reconnect:** Retry logic for audio uploads with exponential backoff.
     *   **Config Loading:** robust search for `config.json` in executable directory.
 
+### 3.1.1 Import Recordings
+*   **Functionality:** Users can import existing audio files (e.g., from Zoom, Teams, Google Meet) directly via the Web Client.
+*   **Supported Formats:** WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+*   **Metadata:** Users can specify a custom meeting name and the original recording date/time during import.
+*   **Processing:** Imported files enter the same processing pipeline (Transcription -> Diarization -> Alignment) as live recordings.
+
 ### 3.2 Transcription & Diarization (Server-Side)
 *   **Async Processing:** Audio processing is decoupled from the UI. Users can close the browser or companion app immediately after recording; the server handles the rest.
 *   **Engine:** OpenAI Whisper (Local) for transcription.

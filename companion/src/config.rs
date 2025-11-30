@@ -5,16 +5,12 @@ use std::fs;
 pub struct Config {
     pub api_url: String,
     pub api_token: String,
-    #[serde(default = "default_web_app_url")]
-    pub web_app_url: String,
+    #[serde(default)]
+    pub web_app_url: Option<String>,
     #[serde(default)]
     pub input_device_name: Option<String>,
     #[serde(default)]
     pub output_device_name: Option<String>,
-}
-
-fn default_web_app_url() -> String {
-    "https://localhost:14443".to_string()
 }
 
 impl Config {
@@ -43,7 +39,7 @@ impl Config {
             let default_config = Config {
                 api_url: "https://localhost:14443/api/v1".to_string(),
                 api_token: "".to_string(),
-                web_app_url: default_web_app_url(),
+                web_app_url: None,
                 input_device_name: None,
                 output_device_name: None,
             };

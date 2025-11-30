@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}, Icon};
 use tao::event_loop::{EventLoop, ControlFlow};
+use reqwest;
+use serde_json;
 
 mod server;
 mod audio;
@@ -72,6 +74,8 @@ fn main() {
         accumulated_duration: Mutex::new(Duration::new(0, 0)),
         input_level: AtomicU32::new(0),
         output_level: AtomicU32::new(0),
+        web_url: Mutex::new(None),
+        is_backend_connected: AtomicBool::new(false),
     });
 
     // Audio Thread
@@ -84,6 +88,81 @@ fn main() {
     let state_server = state.clone();
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
+        
+        // Persistent Health Check Loop
+        let state_fetch = state_server.clone();
+        rt.spawn(async move {
+            let client = reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            
+            let mut attempt = 0;
+            let max_wait = Duration::from_secs(60); // Max wait between retries
+            
+            loop {
+                let api_url = {
+                    let config = state_fetch.config.lock().unwrap();
+                    config.api_url.clone()
+                };
+                
+                let status_url = format!("{}/system/status", api_url);
+                
+                match client.get(&status_url).send().await {
+                    Ok(resp) => {
+                        if let Ok(json) = resp.json::<serde_json::Value>().await {
+                            // Success!
+                            state_fetch.is_backend_connected.store(true, Ordering::SeqCst);
+                            
+                            // Update Web URL
+                            if let Some(url) = json.get("web_app_url").and_then(|v| v.as_str()) {
+                                let mut web_url = state_fetch.web_url.lock().unwrap();
+                                *web_url = Some(url.to_string());
+                            }
+                            
+                            // Reset status if it was offline
+                            {
+                                let mut status = state_fetch.status.lock().unwrap();
+                                if *status == AppStatus::BackendOffline {
+                                    *status = AppStatus::Idle;
+                                }
+                            }
+                            
+                            // Reset backoff
+                            attempt = 0;
+                        } else {
+                            // Response parse error
+                            state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
+                            let mut status = state_fetch.status.lock().unwrap();
+                            if *status == AppStatus::Idle {
+                                *status = AppStatus::BackendOffline;
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        // Connection error
+                        state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
+                        let mut status = state_fetch.status.lock().unwrap();
+                        if *status == AppStatus::Idle {
+                            *status = AppStatus::BackendOffline;
+                        }
+                    }
+                }
+                
+                // Calculate wait time with exponential backoff
+                let wait_secs = if state_fetch.is_backend_connected.load(Ordering::SeqCst) {
+                    30 // Check every 30s if connected
+                } else {
+                    attempt += 1;
+                    let backoff = 2u64.pow(attempt.min(6)); // 2, 4, 8, 16, 32, 64
+                    std::cmp::min(backoff, max_wait.as_secs())
+                };
+                
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+            }
+        });
+
         rt.block_on(server::start_server(state_server));
     });
 
@@ -100,9 +179,14 @@ fn main() {
                  AppStatus::Recording => "Status: Recording",
                  AppStatus::Paused => "Status: Recording Paused",
                  AppStatus::Uploading => "Status: Uploading Recording",
+                 AppStatus::BackendOffline => "Status: Backend Not Found...",
                  AppStatus::Error(_) => "Status: Error",
              };
              let _ = status_i.set_text(status_text);
+             
+             // Disable "Open Nojoin" if offline
+             let is_connected = state.is_backend_connected.load(Ordering::SeqCst);
+             let _ = open_web_i.set_enabled(is_connected);
         }
 
         if let Ok(event) = menu_channel.try_recv() {
@@ -110,10 +194,21 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
             } else if event.id == open_web_i.id() {
                  let url = {
-                     let config = state.config.lock().unwrap();
-                     config.web_app_url.clone()
+                     // Prefer dynamic URL from backend, fallback to config
+                     let dynamic_url = state.web_url.lock().unwrap().clone();
+                     if let Some(d_url) = dynamic_url {
+                         Some(d_url)
+                     } else {
+                         let config = state.config.lock().unwrap();
+                         config.web_app_url.clone()
+                     }
                  };
-                 let _ = open::that(url);
+                 
+                 if let Some(target_url) = url {
+                     let _ = open::that(target_url);
+                 } else {
+                     notifications::show_notification("Error", "Backend URL not found. Please check connection.");
+                 }
             } else if event.id == check_updates_i.id() {
                  notifications::show_notification("Updates", "You are on the latest version.");
             } else if event.id == help_i.id() {

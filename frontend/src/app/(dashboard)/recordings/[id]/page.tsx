@@ -135,7 +135,7 @@ export default function RecordingPage({ params }: PageProps) {
                 console.error("Polling failed", e);
             }
         }
-    }, 1000);
+    }, 3000);
     
     return () => clearInterval(interval);
   }, [params, recording, isEditingTitle]);

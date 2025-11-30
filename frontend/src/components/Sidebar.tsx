@@ -224,7 +224,7 @@ export default function Sidebar() {
 
   useEffect(() => {
     fetchRecordings();
-    const interval = setInterval(fetchRecordings, 5000);
+    const interval = setInterval(fetchRecordings, 15000);
     return () => clearInterval(interval);
   }, [fetchRecordings]);
 

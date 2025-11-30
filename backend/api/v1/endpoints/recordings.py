@@ -1,7 +1,7 @@
 import os
 import shutil
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -290,6 +290,9 @@ async def import_audio(
     
     # Override created_at if recorded_at is provided
     if recorded_at:
+        # Ensure naive UTC datetime for database compatibility
+        if recorded_at.tzinfo is not None:
+            recorded_at = recorded_at.astimezone(timezone.utc).replace(tzinfo=None)
         recording.created_at = recorded_at
     
     db.add(recording)

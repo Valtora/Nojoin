@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, FileAudio, Loader2, CheckCircle, AlertCircle, Calendar, FileText } from 'lucide-react';
-import DatePicker from 'react-datepicker';
+import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats, getMaxUploadSizeMB } from '@/lib/api';
 
 interface ImportAudioModalProps {
@@ -311,15 +311,13 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                   Recording Date (optional)
                 </label>
                 <div className="w-full">
-                  <DatePicker
+                  <ModernDatePicker
                     selected={recordedAt}
                     onChange={(date) => setRecordedAt(date)}
                     showTimeSelect
                     dateFormat="MMMM d, yyyy h:mm aa"
                     placeholderText="Select date and time"
                     disabled={uploadState === 'uploading'}
-                    className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    wrapperClassName="w-full"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">

@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use serde::{Serialize, Deserialize};
 use crossbeam_channel::Sender;
 use crate::config::Config;
@@ -10,6 +10,7 @@ pub enum AppStatus {
     Recording,
     Paused,
     Uploading,
+    BackendOffline,
     Error(String),
 }
 
@@ -24,6 +25,9 @@ pub struct AppState {
     // Audio levels (0-100 scaled, stored as u32 for atomic access)
     pub input_level: AtomicU32,
     pub output_level: AtomicU32,
+    // Dynamic Web URL fetched from backend
+    pub web_url: Mutex<Option<String>>,
+    pub is_backend_connected: AtomicBool,
 }
 
 impl AppState {

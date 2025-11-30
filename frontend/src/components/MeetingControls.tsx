@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 
 type RecordingStatus = 'idle' | 'recording' | 'paused';
 
@@ -11,70 +12,24 @@ interface MeetingControlsProps {
 }
 
 export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) {
-  const [status, setStatus] = useState<RecordingStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const { companionStatus, recordingDuration, checkCompanion } = useServiceStatusStore();
+  
+  // Local state for smooth timer, synced with store
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Poll status on mount to sync with Companion App
+  // Sync local timer with store duration
   useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch('http://localhost:12345/status');
-        if (res.ok) {
-          const data = await res.json();
-          
-          // Handle new object response { status: string, duration_seconds: number }
-          if (typeof data === 'object' && data.status) {
-             // Handle nested status object if it's an enum variant like { "Error": "msg" }
-             let s = '';
-             if (typeof data.status === 'string') {
-                 s = data.status.toLowerCase();
-             } else if (typeof data.status === 'object') {
-                 // e.g. { "Error": "..." }
-                 s = Object.keys(data.status)[0].toLowerCase();
-             }
-
-             if (s === 'idle') {
-                 setStatus('idle');
-                 setElapsedTime(0);
-             } else if (s === 'recording') {
-                 setStatus('recording');
-                 if (typeof data.duration_seconds === 'number') {
-                     setElapsedTime(data.duration_seconds);
-                 }
-             } else if (s === 'paused') {
-                 setStatus('paused');
-                 if (typeof data.duration_seconds === 'number') {
-                     setElapsedTime(data.duration_seconds);
-                 }
-             }
-          }
-          // Fallback for old string response (just in case)
-          else if (typeof data === 'string') {
-            const s = data.toLowerCase();
-            if (s === 'idle') {
-                setStatus('idle');
-                setElapsedTime(0);
-            }
-            else if (s === 'recording') setStatus('recording');
-            else if (s === 'paused') setStatus('paused');
-          }
-        }
-      } catch (e) {
-        // Companion might be down
-      }
-    };
-    
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    if (recordingDuration > 0) {
+      setElapsedTime(recordingDuration);
+    }
+  }, [recordingDuration]);
 
   // Timer logic
   useEffect(() => {
-    if (status === 'recording') {
+    if (companionStatus === 'recording') {
       timerRef.current = setInterval(() => {
         setElapsedTime(prev => prev + 1);
       }, 1000);
@@ -87,7 +42,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [status]);
+  }, [companionStatus]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -112,17 +67,9 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
         throw new Error(`Failed to ${command}`);
       }
       
-      // Optimistic update
-      if (command === 'start') {
-          setStatus('recording');
-          setElapsedTime(0);
-      }
-      if (command === 'stop') {
-          setStatus('idle');
-          setElapsedTime(0);
-      }
-      if (command === 'pause') setStatus('paused');
-      if (command === 'resume') setStatus('recording');
+      // Trigger immediate check to update status
+      // Small delay to allow companion to process
+      setTimeout(() => checkCompanion(), 500);
 
       return await res.json();
       
@@ -160,7 +107,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
       <div className="flex flex-col gap-2">
         {error && <div className="text-xs text-red-500">{error}</div>}
         
-        {status === 'idle' ? (
+        {companionStatus === 'idle' ? (
           <button
             onClick={handleStart}
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
@@ -171,16 +118,16 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
         ) : (
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg border border-red-100 dark:border-red-900/30">
-              <div className={`w-2 h-2 rounded-full bg-red-500 ${status === 'recording' ? 'animate-pulse' : ''}`} />
+              <div className={`w-2 h-2 rounded-full bg-red-500 ${companionStatus === 'recording' ? 'animate-pulse' : ''}`} />
               <span className="text-sm font-medium">
-                {status === 'recording' ? 'Recording' : 'Paused'}
+                {companionStatus === 'recording' ? 'Recording' : 'Paused'}
               </span>
               <span className="ml-auto font-mono text-sm">
                 {formatTime(elapsedTime)}
               </span>
             </div>
             
-            {status === 'recording' ? (
+            {companionStatus === 'recording' ? (
               <button
                 onClick={handlePause}
                 className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
