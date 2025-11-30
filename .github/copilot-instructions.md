@@ -40,15 +40,11 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion**: Run in Windows (Native) to access WASAPI loopback.
 
 ### Commands
-- **Start Infrastructure**: `docker-compose up -d db redis`
-- **Backend (WSL2)**:
-  - API: `uvicorn backend.main:app --reload --host 0.0.0.0`
-  - Worker: `celery -A backend.celery_app.celery_app worker --pool=solo --loglevel=info`
-- **Frontend (WSL2)**: `cd frontend && npm run dev` (Port 14141)
-- **Companion (Windows)**: `cd companion && cargo run`
+- **Start Infrastructure**: `docker-compose up -d`
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
+- **Companion (Windows)**: `cd companion && cargo run`
 
 ## Code Style & Conventions
 

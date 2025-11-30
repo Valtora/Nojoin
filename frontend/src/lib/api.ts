@@ -492,8 +492,8 @@ export const validateHF = async (token: string): Promise<{ valid: boolean, messa
   return response.data;
 };
 
-export const getModelStatus = async (): Promise<any> => {
-  const response = await api.get('/system/models/status');
+export const getModelStatus = async (whisper_model_size?: string): Promise<any> => {
+  const response = await api.get('/system/models/status', { params: { whisper_model_size } });
   return response.data;
 };
 

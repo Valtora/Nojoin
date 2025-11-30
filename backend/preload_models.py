@@ -289,7 +289,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
 def preload_models():
     download_models()
 
-def check_model_status():
+def check_model_status(whisper_model_size=None):
     """
     Check the status of all models.
     Returns a dict with status of each model.
@@ -301,7 +301,8 @@ def check_model_status():
     }
     
     # Check Whisper
-    whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
+    if not whisper_model_size:
+        whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
     download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
     download_root = os.path.join(download_root, "whisper")
     
@@ -319,7 +320,8 @@ def check_model_status():
     # Check Pyannote (harder to check without loading, but we can check cache)
     # Pyannote caches in ~/.cache/huggingface/hub/models--pyannote--speaker-diarization-community-1
     # This is a rough check.
-    hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+    hf_cache = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+    hf_cache = os.path.join(hf_cache, "hub")
     pyannote_path = os.path.join(hf_cache, "models--pyannote--speaker-diarization-community-1")
     if os.path.exists(pyannote_path):
         status["pyannote"]["downloaded"] = True

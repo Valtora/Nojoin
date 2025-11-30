@@ -2,8 +2,8 @@
 
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below:
 
-### Model Cache Management
-- The celery worker container still attempts to download models, despite them being present in the relevant volume(s). This is likely due to the models being downloaded to a different path than where the celery worker expects them to be. Investigate and resolve this issue to ensure that the celery worker utilises the cached models correctly, thereby improving performance and reducing unnecessary downloads. Investigate and report back.
+### Processing Pipeline Robustness
+- Improve the robustness of the processing pipeline to handle edge cases such as corrupted audio files, unsupported formats, when only silence is detected (via silero-VAD) or unexpected interruptions during processing. Implement error handling and recovery mechanisms to ensure that the system can gracefully handle such scenarios without crashing or losing data. Propose a plan on how to implement these improvements.
 
 ### Settings - Custom Base URL and Ports
 - Implement the ability for the user to change the base URL and ports for the web app in the companion app settings modal. This is useful for users who want to self-host Nojoin on a different domain or port. They may instead need to change this using the docker-compose.yml file but having the option in the companion app settings modal is more user friendly. Explore how we could implement this feature.

@@ -38,8 +38,8 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
-    getModelStatus().then(setModelStatus).catch(console.error);
-  }, []);
+    getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
+  }, [settings.whisper_model_size]);
 
   const handleValidate = async (provider: string) => {
     setValidating(provider);
@@ -71,7 +71,10 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
       setDownloading(true);
       setDownloadProgress({ percent: 0, message: "Starting download..." });
       try {
-          const { task_id } = await downloadModels({hf_token: settings.hf_token});
+          const { task_id } = await downloadModels({
+              hf_token: settings.hf_token,
+              whisper_model_size: settings.whisper_model_size
+          });
           
           // Poll for status
           const pollInterval = setInterval(async () => {
@@ -146,7 +149,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   };
 
   const refreshStatus = () => {
-      getModelStatus().then(setModelStatus).catch(console.error);
+      getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
   };
 
 

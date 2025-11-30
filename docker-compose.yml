@@ -26,7 +26,6 @@ services:
     volumes:
       - .:/app
       - ./data/recordings:/app/recordings
-      - model_cache:/root/.cache
     ports:
       - "8000:8000"
     environment:
@@ -34,8 +33,6 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - XDG_CACHE_HOME=/root/.cache
-      - HF_HOME=/root/.cache/huggingface
     depends_on:
       - db
       - redis

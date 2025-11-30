@@ -142,7 +142,8 @@ export default function SetupPage() {
             gemini_api_key: formData.gemini_api_key || undefined,
             openai_api_key: formData.openai_api_key || undefined,
             anthropic_api_key: formData.anthropic_api_key || undefined,
-            hf_token: formData.hf_token || undefined
+            hf_token: formData.hf_token || undefined,
+            whisper_model_size: 'turbo'
           });
         } catch (err: any) {
           // If system is already initialized, we might be in a retry state where the page wasn't refreshed
@@ -165,7 +166,8 @@ export default function SetupPage() {
             gemini_api_key: formData.gemini_api_key || undefined,
             openai_api_key: formData.openai_api_key || undefined,
             anthropic_api_key: formData.anthropic_api_key || undefined,
-            hf_token: formData.hf_token || undefined
+            hf_token: formData.hf_token || undefined,
+            whisper_model_size: 'turbo'
         });
       }
       

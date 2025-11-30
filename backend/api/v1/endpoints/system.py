@@ -20,6 +20,7 @@ class SetupRequest(UserCreate):
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     hf_token: Optional[str] = None
+    whisper_model_size: Optional[str] = "turbo"
 
 @router.get("/status")
 async def get_system_status(
@@ -62,7 +63,8 @@ async def setup_system(
     # Construct settings dict
     settings = {
         "llm_provider": setup_in.llm_provider,
-        "hf_token": setup_in.hf_token
+        "hf_token": setup_in.hf_token,
+        "whisper_model_size": setup_in.whisper_model_size
     }
     if setup_in.gemini_api_key:
         settings["gemini_api_key"] = setup_in.gemini_api_key
@@ -141,11 +143,11 @@ async def get_task_status(task_id: str) -> Any:
     return response
 
 @router.get("/models/status")
-async def get_models_status() -> Any:
+async def get_models_status(whisper_model_size: Optional[str] = None) -> Any:
     """
     Get the status of all models.
     """
-    return check_model_status()
+    return check_model_status(whisper_model_size=whisper_model_size)
 
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(

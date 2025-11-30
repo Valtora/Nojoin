@@ -110,7 +110,12 @@ def transcribe_audio(audio_path: str, config: dict = None) -> dict | None:
         # Load model (use cache)
         if model_size not in _model_cache:
             logger.info(f"Loading Whisper model: {model_size}")
-            _model_cache[model_size] = whisper.load_model(model_size, device=device)
+            
+            # Explicitly define download root to match preload_models.py
+            download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+            download_root = os.path.join(download_root, "whisper")
+            
+            _model_cache[model_size] = whisper.load_model(model_size, device=device, download_root=download_root)
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]
 
