@@ -20,21 +20,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set work directory
 WORKDIR /app
 
-# Copy requirements file
-COPY requirements.txt .
+# Copy requirements folder
+COPY requirements/ /app/requirements/
 
 # Install Python dependencies
-# We filter out torch, torchaudio, torchvision, and torchcodec because they are included in the base image
-# or we want to avoid conflicts with the base image's optimized versions.
-RUN grep -vE "^torch|^torchaudio|^torchvision|^torchcodec" requirements.txt > requirements.docker.txt && \
-    pip install --no-cache-dir -r requirements.docker.txt
+RUN pip install --no-cache-dir -r requirements/worker.txt
+
+# Install pyannote.audio without dependencies to use system torch
+RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2
 
 # Copy the rest of the application code
 COPY . .
 
 # Create a non-root user and switch to it
+# Create directories for volumes to ensure they are owned by appuser
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+    mkdir -p /home/appuser/.cache/huggingface && \
+    mkdir -p /app/data && \
+    chown -R appuser:appuser /app /home/appuser
 
 USER appuser
 

@@ -1,0 +1,11 @@
+sqlmodel
+psycopg2-binary
+asyncpg
+python-dotenv
+python-jose[cryptography]
+passlib[argon2]
+python-multipart
+aiofiles
+requests
+httpx
+alembic

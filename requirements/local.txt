@@ -1,0 +1,7 @@
+-r backend.txt
+-r worker.txt
+pyannote.audio==4.0.2
+torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126
+torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+torchcodec==0.7.0 --index-url https://download.pytorch.org/whl/cu126

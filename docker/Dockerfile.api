@@ -21,16 +21,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set work directory
 WORKDIR /app
 
-# Copy requirements file
-COPY requirements.txt .
+# Copy requirements folder
+COPY requirements/ /app/requirements/
 
-# Install Python dependencies, excluding heavy ML libraries
-# We filter out torch, torchaudio, torchvision, torchcodec, openai-whisper, pyannote.audio, silero-vad
-RUN grep -vE "^torch|^torchaudio|^torchvision|^torchcodec|^openai-whisper|^pyannote.audio|^silero-vad" requirements.txt > requirements.api.txt && \
-    pip install --no-cache-dir -r requirements.api.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements/backend.txt
 
 # Copy the rest of the application code
 COPY . .
+
+# Create a non-root user and switch to it
+# Create directories for volumes to ensure they are owned by appuser
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/recordings && \
+    mkdir -p /shared_model_cache && \
+    chown -R appuser:appuser /app /shared_model_cache
+
+USER appuser
 
 # Expose the port the app runs on
 EXPOSE 8000

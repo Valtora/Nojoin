@@ -58,9 +58,9 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - WHISPER_ENABLE_WORD_TIMESTAMPS=true
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      - WHISPER_ENABLE_WORD_TIMESTAMPS=${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
       # Force cache location to match the mounted volume
       - XDG_CACHE_HOME=/home/appuser/.cache
       - HF_HOME=/home/appuser/.cache/huggingface

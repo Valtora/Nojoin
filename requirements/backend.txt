@@ -1,0 +1,8 @@
+-r base.txt
+fastapi
+uvicorn[standard]
+celery[redis]
+numpy
+openai
+anthropic
+google-genai

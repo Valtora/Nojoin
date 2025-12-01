@@ -3,8 +3,9 @@ import logging
 import json
 import re
 from typing import Dict, Tuple, List
-import openai
-import anthropic
+# Lazy imports for LLM providers to avoid heavy dependencies in API
+# import openai
+# import anthropic
 from backend.utils.transcript_utils import render_transcript
 from backend.utils.config_manager import from_project_relative_path
 import os
@@ -385,6 +386,7 @@ User Question: {user_question}
 
 class OpenAILLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
+        import openai
         if api_key is None:
             api_key = config_manager.get("openai_api_key")
         if not api_key:
@@ -510,6 +512,7 @@ User Question: {user_question}
 
 class AnthropicLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
+        import anthropic
         if api_key is None:
             api_key = config_manager.get("anthropic_api_key")
         if not api_key:
