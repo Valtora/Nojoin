@@ -48,7 +48,56 @@ def validate_audio_file(file_path: str) -> Dict:
     except json.JSONDecodeError:
         raise AudioFormatError(f"ffprobe returned invalid JSON for {file_path}")
     except Exception as e:
-        raise AudioFormatError(f"Validation failed for {file_path}: {str(e)}")
+        raise AudioFormatError(f"Validation error for {file_path}: {str(e)}")
+
+def repair_audio_file(file_path: str) -> Optional[str]:
+    """
+    Attempts to repair a corrupted audio file by re-encoding it with ffmpeg.
+    Returns the path to the repaired file (which might be a temp file) or None if repair failed.
+    """
+    repaired_path = None
+    try:
+        logger.info(f"Attempting to repair audio file: {file_path}")
+        
+        # Create a temp file for the repaired output
+        fd, repaired_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        
+        # Try to convert to 16-bit PCM WAV, ignoring errors
+        # -err_detect ignore_err: ignore decoding errors
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-err_detect", "ignore_err",
+            "-i", file_path,
+            "-c:a", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            repaired_path
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        
+        # Validate the repaired file
+        try:
+            validate_audio_file(repaired_path)
+            logger.info(f"Successfully repaired audio file: {repaired_path}")
+            return repaired_path
+        except AudioFormatError:
+            logger.warning(f"Repaired file is still invalid: {repaired_path}")
+            cleanup_temp_file(repaired_path)
+            return None
+            
+    except subprocess.CalledProcessError as e:
+        logger.error(f"ffmpeg repair failed: {e}")
+        if repaired_path and os.path.exists(repaired_path):
+            cleanup_temp_file(repaired_path)
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error during audio repair: {e}")
+        if repaired_path and os.path.exists(repaired_path):
+            cleanup_temp_file(repaired_path)
+        return None
 
 def preprocess_audio_for_diarization(input_path: str) -> str | None:
     """
@@ -163,4 +212,3 @@ def get_audio_quality_metrics(file_path: str) -> Dict:
     """
     # TODO: Implement using ffprobe or other tools
     return {}
- 

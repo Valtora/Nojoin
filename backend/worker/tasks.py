@@ -2,6 +2,8 @@ import os
 import logging
 import time
 import warnings
+import urllib.error
+import requests.exceptions
 from celery import Task
 from celery.signals import worker_ready
 from sqlmodel import select
@@ -39,14 +41,14 @@ class DatabaseTask(Task):
         if self._session:
             self._session.close()
 
-@celery_app.task(base=DatabaseTask, bind=True)
+@celery_app.task(base=DatabaseTask, bind=True, autoretry_for=(ConnectionError, urllib.error.URLError, requests.exceptions.RequestException), retry_backoff=True, max_retries=3)
 def process_recording_task(self, recording_id: int):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
     # Local imports to avoid loading torch in API
     from backend.processing.vad import mute_non_speech_segments
-    from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad, validate_audio_file, cleanup_temp_file
+    from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad, validate_audio_file, cleanup_temp_file, repair_audio_file
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
@@ -91,12 +93,20 @@ def process_recording_task(self, recording_id: int):
         try:
             validate_audio_file(audio_path)
         except AudioFormatError as e:
-            logger.error(f"Invalid audio file: {e}")
-            recording.status = RecordingStatus.ERROR
-            recording.processing_step = f"Invalid audio: {str(e)}"
-            session.add(recording)
-            session.commit()
-            return
+            logger.warning(f"Invalid audio file detected: {e}. Attempting repair...")
+            repaired_path = repair_audio_file(audio_path)
+            
+            if repaired_path:
+                logger.info(f"Using repaired audio file: {repaired_path}")
+                audio_path = repaired_path
+                temp_files.append(repaired_path) # Ensure cleanup
+            else:
+                logger.error(f"Audio repair failed for {audio_path}")
+                recording.status = RecordingStatus.ERROR
+                recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
+                session.add(recording)
+                session.commit()
+                return
 
         # Fix missing duration if needed
         if (not recording.duration_seconds or recording.duration_seconds == 0):

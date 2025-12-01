@@ -45,6 +45,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **System Config:** Stored in `data/config.json` (Server) and `config.json` (Companion). Includes infrastructure URLs, device paths, and hardware settings.
 *   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences, and AI settings.
 *   **Initial Setup:** The Setup Wizard collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account, ensuring immediate system readiness without manual restarts.
+*   **Database Initialization:** The system automatically handles database schema creation and migrations on startup, ensuring the database is always in a consistent state.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
 
 ### 2.5 Security
@@ -98,6 +99,10 @@ A lightweight, cross-platform system tray application responsible for audio capt
         *   **Silence Detection:** Graceful handling of recordings with no speech (marked as Processed with empty transcript).
         *   **Error Handling:** Granular error states and messages for debugging.
         *   **Cleanup:** Guaranteed removal of temporary files.
+        *   **Robustness & Recovery:**
+            *   **Automatic Repair:** Corrupted audio files are automatically detected and repaired (re-encoded) using ffmpeg.
+            *   **Retry Logic:** Transient errors (network, resource contention) trigger automatic retries with exponential backoff.
+            *   **Graceful Failure:** Unrecoverable errors result in a clear "Error" status with detailed logs, preventing pipeline stalls.
 *   **Progress Tracking:**
     *   **Granular Status:** Real-time status updates pushed to the Web Client, including:
         *   **Client State:** "Meeting in Progress", "Meeting Paused", "Uploading...".

@@ -47,6 +47,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "processing_device": _get_default_device(), # Default to GPU if available
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
+    "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
 }
 
 DEFAULT_USER_SETTINGS = {
@@ -61,7 +62,6 @@ DEFAULT_USER_SETTINGS = {
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "auto_generate_notes": True, # Automatically generate meeting notes after processing
-    "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]

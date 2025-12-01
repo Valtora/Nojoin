@@ -2,8 +2,11 @@
 
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
 
-### Alembic Migrations - First Run Handling
-- Modify the Alembic migration scripts to handle the scenario where the database is being created for the first time. Ensure that all necessary tables and initial data are set up correctly without requiring any manual intervention. Propose a plan on how to implement this feature. Currently I have to run 'alembic upgrade head' manually after the first run to create the database tables.
+### Review Package Dependencies for Each Container
+- Review the python package dependencies for each container to make sure only the relevant python packages are installed in each container. For example the backend container should only have the packages it needs to run the backend and not any packages that are only needed for the companion app or frontend. This will help to reduce the size of each container and improve security by minimizing the attack surface.
+
+### Companion App - Terminal Logs
+- Improve the logging functionality of the companion app to provide real-time terminal logs to the user. This will help users to diagnose any issues that may arise during the operation of the companion app. Right now after the server starts up I know it checks to see if the backend is reachable however there is no feedback to the user in the terminal window of the companion app. We could add more logging to show the progress of the companion app as it starts up and connects to the backend.
 
 ### Frontend Upgrades
 - Consider using shadcn-ui, see here: https://github.com/shadcn-ui/ui and here https://ui.shadcn.com/docs.

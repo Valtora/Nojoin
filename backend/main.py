@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import redis.asyncio as redis
 import os
+import time
+from sqlalchemy.exc import OperationalError
 from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import SQLModel, Session, text
 from backend.core.db import sync_engine
@@ -22,6 +24,24 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 
 def run_migrations():
+    # Wait for DB to be ready
+    max_retries = 30
+    retry_interval = 1
+    
+    print("Waiting for database connection...")
+    for i in range(max_retries):
+        try:
+            with sync_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("Database connection established.")
+            break
+        except OperationalError:
+            if i == max_retries - 1:
+                print("Could not connect to database after multiple retries.")
+                raise
+            print(f"Database not ready, retrying in {retry_interval}s...")
+            time.sleep(retry_interval)
+
     try:
         import subprocess
         import sys
@@ -33,7 +53,7 @@ def run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run database migrations
-    # run_migrations()
+    run_migrations()
         
     yield
 

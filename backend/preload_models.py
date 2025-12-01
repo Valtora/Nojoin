@@ -157,7 +157,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         hf_token = config_manager.get("hf_token")
     
     if not whisper_model_size:
-        whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
+        whisper_model_size = str(config_manager.get("whisper_model_size", "turbo"))
     
     device = config_manager.get("processing_device", "auto")
     if device == "auto":
