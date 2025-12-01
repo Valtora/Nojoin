@@ -5,6 +5,77 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 **Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Privacy First (Self-hosted).
 
+## Repository Structure
+
+```
+/
+├── backend/                 # FastAPI + Celery Python backend
+│   ├── api/                # REST API endpoints
+│   │   ├── deps.py        # Dependency injection (SessionDep, CurrentUser)
+│   │   └── routes/        # Route handlers by domain
+│   ├── models/            # SQLModel ORM models
+│   ├── worker/            # Celery tasks for heavy processing
+│   ├── processing/        # Audio processing utilities
+│   ├── utils/             # Shared utilities (config_manager, etc.)
+│   └── alembic/           # Database migrations
+├── frontend/               # Next.js web application
+│   └── src/
+│       ├── app/           # App Router pages
+│       ├── components/    # React components
+│       ├── lib/           # Utilities (api.ts, store.ts)
+│       └── types/         # TypeScript interfaces
+├── companion/              # Rust system tray application
+│   └── src/
+│       ├── main.rs        # Application entry point
+│       └── uploader.rs    # Audio upload with retry logic
+├── docker/                 # Docker build contexts
+├── docs/                   # Documentation (PRD, SECURITY, TODO)
+└── nginx/                  # Reverse proxy configuration
+```
+
+## Build, Test, and Lint Commands
+
+### Frontend (Next.js)
+```bash
+cd frontend
+npm install          # Install dependencies
+npm run dev          # Development server (port 14141)
+npm run build        # Production build
+npm run lint         # ESLint check
+```
+
+### Backend (Python/FastAPI)
+```bash
+# Run inside Docker or with virtual environment
+pip install -r requirements.txt
+uvicorn backend.main:app --reload     # Development server (port 8000)
+```
+
+### Companion (Rust)
+```bash
+cd companion
+cargo build          # Debug build
+cargo build --release  # Release build
+cargo run            # Run development build
+cargo clippy         # Lint check
+cargo fmt            # Format code
+```
+
+### Infrastructure
+```bash
+docker-compose up -d              # Start all services
+docker-compose logs -f api        # View API logs
+docker-compose logs -f worker     # View worker logs
+docker-compose down               # Stop all services
+```
+
+### Database Migrations
+```bash
+alembic upgrade head              # Apply migrations
+alembic downgrade -1              # Rollback one migration
+alembic revision --autogenerate -m "description"  # Create migration
+```
+
 ## Architecture & Patterns
 
 ### Backend (FastAPI + Celery)
@@ -33,45 +104,68 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - **Retries**: Implemented in `src/uploader.rs` with exponential backoff.
 - **UI**: System tray only (`tray-icon`, `tao`).
 
-## Critical Workflows
+## Code Style & Conventions
+
+### Python (Backend)
+- **Type Hints**: Mandatory for all function arguments and return values.
+- **Imports**: Group standard lib, third-party, and local imports (in that order).
+- **Error Handling**: Use `HTTPException` in API endpoints.
+- **Naming**: snake_case for functions/variables, PascalCase for classes.
+
+### TypeScript (Frontend)
+- **Interfaces**: Define shared types in `src/types/index.ts`.
+- **Strict Mode**: Avoid `any` types.
+- **Components**: Use functional components with hooks.
+- **Naming**: camelCase for functions/variables, PascalCase for components/types.
+
+### Rust (Companion)
+- **Error Handling**: Use `anyhow::Result` for application code.
+- **Async**: Use `tokio` for I/O bound tasks.
+- **Naming**: snake_case for functions/variables, PascalCase for types/structs.
+
+## Security Considerations
+- **Authentication**: JWT-based auth handled in `backend/api/deps.py`.
+- **Secrets**: Never commit secrets. Use environment variables and `.env` files.
+- **Input Validation**: Validate all user inputs in API endpoints.
+- **File Uploads**: Audio files are validated before processing.
+- **Self-hosted**: All data stays on user's infrastructure.
+
+## Development Workflow
+
+### Environment Setup
+1. Copy `.env.example` to `.env` and configure
+2. Start infrastructure: `docker-compose up -d`
+3. Access web UI at `http://localhost:14141`
+4. Access API docs at `http://localhost:8000/docs`
+
+### Making Changes
+1. **Backend API**: Add routes in `backend/api/routes/`, models in `backend/models/`
+2. **Frontend**: Add pages in `frontend/src/app/`, components in `frontend/src/components/`
+3. **Database**: Create migrations with Alembic after model changes
+4. **Companion**: Changes require rebuilding the Rust binary
 
 ### Hybrid Development (WSL2 + Windows)
 - **Backend/Frontend**: Run in WSL2/Linux (Docker).
 - **Companion**: Run in Windows (Native) to access WASAPI loopback.
 
-### Commands
-- **Start Infrastructure**: `docker-compose up -d`
-- **Migrations**:
-  - Apply: `alembic upgrade head`
-  - Create: `alembic revision --autogenerate -m "message"`
-- **Companion (Windows)**: `cd companion && cargo run`
+## Agent Guidelines
 
-## Code Style & Conventions
+### When Adding Features
+1. Check existing patterns in similar code
+2. Follow the established directory structure
+3. Use dependency injection for database access
+4. Add proper type hints/annotations
+5. Handle errors appropriately for the component
 
-### Python (Backend)
-- **Type Hints**: Mandatory for all function arguments and return values.
-- **Imports**: Group standard lib, third-party, and local imports.
-- **Error Handling**: Use `HTTPException` in API endpoints.
+### When Fixing Bugs
+1. Understand the data flow through the system
+2. Check both API and worker logs for errors
+3. Consider the async nature of processing tasks
 
-### TypeScript (Frontend)
-- **Interfaces**: Define shared types in `src/types/index.ts`.
-- **Strict Mode**: No `any`.
-
-### Rust (Companion)
-- **Error Handling**: Use `anyhow::Result` for application code.
-- **Async**: Use `tokio` for I/O bound tasks.
-
-## Agent Interaction Rules
-
-### The Workflow Loop
-1.  **REQUIREMENT**: User states a feature.
-2.  **PLANNING**: Produce a detailed plan. Consider signal propagation and dependencies.
-3.  **APPROVAL**: Wait for user confirmation.
-4.  **IMPLEMENTATION**: Generate robust code. Do not delete existing functionality unless planned.
-5.  **TESTING**: User performs manual testing.
-6.  **COMPLETION**: Update PRD if needed.
-
-### Constraints
-- **NO GIT COMMANDS**: Never push/pull automatically. Provide text for messages.
-- **NO EMOJIS**: Keep output strict and professional.
-- **TONE**: Objective, results-oriented. No fluff.
+### File Placement
+- **New API endpoint**: `backend/api/routes/<domain>.py`
+- **New model**: `backend/models/<domain>.py`
+- **New React component**: `frontend/src/components/<ComponentName>.tsx`
+- **New page**: `frontend/src/app/<route>/page.tsx`
+- **New TypeScript type**: `frontend/src/types/index.ts`
+- **API integration**: `frontend/src/lib/api.ts`
