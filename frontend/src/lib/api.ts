@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1` 
@@ -513,6 +513,94 @@ export interface DownloadProgress {
 export const getDownloadProgress = async (): Promise<DownloadProgress> => {
   const response = await api.get<DownloadProgress>('/system/download-progress');
   return response.data;
+};
+
+
+// Chat API
+export const getChatHistory = async (recordingId: number): Promise<ChatMessage[]> => {
+  const response = await api.get<ChatMessage[]>(`/recordings/${recordingId}/chat`);
+  return response.data;
+};
+
+export const clearChatHistory = async (recordingId: number): Promise<void> => {
+  await api.delete(`/recordings/${recordingId}/chat`);
+};
+
+export const streamChatMessage = (
+  recordingId: number,
+  message: string,
+  onToken: (token: string) => void,
+  onComplete: () => void,
+  onError: (error: string) => void
+): AbortController => {
+  const controller = new AbortController();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+  fetch(`${API_BASE_URL}/recordings/${recordingId}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : '',
+    },
+    body: JSON.stringify({ message }),
+    signal: controller.signal,
+  }).then(async (response) => {
+    if (!response.ok) {
+        try {
+            const err = await response.json();
+            onError(err.detail || 'Failed to send message');
+        } catch {
+            onError(`Error: ${response.statusText}`);
+        }
+        return;
+    }
+    
+    if (!response.body) {
+        onError("No response body");
+        return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            onComplete();
+            break;
+        }
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') {
+                    continue;
+                }
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.token) {
+                        onToken(parsed.token);
+                    } else if (parsed.error) {
+                        onError(parsed.error);
+                    }
+                } catch (e) {
+                    console.error("Failed to parse SSE data", e);
+                }
+            }
+        }
+    }
+  }).catch(err => {
+      if (err.name === 'AbortError') {
+          console.log('Stream aborted');
+      } else {
+          onError(err.message || 'Network error');
+      }
+  });
+
+  return controller;
 };
 
 export default api;

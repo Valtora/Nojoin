@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
-import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -154,7 +154,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
 
 
   // We use the centralized keywords for the main section check, but specific checks for subsections
-  const showProvider = fuzzyMatch(searchQuery, ['provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai']);
+  const showProvider = fuzzyMatch(searchQuery, ['provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai', 'custom instructions', 'chat instructions']);
   const showGemini = fuzzyMatch(searchQuery, ['gemini', 'api key', 'google']);
   const showOpenAI = fuzzyMatch(searchQuery, ['openai', 'api key', 'gpt']);
   const showAnthropic = fuzzyMatch(searchQuery, ['anthropic', 'api key', 'claude']);
@@ -192,6 +192,26 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                 <option value="anthropic">Anthropic</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">Select the AI provider for generating notes and chat.</p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Chat Custom Instructions
+                </label>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-2 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
+                    <Info className="w-4 h-4 flex-shrink-0" />
+                    <span>Warning: Custom instructions modify AI behavior. Poorly written instructions may degrade response quality.</span>
+                </div>
+                <textarea
+                    value={settings.chat_custom_instructions || ''}
+                    onChange={(e) => onUpdate({ ...settings, chat_custom_instructions: e.target.value })}
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent min-h-[100px] text-sm"
+                    placeholder="E.g., Be concise, Format responses as bullet points, Use formal tone..."
+                    maxLength={500}
+                />
+                <p className="text-xs text-gray-500 mt-1 text-right">
+                    {settings.chat_custom_instructions?.length || 0}/500
+                </p>
             </div>
           </div>
         </div>

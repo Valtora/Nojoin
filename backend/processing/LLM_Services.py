@@ -2,7 +2,7 @@ from backend.utils.config_manager import config_manager
 import logging
 import json
 import re
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Generator, Any
 # Lazy imports for LLM providers to avoid heavy dependencies in API
 # import openai
 # import anthropic
@@ -35,8 +35,19 @@ class LLMBackend:
         notes = self.generate_meeting_notes(transcript, mapping, prompt_template, timeout)
         return mapping, notes
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+        """
+        Ask a question about the meeting.
+        """
         # If recording_id is provided, use mapped transcript
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        raise NotImplementedError
+
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+        """
+        Ask a question about the meeting and yield response chunks.
+        """
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
@@ -54,6 +65,25 @@ class LLMBackend:
         Returns True if valid, raises an exception or returns False if invalid.
         """
         raise NotImplementedError
+
+    def _build_chat_prompt(self, user_question: str, meeting_notes: str, diarized_transcript: str, custom_instructions: str = None) -> str:
+        base_prompt = f"""
+You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
+
+# CRITICAL INSTRUCTION
+When referencing transcript content, always include the timestamp in [MM:SS] format (e.g., "At [12:30], Speaker A mentioned...").
+
+# Meeting Notes:
+{meeting_notes}
+
+# Full Diarized Transcript:
+{diarized_transcript}
+"""
+        if custom_instructions:
+            base_prompt += f"\n# Custom User Instructions:\n{custom_instructions}\n"
+
+        base_prompt += f"\nUser Question: {user_question}\n"
+        return base_prompt
 
     @staticmethod
     def get_default_speaker_prompt_template():
@@ -235,7 +265,11 @@ Now generate the meeting notes following the exact format specified above. Be co
                 speaker_label = seg.get('speaker', 'Unknown')
                 speaker_name = label_to_name.get(speaker_label, speaker_label)
                 text = seg.get('text', '')
-                lines.append(f"{speaker_name}: {text}")
+                start = seg.get('start', 0)
+                minutes = int(start // 60)
+                seconds = int(start % 60)
+                timestamp = f"[{minutes:02d}:{seconds:02d}]"
+                lines.append(f"{timestamp} {speaker_name}: {text}")
             
             return "\n".join(lines)
 
@@ -321,22 +355,13 @@ class GeminiLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
         # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = f"""
-You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-
-# Meeting Notes:
-{meeting_notes}
-
-# Full Diarized Transcript:
-{diarized_transcript}
-
-User Question: {user_question}
-"""
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
         contents = []
         if conversation_history:
             contents.extend(conversation_history)
@@ -350,6 +375,30 @@ User Question: {user_question}
         except Exception as e:
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
+
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+            
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
+        contents = []
+        if conversation_history:
+            contents.extend(conversation_history)
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        
+        try:
+            # Use streaming API
+            response_stream = self.client.models.generate_content_stream(
+                model=self.model,
+                contents=contents,
+            )
+            for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"Gemini API error (streaming chat): {e}")
+            raise RuntimeError(f"Gemini API error (streaming chat): {e}")
 
     def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
         """
@@ -441,22 +490,12 @@ class OpenAILLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
-        # If recording_id is provided, use mapped transcript
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = f"""
-You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-
-# Meeting Notes:
-{meeting_notes}
-
-# Full Diarized Transcript:
-{diarized_transcript}
-
-User Question: {user_question}
-"""
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -475,6 +514,35 @@ User Question: {user_question}
         except Exception as e:
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
+
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+            
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if msg.get("role") and msg.get("parts"):
+                    for part in msg["parts"]:
+                        messages.append({"role": msg["role"], "content": part["text"]})
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.2,
+                stream=True,
+                timeout=timeout
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            logger.error(f"OpenAI API error (streaming chat): {e}")
+            raise RuntimeError(f"OpenAI API error (streaming chat): {e}")
 
     def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
         """
@@ -567,22 +635,12 @@ class AnthropicLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
-        # If recording_id is provided, use mapped transcript
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = f"""
-You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-
-# Meeting Notes:
-{meeting_notes}
-
-# Full Diarized Transcript:
-{diarized_transcript}
-
-User Question: {user_question}
-"""
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -601,6 +659,33 @@ User Question: {user_question}
         except Exception as e:
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
+
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if msg.get("role") and msg.get("parts"):
+                    for part in msg["parts"]:
+                        messages.append({"role": msg["role"], "content": part["text"]})
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            with self.client.messages.stream(
+                model=self.model,
+                max_tokens=1024,
+                messages=messages,
+                temperature=0.2,
+            ) as stream:
+                for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            logger.error(f"Anthropic API error (streaming chat): {e}")
+            raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
 
     def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
         """

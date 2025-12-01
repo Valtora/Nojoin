@@ -1,8 +1,12 @@
 name: Build Companion Installers
 
+# Only builds when:
+# 1. A companion-specific tag is pushed (companion-v*)
+# 2. Manually triggered via workflow_dispatch
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'companion-v*'
   workflow_dispatch:
 
 permissions:

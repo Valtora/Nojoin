@@ -94,7 +94,15 @@ export interface Settings {
   companion_url?: string;
   enable_auto_voiceprints?: boolean;
   auto_generate_notes?: boolean;
+  chat_custom_instructions?: string;
   [key: string]: any;
+}
+
+export interface ChatMessage extends BaseDBModel {
+  recording_id: number;
+  user_id: number;
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 // Voiceprint-related types

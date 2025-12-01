@@ -166,6 +166,9 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   **Unified Find/Replace:** Changes made via find/replace apply to both transcript and notes to maintain consistency
 *   **Chat Q&A:**
     *   "Chat with your meeting" feature allowing users to ask questions about specific recordings.
+    *   **Persistent Chat:** Chat history is saved per recording.
+    *   **Streaming:** Real-time responses using Server-Sent Events.
+    *   **Custom Instructions:** Users can configure system prompts for tone and format.
     *   Uses transcript context to provide accurate answers.
 
 ### 3.6 Search & Organization

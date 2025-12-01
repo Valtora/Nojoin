@@ -310,34 +310,14 @@ fn main() {
                  });
             } else if event.id == view_logs_i.id() {
                  let log_path = get_log_path();
-                 if log_path.exists() {
-                     #[cfg(target_os = "windows")]
-                     {
-                         use std::process::Command;
-                         // Check EDITOR env var first (respects user preference)
-                         let editor = std::env::var("EDITOR")
-                             .or_else(|_| std::env::var("VISUAL"))
-                             .unwrap_or_else(|_| "notepad.exe".to_string());
-                         
-                         if let Err(e) = Command::new(&editor).arg(&log_path).spawn() {
-                             error!("Failed to open log file with {}: {}", editor, e);
-                             // Fallback to notepad if custom editor fails
-                             if editor != "notepad.exe" {
-                                 let _ = Command::new("notepad.exe").arg(&log_path).spawn();
-                             } else {
-                                 notifications::show_notification("Error", "Failed to open log file.");
-                             }
-                         }
-                     }
-                     #[cfg(not(target_os = "windows"))]
-                     {
-                         if let Err(e) = open::that(&log_path) {
-                             error!("Failed to open log file: {}", e);
-                             notifications::show_notification("Error", "Failed to open log file.");
-                         }
+                 // Open the directory containing the log file
+                 if let Some(log_dir) = log_path.parent() {
+                     if let Err(e) = open::that(log_dir) {
+                         error!("Failed to open log directory: {}", e);
+                         notifications::show_notification("Error", "Failed to open log directory.");
                      }
                  } else {
-                     notifications::show_notification("Info", "Log file not found yet.");
+                     notifications::show_notification("Error", "Could not determine log directory.");
                  }
             } else if event.id == help_i.id() {
                  let _ = open::that("https://github.com/Valtora/Nojoin"); 

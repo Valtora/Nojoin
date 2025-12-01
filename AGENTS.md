@@ -59,19 +59,28 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Output: `companion/dist/Nojoin-Companion-Setup.exe`
 
 ### Companion Release Workflow
+
+**The companion app uses a separate tag pattern** (`companion-v*`) to avoid rebuilds on every main app release.
+
 1. **Update Version Numbers** (both files must match):
    - `companion/Cargo.toml`: `version = "X.Y.Z"`
    - `companion/installer/installer.nsi`: `!define PRODUCT_VERSION "X.Y.Z"`
 2. **Commit and Push**: Push changes to `main` branch.
-3. **Create GitHub Release**: Tag with `vX.Y.Z` (e.g., `v0.2.0`).
-4. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
+3. **Create Companion Tag**: Use `companion-v` prefix:
+   ```bash
+   git tag companion-v0.2.0
+   git push origin companion-v0.2.0
+   ```
+4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
+5. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
    - Windows: NSIS installer (`Nojoin-Companion-Setup.exe`)
-   - macOS: DMG with drag-to-Applications (`Nojoin-Companion-Setup.dmg`)
+   - macOS: Universal DMG (`Nojoin-Companion-Setup.dmg`)
    - Linux: DEB package (`Nojoin-Companion-Setup.deb`)
-5. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
-6. **Download URLs**: Frontend uses `/releases/latest/download/` which auto-resolves to newest release.
+6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
 
-**Manual CI Trigger**: Run "Build Companion Installers" workflow from GitHub Actions without creating a release (useful for testing builds).
+**Important**: Regular `v*` tags do NOT trigger companion builds. Only `companion-v*` tags do.
+
+**Manual CI Trigger**: Run "Build Companion Installers" from GitHub Actions > "Run workflow" for testing.
 
 ## Code Style & Conventions
 
