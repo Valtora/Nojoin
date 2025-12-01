@@ -15,6 +15,8 @@ services:
     image: redis:alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
 
   api:
@@ -26,6 +28,7 @@ services:
     volumes:
       - .:/app
       - ./data/recordings:/app/recordings
+      - model_cache:/shared_model_cache:ro
     ports:
       - "8000:8000"
     environment:
@@ -33,6 +36,8 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - XDG_CACHE_HOME=/shared_model_cache
+      - HF_HOME=/shared_model_cache/huggingface
     depends_on:
       - db
       - redis
@@ -77,7 +82,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend_node_modules:/app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=https://localhost:14443/api
       # Enable polling for hot reloading on Windows file systems
@@ -101,3 +106,5 @@ services:
 volumes:
   postgres_data:
   model_cache:
+  redis_data:
+  frontend_node_modules:

@@ -700,9 +700,24 @@ export default function RecordingPage({ params }: PageProps) {
                                         onExport={() => setShowExportModal(true)}
                                     />
                                 ) : (
-                                    <p className="text-gray-500 dark:text-gray-400 italic p-6">
-                                        No transcript available yet.
-                                    </p>
+                                    <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
+                                        {recording.transcript?.text ? (
+                                            <>
+                                                <div className="p-4 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-md">
+                                                    <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                                                        {recording.transcript.text.replace(/[\[\]]/g, '')}
+                                                    </p>
+                                                </div>
+                                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                    The audio file was processed, but no speech segments were generated.
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <p className="text-gray-500 dark:text-gray-400 italic">
+                                                No transcript available yet.
+                                            </p>
+                                        )}
+                                    </div>
                                 )
                             ) : (
                                 <NotesView

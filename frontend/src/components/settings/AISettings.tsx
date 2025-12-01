@@ -450,9 +450,19 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                                             </button>
                                         </>
                                     ) : (
-                                        <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full flex items-center gap-1">
-                                            <X className="w-3 h-3" /> Missing
-                                        </span>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full flex items-center gap-1">
+                                                <X className="w-3 h-3" /> Missing
+                                            </span>
+                                            {modelStatus?.[model.id]?.checked_paths && (
+                                                <span 
+                                                    className="text-[10px] text-gray-400 mt-1 max-w-[200px] truncate cursor-help"
+                                                    title={`Checked paths:\n${modelStatus[model.id].checked_paths.join('\n')}`}
+                                                >
+                                                    Hover for debug info
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </div>

@@ -1,7 +1,7 @@
 # Nojoin AI Agent Instructions
 
 ## Project Context
-Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app (Windows), processes it on a GPU-enabled Docker backend (WSL2/Linux), and presents insights via a Next.js web interface.
+Nojoin is a distributed meeting intelligence platform. It records system audio via a local Rust companion app, processes it on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
 
 **Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Privacy First (Self-hosted).
 

@@ -12,6 +12,7 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
 from backend.models.user import User
+from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
@@ -45,7 +46,7 @@ def process_recording_task(self, recording_id: int):
     """
     # Local imports to avoid loading torch in API
     from backend.processing.vad import mute_non_speech_segments
-    from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad
+    from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad, validate_audio_file, cleanup_temp_file
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
@@ -55,6 +56,7 @@ def process_recording_task(self, recording_id: int):
     
     start_time = time.time()
     session = self.session
+    temp_files = []
     
     # 1. Fetch Recording
     recording = session.get(Recording, recording_id)
@@ -74,33 +76,39 @@ def process_recording_task(self, recording_id: int):
     merged_config = system_config.copy()
     merged_config.update(user_settings)
     
-    # Update status to PROCESSING
-    recording.status = RecordingStatus.PROCESSING
-    session.add(recording)
-    session.commit()
-    session.refresh(recording)
-    
-    # Fix missing duration if needed
-    if (not recording.duration_seconds or recording.duration_seconds == 0) and os.path.exists(recording.audio_path):
-        try:
-            duration = get_audio_duration(recording.audio_path)
-            recording.duration_seconds = duration
-            session.add(recording)
-            session.commit()
-            session.refresh(recording)
-        except Exception as e:
-            logger.warning(f"Could not determine duration for recording {recording_id}: {e}")
-    
     try:
-        # Update Status
+        # Update status to PROCESSING
         recording.status = RecordingStatus.PROCESSING
         session.add(recording)
         session.commit()
+        session.refresh(recording)
         
         audio_path = recording.audio_path
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        # Validate Audio File
+        try:
+            validate_audio_file(audio_path)
+        except AudioFormatError as e:
+            logger.error(f"Invalid audio file: {e}")
+            recording.status = RecordingStatus.ERROR
+            recording.processing_step = f"Invalid audio: {str(e)}"
+            session.add(recording)
+            session.commit()
+            return
+
+        # Fix missing duration if needed
+        if (not recording.duration_seconds or recording.duration_seconds == 0):
+            try:
+                duration = get_audio_duration(audio_path)
+                recording.duration_seconds = duration
+                session.add(recording)
+                session.commit()
+                session.refresh(recording)
+            except Exception as e:
+                logger.warning(f"Could not determine duration for recording {recording_id}: {e}")
+    
         # --- VAD Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 10, 'stage': 'VAD'})
         recording.processing_step = "Filtering silence and noise..."
@@ -111,17 +119,42 @@ def process_recording_task(self, recording_id: int):
         vad_input_path = preprocess_audio_for_vad(audio_path)
         if not vad_input_path:
             raise RuntimeError("VAD preprocessing failed")
+        temp_files.append(vad_input_path)
             
         # Run VAD (mute silence)
         vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
-        vad_success = mute_non_speech_segments(vad_input_path, vad_output_path)
+        vad_success, speech_duration = mute_non_speech_segments(vad_input_path, vad_output_path)
+        
         if not vad_success:
              raise RuntimeError("VAD execution failed")
-             
+        temp_files.append(vad_output_path)
+
+        # Check for silence
+        if speech_duration < 1.0:
+            logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
+            recording.status = RecordingStatus.PROCESSED
+            recording.processing_step = "Completed (No speech detected)"
+            
+            # Create empty transcript
+            transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
+            if not transcript:
+                transcript = Transcript(recording_id=recording.id)
+            
+            transcript.text = "No Speech Detected"
+            transcript.segments = []
+            transcript.transcript_status = "completed"
+            
+            session.add(transcript)
+            session.add(recording)
+            session.commit()
+            return
+
         # Convert to MP3 (aligning with pipeline.py)
         vad_processed_mp3 = vad_output_path.replace(".wav", ".mp3")
-        mp3_success = convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
-        if not mp3_success:
+        try:
+            convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
+            temp_files.append(vad_processed_mp3)
+        except AudioFormatError:
              logger.warning("MP3 conversion failed, falling back to WAV")
              # processed_audio_path = vad_output_path # Already WAV
         
@@ -393,33 +426,34 @@ def process_recording_task(self, recording_id: int):
         session.commit()
         update_recording_status(session, recording.id)
         
-        # Cleanup temp files
-        try:
-            if os.path.exists(vad_input_path): os.remove(vad_input_path)
-            if os.path.exists(vad_output_path): os.remove(vad_output_path)
-        except Exception as cleanup_error:
-            logger.warning(f"Failed to cleanup temp files: {cleanup_error}")
-        
-        # Fix for potential string/float mismatch in duration
-        try:
-            duration_val = float(recording.duration_seconds) if recording.duration_seconds else 0.0
-            # Convert to HH:MM:SS for logging if needed, but don't crash on it
-        except (ValueError, TypeError):
-            duration_val = 0.0
-
         elapsed_time = time.time() - float(start_time)
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         return {"status": "success", "recording_id": recording_id}
 
-    except Exception as e:
-        logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
-        # Re-fetch recording to ensure we are attached to session if rollback happened
+    except AudioProcessingError as e:
+        logger.error(f"Audio processing error for {recording_id}: {e}", exc_info=True)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR
+            recording.processing_step = f"Error: {str(e)}"
             session.add(recording)
             session.commit()
-        raise e
+            update_recording_status(session, recording.id)
+            
+    except Exception as e:
+        logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
+        recording = session.get(Recording, recording_id)
+        if recording:
+            recording.status = RecordingStatus.ERROR
+            recording.processing_step = f"System Error: {str(e)}"
+            session.add(recording)
+            session.commit()
+            update_recording_status(session, recording.id)
+            
+    finally:
+        # Robust cleanup of all temporary files
+        for temp_file in temp_files:
+            cleanup_temp_file(temp_file)
 
 @celery_app.task(base=DatabaseTask, bind=True)
 def update_speaker_embedding_task(self, recording_id: int, start: float, end: float, recording_speaker_id: int):

@@ -13,20 +13,21 @@ from backend.utils.config_manager import config_manager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Whisper model URLs (copied from whisper source to avoid importing torch/whisper at module level)
-WHISPER_MODELS = {
-    "tiny.en": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt",
-    "tiny": "https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt",
-    "base.en": "https://openaipublic.azureedge.net/main/whisper/models/25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead/base.en.pt",
-    "base": "https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt",
-    "small.en": "https://openaipublic.azureedge.net/main/whisper/models/f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872/small.en.pt",
-    "small": "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt",
-    "medium.en": "https://openaipublic.azureedge.net/main/whisper/models/d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f/medium.en.pt",
-    "medium": "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt",
-    "large-v1": "https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a/large-v1.pt",
-    "large-v2": "https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt",
-    "large-v3": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt",
-    "large": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt",
+# Whisper model filenames (used for checking status without importing whisper)
+WHISPER_FILENAMES = {
+    "tiny.en": "tiny.en.pt",
+    "tiny": "tiny.pt",
+    "base.en": "base.en.pt",
+    "base": "base.pt",
+    "small.en": "small.en.pt",
+    "small": "small.pt",
+    "medium.en": "medium.en.pt",
+    "medium": "medium.pt",
+    "large-v1": "large-v1.pt",
+    "large-v2": "large-v2.pt",
+    "large-v3": "large-v3.pt",
+    "large": "large-v3.pt",
+    "turbo": "large-v3-turbo.pt",
 }
 
 def _download_file(url, dest_path, progress_callback, description, retries=3):
@@ -190,10 +191,13 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         os.makedirs(download_root, exist_ok=True)
         
         # Prefer official whisper._MODELS if available (since we imported whisper)
+        url = None
         if hasattr(whisper, "_MODELS") and whisper_model_size in whisper._MODELS:
             url = whisper._MODELS[whisper_model_size]
-        else:
-            url = WHISPER_MODELS.get(whisper_model_size)
+        
+        # Fallback for turbo if not in installed whisper version
+        if not url and whisper_model_size == "turbo":
+             url = "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
 
         if not url:
              # Fallback if model size not in our local dict, try to let whisper handle it or error
@@ -295,43 +299,76 @@ def check_model_status(whisper_model_size=None):
     Returns a dict with status of each model.
     """
     status = {
-        "whisper": {"downloaded": False, "path": None},
-        "pyannote": {"downloaded": False, "path": None},
-        "embedding": {"downloaded": False, "path": None}
+        "whisper": {"downloaded": False, "path": None, "checked_paths": []},
+        "pyannote": {"downloaded": False, "path": None, "checked_paths": []},
+        "embedding": {"downloaded": False, "path": None, "checked_paths": []}
     }
     
     # Check Whisper
     if not whisper_model_size:
         whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
+    
+    # 1. Check XDG_CACHE_HOME location (Primary)
     download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
     download_root = os.path.join(download_root, "whisper")
     
     # Use local dict instead of importing whisper
-    url = WHISPER_MODELS.get(whisper_model_size)
+    filename = WHISPER_FILENAMES.get(whisper_model_size)
     
-    if url:
-        filename = os.path.basename(url)
+    if filename:
         filepath = os.path.join(download_root, filename)
+        status["whisper"]["checked_paths"].append(filepath)
         
         if os.path.exists(filepath):
             status["whisper"]["downloaded"] = True
             status["whisper"]["path"] = filepath
+        else:
+            # 2. Fallback: Check default ~/.cache/whisper
+            # This helps if XDG_CACHE_HOME is set but files are in default location
+            default_root = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
+            default_filepath = os.path.join(default_root, filename)
+            if default_filepath != filepath:
+                status["whisper"]["checked_paths"].append(default_filepath)
+                if os.path.exists(default_filepath):
+                    status["whisper"]["downloaded"] = True
+                    status["whisper"]["path"] = default_filepath
     
-    # Check Pyannote (harder to check without loading, but we can check cache)
-    # Pyannote caches in ~/.cache/huggingface/hub/models--pyannote--speaker-diarization-community-1
-    # This is a rough check.
-    hf_cache = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
-    hf_cache = os.path.join(hf_cache, "hub")
+    # Check Pyannote
+    # 1. Check HF_HOME location (Primary)
+    hf_cache_base = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+    hf_cache = os.path.join(hf_cache_base, "hub")
     pyannote_path = os.path.join(hf_cache, "models--pyannote--speaker-diarization-community-1")
+    
+    status["pyannote"]["checked_paths"].append(pyannote_path)
     if os.path.exists(pyannote_path):
         status["pyannote"]["downloaded"] = True
         status["pyannote"]["path"] = pyannote_path
+    else:
+        # 2. Fallback: Check default ~/.cache/huggingface/hub
+        default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+        default_pyannote_path = os.path.join(default_hf_cache, "models--pyannote--speaker-diarization-community-1")
+        if default_pyannote_path != pyannote_path:
+            status["pyannote"]["checked_paths"].append(default_pyannote_path)
+            if os.path.exists(default_pyannote_path):
+                status["pyannote"]["downloaded"] = True
+                status["pyannote"]["path"] = default_pyannote_path
         
     # Check Embedding
     embedding_path = os.path.join(hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
+    status["embedding"]["checked_paths"].append(embedding_path)
+    
     if os.path.exists(embedding_path):
         status["embedding"]["downloaded"] = True
         status["embedding"]["path"] = embedding_path
+    else:
+        # 2. Fallback
+        default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+        default_embedding_path = os.path.join(default_hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
+        if default_embedding_path != embedding_path:
+            status["embedding"]["checked_paths"].append(default_embedding_path)
+            if os.path.exists(default_embedding_path):
+                status["embedding"]["downloaded"] = True
+                status["embedding"]["path"] = default_embedding_path
 
     return status
 

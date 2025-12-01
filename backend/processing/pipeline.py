@@ -18,7 +18,8 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     from .diarize import diarize_audio, diarize_audio_with_progress
     # from ..db import database # TODO: Replace with new DB layer
     from backend.utils.config_manager import config_manager, from_project_relative_path, to_project_relative_path, is_llm_available
-    from .audio_preprocessing import preprocess_audio_for_diarization, cleanup_temp_file, preprocess_audio_for_vad, convert_wav_to_mp3
+    from .audio_preprocessing import preprocess_audio_for_diarization, cleanup_temp_file, preprocess_audio_for_vad, convert_wav_to_mp3, validate_audio_file
+    from backend.core.exceptions import AudioFormatError, VADNoSpeechError
     from pyannote.core import Segment
     import requests
     from .vad import mute_non_speech_segments
@@ -42,6 +43,14 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
 
     temp_files = []
     try:
+        # Validate Audio File
+        try:
+            validate_audio_file(abs_audio_path)
+        except AudioFormatError as e:
+            logger.error(f"Invalid audio file: {e}")
+            database.update_recording_status(recording_id, 'Error')
+            return False
+
         # VAD Stage
         if stage_callback:
             stage_callback('vad')
@@ -72,21 +81,32 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
             stage_update_callback("Detecting voice activity...")
         vad_progress_callback(60)  # 60% - starting VAD
         vad_processed_wav = vad_wav_path.replace("_vad.wav", "_vad_processed.wav")
-        vad_success = mute_non_speech_segments(vad_wav_path, vad_processed_wav)
+        vad_success, speech_duration = mute_non_speech_segments(vad_wav_path, vad_processed_wav)
+        
         if not vad_success:
             raise RuntimeError("Silero VAD processing failed.")
         temp_files.append(vad_processed_wav)
         vad_progress_callback(80)  # 80% - VAD done
+
+        # Check for silence
+        if speech_duration < 1.0:
+            logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
+            database.update_recording_status(recording_id, 'Processed')
+            # TODO: Create empty transcript in DB if needed
+            return True
 
         # Step 3: Convert VAD-processed WAV to MP3
         if cancel_check and cancel_check():
             logger.info(f"Processing cancelled before VAD->MP3 for recording_id={recording_id}")
             return False
         vad_processed_mp3 = vad_processed_wav.replace(".wav", ".mp3")
-        mp3_success = convert_wav_to_mp3(vad_processed_wav, vad_processed_mp3)
-        if not mp3_success:
-            raise RuntimeError("Failed to convert VAD-processed WAV to MP3.")
-        temp_files.append(vad_processed_mp3)
+        try:
+            convert_wav_to_mp3(vad_processed_wav, vad_processed_mp3)
+            temp_files.append(vad_processed_mp3)
+        except AudioFormatError:
+             logger.warning("MP3 conversion failed, falling back to WAV")
+             # processed_audio_path = vad_processed_wav # Already WAV
+
         vad_progress_callback(100)  # 100% - VAD stage complete
 
         # CRITICAL FIX: Use WAV for processing to avoid sample count mismatches in Pyannote
@@ -411,8 +431,6 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
                     #                     logger.info(f"Inferred meeting title '{inferred_title}' for recording {recording_id}")
                     #     except Exception as e:
                     #         logger.error(f"Failed to infer meeting title: {e}")
-                        except Exception as e:
-                            logger.error(f"Failed to infer meeting title for recording {recording_id}: {e}", exc_info=True)
 
                 except Exception as e:
                     logger.error(f"Failed to save diarized transcript for {recording_id}: {e}", exc_info=True)
@@ -441,12 +459,7 @@ def process_recording(recording_id: str, audio_path: str, whisper_progress_callb
     finally:
         # Clean up all temp files
         for f in temp_files:
-            try:
-                if f and os.path.exists(f):
-                    os.remove(f)
-                    logger.info(f"Deleted temp file: {f}")
-            except Exception as e:
-                logger.warning(f"Failed to delete temp file {f}: {e}", exc_info=True)
+            cleanup_temp_file(f)
 
 
 def combine_transcription_diarization(transcription: dict, diarization: 'Annotation', audio_duration: float = None) -> list | None:

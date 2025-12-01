@@ -4,7 +4,7 @@ import silero_vad
 import os
 import numpy as np
 import torchaudio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def mute_non_speech_segments(
     silence_method: str = "mute",  # "mute" or "fade"
     start_mute_ms: int = 1000,      # Mute first X ms to remove recording artifacts
     end_mute_ms: int = 1000         # Mute last X ms to remove recording artifacts
-) -> bool:
+) -> Tuple[bool, float]:
     """
     Uses Silero VAD to mute non-speech segments in a WAV file with enhanced metrics and quality improvements.
     
@@ -57,7 +57,7 @@ def mute_non_speech_segments(
         end_mute_ms: Duration in ms to forcibly mute at the end (default: 200ms)
     
     Returns:
-        True on success, False on failure
+        Tuple (success: bool, speech_duration_seconds: float)
     """
     try:
         logger.info(f"[VAD] Starting VAD processing...")
@@ -69,7 +69,7 @@ def mute_non_speech_segments(
         
         if not os.path.exists(input_wav_path):
             logger.error(f"[VAD] Input file does not exist: {input_wav_path}")
-            return False
+            return False, 0.0
         
         input_file_size = os.path.getsize(input_wav_path)
         logger.info(f"[VAD] Input file size: {input_file_size:,} bytes")
@@ -146,14 +146,14 @@ def mute_non_speech_segments(
         logger.info(f"[VAD] Output file size: {output_file_size:,} bytes")
         logger.info(f"[VAD] VAD processing completed successfully")
         
-        return True
+        return True, vad_metrics['speech_duration_s']
         
     except AssertionError as ae:
         logger.error(f"[VAD] Assertion failed: {ae}", exc_info=True)
-        return False
+        return False, 0.0
     except Exception as e:
         logger.error(f"[VAD] Processing failed for {input_wav_path}: {e}", exc_info=True)
-        return False
+        return False, 0.0
 
 
 def _calculate_vad_metrics(speech_timestamps: list, total_duration_s: float, sampling_rate: int) -> Dict[str, Any]:

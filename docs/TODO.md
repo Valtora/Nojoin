@@ -1,9 +1,16 @@
 # Nojoin To-Do List
 
-Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below:
+Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
 
-### Processing Pipeline Robustness
-- Improve the robustness of the processing pipeline to handle edge cases such as corrupted audio files, unsupported formats, when only silence is detected (via silero-VAD) or unexpected interruptions during processing. Implement error handling and recovery mechanisms to ensure that the system can gracefully handle such scenarios without crashing or losing data. Propose a plan on how to implement these improvements.
+### Alembic Migrations - First Run Handling
+- Modify the Alembic migration scripts to handle the scenario where the database is being created for the first time. Ensure that all necessary tables and initial data are set up correctly without requiring any manual intervention. Propose a plan on how to implement this feature. Currently I have to run 'alembic upgrade head' manually after the first run to create the database tables.
+
+### Frontend Upgrades
+- Consider using shadcn-ui, see here: https://github.com/shadcn-ui/ui and here https://ui.shadcn.com/docs.
+- Explore the feasibility and benefits of integrating shadcn-ui into the current React-based frontend. Evaluate how this change could enhance the user interface and user experience.
+- Consider using the Gatsby Framework for the Frontend
+- See here: https://www.gatsbyjs.com/docs/porting-from-create-react-app-to-gatsby/
+- Explore the feasibility and benefits of migrating the current React-based frontend to use the Gatsby framework. Evaluate how this change could improve performance.
 
 ### Settings - Custom Base URL and Ports
 - Implement the ability for the user to change the base URL and ports for the web app in the companion app settings modal. This is useful for users who want to self-host Nojoin on a different domain or port. They may instead need to change this using the docker-compose.yml file but having the option in the companion app settings modal is more user friendly. Explore how we could implement this feature.

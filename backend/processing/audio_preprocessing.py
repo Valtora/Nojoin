@@ -1,10 +1,54 @@
 import os
 import tempfile
 import logging
+import subprocess
+import json
 from typing import Dict, Tuple, Optional
 from backend.utils.audio import convert_to_mono_16k
+from backend.core.exceptions import AudioFormatError
 
 logger = logging.getLogger(__name__)
+
+def validate_audio_file(file_path: str) -> Dict:
+    """
+    Validates that the file is a valid audio file using ffprobe.
+    Returns metadata dict if valid, raises AudioFormatError if invalid.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Audio file not found: {file_path}")
+
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+
+        if "format" not in data:
+            raise AudioFormatError(f"Could not parse audio format for {file_path}")
+        
+        duration = float(data["format"].get("duration", 0))
+        if duration <= 0:
+            raise AudioFormatError(f"Audio file has zero duration: {file_path}")
+            
+        # Check for at least one audio stream
+        audio_streams = [s for s in data.get("streams", []) if s.get("codec_type") == "audio"]
+        if not audio_streams:
+            raise AudioFormatError(f"No audio streams found in {file_path}")
+
+        return data["format"]
+
+    except subprocess.CalledProcessError as e:
+        raise AudioFormatError(f"ffprobe failed to analyze {file_path}: {e.stderr}")
+    except json.JSONDecodeError:
+        raise AudioFormatError(f"ffprobe returned invalid JSON for {file_path}")
+    except Exception as e:
+        raise AudioFormatError(f"Validation failed for {file_path}: {str(e)}")
 
 def preprocess_audio_for_diarization(input_path: str) -> str | None:
     """
@@ -61,7 +105,7 @@ def preprocess_audio_for_vad(input_path: str) -> str | None:
 
 def convert_wav_to_mp3(input_wav_path: str, output_mp3_path: str) -> bool:
     """
-    Converts a mono, 16kHz WAV file to MP3 format. Returns True on success, False on failure.
+    Converts a mono, 16kHz WAV file to MP3 format. Returns True on success, raises AudioFormatError on failure.
     """
     import subprocess
     try:
@@ -79,9 +123,12 @@ def convert_wav_to_mp3(input_wav_path: str, output_mp3_path: str) -> bool:
         
         logger.info(f"[Audio Conversion] Conversion completed successfully")
         return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to convert {input_wav_path} to MP3: {e.stderr}", exc_info=True)
+        raise AudioFormatError(f"FFmpeg conversion failed: {e.stderr}")
     except Exception as e:
         logger.error(f"Failed to convert {input_wav_path} to MP3: {e}", exc_info=True)
-        return False
+        raise AudioFormatError(f"Audio conversion failed: {str(e)}")
 
 def analyze_audio_file(file_path: str) -> Optional[Dict]:
     """

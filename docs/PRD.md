@@ -88,10 +88,16 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Engine:** OpenAI Whisper (Local) for transcription.
 *   **Diarization:** Pyannote (Local) for speaker separation.
 *   **Pipeline:**
-    1.  **Preprocessing:** Convert to mono 16kHz WAV, VAD filtering (Silero).
-    2.  **Transcription:** Whisper (Turbo/Large models supported).
-    3.  **Diarization:** Pyannote processing.
-    4.  **Alignment:** Merging transcript segments with speaker timestamps.
+        1.  **Validation:** Verify audio file integrity and duration using `ffprobe`.
+        2.  **Preprocessing:** Convert to mono 16kHz WAV, VAD filtering (Silero).
+        3.  **Transcription:** Whisper (Turbo/Large models supported).
+        4.  **Diarization:** Pyannote processing.
+        5.  **Alignment:** Merging transcript segments with speaker timestamps.
+    *   **Robustness:**
+        *   **Validation:** Early rejection of invalid or zero-duration files.
+        *   **Silence Detection:** Graceful handling of recordings with no speech (marked as Processed with empty transcript).
+        *   **Error Handling:** Granular error states and messages for debugging.
+        *   **Cleanup:** Guaranteed removal of temporary files.
 *   **Progress Tracking:**
     *   **Granular Status:** Real-time status updates pushed to the Web Client, including:
         *   **Client State:** "Meeting in Progress", "Meeting Paused", "Uploading...".
