@@ -9,6 +9,11 @@ import shutil
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.utils.config_manager import config_manager
+from backend.utils.download_progress import (
+    set_download_progress,
+    clear_download_progress,
+    is_download_in_progress
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -144,6 +149,8 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
 
     def report(msg, percent, speed=None, eta=None):
         logger.info(f"{msg} ({percent}%)")
+        # Write to shared Redis progress for frontend visibility
+        set_download_progress(percent, msg, speed, eta, status="downloading")
         if progress_callback:
             try:
                 progress_callback(msg, percent, speed, eta)
@@ -289,9 +296,16 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             # Don't fail completely
 
     report("Model download complete.", 100)
+    # Mark download as complete in shared state
+    set_download_progress(100, "Model download complete.", status="complete")
 
 def preload_models():
-    download_models()
+    try:
+        download_models()
+    except Exception as e:
+        # Mark download as errored in shared state
+        set_download_progress(0, f"Download failed: {str(e)}", status="error")
+        raise
 
 def check_model_status(whisper_model_size=None):
     """

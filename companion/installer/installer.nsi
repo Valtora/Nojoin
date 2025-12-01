@@ -16,7 +16,7 @@
 
 ; Installer Settings
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "..\dist\Nojoin-Companion-v${PRODUCT_VERSION}.exe"
+OutFile "..\dist\Nojoin-Companion-Setup-v${PRODUCT_VERSION}.exe"
 InstallDir "$LOCALAPPDATA\Nojoin"
 InstallDirRegKey HKCU "${PRODUCT_DIR_REGKEY}" ""
 RequestExecutionLevel user

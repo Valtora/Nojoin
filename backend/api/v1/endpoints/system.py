@@ -11,6 +11,7 @@ from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager
 from backend.preload_models import check_model_status
+from backend.utils.download_progress import get_download_progress, is_download_in_progress
 
 router = APIRouter()
 
@@ -99,6 +100,41 @@ async def trigger_model_download(
     """
     task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
     return {"task_id": task.id}
+
+@router.get("/download-progress")
+async def get_current_download_progress() -> Any:
+    """
+    Get the current model download progress from shared state.
+    This allows the frontend to see progress from preload_models.py or any active download task.
+    
+    Returns:
+        - progress: percentage (0-100)
+        - message: current status message
+        - speed: download speed (if available)
+        - eta: estimated time remaining (if available)
+        - status: "downloading", "complete", "error", or null if no active download
+        - in_progress: boolean indicating if a download is currently active
+    """
+    progress = get_download_progress()
+    
+    if progress is None:
+        return {
+            "in_progress": False,
+            "progress": None,
+            "message": None,
+            "speed": None,
+            "eta": None,
+            "status": None
+        }
+    
+    return {
+        "in_progress": is_download_in_progress(),
+        "progress": progress.get("progress", 0),
+        "message": progress.get("message", ""),
+        "speed": progress.get("speed"),
+        "eta": progress.get("eta"),
+        "status": progress.get("status", "downloading")
+    }
 
 @router.get("/tasks/{task_id}")
 async def get_task_status(task_id: str) -> Any:

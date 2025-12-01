@@ -56,7 +56,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion Installer (Windows)**:
   - Requires: NSIS installed (`choco install nsis` or https://nsis.sourceforge.io)
   - Build: `cd companion && .\installer\build.ps1 -Release`
-  - Output: `companion/dist/Nojoin-Companion-v{VERSION}.exe`
+  - Output: `companion/dist/Nojoin-Companion-Setup-v{VERSION}.exe`
 
 ## Code Style & Conventions
 

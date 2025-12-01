@@ -501,4 +501,18 @@ export const deleteModel = async (modelName: string): Promise<void> => {
   await api.delete(`/system/models/${modelName}`);
 };
 
+export interface DownloadProgress {
+  in_progress: boolean;
+  progress: number | null;
+  message: string | null;
+  speed: string | null;
+  eta: string | null;
+  status: 'downloading' | 'complete' | 'error' | null;
+}
+
+export const getDownloadProgress = async (): Promise<DownloadProgress> => {
+  const response = await api.get<DownloadProgress>('/system/download-progress');
+  return response.data;
+};
+
 export default api;

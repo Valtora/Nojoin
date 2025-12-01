@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings } from '@/lib/api';
+import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings, getDownloadProgress, getModelStatus } from '@/lib/api';
 import { Loader2, CheckCircle, Download, Check, X } from 'lucide-react';
 
 export default function SetupPage() {
@@ -22,7 +22,7 @@ export default function SetupPage() {
   // Model Download State
   const [downloadingModels, setDownloadingModels] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadMessage, setDownloadMessage] = useState('Initializing download...');
+  const [downloadMessage, setDownloadMessage] = useState('Checking download status...');
   const [downloadSpeed, setDownloadSpeed] = useState('');
   const [downloadEta, setDownloadEta] = useState('');
   const [downloadComplete, setDownloadComplete] = useState(false);
@@ -61,12 +61,85 @@ export default function SetupPage() {
     checkStatus();
   }, [router]);
 
+  const completeSetupAndRedirect = async () => {
+    setDownloadProgress(100);
+    setDownloadMessage('All models ready!');
+    setDownloadComplete(true);
+    
+    // Auto-login after setup
+    try {
+      const loginResponse = await login(formData.username, formData.password);
+      localStorage.setItem('token', loginResponse.access_token);
+      setTimeout(() => router.push('/'), 2000);
+    } catch (loginErr) {
+      console.error("Auto-login failed", loginErr);
+      // Fallback to login page if auto-login fails
+      setTimeout(() => router.push('/login'), 2000);
+    }
+  };
+
   const startModelDownload = async () => {
     setDownloadingModels(true);
+    setDownloadMessage('Checking download status...');
+    
     try {
+      // First, check if there's an existing download in progress or completed
+      const sharedProgress = await getDownloadProgress();
+      
+      // If download is already complete, skip to completion
+      if (sharedProgress.status === 'complete') {
+        await completeSetupAndRedirect();
+        return;
+      }
+      
+      // If download is in progress (from preload_models.py), poll that instead of starting a new task
+      if (sharedProgress.in_progress) {
+        setDownloadMessage(sharedProgress.message || 'Download in progress...');
+        setDownloadProgress(sharedProgress.progress || 0);
+        if (sharedProgress.speed) setDownloadSpeed(sharedProgress.speed);
+        if (sharedProgress.eta) setDownloadEta(sharedProgress.eta);
+        
+        // Poll the shared progress endpoint
+        const pollInterval = setInterval(async () => {
+          try {
+            const progress = await getDownloadProgress();
+            
+            if (progress.status === 'complete') {
+              clearInterval(pollInterval);
+              await completeSetupAndRedirect();
+            } else if (progress.status === 'error') {
+              clearInterval(pollInterval);
+              setError(progress.message || 'Model download failed. Please check logs.');
+              setDownloadingModels(false);
+            } else {
+              setDownloadProgress(progress.progress || 0);
+              setDownloadMessage(progress.message || 'Downloading...');
+              if (progress.speed) setDownloadSpeed(progress.speed);
+              if (progress.eta) setDownloadEta(progress.eta);
+            }
+          } catch (e) {
+            console.error("Polling error", e);
+          }
+        }, 1000);
+        
+        return;
+      }
+      
+      // Check if models are already downloaded (preload might have completed before we checked)
+      const modelStatus = await getModelStatus('turbo');
+      const allDownloaded = modelStatus.whisper?.downloaded && 
+                           modelStatus.pyannote?.downloaded && 
+                           modelStatus.embedding?.downloaded;
+      
+      if (allDownloaded) {
+        await completeSetupAndRedirect();
+        return;
+      }
+      
+      // No existing download and models not ready, start a new download task
+      setDownloadMessage('Starting download...');
       const { task_id } = await downloadModels({
         hf_token: formData.hf_token || undefined,
-        // Default to turbo if not specified, though backend handles default too
         whisper_model_size: 'turbo' 
       });
 
@@ -76,31 +149,28 @@ export default function SetupPage() {
           
           if (status.status === 'SUCCESS') {
             clearInterval(pollInterval);
-            setDownloadProgress(100);
-            setDownloadMessage('All models ready!');
-            setDownloadComplete(true);
-            
-            // Auto-login after setup
-            try {
-              const loginResponse = await login(formData.username, formData.password);
-              localStorage.setItem('token', loginResponse.access_token);
-              setTimeout(() => router.push('/'), 2000);
-            } catch (loginErr) {
-              console.error("Auto-login failed", loginErr);
-              // Fallback to login page if auto-login fails
-              setTimeout(() => router.push('/login'), 2000);
-            }
+            await completeSetupAndRedirect();
           } else if (status.status === 'FAILURE') {
             clearInterval(pollInterval);
             setError('Model download failed. Please check logs.');
-            setDownloadingModels(false); // Allow retry or manual skip?
+            setDownloadingModels(false);
           } else if (status.status === 'PROCESSING') {
-            // The API returns the meta info in the 'result' field for PROCESSING state
             const meta = status.result || {};
             setDownloadProgress(meta.progress || 0);
             setDownloadMessage(meta.message || 'Downloading...');
             if (meta.speed) setDownloadSpeed(meta.speed);
             if (meta.eta) setDownloadEta(meta.eta);
+          } else if (status.status === 'PENDING') {
+            // Task not yet picked up by worker - check shared progress in case worker is busy
+            const progress = await getDownloadProgress();
+            if (progress.in_progress) {
+              setDownloadProgress(progress.progress || 0);
+              setDownloadMessage(progress.message || 'Download in progress...');
+              if (progress.speed) setDownloadSpeed(progress.speed);
+              if (progress.eta) setDownloadEta(progress.eta);
+            } else {
+              setDownloadMessage('Waiting for worker...');
+            }
           }
         } catch (e) {
           console.error("Polling error", e);
@@ -111,7 +181,6 @@ export default function SetupPage() {
       console.error("Failed to start download", err);
       setError('Failed to start model download. You can try logging in anyway.');
       setDownloadingModels(false);
-      // Optional: allow skipping
     }
   };
 

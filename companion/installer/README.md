@@ -42,12 +42,12 @@ From the `companion` directory, run:
 
 The installer will be created at:
 ```
-companion/dist/Nojoin-Companion-v{VERSION}.exe
+companion/dist/Nojoin-Companion-Setup-v{VERSION}.exe
 ```
 
 For example, version 0.1.0 produces:
 ```
-companion/dist/Nojoin-Companion-v0.1.0.exe
+companion/dist/Nojoin-Companion-Setup-v0.1.0.exe
 ```
 
 ## Installer Features

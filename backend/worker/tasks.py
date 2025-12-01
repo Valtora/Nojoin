@@ -587,12 +587,70 @@ def get_worker_device_status(self):
 def download_models_task(self, hf_token: str | None = None, whisper_model_size: str | None = None):
     """
     Task to download models in the background.
+    Checks for existing downloads from preload_models.py and forwards that progress.
     """
-    from backend.preload_models import download_models
+    from backend.preload_models import download_models, check_model_status
+    from backend.utils.download_progress import (
+        get_download_progress,
+        is_download_in_progress,
+        is_download_complete,
+        set_download_progress
+    )
     
     # Reload config to ensure we have the latest settings
     config_manager.reload()
     
+    # Check if models are already fully downloaded
+    model_status = check_model_status(whisper_model_size=whisper_model_size or "turbo")
+    all_downloaded = (
+        model_status.get("whisper", {}).get("downloaded", False) and
+        model_status.get("pyannote", {}).get("downloaded", False) and
+        model_status.get("embedding", {}).get("downloaded", False)
+    )
+    
+    if all_downloaded:
+        logger.info("All models already downloaded, skipping download.")
+        self.update_state(state='PROCESSING', meta={
+            'progress': 100,
+            'message': 'All models already downloaded!'
+        })
+        set_download_progress(100, "All models already downloaded!", status="complete")
+        return {"status": "success", "message": "All models already downloaded."}
+    
+    # Check if there's an active download from preload_models.py
+    # If so, poll and forward that progress until it completes
+    if is_download_in_progress():
+        logger.info("Download already in progress (from preload_models.py), forwarding progress...")
+        while True:
+            progress = get_download_progress()
+            if progress is None:
+                break
+            
+            status = progress.get("status", "downloading")
+            if status == "complete":
+                self.update_state(state='PROCESSING', meta={
+                    'progress': 100,
+                    'message': 'All models downloaded!'
+                })
+                return {"status": "success", "message": "All models downloaded successfully."}
+            elif status == "error":
+                error_msg = progress.get("message", "Download failed")
+                raise Exception(error_msg)
+            else:
+                # Forward the progress to the Celery task state
+                meta = {
+                    'progress': progress.get('progress', 0),
+                    'message': progress.get('message', 'Downloading...')
+                }
+                if progress.get('speed'):
+                    meta['speed'] = progress['speed']
+                if progress.get('eta'):
+                    meta['eta'] = progress['eta']
+                self.update_state(state='PROCESSING', meta=meta)
+            
+            time.sleep(1)
+    
+    # No active download, proceed with our own download
     def progress_callback(msg, percent, speed=None, eta=None):
         meta = {'progress': percent, 'message': msg}
         if speed:
