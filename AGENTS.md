@@ -32,6 +32,12 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Segments are uploaded sequentially to `/recordings/{id}/segment`.
   - **Retries**: Implemented in `src/uploader.rs` with exponential backoff.
 - **UI**: System tray only (`tray-icon`, `tao`).
+- **Configuration** (`config.json`):
+  - `api_port`: Backend API port (default: 14443). Hostname is always `localhost`.
+  - `local_port`: Local server port (default: 12345).
+  - `api_token`: JWT token obtained via web-based authorization.
+- **Authorization**: Web app sends token to `/auth` endpoint. No manual config needed.
+- **Installer**: NSIS-based (`companion/installer/`). Installs to `%LOCALAPPDATA%\Nojoin`.
 
 ## Critical Workflows
 
@@ -44,7 +50,13 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
-- **Companion (Windows)**: `cd companion && cargo run`
+- **Companion (Windows)**:
+  - Development: `cd companion && cargo run`
+  - Release Build: `cd companion && cargo build --release`
+- **Companion Installer (Windows)**:
+  - Requires: NSIS installed (`choco install nsis` or https://nsis.sourceforge.io)
+  - Build: `cd companion && .\installer\build.ps1 -Release`
+  - Output: `companion/dist/Nojoin-Companion-v{VERSION}.exe`
 
 ## Code Style & Conventions
 

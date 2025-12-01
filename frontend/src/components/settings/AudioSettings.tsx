@@ -8,8 +8,8 @@ import { AUDIO_KEYWORDS } from './keywords';
 interface AudioSettingsProps {
   settings: Settings;
   onUpdateSettings: (newSettings: Settings) => void;
-  companionConfig: { api_url: string } | null;
-  onUpdateCompanionConfig: (config: { api_url: string }) => void;
+  companionConfig: { api_port: number; local_port: number } | null;
+  onUpdateCompanionConfig: (config: { api_port: number }) => void;
   companionDevices: CompanionDevices | null;
   selectedInputDevice: string | null;
   onSelectInputDevice: (device: string | null) => void;

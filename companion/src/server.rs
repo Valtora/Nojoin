@@ -7,15 +7,20 @@ use tower_http::cors::CorsLayer;
 use cpal::traits::{DeviceTrait, HostTrait};
 use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::notifications;
-use crate::config::Config;
 use crate::uploader;
 use log::{info, error};
 use std::time::Duration;
 use axum::debug_handler;
 
 pub async fn start_server(state: Arc<AppState>) {
+    let local_port = {
+        let config = state.config.lock().unwrap();
+        config.local_port
+    };
+    
     let app = Router::new()
         .route("/status", get(get_status))
+        .route("/auth", post(authorize))
         .route("/config", get(get_config).post(update_config))
         .route("/devices", get(get_devices))
         .route("/levels", get(get_audio_levels))
@@ -26,8 +31,9 @@ pub async fn start_server(state: Arc<AppState>) {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    info!("Server running on http://127.0.0.1:12345");
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:12345").await.unwrap();
+    let bind_addr = format!("127.0.0.1:{}", local_port);
+    info!("Server running on http://{}", bind_addr);
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -37,10 +43,13 @@ use std::time::SystemTime;
 struct StatusResponse {
     status: AppStatus,
     duration_seconds: u64,
+    version: &'static str,
+    authenticated: bool,
 }
 
 async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
     let status = state.status.lock().unwrap().clone();
+    let authenticated = state.is_authenticated();
     
     let duration = {
         let acc = *state.accumulated_duration.lock().unwrap();
@@ -65,6 +74,59 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
     Json(StatusResponse {
         status,
         duration_seconds: duration.as_secs(),
+        version: env!("CARGO_PKG_VERSION"),
+        authenticated,
+    })
+}
+
+// Authorization endpoint for web-based device pairing
+#[derive(serde::Deserialize)]
+struct AuthRequest {
+    token: String,
+}
+
+#[derive(serde::Serialize)]
+struct AuthResponse {
+    success: bool,
+    message: String,
+}
+
+#[debug_handler]
+async fn authorize(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<AuthRequest>,
+) -> Json<AuthResponse> {
+    info!("Received authorization request");
+    
+    if payload.token.is_empty() {
+        return Json(AuthResponse {
+            success: false,
+            message: "Token cannot be empty".to_string(),
+        });
+    }
+    
+    // Save the token to config
+    {
+        let mut config = state.config.lock().unwrap();
+        config.api_token = payload.token;
+        if let Err(e) = config.save() {
+            error!("Failed to save config: {}", e);
+            return Json(AuthResponse {
+                success: false,
+                message: format!("Failed to save token: {}", e),
+            });
+        }
+    }
+    
+    info!("Companion app authorized successfully");
+    notifications::show_notification(
+        "Authorization Successful",
+        "Companion app is now connected to Nojoin."
+    );
+    
+    Json(AuthResponse {
+        success: true,
+        message: "Authorization successful".to_string(),
     })
 }
 
@@ -116,7 +178,7 @@ async fn start_recording(
         }
     }
 
-    // Update token if provided
+    // Update token if provided (for backward compatibility)
     if let Some(token) = payload.token {
         let mut config = state.config.lock().unwrap();
         config.api_token = token;
@@ -131,13 +193,9 @@ async fn start_recording(
         .build()
         .unwrap_or_default();
         
-    let api_url = {
+    let (api_url, token) = {
         let config = state.config.lock().unwrap();
-        config.api_url.clone()
-    };
-    let token = {
-        let config = state.config.lock().unwrap();
-        config.api_token.clone()
+        (config.get_api_url(), config.api_token.clone())
     };
 
     let res = client.post(format!("{}/recordings/init", api_url))
@@ -293,9 +351,18 @@ async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<Str
     Ok(Json("Resumed".to_string()))
 }
 
-async fn get_config(State(state): State<Arc<AppState>>) -> Json<Config> {
-    let config = state.config.lock().unwrap().clone();
-    Json(config)
+#[derive(serde::Serialize)]
+struct ConfigResponse {
+    api_port: u16,
+    local_port: u16,
+}
+
+async fn get_config(State(state): State<Arc<AppState>>) -> Json<ConfigResponse> {
+    let config = state.config.lock().unwrap();
+    Json(ConfigResponse {
+        api_port: config.api_port,
+        local_port: config.local_port,
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -354,7 +421,7 @@ async fn get_devices(State(state): State<Arc<AppState>>) -> Json<DevicesResponse
 
 #[derive(serde::Deserialize)]
 struct ConfigUpdate {
-    api_url: Option<String>,
+    api_port: Option<u16>,
     api_token: Option<String>,
     input_device_name: Option<String>,
     output_device_name: Option<String>,
@@ -363,11 +430,11 @@ struct ConfigUpdate {
 async fn update_config(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ConfigUpdate>,
-) -> Result<Json<Config>, StatusCode> {
+) -> Result<Json<ConfigResponse>, StatusCode> {
     let mut config = state.config.lock().unwrap();
     
-    if let Some(url) = payload.api_url {
-        config.api_url = url;
+    if let Some(port) = payload.api_port {
+        config.api_port = port;
     }
     if let Some(token) = payload.api_token {
         config.api_token = token;
@@ -384,5 +451,8 @@ async fn update_config(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
     
-    Ok(Json(config.clone()))
+    Ok(Json(ConfigResponse {
+        api_port: config.api_port,
+        local_port: config.local_port,
+    }))
 }

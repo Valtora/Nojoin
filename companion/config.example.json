@@ -1,4 +1,5 @@
 {
-  "api_url": "https://localhost:14443/api/v1",
-  "api_token": "YOUR_API_TOKEN_HERE"
+  "api_port": 14443,
+  "api_token": "YOUR_API_TOKEN_HERE",
+  "local_port": 12345
 }

@@ -31,6 +31,7 @@ The primary user interface for interacting with the system.
 *   **Styling:** Tailwind CSS for a responsive, modern design.
 *   **Functionality:** Dashboard, playback, transcript editing, speaker management, and system configuration.
 *   **Companion Status:** Visual indicator (warning bubble) when the Companion App is not detected.
+*   **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. Dynamically links to the correct installer for the user's OS (Windows/macOS/Linux) from GitHub Releases.
 
 ### 2.3 The Companion App (Rust)
 A lightweight, cross-platform system tray application responsible for audio capture.
@@ -39,6 +40,9 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Platforms:** Windows, macOS, Linux (First-class support for all).
 *   **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 *   **UI:** Minimalist system tray menu for status indication, updates, help, and exit. **No recording controls in the tray.**
+*   **Local Server:** Always runs on `localhost:12345`. Remote access must be configured via a user-managed reverse proxy.
+*   **Distribution:** Installer binaries are hosted on GitHub Releases, not served from the frontend.
+*   **Auto-Update:** The app periodically checks for new versions on GitHub and notifies the user when updates are available.
 
 ### 2.4 Configuration Management
 *   **Unified Strategy:** Configuration is split between system-wide infrastructure settings and user-specific preferences.
@@ -47,11 +51,17 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Initial Setup:** The Setup Wizard collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account, ensuring immediate system readiness without manual restarts.
 *   **Database Initialization:** The system automatically handles database schema creation and migrations on startup, ensuring the database is always in a consistent state.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
+*   **Companion Config:**
+    *   **Localhost Enforcement:** The Companion App always connects to `localhost`. Users cannot change the hostname.
+    *   **Port Configuration:** The backend API port (default: 14443) is configurable via the Settings page.
+    *   **Legacy Migration:** Old config formats (using `api_url`) are automatically migrated to the new port-based format.
+    *   **Config Preservation:** The Windows installer preserves `config.json` during updates.
 
 ### 2.5 Security
 *   **SSL/TLS:** All communication between components (Frontend, Backend, Companion) is encrypted via HTTPS using Nginx as a reverse proxy.
 *   **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 *   **Authentication:** JWT-based authentication for API access.
+*   **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
 *   **Authorization:** Strict ownership checks ensure users can only access their own data.
 *   **CORS:** Restricted to allowed origins.
 
@@ -213,6 +223,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Async Runtime:** Tokio
 *   **HTTP Client:** Reqwest
 *   **GUI/Tray:** Native Windows/macOS/Linux tray integration
+*   **Windows Installer:** NSIS-based installer with:
+    *   Installation to `%LOCALAPPDATA%\Nojoin`
+    *   Start Menu and Desktop shortcuts (optional)
+    *   Run on Startup option (optional)
+    *   Automatic termination of running instances during update
+    *   Config file preservation during updates
 
 ### 4.4 Deployment
 *   **Docker Compose:** Primary deployment method orchestrating API, Worker, DB, Redis, and Web Frontend containers.

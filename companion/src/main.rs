@@ -14,6 +14,7 @@ mod state;
 mod uploader;
 mod config;
 mod notifications;
+mod updater;
 
 use state::{AppState, AppStatus};
 use config::Config;
@@ -34,7 +35,7 @@ fn load_icon() -> Icon {
 fn main() {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    info!("Starting Nojoin Companion...");
+    info!("Starting Nojoin Companion v{}...", env!("CARGO_PKG_VERSION"));
 
     let event_loop = EventLoop::new();
     
@@ -69,7 +70,7 @@ fn main() {
     // App State
     let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
     let config = Config::load();
-    info!("Configuration loaded. API URL: {}", config.api_url);
+    info!("Configuration loaded. API URL: {}", config.get_api_url());
 
     let state = Arc::new(AppState {
         status: Mutex::new(AppStatus::Idle),
@@ -115,7 +116,7 @@ fn main() {
             loop {
                 let api_url = {
                     let config = state_fetch.config.lock().unwrap();
-                    config.api_url.clone()
+                    config.get_api_url()
                 };
                 
                 let status_url = format!("{}/system/status", api_url);
@@ -130,11 +131,22 @@ fn main() {
                             }
                             state_fetch.is_backend_connected.store(true, Ordering::SeqCst);
                             
-                            // Update Web URL
+                            // Update Web URL from config (always localhost)
+                            {
+                                let config = state_fetch.config.lock().unwrap();
+                                let web_url = config.get_web_url();
+                                let mut stored_url = state_fetch.web_url.lock().unwrap();
+                                if stored_url.as_deref() != Some(&web_url) {
+                                    info!("Web App URL: {}", web_url);
+                                    *stored_url = Some(web_url);
+                                }
+                            }
+                            
+                            // Check if backend returned a different web_app_url (for future flexibility)
                             if let Some(url) = json.get("web_app_url").and_then(|v| v.as_str()) {
                                 let mut web_url = state_fetch.web_url.lock().unwrap();
                                 if web_url.as_deref() != Some(url) {
-                                    info!("Web App URL updated: {}", url);
+                                    info!("Web App URL updated from backend: {}", url);
                                     *web_url = Some(url.to_string());
                                 }
                             }
@@ -196,6 +208,19 @@ fn main() {
             }
         });
 
+        // Auto-update check (runs once at startup, then daily)
+        rt.spawn(async move {
+            // Initial delay to let the app settle
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            updater::check_for_updates().await;
+            
+            // Check daily
+            loop {
+                tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
+                updater::check_for_updates().await;
+            }
+        });
+
         rt.block_on(server::start_server(state_server));
     });
 
@@ -233,7 +258,7 @@ fn main() {
                          Some(d_url)
                      } else {
                          let config = state.config.lock().unwrap();
-                         config.web_app_url.clone()
+                         Some(config.get_web_url())
                      }
                  };
                  
@@ -243,11 +268,18 @@ fn main() {
                      notifications::show_notification("Error", "Backend URL not found. Please check connection.");
                  }
             } else if event.id == check_updates_i.id() {
-                 notifications::show_notification("Updates", "You are on the latest version.");
+                 // Trigger manual update check
+                 std::thread::spawn(|| {
+                     let rt = tokio::runtime::Runtime::new().unwrap();
+                     rt.block_on(updater::check_for_updates_interactive());
+                 });
             } else if event.id == help_i.id() {
                  let _ = open::that("https://github.com/Valtora/Nojoin"); 
             } else if event.id == about_i.id() {
-                 notifications::show_notification("About", "Nojoin Companion v0.1.0");
+                 notifications::show_notification(
+                     "About Nojoin Companion", 
+                     &format!("Version {}\n\nA meeting intelligence companion.", env!("CARGO_PKG_VERSION"))
+                 );
             } else if event.id == restart_i.id() {
                  notifications::show_notification("Restart", "Please restart the application manually.");
             }

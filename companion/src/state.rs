@@ -49,6 +49,12 @@ impl AppState {
     pub fn take_output_level(&self) -> u32 {
         self.output_level.swap(0, Ordering::Relaxed)
     }
+
+    /// Check if the companion has a valid API token configured
+    pub fn is_authenticated(&self) -> bool {
+        let config = self.config.lock().unwrap();
+        !config.api_token.is_empty()
+    }
 }
 
 

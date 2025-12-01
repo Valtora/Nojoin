@@ -17,7 +17,7 @@ pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, 
     let mut contents = Vec::new();
     file.read_to_end(&mut contents).await?;
             
-    let url = format!("{}/recordings/{}/segment?sequence={}", config.api_url, recording_id, sequence);
+    let url = format!("{}/recordings/{}/segment?sequence={}", config.get_api_url(), recording_id, sequence);
     
     let mut attempts = 0;
     const MAX_ATTEMPTS: u32 = 60; // Retry for ~5 minutes
@@ -61,8 +61,10 @@ pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, 
 }
 
 pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()> {
-    let client = reqwest::Client::new();
-    let url = format!("{}/recordings/{}/finalize", config.api_url, recording_id);
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let url = format!("{}/recordings/{}/finalize", config.get_api_url(), recording_id);
     
     let mut attempts = 0;
     const MAX_ATTEMPTS: u32 = 60;
@@ -99,8 +101,10 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
 }
 
 pub async fn update_client_status(recording_id: i64, status: &str, config: &Config) -> Result<()> {
-    let client = reqwest::Client::new();
-    let url = format!("{}/recordings/{}/client_status?status={}", config.api_url, recording_id, status);
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let url = format!("{}/recordings/{}/client_status?status={}", config.get_api_url(), recording_id, status);
     
     let res = client.put(&url)
         .header("Authorization", format!("Bearer {}", config.api_token))

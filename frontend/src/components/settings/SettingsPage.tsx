@@ -16,10 +16,17 @@ import { useNotificationStore } from '@/lib/notificationStore';
 
 type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin';
 
+interface CompanionConfig {
+  api_port: number;
+  local_port: number;
+}
+
+const COMPANION_URL = 'http://localhost:12345';
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [settings, setSettings] = useState<Settings>({});
-  const [companionConfig, setCompanionConfig] = useState<{ api_url: string } | null>(null);
+  const [companionConfig, setCompanionConfig] = useState<CompanionConfig | null>(null);
   const [companionDevices, setCompanionDevices] = useState<CompanionDevices | null>(null);
   const [selectedInputDevice, setSelectedInputDevice] = useState<string | null>(null);
   const [selectedOutputDevice, setSelectedOutputDevice] = useState<string | null>(null);
@@ -95,17 +102,16 @@ export default function SettingsPage() {
         setSettings(safeSettings);
         setIsAdmin(userData.is_superuser);
 
-        // Try to load companion config using the loaded settings or default
-        const companionUrl = safeSettings.companion_url || 'http://localhost:12345';
+        // Try to load companion config (always at localhost:12345)
         try {
-            const res = await fetch(`${companionUrl}/config`);
+            const res = await fetch(`${COMPANION_URL}/config`);
             if (res.ok) {
-                const companionData = await res.json();
+                const companionData: CompanionConfig = await res.json();
                 setCompanionConfig(companionData);
             }
             
             // Fetch available devices
-            const devicesRes = await fetch(`${companionUrl}/devices`);
+            const devicesRes = await fetch(`${COMPANION_URL}/devices`);
             if (devicesRes.ok) {
                 const devicesData: CompanionDevices = await devicesRes.json();
                 setCompanionDevices(devicesData);
@@ -130,20 +136,18 @@ export default function SettingsPage() {
     try {
       await updateSettings(settings);
       
-      const companionUrl = settings.companion_url || 'http://localhost:12345';
-      
-      // Save companion config (api_url) if available
+      // Save companion config (api_port) if available
       if (companionConfig) {
-          await fetch(`${companionUrl}/config`, {
+          await fetch(`${COMPANION_URL}/config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ api_url: companionConfig.api_url })
+              body: JSON.stringify({ api_port: companionConfig.api_port })
           });
       }
       
       // Save device selections if companion is connected
       if (companionDevices) {
-          await fetch(`${companionUrl}/config`, {
+          await fetch(`${COMPANION_URL}/config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -153,7 +157,6 @@ export default function SettingsPage() {
           });
       }
 
-      // Show success feedback (could be a toast, but for now just console)
       console.log("Settings saved successfully");
       addNotification({ type: 'success', message: 'Settings saved successfully' });
     } catch (e) {

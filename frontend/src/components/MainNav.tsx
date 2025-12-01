@@ -16,9 +16,12 @@ import {
   Plus,
   X,
   Bell,
-  LogOut
+  LogOut,
+  Download,
+  Link2
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
+import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 import { getTags, updateTag, deleteTag, createTag } from '@/lib/api';
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
@@ -27,6 +30,7 @@ import GlobalSpeakersModal from './GlobalSpeakersModal';
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
 import NotificationHistoryModal from './NotificationHistoryModal';
+import { getDownloadUrl } from '@/lib/platform';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -181,6 +185,7 @@ function TagItem({
 export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
+  const { companion, companionAuthenticated, authorizeCompanion } = useServiceStatusStore();
   const { 
     currentView, 
     setCurrentView, 
@@ -189,6 +194,7 @@ export default function MainNav() {
     isNavCollapsed, 
     toggleNavCollapse 
   } = useNavigationStore();
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -295,8 +301,26 @@ export default function MainNav() {
     window.dispatchEvent(new CustomEvent('recording-updated'));
   };
 
+  const handleDownloadCompanion = () => {
+    const downloadUrl = getDownloadUrl();
+    window.open(downloadUrl, '_blank');
+  };
+
+  const handleAuthorizeCompanion = async () => {
+    setIsAuthorizing(true);
+    try {
+      await authorizeCompanion();
+    } finally {
+      setIsAuthorizing(false);
+    }
+  };
+
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? isNavCollapsed : false;
+  
+  // Determine which button to show
+  const showDownloadButton = mounted && !companion;
+  const showAuthorizeButton = mounted && companion && !companionAuthenticated;
 
   const navItems: { view: ViewType; icon: React.ReactNode; label: string }[] = [
     { view: 'recordings', icon: <Mic className="w-5 h-5" />, label: 'Recordings' },
@@ -444,6 +468,46 @@ export default function MainNav() {
 
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
+          {/* Download Companion Button - Only shown when companion is not reachable */}
+          {showDownloadButton && (
+            <button
+              onClick={handleDownloadCompanion}
+              title={collapsed ? 'Download Companion' : undefined}
+              className={`
+                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
+                bg-orange-600 hover:bg-orange-700 text-white font-medium
+                ${collapsed ? 'justify-center' : ''}
+              `}
+            >
+              <Download className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && (
+                <span className="text-sm truncate">Download Companion</span>
+              )}
+            </button>
+          )}
+
+          {/* Authorize Companion Button - Only shown when companion is reachable but not authenticated */}
+          {showAuthorizeButton && (
+            <button
+              onClick={handleAuthorizeCompanion}
+              disabled={isAuthorizing}
+              title={collapsed ? 'Authorize Companion' : undefined}
+              className={`
+                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
+                bg-orange-600 hover:bg-orange-700 text-white font-medium
+                disabled:opacity-50 disabled:cursor-not-allowed
+                ${collapsed ? 'justify-center' : ''}
+              `}
+            >
+              <Link2 className={`w-5 h-5 flex-shrink-0 ${isAuthorizing ? 'animate-pulse' : ''}`} />
+              {!collapsed && (
+                <span className="text-sm truncate">
+                  {isAuthorizing ? 'Authorizing...' : 'Authorize Companion'}
+                </span>
+              )}
+            </button>
+          )}
+          
           <NavItem
             icon={<Users className="w-5 h-5" />}
             label="Speaker Library"

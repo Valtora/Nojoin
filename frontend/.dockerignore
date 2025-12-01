@@ -1,0 +1,25 @@
+# Dependencies - installed fresh in container
+node_modules
+
+# Build outputs
+.next
+out
+
+# Development/IDE files
+.git
+.vscode
+.idea
+*.log
+
+# Environment files (sensitive)
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript build info
+*.tsbuildinfo
+

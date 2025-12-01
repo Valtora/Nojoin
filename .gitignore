@@ -21,6 +21,7 @@ __pycache__/
 
 # Companion App (Rust)
 companion/target/
+companion/dist/
 
 # Environment Variables
 .env
@@ -31,9 +32,7 @@ companion/target/
 node_modules/
 
 # Personal Documentation
-.github/copilot-instructions.md
 companion/config.json
-docs/gitmessage.md
 
 # Security / Certificates
 nginx/*.key

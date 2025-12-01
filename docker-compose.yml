@@ -27,6 +27,7 @@ services:
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
+      - ./data:/app/data
       - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
     ports:
