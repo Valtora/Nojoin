@@ -1,6 +1,7 @@
 'use client';
 
 import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor, generateNotes, updateNotes, findAndReplaceNotes, exportContent, ExportContentType } from '@/lib/api';
+import ChatPanel from '@/components/ChatPanel';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
 import TranscriptView from '@/components/TranscriptView';
@@ -8,7 +9,7 @@ import NotesView from '@/components/NotesView';
 import ExportModal from '@/components/ExportModal';
 import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
-import { Loader2, Edit2 } from 'lucide-react';
+import { Loader2, Edit2, MessageSquare } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
@@ -73,6 +74,7 @@ export default function RecordingPage({ params }: PageProps) {
   // Panel State (Transcript or Notes)
   const [activePanel, setActivePanel] = useState<ActivePanel>('transcript');
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
@@ -616,6 +618,18 @@ export default function RecordingPage({ params }: PageProps) {
                     />
                 </div>
             </div>
+
+            <button
+                onClick={() => setShowChat(!showChat)}
+                className={`p-2 rounded-lg transition-colors ${
+                    showChat 
+                        ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' 
+                        : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800'
+                }`}
+                title={showChat ? "Hide Chat" : "Show Chat"}
+            >
+                <MessageSquare className="w-5 h-5" />
+            </button>
         </div>
 
         {/* Audio Player in Header */}
@@ -644,7 +658,8 @@ export default function RecordingPage({ params }: PageProps) {
                 </p>
             </div>
         ) : (
-                        <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full w-full">
+            <>
+                <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full flex-1 min-w-0">
                 <Panel defaultSize={75} minSize={30}>
                     <div className="flex-1 flex flex-col min-h-0 h-full">
                         {/* Panel Tabs */}
@@ -758,6 +773,8 @@ export default function RecordingPage({ params }: PageProps) {
                     />
                 </Panel>
             </PanelGroup>
+            {showChat && <ChatPanel />}
+            </>
         )}
       </div>
 

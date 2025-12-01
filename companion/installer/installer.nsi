@@ -101,10 +101,11 @@ Section "Nojoin Companion" SEC_MAIN
     
     ; Backup existing config.json if it exists
     !insertmacro WriteToLog "Checking for existing config..."
-    IfFileExists "$INSTDIR\config.json" 0 +4
+    ${If} ${FileExists} "$INSTDIR\config.json"
         !insertmacro WriteToLog "Backing up existing config.json"
         CopyFiles /SILENT "$INSTDIR\config.json" "$TEMP\nojoin_config_backup.json"
         StrCpy $ConfigBackup "1"
+    ${EndIf}
     
     SetOverwrite on
     
@@ -114,9 +115,12 @@ Section "Nojoin Companion" SEC_MAIN
     !insertmacro WriteToLog "nojoin-companion.exe installed successfully."
     
     ; Verify the exe was installed
-    IfFileExists "$INSTDIR\nojoin-companion.exe" +3 0
+    ${If} ${FileExists} "$INSTDIR\nojoin-companion.exe"
+        !insertmacro WriteToLog "nojoin-companion.exe verified."
+    ${Else}
         !insertmacro WriteToLog "ERROR: nojoin-companion.exe not found after installation!"
         Abort "Failed to install nojoin-companion.exe"
+    ${EndIf}
     
     ; Restore config.json if it was backed up
     ${If} $ConfigBackup == "1"
@@ -126,11 +130,14 @@ Section "Nojoin Companion" SEC_MAIN
     ${EndIf}
     
     ; Create default config if none exists
-    IfFileExists "$INSTDIR\config.json" +6 0
+    ${If} ${FileExists} "$INSTDIR\config.json"
+        !insertmacro WriteToLog "Config file already exists."
+    ${Else}
         !insertmacro WriteToLog "Creating default config.json..."
         FileOpen $0 "$INSTDIR\config.json" w
         FileWrite $0 '{$\r$\n  "api_port": 14443,$\r$\n  "api_token": "",$\r$\n  "local_port": 12345$\r$\n}$\r$\n'
         FileClose $0
+    ${EndIf}
     
     ; Store installation folder
     !insertmacro WriteToLog "Writing registry keys..."
@@ -220,8 +227,9 @@ Section "Uninstall"
     Delete "$INSTDIR\Uninstall.exe"
     
     ; Optionally remove config (ask user)
-    MessageBox MB_YESNO "Do you want to remove your settings (config.json)?" IDNO +2
+    MessageBox MB_YESNO "Do you want to remove your settings (config.json)?" IDNO skip_config_delete
     Delete "$INSTDIR\config.json"
+    skip_config_delete:
     
     ; Remove installation directory if empty
     RMDir "$INSTDIR"

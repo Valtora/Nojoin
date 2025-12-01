@@ -182,11 +182,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
 
 ### 3.7 Web Playback & Transcript Interface
 *   **Layout:**
-    *   **Four-Pane Dashboard:**
+    *   **Dashboard Layout:**
         *   **Left Sidebar:** Scrollable list of recordings (Meeting Cards) with status indicators. Always visible.
-        *   **Center Panel:** Main content area displaying the Meeting Title, Audio Player, and Transcript/Notes.
-        *   **Speaker Panel:** A dedicated column between the Transcript and Chat panels listing all identified speakers. Includes a "Play" button to preview the speaker's voice snippet.
-        *   **Right Panel:** Collapsible utility panel for "Chat with Meeting", Settings, and Import Audio.
+        *   **Main Content Area:**
+            *   **Center Panel:** Tabbed view for Transcript and Meeting Notes.
+            *   **Speaker Panel:** Resizable panel to the right of the transcript, listing identified speakers.
+            *   **Chat Sidebar:** Collapsible right-hand sidebar for "Chat with Meeting" functionality.
 *   **Modern Player:** HTML5-based audio player with waveform visualization.
 *   **Synced Transcript:** Clicking a transcript segment seeks the audio to that timestamp. Current text highlights during playback.
 *   **Edit Mode:** Allow users to correct transcript text and speaker assignment directly in the browser.
