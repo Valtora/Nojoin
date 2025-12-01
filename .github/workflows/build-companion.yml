@@ -147,7 +147,12 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config libssl-dev
+        sudo apt-get install -y \
+          libasound2-dev \
+          pkg-config \
+          libssl-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev
 
     - name: Install cargo-deb
       run: cargo install cargo-deb
