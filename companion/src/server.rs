@@ -140,12 +140,9 @@ async fn start_recording(
         config.api_token.clone()
     };
 
-    let res = client.post(format!("{}/recordings/", api_url))
+    let res = client.post(format!("{}/recordings/init", api_url))
         .header("Authorization", format!("Bearer {}", token))
-        .json(&serde_json::json!({
-            "name": payload.name,
-            "status": "recording"
-        }))
+        .query(&[("name", &payload.name)])
         .send()
         .await;
 

@@ -2,14 +2,6 @@
 
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
 
-### Review Package Dependencies for Each Container
-- Review the python package dependencies for each container to make sure only the relevant python packages are installed in each container. For example the backend container should only have the packages it needs to run the backend and not any packages that are only needed for the companion app or frontend. This will help to reduce the size of each container and improve security by minimizing the attack surface.
-- During the 'worker' container build, I can see torch modules being uninstalled and installed, I think this is due to the base image coming with torch version 2.8 but we're using torch 2.9.1. We should try to find a base image that has the correct version of torch pre-installed to avoid this unnecessary uninstall/install process during the build. It should be this one: "pytorch/pytorch:2.9.1-cuda12.6-cudnn9-runtime" which I have verified exists on dockerhub.
-- Ultimately I want to remove the 'requirements.txt' file from the project root and have a 'requirements' folder which the docker file for each container can look at to install only the relevant packages for that container. The goal here is to minimise the size of each container, improve build speeds, and improve security by reducing the attack surface.
-
-### Companion App - Terminal Logs
-- Improve the logging functionality of the companion app to provide real-time terminal logs to the user. This will help users to diagnose any issues that may arise during the operation of the companion app. Right now after the server starts up I know it checks to see if the backend is reachable however there is no feedback to the user in the terminal window of the companion app. We could add more logging to show the progress of the companion app as it starts up and connects to the backend.
-
 ### Frontend Upgrades
 - Consider using shadcn-ui, see here: https://github.com/shadcn-ui/ui and here https://ui.shadcn.com/docs.
 - Explore the feasibility and benefits of integrating shadcn-ui into the current React-based frontend. Evaluate how this change could enhance the user interface and user experience.
