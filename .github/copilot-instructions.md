@@ -12,7 +12,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 ├── backend/                 # FastAPI + Celery Python backend
 │   ├── api/                # REST API endpoints
 │   │   ├── deps.py        # Dependency injection (SessionDep, CurrentUser)
-│   │   └── routes/        # Route handlers by domain
+│   │   └── v1/endpoints/  # API endpoint handlers by domain
 │   ├── models/            # SQLModel ORM models
 │   ├── worker/            # Celery tasks for heavy processing
 │   ├── processing/        # Audio processing utilities
@@ -139,7 +139,7 @@ alembic revision --autogenerate -m "description"  # Create migration
 4. Access API docs at `http://localhost:8000/docs`
 
 ### Making Changes
-1. **Backend API**: Add routes in `backend/api/routes/`, models in `backend/models/`
+1. **Backend API**: Add endpoints in `backend/api/v1/endpoints/`, models in `backend/models/`
 2. **Frontend**: Add pages in `frontend/src/app/`, components in `frontend/src/components/`
 3. **Database**: Create migrations with Alembic after model changes
 4. **Companion**: Changes require rebuilding the Rust binary
@@ -163,7 +163,7 @@ alembic revision --autogenerate -m "description"  # Create migration
 3. Consider the async nature of processing tasks
 
 ### File Placement
-- **New API endpoint**: `backend/api/routes/<domain>.py`
+- **New API endpoint**: `backend/api/v1/endpoints/<domain>.py`
 - **New model**: `backend/models/<domain>.py`
 - **New React component**: `frontend/src/components/<ComponentName>.tsx`
 - **New page**: `frontend/src/app/<route>/page.tsx`
