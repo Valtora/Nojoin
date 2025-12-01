@@ -9,6 +9,9 @@ use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::notifications;
 use crate::config::Config;
 use crate::uploader;
+use log::{info, error};
+use std::time::Duration;
+use axum::debug_handler;
 
 pub async fn start_server(state: Arc<AppState>) {
     let app = Router::new()
@@ -23,7 +26,7 @@ pub async fn start_server(state: Arc<AppState>) {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    println!("Server running on http://127.0.0.1:12345");
+    info!("Server running on http://127.0.0.1:12345");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:12345").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -95,75 +98,91 @@ struct StartResponse {
     message: String,
 }
 
+#[debug_handler]
 async fn start_recording(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<StartRequest>,
-) -> Result<Json<StartResponse>, StatusCode> {
-    // Update token if provided
-    if let Some(token) = &payload.token {
-        let mut config = state.config.lock().unwrap();
-        config.api_token = token.clone();
+) -> (StatusCode, Json<StartResponse>) {
+    info!("Received start_recording request for '{}'", payload.name);
+    
+    // Check status (and drop lock immediately)
+    {
+        let status = state.status.lock().unwrap();
+        if *status != AppStatus::Idle && *status != AppStatus::BackendOffline {
+            return (StatusCode::BAD_REQUEST, Json(StartResponse {
+                id: 0,
+                message: "Already recording".to_string(),
+            }));
+        }
     }
 
-    // Get config for request
-    let (api_url, api_token) = {
+    // Update token if provided
+    if let Some(token) = payload.token {
+        let mut config = state.config.lock().unwrap();
+        config.api_token = token;
+        if let Err(e) = config.save() {
+            error!("Failed to save config: {}", e);
+        }
+    }
+
+    // Call backend to create recording
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default();
+        
+    let api_url = {
         let config = state.config.lock().unwrap();
-        (config.api_url.clone(), config.api_token.clone())
+        config.api_url.clone()
+    };
+    let token = {
+        let config = state.config.lock().unwrap();
+        config.api_token.clone()
     };
 
-    // 1. Call Backend to Init
-    let client = reqwest::Client::new();
-    let url = format!("{}/recordings/init", api_url);
-    let res = client.post(&url)
-        .header("Authorization", format!("Bearer {}", api_token))
-        .query(&[("name", &payload.name)])
+    let res = client.post(format!("{}/recordings/", api_url))
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&serde_json::json!({
+            "name": payload.name,
+            "status": "recording"
+        }))
         .send()
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to init recording: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-        
-    if !res.status().is_success() {
-        eprintln!("Backend returned error: {}", res.status());
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-    
-    let json: serde_json::Value = res.json().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let recording_id = json["id"].as_i64().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    
-    // 2. Update State
-    {
-        let mut status = state.status.lock().unwrap();
-        *status = AppStatus::Recording;
-        let mut id = state.current_recording_id.lock().unwrap();
-        *id = Some(recording_id);
-        let mut seq = state.current_sequence.lock().unwrap();
-        *seq = 1;
-        
-        // Reset timing
-        let mut start_time = state.recording_start_time.lock().unwrap();
-        *start_time = Some(SystemTime::now());
-        let mut acc = state.accumulated_duration.lock().unwrap();
-        *acc = std::time::Duration::new(0, 0);
-    }
-    
-    // 2. Send Start Command to Audio Thread
-    state.audio_command_tx.send(AudioCommand::Start(recording_id)).unwrap();
-    
-    // Notify Backend of Status
-    let config_clone = state.config.lock().unwrap().clone();
-    tokio::spawn(async move {
-        if let Err(e) = uploader::update_client_status(recording_id, "RECORDING", &config_clone).await {
-            eprintln!("Failed to update client status: {}", e);
-        }
-    });
-    
-    notifications::show_notification("Recording Started", "Nojoin is now recording.");
+        .await;
 
-    Ok(Json(StartResponse {
-        id: recording_id,
-        message: "Recording started".to_string(),
+    match res {
+        Ok(response) => {
+            if let Ok(json) = response.json::<serde_json::Value>().await {
+                if let Some(id) = json.get("id").and_then(|v| v.as_i64()) {
+                    // Start Audio Thread
+                    *state.current_recording_id.lock().unwrap() = Some(id);
+                    *state.current_sequence.lock().unwrap() = 1;
+                    *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
+                    *state.accumulated_duration.lock().unwrap() = Duration::new(0, 0);
+                    
+                    state.audio_command_tx.send(AudioCommand::Start(id)).unwrap();
+                    
+                    // Re-acquire lock to update status
+                    let mut status = state.status.lock().unwrap();
+                    *status = AppStatus::Recording;
+                    
+                    notifications::show_notification("Recording Started", &format!("Recording '{}' started.", payload.name));
+                    info!("Recording started successfully. ID: {}", id);
+                    
+                    return (StatusCode::OK, Json(StartResponse {
+                        id,
+                        message: "Recording started".to_string(),
+                    }));
+                }
+            }
+        },
+        Err(e) => {
+            error!("Failed to start recording on backend: {}", e);
+        }
+    }
+
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(StartResponse {
+        id: 0,
+        message: "Failed to start recording".to_string(),
     }))
 }
 
@@ -176,6 +195,7 @@ async fn stop_recording(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<Option<StopRequest>>,
 ) -> Result<Json<String>, StatusCode> {
+    info!("Received stop_recording request");
     // Update token if provided
     if let Some(req) = payload {
         if let Some(token) = req.token {
@@ -204,16 +224,18 @@ async fn stop_recording(
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Err(e) = uploader::update_client_status(id, "UPLOADING", &config_clone).await {
-                eprintln!("Failed to update client status: {}", e);
+                error!("Failed to update client status: {}", e);
             }
         });
     }
 
     notifications::show_notification("Recording Stopped", "Processing audio...");
+    info!("Stop command processed successfully");
     Ok(Json("Stopped".to_string()))
 }
 
 async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+    info!("Received pause_recording request");
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
@@ -235,16 +257,18 @@ async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<Stri
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Err(e) = uploader::update_client_status(id, "PAUSED", &config_clone).await {
-                eprintln!("Failed to update client status: {}", e);
+                error!("Failed to update client status: {}", e);
             }
         });
     }
     
     notifications::show_notification("Recording Paused", "Recording paused.");
+    info!("Recording paused");
     Ok(Json("Paused".to_string()))
 }
 
 async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+    info!("Received resume_recording request");
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
@@ -262,12 +286,13 @@ async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<Str
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Err(e) = uploader::update_client_status(id, "RECORDING", &config_clone).await {
-                eprintln!("Failed to update client status: {}", e);
+                error!("Failed to update client status: {}", e);
             }
         });
     }
 
     notifications::show_notification("Recording Resumed", "Recording resumed.");
+    info!("Recording resumed");
     Ok(Json("Resumed".to_string()))
 }
 

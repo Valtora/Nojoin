@@ -7,6 +7,7 @@ use crate::uploader;
 use crate::config::Config;
 use std::thread;
 use hound;
+use log::{info, warn};
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
@@ -14,13 +15,13 @@ fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
             for device in devices {
                 if let Ok(device_name) = device.name() {
                     if &device_name == name {
-                        println!("Using configured input device: {}", device_name);
+                        info!("Using configured input device: {}", device_name);
                         return Some(device);
                     }
                 }
             }
         }
-        println!("Warning: Configured input device '{}' not found, using default", name);
+        warn!("Configured input device '{}' not found, using default", name);
     }
     host.default_input_device()
 }
@@ -31,13 +32,13 @@ fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
             for device in devices {
                 if let Ok(device_name) = device.name() {
                     if &device_name == name {
-                        println!("Using configured output device: {}", device_name);
+                        info!("Using configured output device: {}", device_name);
                         return Some(device);
                     }
                 }
             }
         }
-        println!("Warning: Configured output device '{}' not found, using default", name);
+        warn!("Configured output device '{}' not found, using default", name);
     }
     host.default_output_device()
 }
@@ -49,9 +50,9 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
     let input_device = host.default_input_device().map(|d| d.name().unwrap_or("Unknown".to_string()));
     let output_device = host.default_output_device().map(|d| d.name().unwrap_or("Unknown".to_string()));
     
-    println!("Audio System Initialized:");
-    println!("  Default Input:  {:?}", input_device);
-    println!("  Default Output: {:?}", output_device);
+    info!("Audio System Initialized:");
+    info!("  Default Input:  {:?}", input_device);
+    info!("  Default Output: {:?}", output_device);
 
     // Shared flag to stop the stream thread
     let is_recording = Arc::new(AtomicBool::new(false));

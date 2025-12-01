@@ -4,6 +4,7 @@ use anyhow::Result;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use crate::config::Config;
+use log::{info, warn, error};
 
 pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, config: &Config) -> Result<()> {
     // Allow invalid certs for self-signed SSL (development)
@@ -38,17 +39,19 @@ pub async fn upload_segment(recording_id: i64, sequence: i32, file_path: &Path, 
         match res {
             Ok(response) => {
                 if response.status().is_success() {
+                    info!("Segment {} uploaded successfully for recording {}", sequence, recording_id);
                     return Ok(());
                 } else {
-                    eprintln!("Upload failed (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, response.status());
+                    warn!("Upload failed (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, response.status());
                 }
             },
             Err(e) => {
-                eprintln!("Upload error (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, e);
+                warn!("Upload error (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, e);
             }
         }
 
         if attempts >= MAX_ATTEMPTS {
+            error!("Upload failed after {} attempts", MAX_ATTEMPTS);
             return Err(anyhow::anyhow!("Upload failed after {} attempts", MAX_ATTEMPTS));
         }
 
@@ -74,17 +77,19 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
         match res {
             Ok(response) => {
                 if response.status().is_success() {
+                    info!("Recording {} finalized successfully", recording_id);
                     return Ok(());
                 } else {
-                    eprintln!("Finalize failed (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, response.status());
+                    warn!("Finalize failed (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, response.status());
                 }
             },
             Err(e) => {
-                eprintln!("Finalize error (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, e);
+                warn!("Finalize error (attempt {}/{}): {}", attempts, MAX_ATTEMPTS, e);
             }
         }
 
         if attempts >= MAX_ATTEMPTS {
+            error!("Finalize failed after {} attempts", MAX_ATTEMPTS);
             return Err(anyhow::anyhow!("Finalize failed after {} attempts", MAX_ATTEMPTS));
         }
 

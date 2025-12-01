@@ -6,6 +6,7 @@ use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMen
 use tao::event_loop::{EventLoop, ControlFlow};
 use reqwest;
 use serde_json;
+use log::{info, warn};
 
 mod server;
 mod audio;
@@ -31,6 +32,10 @@ fn load_icon() -> Icon {
 }
 
 fn main() {
+    // Initialize logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    info!("Starting Nojoin Companion...");
+
     let event_loop = EventLoop::new();
     
     // Tray Setup
@@ -64,6 +69,8 @@ fn main() {
     // App State
     let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
     let config = Config::load();
+    info!("Configuration loaded. API URL: {}", config.api_url);
+
     let state = Arc::new(AppState {
         status: Mutex::new(AppStatus::Idle),
         current_recording_id: Mutex::new(None),
@@ -81,6 +88,7 @@ fn main() {
     // Audio Thread
     let state_audio = state.clone();
     thread::spawn(move || {
+        info!("Starting audio thread...");
         audio::run_audio_loop(state_audio, audio_rx);
     });
 
@@ -88,6 +96,7 @@ fn main() {
     let state_server = state.clone();
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
+        info!("Starting server thread...");
         
         // Persistent Health Check Loop
         let state_fetch = state_server.clone();
@@ -101,6 +110,8 @@ fn main() {
             let mut attempt = 0;
             let max_wait = Duration::from_secs(60); // Max wait between retries
             
+            info!("Starting backend health check loop...");
+
             loop {
                 let api_url = {
                     let config = state_fetch.config.lock().unwrap();
@@ -113,18 +124,26 @@ fn main() {
                     Ok(resp) => {
                         if let Ok(json) = resp.json::<serde_json::Value>().await {
                             // Success!
+                            let was_connected = state_fetch.is_backend_connected.load(Ordering::SeqCst);
+                            if !was_connected {
+                                info!("Backend connected successfully!");
+                            }
                             state_fetch.is_backend_connected.store(true, Ordering::SeqCst);
                             
                             // Update Web URL
                             if let Some(url) = json.get("web_app_url").and_then(|v| v.as_str()) {
                                 let mut web_url = state_fetch.web_url.lock().unwrap();
-                                *web_url = Some(url.to_string());
+                                if web_url.as_deref() != Some(url) {
+                                    info!("Web App URL updated: {}", url);
+                                    *web_url = Some(url.to_string());
+                                }
                             }
                             
                             // Reset status if it was offline
                             {
                                 let mut status = state_fetch.status.lock().unwrap();
                                 if *status == AppStatus::BackendOffline {
+                                    info!("Status changed to Idle (Backend Online)");
                                     *status = AppStatus::Idle;
                                 }
                             }
@@ -133,18 +152,28 @@ fn main() {
                             attempt = 0;
                         } else {
                             // Response parse error
+                            warn!("Backend reachable but response invalid.");
                             state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
                             let mut status = state_fetch.status.lock().unwrap();
                             if *status == AppStatus::Idle {
+                                warn!("Status changed to BackendOffline (Invalid Response)");
                                 *status = AppStatus::BackendOffline;
                             }
                         }
                     },
-                    Err(_) => {
+                    Err(e) => {
                         // Connection error
+                        let was_connected = state_fetch.is_backend_connected.load(Ordering::SeqCst);
+                        if was_connected {
+                            warn!("Backend connection lost: {}", e);
+                        } else if attempt == 0 {
+                            warn!("Could not connect to backend: {}", e);
+                        }
+
                         state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
                         let mut status = state_fetch.status.lock().unwrap();
                         if *status == AppStatus::Idle {
+                            warn!("Status changed to BackendOffline (Connection Error)");
                             *status = AppStatus::BackendOffline;
                         }
                     }
@@ -156,7 +185,11 @@ fn main() {
                 } else {
                     attempt += 1;
                     let backoff = 2u64.pow(attempt.min(6)); // 2, 4, 8, 16, 32, 64
-                    std::cmp::min(backoff, max_wait.as_secs())
+                    let wait = std::cmp::min(backoff, max_wait.as_secs());
+                    if !state_fetch.is_backend_connected.load(Ordering::SeqCst) {
+                         info!("Retrying backend connection in {}s...", wait);
+                    }
+                    wait
                 };
                 
                 tokio::time::sleep(Duration::from_secs(wait_secs)).await;
