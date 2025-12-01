@@ -4,6 +4,8 @@ Let's continue the development of Nojoin. Read the PRD.md in the docs directory 
 
 ### Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
+- The meeting note generation feature already exists and is powered by LLM services. We should use the same LLM services for the chat feature.
+- Allow the user to inject custom instructions to the LLM service via a settings modal in the 'AI Services' page. This is for things like the tone of the chat, custom instructions for how to format the chat responses, create call notes emails, etc. The hardcoded instructions should provide a default set of instructions to do with the meeting notes and the transcript and the user's instructions should be appended to the end of the prompt. Warn the user that using custom instructions may result in poor responses if the instructions are not appropriate.
 
 ### Frontend Upgrades
 - Consider using shadcn-ui, see here: https://github.com/shadcn-ui/ui and here https://ui.shadcn.com/docs.

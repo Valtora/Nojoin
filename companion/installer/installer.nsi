@@ -23,6 +23,9 @@ RequestExecutionLevel user
 ShowInstDetails show
 ShowUnInstDetails show
 
+; Enable installer logging
+!define LOGFILE "$INSTDIR\install.log"
+
 ; Installer Compression
 SetCompressor /SOLID lzma
 
@@ -70,37 +73,63 @@ Var ConfigBackup
 Section "Nojoin Companion" SEC_MAIN
     SectionIn RO ; Required section
     
+    ; Set output path first so we can write logs
+    SetOutPath "$INSTDIR"
+    
+    ; Initialize log file
+    FileOpen $0 "$INSTDIR\install.log" w
+    FileWrite $0 "=== Nojoin Companion Installation Log ===$\r$\n"
+    FileWrite $0 "Version: ${PRODUCT_VERSION}$\r$\n"
+    FileWrite $0 "Install Directory: $INSTDIR$\r$\n"
+    FileWrite $0 "=======================================$\r$\n$\r$\n"
+    FileClose $0
+    
+    !insertmacro LogMessage "Starting installation..."
+    
     ; Check if application is running and terminate it
+    !insertmacro LogMessage "Checking for running instances..."
     Call CloseRunningApp
+    !insertmacro LogMessage "Running instances terminated."
     
     ; Backup existing config.json if it exists
-    IfFileExists "$INSTDIR\config.json" 0 +3
+    !insertmacro LogMessage "Checking for existing config..."
+    IfFileExists "$INSTDIR\config.json" 0 +4
+        !insertmacro LogMessage "Backing up existing config.json"
         CopyFiles /SILENT "$INSTDIR\config.json" "$TEMP\nojoin_config_backup.json"
         StrCpy $ConfigBackup "1"
     
-    ; Set output path
-    SetOutPath "$INSTDIR"
     SetOverwrite on
     
     ; Install files
+    !insertmacro LogMessage "Installing nojoin-companion.exe..."
     File "..\target\release\nojoin-companion.exe"
+    !insertmacro LogMessage "nojoin-companion.exe installed successfully."
+    
+    ; Verify the exe was installed
+    IfFileExists "$INSTDIR\nojoin-companion.exe" +3 0
+        !insertmacro LogMessage "ERROR: nojoin-companion.exe not found after installation!"
+        Abort "Failed to install nojoin-companion.exe"
     
     ; Restore config.json if it was backed up
     ${If} $ConfigBackup == "1"
+        !insertmacro LogMessage "Restoring config.json from backup..."
         CopyFiles /SILENT "$TEMP\nojoin_config_backup.json" "$INSTDIR\config.json"
         Delete "$TEMP\nojoin_config_backup.json"
     ${EndIf}
     
     ; Create default config if none exists
-    IfFileExists "$INSTDIR\config.json" +5 0
+    IfFileExists "$INSTDIR\config.json" +6 0
+        !insertmacro LogMessage "Creating default config.json..."
         FileOpen $0 "$INSTDIR\config.json" w
         FileWrite $0 '{$\r$\n  "api_port": 14443,$\r$\n  "api_token": "",$\r$\n  "local_port": 12345$\r$\n}$\r$\n'
         FileClose $0
     
     ; Store installation folder
+    !insertmacro LogMessage "Writing registry keys..."
     WriteRegStr HKCU "${PRODUCT_DIR_REGKEY}" "" "$INSTDIR\nojoin-companion.exe"
     
     ; Create uninstaller
+    !insertmacro LogMessage "Creating uninstaller..."
     WriteUninstaller "$INSTDIR\Uninstall.exe"
     
     ; Write uninstall registry keys
@@ -117,6 +146,8 @@ Section "Nojoin Companion" SEC_MAIN
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     IntFmt $0 "0x%08X" $0
     WriteRegDWORD ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "EstimatedSize" "$0"
+    
+    !insertmacro LogMessage "Installation completed successfully."
 SectionEnd
 
 Section "Start Menu Shortcuts" SEC_STARTMENU
@@ -144,6 +175,30 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; Functions
+
+; Logging function - writes timestamped messages to install.log
+Function WriteLog
+    Exch $0 ; Get log message from stack
+    Push $1
+    
+    ; Get current time
+    ${GetTime} "" "L" $1 $2 $3 $4 $5 $6 $7
+    
+    ; Open log file in append mode
+    FileOpen $1 "$INSTDIR\install.log" a
+    FileSeek $1 0 END
+    FileWrite $1 "[$3-$2-$1 $4:$5:$6] $0$\r$\n"
+    FileClose $1
+    
+    Pop $1
+    Pop $0
+FunctionEnd
+
+!macro LogMessage MSG
+    Push "${MSG}"
+    Call WriteLog
+!macroend
+
 Function CloseRunningApp
     ; Try to close any running instance gracefully
     FindWindow $0 "" "${PRODUCT_NAME}"
