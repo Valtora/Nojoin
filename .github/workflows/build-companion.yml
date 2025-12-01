@@ -27,6 +27,9 @@ jobs:
         cd companion
         cargo build --release
 
+    - name: Create dist directory
+      run: New-Item -ItemType Directory -Force -Path companion/dist
+
     - name: Build NSIS Installer
       run: |
         cd companion/installer
