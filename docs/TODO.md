@@ -2,14 +2,6 @@
 
 Let's continue the development of Nojoin. Read the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
 
-### First Run Script
-- Currently as soon as the celery worker container is created it begins downloading the turbo whisper model. This is fine however when the user fills in the first page of the first-run wizard they get to the page where the dependencies are downloaded and while the turbo model is downloadin the status text is stuck on 'Initializing download...' which is misleading since the turbo model is already being downloaded. This should be updated to show the correct status, usually mid-progress during the download.
-
-### Companion App Deployment
-- The terminal is visible while the companion app is running. This is not ideal and should be hidden. Instead the logs should be available in the system tray context menu as a button called 'View Logs'.
-- The logs should be a text file created in the same directory as the companion app binary.
-- The binary's icon in the filesystem should be the same as the one in the system tray. In the installer folder there is an icon.ico file however there was an error during the build script. Ensure the powershell build script is updated to build the correct icon.ico file via NSIS.
-
 ### Meeting Chat Feature
 - Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal. Let's first brainstorm how best to implement this feature.
 

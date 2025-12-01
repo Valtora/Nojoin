@@ -1,7 +1,10 @@
 [package]
 name = "nojoin-companion"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+description = "A lightweight system tray companion app for Nojoin meeting intelligence"
+authors = ["Valtora"]
+license = "MIT"
 
 [dependencies]
 tokio = { version = "1.36", features = ["full"] }
@@ -22,4 +25,19 @@ parking_lot = "0.12"
 image = "0.24"
 open = "5.0"
 log = "0.4"
-env_logger = "0.11"
+fern = "0.7"
+
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.deb]
+maintainer = "Valtora"
+copyright = "2024, Valtora"
+extended-description = "Nojoin Companion captures system audio and microphone input for transcription and meeting intelligence."
+depends = "$auto"
+section = "sound"
+priority = "optional"
+assets = [
+    ["target/release/nojoin-companion", "usr/bin/", "755"],
+    ["installer/icon.ico", "usr/share/icons/hicolor/256x256/apps/nojoin-companion.ico", "644"]
+]

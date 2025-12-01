@@ -1,12 +1,15 @@
+#![windows_subsystem = "windows"]
+
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::path::PathBuf;
 use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}, Icon};
 use tao::event_loop::{EventLoop, ControlFlow};
 use reqwest;
 use serde_json;
-use log::{info, warn};
+use log::{info, warn, error};
 
 mod server;
 mod audio;
@@ -19,8 +22,35 @@ mod updater;
 use state::{AppState, AppStatus};
 use config::Config;
 
-fn load_icon() -> Icon {
+fn get_log_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("nojoin-companion.log")
+}
 
+fn setup_logging() -> Result<(), fern::InitError> {
+    let log_path = get_log_path();
+    
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{} {} {}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .chain(fern::log_file(&log_path)?)
+        .apply()?;
+    
+    Ok(())
+}
+
+fn load_icon() -> Icon {
     let (icon_rgba, icon_width, icon_height) = {
         let image = image::load_from_memory(include_bytes!("icon.png"))
             .expect("Failed to open icon path")
@@ -33,9 +63,12 @@ fn load_icon() -> Icon {
 }
 
 fn main() {
-    // Initialize logger
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Initialize file-based logger
+    if let Err(e) = setup_logging() {
+        eprintln!("Failed to initialize logging: {}", e);
+    }
     info!("Starting Nojoin Companion v{}...", env!("CARGO_PKG_VERSION"));
+    info!("Log file: {}", get_log_path().display());
 
     let event_loop = EventLoop::new();
     
@@ -45,6 +78,7 @@ fn main() {
     let status_i = MenuItem::new("Status: Ready to Record", false, None);
     let open_web_i = MenuItem::new("Open Nojoin", true, None);
     let check_updates_i = MenuItem::new("Check for Updates", true, None);
+    let view_logs_i = MenuItem::new("View Logs", true, None);
     let help_i = MenuItem::new("Help", true, None);
     let about_i = MenuItem::new("About", true, None);
     let restart_i = MenuItem::new("Restart", true, None);
@@ -54,6 +88,7 @@ fn main() {
     tray_menu.append(&PredefinedMenuItem::separator()).unwrap();
     tray_menu.append(&open_web_i).unwrap();
     tray_menu.append(&check_updates_i).unwrap();
+    tray_menu.append(&view_logs_i).unwrap();
     tray_menu.append(&help_i).unwrap();
     tray_menu.append(&about_i).unwrap();
     tray_menu.append(&PredefinedMenuItem::separator()).unwrap();
@@ -273,6 +308,16 @@ fn main() {
                      let rt = tokio::runtime::Runtime::new().unwrap();
                      rt.block_on(updater::check_for_updates_interactive());
                  });
+            } else if event.id == view_logs_i.id() {
+                 let log_path = get_log_path();
+                 if log_path.exists() {
+                     if let Err(e) = open::that(&log_path) {
+                         error!("Failed to open log file: {}", e);
+                         notifications::show_notification("Error", "Failed to open log file.");
+                     }
+                 } else {
+                     notifications::show_notification("Info", "Log file not found yet.");
+                 }
             } else if event.id == help_i.id() {
                  let _ = open::that("https://github.com/Valtora/Nojoin"); 
             } else if event.id == about_i.id() {

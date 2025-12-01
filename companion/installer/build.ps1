@@ -95,10 +95,9 @@ Write-Host "[4/4] Building installer..." -ForegroundColor Yellow
 $InstallerScript = Join-Path $ScriptDir "installer.nsi"
 
 # Check for required installer assets
-$IconPath = Join-Path $ScriptDir "..\src\icon.ico"
+$IconPath = Join-Path $ScriptDir "icon.ico"
 if (-not (Test-Path $IconPath)) {
-    Write-Host "  WARNING: icon.ico not found, using default" -ForegroundColor Yellow
-    Write-Host "  Create $IconPath for custom installer icon" -ForegroundColor Gray
+    Write-Host "  WARNING: icon.ico not found at $IconPath, installer may use default icon" -ForegroundColor Yellow
 }
 
 # Run NSIS
@@ -110,7 +109,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$InstallerPath = Join-Path $DistDir "NojoinCompanion-Setup.exe"
+$InstallerPath = Join-Path $DistDir "Nojoin-Companion-Setup.exe"
 if (Test-Path $InstallerPath) {
     $FileInfo = Get-Item $InstallerPath
     Write-Host ""

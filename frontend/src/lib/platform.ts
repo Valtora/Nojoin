@@ -33,11 +33,11 @@ export function getDownloadUrl(platform: Platform = detectPlatform()): string {
   
   switch (platform) {
     case 'windows':
-      return `${baseUrl}/NojoinCompanion-Setup.exe`;
+      return `${baseUrl}/Nojoin-Companion-Setup.exe`;
     case 'macos':
-      return `${baseUrl}/NojoinCompanion.dmg`;
+      return `${baseUrl}/Nojoin-Companion-Setup.dmg`;
     case 'linux':
-      return `${baseUrl}/NojoinCompanion.AppImage`;
+      return `${baseUrl}/Nojoin-Companion-Setup.deb`;
     default:
       // Default to releases page if unknown
       return `https://github.com/${GITHUB_REPO}/releases/latest`;

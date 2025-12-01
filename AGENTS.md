@@ -56,7 +56,22 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion Installer (Windows)**:
   - Requires: NSIS installed (`choco install nsis` or https://nsis.sourceforge.io)
   - Build: `cd companion && .\installer\build.ps1 -Release`
-  - Output: `companion/dist/Nojoin-Companion-Setup-v{VERSION}.exe`
+  - Output: `companion/dist/Nojoin-Companion-Setup.exe`
+
+### Companion Release Workflow
+1. **Update Version Numbers** (both files must match):
+   - `companion/Cargo.toml`: `version = "X.Y.Z"`
+   - `companion/installer/installer.nsi`: `!define PRODUCT_VERSION "X.Y.Z"`
+2. **Commit and Push**: Push changes to `main` branch.
+3. **Create GitHub Release**: Tag with `vX.Y.Z` (e.g., `v0.2.0`).
+4. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
+   - Windows: NSIS installer (`Nojoin-Companion-Setup.exe`)
+   - macOS: DMG with drag-to-Applications (`Nojoin-Companion-Setup.dmg`)
+   - Linux: DEB package (`Nojoin-Companion-Setup.deb`)
+5. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
+6. **Download URLs**: Frontend uses `/releases/latest/download/` which auto-resolves to newest release.
+
+**Manual CI Trigger**: Run "Build Companion Installers" workflow from GitHub Actions without creating a release (useful for testing builds).
 
 ## Code Style & Conventions
 

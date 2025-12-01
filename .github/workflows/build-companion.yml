@@ -1,4 +1,4 @@
-name: Build Companion App
+name: Build Companion Installers
 
 on:
   release:
@@ -6,52 +6,171 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: companion.exe
-            asset_name: companion-windows.exe
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: companion
-            asset_name: companion-linux
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: companion
-            asset_name: companion-macos
-
+  build-windows:
+    name: Build Windows Installer (NSIS)
+    runs-on: windows-latest
+    
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}
+        targets: x86_64-pc-windows-msvc
 
-    - name: Install Linux Dependencies
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config libssl-dev
+    - name: Install NSIS
+      run: choco install nsis -y
 
-    - name: Build
+    - name: Build Release Binary
       run: |
         cd companion
-        cargo build --release --target ${{ matrix.target }}
+        cargo build --release --target x86_64-pc-windows-msvc
 
-    - name: Rename Binary
-      shell: bash
+    - name: Build NSIS Installer
       run: |
-        cd companion/target/${{ matrix.target }}/release
-        mv ${{ matrix.artifact_name }} ../../../${{ matrix.asset_name }}
+        cd companion/installer
+        & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-installer
+        path: companion/dist/Nojoin-Companion-Setup.exe
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: companion/${{ matrix.asset_name }}
+        files: companion/dist/Nojoin-Companion-Setup.exe
+
+  build-macos:
+    name: Build macOS Installer (DMG)
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-apple-darwin
+
+    - name: Build Release Binary
+      run: |
+        cd companion
+        cargo build --release --target x86_64-apple-darwin
+
+    - name: Install create-dmg
+      run: brew install create-dmg
+
+    - name: Prepare App Bundle
+      run: |
+        mkdir -p companion/dist/Nojoin\ Companion.app/Contents/MacOS
+        mkdir -p companion/dist/Nojoin\ Companion.app/Contents/Resources
+        
+        # Copy binary
+        cp companion/target/x86_64-apple-darwin/release/nojoin-companion \
+           "companion/dist/Nojoin Companion.app/Contents/MacOS/Nojoin Companion"
+        
+        # Create Info.plist
+        cat > "companion/dist/Nojoin Companion.app/Contents/Info.plist" << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>Nojoin Companion</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.valtora.nojoin-companion</string>
+            <key>CFBundleName</key>
+            <string>Nojoin Companion</string>
+            <key>CFBundleDisplayName</key>
+            <string>Nojoin Companion</string>
+            <key>CFBundleVersion</key>
+            <string>0.1.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>0.1.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.13</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSMicrophoneUsageDescription</key>
+            <string>Nojoin Companion needs microphone access to record audio for meeting transcription.</string>
+        </dict>
+        </plist>
+        EOF
+        
+        # Make executable
+        chmod +x "companion/dist/Nojoin Companion.app/Contents/MacOS/Nojoin Companion"
+
+    - name: Create DMG
+      run: |
+        create-dmg \
+          --volname "Nojoin Companion" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "Nojoin Companion.app" 150 185 \
+          --app-drop-link 450 185 \
+          --no-internet-enable \
+          "companion/dist/Nojoin-Companion-Setup.dmg" \
+          "companion/dist/Nojoin Companion.app"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-installer
+        path: companion/dist/Nojoin-Companion-Setup.dmg
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: companion/dist/Nojoin-Companion-Setup.dmg
+
+  build-linux:
+    name: Build Linux Installer (DEB)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-unknown-linux-gnu
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config libssl-dev
+
+    - name: Install cargo-deb
+      run: cargo install cargo-deb
+
+    - name: Build DEB Package
+      run: |
+        cd companion
+        cargo deb --target x86_64-unknown-linux-gnu
+
+    - name: Rename DEB to consistent name
+      run: |
+        mkdir -p companion/dist
+        cp companion/target/x86_64-unknown-linux-gnu/debian/*.deb \
+           companion/dist/Nojoin-Companion-Setup.deb
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-installer
+        path: companion/dist/Nojoin-Companion-Setup.deb
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: companion/dist/Nojoin-Companion-Setup.deb
