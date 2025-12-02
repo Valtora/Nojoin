@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Send, Trash2, StopCircle, Info } from 'lucide-react';
+import { MessageSquare, Send, Trash2, StopCircle, Info, Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { getSettings, getChatHistory, clearChatHistory, streamChatMessage, ChatMessage } from '@/lib/api';
 import MarkdownBubble from './MarkdownBubble';
 import { useNotificationStore } from '@/lib/notificationStore';
+import ConfirmationModal from './ConfirmationModal';
 
 export default function ChatPanel() {
   const params = useParams();
@@ -15,6 +16,7 @@ export default function ChatPanel() {
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { addNotification } = useNotificationStore();
 
@@ -114,9 +116,13 @@ export default function ChatPanel() {
       }
   };
 
-  const handleClear = async () => {
+  const handleClear = () => {
       if (!recordingId) return;
-      if (!confirm("Are you sure you want to clear the chat history?")) return;
+      setIsClearModalOpen(true);
+  };
+
+  const confirmClear = async () => {
+      if (!recordingId) return;
       
       try {
           await clearChatHistory(recordingId);
@@ -125,6 +131,8 @@ export default function ChatPanel() {
       } catch (e) {
           console.error(e);
           addNotification({ type: 'error', message: 'Failed to clear chat' });
+      } finally {
+          setIsClearModalOpen(false);
       }
   };
 
@@ -174,9 +182,18 @@ export default function ChatPanel() {
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                         ) : (
                             <div className="w-full">
-                                <MarkdownBubble content={msg.content} />
-                                {isStreaming && index === messages.length - 1 && (
-                                    <span className="inline-block w-2 h-4 ml-1 bg-gray-400 animate-pulse align-middle"></span>
+                                {msg.content ? (
+                                    <>
+                                        <MarkdownBubble content={msg.content} />
+                                        {isStreaming && index === messages.length - 1 && (
+                                            <span className="inline-block w-2 h-4 ml-1 bg-gray-400 animate-pulse align-middle"></span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-1">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span className="text-xs">Thinking...</span>
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -202,7 +219,7 @@ export default function ChatPanel() {
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none h-14 max-h-32"
                 disabled={!recordingId}
             />
-            <div className="absolute right-2 top-2">
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
                 {isStreaming ? (
                     <button 
                         onClick={handleStop}
@@ -228,6 +245,16 @@ export default function ChatPanel() {
             </div>
         )}
       </div>
+
+      <ConfirmationModal
+        isOpen={isClearModalOpen}
+        onClose={() => setIsClearModalOpen(false)}
+        onConfirm={confirmClear}
+        title="Clear Chat History"
+        message="Are you sure you want to clear the chat history? This action cannot be undone."
+        confirmText="Clear History"
+        isDangerous={true}
+      />
     </aside>
   );
 }
