@@ -2,19 +2,6 @@
 
 Let's continue the development of Nojoin. Read AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
-### Meeting Card UX Improvements
-- [x] Allow double clicking on a meeting card to rename the meeting. This should put the meeting title into an editable text field similar to how it works in the Speaker Management panel.
-
-### Investigate Celeery Worker Logs
-- Investigate the INFO:__main__:Model download complete. (100%), specifically the __main__ part. Determine why the logger is showing __main__ instead of the actual module name where the logging call is made. This may involve reviewing the logging configuration and how the logger is instantiated in the relevant modules.
-- This may explain why the celery worker logs aren't showing at all.
-
-### Speaker Management Feature - Speaker Inference
-- Now that LLM_Services.py is implemented, use it to implement speaker inference in the Speaker Management feature. This feature should analyze the diarized transcript to make an attempt at inferring which speaker is speaking at any given time based on the context of the conversation and any known information about the speakers. The speaker inference needs to take place AFTER diarization but BEFORE the user is presented with the transcript for the first time.
-- Ensure that this feature integrates seamlessly with the existing Speaker Management workflow and UI components, this includes the CRUD operations that are supported in the Speaker Management panel that the user themselves uses to label speakers.
-- Also take care to consider the voice embedding processing that is already in place as part of the diarization process. Explore how this voice embedding data can be utilized to enhance the accuracy of the speaker inference or vice versa.
-- Implement a context menu option on the meeting card that allows the user to re-run speaker inference on an already processed meeting. This should re-process the diarized transcript with the speaker inference logic and update the speaker labels in the transcript accordingly without needing to re-process the entire recording from scratch. The user may have manually corrected names in the transcript which might help the inference process and they may have already added speakers to the Speaker Library since the original processing.
-
 ### First-Run Wizard and LLM Services - Dynamically Update Default Models
 - Implement a mechanism to dynamically update the models being used for each LLM provider in the LLM_Services.py module. After the user selects their preferred LLM provider and enters their API key during the first-run wizard, the application should query the respective LLM provider's API to retrieve the latest list of available models. The default model for each provider should then be set by the user. Most LLM Providers have a model.list or similar api endpoint that can be used for this purpose.
 - While doing this we can improve the first-run wizard logic to force the user to validate their API keys before proceeding.

@@ -52,8 +52,8 @@ Nojoin is composed of three distinct subsystems:
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
-*   **Docker Desktop** (with NVIDIA Container Toolkit support for GPU acceleration).
-*   **NVIDIA GPU** (Highly recommended for reasonable processing times).
+*   **Docker Desktop**
+*   **NVIDIA GPU** (Optional, but highly recommended for faster processing).
 
 ### Quick Start (Docker Compose)
 
@@ -64,20 +64,29 @@ Nojoin is composed of three distinct subsystems:
     ```
 
 2.  **Start the Stack:**
+
+    **Option A: CPU (Default)**
+    Works on all systems. Slower processing speeds.
     ```bash
-    docker-compose up -d
+    docker compose up -d
     ```
-    This will spin up the Database, Redis, API, Worker, and Frontend.
-    *Note: The first run may take several minutes as it needs to download large Docker images (including the NVIDIA CUDA runtime).*
+
+    **Option B: NVIDIA GPU**
+    Requires an NVIDIA GPU. Much faster processing.
+    ```bash
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    ```
+    *Note: The first run may take several minutes as it needs to download large Docker images.*
 
 3.  **Access the Application:**
-    *   **Web Interface:** Open `http://localhost:14141` (or configured port).
-    *   **API Docs:** Open `http://localhost:8000/docs`.
+    *   **Web Interface:** Open `https://localhost:14443`
+        *   *Note: You will see a "Not Secure" warning because of the self-signed certificate.*
 
 ### Running the Companion App
 1.  Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
 2.  Download the executable for your operating system (Windows, macOS, or Linux).
 3.  Run the application. It will appear in your system tray.
+4.  The web app also has a 'Download Companion App' button that will take you to the above link.
 
 *Note: For developers, you can still build from source by navigating to the `companion` directory and running `cargo run --release`.*
 

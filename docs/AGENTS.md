@@ -47,7 +47,9 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion**: Run in Windows (Native) to access WASAPI loopback.
 
 ### Commands
-- **Start Infrastructure**: `docker-compose up -d`
+- **Start Infrastructure**:
+  - **CPU (Default)**: `docker-compose up -d`
+  - **NVIDIA GPU**: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
