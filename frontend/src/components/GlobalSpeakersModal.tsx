@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { GlobalSpeaker } from '@/types';
-import { getGlobalSpeakers, updateGlobalSpeaker, mergeSpeakers, deleteGlobalSpeaker } from '@/lib/api';
-import { X, Edit2, Merge, Save, Trash2 } from 'lucide-react';
+import { getGlobalSpeakers, updateGlobalSpeaker, mergeSpeakers, deleteGlobalSpeaker, deleteGlobalSpeakerEmbedding } from '@/lib/api';
+import { X, Edit2, Merge, Save, Trash2, Mic, MicOff } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
 interface GlobalSpeakersModalProps {
@@ -87,6 +87,24 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
             } catch (e) {
                 console.error("Failed to delete", e);
                 alert("Failed to delete speaker.");
+            }
+        }
+    });
+  };
+
+  const handleDeleteVoiceprint = (speaker: GlobalSpeaker) => {
+    setConfirmModal({
+        isOpen: true,
+        title: "Delete Voiceprint",
+        message: `Are you sure you want to remove the voiceprint for "${speaker.name}"? The speaker entry will remain in the library.`,
+        isDangerous: true,
+        onConfirm: async () => {
+            try {
+                await deleteGlobalSpeakerEmbedding(speaker.id);
+                fetchSpeakers();
+            } catch (e) {
+                console.error("Failed to delete voiceprint", e);
+                alert("Failed to delete voiceprint.");
             }
         }
     });
@@ -214,6 +232,15 @@ export default function GlobalSpeakersModal({ isOpen, onClose }: GlobalSpeakersM
                                     >
                                         <Edit2 className="w-4 h-4" />
                                     </button>
+                                    {speaker.has_voiceprint && (
+                                        <button 
+                                            onClick={() => handleDeleteVoiceprint(speaker)}
+                                            className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-full transition-colors"
+                                            title="Delete Voiceprint"
+                                        >
+                                            <MicOff className="w-4 h-4" />
+                                        </button>
+                                    )}
                                     <button 
                                         onClick={() => handleMergeClick(speaker)}
                                         className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-full transition-colors"

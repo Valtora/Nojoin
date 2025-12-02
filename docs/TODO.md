@@ -1,6 +1,13 @@
 # Nojoin To-Do List
 
-Let's continue the development of Nojoin. Read the AGENTS.md file in the project root and the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
+Let's continue the development of Nojoin. Read AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
+
+### Meeting Card UX Improvements
+- [x] Allow double clicking on a meeting card to rename the meeting. This should put the meeting title into an editable text field similar to how it works in the Speaker Management panel.
+
+### Investigate Celeery Worker Logs
+- Investigate the INFO:__main__:Model download complete. (100%), specifically the __main__ part. Determine why the logger is showing __main__ instead of the actual module name where the logging call is made. This may involve reviewing the logging configuration and how the logger is instantiated in the relevant modules.
+- This may explain why the celery worker logs aren't showing at all.
 
 ### Speaker Management Feature - Speaker Inference
 - Now that LLM_Services.py is implemented, use it to implement speaker inference in the Speaker Management feature. This feature should analyze the diarized transcript to make an attempt at inferring which speaker is speaking at any given time based on the context of the conversation and any known information about the speakers. The speaker inference needs to take place AFTER diarization but BEFORE the user is presented with the transcript for the first time.

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings, getDownloadProgress, getModelStatus } from '@/lib/api';
+import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings, getDownloadProgress, getModelStatus, listModels } from '@/lib/api';
 import { Loader2, CheckCircle, Download, Check, X } from 'lucide-react';
 
 export default function SetupPage() {
@@ -19,6 +19,10 @@ export default function SetupPage() {
   const [llmValidationMsg, setLlmValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
   const [hfValidationMsg, setHfValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
   
+  // Model Selection State
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
   // Model Download State
   const [downloadingModels, setDownloadingModels] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -35,7 +39,8 @@ export default function SetupPage() {
     gemini_api_key: '',
     openai_api_key: '',
     anthropic_api_key: '',
-    hf_token: ''
+    hf_token: '',
+    selected_model: ''
   });
 
   useEffect(() => {
@@ -212,7 +217,8 @@ export default function SetupPage() {
             openai_api_key: formData.openai_api_key || undefined,
             anthropic_api_key: formData.anthropic_api_key || undefined,
             hf_token: formData.hf_token || undefined,
-            whisper_model_size: 'turbo'
+            whisper_model_size: 'turbo',
+            selected_model: formData.selected_model || undefined
           });
         } catch (err: any) {
           // If system is already initialized, we might be in a retry state where the page wasn't refreshed
@@ -264,13 +270,43 @@ export default function SetupPage() {
 
     setValidatingLLM(true);
     setLlmValidationMsg(null);
+    setAvailableModels([]);
+    setFetchingModels(true);
+    
     try {
       const res = await validateLLM(provider, key);
       setLlmValidationMsg({valid: true, msg: res.message});
+      
+      // Fetch models on success
+      try {
+        const modelsRes = await listModels(provider, key);
+        setAvailableModels(modelsRes.models);
+        if (modelsRes.models.length > 0) {
+            // Set default model if available
+            let defaultModel = modelsRes.models[0];
+            // Try to pick a sensible default based on provider
+            if (provider === 'gemini') {
+                const preferred = modelsRes.models.find(m => m.includes('gemini-2.0-flash-exp')) || modelsRes.models.find(m => m.includes('gemini-1.5-pro'));
+                if (preferred) defaultModel = preferred;
+            } else if (provider === 'openai') {
+                const preferred = modelsRes.models.find(m => m.includes('gpt-4o')) || modelsRes.models.find(m => m.includes('gpt-4-turbo'));
+                if (preferred) defaultModel = preferred;
+            } else if (provider === 'anthropic') {
+                const preferred = modelsRes.models.find(m => m.includes('claude-3-5-sonnet'));
+                if (preferred) defaultModel = preferred;
+            }
+            setFormData(prev => ({ ...prev, selected_model: defaultModel }));
+        }
+      } catch (modelErr) {
+        console.error("Failed to fetch models", modelErr);
+        // Don't fail validation if model list fails, just let them type it or use default
+      }
+      
     } catch (err: any) {
       setLlmValidationMsg({valid: false, msg: err.response?.data?.detail || 'Validation failed'});
     } finally {
       setValidatingLLM(false);
+      setFetchingModels(false);
     }
   };
 
@@ -404,7 +440,11 @@ export default function SetupPage() {
                 <label className="block text-sm font-medium text-gray-400 mb-1">LLM Provider</label>
                 <select
                   value={formData.llm_provider}
-                  onChange={(e) => setFormData({...formData, llm_provider: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, llm_provider: e.target.value, selected_model: ''});
+                    setAvailableModels([]);
+                    setLlmValidationMsg(null);
+                  }}
                   className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
                 >
                   <option value="gemini">Google Gemini</option>
@@ -497,6 +537,21 @@ export default function SetupPage() {
                       {llmValidationMsg.msg}
                     </div>
                   )}
+                </div>
+              )}
+
+              {availableModels.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Select Model</label>
+                  <select
+                    value={formData.selected_model}
+                    onChange={(e) => setFormData({...formData, selected_model: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                  >
+                    {availableModels.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
                 </div>
               )}
 

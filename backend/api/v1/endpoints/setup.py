@@ -17,6 +17,10 @@ class ValidateLLMRequest(BaseModel):
 class ValidateHFRequest(BaseModel):
     token: str
 
+class ListModelsRequest(BaseModel):
+    provider: str
+    api_key: str
+
 @router.post("/validate-llm")
 async def validate_llm(request: ValidateLLMRequest):
     """
@@ -48,3 +52,16 @@ async def validate_hf(request: ValidateHFRequest):
     except Exception as e:
         logger.error(f"HF Validation failed: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid Hugging Face token: {str(e)}")
+
+@router.post("/list-models")
+async def list_models(request: ListModelsRequest):
+    """
+    List available models for a given provider and API key.
+    """
+    try:
+        llm = get_llm_backend(request.provider, api_key=request.api_key)
+        models = llm.list_models()
+        return {"models": models}
+    except Exception as e:
+        logger.error(f"Failed to list models for {request.provider}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))

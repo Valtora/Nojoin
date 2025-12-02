@@ -84,10 +84,15 @@ def setup_logging(log_level=None):
     logging.getLogger('huggingface_hub').setLevel(logging.WARNING)
     logging.getLogger('requests').setLevel(logging.WARNING)
 
+    # Ensure Celery loggers are explicitly set to the correct level
+    logging.getLogger('celery').setLevel(log_level)
+    logging.getLogger('celery.task').setLevel(log_level)
+    logging.getLogger('celery.worker').setLevel(log_level)
+
     # Silence Celery's default task logging to allow custom pretty logs
-    logging.getLogger('celery.worker.strategy').setLevel(logging.WARNING)
-    logging.getLogger('celery.app.trace').setLevel(logging.WARNING)
-    logging.getLogger('celery.worker.job').setLevel(logging.WARNING)
+    # logging.getLogger('celery.worker.strategy').setLevel(logging.WARNING)
+    # logging.getLogger('celery.app.trace').setLevel(logging.WARNING)
+    # logging.getLogger('celery.worker.job').setLevel(logging.WARNING)
 
     logging.info("Logging configured.")
 

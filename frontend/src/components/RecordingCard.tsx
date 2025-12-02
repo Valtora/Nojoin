@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, Loader2, AlertCircle, HelpCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Loader2, AlertCircle, HelpCircle, RefreshCw, Trash2, Edit } from 'lucide-react';
 import { useState } from 'react';
 import ContextMenu from './ContextMenu';
-import { retryProcessing, deleteRecording } from '@/lib/api';
+import { retryProcessing, deleteRecording, inferSpeakers, renameRecording } from '@/lib/api';
+import { useNotificationStore } from '@/lib/notificationStore';
 import { useRouter } from 'next/navigation';
 
 interface RecordingCardProps {
@@ -86,10 +87,39 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
 export default function RecordingCard({ recording }: RecordingCardProps) {
   const router = useRouter();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { addNotification } = useNotificationStore();
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleRenameStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsRenaming(true);
+    setRenameValue(recording.name);
+    setContextMenu(null);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameValue.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+        await renameRecording(recording.id, renameValue.trim());
+        setIsRenaming(false);
+        router.refresh();
+    } catch (e) {
+        console.error("Failed to rename recording", e);
+        addNotification({ message: "Failed to rename recording.", type: "error" });
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleRetry = async () => {
@@ -99,7 +129,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       router.refresh();
     } catch (e) {
       console.error("Failed to retry processing", e);
-      alert("Failed to retry processing.");
+      addNotification({ message: "Failed to retry processing.", type: "error" });
     }
   };
 
@@ -110,36 +140,93 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       router.refresh();
     } catch (e) {
       console.error("Failed to delete recording", e);
-      alert("Failed to delete recording.");
+      addNotification({ message: "Failed to delete recording.", type: "error" });
+    }
+  };
+
+  const handleInferSpeakers = async () => {
+    try {
+      await inferSpeakers(recording.id);
+      addNotification({ message: "Speaker inference started. The speaker names will be updated shortly.", type: "success" });
+      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id: recording.id } }));
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to infer speakers", e);
+      addNotification({ message: "Failed to infer speakers.", type: "error" });
     }
   };
 
   return (
     <>
-      <Link href={`/recordings/${recording.id}`} className="block">
-        <div 
-          className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
-          onContextMenu={handleContextMenu}
-        >
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1">
-              {recording.name}
-            </h3>
-            <StatusBadge recording={recording} />
-          </div>
-          
-          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
-            <div className="flex items-center">
-              <Calendar className="w-4 h-4 mr-1" />
-              {formatDate(recording.created_at)}
+      {isRenaming ? (
+        <div className="block">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
+            onContextMenu={handleContextMenu}
+          >
+            <div className="flex justify-between items-start mb-2">
+              <input
+                  autoFocus
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameSubmit}
+                  onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRenameSubmit();
+                      if (e.key === 'Escape') setIsRenaming(false);
+                      e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                  }}
+                  className="text-lg font-semibold text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none flex-1 mr-4"
+              />
+              <StatusBadge recording={recording} />
             </div>
-            <div className="flex items-center">
-              <Clock className="w-4 h-4 mr-1" />
-              {formatDuration(recording.duration_seconds)}
+            
+            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
+              <div className="flex items-center">
+                <Calendar className="w-4 h-4 mr-1" />
+                {formatDate(recording.created_at)}
+              </div>
+              <div className="flex items-center">
+                <Clock className="w-4 h-4 mr-1" />
+                {formatDuration(recording.duration_seconds)}
+              </div>
             </div>
           </div>
         </div>
-      </Link>
+      ) : (
+        <Link href={`/recordings/${recording.id}`} className="block">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
+            onContextMenu={handleContextMenu}
+          >
+            <div className="flex justify-between items-start mb-2">
+              <h3 
+                className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1 hover:text-blue-600 dark:hover:text-blue-400"
+                title="Double-click to rename"
+                onDoubleClick={handleRenameStart}
+              >
+                {recording.name}
+              </h3>
+              <StatusBadge recording={recording} />
+            </div>
+            
+            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
+              <div className="flex items-center">
+                <Calendar className="w-4 h-4 mr-1" />
+                {formatDate(recording.created_at)}
+              </div>
+              <div className="flex items-center">
+                <Clock className="w-4 h-4 mr-1" />
+                {formatDuration(recording.duration_seconds)}
+              </div>
+            </div>
+          </div>
+        </Link>
+      )}
 
       {contextMenu && (
         <ContextMenu
@@ -147,6 +234,16 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
           items={[
+            {
+              label: 'Rename',
+              onClick: handleRenameStart,
+              icon: <Edit className="w-4 h-4" />,
+            },
+            {
+              label: 'Retry Speaker Inference',
+              onClick: handleInferSpeakers,
+              icon: <RefreshCw className="w-4 h-4" />,
+            },
             {
               label: 'Retry Processing',
               onClick: handleRetry,

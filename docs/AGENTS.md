@@ -9,6 +9,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 ### Backend (FastAPI + Celery)
 - **Service Boundary**: `backend/` handles API requests and offloads heavy processing to Celery workers via Redis.
+  - **Rule**: API endpoints must NEVER run heavy inference (Whisper, Pyannote, LLMs) synchronously. Always dispatch to Celery.
 - **Data Access**: Use `SQLModel` for ORM. Models are in `backend/models/`.
 - **Dependency Injection**: ALWAYS use `backend.api.deps` for DB sessions (`SessionDep`) and current user (`CurrentUser`).
 - **Heavy Processing**:

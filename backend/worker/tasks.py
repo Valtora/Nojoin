@@ -19,7 +19,7 @@ from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADN
 from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
 from backend.utils.audio import get_audio_duration
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.status_manager import update_recording_status
 from backend.processing.LLM_Services import get_llm_backend
 
@@ -233,6 +233,42 @@ def process_recording_task(self, recording_id: int):
         final_segments = consolidate_diarized_transcript(combined_segments)
         logger.info(f"Final segments after consolidation: {len(final_segments)}")
         
+        # --- LLM Speaker Name Inference (First Pass) ---
+        inferred_mapping = {}
+        
+        # Check availability using merged_config (user settings + system config)
+        llm_provider = merged_config.get("llm_provider", "gemini")
+        llm_api_key = merged_config.get(f"{llm_provider}_api_key")
+        llm_model = merged_config.get(f"{llm_provider}_model")
+        
+        if llm_api_key and llm_model:
+            try:
+                self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Inferring Speakers'})
+                logger.info("Running LLM speaker inference...")
+                
+                # Prepare transcript for LLM
+                transcript_for_llm = ""
+                for entry in final_segments:
+                    start = entry['start']
+                    end = entry['end']
+                    def fmt(ts):
+                        h = int(ts // 3600)
+                        m = int((ts % 3600) // 60)
+                        s = ts % 60
+                        return f"{h:02}.{m:02}.{s:05.2f}s"
+                    diarization_label = entry['speaker']
+                    transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {entry['text']}\n"
+                
+                # Get backend and run inference
+                backend = get_llm_backend(llm_provider, api_key=llm_api_key, model=llm_model)
+                inferred_mapping = backend.infer_speakers(transcript_for_llm)
+                logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
+                
+            except Exception as e:
+                logger.error(f"LLM speaker inference failed: {e}")
+        else:
+            logger.info("LLM not available (missing key or model in merged config), skipping speaker inference.")
+
         # Create or Update Transcript Record
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
         
@@ -254,7 +290,7 @@ def process_recording_task(self, recording_id: int):
             session.add(transcript)
         
         session.commit()
-        update_recording_status(session, recording.id)
+        # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
         
         # Save Speakers & Embeddings
         # Extract unique speakers from the final segments
@@ -344,8 +380,13 @@ def process_recording_task(self, recording_id: int):
 
             # If not identified as a global speaker, assign a friendly sequential name
             if not is_identified:
-                resolved_name = f"Speaker {speaker_counter}"
-                speaker_counter += 1
+                # Check if we have an inferred name from LLM
+                if label in inferred_mapping:
+                    resolved_name = inferred_mapping[label]
+                    logger.info(f"Using inferred name for {label}: {resolved_name}")
+                else:
+                    resolved_name = f"Speaker {speaker_counter}"
+                    speaker_counter += 1
 
             label_map[label] = resolved_name
             logger.info(f"Mapped {label} -> {resolved_name}")
@@ -754,3 +795,85 @@ def generate_notes_task(self, recording_id: int):
             session.add(recording)
             session.commit()
             update_recording_status(session, recording_id)
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def infer_speakers_task(self, recording_id: int):
+    """
+    Independent task to re-run speaker inference using LLM.
+    """
+    # Reload config
+    config_manager.reload()
+    
+    session = self.session
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording:
+            logger.error(f"Recording {recording_id} not found.")
+            return
+
+        # Fetch User Settings & Merge with System Config
+        user_settings = {}
+        if recording.user_id:
+            user = session.get(User, recording.user_id)
+            if user and user.settings:
+                user_settings = user.settings
+        
+        system_config = config_manager.get_all()
+        merged_config = system_config.copy()
+        merged_config.update(user_settings)
+
+        provider = merged_config.get("llm_provider", "gemini")
+        api_key = merged_config.get(f"{provider}_api_key")
+        model = merged_config.get(f"{provider}_model")
+
+        if not api_key:
+            logger.error(f"No API key configured for {provider}. Skipping inference.")
+            return
+
+        # Fetch transcript
+        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+        if not transcript or not transcript.segments:
+            logger.error(f"No transcript found for recording {recording_id}.")
+            return
+
+        # Update status (optional, but good for UI feedback if we had a specific status for this)
+        # For now, we just log it.
+        logger.info(f"Starting independent speaker inference for recording {recording_id}")
+
+        # Prepare transcript for LLM
+        transcript_for_llm = ""
+        for seg in transcript.segments:
+            start = seg.get('start', 0)
+            end = seg.get('end', 0)
+            def fmt(ts):
+                h = int(ts // 3600)
+                m = int((ts % 3600) // 60)
+                s = ts % 60
+                return f"{h:02}.{m:02}.{s:05.2f}s"
+            
+            diarization_label = seg.get('speaker', 'Unknown')
+            text = seg.get('text', '')
+            transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
+
+        # Run inference
+        backend = get_llm_backend(provider, api_key=api_key, model=model)
+        inferred_mapping = backend.infer_speakers(transcript_for_llm)
+        logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
+
+        # Update speakers in DB
+        speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
+        
+        updated_count = 0
+        for s in speakers:
+            label = s.diarization_label
+            inferred_name = inferred_mapping.get(label)
+            if inferred_name and inferred_name != s.name:
+                s.name = inferred_name
+                session.add(s)
+                updated_count += 1
+        
+        session.commit()
+        logger.info(f"Updated {updated_count} speakers for recording {recording_id}")
+
+    except Exception as e:
+        logger.error(f"Speaker inference task failed: {e}", exc_info=True)

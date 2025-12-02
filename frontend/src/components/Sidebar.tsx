@@ -10,6 +10,7 @@ import {
   getRecordings, 
   renameRecording, 
   retryProcessing, 
+  inferSpeakers,
   getGlobalSpeakers, 
   RecordingFilters,
   archiveRecording,
@@ -323,6 +324,9 @@ export default function Sidebar() {
     ));
     setRenamingId(null);
 
+    // Dispatch event for optimistic update elsewhere
+    window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id, name: renameValue } }));
+
     try {
       await renameRecording(id, renameValue);
     } catch (e) {
@@ -338,6 +342,19 @@ export default function Sidebar() {
       fetchRecordings();
     } catch (e) {
       console.error("Failed to retry", e);
+    }
+  };
+
+  const handleInferSpeakers = async (id: number) => {
+    try {
+      await inferSpeakers(id);
+      addNotification({ message: "Speaker inference started. The speaker names will be updated shortly.", type: "success" });
+      // Dispatch event to notify other components (like the detail page)
+      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id } }));
+      fetchRecordings();
+    } catch (e) {
+      console.error("Failed to infer speakers", e);
+      addNotification({ message: "Failed to infer speakers.", type: "error" });
     }
   };
 
@@ -380,6 +397,10 @@ export default function Sidebar() {
         { 
           label: 'Rename', 
           onClick: () => handleRenameStart(recording.id, recording.name) 
+        },
+        {
+          label: 'Retry Speaker Inference',
+          onClick: () => handleInferSpeakers(recording.id)
         },
         {
           label: 'Retry Processing',
@@ -644,7 +665,15 @@ export default function Sidebar() {
                           {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                         </div>
                       )}
-                      <h3 className={`text-sm font-semibold truncate ${isActive && !selectionMode ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                      <h3 
+                        className={`text-sm font-semibold truncate ${isActive && !selectionMode ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}
+                        title="Double-click to rename"
+                        onDoubleClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleRenameStart(recording.id, recording.name);
+                        }}
+                      >
                         {recording.name}
                       </h3>
                     </div>

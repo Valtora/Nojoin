@@ -9,14 +9,15 @@ import shutil
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.utils.config_manager import config_manager
+from backend.utils.logging_config import setup_logging
 from backend.utils.download_progress import (
     set_download_progress,
     clear_download_progress,
     is_download_in_progress
 )
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+setup_logging()
+logger = logging.getLogger("backend.preload_models")
 
 # Whisper model filenames (used for checking status without importing whisper)
 WHISPER_FILENAMES = {

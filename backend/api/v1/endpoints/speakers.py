@@ -1024,3 +1024,22 @@ async def update_speaker_color(
     await db.commit()
     
     return {"status": "success", "color": update.color}
+
+@router.delete("/{speaker_id}/embedding")
+async def delete_global_speaker_embedding(
+    speaker_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete the voice embedding for a global speaker, but keep the speaker entry.
+    """
+    speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not speaker or speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+    
+    speaker.embedding = None
+    db.add(speaker)
+    await db.commit()
+    await db.refresh(speaker)
+    return {"ok": True}

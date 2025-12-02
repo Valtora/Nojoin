@@ -131,9 +131,12 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Intelligent Linking:**
     *   "Unknown Speakers" in new recordings can be linked to existing Global Speakers via the Web UI.
     *   Renaming a speaker in one meeting offers to update the Global Speaker or create a new one.
-*   **Visual Identification:**
-    *   Color-coded speaker chips in the transcript view.
-    *   Filter transcripts by specific speakers.
+    *   **Visual Identification:**
+        *   Color-coded speaker chips in the transcript view.
+        *   Filter transcripts by specific speakers.
+    *   **Error Handling & Recovery:**
+        *   **Manual Retry:** Users can manually trigger a retry of the speaker inference process if it fails or yields poor results.
+        *   **Async Execution:** Manual retries are processed asynchronously via the worker queue to prevent UI blocking.
 *   **Voiceprint Management:**
     *   **Optional Auto-Extraction:** Speaker voiceprints (embeddings) can be automatically extracted during processing. This can be disabled in Settings for faster processing.
     *   **On-Demand Creation:** Users can create voiceprints for individual speakers via the "Create Voiceprint" context menu option in the Speaker Panel.

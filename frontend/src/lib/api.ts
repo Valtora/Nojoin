@@ -134,6 +134,10 @@ export const deleteGlobalSpeaker = async (id: number): Promise<void> => {
   await api.delete(`/speakers/${id}`);
 };
 
+export const deleteGlobalSpeakerEmbedding = async (id: number): Promise<void> => {
+  await api.delete(`/speakers/${id}/embedding`);
+};
+
 export const updateSpeaker = async (recordingId: number, diarizationLabel: string, newName: string): Promise<void> => {
   await api.put(`/speakers/recordings/${recordingId}`, {
     diarization_label: diarizationLabel,
@@ -414,7 +418,7 @@ export const batchSoftDeleteRecordings = async (ids: number[]): Promise<void> =>
 };
 
 export const batchPermanentlyDeleteRecordings = async (ids: number[]): Promise<void> => {
-  await api.delete('/recordings/batch/permanent', { data: { recording_ids: ids } });
+  await api.post('/recordings/batch/permanent', { recording_ids: ids });
 };
 
 export const batchAddTagToRecordings = async (ids: number[], tagName: string): Promise<void> => {
@@ -601,6 +605,16 @@ export const streamChatMessage = (
   });
 
   return controller;
+};
+
+// Infer Speakers
+export const inferSpeakers = async (recordingId: number): Promise<void> => {
+  await api.post(`/recordings/${recordingId}/infer-speakers`);
+};
+
+export const listModels = async (provider: string, apiKey: string): Promise<{ models: string[] }> => {
+  const response = await api.post<{ models: string[] }>('/setup/list-models', { provider, api_key: apiKey });
+  return response.data;
 };
 
 export default api;

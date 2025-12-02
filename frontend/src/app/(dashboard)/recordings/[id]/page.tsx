@@ -128,7 +128,8 @@ export default function RecordingPage({ params }: PageProps) {
                     data.client_status !== recording.client_status ||
                     data.processing_step !== recording.processing_step ||
                     data.transcript?.notes_status !== recording.transcript?.notes_status ||
-                    data.transcript?.notes !== recording.transcript?.notes
+                    data.transcript?.notes !== recording.transcript?.notes ||
+                    JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
                 ) {
                     setRecording(data);
                     if (!isEditingTitle) setTitleValue(data.name);
@@ -142,17 +143,24 @@ export default function RecordingPage({ params }: PageProps) {
     return () => clearInterval(interval);
   }, [params, recording, isEditingTitle]);
 
-  // Listen for recording updates (e.g. from Sidebar retry)
+  // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {
     const handleUpdate = (e: Event) => {
         const customEvent = e as CustomEvent;
         if (recording && customEvent.detail?.id === recording.id) {
-            getRecording(recording.id).then(setRecording).catch(console.error);
+            if (customEvent.detail.name) {
+                // Optimistic update
+                setRecording(prev => prev ? { ...prev, name: customEvent.detail.name } : null);
+                if (!isEditingTitle) setTitleValue(customEvent.detail.name);
+            } else {
+                // Force refresh for other updates (like status change or speaker inference)
+                getRecording(recording.id).then(setRecording).catch(console.error);
+            }
         }
     };
     window.addEventListener('recording-updated', handleUpdate);
     return () => window.removeEventListener('recording-updated', handleUpdate);
-  }, [recording]);
+  }, [recording, isEditingTitle]);
 
   // Initialize speaker colors
   useEffect(() => {
@@ -618,18 +626,6 @@ export default function RecordingPage({ params }: PageProps) {
                     />
                 </div>
             </div>
-
-            <button
-                onClick={() => setShowChat(!showChat)}
-                className={`p-2 rounded-lg transition-colors ${
-                    showChat 
-                        ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' 
-                        : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800'
-                }`}
-                title={showChat ? "Hide Chat" : "Show Chat"}
-            >
-                <MessageSquare className="w-5 h-5" />
-            </button>
         </div>
 
         {/* Audio Player in Header */}
@@ -690,7 +686,7 @@ export default function RecordingPage({ params }: PageProps) {
                         {/* Panel Content */}
                         <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
                             {activePanel === 'transcript' ? (
-                                (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
+                                (recording.transcript?.segments && recording.transcript.segments.length > 0 && recording.status !== RecordingStatus.PROCESSING) ? (
                                     <TranscriptView
                                         recordingId={recording.id}
                                         segments={recording.transcript.segments}
@@ -772,16 +768,12 @@ export default function RecordingPage({ params }: PageProps) {
                     />
                 </Panel>
                 
-                {showChat && (
-                    <>
-                        <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
-                            <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
-                        </PanelResizeHandle>
-                        <Panel defaultSize={20} minSize={15}>
-                            <ChatPanel />
-                        </Panel>
-                    </>
-                )}
+                <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                    <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+                </PanelResizeHandle>
+                <Panel defaultSize={20} minSize={15}>
+                    <ChatPanel />
+                </Panel>
             </PanelGroup>
         )}
       </div>

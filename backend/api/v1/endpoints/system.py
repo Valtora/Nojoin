@@ -22,6 +22,7 @@ class SetupRequest(UserCreate):
     anthropic_api_key: Optional[str] = None
     hf_token: Optional[str] = None
     whisper_model_size: Optional[str] = "turbo"
+    selected_model: Optional[str] = None
 
 @router.get("/status")
 async def get_system_status(
@@ -73,6 +74,9 @@ async def setup_system(
         settings["openai_api_key"] = setup_in.openai_api_key
     if setup_in.anthropic_api_key:
         settings["anthropic_api_key"] = setup_in.anthropic_api_key
+    
+    if setup_in.selected_model:
+        settings[f"{setup_in.llm_provider}_model"] = setup_in.selected_model
 
     user = User(
         username=setup_in.username,

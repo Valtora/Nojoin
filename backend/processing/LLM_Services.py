@@ -20,6 +20,12 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def list_models(self) -> List[str]:
+        """
+        List available models for the provider.
+        """
+        raise NotImplementedError
+
     def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60) -> str:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
@@ -313,6 +319,39 @@ class GeminiLLMBackend(LLMBackend):
             return response.text
         return ""
 
+    def list_models(self) -> List[str]:
+        """
+        List available Gemini models.
+        """
+        try:
+            models = self.client.models.list()
+            # Filter for generateContent models if possible, or just return all
+            # The google-genai library returns model objects.
+            # We want to return a list of model names (ids).
+            # Based on docs, it might be 'name' or 'display_name'. Usually 'name' is the ID (e.g. 'models/gemini-pro').
+            # But the user wants 'gemini-pro-latest' etc.
+            # Let's return the names.
+            model_list = []
+            for m in models:
+                # Check attributes
+                name = getattr(m, 'name', None)
+                if name:
+                    # Strip 'models/' prefix if present, as the client usually handles it or expects it.
+                    # But for display we might want the full name or short name.
+                    # The user example showed 'gemini-flash-latest'.
+                    if name.startswith("models/"):
+                        name = name[7:]
+                    model_list.append(name)
+            
+            # Ensure the default one is in the list if not found (sometimes list() is filtered)
+            default_model = "gemini-2.0-flash-exp" # Updated default based on recent releases or keep existing
+            # Actually, let's just return what the API gives.
+            return model_list
+        except Exception as e:
+            logger.error(f"Gemini API error (list models): {e}")
+            # Fallback to a hardcoded list if API fails
+            return ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"]
+
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
         Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
@@ -443,6 +482,19 @@ class OpenAILLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("openai")
         self.client = openai.OpenAI(api_key=self.api_key)
+
+    def list_models(self) -> List[str]:
+        """
+        List available OpenAI models.
+        """
+        try:
+            models = self.client.models.list()
+            # Filter for gpt models to avoid clutter (dall-e, whisper, etc)
+            model_list = [m.id for m in models if "gpt" in m.id]
+            return sorted(model_list)
+        except Exception as e:
+            logger.error(f"OpenAI API error (list models): {e}")
+            return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
@@ -588,6 +640,32 @@ class AnthropicLLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("anthropic")
         self.client = anthropic.Anthropic(api_key=self.api_key)
+
+    def list_models(self) -> List[str]:
+        """
+        List available Anthropic models.
+        """
+        try:
+            # Anthropic Python SDK might support models.list() in newer versions.
+            if hasattr(self.client, 'models') and hasattr(self.client.models, 'list'):
+                models = self.client.models.list()
+                return [m.id for m in models]
+            else:
+                # Fallback to hardcoded list as per user request/docs
+                return [
+                    "claude-3-5-sonnet-20240620",
+                    "claude-3-opus-20240229",
+                    "claude-3-sonnet-20240229",
+                    "claude-3-haiku-20240307"
+                ]
+        except Exception as e:
+            logger.error(f"Anthropic API error (list models): {e}")
+            return [
+                "claude-3-5-sonnet-20240620",
+                "claude-3-opus-20240229",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307"
+            ]
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """

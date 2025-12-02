@@ -109,9 +109,10 @@ class ConfigManager:
                     loaded_config.pop("save_diarized_transcript", None)
                     loaded_config.pop("transcripts_directory", None)  # Remove deprecated transcripts directory
                     
-                    # Filter out keys that are not in DEFAULT_SYSTEM_CONFIG
-                    # This ensures config.json only contains system settings
-                    filtered_config = {k: v for k, v in loaded_config.items() if k in DEFAULT_SYSTEM_CONFIG}
+                    # Filter out keys that are not in DEFAULT_SYSTEM_CONFIG or DEFAULT_USER_SETTINGS
+                    # This ensures config.json only contains valid settings
+                    valid_keys = set(DEFAULT_SYSTEM_CONFIG.keys()) | set(DEFAULT_USER_SETTINGS.keys())
+                    filtered_config = {k: v for k, v in loaded_config.items() if k in valid_keys}
                     
                     # Update default config with loaded values
                     config.update(filtered_config) 

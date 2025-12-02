@@ -12,8 +12,13 @@ from uuid import uuid4
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
-from backend.worker.tasks import process_recording_task
+from backend.worker.tasks import process_recording_task, infer_speakers_task
 from backend.utils.audio import concatenate_wavs, get_audio_duration
+from backend.processing.LLM_Services import get_llm_backend
+from backend.utils.speaker_label_manager import SpeakerLabelManager
+from backend.models.transcript import Transcript
+from backend.models.speaker import RecordingSpeaker
+from backend.utils.config_manager import config_manager, is_llm_available
 
 router = APIRouter()
 
@@ -771,7 +776,7 @@ async def batch_soft_delete_recordings(
     await db.commit()
     return {"ok": True, "count": len(recordings)}
 
-@router.delete("/batch/permanent")
+@router.post("/batch/permanent")
 async def batch_permanently_delete_recordings(
     batch: BatchRecordingIds,
     db: AsyncSession = Depends(get_db),
@@ -815,3 +820,22 @@ async def update_client_status(
     await db.commit()
     await db.refresh(recording)
     return recording
+
+@router.post("/{recording_id}/infer-speakers")
+async def infer_speakers_for_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Re-run speaker inference on an already processed meeting.
+    Triggers a background Celery task.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # Trigger Celery task
+    infer_speakers_task.delay(recording.id)
+    
+    return {"status": "queued", "message": "Speaker inference started in background."}
