@@ -518,12 +518,12 @@ export const getDownloadProgress = async (): Promise<DownloadProgress> => {
 
 // Chat API
 export const getChatHistory = async (recordingId: number): Promise<ChatMessage[]> => {
-  const response = await api.get<ChatMessage[]>(`/recordings/${recordingId}/chat`);
+  const response = await api.get<ChatMessage[]>(`/transcripts/${recordingId}/chat`);
   return response.data;
 };
 
 export const clearChatHistory = async (recordingId: number): Promise<void> => {
-  await api.delete(`/recordings/${recordingId}/chat`);
+  await api.delete(`/transcripts/${recordingId}/chat`);
 };
 
 export const streamChatMessage = (
@@ -536,7 +536,7 @@ export const streamChatMessage = (
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  fetch(`${API_BASE_URL}/recordings/${recordingId}/chat`, {
+  fetch(`${API_BASE_URL}/transcripts/${recordingId}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

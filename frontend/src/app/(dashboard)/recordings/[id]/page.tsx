@@ -74,7 +74,7 @@ export default function RecordingPage({ params }: PageProps) {
   // Panel State (Transcript or Notes)
   const [activePanel, setActivePanel] = useState<ActivePanel>('transcript');
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
-  const [showChat, setShowChat] = useState(false);
+  const [showChat, setShowChat] = useState(true);
   
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
@@ -658,7 +658,6 @@ export default function RecordingPage({ params }: PageProps) {
                 </p>
             </div>
         ) : (
-            <>
                 <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full flex-1 min-w-0">
                 <Panel defaultSize={75} minSize={30}>
                     <div className="flex-1 flex flex-col min-h-0 h-full">
@@ -772,9 +771,18 @@ export default function RecordingPage({ params }: PageProps) {
                         onRefresh={fetchRecording}
                     />
                 </Panel>
+                
+                {showChat && (
+                    <>
+                        <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                            <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+                        </PanelResizeHandle>
+                        <Panel defaultSize={20} minSize={15}>
+                            <ChatPanel />
+                        </Panel>
+                    </>
+                )}
             </PanelGroup>
-            {showChat && <ChatPanel />}
-            </>
         )}
       </div>
 

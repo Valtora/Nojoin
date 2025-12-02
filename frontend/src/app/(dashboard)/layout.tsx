@@ -25,8 +25,6 @@ export default function DashboardLayout({
         {children}
         <ServiceStatusAlerts />
       </main>
-      
-      {!isSettingsPage && <ChatPanel />}
     </div>
   );
 }

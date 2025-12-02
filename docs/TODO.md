@@ -2,10 +2,10 @@
 
 Let's continue the development of Nojoin. Read the AGENTS.md file in the project root and the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
 
-### Meeting Chat Feature
-- [x] Implement the MeetingChat panel powered by LLM services which is currently a placeholder. Utilise the same chat bubbles like in the transcript window. The objective of this feature is to allow the user to 'chat' with the transcript via an LLM. This means they will be able to make enquiries about the transcript and receive a response from an LLM provider of their choice as set in the settings modal.
-- [x] The meeting note generation feature already exists and is powered by LLM services. We should use the same LLM services for the chat feature.
-- [x] Allow the user to inject custom instructions to the LLM service via a settings modal in the 'AI Services' page. This is for things like the tone of the chat, custom instructions for how to format the chat responses, create call notes emails, etc. The hardcoded instructions should provide a default set of instructions to do with the meeting notes and the transcript and the user's instructions should be appended to the end of the prompt. Warn the user that using custom instructions may result in poor responses if the instructions are not appropriate.
+### Meeting Chat UI/UX Improvements
+- Improve the UI/UX of the meeting chat feature in the frontend.
+- The send message button in the chat interface is not centred in the chat input box. Adjust the styling to ensure it is properly centred vertically within the input box.
+- While waiting for a response from the AI assistant after sending a message, there is no visual indication that a response is being generated. Implement a loading spinner or similar visual cue to inform the user that their message is being processed. I thought we had implemented token streaming via the LLM_Services.py file, confirm this is the case. Ideally what would happen is that the text streams in real-time as the AI generates the response, rather than waiting for the full response to be ready. That being said we don't need to see the 'thoughts' of the AI model, just the final response streaming in would be sufficient.
 
 ### Frontend Upgrades
 - Consider using shadcn-ui, see here: https://github.com/shadcn-ui/ui and here https://ui.shadcn.com/docs.

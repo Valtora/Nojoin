@@ -129,7 +129,7 @@ export default function ChatPanel() {
   };
 
   return (
-    <aside className="w-96 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full flex flex-col shadow-xl z-10">
+    <aside className="flex-1 min-w-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full flex flex-col shadow-xl z-10">
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-900">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-orange-500" />

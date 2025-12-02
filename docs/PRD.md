@@ -187,7 +187,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
         *   **Main Content Area:**
             *   **Center Panel:** Tabbed view for Transcript and Meeting Notes.
             *   **Speaker Panel:** Resizable panel to the right of the transcript, listing identified speakers.
-            *   **Chat Sidebar:** Collapsible right-hand sidebar for "Chat with Meeting" functionality.
+            *   **Chat Sidebar:** Collapsible and resizable right-hand sidebar for "Chat with Meeting" functionality.
 *   **Modern Player:** HTML5-based audio player with waveform visualization.
 *   **Synced Transcript:** Clicking a transcript segment seeks the audio to that timestamp. Current text highlights during playback.
 *   **Edit Mode:** Allow users to correct transcript text and speaker assignment directly in the browser.
