@@ -7,7 +7,7 @@
 
 ; Application Information
 !define PRODUCT_NAME "Nojoin Companion"
-!define PRODUCT_VERSION "0.1.1"
+!define PRODUCT_VERSION "0.1.2"
 !define PRODUCT_PUBLISHER "Valtora"
 !define PRODUCT_WEB_SITE "https://github.com/Valtora/Nojoin"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\nojoin-companion.exe"

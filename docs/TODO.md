@@ -1,6 +1,29 @@
 # Nojoin To-Do List
 
-Let's continue the development of Nojoin. Read the AGENTS.md file in the project root and the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Your goal is now to present a plan for me to approve to complete these tasks/instructions set out below. Do not move on to implementation without my explicit approval:
+Let's continue the development of Nojoin. Read the AGENTS.md file in the project root and the PRD.md in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
+
+### Speaker Management Feature - Speaker Inference
+- Now that LLM_Services.py is implemented, use it to implement speaker inference in the Speaker Management feature. This feature should analyze the diarized transcript to make an attempt at inferring which speaker is speaking at any given time based on the context of the conversation and any known information about the speakers. The speaker inference needs to take place AFTER diarization but BEFORE the user is presented with the transcript for the first time.
+- Ensure that this feature integrates seamlessly with the existing Speaker Management workflow and UI components, this includes the CRUD operations that are supported in the Speaker Management panel that the user themselves uses to label speakers.
+- Also take care to consider the voice embedding processing that is already in place as part of the diarization process. Explore how this voice embedding data can be utilized to enhance the accuracy of the speaker inference or vice versa.
+- Implement a context menu option on the meeting card that allows the user to re-run speaker inference on an already processed meeting. This should re-process the diarized transcript with the speaker inference logic and update the speaker labels in the transcript accordingly without needing to re-process the entire recording from scratch. The user may have manually corrected names in the transcript which might help the inference process and they may have already added speakers to the Speaker Library since the original processing.
+
+### First-Run Wizard and LLM Services - Dynamically Update Default Models
+- Implement a mechanism to dynamically update the models being used for each LLM provider in the LLM_Services.py module. After the user selects their preferred LLM provider and enters their API key during the first-run wizard, the application should query the respective LLM provider's API to retrieve the latest list of available models. The default model for each provider should then be set by the user. Most LLM Providers have a model.list or similar api endpoint that can be used for this purpose.
+- While doing this we can improve the first-run wizard logic to force the user to validate their API keys before proceeding.
+- Only the admin user should be able to provide API keys and set default models for LLM providers with the normal users just piggybacking off these settings from the admin.
+
+### Speaker Library Management
+- Give the user the ability to delete a voice print (embedding) associated from a speaker in the Speaker Library which just removes their voice embedding from the database but keeps the speaker entry itself and any associated transcripts/notes/tags intact. I think the current logic only allows a speaker to be in the Speaker Library if they have an associated voice embedding, so this will require some changes to the database schema and the Speaker Library management logic. There should be no requirement to have a voice embedding for a speaker to exist in the Speaker Library.
+
+### Meeting Chat Feature - UI/UX Improvements
+- Remove the button that shows/hides the chat panel, the chat panel should just always be visible.
+
+### Bulk Delete Recordings - Error
+- Investigate this error from the log when I tried to delete two recordings at once (they did have the same name): INFO:     172.18.0.6:54256 - "DELETE /api/v1/recordings/batch/permanent HTTP/1.1" 422 Unprocessable Entity
+
+### Security
+- Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via trafeik, caddy, etc. Research the implications of this change on the companion app's ability to connect to the backend server and any other parts of the system that may be affected. Provide a summary of findings and recommendations on whether this change should be implemented and how to go about it if so.
 
 ### Consider Upgrading to Cuda 13
 - See this link: https://www.google.com/search?q=cuda+12.6+vs+12.8+vs+13.0&num=10&client=firefox-b-d&sca_esv=30d2ca42fc4644ef&sxsrf=AE3TifPQ_jdRbNECXpjGm2Ar-AilIFMQyw%3A1764454298783&ei=mm8raYvJL-2jhbIPzv6w-Ag&oq=cuda+12.6+vs&gs_lp=Egxnd3Mtd2l6LXNlcnAiDGN1ZGEgMTIuNiB2cyoCCAIyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIIEAAYFhgKGB4yBhAAGBYYHjIGEAAYFhgeMgYQABgWGB4yCBAAGBYYChgeSKwOUIcBWOMCcAF4AJABAJgBRKABwAGqAQEzuAEByAEA-AEBmAIEoALNAcICDRAAGIAEGLADGEMYigXCAgoQABiABBhDGIoFwgIKEAAYgAQYFBiHApgDAIgGAZAGCpIHATSgB_QWsgcBM7gHyQHCBwUwLjIuMsgHCg&sclient=gws-wiz-serp
