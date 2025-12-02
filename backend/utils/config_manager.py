@@ -252,7 +252,7 @@ def migrate_file_if_needed(old_path, new_path):
             import shutil
             shutil.move(old_path, new_path)
 
-def get_default_model_for_provider(provider: str) -> str:
+def get_default_model_for_provider(provider: str) -> str | None:
     """
     Get the default model for a specific LLM provider.
     This imports from LLM_Services to maintain single source of truth.
@@ -262,12 +262,7 @@ def get_default_model_for_provider(provider: str) -> str:
         return _get_default(provider)
     except ImportError:
         # Fallback values
-        defaults = {
-            "gemini": "gemini-2.5-pro-preview-06-05",
-            "openai": "gpt-4.1-mini-2025-04-14", 
-            "anthropic": "claude-sonnet-4-20250514"
-        }
-        return defaults.get(provider, "")
+        return None
 
 def is_llm_available():
     provider = config_manager.get("llm_provider", "gemini")

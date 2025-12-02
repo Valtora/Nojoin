@@ -59,8 +59,31 @@ def set_download_progress(
         return False
     
     try:
+        # Prevent regressions in visible progress shown to the frontend.
+        # If an existing progress is recorded and the new progress is lower
+        # (common when switching from "download" -> "loading" phases),
+        # keep the higher value so the progress bar doesn't jump backwards.
+        existing = None
+        try:
+            existing_raw = r.get(PROGRESS_KEY)
+            if existing_raw:
+                existing = json.loads(existing_raw).get("progress")
+        except Exception:
+            existing = None
+
+        # If we're actively downloading, avoid decreasing the numeric progress
+        write_progress = progress
+        if status == "downloading" and existing is not None:
+            try:
+                existing_int = int(existing)
+                if write_progress < existing_int:
+                    write_progress = existing_int
+            except Exception:
+                # If parsing fails, fall back to provided value
+                pass
+
         data = {
-            "progress": progress,
+            "progress": write_progress,
             "message": message,
             "speed": speed,
             "eta": eta,

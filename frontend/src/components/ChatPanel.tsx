@@ -31,11 +31,21 @@ export default function ChatPanel() {
       
       const provider = settings.llm_provider;
       let key = '';
-      if (provider === 'gemini') key = settings.gemini_api_key || '';
-      else if (provider === 'openai') key = settings.openai_api_key || '';
-      else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
+      let model = '';
+      if (provider === 'gemini') {
+        key = settings.gemini_api_key || '';
+        model = settings.gemini_model || '';
+      }
+      else if (provider === 'openai') {
+        key = settings.openai_api_key || '';
+        model = settings.openai_model || '';
+      }
+      else if (provider === 'anthropic') {
+        key = settings.anthropic_api_key || '';
+        model = settings.anthropic_model || '';
+      }
       
-      const configured = !!(provider && key);
+      const configured = !!(provider && key && model);
       setIsLLMConfigured(configured);
 
       if (provider) {
@@ -223,7 +233,7 @@ export default function ChatPanel() {
             <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-[1px] z-20 flex items-center justify-center p-4 text-center">
                 <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                     {isAdmin ? (
-                        <p>Chat is disabled. Please <Link href="/settings" className="text-orange-500 hover:underline">configure an LLM provider</Link>.</p>
+                        <p>Chat is disabled. Please <Link href="/settings" className="text-orange-500 hover:underline">configure an API key and select a model</Link>.</p>
                     ) : (
                         <p>Chat is disabled. Please contact your administrator.</p>
                     )}

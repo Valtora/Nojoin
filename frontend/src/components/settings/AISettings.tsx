@@ -282,7 +282,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     {settings.llm_provider === 'anthropic' && (
                         <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                             <span className="font-medium text-blue-600 dark:text-blue-400">Recommended:</span> 
-                            <span className="ml-1"><strong>Claude 3 Haiku</strong> (Fast) or <strong>Claude 3.5 Sonnet</strong> (Complex)</span>
+                            <span className="ml-1"><strong>Claude Haiku</strong> (Fast) or <strong>Claude Sonnet</strong> (Balanced) or <strong>Claude Opus</strong> (Complex)</span>
                         </div>
                     )}
                 </div>
@@ -353,7 +353,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                 </label>
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
                     <Info className="w-4 h-4 flex-shrink-0" />
-                    <span>These instructions are appended to every prompt sent to the LLM. Use this to define the persona or specific formatting rules.</span>
+                    <span>These instructions are appended to every prompt sent to the LLM. Use this to define a custom persona or specific formatting rules.</span>
                 </div>
                 <textarea
                     value={settings.chat_custom_instructions || ''}

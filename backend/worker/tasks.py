@@ -748,12 +748,21 @@ def generate_notes_task(self, recording_id: int):
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")
-        model = merged_config.get("llm_model")
+        # Fix: Use provider-specific model key (e.g. gemini_model) instead of generic llm_model
+        model = merged_config.get(f"{provider}_model")
 
         if not api_key:
             logger.warning(f"No API key configured for {provider}. Cannot generate notes.")
             transcript.notes_status = "error"
-            transcript.error_message = "LLM Provider not configured"
+            transcript.error_message = f"No API key configured for {provider}"
+            session.add(transcript)
+            session.commit()
+            return
+            
+        if not model:
+            logger.warning(f"No model selected for {provider}. Cannot generate notes.")
+            transcript.notes_status = "error"
+            transcript.error_message = f"No model selected for {provider}"
             session.add(transcript)
             session.commit()
             return

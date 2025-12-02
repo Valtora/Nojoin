@@ -504,8 +504,8 @@ export default function SetupPage() {
                     <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
                       <p className="font-semibold mb-1">Recommended Models:</p>
                       <ul className="list-disc list-inside space-y-0.5">
-                        <li><strong>GPT-5 mini</strong>: Faster, cost-effective for simple chat tasks.</li>
-                        <li><strong>GPT-5.1</strong>: High intelligence, recommended for complex analysis.</li>
+                        <li><strong>GPT-5 mini (or later)</strong>: Faster, cost-effective for simple chat tasks.</li>
+                        <li><strong>GPT-5.1 (or later)</strong>: Higher intelligence, recommended for complex analysis.</li>
                       </ul>
                     </div>
                   )}
@@ -513,8 +513,9 @@ export default function SetupPage() {
                     <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
                       <p className="font-semibold mb-1">Recommended Models:</p>
                       <ul className="list-disc list-inside space-y-0.5">
-                        <li><strong>Claude 3 Haiku</strong>: Fast and efficient for simple chats.</li>
-                        <li><strong>Claude 3.5 Sonnet</strong>: Strong reasoning, best for complex meetings.</li>
+                        <li><strong>Claude Haiku</strong>: Fast and efficient for simple chats.</li>
+                        <li><strong>Claude Sonnet</strong>: Good reasoning, best for medium complexity meetings.</li>
+                        <li><strong>Claude Opus</strong>: Strong reasoning, best for complex meetings and topics.</li>
                       </ul>
                     </div>
                   )}

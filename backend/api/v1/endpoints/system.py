@@ -89,6 +89,25 @@ async def setup_system(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    # Persist key system-wide settings so workers and other processes can access them
+    try:
+        # Only persist a whitelist of system-level keys to avoid overwriting user-specific preferences
+        system_keys = [
+            "llm_provider",
+            "gemini_api_key",
+            "openai_api_key",
+            "anthropic_api_key",
+            "hf_token",
+            "whisper_model_size",
+        ]
+        for k, v in settings.items():
+            if k in system_keys or k.endswith("_model"):
+                if v is not None:
+                    config_manager.set(k, v)
+    except Exception as e:
+        # Log but do not fail the setup if persisting to disk fails
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to persist system settings: {e}")
     return {"message": "System initialized successfully"}
 
 @router.post("/download-models")
@@ -133,7 +152,7 @@ async def get_current_download_progress() -> Any:
     
     return {
         "in_progress": is_download_in_progress(),
-        "progress": progress.get("progress", 0),
+        "progress": min(progress.get("progress", 0), 100),
         "message": progress.get("message", ""),
         "speed": progress.get("speed"),
         "eta": progress.get("eta"),

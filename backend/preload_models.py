@@ -134,6 +134,9 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     Downloads necessary models.
     progress_callback: function(status_message, percent_complete, speed=None, eta=None, stage=None)
     """
+    # Clear any stale progress from previous runs to prevent progress bar glitches
+    clear_download_progress()
+
     # Lazy imports to avoid loading heavy libraries at module level
     import torch
     import whisper
@@ -230,7 +233,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
                 report(f"Whisper model found in cache.", 100, stage="whisper")
 
         # Now load it (this verifies checksum and loads into memory)
-        report(f"Loading Whisper model ({whisper_model_size})...", 90, stage="whisper")
+        report(f"Loading Whisper model ({whisper_model_size})...", 110, stage="whisper")
         whisper.load_model(whisper_model_size, download_root=download_root)
         report(f"Whisper model ({whisper_model_size}) loaded.", 100, stage="whisper")
         

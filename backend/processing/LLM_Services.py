@@ -2,7 +2,7 @@ from backend.utils.config_manager import config_manager
 import logging
 import json
 import re
-from typing import Dict, Tuple, List, Generator, Any
+from typing import Dict, Tuple, List, Generator, Any, Optional
 # Lazy imports for LLM providers to avoid heavy dependencies in API
 # import openai
 # import anthropic
@@ -359,6 +359,8 @@ class GeminiLLMBackend(LLMBackend):
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -379,6 +381,8 @@ class GeminiLLMBackend(LLMBackend):
             prompt_template = self.get_notes_prompt_template()
         mapping_table = self.mapping_to_markdown_table(speaker_mapping)
         prompt = prompt_template.format(transcript=transcript, mapping_table=mapping_table)
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -404,6 +408,8 @@ class GeminiLLMBackend(LLMBackend):
         if conversation_history:
             contents.extend(conversation_history)
         contents.append({"role": "user", "parts": [{"text": prompt}]})
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -425,6 +431,8 @@ class GeminiLLMBackend(LLMBackend):
             contents.extend(conversation_history)
         contents.append({"role": "user", "parts": [{"text": prompt}]})
         
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
             # Use streaming API
             response_stream = self.client.models.generate_content_stream(
@@ -446,6 +454,8 @@ class GeminiLLMBackend(LLMBackend):
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -503,6 +513,8 @@ class OpenAILLMBackend(LLMBackend):
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -525,6 +537,8 @@ class OpenAILLMBackend(LLMBackend):
             prompt_template = self.get_notes_prompt_template()
         mapping_table = self.mapping_to_markdown_table(speaker_mapping)
         prompt = prompt_template.format(transcript=transcript, mapping_table=mapping_table)
+        if not self.model:
+            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -554,6 +568,8 @@ class OpenAILLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
+        if not self.model:
+            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -603,6 +619,8 @@ class OpenAILLMBackend(LLMBackend):
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -664,6 +682,8 @@ class AnthropicLLMBackend(LLMBackend):
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
         prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -686,6 +706,8 @@ class AnthropicLLMBackend(LLMBackend):
             prompt_template = self.get_notes_prompt_template()
         mapping_table = self.mapping_to_markdown_table(speaker_mapping)
         prompt = prompt_template.format(transcript=transcript, mapping_table=mapping_table)
+        if not self.model:
+            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -703,6 +725,7 @@ class AnthropicLLMBackend(LLMBackend):
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
     def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+        # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
@@ -715,6 +738,8 @@ class AnthropicLLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
+        if not self.model:
+            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -799,11 +824,13 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")
 
-def _get_default_model_for_provider(provider: str) -> str:
-    """Return None as there are no default models."""
+def _get_default_model_for_provider(provider: str) -> Optional[str]:
+    """Return the recommended default model for a provider."""
+    # Defaults are no longer hardcoded here. 
+    # Users must select a model or rely on frontend recommendations.
     return None
 
-def get_default_model_for_provider(provider: str) -> str:
+def get_default_model_for_provider(provider: str) -> Optional[str]:
     """
     Public function to get the default model for a provider.
     This is the single source of truth for default model names.
