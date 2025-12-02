@@ -77,11 +77,13 @@ export default function ServiceStatusAlerts() {
 
       // Worker (only if backend is up)
       if (backend && !worker && !notificationIds.current.worker) {
-        notificationIds.current.worker = addNotification({
-          type: 'error',
-          message: 'Worker Offline: Background processing is paused.',
-          persistent: true
-        });
+        if (!isStartupRef.current) {
+          notificationIds.current.worker = addNotification({
+            type: 'error',
+            message: 'Worker Offline: Background processing is paused.',
+            persistent: true
+          });
+        }
       } else if ((!backend || worker) && notificationIds.current.worker) {
         removeActiveNotification(notificationIds.current.worker);
         notificationIds.current.worker = null;

@@ -681,7 +681,8 @@ def download_models_task(self, hf_token: str | None = None, whisper_model_size: 
                 # Forward the progress to the Celery task state
                 meta = {
                     'progress': progress.get('progress', 0),
-                    'message': progress.get('message', 'Downloading...')
+                    'message': progress.get('message', 'Downloading...'),
+                    'stage': progress.get('stage')
                 }
                 if progress.get('speed'):
                     meta['speed'] = progress['speed']
@@ -692,8 +693,8 @@ def download_models_task(self, hf_token: str | None = None, whisper_model_size: 
             time.sleep(1)
     
     # No active download, proceed with our own download
-    def progress_callback(msg, percent, speed=None, eta=None):
-        meta = {'progress': percent, 'message': msg}
+    def progress_callback(msg, percent, speed=None, eta=None, stage=None):
+        meta = {'progress': percent, 'message': msg, 'stage': stage}
         if speed:
             meta['speed'] = speed
         if eta:
@@ -747,11 +748,12 @@ def generate_notes_task(self, recording_id: int):
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")
-        model = merged_config.get(f"{provider}_model")
+        model = merged_config.get("llm_model")
 
         if not api_key:
-            logger.error(f"No API key configured for {provider}.")
+            logger.warning(f"No API key configured for {provider}. Cannot generate notes.")
             transcript.notes_status = "error"
+            transcript.error_message = "LLM Provider not configured"
             session.add(transcript)
             session.commit()
             return
@@ -824,10 +826,10 @@ def infer_speakers_task(self, recording_id: int):
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")
-        model = merged_config.get(f"{provider}_model")
+        model = merged_config.get("llm_model")
 
         if not api_key:
-            logger.error(f"No API key configured for {provider}. Skipping inference.")
+            logger.warning(f"No API key configured for {provider}. Skipping inference.")
             return
 
         # Fetch transcript

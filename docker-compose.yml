@@ -49,7 +49,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.worker
     # Use watchmedo to auto-restart Celery on code changes
-    command: sh -c "python3 backend/preload_models.py && watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo"
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
     volumes:
       - .:/app
       - ./data:/app/data

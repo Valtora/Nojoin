@@ -274,6 +274,7 @@ export default function SettingsPage() {
                   settings={settings} 
                   onUpdate={setSettings} 
                   searchQuery={searchQuery}
+                  isAdmin={isAdmin}
                 />
               )}
               {activeTab === 'audio' && (

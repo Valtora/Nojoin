@@ -4,33 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings, getDownloadProgress, getModelStatus, listModels } from '@/lib/api';
-import { Loader2, CheckCircle, Download, Check, X } from 'lucide-react';
+import { Loader2, CheckCircle, Download, Check, X, AlertTriangle, ArrowRight, ArrowLeft, Shield, Cpu, Key } from 'lucide-react';
+import ConfirmationModal from '@/components/ConfirmationModal';
 
 export default function SetupPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [setupSuccess, setSetupSuccess] = useState(false);
+  const [step, setStep] = useState(1); // 1: Account, 2: LLM, 3: HuggingFace, 4: Download
   
-  // Validation State
-  const [validatingLLM, setValidatingLLM] = useState(false);
-  const [validatingHF, setValidatingHF] = useState(false);
-  const [llmValidationMsg, setLlmValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
-  const [hfValidationMsg, setHfValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
-  
-  // Model Selection State
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
-
-  // Model Download State
-  const [downloadingModels, setDownloadingModels] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadMessage, setDownloadMessage] = useState('Checking download status...');
-  const [downloadSpeed, setDownloadSpeed] = useState('');
-  const [downloadEta, setDownloadEta] = useState('');
-  const [downloadComplete, setDownloadComplete] = useState(false);
-
+  // Form Data
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -42,6 +24,30 @@ export default function SetupPage() {
     hf_token: '',
     selected_model: ''
   });
+
+  // Validation State
+  const [validatingLLM, setValidatingLLM] = useState(false);
+  const [validatingHF, setValidatingHF] = useState(false);
+  const [llmValidationMsg, setLlmValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
+  const [hfValidationMsg, setHfValidationMsg] = useState<{valid: boolean, msg: string} | null>(null);
+  const [error, setError] = useState('');
+  
+  // Model Selection State
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [llmSkipped, setLlmSkipped] = useState(false);
+
+  // Download State
+  const [downloadingModels, setDownloadingModels] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadStage, setDownloadStage] = useState('');
+  const [downloadMessage, setDownloadMessage] = useState('Checking download status...');
+  const [downloadSpeed, setDownloadSpeed] = useState('');
+  const [downloadEta, setDownloadEta] = useState('');
+  const [downloadComplete, setDownloadComplete] = useState(false);
+
+  // Modals
+  const [showSkipLLMModal, setShowSkipLLMModal] = useState(false);
 
   useEffect(() => {
     // Clear any existing token when visiting setup page
@@ -66,386 +72,373 @@ export default function SetupPage() {
     checkStatus();
   }, [router]);
 
-  const completeSetupAndRedirect = async () => {
-    setDownloadProgress(100);
-    setDownloadMessage('All models ready!');
-    setDownloadComplete(true);
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Auto-login after setup
-    try {
-      const loginResponse = await login(formData.username, formData.password);
-      localStorage.setItem('token', loginResponse.access_token);
-      setTimeout(() => router.push('/'), 2000);
-    } catch (loginErr) {
-      console.error("Auto-login failed", loginErr);
-      // Fallback to login page if auto-login fails
-      setTimeout(() => router.push('/login'), 2000);
+    // Reset validation messages when changing keys
+    if (name.includes('api_key')) {
+      setLlmValidationMsg(null);
+      setAvailableModels([]);
+      setFormData(prev => ({ ...prev, selected_model: '' }));
+    }
+    if (name === 'hf_token') {
+      setHfValidationMsg(null);
+    }
+    if (name === 'llm_provider') {
+      setLlmValidationMsg(null);
+      setAvailableModels([]);
+      setFormData(prev => ({ ...prev, selected_model: '' }));
     }
   };
 
-  const startModelDownload = async () => {
-    setDownloadingModels(true);
-    setDownloadMessage('Checking download status...');
-    
-    try {
-      // First, check if there's an existing download in progress or completed
-      const sharedProgress = await getDownloadProgress();
-      
-      // If download is already complete, skip to completion
-      if (sharedProgress.status === 'complete') {
-        await completeSetupAndRedirect();
-        return;
-      }
-      
-      // If download is in progress (from preload_models.py), poll that instead of starting a new task
-      if (sharedProgress.in_progress) {
-        setDownloadMessage(sharedProgress.message || 'Download in progress...');
-        setDownloadProgress(sharedProgress.progress || 0);
-        if (sharedProgress.speed) setDownloadSpeed(sharedProgress.speed);
-        if (sharedProgress.eta) setDownloadEta(sharedProgress.eta);
-        
-        // Poll the shared progress endpoint
-        const pollInterval = setInterval(async () => {
-          try {
-            const progress = await getDownloadProgress();
-            
-            if (progress.status === 'complete') {
-              clearInterval(pollInterval);
-              await completeSetupAndRedirect();
-            } else if (progress.status === 'error') {
-              clearInterval(pollInterval);
-              setError(progress.message || 'Model download failed. Please check logs.');
-              setDownloadingModels(false);
-            } else {
-              setDownloadProgress(progress.progress || 0);
-              setDownloadMessage(progress.message || 'Downloading...');
-              if (progress.speed) setDownloadSpeed(progress.speed);
-              if (progress.eta) setDownloadEta(progress.eta);
-            }
-          } catch (e) {
-            console.error("Polling error", e);
-          }
-        }, 1000);
-        
-        return;
-      }
-      
-      // Check if models are already downloaded (preload might have completed before we checked)
-      const modelStatus = await getModelStatus('turbo');
-      const allDownloaded = modelStatus.whisper?.downloaded && 
-                           modelStatus.pyannote?.downloaded && 
-                           modelStatus.embedding?.downloaded;
-      
-      if (allDownloaded) {
-        await completeSetupAndRedirect();
-        return;
-      }
-      
-      // No existing download and models not ready, start a new download task
-      setDownloadMessage('Starting download...');
-      const { task_id } = await downloadModels({
-        hf_token: formData.hf_token || undefined,
-        whisper_model_size: 'turbo' 
-      });
-
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await getTaskStatus(task_id);
-          
-          if (status.status === 'SUCCESS') {
-            clearInterval(pollInterval);
-            await completeSetupAndRedirect();
-          } else if (status.status === 'FAILURE') {
-            clearInterval(pollInterval);
-            setError('Model download failed. Please check logs.');
-            setDownloadingModels(false);
-          } else if (status.status === 'PROCESSING') {
-            const meta = status.result || {};
-            setDownloadProgress(meta.progress || 0);
-            setDownloadMessage(meta.message || 'Downloading...');
-            if (meta.speed) setDownloadSpeed(meta.speed);
-            if (meta.eta) setDownloadEta(meta.eta);
-          } else if (status.status === 'PENDING') {
-            // Task not yet picked up by worker - check shared progress in case worker is busy
-            const progress = await getDownloadProgress();
-            if (progress.in_progress) {
-              setDownloadProgress(progress.progress || 0);
-              setDownloadMessage(progress.message || 'Download in progress...');
-              if (progress.speed) setDownloadSpeed(progress.speed);
-              if (progress.eta) setDownloadEta(progress.eta);
-            } else {
-              setDownloadMessage('Waiting for worker...');
-            }
-          }
-        } catch (e) {
-          console.error("Polling error", e);
-        }
-      }, 1000);
-
-    } catch (err: any) {
-      console.error("Failed to start download", err);
-      setError('Failed to start model download. You can try logging in anyway.');
-      setDownloadingModels(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  // --- Step 1: Account ---
+  const handleAccountSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
-    
     if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError("Password must be at least 8 characters");
       return;
     }
-
-    setSubmitting(true);
-    try {
-      if (!setupSuccess) {
-        // 1. Initial Setup
-        try {
-          await setupSystem({
-            username: formData.username,
-            password: formData.password,
-            is_superuser: true,
-            llm_provider: formData.llm_provider,
-            gemini_api_key: formData.gemini_api_key || undefined,
-            openai_api_key: formData.openai_api_key || undefined,
-            anthropic_api_key: formData.anthropic_api_key || undefined,
-            hf_token: formData.hf_token || undefined,
-            whisper_model_size: 'turbo',
-            selected_model: formData.selected_model || undefined
-          });
-        } catch (err: any) {
-          // If system is already initialized, we might be in a retry state where the page wasn't refreshed
-          if (err.response?.status === 400 && err.response?.data?.detail === "System is already initialized.") {
-             // Proceed to login and update
-             console.log("System already initialized, proceeding to login/update flow");
-          } else {
-             throw err;
-          }
-        }
-
-        // 2. Auto Login
-        const loginResponse = await login(formData.username, formData.password);
-        localStorage.setItem('token', loginResponse.access_token);
-        setSetupSuccess(true);
-      } else {
-        // 3. Update Settings (Retry Flow)
-        await updateSettings({
-            llm_provider: formData.llm_provider,
-            gemini_api_key: formData.gemini_api_key || undefined,
-            openai_api_key: formData.openai_api_key || undefined,
-            anthropic_api_key: formData.anthropic_api_key || undefined,
-            hf_token: formData.hf_token || undefined,
-            whisper_model_size: 'turbo'
-        });
-      }
-      
-      // 4. Start Download
-      setSubmitting(false);
-      await startModelDownload();
-
-    } catch (err: any) {
-      console.error(err);
-      setError(err.response?.data?.detail || 'Setup failed');
-      setSubmitting(false);
-    }
+    setError('');
+    setStep(2);
   };
 
-  const handleValidateLLM = async () => {
-    const provider = formData.llm_provider;
-    const key = provider === 'gemini' ? formData.gemini_api_key : 
-                provider === 'openai' ? formData.openai_api_key : 
-                formData.anthropic_api_key;
-    
-    if (!key) {
-      setLlmValidationMsg({valid: false, msg: 'Please enter an API key'});
+  // --- Step 2: LLM ---
+  const getCurrentApiKey = () => {
+    if (formData.llm_provider === 'gemini') return formData.gemini_api_key;
+    if (formData.llm_provider === 'openai') return formData.openai_api_key;
+    if (formData.llm_provider === 'anthropic') return formData.anthropic_api_key;
+    return '';
+  };
+
+  const validateAndFetchModels = async () => {
+    const apiKey = getCurrentApiKey();
+    if (!apiKey) {
+      setError("Please enter an API key");
       return;
     }
-
+    
     setValidatingLLM(true);
+    setError('');
     setLlmValidationMsg(null);
-    setAvailableModels([]);
-    setFetchingModels(true);
     
     try {
-      const res = await validateLLM(provider, key);
-      setLlmValidationMsg({valid: true, msg: res.message});
+      // 1. Validate Key
+      const res = await validateLLM(formData.llm_provider, apiKey);
+      setLlmValidationMsg({ valid: true, msg: res.message });
       
-      // Fetch models on success
-      try {
-        const modelsRes = await listModels(provider, key);
-        setAvailableModels(modelsRes.models);
-        if (modelsRes.models.length > 0) {
-            // Set default model if available
-            let defaultModel = modelsRes.models[0];
-            // Try to pick a sensible default based on provider
-            if (provider === 'gemini') {
-                const preferred = modelsRes.models.find(m => m.includes('gemini-2.0-flash-exp')) || modelsRes.models.find(m => m.includes('gemini-1.5-pro'));
-                if (preferred) defaultModel = preferred;
-            } else if (provider === 'openai') {
-                const preferred = modelsRes.models.find(m => m.includes('gpt-4o')) || modelsRes.models.find(m => m.includes('gpt-4-turbo'));
-                if (preferred) defaultModel = preferred;
-            } else if (provider === 'anthropic') {
-                const preferred = modelsRes.models.find(m => m.includes('claude-3-5-sonnet'));
-                if (preferred) defaultModel = preferred;
-            }
-            setFormData(prev => ({ ...prev, selected_model: defaultModel }));
-        }
-      } catch (modelErr) {
-        console.error("Failed to fetch models", modelErr);
-        // Don't fail validation if model list fails, just let them type it or use default
+      // 2. Fetch Models
+      setFetchingModels(true);
+      const modelsRes = await listModels(formData.llm_provider, apiKey);
+      setAvailableModels(modelsRes.models);
+      
+      if (modelsRes.models.length > 0) {
+        setFormData(prev => ({ ...prev, selected_model: modelsRes.models[0] }));
+      } else {
+        setError("No models found for this provider. Please check your API key permissions.");
       }
-      
     } catch (err: any) {
-      setLlmValidationMsg({valid: false, msg: err.response?.data?.detail || 'Validation failed'});
+      setLlmValidationMsg({ valid: false, msg: err.response?.data?.detail || err.message });
     } finally {
       setValidatingLLM(false);
       setFetchingModels(false);
     }
   };
 
-  const handleValidateHF = async () => {
-    if (!formData.hf_token) {
-      setHfValidationMsg({valid: false, msg: 'Please enter a token'});
+  const handleLLMSubmit = () => {
+    if (llmSkipped) {
+      setStep(3);
       return;
     }
+    
+    if (!getCurrentApiKey()) {
+      setError("Please enter an API key or skip this step.");
+      return;
+    }
+    
+    if (!llmValidationMsg?.valid) {
+      setError("Please validate your API key first.");
+      return;
+    }
+    
+    if (!formData.selected_model) {
+      setError("Please select a model.");
+      return;
+    }
+    
+    setError('');
+    setStep(3);
+  };
+
+  const handleSkipLLM = () => {
+    setShowSkipLLMModal(true);
+  };
+
+  const confirmSkipLLM = () => {
+    setLlmSkipped(true);
+    // Clear LLM data
+    setFormData(prev => ({
+      ...prev,
+      gemini_api_key: '',
+      openai_api_key: '',
+      anthropic_api_key: '',
+      selected_model: ''
+    }));
+    setStep(3);
+  };
+
+  // --- Step 3: HuggingFace ---
+  const validateHFToken = async () => {
+    if (!formData.hf_token) {
+      setError("Please enter a token");
+      return;
+    }
+    
     setValidatingHF(true);
+    setError('');
     setHfValidationMsg(null);
+    
     try {
       const res = await validateHF(formData.hf_token);
-      setHfValidationMsg({valid: true, msg: res.message});
+      setHfValidationMsg({ valid: true, msg: res.message });
     } catch (err: any) {
-      setHfValidationMsg({valid: false, msg: err.response?.data?.detail || 'Validation failed'});
+      setHfValidationMsg({ valid: false, msg: err.response?.data?.detail || err.message });
     } finally {
       setValidatingHF(false);
     }
   };
 
+  const handleHFSubmit = async () => {
+    // If token provided, must be valid
+    if (formData.hf_token && !hfValidationMsg?.valid) {
+      setError("Please validate your token first.");
+      return;
+    }
+    
+    // Proceed to create account and start download
+    await createAccountAndStartDownload();
+  };
+
+  const createAccountAndStartDownload = async () => {
+    setStep(4);
+    setDownloadingModels(true);
+    
+    try {
+      // 1. Create Admin Account & Save Settings
+      await setupSystem({
+        username: formData.username,
+        password: formData.password,
+        llm_provider: formData.llm_provider,
+        gemini_api_key: formData.gemini_api_key,
+        openai_api_key: formData.openai_api_key,
+        anthropic_api_key: formData.anthropic_api_key,
+        hf_token: formData.hf_token,
+        // Save selected model in the provider-specific field
+        [`${formData.llm_provider}_model`]: formData.selected_model
+      });
+
+      // 2. Login to get token for subsequent requests
+      const loginResponse = await login(formData.username, formData.password);
+      localStorage.setItem('token', loginResponse.access_token);
+
+      // 3. Start Download
+      startModelDownload();
+
+    } catch (err: any) {
+      console.error("Setup failed:", err);
+      setError(err.response?.data?.detail || "Setup failed. Please try again.");
+      setStep(3); // Go back
+      setDownloadingModels(false);
+    }
+  };
+
+  // --- Step 4: Download ---
+  const startModelDownload = async () => {
+    setDownloadMessage('Checking download status...');
+    
+    try {
+      // Check existing progress
+      const sharedProgress = await getDownloadProgress();
+      if (sharedProgress.status === 'complete') {
+        completeSetupAndRedirect();
+        return;
+      }
+      
+      if (sharedProgress.in_progress) {
+        pollDownloadProgress();
+        return;
+      }
+
+      // Start new download
+      await downloadModels({
+        hf_token: formData.hf_token,
+        whisper_model_size: 'turbo' // Default
+      });
+      
+      pollDownloadProgress();
+      
+    } catch (err: any) {
+      console.error("Download start failed:", err);
+      setDownloadMessage(`Error starting download: ${err.message}`);
+    }
+  };
+
+  const pollDownloadProgress = () => {
+    const interval = setInterval(async () => {
+      try {
+        const progress = await getDownloadProgress();
+        
+        if (progress.status === 'complete') {
+          clearInterval(interval);
+          completeSetupAndRedirect();
+        } else if (progress.status === 'error') {
+          clearInterval(interval);
+          setDownloadMessage(`Download failed: ${progress.message}`);
+        } else {
+          setDownloadProgress(progress.progress || 0);
+          setDownloadStage(progress.stage || '');
+          setDownloadMessage(progress.message || 'Downloading...');
+          setDownloadSpeed(progress.speed || '');
+          setDownloadEta(progress.eta || '');
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 1000);
+  };
+
+  const completeSetupAndRedirect = () => {
+    setDownloadProgress(100);
+    setDownloadMessage('All models ready!');
+    setDownloadComplete(true);
+    setTimeout(() => router.push('/'), 2000);
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
-
-  if (downloadingModels || downloadComplete) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
-        <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-700 text-center">
-          <div className="flex justify-center mb-6">
-            {downloadComplete ? (
-              <div className="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-8 h-8 text-white" />
-              </div>
-            ) : (
-              <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center animate-pulse">
-                <Download className="w-8 h-8 text-white" />
-              </div>
-            )}
-          </div>
-          
-          <h2 className="text-2xl font-bold mb-2">
-            {downloadComplete ? 'Setup Complete!' : <>Setting Up <span className="text-orange-500">Nojoin</span></>}
-          </h2>
-          <p className="text-gray-400 mb-6">
-            {downloadComplete 
-              ? 'Redirecting you to the dashboard...' 
-              : 'Please wait while Nojoin downloads and setups the necessary dependencies...'}
-          </p>
-
-          <div className="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
-            <div 
-              className="bg-orange-500 h-4 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${downloadProgress}%` }}
-            />
-          </div>
-          <div className="flex flex-col items-center text-sm text-gray-400 font-mono mt-2">
-            <span className="mb-1">{downloadMessage}</span>
-            {downloadSpeed && !downloadComplete && (
-               <span className="text-xs text-gray-500">{downloadSpeed} • ETA: {downloadEta}</span>
-            )}
-          </div>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
-      <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-700">
-        <div className="flex flex-col items-center mb-8">
-          <Image 
-            src="/assets/NojoinLogo.png" 
-            alt="Nojoin Logo" 
-            width={64} 
-            height={64} 
-            className="mb-4"
-          />
-          <h1 className="text-2xl font-bold">Welcome to Nojoin</h1>
-          <p className="text-gray-400 mt-2 text-center">Create your admin account to get started</p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+      <ConfirmationModal
+        isOpen={showSkipLLMModal}
+        onClose={() => setShowSkipLLMModal(false)}
+        onConfirm={confirmSkipLLM}
+        title="Skip AI Setup?"
+        message="Without an API key and model, features like Meeting Notes, Chat, and Speaker Identification will be disabled. You can configure this later in Settings."
+        confirmText="Skip AI Features"
+        isDangerous={true}
+      />
+
+      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
+        {/* Header */}
+        <div className="bg-orange-600 p-6 text-center">
+          <div className="flex justify-center mb-4">
+            <div className="bg-white p-3 rounded-full shadow-lg">
+              <Image src="/assets/NojoinLogo.png" alt="Nojoin" width={48} height={48} className="w-12 h-12" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-white">Welcome to Nojoin</h1>
+          <p className="text-orange-100 mt-2">Initial System Setup</p>
         </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded mb-6 text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Username</label>
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => setFormData({...formData, username: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-              required
+        {/* Progress Steps */}
+        <div className="flex border-b border-gray-200 dark:border-gray-700">
+          {[1, 2, 3, 4].map((s) => (
+            <div 
+              key={s} 
+              className={`flex-1 h-1 ${s <= step ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'}`}
             />
-          </div>
+          ))}
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Password</label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-              required
-            />
-          </div>
+        <div className="p-8">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Confirm Password</label>
-            <input
-              type="password"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-              required
-            />
-          </div>
-
-          <div className="pt-4 border-t border-gray-700">
-            <h3 className="text-lg font-medium mb-4">Configuration</h3>
-            
-            <div className="space-y-4">
+          {/* Step 1: Account */}
+          {step === 1 && (
+            <form onSubmit={handleAccountSubmit} className="space-y-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create Admin Account</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Set up your administrator credentials</p>
+              </div>
+              
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">LLM Provider</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                <input
+                  type="text"
+                  name="username"
+                  required
+                  value={formData.username}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="admin"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="••••••••"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  required
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full mt-6 bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                Next Step <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          )}
+
+          {/* Step 2: LLM Setup */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">AI Configuration</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Configure your LLM provider for meeting intelligence</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Provider</label>
                 <select
+                  name="llm_provider"
                   value={formData.llm_provider}
-                  onChange={(e) => {
-                    setFormData({...formData, llm_provider: e.target.value, selected_model: ''});
-                    setAvailableModels([]);
-                    setLlmValidationMsg(null);
-                  }}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
                 >
                   <option value="gemini">Google Gemini</option>
                   <option value="openai">OpenAI</option>
@@ -453,148 +446,258 @@ export default function SetupPage() {
                 </select>
               </div>
 
-              {formData.llm_provider === 'gemini' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Gemini API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={formData.gemini_api_key}
-                      onChange={(e) => setFormData({...formData, gemini_api_key: e.target.value})}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                      placeholder="AIza..."
-                    />
-                    <button
-                      type="button"
-                      onClick={handleValidateLLM}
-                      disabled={validatingLLM || !formData.gemini_api_key}
-                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
-                    >
-                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                  </div>
-                  {llmValidationMsg && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
-                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                      {llmValidationMsg.msg}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {formData.llm_provider === 'openai' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">OpenAI API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={formData.openai_api_key}
-                      onChange={(e) => setFormData({...formData, openai_api_key: e.target.value})}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                      placeholder="sk-..."
-                    />
-                    <button
-                      type="button"
-                      onClick={handleValidateLLM}
-                      disabled={validatingLLM || !formData.openai_api_key}
-                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
-                    >
-                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                  </div>
-                  {llmValidationMsg && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
-                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                      {llmValidationMsg.msg}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {formData.llm_provider === 'anthropic' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Anthropic API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={formData.anthropic_api_key}
-                      onChange={(e) => setFormData({...formData, anthropic_api_key: e.target.value})}
-                      className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                      placeholder="sk-ant-..."
-                    />
-                    <button
-                      type="button"
-                      onClick={handleValidateLLM}
-                      disabled={validatingLLM || !formData.anthropic_api_key}
-                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
-                    >
-                      {validatingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                  </div>
-                  {llmValidationMsg && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
-                      {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                      {llmValidationMsg.msg}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {availableModels.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Select Model</label>
-                  <select
-                    value={formData.selected_model}
-                    onChange={(e) => setFormData({...formData, selected_model: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                  >
-                    {availableModels.map(model => (
-                        <option key={model} value={model}>{model}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  HuggingFace Token <span className="text-gray-500 text-xs">(Required for Pyannote)</span>
-                </label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
                 <div className="flex gap-2">
                   <input
                     type="password"
+                    name={`${formData.llm_provider}_api_key`}
+                    value={getCurrentApiKey()}
+                    onChange={handleInputChange}
+                    className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                    placeholder={`Enter ${formData.llm_provider} API Key`}
+                  />
+                  <button
+                    type="button"
+                    onClick={validateAndFetchModels}
+                    disabled={validatingLLM || !getCurrentApiKey()}
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium disabled:opacity-50 transition-colors"
+                  >
+                    {validatingLLM ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Validate'}
+                  </button>
+                </div>
+                {llmValidationMsg && (
+                  <p className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-600' : 'text-red-600'}`}>
+                    {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    {llmValidationMsg.msg}
+                  </p>
+                )}
+              </div>
+
+              {/* Model Selection - Only shown after validation */}
+              {availableModels.length > 0 && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Model</label>
+                  <select
+                    name="selected_model"
+                    value={formData.selected_model}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                  >
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Select the model to use for chat and notes.</p>
+                  
+                  {/* Model Recommendations */}
+                  {formData.llm_provider === 'gemini' && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                      <p className="font-semibold mb-1">Recommended Models:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><strong>gemini-flash-latest</strong>: Faster responses, good for simple transcripts.</li>
+                        <li><strong>gemini-pro-latest</strong>: Better reasoning, recommended for complex meetings.</li>
+                      </ul>
+                    </div>
+                  )}
+                  {formData.llm_provider === 'openai' && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                      <p className="font-semibold mb-1">Recommended Models:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><strong>GPT-5 mini</strong>: Faster, cost-effective for simple chat tasks.</li>
+                        <li><strong>GPT-5.1</strong>: High intelligence, recommended for complex analysis.</li>
+                      </ul>
+                    </div>
+                  )}
+                  {formData.llm_provider === 'anthropic' && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                      <p className="font-semibold mb-1">Recommended Models:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><strong>Claude 3 Haiku</strong>: Fast and efficient for simple chats.</li>
+                        <li><strong>Claude 3.5 Sonnet</strong>: Strong reasoning, best for complex meetings.</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={handleSkipLLM}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
+                >
+                  Skip for now
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLLMSubmit}
+                  disabled={!llmValidationMsg?.valid || !formData.selected_model}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  Next Step <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: HuggingFace */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Hugging Face Token</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Optional: Required for speaker identification</p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  To enable speaker identification (who said what), you need a Hugging Face token with access to <code>pyannote/speaker-diarization-3.1</code>.
+                  <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline ml-1 font-medium">
+                    Get one here
+                  </a>.
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
+                  You can skip this step if you don't need speaker labels.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Access Token</label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    name="hf_token"
                     value={formData.hf_token}
-                    onChange={(e) => setFormData({...formData, hf_token: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+                    onChange={handleInputChange}
+                    className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="hf_..."
                   />
                   <button
                     type="button"
-                    onClick={handleValidateHF}
+                    onClick={validateHFToken}
                     disabled={validatingHF || !formData.hf_token}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded disabled:opacity-50"
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium disabled:opacity-50 transition-colors"
                   >
-                    {validatingHF ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                    {validatingHF ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Validate'}
                   </button>
                 </div>
                 {hfValidationMsg && (
-                  <div className={`text-xs mt-1 flex items-center gap-1 ${hfValidationMsg.valid ? 'text-green-500' : 'text-red-500'}`}>
+                  <p className={`text-xs mt-1 flex items-center gap-1 ${hfValidationMsg.valid ? 'text-green-600' : 'text-red-600'}`}>
                     {hfValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                     {hfValidationMsg.msg}
-                  </div>
+                  </p>
                 )}
               </div>
-            </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
-          >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {setupSuccess ? 'Update & Retry Download' : 'Create Admin Account'}
-          </button>
-        </form>
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={handleHFSubmit}
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {formData.hf_token ? 'Validate & Finish' : 'Skip & Finish'} <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Download */}
+          {step === 4 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {downloadComplete ? 'Setup Complete!' : 'Downloading Models'}
+                </h2>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  {downloadMessage}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {/* Whisper */}
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="shrink-0">
+                    {['pyannote', 'embedding', 'complete'].includes(downloadStage) ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : downloadStage === 'whisper' ? (
+                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">Transcription Model</h3>
+                      {downloadStage === 'whisper' && <span className="text-xs text-orange-600 font-medium">{Math.round(downloadProgress)}%</span>}
+                    </div>
+                    <p className="text-xs text-gray-500">OpenAI Whisper (Turbo)</p>
+                    {downloadStage === 'whisper' && (
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
+                        <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pyannote */}
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="shrink-0">
+                    {['embedding', 'complete'].includes(downloadStage) ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : downloadStage === 'pyannote' ? (
+                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">Speaker Diarization</h3>
+                      {downloadStage === 'pyannote' && <span className="text-xs text-orange-600 font-medium">{Math.round(downloadProgress)}%</span>}
+                    </div>
+                    <p className="text-xs text-gray-500">Pyannote Audio</p>
+                    {downloadStage === 'pyannote' && (
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
+                        <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Embedding */}
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="shrink-0">
+                    {downloadStage === 'complete' ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : downloadStage === 'embedding' ? (
+                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">Voice Embedding</h3>
+                      {downloadStage === 'embedding' && <span className="text-xs text-orange-600 font-medium">{Math.round(downloadProgress)}%</span>}
+                    </div>
+                    <p className="text-xs text-gray-500">SpeechBrain</p>
+                    {downloadStage === 'embedding' && (
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
+                        <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {downloadComplete && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 text-center">
+                  <p className="text-green-600 dark:text-green-400 mb-4">Redirecting to dashboard...</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

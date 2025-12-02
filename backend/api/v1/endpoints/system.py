@@ -137,7 +137,8 @@ async def get_current_download_progress() -> Any:
         "message": progress.get("message", ""),
         "speed": progress.get("speed"),
         "eta": progress.get("eta"),
-        "status": progress.get("status", "downloading")
+        "status": progress.get("status", "downloading"),
+        "stage": progress.get("stage")
     }
 
 @router.get("/tasks/{task_id}")

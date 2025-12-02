@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, Trash2, StopCircle, Info, Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { getSettings, getChatHistory, clearChatHistory, streamChatMessage, ChatMessage } from '@/lib/api';
+import { getSettings, getChatHistory, clearChatHistory, streamChatMessage, ChatMessage, getUserMe } from '@/lib/api';
+import Link from 'next/link';
 import MarkdownBubble from './MarkdownBubble';
 import { useNotificationStore } from '@/lib/notificationStore';
 import ConfirmationModal from './ConfirmationModal';
@@ -20,12 +21,25 @@ export default function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { addNotification } = useNotificationStore();
 
-  // Load provider name
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLLMConfigured, setIsLLMConfigured] = useState(true);
+
+  // Load provider name and check config
   useEffect(() => {
-    getSettings().then(settings => {
-      if (settings.llm_provider) {
-        const p = settings.llm_provider;
-        setProvider(p.charAt(0).toUpperCase() + p.slice(1));
+    Promise.all([getSettings(), getUserMe()]).then(([settings, user]) => {
+      setIsAdmin(user.is_superuser);
+      
+      const provider = settings.llm_provider;
+      let key = '';
+      if (provider === 'gemini') key = settings.gemini_api_key || '';
+      else if (provider === 'openai') key = settings.openai_api_key || '';
+      else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
+      
+      const configured = !!(provider && key);
+      setIsLLMConfigured(configured);
+
+      if (provider) {
+        setProvider(provider.charAt(0).toUpperCase() + provider.slice(1));
       }
     }).catch(console.error);
   }, []);
@@ -204,7 +218,18 @@ export default function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+      <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 relative">
+        {!isLLMConfigured && (
+            <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-[1px] z-20 flex items-center justify-center p-4 text-center">
+                <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+                    {isAdmin ? (
+                        <p>Chat is disabled. Please <Link href="/settings" className="text-orange-500 hover:underline">configure an LLM provider</Link>.</p>
+                    ) : (
+                        <p>Chat is disabled. Please contact your administrator.</p>
+                    )}
+                </div>
+            </div>
+        )}
         <div className="relative">
             <textarea 
                 value={inputValue}

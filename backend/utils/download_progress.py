@@ -37,7 +37,8 @@ def set_download_progress(
     message: str,
     speed: Optional[str] = None,
     eta: Optional[str] = None,
-    status: str = "downloading"
+    status: str = "downloading",
+    stage: Optional[str] = None
 ) -> bool:
     """
     Write download progress to Redis.
@@ -48,6 +49,7 @@ def set_download_progress(
         speed: Download speed string (e.g., "5.2 MB/s")
         eta: Estimated time remaining (e.g., "45s")
         status: Overall status - "downloading", "complete", "error"
+        stage: Current download stage - "whisper", "pyannote", "embedding", "vad"
     
     Returns:
         True if successfully written, False otherwise
@@ -63,7 +65,9 @@ def set_download_progress(
             "speed": speed,
             "eta": eta,
             "status": status,
-            "updated_at": time.time()
+            "stage": stage,
+            "updated_at": time.time(),
+            "in_progress": status == "downloading"
         }
         r.set(PROGRESS_KEY, json.dumps(data), ex=PROGRESS_TTL)
         return True

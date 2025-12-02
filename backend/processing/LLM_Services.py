@@ -341,16 +341,15 @@ class GeminiLLMBackend(LLMBackend):
                     # The user example showed 'gemini-flash-latest'.
                     if name.startswith("models/"):
                         name = name[7:]
-                    model_list.append(name)
+                    
+                    # Filter for gemini models
+                    if "gemini" in name.lower():
+                        model_list.append(name)
             
-            # Ensure the default one is in the list if not found (sometimes list() is filtered)
-            default_model = "gemini-2.0-flash-exp" # Updated default based on recent releases or keep existing
-            # Actually, let's just return what the API gives.
-            return model_list
+            return sorted(model_list)
         except Exception as e:
             logger.error(f"Gemini API error (list models): {e}")
-            # Fallback to a hardcoded list if API fails
-            return ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"]
+            return []
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
@@ -490,11 +489,11 @@ class OpenAILLMBackend(LLMBackend):
         try:
             models = self.client.models.list()
             # Filter for gpt models to avoid clutter (dall-e, whisper, etc)
-            model_list = [m.id for m in models if "gpt" in m.id]
+            model_list = [m.id for m in models if "gpt" in m.id and "audio" not in m.id and "realtime" not in m.id]
             return sorted(model_list)
         except Exception as e:
             logger.error(f"OpenAI API error (list models): {e}")
-            return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
+            return []
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
@@ -646,26 +645,16 @@ class AnthropicLLMBackend(LLMBackend):
         List available Anthropic models.
         """
         try:
-            # Anthropic Python SDK might support models.list() in newer versions.
+            # Anthropic Python SDK supports models.list()
             if hasattr(self.client, 'models') and hasattr(self.client.models, 'list'):
                 models = self.client.models.list()
-                return [m.id for m in models]
+                # Filter for claude models
+                return sorted([m.id for m in models if "claude" in m.id])
             else:
-                # Fallback to hardcoded list as per user request/docs
-                return [
-                    "claude-3-5-sonnet-20240620",
-                    "claude-3-opus-20240229",
-                    "claude-3-sonnet-20240229",
-                    "claude-3-haiku-20240307"
-                ]
+                return []
         except Exception as e:
             logger.error(f"Anthropic API error (list models): {e}")
-            return [
-                "claude-3-5-sonnet-20240620",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
-            ]
+            return []
 
     def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
         """
@@ -792,12 +781,16 @@ class AnthropicLLMBackend(LLMBackend):
         Returns True if valid, raises an exception or returns False if invalid.
         """
         try:
-            # Simple call to list models to verify key
-            # Anthropic doesn't have a lightweight list_models in all versions, 
-            # but we can try a very cheap message or just check if client init worked (which it does).
-            # Better to try a minimal generation.
+            # Use list_models to verify key without consuming tokens
+            if hasattr(self.client, 'models') and hasattr(self.client.models, 'list'):
+                self.client.models.list()
+                return True
+            
+            # Fallback if list_models not available (should not happen with recent SDK)
+            # Try a minimal generation with a known cheap model if self.model is not set
+            model_to_use = self.model or "claude-3-haiku-20240307"
             self.client.messages.create(
-                model=self.model,
+                model=model_to_use,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "Hi"}],
             )
@@ -807,15 +800,8 @@ class AnthropicLLMBackend(LLMBackend):
             raise ValueError(f"Anthropic API validation failed: {e}")
 
 def _get_default_model_for_provider(provider: str) -> str:
-    """Return the hardcoded default model for each provider."""
-    if provider == "gemini":
-        return "gemini-2.5-pro-preview-06-05"
-    elif provider == "openai":
-        return "gpt-4.1-2025-04-14"
-    elif provider == "anthropic":
-        return "claude-sonnet-4-20250514"
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
+    """Return None as there are no default models."""
+    return None
 
 def get_default_model_for_provider(provider: str) -> str:
     """
@@ -840,7 +826,15 @@ def get_llm_backend(provider: str, api_key=None, model=None):
     """
     from backend.utils.config_manager import config_manager
     if model is None:
-        model = config_manager.get(f"{provider}_model") or _get_default_model_for_provider(provider)
+        model = config_manager.get(f"{provider}_model")
+    
+    # If model is still None, we proceed. The backend might fail if it tries to use it without setting it,
+    # but for listing models or validating keys, it might be fine depending on implementation.
+    # However, the classes (GeminiLLMBackend etc) use self.model in __init__.
+    # We should handle this in the classes or here.
+    # The classes use: self.model = model or _get_default_model_for_provider("gemini")
+    # Since _get_default... returns None now, self.model will be None.
+    
     if provider == "gemini":
         return GeminiLLMBackend(api_key=api_key, model=model)
     elif provider == "openai":

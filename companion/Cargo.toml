@@ -1,7 +1,7 @@
 [package]
 name = "nojoin-companion"
 version = "0.1.2"
-edition = "2025"
+edition = "2021"
 description = "A lightweight system tray companion app for Nojoin meeting intelligence"
 authors = ["Valtora"]
 license = "Copyright Valtora"

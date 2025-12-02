@@ -7,7 +7,8 @@ use crate::uploader;
 use crate::config::Config;
 use std::thread;
 use hound;
-use log::{info, warn};
+use log::{info, warn, error};
+use anyhow;
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
@@ -145,163 +146,170 @@ fn start_segment(
     let config = state.config.lock().unwrap().clone();
     
     thread::spawn(move || {
-        let host = cpal::default_host();
-        
-        // 1. Setup Microphone (Input) - use configured or default
-        let mic_device = find_input_device(&host, &config).expect("No input device available");
-        let mic_config = mic_device.default_input_config().expect("Failed to get mic config");
-        let mic_channels = mic_config.channels();
-        
-        // 2. Setup System Audio (Loopback) - use configured or default
-        // On Windows WASAPI, we use the output device for loopback
-        let sys_device = find_output_device(&host, &config).expect("No output device available");
-        let sys_config = sys_device.default_output_config().expect("Failed to get sys config");
-        let sys_channels = sys_config.channels();
+        let run = || -> anyhow::Result<()> {
+            let host = cpal::default_host();
+            
+            // 1. Setup Microphone (Input) - use configured or default
+            let mic_device = find_input_device(&host, &config).ok_or_else(|| anyhow::anyhow!("No input device available"))?;
+            let mic_config = mic_device.default_input_config().map_err(|e| anyhow::anyhow!("Failed to get mic config: {}", e))?;
+            let mic_channels = mic_config.channels();
+            
+            // 2. Setup System Audio (Loopback) - use configured or default
+            // On Windows WASAPI, we use the output device for loopback
+            let sys_device = find_output_device(&host, &config).ok_or_else(|| anyhow::anyhow!("No output device available"))?;
+            let sys_config = sys_device.default_output_config().map_err(|e| anyhow::anyhow!("Failed to get sys config: {}", e))?;
+            let sys_channels = sys_config.channels();
 
-        println!("Mic: {} ({}ch, {}Hz)", mic_device.name().unwrap_or_default(), mic_channels, mic_config.sample_rate().0);
-        println!("Sys: {} ({}ch, {}Hz)", sys_device.name().unwrap_or_default(), sys_channels, sys_config.sample_rate().0);
+            info!("Mic: {} ({}ch, {}Hz)", mic_device.name().unwrap_or_default(), mic_channels, mic_config.sample_rate().0);
+            info!("Sys: {} ({}ch, {}Hz)", sys_device.name().unwrap_or_default(), sys_channels, sys_config.sample_rate().0);
 
-        // Target format: Mono, 16-bit, Mic Sample Rate (Master Clock)
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: mic_config.sample_rate().0,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
+            // Target format: Mono, 16-bit, Mic Sample Rate (Master Clock)
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: mic_config.sample_rate().0,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
 
-        let filename = format!("temp_{}_{}.wav", recording_id, sequence);
-        let path = std::env::current_dir().unwrap().join(&filename);
-        
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        
-        // Channels for data transfer
-        let (mic_tx, mic_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
-        let (sys_tx, sys_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
-        
-        let err_fn = |err| eprintln!("Stream error: {}", err);
-        
-        // Helper to convert interleaved to mono
-        let to_mono = |data: &[f32], channels: u16| -> Vec<f32> {
-            if channels == 1 {
-                return data.to_vec();
-            }
-            let mut mono = Vec::with_capacity(data.len() / channels as usize);
-            for chunk in data.chunks(channels as usize) {
-                let sum: f32 = chunk.iter().sum();
-                mono.push(sum / channels as f32);
-            }
-            mono
-        };
-        
-        // Helper to calculate RMS level (0.0 to 1.0)
-        fn calculate_rms(data: &[f32]) -> f32 {
-            if data.is_empty() {
-                return 0.0;
-            }
-            let sum_squares: f32 = data.iter().map(|s| s * s).sum();
-            (sum_squares / data.len() as f32).sqrt()
-        }
-
-        // 3. Build Mic Stream
-        let is_recording_mic = is_recording.clone();
-        let state_mic = state.clone();
-        let mic_stream = mic_device.build_input_stream(
-            &mic_config.into(),
-            move |data: &[f32], _: &_| {
-                let mono = to_mono(data, mic_channels);
-                // Update input level (always, for monitoring)
-                let rms = calculate_rms(&mono);
-                state_mic.record_input_level(rms);
-                
-                if is_recording_mic.load(Ordering::SeqCst) {
-                    mic_tx.send(mono).unwrap();
+            let filename = format!("temp_{}_{}.wav", recording_id, sequence);
+            let path = std::env::current_dir()?.join(&filename);
+            
+            let mut writer = hound::WavWriter::create(&path, spec).map_err(|e| anyhow::anyhow!("Failed to create wav writer: {}", e))?;
+            
+            // Channels for data transfer
+            let (mic_tx, mic_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
+            let (sys_tx, sys_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
+            
+            let err_fn = |err| log::error!("Stream error: {}", err);
+            
+            // Helper to convert interleaved to mono
+            let to_mono = |data: &[f32], channels: u16| -> Vec<f32> {
+                if channels == 1 {
+                    return data.to_vec();
                 }
-            },
-            err_fn,
-            None
-        ).unwrap();
+                let mut mono = Vec::with_capacity(data.len() / channels as usize);
+                for chunk in data.chunks(channels as usize) {
+                    let sum: f32 = chunk.iter().sum();
+                    mono.push(sum / channels as f32);
+                }
+                mono
+            };
+            
+            // Helper to calculate RMS level (0.0 to 1.0)
+            fn calculate_rms(data: &[f32]) -> f32 {
+                if data.is_empty() {
+                    return 0.0;
+                }
+                let sum_squares: f32 = data.iter().map(|s| s * s).sum();
+                (sum_squares / data.len() as f32).sqrt()
+            }
 
-        // 4. Build System Stream
-        let is_recording_sys = is_recording.clone();
-        let state_sys = state.clone();
-        let sys_stream = sys_device.build_input_stream(
-            &sys_config.into(),
-            move |data: &[f32], _: &_| {
-                let mono = to_mono(data, sys_channels);
-                // Update output level (always, for monitoring)
-                let rms = calculate_rms(&mono);
-                state_sys.record_output_level(rms);
-                
-                if is_recording_sys.load(Ordering::SeqCst) {
-                    sys_tx.send(mono).unwrap();
-                }
-            },
-            err_fn,
-            None
-        ).unwrap();
-        
-        mic_stream.play().unwrap();
-        sys_stream.play().unwrap();
-        
-        // 5. Mixing Loop
-        // We use Mic as the master clock.
-        let mut sys_buffer: Vec<f32> = Vec::new();
-        
-        while is_recording.load(Ordering::SeqCst) {
-            // Block on Mic data (Master)
-            if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                // Collect available System data
-                while let Ok(sys_chunk) = sys_rx.try_recv() {
-                    sys_buffer.extend(sys_chunk);
-                }
-                
-                // Mix
-                for (i, mic_sample) in mic_data.iter().enumerate() {
-                    let mut mixed = *mic_sample;
+            // 3. Build Mic Stream
+            let is_recording_mic = is_recording.clone();
+            let state_mic = state.clone();
+            let mic_stream = mic_device.build_input_stream(
+                &mic_config.into(),
+                move |data: &[f32], _: &_| {
+                    let mono = to_mono(data, mic_channels);
+                    // Update input level (always, for monitoring)
+                    let rms = calculate_rms(&mono);
+                    state_mic.record_input_level(rms);
                     
-                    // If we have system audio, add it
-                    if i < sys_buffer.len() {
-                        mixed += sys_buffer[i];
-                    }
-                    
-                    // Hard clip to prevent wrapping
-                    mixed = mixed.clamp(-1.0, 1.0);
-                    
-                    let amplitude = i16::MAX as f32;
-                    writer.write_sample((mixed * amplitude) as i16).unwrap();
-                }
-                
-                // Remove used system samples
-                if sys_buffer.len() >= mic_data.len() {
-                    sys_buffer.drain(0..mic_data.len());
-                } else {
-                    sys_buffer.clear(); // Drained all, some mic samples were unmixed (silence)
-                }
-            }
-        }
-        
-        // Flush remaining Mic data? 
-        // Usually we stop immediately on pause/stop.
-        
-        writer.finalize().unwrap();
-        drop(mic_stream);
-        drop(sys_stream);
-        
-        println!("Segment finished: {:?}", path);
-        
-        // Upload
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            match uploader::upload_segment(recording_id, sequence, &path, &config).await {
-                Ok(_) => {
-                    println!("Segment uploaded successfully");
-                    // Only delete file if upload was successful
-                    if let Err(e) = std::fs::remove_file(&path) {
-                        eprintln!("Failed to delete temp file {:?}: {}", path, e);
+                    if is_recording_mic.load(Ordering::SeqCst) {
+                        let _ = mic_tx.send(mono);
                     }
                 },
-                Err(e) => eprintln!("Failed to upload segment: {}. File preserved at {:?}", e, path),
+                err_fn,
+                None
+            ).map_err(|e| anyhow::anyhow!("Failed to build mic stream: {}", e))?;
+
+            // 4. Build System Stream
+            let is_recording_sys = is_recording.clone();
+            let state_sys = state.clone();
+            let sys_stream = sys_device.build_input_stream(
+                &sys_config.into(),
+                move |data: &[f32], _: &_| {
+                    let mono = to_mono(data, sys_channels);
+                    // Update output level (always, for monitoring)
+                    let rms = calculate_rms(&mono);
+                    state_sys.record_output_level(rms);
+                    
+                    if is_recording_sys.load(Ordering::SeqCst) {
+                        let _ = sys_tx.send(mono);
+                    }
+                },
+                err_fn,
+                None
+            ).map_err(|e| anyhow::anyhow!("Failed to build sys stream: {}", e))?;
+            
+            mic_stream.play().map_err(|e| anyhow::anyhow!("Failed to play mic stream: {}", e))?;
+            sys_stream.play().map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
+            
+            // 5. Mixing Loop
+            // We use Mic as the master clock.
+            let mut sys_buffer: Vec<f32> = Vec::new();
+            
+            while is_recording.load(Ordering::SeqCst) {
+                // Block on Mic data (Master)
+                if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                    // Collect available System data
+                    while let Ok(sys_chunk) = sys_rx.try_recv() {
+                        sys_buffer.extend(sys_chunk);
+                    }
+                    
+                    // Mix
+                    for (i, mic_sample) in mic_data.iter().enumerate() {
+                        let mut mixed = *mic_sample;
+                        
+                        // If we have system audio, add it
+                        if i < sys_buffer.len() {
+                            mixed += sys_buffer[i];
+                        }
+                        
+                        // Hard clip to prevent wrapping
+                        mixed = mixed.clamp(-1.0, 1.0);
+                        
+                        let amplitude = i16::MAX as f32;
+                        writer.write_sample((mixed * amplitude) as i16).map_err(|e| anyhow::anyhow!("Failed to write sample: {}", e))?;
+                    }
+                    
+                    // Remove used system samples
+                    if sys_buffer.len() >= mic_data.len() {
+                        sys_buffer.drain(0..mic_data.len());
+                    } else {
+                        sys_buffer.clear(); // Drained all, some mic samples were unmixed (silence)
+                    }
+                }
             }
-        });
+            
+            writer.finalize().map_err(|e| anyhow::anyhow!("Failed to finalize writer: {}", e))?;
+            drop(mic_stream);
+            drop(sys_stream);
+            
+            info!("Segment finished: {:?}", path);
+            
+            // Upload
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                match uploader::upload_segment(recording_id, sequence, &path, &config).await {
+                    Ok(_) => {
+                        info!("Segment uploaded successfully");
+                        // Only delete file if upload was successful
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            log::error!("Failed to delete temp file {:?}: {}", path, e);
+                        }
+                    }
+                    Err(e) => log::error!("Failed to upload segment: {}", e),
+                }
+            });
+            
+            Ok(())
+        };
+
+        if let Err(e) = run() {
+            log::error!("Audio thread error: {}", e);
+            // Ensure we stop recording state if we crash
+            is_recording.store(false, Ordering::SeqCst);
+        }
     })
 }

@@ -36,7 +36,7 @@ WHISPER_FILENAMES = {
     "turbo": "large-v3-turbo.pt",
 }
 
-def _download_file(url, dest_path, progress_callback, description, retries=3):
+def _download_file(url, dest_path, progress_callback, description, retries=3, stage=None):
     for attempt in range(retries):
         try:
             logger.info(f"Downloading {url} to {dest_path} (Attempt {attempt + 1}/{retries})")
@@ -118,7 +118,7 @@ def _download_file(url, dest_path, progress_callback, description, retries=3):
                             speed_str = "..."
                             eta_str = "..."
 
-                        progress_callback(f"{description}", percent, speed_str, eta_str)
+                        progress_callback(f"{description}", percent, speed_str, eta_str, stage=stage)
             
             # If we get here, download completed successfully
             return
@@ -132,7 +132,7 @@ def _download_file(url, dest_path, progress_callback, description, retries=3):
 def download_models(progress_callback=None, hf_token=None, whisper_model_size=None):
     """
     Downloads necessary models.
-    progress_callback: function(status_message, percent_complete, speed=None, eta=None)
+    progress_callback: function(status_message, percent_complete, speed=None, eta=None, stage=None)
     """
     # Lazy imports to avoid loading heavy libraries at module level
     import torch
@@ -148,17 +148,21 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     except ImportError:
         pass 
 
-    def report(msg, percent, speed=None, eta=None):
+    def report(msg, percent, speed=None, eta=None, stage=None):
         logger.info(f"{msg} ({percent}%)")
         # Write to shared Redis progress for frontend visibility
-        set_download_progress(percent, msg, speed, eta, status="downloading")
+        set_download_progress(percent, msg, speed, eta, status="downloading", stage=stage)
         if progress_callback:
             try:
-                progress_callback(msg, percent, speed, eta)
+                progress_callback(msg, percent, speed, eta, stage=stage)
             except TypeError:
-                progress_callback(msg, percent)
+                # Fallback for callbacks that don't accept stage
+                try:
+                    progress_callback(msg, percent, speed, eta)
+                except TypeError:
+                    progress_callback(msg, percent)
 
-    report("Starting model download...", 0)
+    report("Starting model download...", 0, stage="init")
 
     # 1. Load Configuration
     if not hf_token:
@@ -174,7 +178,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     if not hf_token:
         logger.warning("HF_TOKEN not found. Pyannote model download might fail if not already cached.")
     else:
-        report("Logging in to Hugging Face...", 10)
+        report("Logging in to Hugging Face...", 10, stage="init")
         try:
             huggingface_hub.login(token=hf_token)
         except Exception as e:
@@ -182,16 +186,16 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             raise ValueError(f"Hugging Face login failed: {str(e)}. Please check your token.")
 
     # 2. Preload Silero VAD
-    report("Downloading Silero VAD model...", 20)
+    report("Downloading Silero VAD model...", 20, stage="vad")
     try:
         silero_vad.load_silero_vad()
-        report("Silero VAD model loaded.", 30)
+        report("Silero VAD model loaded.", 100, stage="vad")
     except Exception as e:
         logger.error(f"Failed to load Silero VAD: {e}")
         # Don't fail completely, VAD might be optional or retriable
 
     # 3. Preload Whisper Model
-    report(f"Checking Whisper model ({whisper_model_size})...", 35)
+    report(f"Checking Whisper model ({whisper_model_size})...", 0, stage="whisper")
     try:
         # Determine download path
         download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
@@ -220,15 +224,15 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             filepath = os.path.join(download_root, filename)
             
             if not os.path.exists(filepath):
-                report(f"Downloading Whisper model ({whisper_model_size})...", 40)
-                _download_file(url, filepath, report, f"Downloading Whisper ({whisper_model_size})")
+                report(f"Downloading Whisper model ({whisper_model_size})...", 0, stage="whisper")
+                _download_file(url, filepath, report, f"Downloading Whisper ({whisper_model_size})", stage="whisper")
             else:
-                report(f"Whisper model found in cache.", 40)
+                report(f"Whisper model found in cache.", 100, stage="whisper")
 
         # Now load it (this verifies checksum and loads into memory)
-        report(f"Loading Whisper model ({whisper_model_size})...", 60)
+        report(f"Loading Whisper model ({whisper_model_size})...", 90, stage="whisper")
         whisper.load_model(whisper_model_size, download_root=download_root)
-        report(f"Whisper model ({whisper_model_size}) loaded.", 70)
+        report(f"Whisper model ({whisper_model_size}) loaded.", 100, stage="whisper")
         
     except Exception as e:
         logger.error(f"Failed to load Whisper model: {e}")
@@ -236,14 +240,14 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
 
     # 4. Preload Pyannote Diarization Model
     pipeline_name = "pyannote/speaker-diarization-community-1"
-    report(f"Downloading Pyannote pipeline ({pipeline_name})...", 80)
+    report(f"Downloading Pyannote pipeline ({pipeline_name})...", 0, stage="pyannote")
     
     if hf_token:
         try:
             # We just need to download it, not necessarily run it.
             # from_pretrained will download and cache it.
             Pipeline.from_pretrained(pipeline_name, token=hf_token)
-            report(f"Pyannote pipeline ({pipeline_name}) loaded.", 95)
+            report(f"Pyannote pipeline ({pipeline_name}) loaded.", 100, stage="pyannote")
         except OSError as e:
             # This often happens if the user hasn't accepted the terms of use
             error_msg = str(e)
@@ -262,11 +266,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             raise e
     else:
         logger.warning("Skipping Pyannote load due to missing HF token.")
-        report("Skipping Pyannote (no token).", 90)
+        report("Skipping Pyannote (no token).", 100, stage="pyannote")
 
     # 5. Preload Embedding Model
     embedding_model_name = "pyannote/wespeaker-voxceleb-resnet34-LM"
-    report(f"Downloading Embedding model ({embedding_model_name})...", 95)
+    report(f"Downloading Embedding model ({embedding_model_name})...", 0, stage="embedding")
     if hf_token:
         try:
             from pyannote.audio import Model
@@ -291,12 +295,12 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
                 logger.warning(f"Could not add safe globals: {e}")
 
             Model.from_pretrained(embedding_model_name, token=hf_token)
-            report(f"Embedding model ({embedding_model_name}) loaded.", 98)
+            report(f"Embedding model ({embedding_model_name}) loaded.", 100, stage="embedding")
         except Exception as e:
             logger.error(f"Failed to load Embedding model: {e}")
             # Don't fail completely
 
-    report("Model download complete.", 100)
+    report("Model download complete.", 100, stage="complete")
     # Mark download as complete in shared state
     set_download_progress(100, "Model download complete.", status="complete")
 
@@ -355,7 +359,11 @@ def check_model_status(whisper_model_size=None):
     pyannote_path = os.path.join(hf_cache, "models--pyannote--speaker-diarization-community-1")
     
     status["pyannote"]["checked_paths"].append(pyannote_path)
-    if os.path.exists(pyannote_path):
+    # Check if directory exists and has content (snapshots)
+    if os.path.exists(pyannote_path) and (
+        os.path.exists(os.path.join(pyannote_path, "snapshots")) or 
+        os.path.exists(os.path.join(pyannote_path, "refs"))
+    ):
         status["pyannote"]["downloaded"] = True
         status["pyannote"]["path"] = pyannote_path
     else:
@@ -364,7 +372,10 @@ def check_model_status(whisper_model_size=None):
         default_pyannote_path = os.path.join(default_hf_cache, "models--pyannote--speaker-diarization-community-1")
         if default_pyannote_path != pyannote_path:
             status["pyannote"]["checked_paths"].append(default_pyannote_path)
-            if os.path.exists(default_pyannote_path):
+            if os.path.exists(default_pyannote_path) and (
+                os.path.exists(os.path.join(default_pyannote_path, "snapshots")) or 
+                os.path.exists(os.path.join(default_pyannote_path, "refs"))
+            ):
                 status["pyannote"]["downloaded"] = True
                 status["pyannote"]["path"] = default_pyannote_path
         
@@ -372,7 +383,10 @@ def check_model_status(whisper_model_size=None):
     embedding_path = os.path.join(hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
     status["embedding"]["checked_paths"].append(embedding_path)
     
-    if os.path.exists(embedding_path):
+    if os.path.exists(embedding_path) and (
+        os.path.exists(os.path.join(embedding_path, "snapshots")) or 
+        os.path.exists(os.path.join(embedding_path, "refs"))
+    ):
         status["embedding"]["downloaded"] = True
         status["embedding"]["path"] = embedding_path
     else:
@@ -381,7 +395,10 @@ def check_model_status(whisper_model_size=None):
         default_embedding_path = os.path.join(default_hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
         if default_embedding_path != embedding_path:
             status["embedding"]["checked_paths"].append(default_embedding_path)
-            if os.path.exists(default_embedding_path):
+            if os.path.exists(default_embedding_path) and (
+                os.path.exists(os.path.join(default_embedding_path, "snapshots")) or 
+                os.path.exists(os.path.join(default_embedding_path, "refs"))
+            ):
                 status["embedding"]["downloaded"] = True
                 status["embedding"]["path"] = default_embedding_path
 

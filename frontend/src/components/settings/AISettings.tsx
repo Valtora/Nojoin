@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
-import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus } from '@/lib/api';
+import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 const WHISPER_MODELS = [
@@ -20,9 +20,10 @@ interface AISettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
   searchQuery?: string;
+  isAdmin?: boolean;
 }
 
-export default function AISettings({ settings, onUpdate, searchQuery = '' }: AISettingsProps) {
+export default function AISettings({ settings, onUpdate, searchQuery = '', isAdmin = false }: AISettingsProps) {
   const { addNotification } = useNotificationStore();
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
@@ -36,10 +37,44 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{percent: number, message: string, speed?: string, eta?: string} | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  
+  // Dynamic Model Lists
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
     getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
   }, [settings.whisper_model_size]);
+
+  // Fetch models when provider or key changes (if valid)
+  useEffect(() => {
+    const fetchModels = async () => {
+      const provider = settings.llm_provider;
+      let key = '';
+      if (provider === 'gemini') key = settings.gemini_api_key || '';
+      else if (provider === 'openai') key = settings.openai_api_key || '';
+      else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
+
+      if (provider && key) {
+        setFetchingModels(true);
+        try {
+          const res = await listModels(provider, key);
+          setAvailableModels(res.models);
+        } catch (e) {
+          console.error("Failed to fetch models", e);
+          setAvailableModels([]);
+        } finally {
+          setFetchingModels(false);
+        }
+      } else {
+        setAvailableModels([]);
+      }
+    };
+    
+    // Debounce slightly to avoid too many calls while typing
+    const timeout = setTimeout(fetchModels, 1000);
+    return () => clearTimeout(timeout);
+  }, [settings.llm_provider, settings.gemini_api_key, settings.openai_api_key, settings.anthropic_api_key]);
 
   const handleValidate = async (provider: string) => {
     setValidating(provider);
@@ -58,6 +93,9 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
             res = await validateHF(key);
         } else {
             res = await validateLLM(provider, key);
+            // Also refresh models on explicit validate
+            const modelsRes = await listModels(provider, key);
+            setAvailableModels(modelsRes.models);
         }
         setValidationMsg({type: 'success', msg: res.message, provider});
     } catch (e: any) {
@@ -153,201 +191,196 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
   };
 
 
-  // We use the centralized keywords for the main section check, but specific checks for subsections
-  const showProvider = fuzzyMatch(searchQuery, ['provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai', 'custom instructions', 'chat instructions']);
-  const showGemini = fuzzyMatch(searchQuery, ['gemini', 'api key', 'google']);
-  const showOpenAI = fuzzyMatch(searchQuery, ['openai', 'api key', 'gpt']);
-  const showAnthropic = fuzzyMatch(searchQuery, ['anthropic', 'api key', 'claude']);
-  const showHf = fuzzyMatch(searchQuery, ['hugging face', 'token', 'diarization', 'pyannote', 'speaker', 'separation']);
-  const showVoiceprints = fuzzyMatch(searchQuery, ['voiceprint', 'auto-create', 'speaker', 'identification', 'recognition']);
-  const showNotes = fuzzyMatch(searchQuery, ['notes', 'meeting notes', 'auto-generate', 'summary']);
-  const showWhisper = fuzzyMatch(searchQuery, ['whisper', 'model', 'transcription', 'speech to text']);
+  // Search Logic
+  const showLLM = fuzzyMatch(searchQuery, ['llm', 'provider', 'gemini', 'openai', 'anthropic', 'api key', 'model', 'instructions']);
+  const showHF = fuzzyMatch(searchQuery, ['hugging face', 'token', 'diarization']);
+  const showTranscription = fuzzyMatch(searchQuery, ['transcription', 'whisper', 'speech to text']);
+  const showDependencies = fuzzyMatch(searchQuery, ['dependencies', 'models', 'download', 'status']);
 
-  const showLLMSection = showProvider;
-  const showAPIKeysSection = showGemini || showOpenAI || showAnthropic;
-  const showDiarizationSection = showHf;
-  const showProcessingSection = showVoiceprints || showWhisper || showNotes;
+  const hasSearch = !!searchQuery;
+  const showLLMSection = !hasSearch || showLLM;
+  const showHFSection = !hasSearch || showHF;
+  const showTranscriptionSection = !hasSearch || showTranscription;
+  const showDependenciesSection = !hasSearch || showDependencies;
 
-  if (!showLLMSection && !showAPIKeysSection && !showDiarizationSection && !showProcessingSection && searchQuery) {
+  if (!showLLMSection && !showHFSection && !showTranscriptionSection && !showDependenciesSection) {
     return <div className="text-gray-500">No matching settings found.</div>;
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* 1. LLM Settings Group */}
       {showLLMSection && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">LLM Provider</h3>
-          <div className="max-w-xl space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Provider
-              </label>
-              <select
-                value={settings.llm_provider || 'gemini'}
-                onChange={(e) => onUpdate({ ...settings, llm_provider: e.target.value })}
-                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="gemini">Google Gemini</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">Select the AI provider for generating notes and chat.</p>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+            <Cpu className="w-5 h-5 text-orange-500" /> LLM Configuration
+          </h3>
+          
+          <div className="space-y-6 max-w-3xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Provider */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Provider
+                  </label>
+                  <select
+                    value={settings.llm_provider || 'gemini'}
+                    onChange={(e) => onUpdate({ ...settings, llm_provider: e.target.value, llm_model: '' })}
+                    disabled={!isAdmin}
+                    className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  >
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                </div>
+
+                {/* Model */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
+                        Model
+                        <button 
+                            onClick={() => {
+                                const provider = settings.llm_provider || 'gemini';
+                                let key = '';
+                                if (provider === 'gemini') key = settings.gemini_api_key || '';
+                                else if (provider === 'openai') key = settings.openai_api_key || '';
+                                else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
+                                if (key) listModels(provider, key).then(res => setAvailableModels(res.models));
+                            }}
+                            disabled={fetchingModels || !isAdmin}
+                            className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
+                        >
+                            <RefreshCw className={`w-3 h-3 ${fetchingModels ? 'animate-spin' : ''}`} /> Refresh
+                        </button>
+                    </label>
+                    <select
+                        value={settings.llm_model || ''}
+                        onChange={(e) => onUpdate({ ...settings, llm_model: e.target.value })}
+                        disabled={!isAdmin || availableModels.length === 0}
+                        className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    >
+                        <option value="" disabled>Select a model...</option>
+                        {availableModels.map(model => (
+                            <option key={model} value={model}>{model}</option>
+                        ))}
+                    </select>
+                    
+                    {/* Model Recommendations */}
+                    {settings.llm_provider === 'gemini' && (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-medium text-blue-600 dark:text-blue-400">Recommended:</span> 
+                            <span className="ml-1"><strong>gemini-flash-latest</strong> (Fast) or <strong>gemini-pro-latest</strong> (Complex)</span>
+                        </div>
+                    )}
+                    {settings.llm_provider === 'openai' && (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-medium text-blue-600 dark:text-blue-400">Recommended:</span> 
+                            <span className="ml-1"><strong>GPT-5 mini</strong> (Fast) or <strong>GPT-5.1</strong> (Complex)</span>
+                        </div>
+                    )}
+                    {settings.llm_provider === 'anthropic' && (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-medium text-blue-600 dark:text-blue-400">Recommended:</span> 
+                            <span className="ml-1"><strong>Claude 3 Haiku</strong> (Fast) or <strong>Claude 3.5 Sonnet</strong> (Complex)</span>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            {/* API Key (Dynamic) */}
+            <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Chat Custom Instructions
+                    API Key
                 </label>
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-2 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <input
+                            type={
+                                (settings.llm_provider === 'gemini' && showGeminiKey) ||
+                                (settings.llm_provider === 'openai' && showOpenAIKey) ||
+                                (settings.llm_provider === 'anthropic' && showAnthropicKey) 
+                                ? "text" : "password"
+                            }
+                            value={
+                                settings.llm_provider === 'gemini' ? (settings.gemini_api_key || '') :
+                                settings.llm_provider === 'openai' ? (settings.openai_api_key || '') :
+                                (settings.anthropic_api_key || '')
+                            }
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                if (settings.llm_provider === 'gemini') onUpdate({ ...settings, gemini_api_key: val });
+                                else if (settings.llm_provider === 'openai') onUpdate({ ...settings, openai_api_key: val });
+                                else onUpdate({ ...settings, anthropic_api_key: val });
+                            }}
+                            disabled={!isAdmin}
+                            className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                            placeholder={`Enter ${settings.llm_provider === 'gemini' ? 'Gemini' : settings.llm_provider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key`}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (settings.llm_provider === 'gemini') setShowGeminiKey(!showGeminiKey);
+                                else if (settings.llm_provider === 'openai') setShowOpenAIKey(!showOpenAIKey);
+                                else setShowAnthropicKey(!showAnthropicKey);
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                            {(settings.llm_provider === 'gemini' ? showGeminiKey : settings.llm_provider === 'openai' ? showOpenAIKey : showAnthropicKey) 
+                                ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                    </div>
+                    <button
+                        onClick={() => handleValidate(settings.llm_provider || 'gemini')}
+                        disabled={validating === settings.llm_provider || !isAdmin}
+                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
+                    >
+                        {validating === settings.llm_provider ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                    </button>
+                </div>
+                {validationMsg && validationMsg.provider === settings.llm_provider && (
+                    <p className={`text-xs mt-2 flex items-center gap-1 ${validationMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        {validationMsg.type === 'success' ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                        {validationMsg.msg}
+                    </p>
+                )}
+            </div>
+
+            {/* Custom Instructions */}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-gray-400" /> Custom Instructions
+                </label>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
                     <Info className="w-4 h-4 flex-shrink-0" />
-                    <span>Warning: Custom instructions modify AI behavior. Poorly written instructions may degrade response quality.</span>
+                    <span>These instructions are appended to every prompt sent to the LLM. Use this to define the persona or specific formatting rules.</span>
                 </div>
                 <textarea
                     value={settings.chat_custom_instructions || ''}
                     onChange={(e) => onUpdate({ ...settings, chat_custom_instructions: e.target.value })}
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent min-h-[100px] text-sm"
-                    placeholder="E.g., Be concise, Format responses as bullet points, Use formal tone..."
-                    maxLength={500}
+                    disabled={!isAdmin}
+                    className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none min-h-[100px] text-sm transition-all"
+                    placeholder="E.g., You are a helpful meeting assistant. Always summarize key decisions first..."
+                    maxLength={1000}
                 />
                 <p className="text-xs text-gray-500 mt-1 text-right">
-                    {settings.chat_custom_instructions?.length || 0}/500
+                    {settings.chat_custom_instructions?.length || 0}/1000
                 </p>
             </div>
           </div>
         </div>
       )}
 
-      {showAPIKeysSection && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">API Keys</h3>
-          <div className="max-w-xl space-y-4">
-            {showGemini && (settings.llm_provider === 'gemini' || !settings.llm_provider) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Gemini API Key
-                </label>
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                    <input
-                        type={showGeminiKey ? "text" : "password"}
-                        value={settings.gemini_api_key || ''}
-                        onChange={(e) => onUpdate({ ...settings, gemini_api_key: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                        placeholder="AIza..."
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setShowGeminiKey(!showGeminiKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                        {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                    </div>
-                    <button
-                        onClick={() => handleValidate('gemini')}
-                        disabled={validating === 'gemini' || !settings.gemini_api_key}
-                        className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                    >
-                        {validating === 'gemini' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                </div>
-                {validationMsg && validationMsg.provider === 'gemini' && (
-                    <p className={`text-xs mt-1 ${validationMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
-                        {validationMsg.msg}
-                    </p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">Your secret API key for Google Gemini.</p>
-              </div>
-            )}
-
-            {showOpenAI && settings.llm_provider === 'openai' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  OpenAI API Key
-                </label>
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                    <input
-                        type={showOpenAIKey ? "text" : "password"}
-                        value={settings.openai_api_key || ''}
-                        onChange={(e) => onUpdate({ ...settings, openai_api_key: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                        placeholder="sk-..."
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                        {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                    </div>
-                    <button
-                        onClick={() => handleValidate('openai')}
-                        disabled={validating === 'openai' || !settings.openai_api_key}
-                        className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                    >
-                        {validating === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                </div>
-                {validationMsg && validationMsg.provider === 'openai' && (
-                    <p className={`text-xs mt-1 ${validationMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
-                        {validationMsg.msg}
-                    </p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">Your secret API key for OpenAI.</p>
-              </div>
-            )}
-
-            {showAnthropic && settings.llm_provider === 'anthropic' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Anthropic API Key
-                </label>
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                    <input
-                        type={showAnthropicKey ? "text" : "password"}
-                        value={settings.anthropic_api_key || ''}
-                        onChange={(e) => onUpdate({ ...settings, anthropic_api_key: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                        placeholder="sk-ant-..."
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setShowAnthropicKey(!showAnthropicKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                        {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                    </div>
-                    <button
-                        onClick={() => handleValidate('anthropic')}
-                        disabled={validating === 'anthropic' || !settings.anthropic_api_key}
-                        className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                    >
-                        {validating === 'anthropic' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
-                    </button>
-                </div>
-                {validationMsg && validationMsg.provider === 'anthropic' && (
-                    <p className={`text-xs mt-1 ${validationMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
-                        {validationMsg.msg}
-                    </p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">Your secret API key for Anthropic.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showDiarizationSection && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Diarization</h3>
-          <div className="max-w-xl space-y-4">
+      {/* 2. HuggingFace Group */}
+      {showHFSection && (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+            <Key className="w-5 h-5 text-blue-500" /> Hugging Face
+          </h3>
+          <div className="max-w-3xl space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Hugging Face Token
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Access Token
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -355,44 +388,49 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     type={showHfToken ? "text" : "password"}
                     value={settings.hf_token || ''}
                     onChange={(e) => onUpdate({ ...settings, hf_token: e.target.value })}
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    disabled={!isAdmin}
+                    className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     placeholder="hf_..."
                   />
                   <button
                     type="button"
                     onClick={() => setShowHfToken(!showHfToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     {showHfToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 <button
                     onClick={() => handleValidate('hf')}
-                    disabled={validating === 'hf' || !settings.hf_token}
-                    className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                    disabled={validating === 'hf' || !settings.hf_token || !isAdmin}
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
                 >
                     {validating === 'hf' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
                 </button>
               </div>
               {validationMsg && validationMsg.provider === 'hf' && (
-                    <p className={`text-xs mt-1 ${validationMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                    <p className={`text-xs mt-2 flex items-center gap-1 ${validationMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        {validationMsg.type === 'success' ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                         {validationMsg.msg}
                     </p>
               )}
-              <p className="text-xs text-gray-500 mt-1">
-                Required for Pyannote speaker diarization. You must accept the user agreement on Hugging Face.
+              <p className="text-xs text-gray-500 mt-2">
+                Required for Pyannote speaker diarization. Ensure you have accepted the user agreement for <code>pyannote/speaker-diarization-3.1</code> on Hugging Face.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {showProcessingSection && (
-        <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Transcription</h3>
-            <div className="max-w-xl space-y-4 mb-8">
+      {/* 3. Transcription Group */}
+      {showTranscriptionSection && (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-purple-500" /> Transcription Settings
+            </h3>
+            <div className="max-w-3xl space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                         Whisper Model Size
                         <div className="group relative">
                             <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
@@ -421,7 +459,8 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     <select
                         value={settings.whisper_model_size || 'turbo'}
                         onChange={(e) => onUpdate({ ...settings, whisper_model_size: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        disabled={!isAdmin}
+                        className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     >
                         {WHISPER_MODELS.map(model => (
                             <option key={model.id} value={model.id}>
@@ -429,37 +468,52 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                             </option>
                         ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-2">
                         Select the model size for speech-to-text transcription. Larger models are more accurate but slower and require more VRAM.
                     </p>
                 </div>
             </div>
+        </div>
+      )}
 
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Model Dependencies</h3>
-            <div className="max-w-xl space-y-4">
-                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                    
+      {/* 4. Dependencies Group */}
+      {showDependenciesSection && (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <HardDrive className="w-5 h-5 text-green-500" /> Model Dependencies
+                </h3>
+                <button 
+                    onClick={refreshStatus}
+                    className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+                >
+                    <RefreshCw className="w-3 h-3" /> Refresh Status
+                </button>
+            </div>
+            
+            <div className="max-w-3xl space-y-6">
+                <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                     <div className="space-y-3">
                         {[
                             { id: 'whisper', label: 'Whisper (Transcription)', desc: 'OpenAI Whisper model for speech-to-text.' },
                             { id: 'pyannote', label: 'Pyannote (Diarization)', desc: 'Speaker diarization pipeline.' },
                             { id: 'embedding', label: 'Voice Embedding', desc: 'Speaker identification model.' }
                         ].map((model) => (
-                            <div key={model.id} className="flex justify-between items-center p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors">
+                            <div key={model.id} className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm">
                                 <div>
-                                    <div className="text-sm font-medium">{model.label}</div>
+                                    <div className="text-sm font-medium text-gray-900 dark:text-white">{model.label}</div>
                                     <div className="text-xs text-gray-500">{model.desc}</div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {modelStatus?.[model.id]?.downloaded ? (
                                         <>
-                                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center gap-1">
+                                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
                                                 <Check className="w-3 h-3" /> Ready
                                             </span>
                                             <button
                                                 onClick={() => handleDeleteModel(model.id)}
-                                                disabled={deleting === model.id || downloading}
-                                                className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                                                disabled={deleting === model.id || downloading || !isAdmin}
+                                                className="text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
                                                 title="Delete Model"
                                             >
                                                 {deleting === model.id ? (
@@ -471,7 +525,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                                         </>
                                     ) : (
                                         <div className="flex flex-col items-end">
-                                            <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full flex items-center gap-1">
+                                            <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
                                                 <X className="w-3 h-3" /> Missing
                                             </span>
                                             {modelStatus?.[model.id]?.checked_paths && (
@@ -490,14 +544,14 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                     </div>
 
                     {downloading && downloadProgress && (
-                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                            <div className="flex justify-between text-xs mb-1">
+                        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                            <div className="flex justify-between text-sm mb-2">
                                 <span className="font-medium text-blue-700 dark:text-blue-300">{downloadProgress.message}</span>
-                                <span className="text-blue-600 dark:text-blue-400">{downloadProgress.percent}%</span>
+                                <span className="text-blue-600 dark:text-blue-400 font-bold">{downloadProgress.percent}%</span>
                             </div>
-                            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
+                            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2.5 mb-2">
                                 <div 
-                                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
                                     style={{ width: `${downloadProgress.percent}%` }}
                                 ></div>
                             </div>
@@ -508,16 +562,16 @@ export default function AISettings({ settings, onUpdate, searchQuery = '' }: AIS
                         </div>
                     )}
 
-                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                         <button
                             onClick={handleDownloadModels}
-                            disabled={downloading}
-                            className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={downloading || !isAdmin}
+                            className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
                         >
-                            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                            {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                             {downloading ? 'Downloading Models...' : 'Download / Update All Models'}
                         </button>
-                        <p className="text-xs text-gray-500 mt-2 text-center">
+                        <p className="text-xs text-gray-500 mt-3 text-center">
                             This will download any missing models to the server. Large files (2GB+) may take a while.
                         </p>
                     </div>

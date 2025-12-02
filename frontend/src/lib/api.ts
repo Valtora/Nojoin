@@ -512,6 +512,7 @@ export interface DownloadProgress {
   speed: string | null;
   eta: string | null;
   status: 'downloading' | 'complete' | 'error' | null;
+  stage?: string | null;
 }
 
 export const getDownloadProgress = async (): Promise<DownloadProgress> => {
