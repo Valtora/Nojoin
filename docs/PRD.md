@@ -33,16 +33,17 @@ The primary user interface for interacting with the system.
 *   **Companion Status:** Visual indicator (warning bubble) when the Companion App is not detected.
 *   **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. Dynamically links to the correct installer for the user's OS (Windows/macOS/Linux) from GitHub Releases.
 
-### 2.3 The Companion App (Rust)
+### 2.3 The Companion App (Tauri + Rust)
 A lightweight, cross-platform system tray application responsible for audio capture.
 *   **Directory:** `companion/`
-*   **Language:** Rust.
+*   **Framework:** Tauri v1.5.
+*   **Language:** Rust (Backend) + HTML/JS (Frontend - currently minimal).
 *   **Platforms:** Windows, macOS, Linux (First-class support for all).
 *   **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
-*   **UI:** Minimalist system tray menu for status indication, updates, help, and exit. **No recording controls in the tray.**
+*   **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 *   **Local Server:** Always runs on `localhost:12345`. Remote access must be configured via a user-managed reverse proxy.
-*   **Distribution:** Installer binaries are hosted on GitHub Releases, not served from the frontend.
-*   **Auto-Update:** The app periodically checks for new versions on GitHub and notifies the user when updates are available.
+*   **Distribution:** Installer binaries (MSI, EXE, DMG, DEB) are built via Tauri Bundler and hosted on GitHub Releases.
+*   **Auto-Update:** The app uses Tauri's built-in updater to check for new versions on GitHub.
 
 ### 2.4 Configuration Management
 *   **Unified Strategy:** Configuration is split between system-wide infrastructure settings and user-specific preferences.
@@ -225,15 +226,16 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **State Management:** React Query / Zustand
 
 ### 4.3 Companion App Stack
-*   **Language:** Rust
+*   **Framework:** Tauri v1.5
+*   **Language:** Rust (Core Logic)
 *   **Audio:** cpal (Cross-Platform Audio Library)
 *   **Async Runtime:** Tokio
 *   **HTTP Client:** Reqwest
-*   **GUI/Tray:** Native Windows/macOS/Linux tray integration
-*   **Windows Installer:** NSIS-based installer with:
-    *   Installation to `%LOCALAPPDATA%\Nojoin`
-    *   Start Menu and Desktop shortcuts (optional)
-    *   Run on Startup option (optional)
+*   **GUI/Tray:** Tauri System Tray
+*   **Installer:** Tauri Bundler (NSIS for Windows, DMG for macOS, DEB/AppImage for Linux) with:
+    *   Installation to `%LOCALAPPDATA%\Nojoin` (Windows)
+    *   Start Menu and Desktop shortcuts
+    *   Run on Startup option
     *   Automatic termination of running instances during update
     *   Config file preservation during updates
 

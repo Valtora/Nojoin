@@ -25,20 +25,23 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Styling**: Tailwind CSS.
 - **Components**: Prefer functional components in `src/components/`.
 
-### Companion App (Rust)
+### Companion App (Tauri + Rust)
+- **Structure**:
+  - `src-tauri/`: Rust backend code.
+  - `src/`: Frontend assets (currently minimal).
 - **Concurrency**:
   - **Audio Thread**: Captures audio using `cpal`. Communicates via `crossbeam_channel`.
   - **Server/Upload Thread**: Uses `tokio` runtime.
 - **Upload Strategy**:
   - Segments are uploaded sequentially to `/recordings/{id}/segment`.
-  - **Retries**: Implemented in `src/uploader.rs` with exponential backoff.
-- **UI**: System tray only (`tray-icon`, `tao`).
+  - **Retries**: Implemented in `src-tauri/src/uploader.rs` with exponential backoff.
+- **UI**: System tray managed by Tauri.
 - **Configuration** (`config.json`):
   - `api_port`: Backend API port (default: 14443). Hostname is always `localhost`.
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
 - **Authorization**: Web app sends token to `/auth` endpoint. No manual config needed.
-- **Installer**: NSIS-based (`companion/installer/`). Installs to `%LOCALAPPDATA%\Nojoin`.
+- **Installer**: Built via Tauri Bundler. Installs to `%LOCALAPPDATA%\Nojoin` on Windows.
 
 ## Critical Workflows
 
@@ -54,12 +57,11 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
 - **Companion (Windows)**:
-  - Development: `cd companion && cargo run`
-  - Release Build: `cd companion && cargo build --release`
+  - Development: `cd companion && npm run tauri dev`
+  - Release Build: `cd companion && npm run tauri build`
 - **Companion Installer (Windows)**:
-  - Requires: NSIS installed (`choco install nsis` or https://nsis.sourceforge.io)
-  - Build: `cd companion && .\installer\build.ps1 -Release`
-  - Output: `companion/dist/Nojoin-Companion-Setup.exe`
+  - Build: `cd companion && npm run tauri build`
+  - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin-Companion-Setup.exe`
 
 ### Companion Release Workflow
 
@@ -76,9 +78,9 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
    ```
 4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
 5. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
-   - Windows: NSIS installer (`Nojoin-Companion-Setup.exe`)
-   - macOS: Universal DMG (`Nojoin-Companion-Setup.dmg`)
-   - Linux: DEB package (`Nojoin-Companion-Setup.deb`)
+   - Windows: Tauri NSIS installer (`.exe`)
+   - macOS: Tauri DMG (`.dmg`)
+   - Linux: Tauri DEB (`.deb`)
 6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
 
 **Important**: Regular `v*` tags do NOT trigger companion builds. Only `companion-v*` tags do.

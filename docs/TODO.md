@@ -2,10 +2,9 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
-## Companion App Installer and Wizard
-- Currently when installing the companion app via the wizard, the wizard logs show an 'ERROR: companion-app process not found.' (or something like this). Investigate and fix this.
-- Implement the 'Check for Updates' button in the system tray context menu of the companion app. This button should check the GitHub releases page for a newer version of the companion app. If a newer version is found, prompt the user to download and install it. If no newer version is found, display a message indicating that the user is already on the latest version.
-- Let's improve the installer to support updating an existing version of the companion app. When the user runs the installer and an existing version is detected, the installer should prompt the user to confirm if they want to update to the new version. If the user agrees, the installer should replace the existing files with the new ones while preserving user settings and data. If no existing version is found, proceed with a standard installation. The installer should gracefully close the companion app if it is running before proceeding with the update.
+## Companion App Un/Installer and Wizard
+- Currently if an existing instance of Nojoin's companion app is found the installer prompts the user to kill it manually and retry. This is fine however we should also add a 'Close Nojoin Companion App' button to the installer to let the user kill it themselves via that UI interacttion.
+- Verify the UNinstall logic is as equally robust as the installer logic.
 
 ## Security
 - Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via traefik, caddy, etc.
@@ -26,3 +25,16 @@ Let's continue the development of Nojoin. Read completely (not just first 100 li
 
 ## LICENCE File
 - Help me to create an appropriate LICENCE file for the Nojoin project. I may decide to monetise Nojoin in the future by having a 'community' version that is open source and self-hosted as well as a 'pro' version that is closed source and has additional features. Therefore I want to choose a licence that allows me to do this. Research and suggest a suitable open source licence for the Nojoin project that meets these criteria and also considers the dependencies used in the project.
+
+## Tauri Migration & CI/CD
+- [ ] **Update GitHub CI/CD Workflows**: Create or update `.github/workflows/companion-tauri.yml` to build the Tauri application for Windows, macOS, and Linux. Ensure artifacts are correctly uploaded to GitHub Releases.
+- [ ] **Implement Installer Configuration**: Verify `tauri.conf.json` bundle settings. Ensure the installer correctly handles:
+    - Installation directory.
+    - Shortcuts (Desktop/Start Menu).
+    - "Run on Startup" functionality (may need a specific Tauri plugin or registry key logic).
+    - Uninstall logic.
+- [ ] **Re-enable Auto-Updater**:
+    - Generate Tauri signing keys (`tauri signer generate`).
+    - Add public key to `tauri.conf.json`.
+    - Add private key to GitHub Secrets.
+    - Re-enable `updater` in `tauri.conf.json` and uncomment updater logic in `main.rs`.

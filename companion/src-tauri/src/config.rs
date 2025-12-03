@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use log::info;
+use directories::ProjectDirs;
 
 const DEFAULT_API_PORT: u16 = 14443;
 const DEFAULT_LOCAL_PORT: u16 = 12345;
@@ -52,13 +53,35 @@ impl Config {
     fn get_config_path() -> PathBuf {
         let config_name = "config.json";
         
-        // First check current directory
+        // First check current directory (development override)
         let cwd_path = PathBuf::from(config_name);
         if cwd_path.exists() {
             return cwd_path;
         }
         
-        // Check executable directory
+        // Check standard system locations using directories crate
+        if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin") {
+            let config_dir = proj_dirs.config_dir();
+            let app_config = config_dir.join(config_name);
+            
+            // If it exists, use it
+            if app_config.exists() {
+                return app_config;
+            }
+            
+            // If we are on Linux or MacOS, we prefer this location for new configs
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            {
+                // Ensure directory exists
+                if let Err(e) = fs::create_dir_all(config_dir) {
+                    log::warn!("Failed to create config directory: {}", e);
+                } else {
+                    return app_config;
+                }
+            }
+        }
+
+        // Check executable directory (Legacy/Portable fallback)
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let exe_config = exe_dir.join(config_name);
@@ -68,20 +91,15 @@ impl Config {
             }
         }
         
-        // Check %LOCALAPPDATA%/Nojoin on Windows
+        // Check %LOCALAPPDATA%/Nojoin on Windows (Legacy manual check, directories crate handles this too but keeping for compat)
         #[cfg(windows)]
         if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
             let app_config = PathBuf::from(local_app_data).join("Nojoin").join(config_name);
             if app_config.exists() {
                 return app_config;
             }
-        }
-        
-        // Default to executable directory for new config
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                return exe_dir.join(config_name);
-            }
+            // For Windows, we also prefer this for new configs if directories crate failed or we want explicit path
+            return app_config;
         }
         
         // Fallback to current directory
