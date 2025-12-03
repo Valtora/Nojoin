@@ -5,12 +5,12 @@ __pycache__/
 
 # Environment
 /.venv
-
 # User data directory, also contains the config.json file which may have sensitive info
 /data
 
 # IDE files
 *.mdc
+/.vscode
 
 # Logs
 *.log

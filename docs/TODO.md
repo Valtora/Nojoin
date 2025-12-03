@@ -1,18 +1,14 @@
 # Nojoin To-Do List
 
-Let's continue the development of Nojoin. Read AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
+Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
 ## Companion App Installer and Wizard
 - Currently when installing the companion app via the wizard, the wizard logs show an 'ERROR: companion-app process not found.' (or something like this). Investigate and fix this.
 - Implement the 'Check for Updates' button in the system tray context menu of the companion app. This button should check the GitHub releases page for a newer version of the companion app. If a newer version is found, prompt the user to download and install it. If no newer version is found, display a message indicating that the user is already on the latest version.
 - Let's improve the installer to support updating an existing version of the companion app. When the user runs the installer and an existing version is detected, the installer should prompt the user to confirm if they want to update to the new version. If the user agrees, the installer should replace the existing files with the new ones while preserving user settings and data. If no existing version is found, proceed with a standard installation. The installer should gracefully close the companion app if it is running before proceeding with the update.
 
-## Celery Worker
-- Investigate the duplication of log lines, every log line appears twice in the celery worker logs. Investigate and fix this issue so that each log line only appears once.
-- While speaker inference (or any other celery worker task or LLM API call) is running, the meeting card should show the processing spinner as a status. Currently the task just runs in the background. When the task or API call is complete the view should be automatically refreshed to show the new content. For example after speaker inference the view should update to show the speakers without the use having to click the meeting card again or navigate away then back.
-
 ## Security
-- Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via trafeik, caddy, etc.
+- Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via traefik, caddy, etc.
 - Research the implications of this change on the companion app's ability to connect to the backend server and any other parts of the system that may be affected. Provide a summary of findings and recommendations on whether this change should be implemented and how to go about it if so.
 
 ## Consider Upgrading to Cuda 13

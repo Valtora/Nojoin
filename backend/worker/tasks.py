@@ -887,5 +887,20 @@ def infer_speakers_task(self, recording_id: int):
         session.commit()
         logger.info(f"Updated {updated_count} speakers for recording {recording_id}")
 
+        # Update status back to PROCESSED
+        recording.status = RecordingStatus.PROCESSED
+        recording.processing_step = "Completed"
+        session.add(recording)
+        session.commit()
+
     except Exception as e:
         logger.error(f"Speaker inference task failed: {e}", exc_info=True)
+        # Revert status to PROCESSED on error so spinner stops
+        try:
+            recording = session.get(Recording, recording_id)
+            if recording:
+                recording.status = RecordingStatus.PROCESSED
+                session.add(recording)
+                session.commit()
+        except Exception as db_err:
+            logger.error(f"Failed to revert recording status: {db_err}")

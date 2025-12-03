@@ -603,6 +603,7 @@ async def retry_processing(
         
     # Reset status
     recording.status = RecordingStatus.PROCESSING
+    recording.processing_step = "Queued for retry..."
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
@@ -834,6 +835,13 @@ async def infer_speakers_for_recording(
     recording = await db.get(Recording, recording_id)
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
+
+    # Update status to PROCESSING so UI shows spinner
+    recording.status = RecordingStatus.PROCESSING
+    recording.processing_step = "Inferring speakers..."
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
 
     # Trigger Celery task
     infer_speakers_task.delay(recording.id)

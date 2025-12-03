@@ -53,6 +53,10 @@ def setup_logging(log_level=None):
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
+    # Remove existing handlers to prevent duplication
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
+
     # Create the filter instance
     checkpoint_filter = CheckpointFilter()
 
