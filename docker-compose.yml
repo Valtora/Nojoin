@@ -30,8 +30,6 @@ services:
       - ./data:/app/data
       - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
-    ports:
-      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}

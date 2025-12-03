@@ -2,21 +2,21 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
-## Preparing Repository for Public Release
-- Review the entire codebase for any hardcoded secrets, API keys, or sensitive information and report back.
-- Review historical commits for any accidental exposure of sensitive information and report back.
-- Create a comprehensive README.md file that includes an overview of the project, installation instructions and usage guidelines.
-- Setup a CONTRIBUTING.md file to say that I'm not encouraging contributions at this time but welcome bug reports and feature requests via GitHub Issues.
-- Make it clear that this is the free and open-source 'Community' edition of Nojoin and there will be a paid 'Enterprise' edition in future with additional deployment and support options.
+## Nojoin Shortcut Logo
+- The logo for Nojoin shortcuts (e.g. desktop shortcut created by the installer) is lower resolution than the asset used. What could be the cause of this? It should be a high resolution icon. Investigate and report back.
+
+## Companion App - System Tray
+- When hovering over the system tray icon for the companion app, it currently shows a small blank empty bubble. Investigate how to either remove this or populate it with useful information such as the current status text from the context menu.
+
+## Companion App - Reauthorisation
+- Consider the case where the user moves from a local docker deployment to a remote server deployment.
+- Will they need to reauthorise the companion app to connect to the new server?
+- If so, implement a way for the user to trigger reauthorisation via the web app front end similar to how it is done for the initial authorisation.
 
 ## Companion App - Auto-Updater
 - Investigate how we can implement an auto-update function that periodically checks for updates and notifies the user if there is an update to download. Using the notification system in the companion app, the user should be able to click 'Update Now' or 'Not Now' that appears in the notification toast, with the auto-update check occuring again on next start-up if they click 'Update Now'.
 - If they click Update Now then the companion app should silently download and update itself. If successfully updated and restarted there should be another notification along the lines of 'Nojoin Companion App Updated vX.X.X'.
 - Add another button in the main sidebar of the web app that shows up when the companion app is connected but not running the latest version. This button should say 'Update Companion App' and clicking it should trigger the same update process as above.
-
-## Security
-- Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via traefik, caddy, etc.
-- Research the implications of this change on the companion app's ability to connect to the backend server and any other parts of the system that may be affected. Provide a summary of findings and recommendations on whether this change should be implemented and how to go about it if so.
 
 ## Meeting Transcription Feature - Translation
 - Use OpenAI's Whisper API to implement a translation feature for meeting transcriptions. This feature should allow users to select a target language for translation after the transcription is complete. The translated text should be displayed alongside the original transcript in the transcript window, with clear labeling to differentiate between the two. Explore how to best integrate this feature into the existing transcription workflow.
