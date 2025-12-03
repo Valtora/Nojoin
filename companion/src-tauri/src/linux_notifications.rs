@@ -1,7 +1,7 @@
 #[cfg(target_os = "linux")]
 use tauri::{AppHandle, Manager};
 #[cfg(target_os = "linux")]
-use notify_rust::{Notification, Hint, Timeout};
+use notify_rust::{Notification, Timeout};
 #[cfg(target_os = "linux")]
 use log::error;
 

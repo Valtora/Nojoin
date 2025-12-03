@@ -2,11 +2,10 @@
 use tauri::{AppHandle, Manager};
 #[cfg(windows)]
 use win32_notif::{
-    NotificationBuilder, ToastsNotifier,
+    NotificationBuilder, ToastsNotifier, NotificationActivatedEventHandler,
     notification::{
-        actions::{ActionButton, ActivationType},
+        actions::{ActionButton, action::ActivationType},
         visual::Text,
-        NotificationActivatedEventHandler
     }
 };
 #[cfg(windows)]

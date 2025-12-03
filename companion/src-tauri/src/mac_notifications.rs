@@ -7,7 +7,7 @@ use log::error;
 
 #[cfg(target_os = "macos")]
 pub fn show_update_notification(app: AppHandle, version: String) {
-    let bundle_id = app.config().tauri.bundle.identifier.clone();
+    let _bundle_id = app.config().tauri.bundle.identifier.clone();
     let title = "Update Available";
     let message = format!("Version {} is available.", version);
     

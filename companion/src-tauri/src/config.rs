@@ -136,6 +136,7 @@ impl Config {
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: legacy.input_device_name,
             output_device_name: legacy.output_device_name,
+            last_version: None,
         })
     }
 
@@ -207,6 +208,7 @@ impl Default for Config {
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: None,
             output_device_name: None,
+            last_version: None,
         }
     }
 }
