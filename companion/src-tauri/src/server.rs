@@ -83,6 +83,8 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
 #[derive(serde::Deserialize)]
 struct AuthRequest {
     token: String,
+    api_host: Option<String>,
+    api_port: Option<u16>,
 }
 
 #[derive(serde::Serialize)]
@@ -105,28 +107,37 @@ async fn authorize(
         });
     }
     
-    // Save the token to config
+    // Save the token and connection details to config
     {
         let mut config = state.config.lock().unwrap();
         config.api_token = payload.token;
+        
+        if let Some(host) = payload.api_host {
+            config.api_host = host;
+        }
+        
+        if let Some(port) = payload.api_port {
+            config.api_port = port;
+        }
+
         if let Err(e) = config.save() {
             error!("Failed to save config: {}", e);
             return Json(AuthResponse {
                 success: false,
-                message: format!("Failed to save token: {}", e),
+                message: format!("Failed to save config: {}", e),
             });
         }
     }
     
-    info!("Companion app authorized successfully");
+    info!("Companion app authorized and configured successfully");
     notifications::show_notification(
-        "Authorization Successful",
-        "Companion app is now connected to Nojoin."
+        "Connected to Nojoin",
+        "Companion app is now connected and configured."
     );
     
     Json(AuthResponse {
         success: true,
-        message: "Authorization successful".to_string(),
+        message: "Authorization and configuration successful".to_string(),
     })
 }
 

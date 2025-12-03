@@ -491,7 +491,7 @@ export default function MainNav() {
             <button
               onClick={handleAuthorizeCompanion}
               disabled={isAuthorizing}
-              title={collapsed ? 'Authorize Companion' : undefined}
+              title={collapsed ? 'Connect to Companion' : undefined}
               className={`
                 w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
                 bg-orange-600 hover:bg-orange-700 text-white font-medium
@@ -502,7 +502,7 @@ export default function MainNav() {
               <Link2 className={`w-5 h-5 flex-shrink-0 ${isAuthorizing ? 'animate-pulse' : ''}`} />
               {!collapsed && (
                 <span className="text-sm truncate">
-                  {isAuthorizing ? 'Authorizing...' : 'Authorize Companion'}
+                  {isAuthorizing ? 'Connecting...' : 'Connect to Companion'}
                 </span>
               )}
             </button>

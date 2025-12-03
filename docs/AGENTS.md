@@ -37,10 +37,14 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - **Retries**: Implemented in `src-tauri/src/uploader.rs` with exponential backoff.
 - **UI**: System tray managed by Tauri.
 - **Configuration** (`config.json`):
-  - `api_port`: Backend API port (default: 14443). Hostname is always `localhost`.
+  - `api_host`: Backend API hostname/IP (default: "localhost").
+  - `api_port`: Backend API port (default: 14443).
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
-- **Authorization**: Web app sends token to `/auth` endpoint. No manual config needed.
+- **Authorization**: 
+  - Web app sends token + current host/port to `/auth` endpoint.
+  - App automatically updates config and connects.
+  - Manual configuration available via System Tray > Settings.
 - **Installer**: Built via Tauri Bundler. Installs to `%LOCALAPPDATA%\Nojoin` on Windows.
 
 ## Critical Workflows
@@ -60,6 +64,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Development: `cd companion && npm run tauri dev`
   - Release Build: `cd companion && npm run tauri build`
   - **Note**: When building from WSL2, copy the project to a Windows directory first to avoid UNC path issues with `npm`.
+  - **Environment Variables**: Ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` (if applicable) are set in your Windows environment variables or PowerShell session before building.
 - **Companion Installer (Windows)**:
   - Build: `cd companion && npm run tauri build`
   - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin-Companion-Setup.exe`
@@ -78,6 +83,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
    git tag companion-v0.2.0
    git push origin companion-v0.2.0
    ```
+   *Note: Creating a tag locally via GUI does not automatically push it. You must explicitly push the tag to trigger the workflow.*
 4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
 5. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
    - Windows: Tauri NSIS installer (`.exe`)

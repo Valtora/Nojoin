@@ -53,13 +53,15 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Database Initialization:** The system automatically handles database schema creation and migrations on startup, ensuring the database is always in a consistent state.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
 *   **Companion Config:**
-    *   **Localhost Enforcement:** The Companion App always connects to `localhost`. Users cannot change the hostname.
-    *   **Port Configuration:** The backend API port (default: 14443) is configurable via the Settings page.
-    *   **Legacy Migration:** Old config formats (using `api_url`) are automatically migrated to the new port-based format.
+    *   **Localhost Enforcement:** The Companion App defaults to `localhost` but supports a configurable `api_host` for remote deployments.
+    *   **Auto-Configuration:** The "Connect to Companion" flow in the Web Client automatically configures the Companion App with the correct Server IP and Port.
+    *   **Manual Configuration:** A "Settings" window (accessible via System Tray) allows manual entry of the API Host and Port if auto-configuration is not possible.
+    *   **Legacy Migration:** Old config formats (using `api_url`) are automatically migrated to the new host/port-based format.
     *   **Config Preservation:** The Windows installer preserves `config.json` during updates.
 
 ### 2.5 Security
 *   **SSL/TLS:** All communication between components (Frontend, Backend, Companion) is encrypted via HTTPS using Nginx as a reverse proxy.
+*   **Automatic SSL Generation:** The system automatically generates self-signed SSL certificates on startup if they are missing, ensuring immediate secure access for local deployments.
 *   **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 *   **Authentication:** JWT-based authentication for API access.
 *   **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
@@ -238,6 +240,10 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   Run on Startup option (via `tauri-plugin-autostart`)
     *   Automatic termination of running instances during update
     *   Config file preservation during updates
+*   **Signing:**
+    *   Updates are signed using Tauri's built-in mechanism (Minisign).
+    *   Private keys are stored in GitHub Secrets (`TAURI_PRIVATE_KEY`, `TAURI_KEY_PASSWORD`) for CI/CD.
+    *   Local builds require these keys to be present in environment variables.
 
 ### 4.4 Deployment
 *   **Docker Compose:** Primary deployment method orchestrating API, Worker, DB, Redis, and Web Frontend containers.

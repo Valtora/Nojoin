@@ -11,6 +11,8 @@ const DEFAULT_LOCAL_PORT: u16 = 12345;
 pub struct Config {
     #[serde(default = "default_api_port")]
     pub api_port: u16,
+    #[serde(default = "default_api_host")]
+    pub api_host: String,
     #[serde(default)]
     pub api_token: String,
     #[serde(default = "default_local_port")]
@@ -23,6 +25,10 @@ pub struct Config {
 
 fn default_api_port() -> u16 {
     DEFAULT_API_PORT
+}
+
+fn default_api_host() -> String {
+    "localhost".to_string()
 }
 
 fn default_local_port() -> u16 {
@@ -43,11 +49,11 @@ struct LegacyConfig {
 
 impl Config {
     pub fn get_api_url(&self) -> String {
-        format!("https://localhost:{}/api/v1", self.api_port)
+        format!("https://{}:{}/api/v1", self.api_host, self.api_port)
     }
 
     pub fn get_web_url(&self) -> String {
-        format!("https://localhost:{}", self.api_port)
+        format!("https://{}:{}", self.api_host, self.api_port)
     }
 
     fn get_config_path() -> PathBuf {
@@ -123,6 +129,7 @@ impl Config {
         
         Some(Config {
             api_port,
+            api_host: default_api_host(),
             api_token: legacy.api_token.unwrap_or_default(),
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: legacy.input_device_name,
@@ -193,6 +200,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             api_port: DEFAULT_API_PORT,
+            api_host: default_api_host(),
             api_token: String::new(),
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: None,

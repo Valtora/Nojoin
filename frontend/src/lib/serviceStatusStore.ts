@@ -256,10 +256,18 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           return false;
         }
 
+        // Get current host and port to configure the companion app
+        const api_host = window.location.hostname;
+        const api_port = parseInt(window.location.port || (window.location.protocol === 'https:' ? '443' : '80'));
+
         const res = await fetch(`${COMPANION_URL}/auth`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ 
+            token,
+            api_host,
+            api_port
+          }),
         });
 
         if (res.ok) {

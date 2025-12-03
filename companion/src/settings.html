@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nojoin Settings</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h2 { margin-top: 0; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #f97316;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #ea580c;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 0.9em;
+            text-align: center;
+            min-height: 1.2em;
+        }
+        .success { color: #16a34a; }
+        .error { color: #dc2626; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Connection Settings</h2>
+        <div class="form-group">
+            <label for="apiHost">API Host (IP or Hostname)</label>
+            <input type="text" id="apiHost" placeholder="localhost">
+        </div>
+        <div class="form-group">
+            <label for="apiPort">API Port</label>
+            <input type="number" id="apiPort" placeholder="14443">
+        </div>
+        <button id="saveBtn">Save Settings</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        const { invoke } = window.__TAURI__.tauri;
+
+        const apiHostInput = document.getElementById('apiHost');
+        const apiPortInput = document.getElementById('apiPort');
+        const saveBtn = document.getElementById('saveBtn');
+        const statusDiv = document.getElementById('status');
+
+        // Load current config
+        async function loadConfig() {
+            try {
+                const config = await invoke('get_config');
+                apiHostInput.value = config.api_host;
+                apiPortInput.value = config.api_port;
+            } catch (e) {
+                statusDiv.textContent = 'Failed to load config: ' + e;
+                statusDiv.className = 'status error';
+            }
+        }
+
+        // Save config
+        saveBtn.addEventListener('click', async () => {
+            const host = apiHostInput.value.trim() || 'localhost';
+            const port = parseInt(apiPortInput.value) || 14443;
+
+            try {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                
+                await invoke('save_config', { 
+                    apiHost: host, 
+                    apiPort: port 
+                });
+                
+                statusDiv.textContent = 'Settings saved successfully!';
+                statusDiv.className = 'status success';
+                
+                setTimeout(() => {
+                    statusDiv.textContent = '';
+                    statusDiv.className = 'status';
+                }, 3000);
+            } catch (e) {
+                statusDiv.textContent = 'Error: ' + e;
+                statusDiv.className = 'status error';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Settings';
+            }
+        });
+
+        loadConfig();
+    </script>
+</body>
+</html>

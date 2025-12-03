@@ -87,10 +87,17 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     environment:
-      - NEXT_PUBLIC_API_URL=https://localhost:14443/api
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
       # Enable polling for hot reloading on Windows file systems
       - WATCHPACK_POLLING=true
     restart: unless-stopped
+
+  init-ssl:
+    image: alpine:latest
+    volumes:
+      - ./nginx:/etc/nginx/certs
+      - ./docker/init-ssl.sh:/init-ssl.sh
+    command: /bin/sh /init-ssl.sh
 
   nginx:
     image: nginx:alpine
@@ -100,10 +107,10 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx:/etc/nginx/certs:ro
-      - ./nginx/cert.key:/etc/nginx/certs/cert.key:ro
     depends_on:
       - frontend
       - api
+      - init-ssl
     restart: unless-stopped
 
 volumes:

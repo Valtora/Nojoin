@@ -2,6 +2,13 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
+## Meeting Recording UX
+- When a meeting recording is started the system tray notifies the user that a recording with ID "" has started. This is because the recording ID and more human readable name is not yet known when the notification is sent. Modify the code so that the notification is only sent after the recording ID and name is known, and include the correct recording name only in the notification message. A default name is generated from the date and time of the meeting start already, so this can be used in the notification.
+
+## Deployment & Configuration Improvements
+- Clean up the init-ssl container after it has been used once to generate self-signed SSL certificates. Currently the container remains on the system after it has run, which is unnecessary.
+- Reverse the docker-compose.yml and docker-compose.gpu.yml files so that the GPU version is the default and the CPU version is the one with a special name. This is because most users will have a compatible NVIDIA GPU and will want to use it for better performance.
+
 ## Security
 - Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via traefik, caddy, etc.
 - Research the implications of this change on the companion app's ability to connect to the backend server and any other parts of the system that may be affected. Provide a summary of findings and recommendations on whether this change should be implemented and how to go about it if so.

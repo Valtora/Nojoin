@@ -23,6 +23,26 @@ use state::{AppState, AppStatus};
 use config::Config;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
+// Define SharedAppState at module level so it's visible to commands
+struct SharedAppState(Arc<AppState>);
+
+#[tauri::command]
+fn get_config(state: tauri::State<SharedAppState>) -> Config {
+    // Access the inner Arc<AppState> via .0 on the dereferenced state
+    let config = state.0.config.lock().unwrap();
+    config.clone()
+}
+
+#[tauri::command]
+fn save_config(state: tauri::State<SharedAppState>, api_host: String, api_port: u16) -> Result<(), String> {
+    let mut config = state.0.config.lock().unwrap();
+    config.api_host = api_host;
+    config.api_port = api_port;
+    
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn get_log_path() -> PathBuf {
     // In Tauri, we might want to use the app data directory, but for now let's stick to exe dir or current dir
     std::env::current_exe()
@@ -66,12 +86,14 @@ fn main() {
     let check_updates = CustomMenuItem::new("check_updates".to_string(), "Check for Updates");
     let run_on_startup = CustomMenuItem::new("run_on_startup".to_string(), "Run on Startup");
     let open_web = CustomMenuItem::new("open_web".to_string(), "Open Nojoin");
-    let status_item = CustomMenuItem::new("status".to_string(), "Status: Ready to Record").disabled();
+    let settings = CustomMenuItem::new("settings".to_string(), "Settings");
+    let status_item = CustomMenuItem::new("status".to_string(), "Status: Waiting for connection...").disabled();
 
     let tray_menu = SystemTrayMenu::new()
         .add_item(status_item)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(open_web)
+        .add_item(settings)
         .add_item(run_on_startup)
         .add_item(check_updates)
         .add_item(view_logs)
@@ -91,16 +113,34 @@ fn main() {
     // Actually, we can put the Arc<AppState> into Tauri's managed state!
     
     // However, our AppState is complex. Let's wrap it.
-    struct SharedAppState(Arc<AppState>);
+    // struct SharedAppState(Arc<AppState>); // Moved to module level
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
+        .invoke_handler(tauri::generate_handler![get_config, save_config])
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| match event {
             SystemTrayEvent::MenuItemClick { id, .. } => {
                 match id.as_str() {
                     "quit" => {
                         std::process::exit(0);
+                    }
+                    "settings" => {
+                        let window = app.get_window("settings");
+                        if let Some(window) = window {
+                            window.show().unwrap();
+                            window.set_focus().unwrap();
+                        } else {
+                            tauri::WindowBuilder::new(
+                                app,
+                                "settings",
+                                tauri::WindowUrl::App("settings.html".into())
+                            )
+                            .title("Nojoin Companion Settings")
+                            .inner_size(400.0, 350.0)
+                            .build()
+                            .unwrap();
+                        }
                     }
                     "open_web" => {
                         let state_wrapper = app.state::<SharedAppState>();
@@ -272,13 +312,17 @@ fn main() {
 
                         // 2. Update Tray Icon Text
                         if let Ok(status) = state_fetch.status.try_lock() {
-                             let status_text = match *status {
-                                 AppStatus::Idle => "Status: Ready to Record",
-                                 AppStatus::Recording => "Status: Recording",
-                                 AppStatus::Paused => "Status: Recording Paused",
-                                 AppStatus::Uploading => "Status: Uploading Recording",
-                                 AppStatus::BackendOffline => "Status: Backend Not Found...",
-                                 AppStatus::Error(_) => "Status: Error",
+                             let status_text = if !state_fetch.is_authenticated() {
+                                 "Status: Waiting for connection..."
+                             } else {
+                                 match *status {
+                                     AppStatus::Idle => "Status: Ready to Record",
+                                     AppStatus::Recording => "Status: Recording",
+                                     AppStatus::Paused => "Status: Recording Paused",
+                                     AppStatus::Uploading => "Status: Uploading Recording",
+                                     AppStatus::BackendOffline => "Status: Backend Not Found...",
+                                     AppStatus::Error(_) => "Status: Error",
+                                 }
                              };
                              let _ = tray_handle.get_item("status").set_title(status_text);
                              
