@@ -235,7 +235,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Installer:** Tauri Bundler (NSIS for Windows, DMG for macOS, DEB/AppImage for Linux) with:
     *   Installation to `%LOCALAPPDATA%\Nojoin` (Windows)
     *   Start Menu and Desktop shortcuts
-    *   Run on Startup option
+    *   Run on Startup option (via `tauri-plugin-autostart`)
     *   Automatic termination of running instances during update
     *   Config file preservation during updates
 

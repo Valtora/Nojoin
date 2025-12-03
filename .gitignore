@@ -22,6 +22,9 @@ __pycache__/
 # Companion App (Rust)
 companion/target/
 companion/dist/
+companion/src-tauri/target/
+companion/src-tauri/gen/
+companion/src-tauri/schemas/
 
 # Environment Variables
 .env
@@ -35,11 +38,15 @@ node_modules/
 companion/config.json
 
 # Security / Certificates
+*.key
+*.sig
+*.pem
+*.crt
+*.pfx
+*.p12
 nginx/*.key
 nginx/*.crt
 nginx/*.pem
-*.pfx
-*.p12
 
 # Audio Files
 *.wav

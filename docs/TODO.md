@@ -2,10 +2,6 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
-## Companion App Un/Installer and Wizard
-- Currently if an existing instance of Nojoin's companion app is found the installer prompts the user to kill it manually and retry. This is fine however we should also add a 'Close Nojoin Companion App' button to the installer to let the user kill it themselves via that UI interacttion.
-- Verify the UNinstall logic is as equally robust as the installer logic.
-
 ## Security
 - Explore feasibility of removing HTTP support entirely and only allowing HTTPS connections to the Nojoin backend server. This may involve generating self-signed certificates for local development and self-hosting via traefik, caddy, etc.
 - Research the implications of this change on the companion app's ability to connect to the backend server and any other parts of the system that may be affected. Provide a summary of findings and recommendations on whether this change should be implemented and how to go about it if so.
@@ -25,16 +21,3 @@ Let's continue the development of Nojoin. Read completely (not just first 100 li
 
 ## LICENCE File
 - Help me to create an appropriate LICENCE file for the Nojoin project. I may decide to monetise Nojoin in the future by having a 'community' version that is open source and self-hosted as well as a 'pro' version that is closed source and has additional features. Therefore I want to choose a licence that allows me to do this. Research and suggest a suitable open source licence for the Nojoin project that meets these criteria and also considers the dependencies used in the project.
-
-## Tauri Migration & CI/CD
-- [ ] **Update GitHub CI/CD Workflows**: Create or update `.github/workflows/companion-tauri.yml` to build the Tauri application for Windows, macOS, and Linux. Ensure artifacts are correctly uploaded to GitHub Releases.
-- [ ] **Implement Installer Configuration**: Verify `tauri.conf.json` bundle settings. Ensure the installer correctly handles:
-    - Installation directory.
-    - Shortcuts (Desktop/Start Menu).
-    - "Run on Startup" functionality (may need a specific Tauri plugin or registry key logic).
-    - Uninstall logic.
-- [ ] **Re-enable Auto-Updater**:
-    - Generate Tauri signing keys (`tauri signer generate`).
-    - Add public key to `tauri.conf.json`.
-    - Add private key to GitHub Secrets.
-    - Re-enable `updater` in `tauri.conf.json` and uncomment updater logic in `main.rs`.

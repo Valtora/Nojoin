@@ -38,8 +38,10 @@
       "shortDescription": "Nojoin Companion App",
       "longDescription": "A lightweight system tray companion app for Nojoin meeting intelligence",
       "windows": {
-        "wix": {
-          "language": "en-US"
+        "nsis": {
+          "installMode": "currentUser",
+          "languages": ["English"],
+          "displayLanguageSelector": false
         }
       }
     },
@@ -47,12 +49,12 @@
       "csp": null
     },
     "updater": {
-      "active": false,
+      "active": true,
       "endpoints": [
         "https://github.com/Valtora/Nojoin/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEQjE5ODcwRDI4NzJCQjYKUldTMks0ZlNjSml4clcyd1FJSDZURWhpQ1hPK2xQenhUbVBsYmMxaEZSSjdjWEdFOTJmYlU0b2sK"
     },
     "windows": [
       {

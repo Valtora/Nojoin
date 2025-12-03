@@ -9,9 +9,8 @@ use std::thread;
 use std::time::Duration;
 use std::path::PathBuf;
 use tauri::{CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayMenuItem, SystemTrayEvent, Manager};
-use log::{info, warn, error};
+use log::{info, error};
 use reqwest;
-use serde_json;
 
 mod server;
 mod audio;
@@ -22,6 +21,7 @@ mod notifications;
 
 use state::{AppState, AppStatus};
 use config::Config;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 fn get_log_path() -> PathBuf {
     // In Tauri, we might want to use the app data directory, but for now let's stick to exe dir or current dir
@@ -64,6 +64,7 @@ fn main() {
     let help = CustomMenuItem::new("help".to_string(), "Help");
     let view_logs = CustomMenuItem::new("view_logs".to_string(), "View Logs");
     let check_updates = CustomMenuItem::new("check_updates".to_string(), "Check for Updates");
+    let run_on_startup = CustomMenuItem::new("run_on_startup".to_string(), "Run on Startup");
     let open_web = CustomMenuItem::new("open_web".to_string(), "Open Nojoin");
     let status_item = CustomMenuItem::new("status".to_string(), "Status: Ready to Record").disabled();
 
@@ -71,6 +72,7 @@ fn main() {
         .add_item(status_item)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(open_web)
+        .add_item(run_on_startup)
         .add_item(check_updates)
         .add_item(view_logs)
         .add_item(help)
@@ -92,6 +94,7 @@ fn main() {
     struct SharedAppState(Arc<AppState>);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| match event {
             SystemTrayEvent::MenuItemClick { id, .. } => {
@@ -136,10 +139,6 @@ fn main() {
                     }
                     "check_updates" => {
                         // Trigger Tauri updater check
-                        // Updater is currently disabled in tauri.conf.json, so this code is unreachable/invalid if the feature is off.
-                        // We will comment it out for now until keys are generated and updater is re-enabled.
-                        notifications::show_notification("Updates", "Auto-update is currently disabled.");
-                        /*
                         let handle = app.app_handle();
                         tauri::async_runtime::spawn(async move {
                             match handle.updater().check().await {
@@ -158,7 +157,23 @@ fn main() {
                                 }
                             }
                         });
-                        */
+                    }
+                    "run_on_startup" => {
+                        let autostart_manager = app.autolaunch();
+                        if autostart_manager.is_enabled().unwrap_or(false) {
+                            if let Err(e) = autostart_manager.disable() {
+                                error!("Failed to disable autostart: {}", e);
+                            } else {
+                                let _ = app.tray_handle().get_item("run_on_startup").set_selected(false);
+                            }
+                        } else {
+                            if let Err(e) = autostart_manager.enable() {
+                                error!("Failed to enable autostart: {}", e);
+                                notifications::show_notification("Error", "Could not enable run on startup");
+                            } else {
+                                let _ = app.tray_handle().get_item("run_on_startup").set_selected(true);
+                            }
+                        }
                     }
                     "restart" => {
                         notifications::show_notification("Restart", "Please restart manually.");
@@ -189,6 +204,11 @@ fn main() {
             // Manage the state so we can access it in menu handlers
             app.manage(SharedAppState(state.clone()));
 
+            // Initialize run_on_startup checkmark
+            let autostart_manager = app.autolaunch();
+            let is_enabled = autostart_manager.is_enabled().unwrap_or(false);
+            let _ = app.tray_handle().get_item("run_on_startup").set_selected(is_enabled);
+
             let state_audio = state.clone();
             thread::spawn(move || {
                 audio::run_audio_loop(state_audio, audio_rx);
@@ -211,9 +231,6 @@ fn main() {
                         .build()
                         .unwrap_or_default();
                     
-                    let mut attempt = 0;
-                    let max_wait = Duration::from_secs(60);
-
                     loop {
                         // 1. Perform Health Check (Logic copied from old main.rs)
                         let api_url = {

@@ -59,6 +59,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion (Windows)**:
   - Development: `cd companion && npm run tauri dev`
   - Release Build: `cd companion && npm run tauri build`
+  - **Note**: When building from WSL2, copy the project to a Windows directory first to avoid UNC path issues with `npm`.
 - **Companion Installer (Windows)**:
   - Build: `cd companion && npm run tauri build`
   - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin-Companion-Setup.exe`
@@ -68,8 +69,9 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 **The companion app uses a separate tag pattern** (`companion-v*`) to avoid rebuilds on every main app release.
 
 1. **Update Version Numbers** (both files must match):
-   - `companion/Cargo.toml`: `version = "X.Y.Z"`
-   - `companion/installer/installer.nsi`: `!define PRODUCT_VERSION "X.Y.Z"`
+   - `companion/package.json`: `"version": "X.Y.Z"`
+   - `companion/src-tauri/tauri.conf.json`: `"version": "X.Y.Z"`
+   - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
 2. **Commit and Push**: Push changes to `main` branch.
 3. **Create Companion Tag**: Use `companion-v` prefix:
    ```bash
