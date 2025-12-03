@@ -45,11 +45,15 @@ struct StatusResponse {
     duration_seconds: u64,
     version: &'static str,
     authenticated: bool,
+    api_host: String,
 }
 
 async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
     let status = state.status.lock().unwrap().clone();
-    let authenticated = state.is_authenticated();
+    let (authenticated, api_host) = {
+        let config = state.config.lock().unwrap();
+        (!config.api_token.is_empty(), config.api_host.clone())
+    };
     
     let duration = {
         let acc = *state.accumulated_duration.lock().unwrap();
@@ -76,6 +80,7 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
         duration_seconds: duration.as_secs(),
         version: env!("CARGO_PKG_VERSION"),
         authenticated,
+        api_host,
     })
 }
 

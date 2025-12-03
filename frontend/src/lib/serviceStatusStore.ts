@@ -20,6 +20,7 @@ interface CompanionStatusResponse {
   duration_seconds?: number;
   version?: string;
   authenticated?: boolean;
+  api_host?: string;
 }
 
 interface ServiceStatusState {
@@ -196,9 +197,24 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
              }
           }
 
+          // Check if re-authorization is needed due to host mismatch
+          let isAuthenticated = data.authenticated === true;
+          if (isAuthenticated && data.api_host) {
+            const currentHost = window.location.hostname;
+            const isLocal = (h: string) => h === 'localhost' || h === '127.0.0.1';
+            
+            // If current is local, companion must be local (or we don't care? usually local)
+            // If current is remote, companion must match remote
+            if (isLocal(currentHost)) {
+                if (!isLocal(data.api_host)) isAuthenticated = false;
+            } else {
+                if (data.api_host !== currentHost) isAuthenticated = false;
+            }
+          }
+
           set({ 
             companion: true, 
-            companionAuthenticated: data.authenticated === true,
+            companionAuthenticated: isAuthenticated,
             companionStatus: status,
             companionVersion: data.version || null,
             recordingDuration: duration,
@@ -258,7 +274,14 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
 
         // Get current host and port to configure the companion app
         const api_host = window.location.hostname;
-        const api_port = parseInt(window.location.port || (window.location.protocol === 'https:' ? '443' : '80'));
+        let api_port = parseInt(window.location.port || (window.location.protocol === 'https:' ? '443' : '80'));
+
+        // Special handling for local development:
+        // If accessing via localhost:3000 (Next.js dev server), point Companion to the standard Backend port (14443)
+        // because the Companion requires HTTPS and the Backend is likely running in Docker on 14443.
+        if ((api_host === 'localhost' || api_host === '127.0.0.1') && api_port === 3000) {
+            api_port = 14443;
+        }
 
         const res = await fetch(`${COMPANION_URL}/auth`, {
           method: 'POST',

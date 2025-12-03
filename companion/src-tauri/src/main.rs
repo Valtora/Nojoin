@@ -160,7 +160,9 @@ fn main() {
         .add_item(restart)
         .add_item(quit);
 
-    let system_tray = SystemTray::new().with_menu(tray_menu);
+    let system_tray = SystemTray::new()
+        .with_tooltip("Nojoin Companion")
+        .with_menu(tray_menu);
 
     // We need a way to share state with the event handler.
     // Since the event handler is a closure, we can't easily move the Arc<AppState> into it AND the setup closure.
@@ -398,6 +400,7 @@ fn main() {
                                  }
                              };
                              let _ = tray_handle.get_item("status").set_title(status_text);
+                             let _ = tray_handle.set_tooltip(status_text);
                              
                              let is_connected = state_fetch.is_backend_connected.load(Ordering::SeqCst);
                              let _ = tray_handle.get_item("open_web").set_enabled(is_connected);
