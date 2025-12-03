@@ -29,32 +29,14 @@ export function detectPlatform(): Platform {
 }
 
 export function getDownloadUrl(platform: Platform = detectPlatform()): string {
-  const baseUrl = `https://github.com/${GITHUB_REPO}/releases/latest/download`;
-  
-  switch (platform) {
-    case 'windows':
-      return `${baseUrl}/Nojoin-Companion-Setup.exe`;
-    case 'macos':
-      return `${baseUrl}/Nojoin-Companion-Setup.dmg`;
-    case 'linux':
-      return `${baseUrl}/Nojoin-Companion-Setup.deb`;
-    default:
-      // Default to releases page if unknown
-      return `https://github.com/${GITHUB_REPO}/releases/latest`;
-  }
+  // Robustness: Directing to the releases page is safer than hardcoding filenames
+  // which change with every version (e.g. including version numbers) and architecture.
+  // This allows the user to choose the correct installer (e.g. Apple Silicon vs Intel).
+  return `https://github.com/${GITHUB_REPO}/releases/latest`;
 }
 
 export function getDownloadLabel(platform: Platform = detectPlatform()): string {
-  switch (platform) {
-    case 'windows':
-      return 'Download for Windows';
-    case 'macos':
-      return 'Download for macOS';
-    case 'linux':
-      return 'Download for Linux';
-    default:
-      return 'Download Companion';
-  }
+  return 'Download Companion';
 }
 
 export function getPlatformIcon(platform: Platform = detectPlatform()): string {

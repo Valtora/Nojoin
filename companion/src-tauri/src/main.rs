@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 use std::path::PathBuf;
-use tauri::{CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayMenuItem, SystemTrayEvent, Manager};
+use tauri::{CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayMenuItem, SystemTrayEvent, Manager, AppHandle};
 use log::{info, error};
 use reqwest;
 
@@ -18,6 +18,9 @@ mod state;
 mod uploader;
 mod config;
 mod notifications;
+mod win_notifications;
+mod mac_notifications;
+mod linux_notifications;
 
 use state::{AppState, AppStatus};
 use config::Config;
@@ -41,6 +44,60 @@ fn save_config(state: tauri::State<SharedAppState>, api_host: String, api_port: 
     
     config.save().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    match app.updater().check().await {
+        Ok(update) => {
+            if update.is_update_available() {
+                update.download_and_install().await.map_err(|e| e.to_string())?;
+                tauri::api::process::restart(&app.env());
+                Ok(())
+            } else {
+                Err("No update available".to_string())
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn close_update_prompt(window: tauri::Window) {
+    let _ = window.close();
+}
+
+async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
+    match app.updater().check().await {
+        Ok(update) => {
+            if update.is_update_available() {
+                let version = update.latest_version().to_string();
+                
+                #[cfg(windows)]
+                {
+                    win_notifications::show_update_notification(app.clone(), version);
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    mac_notifications::show_update_notification(app.clone(), version);
+                }
+
+                #[cfg(target_os = "linux")]
+                {
+                    linux_notifications::show_update_notification(app.clone(), version);
+                }
+            } else if !silent {
+                notifications::show_notification("No Updates", "You are on the latest version.");
+            }
+        }
+        Err(e) => {
+            error!("Update check failed: {}", e);
+            if !silent {
+                notifications::show_notification("Update Error", &e.to_string());
+            }
+        }
+    }
 }
 
 fn get_log_path() -> PathBuf {
@@ -117,7 +174,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
-        .invoke_handler(tauri::generate_handler![get_config, save_config])
+        .invoke_handler(tauri::generate_handler![get_config, save_config, install_update, close_update_prompt])
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| match event {
             SystemTrayEvent::MenuItemClick { id, .. } => {
@@ -181,21 +238,7 @@ fn main() {
                         // Trigger Tauri updater check
                         let handle = app.app_handle();
                         tauri::async_runtime::spawn(async move {
-                            match handle.updater().check().await {
-                                Ok(update) => {
-                                    if update.is_update_available() {
-                                        let _ = update.download_and_install().await;
-                                        // Notify user to restart
-                                        notifications::show_notification("Update Installed", "Please restart the app.");
-                                    } else {
-                                        notifications::show_notification("No Updates", "You are on the latest version.");
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Update check failed: {}", e);
-                                    notifications::show_notification("Update Error", &e.to_string());
-                                }
-                            }
+                            check_and_prompt_update(&handle, false).await;
                         });
                     }
                     "run_on_startup" => {
@@ -248,6 +291,36 @@ fn main() {
             let autostart_manager = app.autolaunch();
             let is_enabled = autostart_manager.is_enabled().unwrap_or(false);
             let _ = app.tray_handle().get_item("run_on_startup").set_selected(is_enabled);
+
+            // Post-update check
+            {
+                let mut config = state.config.lock().unwrap();
+                let current_version = app.package_info().version.to_string();
+                
+                if let Some(last_ver) = &config.last_version {
+                    if last_ver != &current_version {
+                        notifications::show_notification("Updated", &format!("Nojoin Companion App Updated v{}", current_version));
+                    }
+                }
+                
+                if config.last_version.as_ref() != Some(&current_version) {
+                    config.last_version = Some(current_version);
+                    let _ = config.save();
+                }
+            }
+
+            // Start update check loop
+            let app_handle_update = app.handle();
+            tauri::async_runtime::spawn(async move {
+                // Initial delay
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                check_and_prompt_update(&app_handle_update, true).await;
+                
+                loop {
+                    tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await; // 6 hours
+                    check_and_prompt_update(&app_handle_update, true).await;
+                }
+            });
 
             let state_audio = state.clone();
             thread::spawn(move || {

@@ -23,7 +23,13 @@
     },
     "bundle": {
       "active": true,
-      "targets": "all",
+      "targets": [
+        "nsis",
+        "dmg",
+        "deb",
+        "appimage",
+        "updater"
+      ],
       "identifier": "com.valtora.nojoin.companion",
       "icon": [
         "icons/32x32.png",
@@ -54,7 +60,7 @@
       "endpoints": [
         "https://github.com/Valtora/Nojoin/releases/latest/download/latest.json"
       ],
-      "dialog": true,
+      "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEQjE5ODcwRDI4NzJCQjYKUldTMks0ZlNjSml4clcyd1FJSDZURWhpQ1hPK2xQenhUbVBsYmMxaEZSSjdjWEdFOTJmYlU0b2sK"
     },
     "windows": [

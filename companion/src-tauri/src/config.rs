@@ -21,6 +21,8 @@ pub struct Config {
     pub input_device_name: Option<String>,
     #[serde(default)]
     pub output_device_name: Option<String>,
+    #[serde(default)]
+    pub last_version: Option<String>,
 }
 
 fn default_api_port() -> u16 {
