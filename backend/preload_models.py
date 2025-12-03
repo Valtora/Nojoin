@@ -233,9 +233,9 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
                 report(f"Whisper model found in cache.", 100, stage="whisper")
 
         # Now load it (this verifies checksum and loads into memory)
-        report(f"Loading Whisper model ({whisper_model_size})...", 110, stage="whisper")
+        report(f"Loading Whisper model ({whisper_model_size})...", 0, stage="whisper_loading")
         whisper.load_model(whisper_model_size, download_root=download_root)
-        report(f"Whisper model ({whisper_model_size}) loaded.", 100, stage="whisper")
+        report(f"Whisper model ({whisper_model_size}) loaded.", 100, stage="whisper_loading")
         
     except Exception as e:
         logger.error(f"Failed to load Whisper model: {e}")

@@ -64,16 +64,22 @@ def set_download_progress(
         # (common when switching from "download" -> "loading" phases),
         # keep the higher value so the progress bar doesn't jump backwards.
         existing = None
+        existing_stage = None
         try:
             existing_raw = r.get(PROGRESS_KEY)
             if existing_raw:
-                existing = json.loads(existing_raw).get("progress")
+                data = json.loads(existing_raw)
+                existing = data.get("progress")
+                existing_stage = data.get("stage")
         except Exception:
             existing = None
+            existing_stage = None
 
         # If we're actively downloading, avoid decreasing the numeric progress
+        # BUT only if we are in the same stage. If stage changes (e.g. vad -> whisper),
+        # we want to allow the progress to reset to 0.
         write_progress = progress
-        if status == "downloading" and existing is not None:
+        if status == "downloading" and existing is not None and stage == existing_stage:
             try:
                 existing_int = int(existing)
                 if write_progress < existing_int:

@@ -237,8 +237,8 @@ export default function SetupPage() {
         openai_api_key: formData.openai_api_key,
         anthropic_api_key: formData.anthropic_api_key,
         hf_token: formData.hf_token,
-        // Save selected model in the provider-specific field
-        [`${formData.llm_provider}_model`]: formData.selected_model
+        // Save selected model
+        selected_model: formData.selected_model
       });
 
       // 2. Login to get token for subsequent requests
@@ -313,9 +313,14 @@ export default function SetupPage() {
 
   const completeSetupAndRedirect = () => {
     setDownloadProgress(100);
+    setDownloadStage('complete');
     setDownloadMessage('All models ready!');
     setDownloadComplete(true);
-    setTimeout(() => router.push('/'), 2000);
+    // Removed automatic redirect
+  };
+
+  const handleCompleteSetup = () => {
+    router.push('/');
   };
 
   if (loading) {
@@ -620,7 +625,7 @@ export default function SetupPage() {
                   <div className="shrink-0">
                     {['pyannote', 'embedding', 'complete'].includes(downloadStage) ? (
                       <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === 'whisper' ? (
+                    ) : (downloadStage === 'whisper' || downloadStage === 'whisper_loading') ? (
                       <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
                     ) : (
                       <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
@@ -630,11 +635,29 @@ export default function SetupPage() {
                     <div className="flex justify-between mb-1">
                       <h3 className="font-medium text-gray-900 dark:text-white">Transcription Model</h3>
                       {downloadStage === 'whisper' && <span className="text-xs text-orange-600 font-medium">{Math.round(downloadProgress)}%</span>}
+                      {downloadStage === 'whisper_loading' && <span className="text-xs text-orange-600 font-medium">Loading...</span>}
                     </div>
                     <p className="text-xs text-gray-500">OpenAI Whisper (Turbo)</p>
-                    {downloadStage === 'whisper' && (
+                    
+                    {/* Download Bar */}
+                    {(downloadStage === 'whisper' || downloadStage === 'whisper_loading') && (
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                        <div 
+                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" 
+                          style={{ width: downloadStage === 'whisper_loading' ? '100%' : `${downloadProgress}%` }} 
+                        />
+                      </div>
+                    )}
+
+                    {/* Loading Bar */}
+                    {downloadStage === 'whisper_loading' && (
+                      <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                        <div className="flex justify-between mb-1">
+                          <span className="text-xs text-gray-500">Loading into memory...</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 overflow-hidden">
+                          <div className="bg-orange-400/50 h-1.5 rounded-full w-full animate-pulse" />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -693,7 +716,12 @@ export default function SetupPage() {
 
               {downloadComplete && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 text-center">
-                  <p className="text-green-600 dark:text-green-400 mb-4">Redirecting to dashboard...</p>
+                  <button
+                    onClick={handleCompleteSetup}
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
+                  >
+                    Complete Setup <ArrowRight className="w-5 h-5" />
+                  </button>
                 </div>
               )}
             </div>

@@ -7,7 +7,7 @@ use crate::uploader;
 use crate::config::Config;
 use std::thread;
 use hound;
-use log::{info, warn, error};
+use log::{info, warn};
 use anyhow;
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {

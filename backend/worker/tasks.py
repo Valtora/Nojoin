@@ -444,6 +444,7 @@ def process_recording_task(self, recording_id: int):
                 
                 provider = merged_config.get("llm_provider", "gemini")
                 api_key = merged_config.get(f"{provider}_api_key")
+                model = merged_config.get(f"{provider}_model")
                 
                 if api_key:
                     transcript.notes_status = "generating"
@@ -451,7 +452,7 @@ def process_recording_task(self, recording_id: int):
                     session.commit()
                     update_recording_status(session, recording.id)
                     
-                    llm = get_llm_backend(provider, api_key=api_key)
+                    llm = get_llm_backend(provider, api_key=api_key, model=model)
                     # We pass empty mapping because names are already resolved in transcript_text
                     notes = llm.generate_meeting_notes(transcript_text, {})
                     transcript.notes = notes
@@ -835,7 +836,7 @@ def infer_speakers_task(self, recording_id: int):
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")
-        model = merged_config.get("llm_model")
+        model = merged_config.get(f"{provider}_model")
 
         if not api_key:
             logger.warning(f"No API key configured for {provider}. Skipping inference.")

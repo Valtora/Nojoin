@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
+// @ts-ignore: No types for lucide-react available in this project; add a declaration file if stricter typing is required.
 import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
@@ -225,7 +226,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                   </label>
                   <select
                     value={settings.llm_provider || 'gemini'}
-                    onChange={(e) => onUpdate({ ...settings, llm_provider: e.target.value, llm_model: '' })}
+                    onChange={(e) => onUpdate({ ...settings, llm_provider: e.target.value })}
                     disabled={!isAdmin}
                     className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                   >
@@ -255,8 +256,17 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                         </button>
                     </label>
                     <select
-                        value={settings.llm_model || ''}
-                        onChange={(e) => onUpdate({ ...settings, llm_model: e.target.value })}
+                        value={(settings.llm_provider === 'openai' ? settings.openai_model : 
+                               settings.llm_provider === 'anthropic' ? settings.anthropic_model : 
+                               settings.gemini_model) || ''}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            const updates: any = { ...settings };
+                            if (settings.llm_provider === 'openai') updates.openai_model = val;
+                            else if (settings.llm_provider === 'anthropic') updates.anthropic_model = val;
+                            else updates.gemini_model = val;
+                            onUpdate(updates);
+                        }}
                         disabled={!isAdmin || availableModels.length === 0}
                         className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     >
