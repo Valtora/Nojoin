@@ -2,8 +2,15 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
+## Preparing Repository for Public Release
+- Review the entire codebase for any hardcoded secrets, API keys, or sensitive information and report back.
+- Review historical commits for any accidental exposure of sensitive information and report back.
+- Create a comprehensive README.md file that includes an overview of the project, installation instructions and usage guidelines.
+- Setup a CONTRIBUTING.md file to say that I'm not encouraging contributions at this time but welcome bug reports and feature requests via GitHub Issues.
+- Make it clear that this is the free and open-source 'Community' edition of Nojoin and there will be a paid 'Enterprise' edition in future with additional deployment and support options.
+
 ## Companion App - Auto-Updater
-- Investigate how we can implement an auto-update function that periodically checks for updates and notifies the user if there is an update to download. Using the notification system in the companion app, the user should be able to click 'Update Now' or 'Not Now' that appears in the notification toast, with the auto-update check occuring again on next start-up if they click 'Now Now'.
+- Investigate how we can implement an auto-update function that periodically checks for updates and notifies the user if there is an update to download. Using the notification system in the companion app, the user should be able to click 'Update Now' or 'Not Now' that appears in the notification toast, with the auto-update check occuring again on next start-up if they click 'Update Now'.
 - If they click Update Now then the companion app should silently download and update itself. If successfully updated and restarted there should be another notification along the lines of 'Nojoin Companion App Updated vX.X.X'.
 - Add another button in the main sidebar of the web app that shows up when the companion app is connected but not running the latest version. This button should say 'Update Companion App' and clicking it should trigger the same update process as above.
 

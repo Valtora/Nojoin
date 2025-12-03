@@ -90,6 +90,11 @@ Nojoin is composed of three distinct subsystems:
 
 *Note: For developers, you can still build from source by navigating to the `companion` directory and running `cargo run --release`.*
 
+## 📦 Editions
+
+*   **Community Edition:** This is the free and open-source version of Nojoin, designed for self-hosting and community support. It includes all core features for recording, processing, and analyzing meetings.
+*   **Enterprise Edition:** (Coming Soon) A paid version designed for larger organizations. It will include additional deployment options, advanced administration features, and dedicated support.
+
 ## ☕ Buy Me a Coffee
 
 If Nojoin is useful to you please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support the project.
