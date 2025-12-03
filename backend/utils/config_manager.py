@@ -13,11 +13,9 @@ CONFIG_PATH = str(path_manager.config_path)
 
 def _get_default_device():
     """Determine default processing device safely."""
-    try:
-        import torch
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
-        return "cpu"
+    # Always default to 'auto' so the worker can decide at runtime based on availability.
+    # This prevents 'cpu' from being hardcoded if the config is generated in a non-GPU environment (like CI or build).
+    return "auto"
 
 def _get_default_models():
     """Get default models from LLM_Services to avoid circular imports."""

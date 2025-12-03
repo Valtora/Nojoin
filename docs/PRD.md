@@ -66,7 +66,9 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Authentication:** JWT-based authentication for API access.
 *   **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
 *   **Authorization:** Strict ownership checks ensure users can only access their own data.
-*   **CORS:** Restricted to allowed origins.
+*   **CORS & Remote Access:**
+    *   **CORS:** Restricted to allowed origins. Configurable via `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
+    *   **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
 
 ---
 

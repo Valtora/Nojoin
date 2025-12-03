@@ -81,6 +81,7 @@ Nojoin is composed of three distinct subsystems:
 3.  **Access the Application:**
     *   **Web Interface:** Open `https://localhost:14443`
         *   *Note: You will see a "Not Secure" warning because of the self-signed certificate.*
+    *   **Remote Access:** To access from another machine or domain, configure `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS` in your `.env` file. See `.env.example` for details.
 
 ### Running the Companion App
 1.  Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
