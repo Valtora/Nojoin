@@ -219,6 +219,10 @@ async fn start_recording(
         Ok(response) => {
             if let Ok(json) = response.json::<serde_json::Value>().await {
                 if let Some(id) = json.get("id").and_then(|v| v.as_i64()) {
+                    let recording_name = json.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&payload.name);
+
                     // Start Audio Thread
                     *state.current_recording_id.lock().unwrap() = Some(id);
                     *state.current_sequence.lock().unwrap() = 1;
@@ -231,7 +235,7 @@ async fn start_recording(
                     let mut status = state.status.lock().unwrap();
                     *status = AppStatus::Recording;
                     
-                    notifications::show_notification("Recording Started", &format!("Recording '{}' started.", payload.name));
+                    notifications::show_notification("Recording Started", &format!("Recording '{}' started.", recording_name));
                     info!("Recording started successfully. ID: {}", id);
                     
                     return (StatusCode::OK, Json(StartResponse {

@@ -248,8 +248,8 @@ A lightweight, cross-platform system tray application responsible for audio capt
 ### 4.4 Deployment
 *   **Docker Compose:** Primary deployment method orchestrating API, Worker, DB, Redis, and Web Frontend containers.
 *   **Hardware Support:**
-    *   **CPU-Only (Default):** The base `docker-compose.yml` is configured for CPU inference by default, ensuring compatibility with all systems.
-    *   **NVIDIA GPU (Optional):** GPU support is enabled by layering a secondary configuration file: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
+    *   **NVIDIA GPU (Default):** The base `docker-compose.yml` is configured for GPU inference by default.
+    *   **CPU-Only (Optional):** CPU support is enabled by using the CPU configuration file: `docker compose -f docker-compose.cpu.yml up -d`.
 *   **Versioning:** Semantic versioning applied to Docker images.
 
 ### 4.5 Containerization Standards

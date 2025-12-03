@@ -65,13 +65,15 @@ services:
       # Force cache location to match the mounted volume
       - XDG_CACHE_HOME=/home/appuser/.cache
       - HF_HOME=/home/appuser/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # This section is commented out by default on the normal docker compose file
+    # If you have a GPU you can uncomment it to enable GPU support or you can use the docker-compose.gpu.yml file
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     depends_on:
       - db
       - redis

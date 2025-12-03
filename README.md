@@ -65,16 +65,16 @@ Nojoin is composed of three distinct subsystems:
 
 2.  **Start the Stack:**
 
-    **Option A: CPU (Default)**
-    Works on all systems. Slower processing speeds.
+    **Option A: NVIDIA GPU (Default)**
+    Requires an NVIDIA GPU. Much faster processing.
     ```bash
     docker compose up -d
     ```
 
-    **Option B: NVIDIA GPU**
-    Requires an NVIDIA GPU. Much faster processing.
+    **Option B: CPU**
+    Works on all systems. Slower processing speeds.
     ```bash
-    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    docker compose -f docker-compose.cpu.yml up -d
     ```
     *Note: The first run may take several minutes as it needs to download large Docker images.*
 

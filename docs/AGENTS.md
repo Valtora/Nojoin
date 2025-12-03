@@ -55,8 +55,8 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 ### Commands
 - **Start Infrastructure**:
-  - **CPU (Default)**: `docker-compose up -d`
-  - **NVIDIA GPU**: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
+  - **NVIDIA GPU (Default)**: `docker-compose up -d`
+  - **CPU**: `docker compose -f docker-compose.cpu.yml up -d`
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
