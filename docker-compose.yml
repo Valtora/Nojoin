@@ -35,6 +35,7 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - XDG_CACHE_HOME=/shared_model_cache
       - HF_HOME=/shared_model_cache/huggingface
     depends_on:
