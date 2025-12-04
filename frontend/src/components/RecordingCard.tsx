@@ -98,9 +98,11 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const handleRenameStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleRenameStart = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setIsRenaming(true);
     setRenameValue(recording.name);
     setContextMenu(null);

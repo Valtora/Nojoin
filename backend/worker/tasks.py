@@ -754,7 +754,7 @@ def generate_notes_task(self, recording_id: int):
         # Fix: Use provider-specific model key (e.g. gemini_model) instead of generic llm_model
         model = merged_config.get(f"{provider}_model")
 
-        if not api_key:
+        if not api_key and provider != "ollama":
             logger.warning(f"No API key configured for {provider}. Cannot generate notes.")
             transcript.notes_status = "error"
             transcript.error_message = f"No API key configured for {provider}"
@@ -840,7 +840,7 @@ def infer_speakers_task(self, recording_id: int):
         api_key = merged_config.get(f"{provider}_api_key")
         model = merged_config.get(f"{provider}_model")
 
-        if not api_key:
+        if not api_key and provider != "ollama":
             logger.warning(f"No API key configured for {provider}. Skipping inference.")
             return
 

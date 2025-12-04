@@ -89,6 +89,8 @@ export interface Settings {
   gemini_model?: string;
   openai_model?: string;
   anthropic_model?: string;
+  ollama_model?: string;
+  ollama_api_url?: string;
   hf_token?: string;
   worker_url?: string;
   companion_url?: string;

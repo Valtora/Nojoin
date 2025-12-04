@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { GlobalSpeaker } from '@/types';
 import { getGlobalSpeakers, updateGlobalSpeaker, mergeSpeakers, deleteGlobalSpeaker, deleteGlobalSpeakerEmbedding } from '@/lib/api';
-import { X, Edit2, Merge, Save, Trash2, Mic, MicOff } from 'lucide-react';
+import { X, Edit2, Merge, Save, Trash2, MicOff } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
 interface GlobalSpeakersModalProps {

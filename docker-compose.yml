@@ -43,6 +43,8 @@ services:
     depends_on:
       - db
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   worker:
@@ -77,6 +79,8 @@ services:
     depends_on:
       - db
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:

@@ -21,9 +21,7 @@ class SettingsUpdate(BaseModel):
     openai_model: Optional[str] = None
     anthropic_model: Optional[str] = None
     ollama_model: Optional[str] = None
-    localai_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
-    localai_api_url: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     # System settings that might be passed but should be ignored or handled separately if we allowed admin to change them
     # For now, we only allow user settings update here.

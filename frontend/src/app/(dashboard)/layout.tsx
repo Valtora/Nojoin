@@ -4,7 +4,6 @@ import { usePathname } from 'next/navigation';
 import MainNav from "@/components/MainNav";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
-import ChatPanel from "@/components/ChatPanel";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
 
 export default function DashboardLayout({

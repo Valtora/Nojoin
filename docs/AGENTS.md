@@ -111,6 +111,17 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Error Handling**: Use `anyhow::Result` for application code.
 - **Async**: Use `tokio` for I/O bound tasks.
 
+## Quality Assurance & Build Safety
+*   **Frontend Verification:**
+    *   **Rule:** After ANY change to frontend code (`frontend/src/**/*`), you MUST run a build check to catch type errors that dev mode misses.
+    *   **Command:** `docker compose build frontend` OR if working locally `cd frontend && npm run build`.
+    *   **Why:** Next.js dev mode is lenient; production builds are strict.
+*   **Type Safety:**
+    *   **Rule:** When adding new data fields (e.g., to Settings or Models), update the TypeScript interfaces in `frontend/src/types/index.ts` **FIRST**.
+    *   **Rule:** Do not use `any` unless absolutely necessary to bypass library bugs.
+*   **Import Verification:**
+    *   **Rule:** When refactoring or moving code, verify that all imports in dependent files are updated. Use `grep_search` to find usages of moved symbols.
+
 ## Agent Interaction Rules
 
 ### The Workflow Loop

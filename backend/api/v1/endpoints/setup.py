@@ -31,6 +31,12 @@ async def validate_llm(request: ValidateLLMRequest):
     try:
         llm = get_llm_backend(request.provider, api_key=request.api_key, model=request.model, api_url=request.api_url)
         llm.validate_api_key()
+        
+        models = []
+        if request.provider == "ollama":
+            models = llm.list_models()
+            return {"valid": True, "message": "Connected to Ollama successfully.", "models": models}
+            
         provider_name = request.provider.capitalize() if request.provider else "LLM"
         return {"valid": True, "message": f"{provider_name} API key is valid."}
     except Exception as e:

@@ -9,7 +9,7 @@ import NotesView from '@/components/NotesView';
 import ExportModal from '@/components/ExportModal';
 import RecordingTagEditor from '@/components/RecordingTagEditor';
 import Link from 'next/link';
-import { Loader2, Edit2, MessageSquare } from 'lucide-react';
+import { Loader2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpeaker } from '@/types';
 import { useRouter } from 'next/navigation';
@@ -74,7 +74,6 @@ export default function RecordingPage({ params }: PageProps) {
   // Panel State (Transcript or Notes)
   const [activePanel, setActivePanel] = useState<ActivePanel>('transcript');
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
-  const [showChat, setShowChat] = useState(true);
   
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);

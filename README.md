@@ -24,7 +24,7 @@
     *   **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote.
     *   **Dual-Channel Recording:** Captures both system audio (what you hear) and microphone input (what you say).
 *   **Meeting Intelligence:**
-    *   **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, or Google Gemini.
+    *   **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, Google Gemini, or Ollama (Local).
     *   **Chat Q&A:** "Chat with your meeting" to ask specific questions about the content.
 *   **Organization & Search:**
     *   **Global Speaker Library:** Centralized management of speaker identities across all recordings.
@@ -82,6 +82,11 @@ Nojoin is composed of three distinct subsystems:
     *   **Web Interface:** Open `https://localhost:14443`
         *   *Note: You will see a "Not Secure" warning because of the self-signed certificate.*
     *   **Remote Access:** To access from another machine or domain, configure `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS` in your `.env` file. See `.env.example` for details.
+
+### Using Local LLMs (Ollama)
+If you are running Ollama on the same machine as the Nojoin Docker containers, you must use the special Docker host address:
+*   **API URL:** `http://host.docker.internal:11434`
+*   Do **not** use `localhost` or `127.0.0.1` as the container cannot see the host's localhost.
 
 ### Running the Companion App
 1.  Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.

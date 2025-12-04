@@ -28,14 +28,14 @@ export function detectPlatform(): Platform {
   return 'unknown';
 }
 
-export function getDownloadUrl(platform: Platform = detectPlatform()): string {
+export function getDownloadUrl(): string {
   // Robustness: Directing to the releases page is safer than hardcoding filenames
   // which change with every version (e.g. including version numbers) and architecture.
   // This allows the user to choose the correct installer (e.g. Apple Silicon vs Intel).
   return `https://github.com/${GITHUB_REPO}/releases/latest`;
 }
 
-export function getDownloadLabel(platform: Platform = detectPlatform()): string {
+export function getDownloadLabel(): string {
   return 'Download Companion';
 }
 

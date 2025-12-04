@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
-// @ts-ignore: No types for lucide-react available in this project; add a declaration file if stricter typing is required.
 import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive, Server } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
@@ -58,10 +57,9 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
       else if (provider === 'openai') key = settings.openai_api_key || '';
       else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
       else if (provider === 'ollama') url = settings.ollama_api_url || '';
-      else if (provider === 'localai') url = settings.localai_api_url || '';
 
       const needsKey = ['gemini', 'openai', 'anthropic'].includes(provider || '');
-      const needsUrl = ['ollama', 'localai'].includes(provider || '');
+      const needsUrl = ['ollama'].includes(provider || '');
 
       if (provider && ((needsKey && key) || (needsUrl && url))) {
         setFetchingModels(true);
@@ -82,7 +80,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
     // Debounce slightly to avoid too many calls while typing
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.llm_provider, settings.gemini_api_key, settings.openai_api_key, settings.anthropic_api_key, settings.ollama_api_url, settings.localai_api_url]);
+  }, [settings.llm_provider, settings.gemini_api_key, settings.openai_api_key, settings.anthropic_api_key, settings.ollama_api_url]);
 
   const handleValidate = async (provider: string) => {
     setValidating(provider);
@@ -95,7 +93,6 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
         else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
         else if (provider === 'hf') key = settings.hf_token || '';
         else if (provider === 'ollama') url = settings.ollama_api_url || '';
-        else if (provider === 'localai') url = settings.localai_api_url || '';
 
         if (!key && !url) throw new Error("No API key/URL provided");
         
@@ -103,18 +100,15 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
         if (provider === 'hf') {
             res = await validateHF(key);
         } else {
-            // validateLLM needs to support URL too. I need to update validateLLM in api.ts?
-            // validateLLM calls /setup/validate-llm which I updated.
-            // But validateLLM signature in api.ts might need update.
-            // I'll check api.ts later. Assuming I update it or pass it somehow.
-            // Actually validateLLM takes (provider, apiKey, model?). I should update it to take url.
-            // For now, I'll assume I update api.ts.
-            // Wait, I haven't updated validateLLM in api.ts yet.
-            // I'll do that in next step.
             res = await validateLLM(provider, key, undefined, url);
-            // Also refresh models on explicit validate
-            const modelsRes = await listModels(provider, key, url);
-            setAvailableModels(modelsRes.models);
+            // If models are returned (e.g. from Ollama), update the list
+            if (res.models) {
+                setAvailableModels(res.models);
+            } else {
+                // Otherwise refresh models explicitly
+                const modelsRes = await listModels(provider, key, url);
+                setAvailableModels(modelsRes.models);
+            }
         }
         setValidationMsg({type: 'success', msg: res.message, provider});
     } catch (e: any) {
@@ -252,12 +246,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="ollama">Ollama (Local)</option>
-                    <option value="localai">LocalAI (Local)</option>
                   </select>
                 </div>
 
                 {/* API URL for Local Providers */}
-                {(settings.llm_provider === 'ollama' || settings.llm_provider === 'localai') && (
+                {(settings.llm_provider === 'ollama') && (
                     <div className="col-span-2 md:col-span-1">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             API URL
@@ -265,15 +258,14 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                         <div className="relative">
                             <input
                                 type="text"
-                                value={(settings.llm_provider === 'ollama' ? settings.ollama_api_url : settings.localai_api_url) || ''}
+                                value={(settings.llm_provider === 'ollama' ? settings.ollama_api_url : '') || ''}
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     const updates: any = { ...settings };
                                     if (settings.llm_provider === 'ollama') updates.ollama_api_url = val;
-                                    else updates.localai_api_url = val;
                                     onUpdate(updates);
                                 }}
-                                placeholder={settings.llm_provider === 'ollama' ? "http://localhost:11434" : "http://localhost:8080"}
+                                placeholder={settings.llm_provider === 'ollama' ? "http://host.docker.internal:11434" : ""}
                                 disabled={!isAdmin}
                                 className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                             />
@@ -299,7 +291,6 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                                 else if (provider === 'openai') key = settings.openai_api_key || '';
                                 else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
                                 else if (provider === 'ollama') url = settings.ollama_api_url || '';
-                                else if (provider === 'localai') url = settings.localai_api_url || '';
                                 
                                 if (key || url) listModels(provider, key, url).then(res => setAvailableModels(res.models));
                             }}
@@ -313,7 +304,6 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                         value={(settings.llm_provider === 'openai' ? settings.openai_model : 
                                settings.llm_provider === 'anthropic' ? settings.anthropic_model : 
                                settings.llm_provider === 'ollama' ? settings.ollama_model :
-                               settings.llm_provider === 'localai' ? settings.localai_model :
                                settings.gemini_model) || ''}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -321,7 +311,6 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                             if (settings.llm_provider === 'openai') updates.openai_model = val;
                             else if (settings.llm_provider === 'anthropic') updates.anthropic_model = val;
                             else if (settings.llm_provider === 'ollama') updates.ollama_model = val;
-                            else if (settings.llm_provider === 'localai') updates.localai_model = val;
                             else updates.gemini_model = val;
                             onUpdate(updates);
                         }}
@@ -357,7 +346,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
             </div>
 
             {/* API Key (Dynamic) */}
-            {!['ollama', 'localai'].includes(settings.llm_provider || '') && (
+            {!['ollama'].includes(settings.llm_provider || '') && (
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     API Key
@@ -417,7 +406,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
             )}
 
             {/* Validation for Local Providers */}
-            {['ollama', 'localai'].includes(settings.llm_provider || '') && (
+            {['ollama'].includes(settings.llm_provider || '') && (
                 <div>
                     <button
                         onClick={() => handleValidate(settings.llm_provider || 'ollama')}

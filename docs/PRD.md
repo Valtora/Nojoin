@@ -161,7 +161,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 
 ### 3.5 Meeting Intelligence
 *   **LLM-Powered Notes:**
-    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, Gemini, Ollama, or LocalAI).
+    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, Gemini, or Ollama).
     *   Notes are stored in the database and rendered as rich Markdown in the Web UI.
     *   **Comprehensive Meeting Notes:** AI-generated notes include:
         *   **Topics Discussed:** List of major themes covered
@@ -260,3 +260,8 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Context Management:** Maintain a strict `.dockerignore` file to exclude build artifacts (Rust `target/`, Node `node_modules/`), version control history (`.git`), and local environment files from the build context.
 *   **Dependency Optimization:** Filter `requirements.txt` during the build process to prevent redundant installation of packages already present in the base image (e.g., `torch`, `torchaudio`).
 *   **Layer Efficiency:** Combine `RUN` instructions where possible and clean up package manager caches (`apt-get clean`, `rm -rf /var/lib/apt/lists/*`) in the same layer to reduce image size.
+
+### 4.6 Development Standards
+*   **Type Safety:** All frontend code must pass strict TypeScript validation (`npm run type-check` or `npm run build`) before merging.
+*   **Interface Consistency:** Data models must be synchronized between Backend (Pydantic/SQLModel) and Frontend (TypeScript Interfaces).
+*   **Build Verification:** Features are not considered complete until the application builds successfully in the Docker production environment.

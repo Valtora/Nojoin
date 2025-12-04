@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getSystemStatus, setupSystem, downloadModels, getTaskStatus, login, validateLLM, validateHF, updateSettings, getDownloadProgress, getModelStatus, listModels } from '@/lib/api';
-import { Loader2, CheckCircle, Download, Check, X, AlertTriangle, ArrowRight, ArrowLeft, Shield, Cpu, Key } from 'lucide-react';
+import { getSystemStatus, setupSystem, downloadModels, login, validateLLM, validateHF, getDownloadProgress, listModels } from '@/lib/api';
+import { Loader2, CheckCircle, Check, X, AlertTriangle, ArrowRight } from 'lucide-react';
 import ConfirmationModal from '@/components/ConfirmationModal';
 
 export default function SetupPage() {
@@ -21,6 +21,7 @@ export default function SetupPage() {
     gemini_api_key: '',
     openai_api_key: '',
     anthropic_api_key: '',
+    ollama_api_url: 'http://host.docker.internal:11434',
     hf_token: '',
     selected_model: ''
   });
@@ -34,16 +35,12 @@ export default function SetupPage() {
   
   // Model Selection State
   const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
   const [llmSkipped, setLlmSkipped] = useState(false);
 
   // Download State
-  const [downloadingModels, setDownloadingModels] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadStage, setDownloadStage] = useState('');
   const [downloadMessage, setDownloadMessage] = useState('Checking download status...');
-  const [downloadSpeed, setDownloadSpeed] = useState('');
-  const [downloadEta, setDownloadEta] = useState('');
   const [downloadComplete, setDownloadComplete] = useState(false);
 
   // Modals
@@ -112,8 +109,7 @@ export default function SetupPage() {
     if (formData.llm_provider === 'gemini') return { key: formData.gemini_api_key };
     if (formData.llm_provider === 'openai') return { key: formData.openai_api_key };
     if (formData.llm_provider === 'anthropic') return { key: formData.anthropic_api_key };
-    if (formData.llm_provider === 'ollama') return { url: formData.ollama_api_url || 'http://localhost:11434' };
-    if (formData.llm_provider === 'localai') return { url: formData.localai_api_url || 'http://localhost:8080' };
+    if (formData.llm_provider === 'ollama') return { url: formData.ollama_api_url || 'http://host.docker.internal:11434' };
     return {};
   };
 
@@ -134,7 +130,6 @@ export default function SetupPage() {
       setLlmValidationMsg({ valid: true, msg: res.message });
       
       // 2. Fetch Models
-      setFetchingModels(true);
       const modelsRes = await listModels(formData.llm_provider, creds.key || '', creds.url);
       setAvailableModels(modelsRes.models);
       
@@ -147,7 +142,6 @@ export default function SetupPage() {
       setLlmValidationMsg({ valid: false, msg: err.response?.data?.detail || err.message });
     } finally {
       setValidatingLLM(false);
-      setFetchingModels(false);
     }
   };
 
@@ -228,7 +222,6 @@ export default function SetupPage() {
 
   const createAccountAndStartDownload = async () => {
     setStep(4);
-    setDownloadingModels(true);
     
     try {
       // 1. Create Admin Account & Save Settings
@@ -240,7 +233,6 @@ export default function SetupPage() {
         openai_api_key: formData.openai_api_key,
         anthropic_api_key: formData.anthropic_api_key,
         ollama_api_url: formData.ollama_api_url,
-        localai_api_url: formData.localai_api_url,
         hf_token: formData.hf_token,
         // Save selected model
         selected_model: formData.selected_model
@@ -257,7 +249,6 @@ export default function SetupPage() {
       console.error("Setup failed:", err);
       setError(err.response?.data?.detail || "Setup failed. Please try again.");
       setStep(3); // Go back
-      setDownloadingModels(false);
     }
   };
 
@@ -307,8 +298,6 @@ export default function SetupPage() {
           setDownloadProgress(progress.progress || 0);
           setDownloadStage(progress.stage || '');
           setDownloadMessage(progress.message || 'Downloading...');
-          setDownloadSpeed(progress.speed || '');
-          setDownloadEta(progress.eta || '');
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -454,32 +443,28 @@ export default function SetupPage() {
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="ollama">Ollama (Local)</option>
-                  <option value="localai">LocalAI (Local)</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {['ollama', 'localai'].includes(formData.llm_provider) ? 'API URL' : 'API Key'}
+                    {['ollama'].includes(formData.llm_provider) ? 'API URL' : 'API Key'}
                 </label>
                 <div className="flex gap-2">
                   <input
-                    type={['ollama', 'localai'].includes(formData.llm_provider) ? "text" : "password"}
+                    type={['ollama'].includes(formData.llm_provider) ? "text" : "password"}
                     name={
                         formData.llm_provider === 'ollama' ? 'ollama_api_url' :
-                        formData.llm_provider === 'localai' ? 'localai_api_url' :
                         `${formData.llm_provider}_api_key`
                     }
                     value={
                         formData.llm_provider === 'ollama' ? (formData.ollama_api_url || '') :
-                        formData.llm_provider === 'localai' ? (formData.localai_api_url || '') :
                         getCurrentCredentials().key || ''
                     }
                     onChange={handleInputChange}
                     className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder={
-                        formData.llm_provider === 'ollama' ? "http://localhost:11434" :
-                        formData.llm_provider === 'localai' ? "http://localhost:8080" :
+                        formData.llm_provider === 'ollama' ? "http://host.docker.internal:11434" :
                         `Enter ${formData.llm_provider} API Key`
                     }
                   />
@@ -492,7 +477,7 @@ export default function SetupPage() {
                     {validatingLLM ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Validate'}
                   </button>
                 </div>
-                {['ollama', 'localai'].includes(formData.llm_provider) && (
+                {['ollama'].includes(formData.llm_provider) && (
                     <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
                         Local models run on your hardware. Performance depends on your GPU/CPU.
@@ -590,7 +575,7 @@ export default function SetupPage() {
                   </a>.
                 </p>
                 <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
-                  You can skip this step if you don't need speaker labels.
+                  You can skip this step if you don&apos;t need speaker labels.
                 </p>
               </div>
 

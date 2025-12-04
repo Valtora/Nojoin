@@ -9,7 +9,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface ModernDatePickerProps extends Omit<DatePickerProps, 'onChange'> {
+interface ModernDatePickerProps extends Omit<DatePickerProps, 'onChange' | 'selectsRange' | 'selectsMultiple'> {
   onChange: (date: Date | null) => void;
   label?: string;
   className?: string;
@@ -58,9 +58,10 @@ export default function ModernDatePicker({
         </label>
       )}
       <div className="relative">
+        {/* @ts-expect-error: react-datepicker types are strict/broken in v8 */}
         <DatePicker
           selected={selected}
-          onChange={(date) => onChange(date as Date | null)}
+          onChange={(date: any) => onChange(date)}
           customInput={<CustomInput placeholder={placeholderText} />}
           wrapperClassName="w-full"
           calendarClassName="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-700 !font-sans !text-gray-900 dark:!text-gray-100 !rounded-lg !shadow-lg"

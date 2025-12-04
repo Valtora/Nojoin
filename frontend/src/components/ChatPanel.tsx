@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, Trash2, StopCircle, Info, Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { getSettings, getChatHistory, clearChatHistory, streamChatMessage, ChatMessage, getUserMe } from '@/lib/api';
+import { getSettings, getChatHistory, clearChatHistory, streamChatMessage, getUserMe } from '@/lib/api';
+import { ChatMessage } from '@/types';
 import Link from 'next/link';
 import MarkdownBubble from './MarkdownBubble';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -43,6 +44,11 @@ export default function ChatPanel() {
       else if (provider === 'anthropic') {
         key = settings.anthropic_api_key || '';
         model = settings.anthropic_model || '';
+      }
+      else if (provider === 'ollama') {
+        // Ollama doesn't need a key, just a model and URL (which has a default)
+        key = 'ollama'; // Dummy value to pass the check
+        model = settings.ollama_model || '';
       }
       
       const configured = !!(provider && key && model);

@@ -21,7 +21,6 @@ class SetupRequest(UserCreate):
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     ollama_api_url: Optional[str] = None
-    localai_api_url: Optional[str] = None
     hf_token: Optional[str] = None
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
@@ -78,14 +77,10 @@ async def setup_system(
         settings["anthropic_api_key"] = setup_in.anthropic_api_key
     if setup_in.ollama_api_url:
         settings["ollama_api_url"] = setup_in.ollama_api_url
-    if setup_in.localai_api_url:
-        settings["localai_api_url"] = setup_in.localai_api_url
     
     if setup_in.selected_model:
         if setup_in.llm_provider == "ollama":
             settings["ollama_model"] = setup_in.selected_model
-        elif setup_in.llm_provider == "localai":
-            settings["localai_model"] = setup_in.selected_model
         else:
             settings[f"{setup_in.llm_provider}_model"] = setup_in.selected_model
 

@@ -831,7 +831,7 @@ class OllamaLLMBackend(LLMBackend):
         if api_url is None:
             api_url = config_manager.get("ollama_api_url")
         if not api_url:
-             api_url = "http://localhost:11434"
+             api_url = "http://host.docker.internal:11434"
         
         self.api_url = api_url.rstrip('/')
         self.model = model or config_manager.get("ollama_model")
@@ -992,22 +992,6 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API validation failed: {e}")
             raise ValueError(f"Ollama API validation failed: {e}")
 
-class LocalAILLMBackend(OpenAILLMBackend):
-    def __init__(self, api_url=None, model=None, api_key=None):
-        import openai
-        if api_url is None:
-            api_url = config_manager.get("localai_api_url")
-        if not api_url:
-            api_url = "http://localhost:8080"
-        
-        # LocalAI is OpenAI compatible, usually at /v1
-        if not api_url.endswith("/v1"):
-             api_url = f"{api_url.rstrip('/')}/v1"
-
-        self.api_key = api_key or "sk-localai-placeholder" 
-        self.model = model or config_manager.get("localai_model")
-        self.client = openai.OpenAI(base_url=api_url, api_key=self.api_key)
-
 def _get_default_model_for_provider(provider: str) -> Optional[str]:
     """Return the recommended default model for a provider."""
     # Defaults are no longer hardcoded here. 
@@ -1027,7 +1011,7 @@ def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
     Factory function to instantiate the appropriate LLM backend.
     Heavy dependencies are only imported when needed.
     Args:
-        provider (str): 'gemini', 'openai', 'anthropic', 'ollama', or 'localai'
+        provider (str): 'gemini', 'openai', 'anthropic', or 'ollama'
         api_key (str): API key for the provider (optional)
         model (str): Model name (optional)
         api_url (str): API URL for local providers (optional)
@@ -1041,8 +1025,6 @@ def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
         # For local providers, we might have specific model keys
         if provider == "ollama":
             model = config_manager.get("ollama_model")
-        elif provider == "localai":
-            model = config_manager.get("localai_model")
         else:
             model = config_manager.get(f"{provider}_model")
     
@@ -1054,7 +1036,5 @@ def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
         return AnthropicLLMBackend(api_key=api_key, model=model)
     elif provider == "ollama":
         return OllamaLLMBackend(api_url=api_url, model=model)
-    elif provider == "localai":
-        return LocalAILLMBackend(api_url=api_url, api_key=api_key, model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

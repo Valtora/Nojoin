@@ -12,8 +12,6 @@ interface SystemSettingsProps {
 }
 
 export default function SystemSettings({ 
-  settings, 
-  onUpdate, 
   companionConfig, 
   onUpdateCompanionConfig, 
   searchQuery = '' 

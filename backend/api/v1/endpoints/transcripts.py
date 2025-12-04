@@ -529,7 +529,7 @@ async def generate_notes(
     api_key = user_settings.get(f"{provider}_api_key")
     model = user_settings.get(f"{provider}_model")
     
-    if not api_key:
+    if not api_key and provider != "ollama":
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
     
     # 4. Call Worker Task
@@ -682,7 +682,7 @@ async def chat_with_meeting(
     model = user_settings.get(f"{provider}_model")
     custom_instructions = user_settings.get("chat_custom_instructions")
     
-    if not api_key:
+    if not api_key and provider != "ollama":
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
         
     try:

@@ -282,7 +282,7 @@ export default function SettingsPage() {
                   settings={settings}
                   onUpdateSettings={setSettings}
                   companionConfig={companionConfig}
-                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : config)}
+                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
                   companionDevices={companionDevices}
                   selectedInputDevice={selectedInputDevice}
                   onSelectInputDevice={setSelectedInputDevice}
@@ -296,7 +296,7 @@ export default function SettingsPage() {
                   settings={settings} 
                   onUpdate={setSettings} 
                   companionConfig={companionConfig}
-                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : config)}
+                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
                   searchQuery={searchQuery}
                 />
               )}

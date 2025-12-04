@@ -485,8 +485,8 @@ export const updatePasswordMe = async (data: any): Promise<any> => {
   return response.data;
 };
 
-export const validateLLM = async (provider: string, apiKey: string, model?: string, apiUrl?: string): Promise<{ valid: boolean, message: string }> => {
-  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-llm', { provider, api_key: apiKey, model, api_url: apiUrl });
+export const validateLLM = async (provider: string, apiKey?: string, model?: string, apiUrl?: string): Promise<{ valid: boolean, message: string, models?: string[] }> => {
+  const response = await api.post<{ valid: boolean, message: string, models?: string[] }>('/setup/validate-llm', { provider, api_key: apiKey, model, api_url: apiUrl });
   return response.data;
 };
 
