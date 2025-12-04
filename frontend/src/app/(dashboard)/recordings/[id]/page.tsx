@@ -686,7 +686,7 @@ export default function RecordingPage({ params }: PageProps) {
                         {/* Panel Content */}
                         <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
                             {activePanel === 'transcript' ? (
-                                (recording.transcript?.segments && recording.transcript.segments.length > 0 && recording.status !== RecordingStatus.PROCESSING) ? (
+                                (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
                                     <TranscriptView
                                         recordingId={recording.id}
                                         segments={recording.transcript.segments}

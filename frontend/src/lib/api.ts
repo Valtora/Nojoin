@@ -435,9 +435,8 @@ export const getSystemStatus = async (): Promise<{ initialized: boolean }> => {
   return response.data;
 };
 
-export const setupSystem = async (data: any): Promise<any> => {
-  const response = await api.post('/system/setup', data);
-  return response.data;
+export const setupSystem = async (data: any): Promise<void> => {
+  await api.post('/system/setup', data);
 };
 
 export const downloadModels = async (data: { hf_token?: string, whisper_model_size?: string }): Promise<{ task_id: string }> => {
@@ -486,8 +485,8 @@ export const updatePasswordMe = async (data: any): Promise<any> => {
   return response.data;
 };
 
-export const validateLLM = async (provider: string, api_key: string, model?: string): Promise<{ valid: boolean, message: string }> => {
-  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-llm', { provider, api_key, model });
+export const validateLLM = async (provider: string, apiKey: string, model?: string, apiUrl?: string): Promise<{ valid: boolean, message: string }> => {
+  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-llm', { provider, api_key: apiKey, model, api_url: apiUrl });
   return response.data;
 };
 
@@ -613,8 +612,18 @@ export const inferSpeakers = async (recordingId: number): Promise<void> => {
   await api.post(`/recordings/${recordingId}/infer-speakers`);
 };
 
-export const listModels = async (provider: string, apiKey: string): Promise<{ models: string[] }> => {
-  const response = await api.post<{ models: string[] }>('/setup/list-models', { provider, api_key: apiKey });
+export const listModels = async (provider: string, apiKey: string, apiUrl?: string): Promise<{ models: string[] }> => {
+  const response = await api.post<{ models: string[] }>('/setup/list-models', { provider, api_key: apiKey, api_url: apiUrl });
+  return response.data;
+};
+
+export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey?: string): Promise<string[]> => {
+  const params = new URLSearchParams();
+  params.append('provider', provider);
+  if (apiUrl) params.append('api_url', apiUrl);
+  if (apiKey) params.append('api_key', apiKey);
+  
+  const response = await api.get<string[]>(`/llm/models?${params.toString()}`);
   return response.data;
 };
 

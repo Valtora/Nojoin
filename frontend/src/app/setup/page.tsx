@@ -108,17 +108,19 @@ export default function SetupPage() {
   };
 
   // --- Step 2: LLM ---
-  const getCurrentApiKey = () => {
-    if (formData.llm_provider === 'gemini') return formData.gemini_api_key;
-    if (formData.llm_provider === 'openai') return formData.openai_api_key;
-    if (formData.llm_provider === 'anthropic') return formData.anthropic_api_key;
-    return '';
+  const getCurrentCredentials = () => {
+    if (formData.llm_provider === 'gemini') return { key: formData.gemini_api_key };
+    if (formData.llm_provider === 'openai') return { key: formData.openai_api_key };
+    if (formData.llm_provider === 'anthropic') return { key: formData.anthropic_api_key };
+    if (formData.llm_provider === 'ollama') return { url: formData.ollama_api_url || 'http://localhost:11434' };
+    if (formData.llm_provider === 'localai') return { url: formData.localai_api_url || 'http://localhost:8080' };
+    return {};
   };
 
   const validateAndFetchModels = async () => {
-    const apiKey = getCurrentApiKey();
-    if (!apiKey) {
-      setError("Please enter an API key");
+    const creds = getCurrentCredentials();
+    if (!creds.key && !creds.url) {
+      setError("Please enter an API key or URL");
       return;
     }
     
@@ -127,19 +129,19 @@ export default function SetupPage() {
     setLlmValidationMsg(null);
     
     try {
-      // 1. Validate Key
-      const res = await validateLLM(formData.llm_provider, apiKey);
+      // 1. Validate Key/URL
+      const res = await validateLLM(formData.llm_provider, creds.key || '', undefined, creds.url);
       setLlmValidationMsg({ valid: true, msg: res.message });
       
       // 2. Fetch Models
       setFetchingModels(true);
-      const modelsRes = await listModels(formData.llm_provider, apiKey);
+      const modelsRes = await listModels(formData.llm_provider, creds.key || '', creds.url);
       setAvailableModels(modelsRes.models);
       
       if (modelsRes.models.length > 0) {
         setFormData(prev => ({ ...prev, selected_model: modelsRes.models[0] }));
       } else {
-        setError("No models found for this provider. Please check your API key permissions.");
+        setError("No models found for this provider. Please check your configuration.");
       }
     } catch (err: any) {
       setLlmValidationMsg({ valid: false, msg: err.response?.data?.detail || err.message });
@@ -155,13 +157,14 @@ export default function SetupPage() {
       return;
     }
     
-    if (!getCurrentApiKey()) {
-      setError("Please enter an API key or skip this step.");
+    const creds = getCurrentCredentials();
+    if (!creds.key && !creds.url) {
+      setError("Please enter an API key/URL or skip this step.");
       return;
     }
     
     if (!llmValidationMsg?.valid) {
-      setError("Please validate your API key first.");
+      setError("Please validate your configuration first.");
       return;
     }
     
@@ -236,6 +239,8 @@ export default function SetupPage() {
         gemini_api_key: formData.gemini_api_key,
         openai_api_key: formData.openai_api_key,
         anthropic_api_key: formData.anthropic_api_key,
+        ollama_api_url: formData.ollama_api_url,
+        localai_api_url: formData.localai_api_url,
         hf_token: formData.hf_token,
         // Save selected model
         selected_model: formData.selected_model
@@ -448,29 +453,51 @@ export default function SetupPage() {
                   <option value="gemini">Google Gemini</option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
+                  <option value="ollama">Ollama (Local)</option>
+                  <option value="localai">LocalAI (Local)</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {['ollama', 'localai'].includes(formData.llm_provider) ? 'API URL' : 'API Key'}
+                </label>
                 <div className="flex gap-2">
                   <input
-                    type="password"
-                    name={`${formData.llm_provider}_api_key`}
-                    value={getCurrentApiKey()}
+                    type={['ollama', 'localai'].includes(formData.llm_provider) ? "text" : "password"}
+                    name={
+                        formData.llm_provider === 'ollama' ? 'ollama_api_url' :
+                        formData.llm_provider === 'localai' ? 'localai_api_url' :
+                        `${formData.llm_provider}_api_key`
+                    }
+                    value={
+                        formData.llm_provider === 'ollama' ? (formData.ollama_api_url || '') :
+                        formData.llm_provider === 'localai' ? (formData.localai_api_url || '') :
+                        getCurrentCredentials().key || ''
+                    }
                     onChange={handleInputChange}
                     className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-                    placeholder={`Enter ${formData.llm_provider} API Key`}
+                    placeholder={
+                        formData.llm_provider === 'ollama' ? "http://localhost:11434" :
+                        formData.llm_provider === 'localai' ? "http://localhost:8080" :
+                        `Enter ${formData.llm_provider} API Key`
+                    }
                   />
                   <button
                     type="button"
                     onClick={validateAndFetchModels}
-                    disabled={validatingLLM || !getCurrentApiKey()}
+                    disabled={validatingLLM || (!getCurrentCredentials().key && !getCurrentCredentials().url)}
                     className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium disabled:opacity-50 transition-colors"
                   >
                     {validatingLLM ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Validate'}
                   </button>
                 </div>
+                {['ollama', 'localai'].includes(formData.llm_provider) && (
+                    <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Local models run on your hardware. Performance depends on your GPU/CPU.
+                    </p>
+                )}
                 {llmValidationMsg && (
                   <p className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? 'text-green-600' : 'text-red-600'}`}>
                     {llmValidationMsg.valid ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}

@@ -824,6 +824,190 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")
 
+class OllamaLLMBackend(LLMBackend):
+    def __init__(self, api_url=None, model=None):
+        import requests
+        self.requests = requests
+        if api_url is None:
+            api_url = config_manager.get("ollama_api_url")
+        if not api_url:
+             api_url = "http://localhost:11434"
+        
+        self.api_url = api_url.rstrip('/')
+        self.model = model or config_manager.get("ollama_model")
+
+    def list_models(self) -> List[str]:
+        try:
+            resp = self.requests.get(f"{self.api_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+            return sorted([m['name'] for m in data.get('models', [])])
+        except Exception as e:
+            logger.error(f"Ollama API error (list models): {e}")
+            return []
+
+    def infer_speakers(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> Dict[str, str]:
+        if prompt_template is None:
+            prompt_template = self.get_speaker_prompt_template()
+        prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+        
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            text = resp.json().get('message', {}).get('content', '')
+            return self.parse_mapping_table(text)
+        except Exception as e:
+            logger.error(f"Ollama API error (speaker mapping): {e}")
+            raise RuntimeError(f"Ollama API error (speaker mapping): {e}")
+
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60) -> str:
+        if prompt_template is None:
+            prompt_template = self.get_notes_prompt_template()
+        mapping_table = self.mapping_to_markdown_table(speaker_mapping)
+        prompt = prompt_template.format(transcript=transcript, mapping_table=mapping_table)
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+        
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            text = resp.json().get('message', {}).get('content', '')
+            return self.parse_notes(text)
+        except Exception as e:
+            logger.error(f"Ollama API error (meeting notes): {e}")
+            raise RuntimeError(f"Ollama API error (meeting notes): {e}")
+
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if msg.get("role") and msg.get("parts"):
+                    for part in msg["parts"]:
+                        messages.append({"role": msg["role"], "content": part["text"]})
+        messages.append({"role": "user", "content": prompt})
+        
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json().get('message', {}).get('content', '')
+        except Exception as e:
+            logger.error(f"Ollama API error (chat): {e}")
+            raise RuntimeError(f"Ollama API error (chat): {e}")
+
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+            
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if msg.get("role") and msg.get("parts"):
+                    for part in msg["parts"]:
+                        messages.append({"role": msg["role"], "content": part["text"]})
+        messages.append({"role": "user", "content": prompt})
+        
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, stream=True, timeout=timeout)
+            resp.raise_for_status()
+            
+            import json
+            for line in resp.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        content = chunk.get('message', {}).get('content', '')
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        pass
+        except Exception as e:
+            logger.error(f"Ollama API error (streaming chat): {e}")
+            raise RuntimeError(f"Ollama API error (streaming chat): {e}")
+
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+        if prompt_template is None:
+            prompt_template = self.get_title_prompt_template()
+        prompt = prompt_template.format(transcript=transcript)
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            text = resp.json().get('message', {}).get('content', '')
+            return self.parse_title(text)
+        except Exception as e:
+            logger.error(f"Ollama API error (meeting title): {e}")
+            raise RuntimeError(f"Ollama API error (meeting title): {e}")
+
+    def validate_api_key(self) -> bool:
+        try:
+            self.list_models()
+            return True
+        except Exception as e:
+            logger.error(f"Ollama API validation failed: {e}")
+            raise ValueError(f"Ollama API validation failed: {e}")
+
+class LocalAILLMBackend(OpenAILLMBackend):
+    def __init__(self, api_url=None, model=None, api_key=None):
+        import openai
+        if api_url is None:
+            api_url = config_manager.get("localai_api_url")
+        if not api_url:
+            api_url = "http://localhost:8080"
+        
+        # LocalAI is OpenAI compatible, usually at /v1
+        if not api_url.endswith("/v1"):
+             api_url = f"{api_url.rstrip('/')}/v1"
+
+        self.api_key = api_key or "sk-localai-placeholder" 
+        self.model = model or config_manager.get("localai_model")
+        self.client = openai.OpenAI(base_url=api_url, api_key=self.api_key)
+
 def _get_default_model_for_provider(provider: str) -> Optional[str]:
     """Return the recommended default model for a provider."""
     # Defaults are no longer hardcoded here. 
@@ -838,14 +1022,15 @@ def get_default_model_for_provider(provider: str) -> Optional[str]:
     return _get_default_model_for_provider(provider)
 
 # --- LLM Backend Factory ---
-def get_llm_backend(provider: str, api_key=None, model=None):
+def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
     """
     Factory function to instantiate the appropriate LLM backend.
     Heavy dependencies are only imported when needed.
     Args:
-        provider (str): 'gemini', 'openai', or 'anthropic'
+        provider (str): 'gemini', 'openai', 'anthropic', 'ollama', or 'localai'
         api_key (str): API key for the provider (optional)
         model (str): Model name (optional)
+        api_url (str): API URL for local providers (optional)
     Returns:
         Instance of the appropriate LLMBackend subclass.
     Raises:
@@ -853,14 +1038,13 @@ def get_llm_backend(provider: str, api_key=None, model=None):
     """
     from backend.utils.config_manager import config_manager
     if model is None:
-        model = config_manager.get(f"{provider}_model")
-    
-    # If model is still None, we proceed. The backend might fail if it tries to use it without setting it,
-    # but for listing models or validating keys, it might be fine depending on implementation.
-    # However, the classes (GeminiLLMBackend etc) use self.model in __init__.
-    # We should handle this in the classes or here.
-    # The classes use: self.model = model or _get_default_model_for_provider("gemini")
-    # Since _get_default... returns None now, self.model will be None.
+        # For local providers, we might have specific model keys
+        if provider == "ollama":
+            model = config_manager.get("ollama_model")
+        elif provider == "localai":
+            model = config_manager.get("localai_model")
+        else:
+            model = config_manager.get(f"{provider}_model")
     
     if provider == "gemini":
         return GeminiLLMBackend(api_key=api_key, model=model)
@@ -868,5 +1052,9 @@ def get_llm_backend(provider: str, api_key=None, model=None):
         return OpenAILLMBackend(api_key=api_key, model=model)
     elif provider == "anthropic":
         return AnthropicLLMBackend(api_key=api_key, model=model)
+    elif provider == "ollama":
+        return OllamaLLMBackend(api_url=api_url, model=model)
+    elif provider == "localai":
+        return LocalAILLMBackend(api_url=api_url, api_key=api_key, model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

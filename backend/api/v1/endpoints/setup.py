@@ -11,15 +11,17 @@ router = APIRouter()
 
 class ValidateLLMRequest(BaseModel):
     provider: str
-    api_key: str
+    api_key: Optional[str] = None
     model: Optional[str] = None
+    api_url: Optional[str] = None
 
 class ValidateHFRequest(BaseModel):
     token: str
 
 class ListModelsRequest(BaseModel):
     provider: str
-    api_key: str
+    api_key: Optional[str] = None
+    api_url: Optional[str] = None
 
 @router.post("/validate-llm")
 async def validate_llm(request: ValidateLLMRequest):
@@ -27,7 +29,7 @@ async def validate_llm(request: ValidateLLMRequest):
     Validate LLM API Key.
     """
     try:
-        llm = get_llm_backend(request.provider, api_key=request.api_key, model=request.model)
+        llm = get_llm_backend(request.provider, api_key=request.api_key, model=request.model, api_url=request.api_url)
         llm.validate_api_key()
         provider_name = request.provider.capitalize() if request.provider else "LLM"
         return {"valid": True, "message": f"{provider_name} API key is valid."}
@@ -59,7 +61,7 @@ async def list_models(request: ListModelsRequest):
     List available models for a given provider and API key.
     """
     try:
-        llm = get_llm_backend(request.provider, api_key=request.api_key)
+        llm = get_llm_backend(request.provider, api_key=request.api_key, api_url=request.api_url)
         models = llm.list_models()
         return {"models": models}
     except Exception as e:

@@ -58,6 +58,10 @@ DEFAULT_USER_SETTINGS = {
     "gemini_model": _default_models["gemini_model"],     # Default Gemini model
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
+    "ollama_model": None,       # Default Ollama model
+    "localai_model": None,      # Default LocalAI model
+    "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
+    "localai_api_url": "http://host.docker.internal:8080", # Default LocalAI API URL
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "auto_generate_notes": True, # Automatically generate meeting notes after processing
 }

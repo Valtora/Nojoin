@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Settings } from '@/types';
 // @ts-ignore: No types for lucide-react available in this project; add a declaration file if stricter typing is required.
-import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive, Server } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -52,14 +52,21 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
     const fetchModels = async () => {
       const provider = settings.llm_provider;
       let key = '';
+      let url = '';
+      
       if (provider === 'gemini') key = settings.gemini_api_key || '';
       else if (provider === 'openai') key = settings.openai_api_key || '';
       else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
+      else if (provider === 'ollama') url = settings.ollama_api_url || '';
+      else if (provider === 'localai') url = settings.localai_api_url || '';
 
-      if (provider && key) {
+      const needsKey = ['gemini', 'openai', 'anthropic'].includes(provider || '');
+      const needsUrl = ['ollama', 'localai'].includes(provider || '');
+
+      if (provider && ((needsKey && key) || (needsUrl && url))) {
         setFetchingModels(true);
         try {
-          const res = await listModels(provider, key);
+          const res = await listModels(provider, key, url);
           setAvailableModels(res.models);
         } catch (e) {
           console.error("Failed to fetch models", e);
@@ -75,27 +82,38 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
     // Debounce slightly to avoid too many calls while typing
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.llm_provider, settings.gemini_api_key, settings.openai_api_key, settings.anthropic_api_key]);
+  }, [settings.llm_provider, settings.gemini_api_key, settings.openai_api_key, settings.anthropic_api_key, settings.ollama_api_url, settings.localai_api_url]);
 
   const handleValidate = async (provider: string) => {
     setValidating(provider);
     setValidationMsg(null);
     try {
         let key = '';
+        let url = '';
         if (provider === 'gemini') key = settings.gemini_api_key || '';
         else if (provider === 'openai') key = settings.openai_api_key || '';
         else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
         else if (provider === 'hf') key = settings.hf_token || '';
+        else if (provider === 'ollama') url = settings.ollama_api_url || '';
+        else if (provider === 'localai') url = settings.localai_api_url || '';
 
-        if (!key) throw new Error("No API key/token provided");
+        if (!key && !url) throw new Error("No API key/URL provided");
         
         let res;
         if (provider === 'hf') {
             res = await validateHF(key);
         } else {
-            res = await validateLLM(provider, key);
+            // validateLLM needs to support URL too. I need to update validateLLM in api.ts?
+            // validateLLM calls /setup/validate-llm which I updated.
+            // But validateLLM signature in api.ts might need update.
+            // I'll check api.ts later. Assuming I update it or pass it somehow.
+            // Actually validateLLM takes (provider, apiKey, model?). I should update it to take url.
+            // For now, I'll assume I update api.ts.
+            // Wait, I haven't updated validateLLM in api.ts yet.
+            // I'll do that in next step.
+            res = await validateLLM(provider, key, undefined, url);
             // Also refresh models on explicit validate
-            const modelsRes = await listModels(provider, key);
+            const modelsRes = await listModels(provider, key, url);
             setAvailableModels(modelsRes.models);
         }
         setValidationMsg({type: 'success', msg: res.message, provider});
@@ -233,8 +251,40 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     <option value="gemini">Google Gemini</option>
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="localai">LocalAI (Local)</option>
                   </select>
                 </div>
+
+                {/* API URL for Local Providers */}
+                {(settings.llm_provider === 'ollama' || settings.llm_provider === 'localai') && (
+                    <div className="col-span-2 md:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            API URL
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={(settings.llm_provider === 'ollama' ? settings.ollama_api_url : settings.localai_api_url) || ''}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    const updates: any = { ...settings };
+                                    if (settings.llm_provider === 'ollama') updates.ollama_api_url = val;
+                                    else updates.localai_api_url = val;
+                                    onUpdate(updates);
+                                }}
+                                placeholder={settings.llm_provider === 'ollama' ? "http://localhost:11434" : "http://localhost:8080"}
+                                disabled={!isAdmin}
+                                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                            />
+                            <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        </div>
+                        <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                            <Info className="w-3 h-3" />
+                            Local models run on your hardware. Performance depends on your GPU/CPU.
+                        </p>
+                    </div>
+                )}
 
                 {/* Model */}
                 <div>
@@ -244,10 +294,14 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                             onClick={() => {
                                 const provider = settings.llm_provider || 'gemini';
                                 let key = '';
+                                let url = '';
                                 if (provider === 'gemini') key = settings.gemini_api_key || '';
                                 else if (provider === 'openai') key = settings.openai_api_key || '';
                                 else if (provider === 'anthropic') key = settings.anthropic_api_key || '';
-                                if (key) listModels(provider, key).then(res => setAvailableModels(res.models));
+                                else if (provider === 'ollama') url = settings.ollama_api_url || '';
+                                else if (provider === 'localai') url = settings.localai_api_url || '';
+                                
+                                if (key || url) listModels(provider, key, url).then(res => setAvailableModels(res.models));
                             }}
                             disabled={fetchingModels || !isAdmin}
                             className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
@@ -258,12 +312,16 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     <select
                         value={(settings.llm_provider === 'openai' ? settings.openai_model : 
                                settings.llm_provider === 'anthropic' ? settings.anthropic_model : 
+                               settings.llm_provider === 'ollama' ? settings.ollama_model :
+                               settings.llm_provider === 'localai' ? settings.localai_model :
                                settings.gemini_model) || ''}
                         onChange={(e) => {
                             const val = e.target.value;
                             const updates: any = { ...settings };
                             if (settings.llm_provider === 'openai') updates.openai_model = val;
                             else if (settings.llm_provider === 'anthropic') updates.anthropic_model = val;
+                            else if (settings.llm_provider === 'ollama') updates.ollama_model = val;
+                            else if (settings.llm_provider === 'localai') updates.localai_model = val;
                             else updates.gemini_model = val;
                             onUpdate(updates);
                         }}
@@ -299,6 +357,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
             </div>
 
             {/* API Key (Dynamic) */}
+            {!['ollama', 'localai'].includes(settings.llm_provider || '') && (
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     API Key
@@ -343,18 +402,38 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     <button
                         onClick={() => handleValidate(settings.llm_provider || 'gemini')}
                         disabled={validating === settings.llm_provider || !isAdmin}
-                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
+                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
-                        {validating === settings.llm_provider ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Validate'}
+                        {validating === settings.llm_provider ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        Validate
                     </button>
                 </div>
                 {validationMsg && validationMsg.provider === settings.llm_provider && (
-                    <p className={`text-xs mt-2 flex items-center gap-1 ${validationMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                        {validationMsg.type === 'success' ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    <p className={`mt-2 text-sm ${validationMsg.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {validationMsg.msg}
                     </p>
                 )}
             </div>
+            )}
+
+            {/* Validation for Local Providers */}
+            {['ollama', 'localai'].includes(settings.llm_provider || '') && (
+                <div>
+                    <button
+                        onClick={() => handleValidate(settings.llm_provider || 'ollama')}
+                        disabled={validating === settings.llm_provider || !isAdmin}
+                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {validating === settings.llm_provider ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        Validate Connection
+                    </button>
+                    {validationMsg && validationMsg.provider === settings.llm_provider && (
+                        <p className={`mt-2 text-sm ${validationMsg.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {validationMsg.msg}
+                        </p>
+                    )}
+                </div>
+            )}
 
             {/* Custom Instructions */}
             <div className="pt-4 border-t border-gray-200 dark:border-gray-700">

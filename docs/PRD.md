@@ -48,7 +48,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 ### 2.4 Configuration Management
 *   **Unified Strategy:** Configuration is split between system-wide infrastructure settings and user-specific preferences.
 *   **System Config:** Stored in `data/config.json` (Server) and `config.json` (Companion). Includes infrastructure URLs, device paths, and hardware settings.
-*   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences, and AI settings.
+*   **User Settings:** Stored in the PostgreSQL database per user. Includes UI themes, API keys, model preferences (including local model URLs), and AI settings.
 *   **Initial Setup:** The Setup Wizard collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account, ensuring immediate system readiness without manual restarts.
 *   **Database Initialization:** The system automatically handles database schema creation and migrations on startup, ensuring the database is always in a consistent state.
 *   **Security:** Sensitive user data (API keys) is stored in the database, not in flat files.
@@ -161,7 +161,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 
 ### 3.5 Meeting Intelligence
 *   **LLM-Powered Notes:**
-    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, or Gemini).
+    *   Generate summaries, action items, and key takeaways using configured LLM providers (OpenAI, Anthropic, Gemini, Ollama, or LocalAI).
     *   Notes are stored in the database and rendered as rich Markdown in the Web UI.
     *   **Comprehensive Meeting Notes:** AI-generated notes include:
         *   **Topics Discussed:** List of major themes covered
