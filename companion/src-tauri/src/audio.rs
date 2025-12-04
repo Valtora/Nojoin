@@ -245,7 +245,12 @@ fn start_segment(
             const MAX_SEGMENT_DURATION_SECS: u64 = 5 * 60;
             
             let mut current_sequence = sequence;
+            // Note: sys_buffer is intentionally preserved across segments to avoid losing
+            // system audio data that hasn't been mixed yet (samples arrive asynchronously)
             let mut sys_buffer: Vec<f32> = Vec::new();
+            
+            // Create a single tokio runtime for all segment uploads (reused for efficiency)
+            let rt = tokio::runtime::Runtime::new().unwrap();
             
             while is_recording.load(Ordering::SeqCst) {
                 let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
@@ -300,8 +305,7 @@ fn start_segment(
                 
                 info!("Segment finished: {:?}", path);
                 
-                // Upload segment
-                let rt = tokio::runtime::Runtime::new().unwrap();
+                // Upload segment (reuse runtime for efficiency)
                 let upload_result = rt.block_on(async {
                     uploader::upload_segment(recording_id, current_sequence, &path, &config).await
                 });
@@ -320,10 +324,9 @@ fn start_segment(
                     }
                 }
                 
-                // Increment sequence for next segment
+                // Increment sequence and update state before starting next segment
+                // This ensures Resume commands always get the correct next sequence number
                 current_sequence += 1;
-                
-                // Update state with new sequence number
                 {
                     let mut seq = state.current_sequence.lock().unwrap();
                     *seq = current_sequence;
