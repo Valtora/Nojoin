@@ -55,6 +55,7 @@ services:
       - .:/app
       - ./data:/app/data
       - model_cache:/home/appuser/.cache
+      - /sys/class/drm:/sys/class/drm:ro
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}

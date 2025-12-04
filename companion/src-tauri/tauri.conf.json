@@ -7,8 +7,8 @@
     "withGlobalTauri": true
   },
   "package": {
-    "productName": "Nojoin Companion",
-    "version": "0.1.3"
+    "productName": "Nojoin",
+    "version": "0.1.4"
   },
   "tauri": {
     "allowlist": {
@@ -46,6 +46,7 @@
       "longDescription": "A lightweight system tray companion app for Nojoin meeting intelligence",
       "windows": {
         "nsis": {
+          "template": "nsis/installer.nsi",
           "installMode": "currentUser",
           "languages": ["English"],
           "displayLanguageSelector": false

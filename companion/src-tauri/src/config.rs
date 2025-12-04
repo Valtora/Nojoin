@@ -66,8 +66,27 @@ impl Config {
         if cwd_path.exists() {
             return cwd_path;
         }
+
+        // Check executable directory
+        // On Windows, we install to AppData/Local/Nojoin, so we want the config there to keep everything in one place.
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let exe_config = exe_dir.join(config_name);
+                
+                // If it exists, use it
+                if exe_config.exists() {
+                    return exe_config;
+                }
+
+                // On Windows, default to creating it here if it doesn't exist
+                #[cfg(target_os = "windows")]
+                {
+                    return exe_config;
+                }
+            }
+        }
         
-        // Check standard system locations using directories crate
+        // Check standard system locations using directories crate (Fallback / Linux / MacOS)
         if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin") {
             let config_dir = proj_dirs.config_dir();
             let app_config = config_dir.join(config_name);
@@ -87,31 +106,12 @@ impl Config {
                     return app_config;
                 }
             }
-        }
-
-        // Check executable directory (Legacy/Portable fallback)
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let exe_config = exe_dir.join(config_name);
-                if exe_config.exists() {
-                    return exe_config;
-                }
-            }
-        }
-        
-        // Check %LOCALAPPDATA%/Nojoin on Windows (Legacy manual check, directories crate handles this too but keeping for compat)
-        #[cfg(windows)]
-        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-            let app_config = PathBuf::from(local_app_data).join("Nojoin").join(config_name);
-            if app_config.exists() {
-                return app_config;
-            }
-            // For Windows, we also prefer this for new configs if directories crate failed or we want explicit path
+            
             return app_config;
         }
-        
-        // Fallback to current directory
-        cwd_path
+
+        // Fallback to current directory if all else fails
+        PathBuf::from(config_name)
     }
 
     fn migrate_from_legacy(content: &str) -> Option<Config> {
