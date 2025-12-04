@@ -228,6 +228,7 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **Language:** TypeScript
 *   **Styling:** Tailwind CSS
 *   **State Management:** React Query / Zustand
+*   **Build:** Production optimized (`next build`) with multi-stage Docker build.
 
 ### 4.3 Companion App Stack
 *   **Framework:** Tauri v1.5

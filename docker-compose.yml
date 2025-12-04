@@ -83,9 +83,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
+    # volumes:
+    #   - ./frontend:/app
+    #   - frontend_node_modules:/app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
       # Enable polling for hot reloading on Windows file systems
