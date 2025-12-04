@@ -1,6 +1,8 @@
 import os
+import shutil
 import logging
 import time
+from datetime import datetime, timedelta
 import warnings
 import urllib.error
 import requests.exceptions
@@ -904,3 +906,54 @@ def infer_speakers_task(self, recording_id: int):
                 session.commit()
         except Exception as db_err:
             logger.error(f"Failed to revert recording status: {db_err}")
+
+@celery_app.task
+def cleanup_temp_recordings():
+    """
+    Periodic task to clean up old temporary files and failed uploads.
+    Runs every 24 hours.
+    """
+    logger.info("Starting cleanup of temp recordings...")
+    
+    # Define paths (matching api/v1/endpoints/recordings.py)
+    recordings_dir = os.getenv("RECORDINGS_DIR", "data/recordings")
+    temp_dir = os.path.join(recordings_dir, "temp")
+    failed_dir = os.path.join(recordings_dir, "failed")
+    
+    # 24 hours ago
+    cutoff_time = time.time() - (24 * 60 * 60)
+    
+    cleaned_count = 0
+    
+    # Clean temp dir
+    if os.path.exists(temp_dir):
+        for item in os.listdir(temp_dir):
+            item_path = os.path.join(temp_dir, item)
+            try:
+                # Check modification time
+                if os.path.getmtime(item_path) < cutoff_time:
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                    cleaned_count += 1
+                    logger.info(f"Cleaned up old temp item: {item}")
+            except Exception as e:
+                logger.error(f"Error cleaning temp item {item}: {e}")
+
+    # Clean failed dir
+    if os.path.exists(failed_dir):
+        for item in os.listdir(failed_dir):
+            item_path = os.path.join(failed_dir, item)
+            try:
+                if os.path.getmtime(item_path) < cutoff_time:
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                    cleaned_count += 1
+                    logger.info(f"Cleaned up old failed item: {item}")
+            except Exception as e:
+                logger.error(f"Error cleaning failed item {item}: {e}")
+                
+    logger.info(f"Cleanup complete. Removed {cleaned_count} items.")

@@ -2,6 +2,9 @@
 
 Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed:
 
+## Investigate Celery Worker Log
+- 2025-12-04 00:06:30.224000460 [W:onnxruntime:Default, device_discovery.cc:164 DiscoverDevicesForPlatform] GPU device discovery failed: device_discovery.cc:89 ReadFileContents Failed to open file: "/sys/class/drm/card0/device/vendor"
+
 ## Nojoin Un/Installer and Update - Directory Management
 - In the %appdata/local% directories I can see Nojoin and Nojoin Companion. Why is this the current implementation?
 - It should just be one 'Nojoin' folder that contains the config.json, logs, and executables along with anything else needed.

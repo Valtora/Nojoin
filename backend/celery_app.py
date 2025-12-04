@@ -30,6 +30,12 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        "cleanup-temp-recordings-every-24h": {
+            "task": "backend.worker.tasks.cleanup_temp_recordings",
+            "schedule": 86400.0,  # 24 hours in seconds
+        },
+    },
 )
 
 # Heartbeat implementation to keep worker "active" during heavy tasks
