@@ -28,6 +28,8 @@ RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "data/recordings")
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
 TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
+FAILED_DIR = os.path.join(RECORDINGS_DIR, "failed")
+os.makedirs(FAILED_DIR, exist_ok=True)
 
 def get_ordinal_suffix(day: int) -> str:
     if 11 <= day <= 13:
@@ -199,6 +201,24 @@ async def finalize_upload(
     except Exception as e:
         import traceback
         traceback.print_exc()
+        
+        # Move failed segments to failed directory for inspection
+        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
+        try:
+            if os.path.exists(recording_temp_dir):
+                shutil.move(recording_temp_dir, failed_path)
+                print(f"Moved failed segments to {failed_path}")
+        except Exception as move_error:
+            print(f"Failed to move segments to failed dir: {move_error}")
+            
+        # Cleanup potential partial output file
+        if os.path.exists(recording.audio_path):
+            try:
+                os.remove(recording.audio_path)
+                print(f"Removed partial recording file: {recording.audio_path}")
+            except Exception as cleanup_error:
+                print(f"Failed to remove partial recording file: {cleanup_error}")
+            
         raise HTTPException(status_code=500, detail=f"Failed to concatenate segments: {str(e)}")
         
     # Update recording status

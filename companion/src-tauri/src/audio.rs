@@ -252,9 +252,17 @@ fn start_segment(
             // Create a single tokio runtime for all segment uploads (reused for efficiency)
             let rt = tokio::runtime::Runtime::new().unwrap();
             
+            // Setup temp directory for segments
+            let temp_dir = std::env::temp_dir().join("Nojoin").join("recordings");
+            if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+                log::error!("Failed to create temp directory {:?}: {}", temp_dir, e);
+                return Err(anyhow::anyhow!("Failed to create temp directory: {}", e));
+            }
+            info!("Using temp directory: {:?}", temp_dir);
+
             while is_recording.load(Ordering::SeqCst) {
                 let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
-                let path = std::env::current_dir()?.join(&filename);
+                let path = temp_dir.join(&filename);
                 
                 let mut writer = hound::WavWriter::create(&path, spec).map_err(|e| anyhow::anyhow!("Failed to create wav writer: {}", e))?;
                 
