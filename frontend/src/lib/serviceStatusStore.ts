@@ -21,6 +21,8 @@ interface CompanionStatusResponse {
   version?: string;
   authenticated?: boolean;
   api_host?: string;
+  update_available?: boolean;
+  latest_version?: string | null;
 }
 
 interface ServiceStatusState {
@@ -33,6 +35,8 @@ interface ServiceStatusState {
   // Companion details
   companionStatus: 'idle' | 'recording' | 'paused' | 'error';
   companionVersion: string | null;
+  companionUpdateAvailable: boolean;
+  companionLatestVersion: string | null;
   recordingDuration: number;
   
   // Audio levels
@@ -51,6 +55,7 @@ interface ServiceStatusState {
   checkCompanion: () => Promise<void>;
   checkAudioLevels: () => Promise<void>;
   authorizeCompanion: () => Promise<boolean>;
+  triggerCompanionUpdate: () => Promise<boolean>;
   startPolling: () => void;
   stopPolling: () => void;
 }
@@ -120,6 +125,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     companionAuthenticated: false,
     companionStatus: 'idle',
     companionVersion: null,
+    companionUpdateAvailable: false,
+    companionLatestVersion: null,
     recordingDuration: 0,
     audioLevels: { input: 0, output: 0 },
     isPolling: false,
@@ -217,6 +224,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companionAuthenticated: isAuthenticated,
             companionStatus: status,
             companionVersion: data.version || null,
+            companionUpdateAvailable: data.update_available || false,
+            companionLatestVersion: data.latest_version || null,
             recordingDuration: duration,
             companionFailCount: 0 
           });
@@ -224,6 +233,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           set(state => ({ 
             companion: false,
             companionAuthenticated: false,
+            companionUpdateAvailable: false,
             companionFailCount: state.companionFailCount + 1 
           }));
         }
@@ -231,6 +241,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         set(state => ({ 
           companion: false,
           companionAuthenticated: false,
+          companionUpdateAvailable: false,
           companionFailCount: state.companionFailCount + 1 
         }));
       }
@@ -305,6 +316,21 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         return false;
       } catch (e) {
         console.error('Failed to authorize companion:', e);
+        return false;
+      }
+    },
+
+    triggerCompanionUpdate: async (): Promise<boolean> => {
+      try {
+        const res = await fetch(`${COMPANION_URL}/update`, {
+          method: 'POST',
+        });
+        if (res.ok) {
+            return true;
+        }
+        return false;
+      } catch (e) {
+        console.error('Failed to trigger update:', e);
         return false;
       }
     },

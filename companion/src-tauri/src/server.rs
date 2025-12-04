@@ -11,12 +11,21 @@ use crate::uploader;
 use log::{info, error};
 use std::time::Duration;
 use axum::debug_handler;
+use tauri::Manager;
 
-pub async fn start_server(state: Arc<AppState>) {
+#[derive(Clone)]
+pub struct ServerContext {
+    pub state: Arc<AppState>,
+    pub app_handle: tauri::AppHandle,
+}
+
+pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     let local_port = {
         let config = state.config.lock().unwrap();
         config.local_port
     };
+    
+    let context = ServerContext { state, app_handle };
     
     let app = Router::new()
         .route("/status", get(get_status))
@@ -28,8 +37,9 @@ pub async fn start_server(state: Arc<AppState>) {
         .route("/stop", post(stop_recording))
         .route("/pause", post(pause_recording))
         .route("/resume", post(resume_recording))
+        .route("/update", post(trigger_update))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(context);
 
     let bind_addr = format!("127.0.0.1:{}", local_port);
     info!("Server running on http://{}", bind_addr);
@@ -46,9 +56,12 @@ struct StatusResponse {
     version: &'static str,
     authenticated: bool,
     api_host: String,
+    update_available: bool,
+    latest_version: Option<String>,
 }
 
-async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
+async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse> {
+    let state = &context.state;
     let status = state.status.lock().unwrap().clone();
     let (authenticated, api_host) = {
         let config = state.config.lock().unwrap();
@@ -75,12 +88,17 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
         }
     };
 
+    let update_available = state.update_available.load(std::sync::atomic::Ordering::Relaxed);
+    let latest_version = state.latest_version.lock().unwrap().clone();
+
     Json(StatusResponse {
         status,
         duration_seconds: duration.as_secs(),
         version: env!("CARGO_PKG_VERSION"),
         authenticated,
         api_host,
+        update_available,
+        latest_version,
     })
 }
 
@@ -100,9 +118,10 @@ struct AuthResponse {
 
 #[debug_handler]
 async fn authorize(
-    State(state): State<Arc<AppState>>,
+    State(context): State<ServerContext>,
     Json(payload): Json<AuthRequest>,
 ) -> Json<AuthResponse> {
+    let state = &context.state;
     info!("Received authorization request");
     
     if payload.token.is_empty() {
@@ -153,7 +172,8 @@ struct AudioLevelsResponse {
     is_recording: bool,
 }
 
-async fn get_audio_levels(State(state): State<Arc<AppState>>) -> Json<AudioLevelsResponse> {
+async fn get_audio_levels(State(context): State<ServerContext>) -> Json<AudioLevelsResponse> {
+    let state = &context.state;
     let status = state.status.lock().unwrap().clone();
     let is_recording = matches!(status, AppStatus::Recording);
     
@@ -178,9 +198,10 @@ struct StartResponse {
 
 #[debug_handler]
 async fn start_recording(
-    State(state): State<Arc<AppState>>,
+    State(context): State<ServerContext>,
     Json(payload): Json<StartRequest>,
 ) -> (StatusCode, Json<StartResponse>) {
+    let state = &context.state;
     info!("Received start_recording request for '{}'", payload.name);
     
     // Check status (and drop lock immediately)
@@ -267,9 +288,10 @@ struct StopRequest {
 }
 
 async fn stop_recording(
-    State(state): State<Arc<AppState>>,
+    State(context): State<ServerContext>,
     Json(payload): Json<Option<StopRequest>>,
 ) -> Result<Json<String>, StatusCode> {
+    let state = &context.state;
     info!("Received stop_recording request");
     // Update token if provided
     if let Some(req) = payload {
@@ -309,7 +331,8 @@ async fn stop_recording(
     Ok(Json("Stopped".to_string()))
 }
 
-async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<String>, StatusCode> {
+    let state = &context.state;
     info!("Received pause_recording request");
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
@@ -342,7 +365,8 @@ async fn pause_recording(State(state): State<Arc<AppState>>) -> Result<Json<Stri
     Ok(Json("Paused".to_string()))
 }
 
-async fn resume_recording(State(state): State<Arc<AppState>>) -> Result<Json<String>, StatusCode> {
+async fn resume_recording(State(context): State<ServerContext>) -> Result<Json<String>, StatusCode> {
+    let state = &context.state;
     info!("Received resume_recording request");
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
@@ -377,7 +401,8 @@ struct ConfigResponse {
     local_port: u16,
 }
 
-async fn get_config(State(state): State<Arc<AppState>>) -> Json<ConfigResponse> {
+async fn get_config(State(context): State<ServerContext>) -> Json<ConfigResponse> {
+    let state = &context.state;
     let config = state.config.lock().unwrap();
     Json(ConfigResponse {
         api_port: config.api_port,
@@ -399,7 +424,8 @@ struct DevicesResponse {
     selected_output: Option<String>,
 }
 
-async fn get_devices(State(state): State<Arc<AppState>>) -> Json<DevicesResponse> {
+async fn get_devices(State(context): State<ServerContext>) -> Json<DevicesResponse> {
+    let state = &context.state;
     let host = cpal::default_host();
     
     let default_input_name = host.default_input_device()
@@ -448,9 +474,10 @@ struct ConfigUpdate {
 }
 
 async fn update_config(
-    State(state): State<Arc<AppState>>,
+    State(context): State<ServerContext>,
     Json(payload): Json<ConfigUpdate>,
 ) -> Result<Json<ConfigResponse>, StatusCode> {
+    let state = &context.state;
     let mut config = state.config.lock().unwrap();
     
     if let Some(port) = payload.api_port {
@@ -475,4 +502,25 @@ async fn update_config(
         api_port: config.api_port,
         local_port: config.local_port,
     }))
+}
+
+async fn trigger_update(State(context): State<ServerContext>) -> StatusCode {
+    let app = context.app_handle.clone();
+    
+    tauri::async_runtime::spawn(async move {
+        match app.updater().check().await {
+            Ok(update) => {
+                if update.is_update_available() {
+                    if let Err(e) = update.download_and_install().await {
+                        error!("Failed to install update: {}", e);
+                    } else {
+                        tauri::api::process::restart(&app.env());
+                    }
+                }
+            }
+            Err(e) => error!("Failed to check update: {}", e),
+        }
+    });
+
+    StatusCode::ACCEPTED
 }

@@ -28,6 +28,9 @@ pub struct AppState {
     // Dynamic Web URL fetched from backend
     pub web_url: Mutex<Option<String>>,
     pub is_backend_connected: AtomicBool,
+    // Update status
+    pub update_available: AtomicBool,
+    pub latest_version: Mutex<Option<String>>,
 }
 
 impl AppState {

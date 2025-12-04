@@ -18,7 +18,8 @@ import {
   Bell,
   LogOut,
   Download,
-  Link2
+  Link2,
+  RefreshCw
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
@@ -185,7 +186,7 @@ function TagItem({
 export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
-  const { companion, companionAuthenticated, authorizeCompanion } = useServiceStatusStore();
+  const { companion, companionAuthenticated, authorizeCompanion, companionUpdateAvailable, triggerCompanionUpdate } = useServiceStatusStore();
   const { 
     currentView, 
     setCurrentView, 
@@ -198,6 +199,10 @@ export default function MainNav() {
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
+
+  const handleUpdateCompanion = async () => {
+    await triggerCompanionUpdate();
+  };
   const [newTagName, setNewTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -321,6 +326,7 @@ export default function MainNav() {
   // Determine which button to show
   const showDownloadButton = mounted && !companion;
   const showAuthorizeButton = mounted && companion && !companionAuthenticated;
+  const showUpdateCompanionButton = mounted && companion && companionUpdateAvailable;
 
   const navItems: { view: ViewType; icon: React.ReactNode; label: string }[] = [
     { view: 'recordings', icon: <Mic className="w-5 h-5" />, label: 'Recordings' },
@@ -504,6 +510,24 @@ export default function MainNav() {
                 <span className="text-sm truncate">
                   {isAuthorizing ? 'Connecting...' : 'Connect to Companion'}
                 </span>
+              )}
+            </button>
+          )}
+
+          {/* Update Companion Button */}
+          {showUpdateCompanionButton && (
+            <button
+              onClick={handleUpdateCompanion}
+              title={collapsed ? 'Update Companion App' : undefined}
+              className={`
+                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
+                bg-blue-600 hover:bg-blue-700 text-white font-medium
+                ${collapsed ? 'justify-center' : ''}
+              `}
+            >
+              <RefreshCw className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && (
+                <span className="text-sm truncate">Update Companion App</span>
               )}
             </button>
           )}

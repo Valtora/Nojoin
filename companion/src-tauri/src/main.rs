@@ -70,9 +70,15 @@ fn close_update_prompt(window: tauri::Window) {
 async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
     match app.updater().check().await {
         Ok(update) => {
+            let state_wrapper = app.state::<SharedAppState>();
+            let state = &state_wrapper.0;
+
             if update.is_update_available() {
                 let version = update.latest_version().to_string();
                 
+                state.update_available.store(true, Ordering::SeqCst);
+                *state.latest_version.lock().unwrap() = Some(version.clone());
+
                 #[cfg(windows)]
                 {
                     win_notifications::show_update_notification(app.clone(), version);
@@ -87,8 +93,11 @@ async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
                 {
                     linux_notifications::show_update_notification(app.clone(), version);
                 }
-            } else if !silent {
-                notifications::show_notification("No Updates", "You are on the latest version.");
+            } else {
+                state.update_available.store(false, Ordering::SeqCst);
+                if !silent {
+                    notifications::show_notification("No Updates", "You are on the latest version.");
+                }
             }
         }
         Err(e) => {
@@ -284,6 +293,8 @@ fn main() {
                 output_level: AtomicU32::new(0),
                 web_url: Mutex::new(None),
                 is_backend_connected: AtomicBool::new(false),
+                update_available: AtomicBool::new(false),
+                latest_version: Mutex::new(None),
             });
 
             // Manage the state so we can access it in menu handlers
@@ -410,7 +421,7 @@ fn main() {
                     }
                 });
 
-                rt.block_on(server::start_server(state_server));
+                rt.block_on(server::start_server(state_server, app_handle));
             });
 
             Ok(())
