@@ -170,11 +170,6 @@ fn start_segment(
                 bits_per_sample: 16,
                 sample_format: hound::SampleFormat::Int,
             };
-
-            let filename = format!("temp_{}_{}.wav", recording_id, sequence);
-            let path = std::env::current_dir()?.join(&filename);
-            
-            let mut writer = hound::WavWriter::create(&path, spec).map_err(|e| anyhow::anyhow!("Failed to create wav writer: {}", e))?;
             
             // Channels for data transfer
             let (mic_tx, mic_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
@@ -245,63 +240,98 @@ fn start_segment(
             mic_stream.play().map_err(|e| anyhow::anyhow!("Failed to play mic stream: {}", e))?;
             sys_stream.play().map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
             
-            // 5. Mixing Loop
-            // We use Mic as the master clock.
+            // 5. Mixing Loop with automatic segmentation
+            // Maximum segment duration: 5 minutes to keep files under ~27 MB
+            const MAX_SEGMENT_DURATION_SECS: u64 = 5 * 60;
+            
+            let mut current_sequence = sequence;
             let mut sys_buffer: Vec<f32> = Vec::new();
             
             while is_recording.load(Ordering::SeqCst) {
-                // Block on Mic data (Master)
-                if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                    // Collect available System data
-                    while let Ok(sys_chunk) = sys_rx.try_recv() {
-                        sys_buffer.extend(sys_chunk);
+                let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
+                let path = std::env::current_dir()?.join(&filename);
+                
+                let mut writer = hound::WavWriter::create(&path, spec).map_err(|e| anyhow::anyhow!("Failed to create wav writer: {}", e))?;
+                
+                let segment_start = std::time::Instant::now();
+                
+                // Record for up to MAX_SEGMENT_DURATION_SECS or until stopped
+                while is_recording.load(Ordering::SeqCst) {
+                    // Check if we've exceeded the maximum segment duration
+                    if segment_start.elapsed().as_secs() >= MAX_SEGMENT_DURATION_SECS {
+                        info!("Segment {} reached maximum duration, starting new segment", current_sequence);
+                        break;
                     }
                     
-                    // Mix
-                    for (i, mic_sample) in mic_data.iter().enumerate() {
-                        let mut mixed = *mic_sample;
-                        
-                        // If we have system audio, add it
-                        if i < sys_buffer.len() {
-                            mixed += sys_buffer[i];
+                    // Block on Mic data (Master)
+                    if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                        // Collect available System data
+                        while let Ok(sys_chunk) = sys_rx.try_recv() {
+                            sys_buffer.extend(sys_chunk);
                         }
                         
-                        // Hard clip to prevent wrapping
-                        mixed = mixed.clamp(-1.0, 1.0);
+                        // Mix
+                        for (i, mic_sample) in mic_data.iter().enumerate() {
+                            let mut mixed = *mic_sample;
+                            
+                            // If we have system audio, add it
+                            if i < sys_buffer.len() {
+                                mixed += sys_buffer[i];
+                            }
+                            
+                            // Hard clip to prevent wrapping
+                            mixed = mixed.clamp(-1.0, 1.0);
+                            
+                            let amplitude = i16::MAX as f32;
+                            writer.write_sample((mixed * amplitude) as i16).map_err(|e| anyhow::anyhow!("Failed to write sample: {}", e))?;
+                        }
                         
-                        let amplitude = i16::MAX as f32;
-                        writer.write_sample((mixed * amplitude) as i16).map_err(|e| anyhow::anyhow!("Failed to write sample: {}", e))?;
-                    }
-                    
-                    // Remove used system samples
-                    if sys_buffer.len() >= mic_data.len() {
-                        sys_buffer.drain(0..mic_data.len());
-                    } else {
-                        sys_buffer.clear(); // Drained all, some mic samples were unmixed (silence)
+                        // Remove used system samples
+                        if sys_buffer.len() >= mic_data.len() {
+                            sys_buffer.drain(0..mic_data.len());
+                        } else {
+                            sys_buffer.clear(); // Drained all, some mic samples were unmixed (silence)
+                        }
                     }
                 }
-            }
-            
-            writer.finalize().map_err(|e| anyhow::anyhow!("Failed to finalize writer: {}", e))?;
-            drop(mic_stream);
-            drop(sys_stream);
-            
-            info!("Segment finished: {:?}", path);
-            
-            // Upload
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                match uploader::upload_segment(recording_id, sequence, &path, &config).await {
+                
+                // Finalize current segment
+                writer.finalize().map_err(|e| anyhow::anyhow!("Failed to finalize writer: {}", e))?;
+                
+                info!("Segment finished: {:?}", path);
+                
+                // Upload segment
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let upload_result = rt.block_on(async {
+                    uploader::upload_segment(recording_id, current_sequence, &path, &config).await
+                });
+                
+                match upload_result {
                     Ok(_) => {
-                        info!("Segment uploaded successfully");
+                        info!("Segment {} uploaded successfully", current_sequence);
                         // Only delete file if upload was successful
                         if let Err(e) = std::fs::remove_file(&path) {
                             log::error!("Failed to delete temp file {:?}: {}", path, e);
                         }
                     }
-                    Err(e) => log::error!("Failed to upload segment: {}", e),
+                    Err(e) => {
+                        log::error!("Failed to upload segment {}: {}", current_sequence, e);
+                        // Continue recording even if upload fails - user can retry later
+                    }
                 }
-            });
+                
+                // Increment sequence for next segment
+                current_sequence += 1;
+                
+                // Update state with new sequence number
+                {
+                    let mut seq = state.current_sequence.lock().unwrap();
+                    *seq = current_sequence;
+                }
+            }
+            
+            drop(mic_stream);
+            drop(sys_stream);
             
             Ok(())
         };
