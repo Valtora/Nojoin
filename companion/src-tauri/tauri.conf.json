@@ -35,7 +35,7 @@
     "category": "Productivity",
     "shortDescription": "Nojoin Companion App",
     "longDescription": "A lightweight system tray companion app for Nojoin meeting intelligence",
-    "createUpdaterArtifacts": "v1Compatible"
+    "createUpdaterArtifacts": true
   },
   "productName": "Nojoin",
   "mainBinaryName": "Nojoin",
@@ -43,7 +43,7 @@
   "identifier": "com.valtora.nojoin.companion",
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDMDhGQTJERTgzMjkzOUQKUldTZGt6TG9MZm9JM0FSZlJoWEFDaG0xT1dhNEFYWVhIN29QZzREeTRIcVZOZGVpekJFRUZBNHMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYxMkQ1NjM0REI4NDY0RDkKUldUWlpJVGJORll0OFhwRGFSSE1teUNoL2VLdHR1Z1B3K0pFN2Z0NUxPSW1CSDllSkJpRSs4RzUK",
       "endpoints": [
         "https://github.com/Valtora/Nojoin/releases/latest/download/latest.json"
       ]
