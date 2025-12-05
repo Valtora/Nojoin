@@ -48,27 +48,23 @@ def process_recording_task(self, recording_id: int):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
-    # Local imports to avoid loading torch in API
     from backend.processing.vad import mute_non_speech_segments
     from backend.processing.audio_preprocessing import convert_wav_to_mp3, preprocess_audio_for_vad, validate_audio_file, cleanup_temp_file, repair_audio_file
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
 
-    # Reload config to pick up any changes made via the API
     config_manager.reload()
     
     start_time = time.time()
     session = self.session
     temp_files = []
     
-    # 1. Fetch Recording
     recording = session.get(Recording, recording_id)
     if not recording:
         logger.error(f"Recording {recording_id} not found.")
         return
     
-    # Fetch User Settings & Merge with System Config
     user_settings = {}
     if recording.user_id:
         user = session.get(User, recording.user_id)
@@ -81,7 +77,6 @@ def process_recording_task(self, recording_id: int):
     merged_config.update(user_settings)
     
     try:
-        # Update status to PROCESSING
         recording.status = RecordingStatus.PROCESSING
         session.add(recording)
         session.commit()
@@ -91,7 +86,6 @@ def process_recording_task(self, recording_id: int):
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        # Validate Audio File
         try:
             validate_audio_file(audio_path)
         except AudioFormatError as e:

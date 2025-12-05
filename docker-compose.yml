@@ -25,8 +25,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
-    # Added --reload for hot reloading during development
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     volumes:
       - .:/app
       - ./data:/app/data
@@ -69,6 +68,7 @@ services:
       # Force cache location to match the mounted volume
       - XDG_CACHE_HOME=/home/appuser/.cache
       - HF_HOME=/home/appuser/.cache/huggingface
+    # Comment out the 'deploy' section below if you do not have an NVIDIA GPU
     deploy:
       resources:
         reservations:
@@ -89,13 +89,12 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
+    # Uncomment the following volumes for local development (hot reloading)
     # volumes:
     #   - ./frontend:/app
     #   - frontend_node_modules:/app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
-      # Enable polling for hot reloading on Windows file systems
-      - WATCHPACK_POLLING=true
     restart: unless-stopped
 
   nginx:

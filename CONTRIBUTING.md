@@ -13,6 +13,7 @@ At this time, we are **not actively seeking code contributions** (Pull Requests)
 However, we **highly value** your feedback and involvement in other ways:
 
 *   **Bug Reports:** If you encounter any issues, please [open an issue](https://github.com/Valtora/Nojoin/issues) with detailed reproduction steps.
+*   **Platform Testing:** We specifically need help verifying the Companion App on **macOS** and **Linux**.
 *   **Feature Requests:** We welcome ideas for new features! Please submit them via GitHub Issues.
 *   **Discussions:** Feel free to participate in discussions to help shape the future of Nojoin.
 

@@ -32,8 +32,8 @@ sync_engine = create_engine(
     SYNC_DATABASE_URL, 
     echo=False, 
     future=True,
-    pool_pre_ping=True,  # Check connection validity before using
-    pool_recycle=3600    # Recycle connections every hour
+    pool_pre_ping=True,
+    pool_recycle=3600
 )
 
 async_session_maker = sessionmaker(

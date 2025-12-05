@@ -13,7 +13,6 @@ from backend.celery_app import celery_app
 from alembic.config import Config
 from alembic import command
 
-# Setup audio environment (patches torchaudio)
 setup_audio_environment()
 
 # Import models to register them with SQLModel
@@ -52,7 +51,6 @@ def run_migrations():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run database migrations
     run_migrations()
         
     yield
@@ -67,8 +65,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
-# In production, replace allow_origins=["*"] with specific frontend domains
 origins = [
     "http://localhost:14141",
     "http://localhost:3000",
@@ -78,7 +74,6 @@ origins = [
     "https://localhost:14443",
 ]
 
-# Add env var origins
 env_origins = os.getenv("ALLOWED_ORIGINS", "")
 if env_origins:
     origins.extend([origin.strip() for origin in env_origins.split(",")])

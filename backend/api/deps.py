@@ -49,14 +49,11 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # token_data is the username (subject)
-    # print(f"DEBUG: Validating token for user: {token_data}")
     query = select(User).where(User.username == token_data)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
     
     if not user:
-        print(f"DEBUG: User {token_data} not found in DB")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",

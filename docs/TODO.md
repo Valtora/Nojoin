@@ -1,20 +1,5 @@
 # Nojoin To-Do List
 
-Let's continue the development of Nojoin. Read completely (not just first 100 lines) the AGENTS.md and the PRD.md files in the docs directory to get an understanding of the project. After the colons I will provide a list of tasks/instructions that need to be completed. Now present a plan for my approval to:
-
-## Meeting Chat Feature Enchancements
-- Investigate and report back how we would implement the following features in the meeting chat:
-- Allow the LLM in the chat to not only read the meeting notes but to also have the ability to make changes to it. For example if I tell it to remove a certain topic from the meeting notes it should be able to do so. It should not be able to edit the meeting transcript itself however.
-
-## PRD.md
-- The PRD.md file is becoming a one-stop-shop for all documentation.
-- Analyse the PRD to separate out usage documentation from the actual Product Requirements Document.
-- Place these extracted docs in the 'docs' folder.
-
-## CPU Only Docker Compose
-- Explore removing the docker-compose.cpu.yml file.
-- My understanding is that the celery worker will fallback to the CPU anyway if a CUDA device is not detected. Confirm this and if so, remove the docker-compose-cpu.yml file and update the documentation.
-
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.
 - Investigate 'speaches' library for realtime transcription capabilities.
