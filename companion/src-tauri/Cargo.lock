@@ -2636,7 +2636,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 
 [[package]]
 name = "nojoin-companion"
-version = ""
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -3437,7 +3437,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
 dependencies = [
- "toml_edit 0.23.7",
+ "toml_edit 0.23.8",
 ]
 
 [[package]]
@@ -5054,9 +5054,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.7"
+version = "0.23.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
+checksum = "5a9b7ac41d92f2d2803f233e297127bac397df7b337e0460a1cc39d6c006dee4"
 dependencies = [
  "indexmap 2.12.1",
  "toml_datetime 0.7.3",
