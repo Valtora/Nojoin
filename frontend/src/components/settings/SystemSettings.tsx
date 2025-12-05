@@ -2,6 +2,7 @@
 
 import { Settings } from '@/types';
 import { fuzzyMatch } from '@/lib/searchUtils';
+import BackupRestore from './BackupRestore';
 
 interface SystemSettingsProps {
   settings: Settings;
@@ -18,8 +19,9 @@ export default function SystemSettings({
 }: SystemSettingsProps) {
   const showInfrastructure = fuzzyMatch(searchQuery, ['infrastructure', 'worker', 'redis', 'url', 'broker', 'connection']);
   const showCompanion = fuzzyMatch(searchQuery, ['companion', 'app', 'backend', 'api', 'port', 'address']);
+  const showBackup = fuzzyMatch(searchQuery, ['backup', 'restore', 'export', 'import', 'data', 'zip']);
 
-  if (!showInfrastructure && !showCompanion && searchQuery) {
+  if (!showInfrastructure && !showCompanion && !showBackup && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;
   }
 
@@ -79,6 +81,8 @@ export default function SystemSettings({
           </div>
         </div>
       )}
+
+      {showBackup && <BackupRestore />}
     </div>
   );
 }

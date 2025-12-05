@@ -2,68 +2,55 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devPath": "../src",
-    "distDir": "../src",
-    "withGlobalTauri": true
+    "frontendDist": "../src"
   },
-  "package": {
-    "productName": "Nojoin",
-    "version": "0.1.4"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": true,
-        "open": true
-      },
-      "notification": {
-        "all": true
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
+    "windows": {
+      "nsis": {
+        "template": "nsis/installer.nsi",
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false
       }
     },
-    "bundle": {
-      "active": true,
-      "targets": [
-        "nsis",
-        "dmg",
-        "deb",
-        "appimage",
-        "updater"
-      ],
-      "identifier": "com.valtora.nojoin.companion",
-      "icon": [
-        "icons/icon.ico",
-        "icons/icon.png",
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/icon.icns"
-      ],
-      "resources": [],
-      "externalBin": [],
-      "copyright": "Valtora",
-      "category": "Productivity",
-      "shortDescription": "Nojoin Companion App",
-      "longDescription": "A lightweight system tray companion app for Nojoin meeting intelligence",
-      "windows": {
-        "nsis": {
-          "template": "nsis/installer.nsi",
-          "installMode": "currentUser",
-          "languages": ["English"],
-          "displayLanguageSelector": false
-        }
-      }
-    },
-    "security": {
-      "csp": null
-    },
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "Valtora",
+    "category": "Productivity",
+    "shortDescription": "Nojoin Companion App",
+    "longDescription": "A lightweight system tray companion app for Nojoin meeting intelligence",
+    "createUpdaterArtifacts": "v1Compatible"
+  },
+  "productName": "Nojoin",
+  "mainBinaryName": "Nojoin",
+  "version": "0.1.4",
+  "identifier": "com.valtora.nojoin.companion",
+  "plugins": {
     "updater": {
-      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEQjE5ODcwRDI4NzJCQjYKUldTMks0ZlNjSml4clcyd1FJSDZURWhpQ1hPK2xQenhUbVBsYmMxaEZSSjdjWEdFOTJmYlU0b2sK",
       "endpoints": [
         "https://github.com/Valtora/Nojoin/releases/latest/download/latest.json"
-      ],
-      "dialog": false,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEQjE5ODcwRDI4NzJCQjYKUldTMks0ZlNjSml4clcyd1FJSDZURWhpQ1hPK2xQenhUbVBsYmMxaEZSSjdjWEdFOTJmYlU0b2sK"
-    },
+      ]
+    }
+  },
+  "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "fullscreen": false,
@@ -71,10 +58,14 @@
         "title": "Nojoin Companion",
         "width": 800,
         "height": 600,
-        "visible": false
+        "visible": false,
+        "useHttpsScheme": true
       }
     ],
-    "systemTray": {
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": true,
       "menuOnLeftClick": true

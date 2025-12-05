@@ -1,6 +1,5 @@
 # Nojoin To-Do List
 
-
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.
 - Investigate 'speaches' library for realtime transcription capabilities.

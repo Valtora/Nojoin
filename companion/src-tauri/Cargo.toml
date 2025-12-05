@@ -6,10 +6,10 @@ authors = ["Valtora"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "shell-all", "notification-all", "system-tray", "updater", "notification"] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.36", features = ["full"] }
@@ -27,7 +27,9 @@ log = "0.4"
 fern = "0.7"
 directories = "5.0"
 open = "5.0"
-tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
+tauri-plugin-autostart = { version = "2" }
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
 
 [target.'cfg(windows)'.dependencies]
 win32_notif = "0.10.2"
@@ -37,6 +39,9 @@ mac-notification-sys = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

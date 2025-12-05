@@ -1,17 +1,19 @@
-use axum::{
-    routing::{get, post},
-    Router, Json, extract::State, http::StatusCode,
-};
-use std::sync::Arc;
-use tower_http::cors::CorsLayer;
-use cpal::traits::{DeviceTrait, HostTrait};
-use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::notifications;
+use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::uploader;
-use log::{info, error};
-use std::time::Duration;
 use axum::debug_handler;
-use tauri::Manager;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use cpal::traits::{DeviceTrait, HostTrait};
+use log::{error, info};
+use std::sync::Arc;
+use std::time::Duration;
+use tauri_plugin_updater::UpdaterExt;
+use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 pub struct ServerContext {
@@ -24,9 +26,9 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         let config = state.config.lock().unwrap();
         config.local_port
     };
-    
+
     let context = ServerContext { state, app_handle };
-    
+
     let app = Router::new()
         .route("/status", get(get_status))
         .route("/auth", post(authorize))
@@ -67,11 +69,11 @@ async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse
         let config = state.config.lock().unwrap();
         (!config.api_token.is_empty(), config.api_host.clone())
     };
-    
+
     let duration = {
         let acc = *state.accumulated_duration.lock().unwrap();
         let start = *state.recording_start_time.lock().unwrap();
-        
+
         match status {
             AppStatus::Recording => {
                 if let Some(s) = start {
@@ -83,12 +85,14 @@ async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse
                 } else {
                     acc
                 }
-            },
+            }
             _ => acc,
         }
     };
 
-    let update_available = state.update_available.load(std::sync::atomic::Ordering::Relaxed);
+    let update_available = state
+        .update_available
+        .load(std::sync::atomic::Ordering::Relaxed);
     let latest_version = state.latest_version.lock().unwrap().clone();
 
     Json(StatusResponse {
@@ -123,23 +127,23 @@ async fn authorize(
 ) -> Json<AuthResponse> {
     let state = &context.state;
     info!("Received authorization request");
-    
+
     if payload.token.is_empty() {
         return Json(AuthResponse {
             success: false,
             message: "Token cannot be empty".to_string(),
         });
     }
-    
+
     // Save the token and connection details to config
     {
         let mut config = state.config.lock().unwrap();
         config.api_token = payload.token;
-        
+
         if let Some(host) = payload.api_host {
             config.api_host = host;
         }
-        
+
         if let Some(port) = payload.api_port {
             config.api_port = port;
         }
@@ -152,13 +156,14 @@ async fn authorize(
             });
         }
     }
-    
+
     info!("Companion app authorized and configured successfully");
     notifications::show_notification(
+        &context.app_handle,
         "Connected to Nojoin",
-        "Companion app is now connected and configured."
+        "Companion app is now connected and configured.",
     );
-    
+
     Json(AuthResponse {
         success: true,
         message: "Authorization and configuration successful".to_string(),
@@ -176,7 +181,7 @@ async fn get_audio_levels(State(context): State<ServerContext>) -> Json<AudioLev
     let state = &context.state;
     let status = state.status.lock().unwrap().clone();
     let is_recording = matches!(status, AppStatus::Recording);
-    
+
     Json(AudioLevelsResponse {
         input_level: state.take_input_level(),
         output_level: state.take_output_level(),
@@ -203,15 +208,18 @@ async fn start_recording(
 ) -> (StatusCode, Json<StartResponse>) {
     let state = &context.state;
     info!("Received start_recording request for '{}'", payload.name);
-    
+
     // Check status (and drop lock immediately)
     {
         let status = state.status.lock().unwrap();
         if *status != AppStatus::Idle && *status != AppStatus::BackendOffline {
-            return (StatusCode::BAD_REQUEST, Json(StartResponse {
-                id: 0,
-                message: "Already recording".to_string(),
-            }));
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(StartResponse {
+                    id: 0,
+                    message: "Already recording".to_string(),
+                }),
+            );
         }
     }
 
@@ -229,13 +237,14 @@ async fn start_recording(
         .danger_accept_invalid_certs(true)
         .build()
         .unwrap_or_default();
-        
+
     let (api_url, token) = {
         let config = state.config.lock().unwrap();
         (config.get_api_url(), config.api_token.clone())
     };
 
-    let res = client.post(format!("{}/recordings/init", api_url))
+    let res = client
+        .post(format!("{}/recordings/init", api_url))
         .header("Authorization", format!("Bearer {}", token))
         .query(&[("name", &payload.name)])
         .send()
@@ -245,7 +254,8 @@ async fn start_recording(
         Ok(response) => {
             if let Ok(json) = response.json::<serde_json::Value>().await {
                 if let Some(id) = json.get("id").and_then(|v| v.as_i64()) {
-                    let recording_name = json.get("name")
+                    let recording_name = json
+                        .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or(&payload.name);
 
@@ -254,32 +264,45 @@ async fn start_recording(
                     *state.current_sequence.lock().unwrap() = 1;
                     *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
                     *state.accumulated_duration.lock().unwrap() = Duration::new(0, 0);
-                    
-                    state.audio_command_tx.send(AudioCommand::Start(id)).unwrap();
-                    
+
+                    state
+                        .audio_command_tx
+                        .send(AudioCommand::Start(id))
+                        .unwrap();
+
                     // Re-acquire lock to update status
                     let mut status = state.status.lock().unwrap();
                     *status = AppStatus::Recording;
-                    
-                    notifications::show_notification("Recording Started", &format!("Recording '{}' started.", recording_name));
+
+                    notifications::show_notification(
+                        &context.app_handle,
+                        "Recording Started",
+                        &format!("Recording '{}' started.", recording_name),
+                    );
                     info!("Recording started successfully. ID: {}", id);
-                    
-                    return (StatusCode::OK, Json(StartResponse {
-                        id,
-                        message: "Recording started".to_string(),
-                    }));
+
+                    return (
+                        StatusCode::OK,
+                        Json(StartResponse {
+                            id,
+                            message: "Recording started".to_string(),
+                        }),
+                    );
                 }
             }
-        },
+        }
         Err(e) => {
             error!("Failed to start recording on backend: {}", e);
         }
     }
 
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(StartResponse {
-        id: 0,
-        message: "Failed to start recording".to_string(),
-    }))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(StartResponse {
+            id: 0,
+            message: "Failed to start recording".to_string(),
+        }),
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -306,17 +329,17 @@ async fn stop_recording(
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Uploading;
-        
+
         // Reset timing
         let mut start_time = state.recording_start_time.lock().unwrap();
         *start_time = None;
         let mut acc = state.accumulated_duration.lock().unwrap();
         *acc = std::time::Duration::new(0, 0);
-        
+
         // Do NOT clear current_recording_id here. Audio thread needs it.
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
-    
+
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
@@ -326,7 +349,7 @@ async fn stop_recording(
         });
     }
 
-    notifications::show_notification("Recording Stopped", "Processing audio...");
+    notifications::show_notification(&context.app_handle, "Recording Stopped", "Processing audio...");
     info!("Stop command processed successfully");
     Ok(Json("Stopped".to_string()))
 }
@@ -338,7 +361,7 @@ async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<St
     {
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Paused;
-        
+
         // Accumulate time
         let mut start_time = state.recording_start_time.lock().unwrap();
         if let Some(s) = *start_time {
@@ -350,7 +373,7 @@ async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<St
         *start_time = None;
     }
     state.audio_command_tx.send(AudioCommand::Pause).unwrap();
-    
+
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
@@ -359,13 +382,15 @@ async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<St
             }
         });
     }
-    
-    notifications::show_notification("Recording Paused", "Recording paused.");
+
+    notifications::show_notification(&context.app_handle, "Recording Paused", "Recording paused.");
     info!("Recording paused");
     Ok(Json("Paused".to_string()))
 }
 
-async fn resume_recording(State(context): State<ServerContext>) -> Result<Json<String>, StatusCode> {
+async fn resume_recording(
+    State(context): State<ServerContext>,
+) -> Result<Json<String>, StatusCode> {
     let state = &context.state;
     info!("Received resume_recording request");
     let recording_id = *state.current_recording_id.lock().unwrap();
@@ -374,13 +399,13 @@ async fn resume_recording(State(context): State<ServerContext>) -> Result<Json<S
         *status = AppStatus::Recording;
         let mut seq = state.current_sequence.lock().unwrap();
         *seq += 1;
-        
+
         // Resume timing
         let mut start_time = state.recording_start_time.lock().unwrap();
         *start_time = Some(SystemTime::now());
     }
     state.audio_command_tx.send(AudioCommand::Resume).unwrap();
-    
+
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
         tokio::spawn(async move {
@@ -390,7 +415,7 @@ async fn resume_recording(State(context): State<ServerContext>) -> Result<Json<S
         });
     }
 
-    notifications::show_notification("Recording Resumed", "Recording resumed.");
+    notifications::show_notification(&context.app_handle, "Recording Resumed", "Recording resumed.");
     info!("Recording resumed");
     Ok(Json("Resumed".to_string()))
 }
@@ -427,36 +452,40 @@ struct DevicesResponse {
 async fn get_devices(State(context): State<ServerContext>) -> Json<DevicesResponse> {
     let state = &context.state;
     let host = cpal::default_host();
-    
-    let default_input_name = host.default_input_device()
-        .and_then(|d| d.name().ok());
-    let default_output_name = host.default_output_device()
-        .and_then(|d| d.name().ok());
-    
-    let input_devices: Vec<AudioDevice> = host.input_devices()
+
+    let default_input_name = host.default_input_device().and_then(|d| d.name().ok());
+    let default_output_name = host.default_output_device().and_then(|d| d.name().ok());
+
+    let input_devices: Vec<AudioDevice> = host
+        .input_devices()
         .map(|devices| {
-            devices.filter_map(|d| {
-                d.name().ok().map(|name| AudioDevice {
-                    is_default: Some(&name) == default_input_name.as_ref(),
-                    name,
+            devices
+                .filter_map(|d| {
+                    d.name().ok().map(|name| AudioDevice {
+                        is_default: Some(&name) == default_input_name.as_ref(),
+                        name,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
-    
-    let output_devices: Vec<AudioDevice> = host.output_devices()
+
+    let output_devices: Vec<AudioDevice> = host
+        .output_devices()
         .map(|devices| {
-            devices.filter_map(|d| {
-                d.name().ok().map(|name| AudioDevice {
-                    is_default: Some(&name) == default_output_name.as_ref(),
-                    name,
+            devices
+                .filter_map(|d| {
+                    d.name().ok().map(|name| AudioDevice {
+                        is_default: Some(&name) == default_output_name.as_ref(),
+                        name,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
-    
+
     let config = state.config.lock().unwrap();
-    
+
     Json(DevicesResponse {
         input_devices,
         output_devices,
@@ -479,7 +508,7 @@ async fn update_config(
 ) -> Result<Json<ConfigResponse>, StatusCode> {
     let state = &context.state;
     let mut config = state.config.lock().unwrap();
-    
+
     if let Some(port) = payload.api_port {
         config.api_port = port;
     }
@@ -492,12 +521,12 @@ async fn update_config(
     if payload.output_device_name.is_some() {
         config.output_device_name = payload.output_device_name;
     }
-    
+
     if let Err(e) = config.save() {
         eprintln!("Failed to save config: {}", e);
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    
+
     Ok(Json(ConfigResponse {
         api_port: config.api_port,
         local_port: config.local_port,
@@ -506,17 +535,26 @@ async fn update_config(
 
 async fn trigger_update(State(context): State<ServerContext>) -> StatusCode {
     let app = context.app_handle.clone();
-    
+
     tauri::async_runtime::spawn(async move {
-        match app.updater().check().await {
-            Ok(update) => {
-                if update.is_update_available() {
-                    if let Err(e) = update.download_and_install().await {
-                        error!("Failed to install update: {}", e);
-                    } else {
-                        tauri::api::process::restart(&app.env());
-                    }
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                error!("Failed to get updater: {}", e);
+                return;
+            }
+        };
+
+        match updater.check().await {
+            Ok(Some(update)) => {
+                if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+                    error!("Failed to install update: {}", e);
+                } else {
+                    app.restart();
                 }
+            }
+            Ok(None) => {
+                info!("No update available");
             }
             Err(e) => error!("Failed to check update: {}", e),
         }

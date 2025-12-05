@@ -1,14 +1,16 @@
 #[cfg(target_os = "linux")]
-use tauri::{AppHandle, Manager};
+use log::error;
 #[cfg(target_os = "linux")]
 use notify_rust::{Notification, Timeout};
 #[cfg(target_os = "linux")]
-use log::error;
+use tauri::AppHandle;
+#[cfg(target_os = "linux")]
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(target_os = "linux")]
 pub fn show_update_notification(app: AppHandle, version: String) {
     let app_handle = app.clone();
-    
+
     // notify-rust's wait_for_action blocks, so this is fine in the thread.
     let notification = Notification::new()
         .summary("Update Available")
@@ -27,7 +29,7 @@ pub fn show_update_notification(app: AppHandle, version: String) {
                     trigger_update(app_handle.clone());
                 }
             });
-        },
+        }
         Err(e) => {
             error!("Failed to show notification: {:?}", e);
         }
@@ -37,15 +39,24 @@ pub fn show_update_notification(app: AppHandle, version: String) {
 #[cfg(target_os = "linux")]
 fn trigger_update(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        match app.updater().check().await {
-            Ok(update) => {
-                if update.is_update_available() {
-                    if let Err(e) = update.download_and_install().await {
-                        error!("Failed to install update: {}", e);
-                    } else {
-                        tauri::api::process::restart(&app.env());
-                    }
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                error!("Failed to get updater: {}", e);
+                return;
+            }
+        };
+
+        match updater.check().await {
+            Ok(Some(update)) => {
+                if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+                    error!("Failed to install update: {}", e);
+                } else {
+                    app.restart();
                 }
+            }
+            Ok(None) => {
+                // No update available
             }
             Err(e) => error!("Failed to check update: {}", e),
         }

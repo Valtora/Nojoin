@@ -637,4 +637,22 @@ export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey
   return response.data;
 };
 
+// Backup & Restore
+export const exportBackup = async (): Promise<Blob> => {
+  const response = await api.get('/backup/export', {
+    responseType: 'blob',
+  });
+  return response.data;
+};
+
+export const importBackup = async (file: File, clearExisting: boolean): Promise<void> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  await api.post(`/backup/import?clear_existing=${clearExisting}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
+
 export default api;

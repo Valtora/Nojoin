@@ -24,7 +24,7 @@ interface CompanionConfig {
 const COMPANION_URL = 'http://localhost:12345';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('ai');
+  const [activeTab, setActiveTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<Settings>({});
   const [companionConfig, setCompanionConfig] = useState<CompanionConfig | null>(null);
   const [companionDevices, setCompanionDevices] = useState<CompanionDevices | null>(null);
@@ -43,7 +43,7 @@ export default function SettingsPage() {
 
     const matches: Record<Tab, number> = {
       general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
-      ai: getMatchScore(searchQuery, TAB_KEYWORDS.ai),
+      ai: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.ai) : 1,
       audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
       system: getMatchScore(searchQuery, TAB_KEYWORDS.system),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
@@ -170,16 +170,26 @@ export default function SettingsPage() {
   const tabs = useMemo(() => {
     const baseTabs = [
       { id: 'account', label: 'Account', icon: User },
-      { id: 'ai', label: 'AI Services', icon: Cpu },
+      // AI Services moved to conditional
       { id: 'audio', label: 'Audio & Recording', icon: Mic },
       { id: 'general', label: 'General', icon: SettingsIcon },
       { id: 'system', label: 'System', icon: Server },
     ] as const;
 
+    const aiTab = { id: 'ai', label: 'AI Services', icon: Cpu };
+    const adminTab = { id: 'admin', label: 'Admin Panel', icon: Shield };
+
     if (isAdmin) {
+      // Insert AI tab after Account (index 1)
+      const tabsWithAI = [
+        baseTabs[0], // Account
+        aiTab,
+        ...baseTabs.slice(1)
+      ];
+      
       return [
-        ...baseTabs,
-        { id: 'admin', label: 'Admin Panel', icon: Shield },
+        ...tabsWithAI,
+        adminTab,
       ];
     }
     return baseTabs;
@@ -269,7 +279,7 @@ export default function SettingsPage() {
               {activeTab === 'account' && <AccountSettings />}
               {activeTab === 'admin' && isAdmin && <AdminSettings />}
               {activeTab === 'general' && <GeneralSettings searchQuery={searchQuery} />}
-              {activeTab === 'ai' && (
+              {activeTab === 'ai' && isAdmin && (
                 <AISettings 
                   settings={settings} 
                   onUpdate={setSettings} 

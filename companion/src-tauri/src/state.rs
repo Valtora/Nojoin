@@ -1,8 +1,11 @@
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
-use serde::{Serialize, Deserialize};
-use crossbeam_channel::Sender;
 use crate::config::Config;
+use crossbeam_channel::Sender;
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
+use tauri::menu::{CheckMenuItem, MenuItem};
+use tauri::tray::TrayIcon;
+use tauri::Wry;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AppStatus {
@@ -31,6 +34,12 @@ pub struct AppState {
     // Update status
     pub update_available: AtomicBool,
     pub latest_version: Mutex<Option<String>>,
+    
+    // Tray Menu Items
+    pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
+    pub tray_run_on_startup_item: Mutex<Option<CheckMenuItem<Wry>>>,
+    pub tray_open_web_item: Mutex<Option<MenuItem<Wry>>>,
+    pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
 }
 
 impl AppState {
@@ -39,16 +48,16 @@ impl AppState {
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
         self.input_level.fetch_max(scaled, Ordering::Relaxed);
     }
-    
+
     pub fn record_output_level(&self, level: f32) {
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
         self.output_level.fetch_max(scaled, Ordering::Relaxed);
     }
-    
+
     pub fn take_input_level(&self) -> u32 {
         self.input_level.swap(0, Ordering::Relaxed)
     }
-    
+
     pub fn take_output_level(&self) -> u32 {
         self.output_level.swap(0, Ordering::Relaxed)
     }
@@ -59,7 +68,6 @@ impl AppState {
         !config.api_token.is_empty()
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {

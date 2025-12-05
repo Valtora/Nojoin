@@ -1,8 +1,8 @@
+use directories::ProjectDirs;
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use log::info;
-use directories::ProjectDirs;
 
 const DEFAULT_API_PORT: u16 = 14443;
 const DEFAULT_LOCAL_PORT: u16 = 12345;
@@ -60,7 +60,7 @@ impl Config {
 
     fn get_config_path() -> PathBuf {
         let config_name = "config.json";
-        
+
         // First check current directory (development override)
         let cwd_path = PathBuf::from(config_name);
         if cwd_path.exists() {
@@ -72,7 +72,7 @@ impl Config {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let exe_config = exe_dir.join(config_name);
-                
+
                 // If it exists, use it
                 if exe_config.exists() {
                     return exe_config;
@@ -85,17 +85,17 @@ impl Config {
                 }
             }
         }
-        
+
         // Check standard system locations using directories crate (Fallback / Linux / MacOS)
         if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin") {
             let config_dir = proj_dirs.config_dir();
             let app_config = config_dir.join(config_name);
-            
+
             // If it exists, use it
             if app_config.exists() {
                 return app_config;
             }
-            
+
             // If we are on Linux or MacOS, we prefer this location for new configs
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
@@ -106,7 +106,7 @@ impl Config {
                     return app_config;
                 }
             }
-            
+
             return app_config;
         }
 
@@ -116,19 +116,26 @@ impl Config {
 
     fn migrate_from_legacy(content: &str) -> Option<Config> {
         let legacy: LegacyConfig = serde_json::from_str(content).ok()?;
-        
+
         // Extract port from legacy api_url if present
-        let api_port = legacy.api_url.as_ref().and_then(|url| {
-            // Parse URL like "https://localhost:14443/api/v1"
-            if let Some(port_start) = url.find("localhost:") {
-                let after_colon = &url[port_start + 10..];
-                let port_str: String = after_colon.chars().take_while(|c| c.is_ascii_digit()).collect();
-                port_str.parse().ok()
-            } else {
-                None
-            }
-        }).unwrap_or(DEFAULT_API_PORT);
-        
+        let api_port = legacy
+            .api_url
+            .as_ref()
+            .and_then(|url| {
+                // Parse URL like "https://localhost:14443/api/v1"
+                if let Some(port_start) = url.find("localhost:") {
+                    let after_colon = &url[port_start + 10..];
+                    let port_str: String = after_colon
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    port_str.parse().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DEFAULT_API_PORT);
+
         Some(Config {
             api_port,
             api_host: default_api_host(),
@@ -152,12 +159,12 @@ impl Config {
                     return Self::default();
                 }
             };
-            
+
             // Try parsing as new format first
             if let Ok(config) = serde_json::from_str::<Config>(&content) {
                 return config;
             }
-            
+
             // Try migrating from legacy format
             if let Some(migrated) = Self::migrate_from_legacy(&content) {
                 info!("Migrated config from legacy format");
@@ -167,22 +174,25 @@ impl Config {
                 }
                 return migrated;
             }
-            
+
             eprintln!("Failed to parse config.json. Using defaults.");
             Self::default()
         } else {
-            info!("config.json not found. Creating default config at {:?}", config_path);
+            info!(
+                "config.json not found. Creating default config at {:?}",
+                config_path
+            );
             let default_config = Self::default();
-            
+
             // Ensure parent directory exists
             if let Some(parent) = config_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            
+
             if let Err(e) = default_config.save_to(&config_path) {
                 eprintln!("Failed to write default config.json: {}", e);
             }
-            
+
             default_config
         }
     }
