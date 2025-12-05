@@ -49,10 +49,6 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 ## Critical Workflows
 
-### Hybrid Development (WSL2 + Windows)
-- **Backend/Frontend**: Run in WSL2/Linux (Docker).
-- **Companion**: Run in Windows (Native) to access WASAPI loopback.
-
 ### Commands
 - **Start Infrastructure**:
   - **NVIDIA GPU (Default)**: `docker-compose up -d`
@@ -68,7 +64,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - **Environment Variables**: Ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` (if applicable) are set in your Windows environment variables or PowerShell session before building.
 - **Companion Installer (Windows)**:
   - Build: `cd companion && npm run tauri build`
-  - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin-Companion-Setup.exe`
+  - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin Setup X.Y.Z.exe`
 
 ### Companion Release Workflow
 
@@ -79,6 +75,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
    - `companion/src-tauri/tauri.conf.json`: `"version": "X.Y.Z"`
    - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
 2. **Commit and Push**: Push changes to `main` branch.
+
 3. **Create Companion Tag**: Use `companion-v` prefix:
    ```bash
    git tag companion-v0.2.0
@@ -86,10 +83,12 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
    ```
    *Note: Creating a tag locally via GUI does not automatically push it. You must explicitly push the tag to trigger the workflow.*
 4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
+
 5. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
    - Windows: Tauri NSIS installer (`.exe`)
    - macOS: Tauri DMG (`.dmg`)
    - Linux: Tauri DEB (`.deb`)
+
 6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
 
 **Important**: Regular `v*` tags do NOT trigger companion builds. Only `companion-v*` tags do.

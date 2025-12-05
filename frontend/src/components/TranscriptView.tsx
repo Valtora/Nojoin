@@ -5,6 +5,7 @@ import { useRef, useEffect, useState } from 'react';
 import { Play, Pause, Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2 } from 'lucide-react';
 import { getColorByKey } from '@/lib/constants';
 import SpeakerAssignmentPopover from './SpeakerAssignmentPopover';
+import Fuse from 'fuse.js';
 
 interface TranscriptViewProps {
   recordingId: number;
@@ -20,7 +21,7 @@ interface TranscriptViewProps {
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (index: number, newSpeakerName: string) => void | Promise<void>;
   onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
-  onFindAndReplace: (find: string, replace: string) => void | Promise<void>;
+  onFindAndReplace: (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => void | Promise<void>;
   speakerColors: Record<string, string>;
   onUndo: () => void;
   onRedo: () => void;
@@ -74,6 +75,9 @@ export default function TranscriptView({
   const [showReplace, setShowReplace] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [isFuzzy, setIsFuzzy] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
 
   // Search Matches State
   const [matches, setMatches] = useState<{segmentIndex: number, startIndex: number, length: number}[]>([]);
@@ -89,22 +93,83 @@ export default function TranscriptView({
     }
 
     const newMatches: {segmentIndex: number, startIndex: number, length: number}[] = [];
-    const lowerFind = findText.toLowerCase();
-
-    segments.forEach((segment, sIndex) => {
-        const text = segment.text.toLowerCase();
-        let pos = 0;
-        while (pos < text.length) {
-            const index = text.indexOf(lowerFind, pos);
-            if (index === -1) break;
-            newMatches.push({
-                segmentIndex: sIndex,
-                startIndex: index,
-                length: lowerFind.length
+    
+    if (isFuzzy && !useRegex) {
+        const fuse = new Fuse(segments, {
+            keys: ['text'],
+            includeMatches: true,
+            threshold: 0.4,
+            ignoreLocation: true,
+            isCaseSensitive: caseSensitive
+        });
+        
+        const results = fuse.search(findText);
+        
+        results.forEach(result => {
+             if (result.matches) {
+                 result.matches.forEach(match => {
+                     if (match.key === 'text' && match.indices) {
+                         match.indices.forEach(range => {
+                             newMatches.push({
+                                 segmentIndex: result.refIndex,
+                                 startIndex: range[0],
+                                 length: range[1] - range[0] + 1
+                             });
+                         });
+                     }
+                 });
+             }
+        });
+        
+        // Sort matches by segmentIndex then startIndex
+        newMatches.sort((a, b) => {
+            if (a.segmentIndex !== b.segmentIndex) return a.segmentIndex - b.segmentIndex;
+            return a.startIndex - b.startIndex;
+        });
+        
+    } else if (useRegex) {
+        try {
+            const flags = caseSensitive ? 'g' : 'gi';
+            const regex = new RegExp(findText, flags);
+            
+            segments.forEach((segment, sIndex) => {
+                let match;
+                // Reset lastIndex for each segment if using global flag
+                regex.lastIndex = 0;
+                
+                while ((match = regex.exec(segment.text)) !== null) {
+                    newMatches.push({
+                        segmentIndex: sIndex,
+                        startIndex: match.index,
+                        length: match[0].length
+                    });
+                    // Prevent infinite loop with zero-width matches
+                    if (match.index === regex.lastIndex) {
+                        regex.lastIndex++;
+                    }
+                }
             });
-            pos = index + 1;
+        } catch (e) {
+            // Invalid regex, ignore
         }
-    });
+    } else {
+        segments.forEach((segment, sIndex) => {
+            const text = caseSensitive ? segment.text : segment.text.toLowerCase();
+            const search = caseSensitive ? findText : findText.toLowerCase();
+            
+            let pos = 0;
+            while (pos < text.length) {
+                const index = text.indexOf(search, pos);
+                if (index === -1) break;
+                newMatches.push({
+                    segmentIndex: sIndex,
+                    startIndex: index,
+                    length: search.length
+                });
+                pos = index + 1;
+            }
+        });
+    }
 
     setMatches(newMatches);
     
@@ -123,7 +188,7 @@ export default function TranscriptView({
     });
     
     prevFindTextRef.current = findText;
-  }, [findText, segments, showSearch]);
+  }, [findText, segments, showSearch, caseSensitive, isFuzzy, useRegex]);
 
   // Scroll to current match
   useEffect(() => {
@@ -254,7 +319,7 @@ export default function TranscriptView({
       if (!findText || isSubmitting) return;
       setIsSubmitting(true);
       try {
-          await onFindAndReplace(findText, replaceText);
+          await onFindAndReplace(findText, replaceText, { caseSensitive, useRegex });
           setFindText("");
           setReplaceText("");
           setShowReplace(false);
@@ -405,6 +470,48 @@ export default function TranscriptView({
                 )}
                 {showReplace && (
                     <>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="caseSensitive" 
+                                checked={caseSensitive} 
+                                onChange={(e) => setCaseSensitive(e.target.checked)}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="caseSensitive" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Case Sensitive
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="fuzzySearch" 
+                                checked={isFuzzy} 
+                                onChange={(e) => {
+                                    setIsFuzzy(e.target.checked);
+                                    if (e.target.checked) setUseRegex(false);
+                                }}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="fuzzySearch" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Fuzzy
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="regexSearch" 
+                                checked={useRegex} 
+                                onChange={(e) => {
+                                    setUseRegex(e.target.checked);
+                                    if (e.target.checked) setIsFuzzy(false);
+                                }}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="regexSearch" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Regex
+                            </label>
+                        </div>
                         <button 
                             onClick={nextMatch}
                             disabled={matches.length === 0}

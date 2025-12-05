@@ -384,12 +384,12 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
-  const handleFindAndReplace = async (find: string, replace: string) => {
+  const handleFindAndReplace = async (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => {
     if (!recording) return;
     // Push both transcript and notes to history since this affects both
     pushBothHistories(`Replace "${find}" with "${replace}"`);
     try {
-      await findAndReplace(recording.id, find, replace);
+      await findAndReplace(recording.id, find, replace, options);
       router.refresh();
       const updated = await getRecording(recording.id);
       setRecording(updated);
@@ -490,14 +490,14 @@ export default function RecordingPage({ params }: PageProps) {
       }
   };
 
-  const handleNotesFindAndReplace = async (find: string, replace: string) => {
+  const handleNotesFindAndReplace = async (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => {
       if (!recording) return;
       
       // Push both transcript and notes to history since this affects both
       pushBothHistories(`Replace "${find}" with "${replace}" (from Notes)`);
       
       try {
-          await findAndReplaceNotes(recording.id, find, replace);
+          await findAndReplaceNotes(recording.id, find, replace, options);
           const updated = await getRecording(recording.id);
           setRecording(updated);
       } catch (e) {

@@ -221,8 +221,13 @@ export const updateTranscriptSegmentText = async (recordingId: number, segmentIn
   await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, { text });
 };
 
-export const findAndReplace = async (recordingId: number, find: string, replace: string): Promise<void> => {
-  await api.post(`/transcripts/${recordingId}/replace`, { find_text: find, replace_text: replace });
+export const findAndReplace = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
+  await api.post(`/transcripts/${recordingId}/replace`, { 
+    find_text: find, 
+    replace_text: replace,
+    case_sensitive: options.caseSensitive ?? false,
+    use_regex: options.useRegex ?? false
+  });
 };
 
 export type ExportContentType = 'transcript' | 'notes' | 'both';
@@ -283,9 +288,14 @@ export const generateNotes = async (recordingId: number): Promise<{ notes: strin
   return response.data;
 };
 
-export const findAndReplaceNotes = async (recordingId: number, find: string, replace: string): Promise<void> => {
+export const findAndReplaceNotes = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
   // Use the main replace endpoint since it applies to both transcript and notes
-  await api.post(`/transcripts/${recordingId}/replace`, { find_text: find, replace_text: replace });
+  await api.post(`/transcripts/${recordingId}/replace`, { 
+    find_text: find, 
+    replace_text: replace,
+    case_sensitive: options.caseSensitive ?? false,
+    use_regex: options.useRegex ?? false
+  });
 };
 
 export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerLabel: string, sourceSpeakerLabel: string): Promise<Recording> => {

@@ -5,13 +5,14 @@ import { Search, ArrowRightLeft, Download, ChevronUp, ChevronDown, Undo2, Redo2,
 import { Editor } from '@tiptap/react';
 import RichTextEditor from './RichTextEditor';
 import LinkModal from './LinkModal';
+import Fuse from 'fuse.js';
 
 interface NotesViewProps {
   recordingId: number;
   notes: string | null;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: () => Promise<void>;
-  onFindAndReplace: (find: string, replace: string) => void | Promise<void>;
+  onFindAndReplace: (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => void | Promise<void>;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -48,6 +49,9 @@ export default function NotesView({
   const [showReplace, setShowReplace] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [isFuzzy, setIsFuzzy] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
 
   // Link Modal State
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -93,18 +97,80 @@ export default function NotesView({
     }
 
     const newMatches: {startIndex: number, length: number}[] = [];
-    const lowerFind = findText.toLowerCase();
-    const lowerNotes = displayNotes.toLowerCase();
     
-    let pos = 0;
-    while (pos < lowerNotes.length) {
-        const index = lowerNotes.indexOf(lowerFind, pos);
-        if (index === -1) break;
-        newMatches.push({
-            startIndex: index,
-            length: lowerFind.length
+    if (isFuzzy && !useRegex) {
+        // Split notes into lines to use Fuse.js (which expects a list)
+        // We need to map back to original indices
+        const lines = displayNotes.split('\n');
+        let currentIndex = 0;
+        const lineObjects = lines.map(line => {
+            const obj = { text: line, startIndex: currentIndex };
+            currentIndex += line.length + 1; // +1 for newline
+            return obj;
         });
-        pos = index + 1;
+        
+        const fuse = new Fuse(lineObjects, {
+            keys: ['text'],
+            includeMatches: true,
+            threshold: 0.4,
+            ignoreLocation: true,
+            isCaseSensitive: caseSensitive
+        });
+        
+        const results = fuse.search(findText);
+        
+        results.forEach(result => {
+            if (result.matches) {
+                result.matches.forEach(match => {
+                    if (match.key === 'text' && match.indices) {
+                        match.indices.forEach(range => {
+                            // Calculate absolute index in the full notes string
+                            const absoluteStart = result.item.startIndex + range[0];
+                            newMatches.push({
+                                startIndex: absoluteStart,
+                                length: range[1] - range[0] + 1
+                            });
+                        });
+                    }
+                });
+            }
+        });
+        
+        // Sort matches by startIndex
+        newMatches.sort((a, b) => a.startIndex - b.startIndex);
+        
+    } else if (useRegex) {
+        try {
+            const flags = caseSensitive ? 'g' : 'gi';
+            const regex = new RegExp(findText, flags);
+            let match;
+            
+            while ((match = regex.exec(displayNotes)) !== null) {
+                newMatches.push({
+                    startIndex: match.index,
+                    length: match[0].length
+                });
+                if (match.index === regex.lastIndex) {
+                    regex.lastIndex++;
+                }
+            }
+        } catch (e) {
+            // Invalid regex
+        }
+    } else {
+        const search = caseSensitive ? findText : findText.toLowerCase();
+        const notesContent = caseSensitive ? displayNotes : displayNotes.toLowerCase();
+        
+        let pos = 0;
+        while (pos < notesContent.length) {
+            const index = notesContent.indexOf(search, pos);
+            if (index === -1) break;
+            newMatches.push({
+                startIndex: index,
+                length: search.length
+            });
+            pos = index + 1;
+        }
     }
 
     setMatches(newMatches);
@@ -113,7 +179,7 @@ export default function NotesView({
     } else if (newMatches.length === 0) {
         setCurrentMatchIndex(-1);
     }
-  }, [findText, displayNotes, showSearch, currentMatchIndex]);
+  }, [findText, displayNotes, showSearch, currentMatchIndex, caseSensitive, isFuzzy, useRegex]);
 
   const nextMatch = () => {
       if (matches.length === 0) return;
@@ -129,7 +195,7 @@ export default function NotesView({
       if (!findText || isSubmitting) return;
       setIsSubmitting(true);
       try {
-          await onFindAndReplace(findText, replaceText);
+          await onFindAndReplace(findText, replaceText, { caseSensitive, useRegex });
           setFindText("");
           setReplaceText("");
           setShowReplace(false);
@@ -334,6 +400,48 @@ export default function NotesView({
                 )}
                 {showReplace && (
                     <>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="caseSensitiveNotes" 
+                                checked={caseSensitive} 
+                                onChange={(e) => setCaseSensitive(e.target.checked)}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="caseSensitiveNotes" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Case Sensitive
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="fuzzySearchNotes" 
+                                checked={isFuzzy} 
+                                onChange={(e) => {
+                                    setIsFuzzy(e.target.checked);
+                                    if (e.target.checked) setUseRegex(false);
+                                }}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="fuzzySearchNotes" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Fuzzy
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2">
+                            <input 
+                                type="checkbox" 
+                                id="regexSearchNotes" 
+                                checked={useRegex} 
+                                onChange={(e) => {
+                                    setUseRegex(e.target.checked);
+                                    if (e.target.checked) setIsFuzzy(false);
+                                }}
+                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="regexSearchNotes" className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap cursor-pointer select-none">
+                                Regex
+                            </label>
+                        </div>
                         <button 
                             onClick={nextMatch}
                             disabled={matches.length === 0}
