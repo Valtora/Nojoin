@@ -4,11 +4,9 @@ use log::error;
 use mac_notification_sys::{send_notification, MainButton, NotificationResponse};
 #[cfg(target_os = "macos")]
 use tauri::AppHandle;
-#[cfg(target_os = "macos")]
-use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(target_os = "macos")]
-pub fn show_update_notification(app: AppHandle, version: String) {
+pub fn show_update_notification(app: AppHandle, version: String, url: String) {
     let _bundle_id = app.config().identifier.clone();
     let title = "Update Available";
     let message = format!("Version {} is available.", version);
@@ -20,7 +18,7 @@ pub fn show_update_notification(app: AppHandle, version: String) {
         &message,
         Some(
             mac_notification_sys::Notification::new()
-                .main_button(MainButton::SingleAction("Update Now")),
+                .main_button(MainButton::SingleAction("Download")),
         ),
     );
 
@@ -28,8 +26,8 @@ pub fn show_update_notification(app: AppHandle, version: String) {
         Ok(resp) => {
             match resp {
                 NotificationResponse::ActionButton(action) => {
-                    if action == "Update Now" {
-                        trigger_update(app);
+                    if action == "Download" {
+                        let _ = open::that(url);
                     }
                 }
                 NotificationResponse::Click => {
@@ -43,31 +41,4 @@ pub fn show_update_notification(app: AppHandle, version: String) {
             error!("Failed to send notification: {:?}", e);
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-fn trigger_update(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let updater = match app.updater() {
-            Ok(u) => u,
-            Err(e) => {
-                error!("Failed to get updater: {}", e);
-                return;
-            }
-        };
-
-        match updater.check().await {
-            Ok(Some(update)) => {
-                if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
-                    error!("Failed to install update: {}", e);
-                } else {
-                    app.restart();
-                }
-            }
-            Ok(None) => {
-                // No update available
-            }
-            Err(e) => error!("Failed to check update: {}", e),
-        }
-    });
 }

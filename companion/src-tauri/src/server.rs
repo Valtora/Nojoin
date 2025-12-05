@@ -12,7 +12,6 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use log::{error, info};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri_plugin_updater::UpdaterExt;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
@@ -534,31 +533,16 @@ async fn update_config(
 }
 
 async fn trigger_update(State(context): State<ServerContext>) -> StatusCode {
-    let app = context.app_handle.clone();
+    let state = &context.state;
+    let url = state.latest_update_url.lock().unwrap().clone();
 
-    tauri::async_runtime::spawn(async move {
-        let updater = match app.updater() {
-            Ok(u) => u,
-            Err(e) => {
-                error!("Failed to get updater: {}", e);
-                return;
-            }
-        };
-
-        match updater.check().await {
-            Ok(Some(update)) => {
-                if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
-                    error!("Failed to install update: {}", e);
-                } else {
-                    app.restart();
-                }
-            }
-            Ok(None) => {
-                info!("No update available");
-            }
-            Err(e) => error!("Failed to check update: {}", e),
+    if let Some(target_url) = url {
+        if let Err(e) = open::that(target_url) {
+            error!("Failed to open update URL: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR;
         }
-    });
-
-    StatusCode::ACCEPTED
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }

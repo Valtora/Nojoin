@@ -9,7 +9,6 @@
     "main"
   ],
   "permissions": [
-    "updater:default",
     "shell:default",
     "notification:default",
     "autostart:allow-enable",

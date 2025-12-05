@@ -34,6 +34,7 @@ pub struct AppState {
     // Update status
     pub update_available: AtomicBool,
     pub latest_version: Mutex<Option<String>>,
+    pub latest_update_url: Mutex<Option<String>>,
     
     // Tray Menu Items
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,

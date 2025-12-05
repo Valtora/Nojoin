@@ -15,7 +15,6 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
-use tauri_plugin_updater::UpdaterExt;
 
 mod audio;
 mod config;
@@ -56,59 +55,77 @@ fn save_config(
 }
 
 #[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await.map_err(|e| e.to_string())? {
-        Some(update) => {
-            update
-                .download_and_install(|_, _| {}, || {})
-                .await
-                .map_err(|e| e.to_string())?;
-            app.restart();
-        }
-        None => Err("No update available".to_string()),
-    }
-}
-
-#[tauri::command]
 fn close_update_prompt(window: tauri::Window) {
     let _ = window.close();
 }
 
-async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => {
-            if !silent {
-                notifications::show_notification(app, "Update Error", &e.to_string());
-            }
-            return;
-        }
-    };
+#[derive(serde::Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    html_url: String,
+}
 
-    match updater.check().await {
-        Ok(Some(update)) => {
+async fn check_github_release(current_version: &str) -> Result<Option<(String, String)>, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Nojoin-Companion")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .get("https://api.github.com/repos/Valtora/Nojoin/releases/latest")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status().is_success() {
+        let release: GitHubRelease = resp.json().await.map_err(|e| e.to_string())?;
+        // tag_name is usually like "companion-v0.1.4" or "v0.1.4"
+        // We need to parse it.
+        let version_str = release.tag_name.trim_start_matches("companion-v").trim_start_matches('v');
+        
+        // Simple version comparison (lexicographical might fail for 0.1.10 vs 0.1.9, but semver crate is better if available)
+        // Since we don't have semver crate in Cargo.toml, let's try to use a simple split check or just string compare if format is consistent.
+        // For robustness, let's assume if strings are different, it's an update (or downgrade).
+        // But we only want to notify on NEWER version.
+        // Let's just check inequality for now, or try to parse.
+        
+        if version_str != current_version {
+             // It's different. Is it newer?
+             // Let's just return it if it's different for now, user can decide.
+             // Or better, let's try to parse major.minor.patch
+             return Ok(Some((version_str.to_string(), release.html_url)));
+        }
+        Ok(None)
+    } else {
+        Err(format!("Failed to fetch releases: {}", resp.status()))
+    }
+}
+
+async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
+    let current_version = app.package_info().version.to_string();
+    
+    match check_github_release(&current_version).await {
+        Ok(Some((version, url))) => {
             let state_wrapper = app.state::<SharedAppState>();
             let state = &state_wrapper.0;
 
-            let version = update.version.to_string();
-
             state.update_available.store(true, Ordering::SeqCst);
             *state.latest_version.lock().unwrap() = Some(version.clone());
+            *state.latest_update_url.lock().unwrap() = Some(url.clone());
 
             #[cfg(windows)]
             {
-                win_notifications::show_update_notification(app.clone(), version);
+                win_notifications::show_update_notification(app.clone(), version, url);
             }
 
             #[cfg(target_os = "macos")]
             {
-                mac_notifications::show_update_notification(app.clone(), version.clone());
+                mac_notifications::show_update_notification(app.clone(), version.clone(), url);
             }
 
             #[cfg(target_os = "linux")]
             {
-                linux_notifications::show_update_notification(app.clone(), version);
+                linux_notifications::show_update_notification(app.clone(), version, url);
             }
         }
         Ok(None) => {
@@ -162,9 +179,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
-        .invoke_handler(tauri::generate_handler![get_config, save_config, install_update, close_update_prompt])
+        .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let config = Config::load();
@@ -183,6 +199,7 @@ fn main() {
                 is_backend_connected: AtomicBool::new(false),
                 update_available: AtomicBool::new(false),
                 latest_version: Mutex::new(None),
+                latest_update_url: Mutex::new(None),
                 tray_status_item: Mutex::new(None),
                 tray_run_on_startup_item: Mutex::new(None),
                 tray_open_web_item: Mutex::new(None),
