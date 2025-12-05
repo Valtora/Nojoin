@@ -279,6 +279,24 @@ Now generate the meeting notes following the exact format specified above. Be co
             
             return "\n".join(lines)
 
+    def _update_notes_in_db(self, recording_id: int, new_notes: str):
+        """
+        Updates the meeting notes in the database.
+        """
+        from backend.core.db import get_sync_session
+        from backend.models.transcript import Transcript
+        from sqlmodel import select
+
+        with get_sync_session() as session:
+            transcript_obj = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+            if transcript_obj:
+                transcript_obj.notes = new_notes
+                session.add(transcript_obj)
+                session.commit()
+                logger.info(f"Updated notes for recording {recording_id}")
+            else:
+                logger.error(f"Could not find transcript for recording {recording_id} to update notes")
+
 class GeminiLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         # Lazy import to avoid errors when google-genai isn't installed
@@ -420,7 +438,7 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
             
@@ -433,18 +451,49 @@ class GeminiLLMBackend(LLMBackend):
         
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            
+        # Define Tool
+        def update_meeting_notes(content: str):
+            """Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes."""
+            pass
+
+        tools = [update_meeting_notes]
+        
         try:
             # Use streaming API
+            # We disable automatic function calling to handle it manually and stream the event
             response_stream = self.client.models.generate_content_stream(
                 model=self.model,
                 contents=contents,
+                config=self.genai.types.GenerateContentConfig(
+                    tools=tools,
+                    automatic_function_calling=self.genai.types.AutomaticFunctionCallingConfig(
+                        disable=True 
+                    )
+                )
             )
             for chunk in response_stream:
+                # Check for function calls
+                if chunk.function_calls:
+                    for fc in chunk.function_calls:
+                        if fc.name == "update_meeting_notes":
+                            new_notes = fc.args.get("content")
+                            if new_notes and recording_id:
+                                self._update_notes_in_db(recording_id, new_notes)
+                                yield {"type": "notes_update"}
+                                # We could send the result back to the model here to get a confirmation message,
+                                # but for now we'll rely on the UI update.
+                                # Often the model will output text explaining what it's doing before the tool call.
+                
                 if chunk.text:
                     yield chunk.text
         except Exception as e:
             logger.error(f"Gemini API error (streaming chat): {e}")
-            raise RuntimeError(f"Gemini API error (streaming chat): {e}")
+            # If it's just a property access error because of no text, ignore it
+            if "Candidate was blocked" in str(e) or "has no parts" in str(e):
+                pass
+            else:
+                raise RuntimeError(f"Gemini API error (streaming chat): {e}")
 
     def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
         """
@@ -582,7 +631,7 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
             
@@ -596,17 +645,78 @@ class OpenAILLMBackend(LLMBackend):
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "update_meeting_notes",
+                "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The full, updated Markdown text of the meeting notes."
+                        }
+                    },
+                    "required": ["content"]
+                }
+            }
+        }]
+        
+        # Prepare request arguments
+        request_kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "timeout": timeout,
+            "tools": tools
+        }
+        
+        # Skip temperature for reasoning models (OpenAI) that enforce default temperature
+        if not (self.model.startswith("gpt") in self.model):
+            request_kwargs["temperature"] = 0.2
+        
         try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.2,
-                stream=True,
-                timeout=timeout
-            )
+            stream = self.client.chat.completions.create(**request_kwargs)
+            
+            tool_calls_accumulator = {}
+            
             for chunk in stream:
-                if chunk.choices[0].delta.content is not None:
-                    yield chunk.choices[0].delta.content
+                if not chunk.choices:
+                    continue
+                    
+                delta = chunk.choices[0].delta
+                
+                if delta.content is not None:
+                    yield delta.content
+                
+                if delta.tool_calls:
+                    for tool_part in delta.tool_calls:
+                        idx = tool_part.index
+                        if idx not in tool_calls_accumulator:
+                            tool_calls_accumulator[idx] = {
+                                "name": "",
+                                "arguments": ""
+                            }
+                        
+                        if tool_part.function and tool_part.function.name:
+                            tool_calls_accumulator[idx]["name"] += tool_part.function.name
+                        
+                        if tool_part.function and tool_part.function.arguments:
+                            tool_calls_accumulator[idx]["arguments"] += tool_part.function.arguments
+            
+            # Process accumulated tool calls
+            for idx, tool_data in tool_calls_accumulator.items():
+                if tool_data["name"] == "update_meeting_notes":
+                    try:
+                        args = json.loads(tool_data["arguments"])
+                        new_notes = args.get("content")
+                        if new_notes and recording_id:
+                            self._update_notes_in_db(recording_id, new_notes)
+                            yield {"type": "notes_update"}
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse tool arguments for update_meeting_notes")
+
         except Exception as e:
             logger.error(f"OpenAI API error (streaming chat): {e}")
             raise RuntimeError(f"OpenAI API error (streaming chat): {e}")
@@ -752,7 +862,7 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
@@ -766,15 +876,61 @@ class AnthropicLLMBackend(LLMBackend):
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         
+        tool_definition = {
+            "name": "update_meeting_notes",
+            "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The full, updated Markdown text of the meeting notes."
+                    }
+                },
+                "required": ["content"]
+            }
+        }
+        
         try:
             with self.client.messages.stream(
                 model=self.model,
                 max_tokens=1024,
                 messages=messages,
                 temperature=0.2,
+                tools=[tool_definition]
             ) as stream:
-                for text in stream.text_stream:
-                    yield text
+                
+                current_tool_name = None
+                current_json_accum = ""
+
+                for event in stream:
+                    # Text Delta
+                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                        yield event.delta.text
+                    
+                    # Tool Start
+                    elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                        current_tool_name = event.content_block.name
+                        current_json_accum = ""
+                    
+                    # Tool Args Delta
+                    elif event.type == "content_block_delta" and event.delta.type == "input_json_delta":
+                        current_json_accum += event.delta.partial_json
+                    
+                    # Tool Stop (Execute)
+                    elif event.type == "content_block_stop":
+                        if current_tool_name == "update_meeting_notes":
+                            try:
+                                args = json.loads(current_json_accum)
+                                new_notes = args.get("content")
+                                if new_notes and recording_id:
+                                    self._update_notes_in_db(recording_id, new_notes)
+                                    yield {"type": "notes_update"}
+                            except json.JSONDecodeError:
+                                logger.error("Failed to parse tool arguments for update_meeting_notes")
+                            finally:
+                                current_tool_name = None
+
         except Exception as e:
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")

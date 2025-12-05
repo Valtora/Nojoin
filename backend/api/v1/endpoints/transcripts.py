@@ -763,9 +763,12 @@ async def chat_with_meeting(
             
             # So:
             for chunk in generator:
-                 full_response += chunk
-                 # Yield SSE format
-                 yield f"data: {json.dumps({'token': chunk})}\n\n"
+                if isinstance(chunk, dict) and chunk.get("type") == "notes_update":
+                    yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"
+                else:
+                    full_response += str(chunk)
+                    # Yield SSE format
+                    yield f"data: {json.dumps({'token': str(chunk)})}\n\n"
                  
         except Exception as e:
             logger.error(f"Streaming error: {e}")
