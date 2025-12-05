@@ -481,12 +481,25 @@ class GeminiLLMBackend(LLMBackend):
                             if new_notes and recording_id:
                                 self._update_notes_in_db(recording_id, new_notes)
                                 yield {"type": "notes_update"}
-                                # We could send the result back to the model here to get a confirmation message,
-                                # but for now we'll rely on the UI update.
-                                # Often the model will output text explaining what it's doing before the tool call.
+                                # Send a confirmation message back to the user since we are not doing a full round-trip
+                                yield "I have updated the meeting notes."
                 
-                if chunk.text:
-                    yield chunk.text
+                # Safely extract text to avoid warnings about non-text parts
+                try:
+                    # Check if there is actual text content before accessing .text
+                    has_text = False
+                    if hasattr(chunk, 'candidates') and chunk.candidates:
+                        candidate = chunk.candidates[0]
+                        if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    has_text = True
+                                    break
+                    
+                    if has_text and chunk.text:
+                        yield chunk.text
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"Gemini API error (streaming chat): {e}")
             # If it's just a property access error because of no text, ignore it
@@ -714,6 +727,7 @@ class OpenAILLMBackend(LLMBackend):
                         if new_notes and recording_id:
                             self._update_notes_in_db(recording_id, new_notes)
                             yield {"type": "notes_update"}
+                            yield "I have updated the meeting notes."
                     except json.JSONDecodeError:
                         logger.error("Failed to parse tool arguments for update_meeting_notes")
 
@@ -926,6 +940,7 @@ class AnthropicLLMBackend(LLMBackend):
                                 if new_notes and recording_id:
                                     self._update_notes_in_db(recording_id, new_notes)
                                     yield {"type": "notes_update"}
+                                    yield "I have updated the meeting notes."
                             except json.JSONDecodeError:
                                 logger.error("Failed to parse tool arguments for update_meeting_notes")
                             finally:

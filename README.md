@@ -15,6 +15,16 @@ By using Nojoin, you acknowledge that you will use this software in a lawful man
 *   **Ubiquitous Access:** Manage and view meetings from any desktop device with a browser. (The companion app is currently desktop-only, mobile support will be added in future releases.)
 *   **Privacy First:** Self-hosted architecture ensures audio and transcripts never leave your control unless explicitly configured for external LLM services.
 
+## Quick Start
+
+1.  **Clone:** `git clone https://github.com/Valtora/Nojoin && cd Nojoin`
+2.  **Launch:** `docker compose up -d`
+3.  **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
+4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
+5.  **Companion App:** Download, install, and connect the companion app on client machines to start recording audio.
+
+    *See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
+
 ## Features
 
 *   **Distributed Architecture:**
@@ -50,6 +60,26 @@ Nojoin is composed of three distinct subsystems:
     *   Runs on client machines (Windows, macOS, Linux).
     *   Sits in the system tray and handles audio capture.
     *   Uploads audio to the server for processing.
+
+## API Keys & Configuration
+
+Nojoin requires certain API keys to function fully. The first-run wizard will request these keys but they can also be entered in the **Settings** -> **AI Services** page of the web interface after installation.
+
+### Hugging Face Token (Required for Diarization)
+To enable speaker diarization (identifying who is speaking), you need a Hugging Face token.
+1.  Create an account on [Hugging Face](https://huggingface.co/).
+2.  Generate an Access Token (Read permissions).
+3.  Accept the user conditions for the following models:
+    *   [`pyannote/speaker-diarization-3.1`](https://huggingface.co/pyannote/speaker-diarization-3.1)
+    *   [`pyannote/segmentation-3.0`](https://huggingface.co/pyannote/segmentation-3.0)
+4.  Enter this token in the Nojoin **Settings > AI Settings**.
+
+### LLM Providers (Optional)
+To use the "Chat with Meeting" and "Generate Notes" features, you need an API key from one of the supported providers:
+*   **OpenAI**
+*   **Anthropic**
+*   **Google Gemini**
+*   **Ollama** (Local LLMs - no API key required, but requires setup)
 
 ## Installation & Setup
 
