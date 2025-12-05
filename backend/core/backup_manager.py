@@ -6,9 +6,9 @@ import tempfile
 import subprocess
 from datetime import datetime
 from typing import List, Dict, Any, Type, Tuple
-from sqlmodel import Session, select, SQLModel, delete
+from sqlmodel import select, SQLModel, delete
 from sqlalchemy import text
-from backend.core.db import engine
+from backend.core.db import async_session_maker
 from backend.models.user import User
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.recording import Recording
@@ -72,11 +72,11 @@ class BackupManager:
         try:
             with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 # 1. Dump Database
-                async with Session(engine) as session:
+                async with async_session_maker() as session:
                     for table_name, model_cls in MODELS:
                         statement = select(model_cls)
-                        results = await session.exec(statement)
-                        items = results.all()
+                        results = await session.execute(statement)
+                        items = results.scalars().all()
                         
                         # Serialize
                         data = [item.model_dump(mode='json') for item in items]
@@ -150,10 +150,10 @@ class BackupManager:
             # 1. Clear Existing Data if requested
             if clear_existing:
                 # Clear DB
-                async with Session(engine) as session:
+                async with async_session_maker() as session:
                     # Delete in reverse order
                     for table_name, model_cls in reversed(MODELS):
-                        await session.exec(delete(model_cls))
+                        await session.execute(delete(model_cls))
                     await session.commit()
                 
                 # Clear Recordings
@@ -174,7 +174,7 @@ class BackupManager:
                         zipf.extract(file, path_manager.user_data_directory)
 
             # 3. Restore Database
-            async with Session(engine) as session:
+            async with async_session_maker() as session:
                 for table_name, model_cls in MODELS:
                     if f"{table_name}.json" not in zipf.namelist():
                         continue

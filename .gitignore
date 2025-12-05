@@ -50,3 +50,4 @@ nginx/*.pem
 
 # Audio Files
 *.wav
+.github/copilot-instructions.md
