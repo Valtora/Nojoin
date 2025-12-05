@@ -605,7 +605,21 @@ async def stream_recording(
     if not recording.audio_path or not os.path.exists(recording.audio_path):
         raise HTTPException(status_code=404, detail="Audio file not found on server")
         
-    return FileResponse(recording.audio_path, media_type="audio/wav", filename=recording.name)
+    # Determine media type based on extension
+    media_type = "audio/wav" # Default
+    ext = os.path.splitext(recording.audio_path)[1].lower()
+    if ext == ".opus":
+        media_type = "audio/ogg"
+    elif ext == ".mp3":
+        media_type = "audio/mpeg"
+    elif ext == ".m4a":
+        media_type = "audio/mp4"
+    elif ext == ".ogg":
+        media_type = "audio/ogg"
+    elif ext == ".flac":
+        media_type = "audio/flac"
+        
+    return FileResponse(recording.audio_path, media_type=media_type, filename=recording.name)
 
 @router.post("/{recording_id}/retry", response_model=Recording)
 async def retry_processing(
