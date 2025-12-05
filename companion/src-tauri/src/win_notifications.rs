@@ -1,7 +1,7 @@
 #[cfg(windows)]
 use log::error;
 #[cfg(windows)]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 #[cfg(windows)]
 use win32_notif::{
     notification::{
@@ -12,7 +12,7 @@ use win32_notif::{
 };
 
 #[cfg(windows)]
-pub fn show_update_notification(app: AppHandle, version: String, url: String) {
+pub fn show_update_notification(_app: AppHandle, version: String, url: String) {
     // The App ID must match what is registered by the installer or the executable
     // Tauri usually uses the bundle identifier.
     let app_id = "com.valtora.nojoin.companion";
@@ -24,7 +24,6 @@ pub fn show_update_notification(app: AppHandle, version: String, url: String) {
     }
     let notifier = notifier_result.unwrap();
 
-    let app_handle = app.clone();
     let update_url = url.clone();
 
     let notif_result = NotificationBuilder::new()
