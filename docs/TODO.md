@@ -2,6 +2,13 @@
 
 After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
 
+## Audio Playback Optimization (Transcoding)
+- Implement on-the-fly transcoding for audio playback to improve robustness on slow networks and reduce bandwidth usage.
+- Create a new endpoint parameter or separate endpoint (e.g., `/api/v1/recordings/{id}/stream?format=mp3`) that accepts a target format.
+- Use `ffmpeg` on the backend to transcode the original WAV file to a lower bitrate format (e.g., MP3 128kbps) in real-time or cache a transcoded version.
+- This will significantly reduce the chunk size needed for the same duration of audio (e.g., 1MB = ~1 minute of MP3 vs ~6 seconds of WAV), making seeking and scrubbing much smoother.
+- Update the frontend `AudioPlayer` to request the compressed format by default, potentially with a quality toggle.
+
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.
 - Investigate 'speaches' library for realtime transcription capabilities.
@@ -27,7 +34,3 @@ After the colons I will provide a list of tasks/instructions that need to be com
 - Use OpenAI's Whisper API to implement a translation feature for meeting transcriptions. This feature should allow users to select a target language for translation after the transcription is complete. The translated text should be displayed alongside the original transcript in the transcript window, with clear labeling to differentiate between the two. Explore how to best integrate this feature into the existing transcription workflow.
 - See here: https://github.com/openai/whisper/blob/main/model-card.md
 
-## Backup/Restore Feature
-- Implement a backup/restore feature.
-- The backup feature should create a zip file containing all relevant data including the database, recordings, transcripts, notes, tags, and settings. The user should be able to download this zip file to their local machine via the frontend.
-- The restore feature should allow the user to upload a previously created backup zip file via the frontend. The backend should then extract the zip file and replace the existing data with the data from the backup in an additive way unless the user checks a 'Clear Existing Data' option. Proper validation and error handling should be implemented to ensure data integrity during the restore process.

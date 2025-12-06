@@ -242,12 +242,23 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
-  const handlePlaySegment = (start: number, end?: number) => {
+  const handlePlaySegment = async (start: number, end?: number) => {
     if (audioRef.current) {
-        audioRef.current.currentTime = start;
-        if (end) setStopTime(end);
-        else setStopTime(null);
-        audioRef.current.play();
+        try {
+            // Pause first to interrupt any pending play requests
+            audioRef.current.pause();
+            
+            audioRef.current.currentTime = start;
+            if (end) setStopTime(end);
+            else setStopTime(null);
+            
+            await audioRef.current.play();
+        } catch (err: any) {
+            // Ignore AbortError which happens when play() is interrupted by another play() or pause()
+            if (err.name !== 'AbortError') {
+                console.error("Playback failed:", err);
+            }
+        }
     }
   };
 

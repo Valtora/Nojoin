@@ -4,7 +4,8 @@
   "description": "Nojoin Companion App",
   "scripts": {
     "tauri": "tauri",
-    "build": "tauri build"
+    "build": "tauri build",
+    "build:portable": "node scripts/package-portable.js"
   },
   "license": "MIT",
   "dependencies": {

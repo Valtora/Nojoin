@@ -624,8 +624,11 @@ async def stream_recording(
     file_path = recording.audio_path
     file_size = os.path.getsize(file_path)
     
-    # Cloudflare limit is 100MB, let's use 10MB chunks to be safe and efficient
-    CHUNK_SIZE = 10 * 1024 * 1024 
+    # Cloudflare limit is 100MB.
+    # We use a smaller chunk size to support responsive seeking and scrubbing.
+    # 2.5MB is approx 15 seconds of CD-quality WAV audio (44.1kHz/16bit/Stereo).
+    # This balances request overhead vs. seek responsiveness.
+    CHUNK_SIZE = 2500 * 1024 
     
     start = 0
     end = min(file_size - 1, CHUNK_SIZE - 1)
@@ -633,19 +636,31 @@ async def stream_recording(
     range_header = request.headers.get("range")
     if range_header:
         try:
-            # Parse "bytes=0-" or "bytes=0-100"
+            # Parse "bytes=0-" or "bytes=0-100" or "bytes=-500"
             range_str = range_header.replace("bytes=", "")
             range_parts = range_str.split("-")
-            start = int(range_parts[0]) if range_parts[0] else 0
-            if len(range_parts) > 1 and range_parts[1]:
-                requested_end = int(range_parts[1])
-                # Don't let the client request more than CHUNK_SIZE
-                end = min(requested_end, start + CHUNK_SIZE - 1)
+            
+            if range_parts[0] == "":
+                # Suffix range request (e.g., bytes=-500)
+                suffix_length = int(range_parts[1])
+                start = max(0, file_size - suffix_length)
+                end = file_size - 1
             else:
-                end = min(file_size - 1, start + CHUNK_SIZE - 1)
+                # Standard range request (e.g., bytes=0- or bytes=0-100)
+                start = int(range_parts[0])
+                if len(range_parts) > 1 and range_parts[1]:
+                    requested_end = int(range_parts[1])
+                    end = min(requested_end, file_size - 1)
+                else:
+                    end = file_size - 1
         except ValueError:
             pass # Fallback to default
             
+    # Apply Chunk Size Limit
+    # We enforce that we never send more than CHUNK_SIZE
+    chunk_end = min(end, start + CHUNK_SIZE - 1)
+    end = chunk_end
+
     if start >= file_size:
         raise HTTPException(
             status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
@@ -676,6 +691,9 @@ async def stream_recording(
         "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Accept-Ranges": "bytes",
         "Content-Length": str(content_length),
+        "Cache-Control": "no-cache, no-store, must-revalidate", # Prevent caching of partial responses
+        "Pragma": "no-cache",
+        "Expires": "0",
     }
     
     return StreamingResponse(

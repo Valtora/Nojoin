@@ -14,6 +14,11 @@ The Companion App is a lightweight system tray application that handles audio ca
 *   **Smart Uploads:** Audio is sent to the server automatically. If pauses occur, the audio is sent as multiple segments and concatenated on the server.
 *   **Visual Feedback:** Tray icon changes color/shape based on status. Native system notifications for status changes.
 
+### Portable Version
+A portable version of the Companion App is available for users who cannot or prefer not to install software.
+- **Windows:** `Nojoin-Companion-Portable.exe`
+- **Linux:** `Nojoin-Companion-Portable.AppImage`
+
 ### Import Recordings
 You can import existing audio files directly via the Web Client.
 

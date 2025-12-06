@@ -44,3 +44,23 @@ jobs:
           tagName: companion-v__VERSION__ # Automatically replaced with app version
           releaseDraft: false
           prerelease: false
+
+      - name: Package Portable
+        run: |
+          cd companion
+          npm run build:portable -- --no-build
+
+      - name: Get version
+        shell: bash
+        run: |
+          cd companion
+          echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Upload Portable Assets
+        if: matrix.platform != 'macos-latest'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd companion/dist-portable
+          gh release upload "companion-v${{ env.VERSION }}" * --clobber
