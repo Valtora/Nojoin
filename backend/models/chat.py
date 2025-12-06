@@ -13,7 +13,7 @@ class ChatMessage(BaseDBModel, table=True):
     role: str = Field(description="Role of the message sender: 'user' or 'assistant'")
     content: str = Field(description="Content of the chat message")
 
-    # Relationships (optional but good for future use)
+    # Relationships
     # user: Optional["User"] = Relationship(back_populates="chat_messages")
-    # recording: Optional["Recording"] = Relationship(back_populates="chat_messages")
+    recording: Optional["Recording"] = Relationship(back_populates="chat_messages")
 

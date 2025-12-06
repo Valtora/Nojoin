@@ -92,7 +92,9 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
 
-**Important**: Tags do NOT trigger companion builds automatically. You must manually trigger the workflow.
+**Important**:
+- **Versioning**: Must use strict 3-component Semantic Versioning (`X.Y.Z`, e.g., `0.1.6`). 4-component versions (`0.1.6.1`) are **NOT** supported by Tauri or Windows installers.
+- **Triggers**: Tags do NOT trigger companion builds automatically. You must manually trigger the workflow.
 
 ## Code Style & Conventions
 
