@@ -21,6 +21,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.models.chat import ChatMessage
 
 def run_migrations():
     # Wait for DB to be ready
@@ -103,7 +104,7 @@ async def health_check():
     # Check Database
     try:
         with Session(sync_engine) as session:
-            session.exec(text("SELECT 1"))
+            session.execute(text("SELECT 1"))
         health_status["components"]["db"] = "connected"
     except Exception:
         health_status["components"]["db"] = "disconnected"

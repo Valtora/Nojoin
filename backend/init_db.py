@@ -7,6 +7,7 @@ from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
+from backend.models.chat import ChatMessage
 
 async def init_db():
     print("Initializing database...")

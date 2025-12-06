@@ -16,6 +16,7 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
 from backend.models.user import User
+from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.processing.embedding import cosine_similarity, merge_embeddings
@@ -713,6 +714,7 @@ def generate_notes_task(self, recording_id: int):
     from backend.processing.LLM_Services import get_llm_backend
     
     session = self.session
+    recording = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
@@ -798,10 +800,14 @@ def generate_notes_task(self, recording_id: int):
         if transcript:
             transcript.notes_status = "error"
             transcript.error_message = str(e)
-            recording.processing_step = "Error generating notes"
             session.add(transcript)
+        
+        if recording:
+            recording.processing_step = "Error generating notes"
             session.add(recording)
-            session.commit()
+            
+        session.commit()
+        if recording:
             update_recording_status(session, recording_id)
 
 @celery_app.task(base=DatabaseTask, bind=True)
