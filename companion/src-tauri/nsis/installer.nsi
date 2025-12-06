@@ -357,6 +357,11 @@ FunctionEnd
 {{#each languages}}
 !insertmacro MUI_LANGUAGE "{{this}}"
 {{/each}}
+
+LangString customAppRunning ${LANG_ENGLISH} "Nojoin Companion is running."
+LangString customAppRunningOkKill ${LANG_ENGLISH} "Nojoin Companion is running. Click OK to close it and continue."
+LangString customFailedToKillApp ${LANG_ENGLISH} "Failed to close Nojoin Companion."
+
 !insertmacro MUI_RESERVEFILE_LANGDLL
 {{#each language_files}}
   !include "{{this}}"
@@ -507,7 +512,7 @@ SectionEnd
   Pop $R0
   ${If} $R0 = 0
       IfSilent kill 0
-      ${IfThen} $PassiveMode != 1 ${|} MessageBox MB_OKCANCEL "$(appRunningOkKill)" IDOK kill IDCANCEL cancel ${|}
+      ${IfThen} $PassiveMode != 1 ${|} MessageBox MB_OKCANCEL "$(customAppRunningOkKill)" IDOK kill IDCANCEL cancel ${|}
       kill:
         !if "${INSTALLMODE}" == "currentUser"
           nsis_tauri_utils::KillProcessCurrentUser "${MAINBINARYNAME}.exe"
@@ -525,14 +530,14 @@ SectionEnd
             ${If} $0 != 0
               System::Call 'kernel32::GetStdHandle(i -11)i.r0'
               System::call 'kernel32::SetConsoleTextAttribute(i r0, i 0x0004)' ; set red color
-              FileWrite $0 "$(appRunning)$\n"
+              FileWrite $0 "$(customAppRunning)$\n"
             ${EndIf}
             Abort
           ui:
-            Abort "$(failedToKillApp)"
+            Abort "$(customFailedToKillApp)"
         ${EndIf}
       cancel:
-        Abort "$(appRunning)"
+        Abort "$(customAppRunning)"
   ${EndIf}
   app_check_done:
 !macroend

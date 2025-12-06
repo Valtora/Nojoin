@@ -84,16 +84,15 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
    *Note: Creating a tag locally via GUI does not automatically push it. You must explicitly push the tag to trigger the workflow.*
 4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
 
-5. **CI/CD Builds Automatically**: GitHub Actions builds all platform installers:
-   - Windows: Tauri NSIS installer (`.exe`)
-   - macOS: Tauri DMG (`.dmg`)
-   - Linux: Tauri DEB (`.deb`)
+5. **Trigger CI/CD Manually**: Go to GitHub Actions > "Companion App Build & Release" > "Run workflow". Select the branch or tag to build.
+   - This builds all platform installers:
+     - Windows: Tauri NSIS installer (`.exe`)
+     - macOS: Tauri DMG (`.dmg`)
+     - Linux: Tauri DEB (`.deb`)
 
 6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
 
-**Important**: Regular `v*` tags do NOT trigger companion builds. Only `companion-v*` tags do.
-
-**Manual CI Trigger**: Run "Build Companion Installers" from GitHub Actions > "Run workflow" for testing.
+**Important**: Tags do NOT trigger companion builds automatically. You must manually trigger the workflow.
 
 ## Code Style & Conventions
 

@@ -1,5 +1,7 @@
 # Nojoin To-Do List
 
+After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
+
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.
 - Investigate 'speaches' library for realtime transcription capabilities.
