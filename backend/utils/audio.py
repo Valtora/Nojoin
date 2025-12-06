@@ -107,3 +107,29 @@ def convert_to_mono_16k(input_path: str, output_path: str):
         subprocess.run(cmd, check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
+
+def convert_to_mp3(input_path: str, output_path: str) -> bool:
+    """
+    Convert audio to MP3 (128kbps) using ffmpeg.
+    Returns True if successful, False otherwise.
+    """
+    ensure_ffmpeg_in_path()
+    
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-codec:a", "libmp3lame",
+        "-b:a", "128k",
+        output_path
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to convert audio to MP3: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error converting to MP3: {str(e)}")
+        return False

@@ -2,12 +2,20 @@
 
 After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
 
-## Audio Playback Optimization (Transcoding)
-- Implement on-the-fly transcoding for audio playback to improve robustness on slow networks and reduce bandwidth usage.
-- Create a new endpoint parameter or separate endpoint (e.g., `/api/v1/recordings/{id}/stream?format=mp3`) that accepts a target format.
-- Use `ffmpeg` on the backend to transcode the original WAV file to a lower bitrate format (e.g., MP3 128kbps) in real-time or cache a transcoded version.
-- This will significantly reduce the chunk size needed for the same duration of audio (e.g., 1MB = ~1 minute of MP3 vs ~6 seconds of WAV), making seeking and scrubbing much smoother.
-- Update the frontend `AudioPlayer` to request the compressed format by default, potentially with a quality toggle.
+## Implement Robust Test Suites
+- Develop comprehensive unit and integration tests for all major components of Nojoin (api, frontend, worker, db, redis).
+- Focus on critical paths: audio ingestion, processing tasks, transcription accuracy, speaker diarization, and frontend playback.
+- Use pytest for backend tests, Jest for frontend tests.
+- Aim for at least 80% code coverage across the codebase.
+
+## Audio Playback Optimization (Proxy Files)
+- Implement a "Proxy File" strategy for robust audio playback across all browsers (especially Firefox) and network conditions.
+- **Strategy**: Keep the original high-quality WAV file as the "Master" for AI processing (Diarization, Transcription) but generate a lightweight compressed "Proxy" file (MP3, ~128kbps) for frontend playback.
+- **Database**: Update the `Recording` model to include a `proxy_path` field.
+- **Ingestion**: Update `finalize_upload` and `import_audio` to trigger a background task (`convert_to_proxy_task`) that generates the MP3 using `ffmpeg`.
+- **Streaming**: Update the `stream_recording` endpoint to check for and serve the `proxy_path` if available. Fallback to the WAV file (with existing chunking logic) if the proxy is missing.
+- **Frontend**: No major changes required, as the browser will transparently receive the MP3 stream.
+- **Note**: Ensure "Retry Processing" actions continue to use the Master WAV file to prevent generation loss.
 
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.

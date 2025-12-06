@@ -12,7 +12,7 @@ from uuid import uuid4
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
-from backend.worker.tasks import process_recording_task, infer_speakers_task
+from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.utils.audio import concatenate_wavs, get_audio_duration
 from backend.processing.LLM_Services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
@@ -233,6 +233,9 @@ async def finalize_upload(
     # Trigger processing task
     process_recording_task.delay(recording.id)
     
+    # Trigger proxy generation task
+    generate_proxy_task.delay(recording.id)
+    
     return recording
 
 # Supported audio formats for import
@@ -327,6 +330,9 @@ async def import_audio(
     # Trigger processing task
     process_recording_task.delay(recording.id)
     
+    # Trigger proxy generation task
+    generate_proxy_task.delay(recording.id)
+    
     return recording
 
 
@@ -386,6 +392,9 @@ async def upload_recording(
     
     # Trigger processing task
     process_recording_task.delay(recording.id)
+    
+    # Trigger proxy generation task
+    generate_proxy_task.delay(recording.id)
     
     return recording
 
@@ -607,21 +616,27 @@ async def stream_recording(
     if not recording.audio_path or not os.path.exists(recording.audio_path):
         raise HTTPException(status_code=404, detail="Audio file not found on server")
         
-    # Determine media type based on extension
-    media_type = "audio/wav" # Default
-    ext = os.path.splitext(recording.audio_path)[1].lower()
-    if ext == ".opus":
-        media_type = "audio/ogg"
-    elif ext == ".mp3":
-        media_type = "audio/mpeg"
-    elif ext == ".m4a":
-        media_type = "audio/mp4"
-    elif ext == ".ogg":
-        media_type = "audio/ogg"
-    elif ext == ".flac":
-        media_type = "audio/flac"
-        
+    # Check for proxy file first
     file_path = recording.audio_path
+    media_type = "audio/wav" # Default fallback
+    
+    if recording.proxy_path and os.path.exists(recording.proxy_path):
+        file_path = recording.proxy_path
+        media_type = "audio/mpeg"
+    else:
+        # Fallback to original file
+        ext = os.path.splitext(recording.audio_path)[1].lower()
+        if ext == ".opus":
+            media_type = "audio/ogg"
+        elif ext == ".mp3":
+            media_type = "audio/mpeg"
+        elif ext == ".m4a":
+            media_type = "audio/mp4"
+        elif ext == ".ogg":
+            media_type = "audio/ogg"
+        elif ext == ".flac":
+            media_type = "audio/flac"
+        
     file_size = os.path.getsize(file_path)
     
     # Cloudflare limit is 100MB.

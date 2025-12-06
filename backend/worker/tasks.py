@@ -21,7 +21,7 @@ from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADN
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
-from backend.utils.audio import get_audio_duration
+from backend.utils.audio import get_audio_duration, convert_to_mp3
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.status_manager import update_recording_status
 from backend.processing.LLM_Services import get_llm_backend
@@ -957,3 +957,37 @@ def cleanup_temp_recordings():
                 logger.error(f"Error cleaning failed item {item}: {e}")
                 
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def generate_proxy_task(self, recording_id: int):
+    """
+    Generate a lightweight MP3 proxy file for frontend playback.
+    """
+    session = self.session
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording:
+            logger.error(f"Recording {recording_id} not found for proxy generation")
+            return
+
+        if not recording.audio_path or not os.path.exists(recording.audio_path):
+            logger.error(f"Audio file not found for recording {recording_id}")
+            return
+
+        # Define proxy path (same dir, .mp3 extension)
+        base_path, _ = os.path.splitext(recording.audio_path)
+        proxy_path = f"{base_path}.mp3"
+
+        logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
+        
+        if convert_to_mp3(recording.audio_path, proxy_path):
+            recording.proxy_path = proxy_path
+            session.add(recording)
+            session.commit()
+            logger.info(f"Proxy generated successfully for recording {recording_id}")
+        else:
+            logger.error(f"Failed to generate proxy for recording {recording_id}")
+
+    except Exception as e:
+        logger.error(f"Error in generate_proxy_task for recording {recording_id}: {e}")
+        # We don't re-raise here because proxy generation is optional/secondary
