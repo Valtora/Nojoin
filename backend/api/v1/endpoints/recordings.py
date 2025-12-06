@@ -2,8 +2,8 @@ import os
 import shutil
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 import aiofiles
@@ -592,11 +592,13 @@ async def delete_recording(
 @router.get("/{recording_id}/stream")
 async def stream_recording(
     recording_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Stream the audio file for a recording.
+    Supports range requests and limits chunk size to avoid Cloudflare 100MB limit.
     """
     recording = await db.get(Recording, recording_id)
     if not recording or recording.user_id != current_user.id:
@@ -619,7 +621,69 @@ async def stream_recording(
     elif ext == ".flac":
         media_type = "audio/flac"
         
-    return FileResponse(recording.audio_path, media_type=media_type, filename=recording.name)
+    file_path = recording.audio_path
+    file_size = os.path.getsize(file_path)
+    
+    # Cloudflare limit is 100MB, let's use 10MB chunks to be safe and efficient
+    CHUNK_SIZE = 10 * 1024 * 1024 
+    
+    start = 0
+    end = min(file_size - 1, CHUNK_SIZE - 1)
+    
+    range_header = request.headers.get("range")
+    if range_header:
+        try:
+            # Parse "bytes=0-" or "bytes=0-100"
+            range_str = range_header.replace("bytes=", "")
+            range_parts = range_str.split("-")
+            start = int(range_parts[0]) if range_parts[0] else 0
+            if len(range_parts) > 1 and range_parts[1]:
+                requested_end = int(range_parts[1])
+                # Don't let the client request more than CHUNK_SIZE
+                end = min(requested_end, start + CHUNK_SIZE - 1)
+            else:
+                end = min(file_size - 1, start + CHUNK_SIZE - 1)
+        except ValueError:
+            pass # Fallback to default
+            
+    if start >= file_size:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Requested range not satisfiable",
+            headers={"Content-Range": f"bytes */{file_size}"}
+        )
+
+    # Ensure end is within bounds
+    if end >= file_size:
+        end = file_size - 1
+        
+    # Calculate content length for this chunk
+    content_length = end - start + 1
+    
+    async def iterfile():
+        async with aiofiles.open(file_path, "rb") as f:
+            await f.seek(start)
+            bytes_to_read = content_length
+            while bytes_to_read > 0:
+                chunk_size = min(1024 * 64, bytes_to_read) # Read in 64KB blocks
+                data = await f.read(chunk_size)
+                if not data:
+                    break
+                yield data
+                bytes_to_read -= len(data)
+                
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(content_length),
+    }
+    
+    return StreamingResponse(
+        iterfile(),
+        status_code=206,
+        headers=headers,
+        media_type=media_type
+    )
 
 @router.post("/{recording_id}/retry", response_model=Recording)
 async def retry_processing(

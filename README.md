@@ -1,21 +1,38 @@
-# Nojoin
+<div align="center">
+  <!-- <img src="docs/images/logo.png" alt="Nojoin Logo" width="200"/> -->
+  <h1>Nojoin</h1>
+  <p>
+    <strong>Self-Hosted Meeting Intelligence. Privacy First.</strong>
+  </p>
+  
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml"><img src="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml/badge.svg" alt="Companion App Build"></a>
+  <!-- <a href="#"><img src="https://img.shields.io/badge/docker-ready-green.svg" alt="Docker"></a> -->
+  
+  <br/>
+  
+  <p>
+    Record system audio, transcribe with Whisper, diarize speakers, and chat with your meeting notes using local LLMs.
+    <br />
+    <strong>All running on your own hardware.</strong>
+  </p>
+</div>
 
-## Legal Disclaimer
+---
 
-**Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded.
+<!-- Screenshot Placeholder -->
+![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
 
-By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
+## Why Nojoin?
 
-## Overview
+Most meeting assistants require you to upload sensitive business conversations to the cloud. Nojoin is different.
 
-**Nojoin** is a distributed, containerized meeting intelligence platform. It enables users to record system audio from any client device, process it centrally on a powerful GPU-enabled server, and access transcripts, diarization, and AI-generated insights via a modern web interface.
+- 🔒 **100% Private:** Audio and transcripts never leave your server (unless you want them to for LLM processing).
+- 🚀 **Unlimited:** No monthly limits on recording minutes.
+- 🧠 **Smart:** Uses OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
+- 💬 **Interactive:** Chat with your meetings using ChatGPT, Claude, Gemini, or Ollama.
 
-**Core Philosophy:**
-*   **Centralized Intelligence:** Heavy lifting (Whisper/Pyannote) happens on a dedicated server.
-*   **Ubiquitous Access:** Manage and view meetings from any desktop device with a browser. (The companion app is currently desktop-only, mobile support will be added in future releases.)
-*   **Privacy First:** Self-hosted architecture ensures audio and transcripts never leave your control unless explicitly configured for external LLM services.
-
-## Quick Start
+## ⚡ Quick Start
 
 1.  **Clone:** `git clone https://github.com/Valtora/Nojoin && cd Nojoin`
 2.  **Launch:** `docker compose up -d`
@@ -25,7 +42,7 @@ By using Nojoin, you acknowledge that you will use this software in a lawful man
 
     *See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
 
-## Features
+## ✨ Features
 
 *   **Distributed Architecture:**
     *   **Server:** Dockerized backend handling heavy AI processing (Whisper, Pyannote).
@@ -43,7 +60,7 @@ By using Nojoin, you acknowledge that you will use this software in a lawful man
     *   **Full-Text Search:** Instantly find content across transcripts, titles, and notes.
     *   **Tagging:** Organize meetings with custom tags.
 
-## System Architecture
+## 🏗️ System Architecture
 
 Nojoin is composed of three distinct subsystems:
 
@@ -61,7 +78,7 @@ Nojoin is composed of three distinct subsystems:
     *   Sits in the system tray and handles audio capture.
     *   Uploads audio to the server for processing.
 
-## API Keys & Configuration
+## 🔑 API Keys & Configuration
 
 Nojoin requires certain API keys to function fully. The first-run wizard will request these keys but they can also be entered in the **Settings** -> **AI Services** page of the web interface after installation.
 
@@ -71,7 +88,6 @@ To enable speaker diarization (identifying who is speaking), you need a Hugging 
 2.  Generate an Access Token (Read permissions).
 3.  Accept the user conditions for the following models:
     *   [`pyannote/speaker-diarization-3.1`](https://huggingface.co/pyannote/speaker-diarization-3.1)
-    *   [`pyannote/segmentation-3.0`](https://huggingface.co/pyannote/segmentation-3.0)
 4.  Enter this token in the Nojoin **Settings > AI Settings**.
 
 ### LLM Providers (Optional)
@@ -81,7 +97,7 @@ To use the "Chat with Meeting" and "Generate Notes" features, you need an API ke
 *   **Google Gemini**
 *   **Ollama** (Local LLMs - no API key required, but requires setup)
 
-## Installation & Setup
+## 🛠️ Installation & Setup
 
 ### Prerequisites
 *   **Docker Desktop**
@@ -135,10 +151,14 @@ If you are running Ollama on the same machine as the Nojoin Docker containers, y
 
 > **🧪 Call for Testing:** The Companion App has been tested on Windows. We are looking for community feedback on **macOS** and **Linux** stability. Please report any OS-specific issues on GitHub.
 
-## Editions
+## 📦 Editions
 
 *   **Community Edition:** This is the free and open-source version of Nojoin, designed for self-hosting and community support. It includes all core features for recording, processing, and analyzing meetings.
 *   **Enterprise Edition:** (Coming Soon) A paid version designed for larger organizations. It will include additional deployment options, advanced administration features, and dedicated support.
+
+## ⚖️ Legal
+
+Please review our [Legal Disclaimer](LEGAL.md) regarding the recording of conversations and compliance with local laws.
 
 ## ☕ Buy Me a Coffee
 
