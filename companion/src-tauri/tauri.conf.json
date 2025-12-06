@@ -15,6 +15,7 @@
     "windows": {
       "nsis": {
         "template": "nsis/installer.nsi",
+        "license": "LICENSE_DISCLAIMER.txt",
         "installMode": "currentUser",
         "languages": [
           "English"

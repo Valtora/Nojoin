@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
+# We need ffmpeg for audio, git for pip installs, and build tools for some python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
@@ -24,7 +25,14 @@ WORKDIR /app
 COPY requirements/ /app/requirements/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements/worker.txt
+# 1. Generate constraints from the pre-installed system packages (torch, torchaudio)
+#    This prevents pip from downloading a new version of torch/torchaudio that might be incompatible or huge.
+RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt && \
+    python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt || true
+
+# 2. Install dependencies using the constraints to force usage of system torch
+# We install directly into the system python environment to leverage pre-installed torch
+RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
 # Install pyannote.audio without dependencies to use system torch
 RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2

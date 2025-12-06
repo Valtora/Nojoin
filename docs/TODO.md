@@ -1,8 +1,6 @@
 # Nojoin To-Do List
 
-After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project.
-
-Present a plan for approval before making any changes:
+After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
 
 ## Review Contrast and Accessibility
 - Review the current color scheme and contrast ratios used in the Nojoin frontend, especially for text, buttons, and interactive elements.

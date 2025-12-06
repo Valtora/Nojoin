@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import warnings
 import urllib.error
 import requests.exceptions
+from typing import TYPE_CHECKING
 from celery import Task
 from celery.signals import worker_ready
 from sqlmodel import select
@@ -19,12 +20,15 @@ from backend.models.user import User
 from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
 # Heavy processing imports moved inside tasks to avoid loading torch in API
-from backend.processing.embedding import cosine_similarity, merge_embeddings
-from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
-from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.status_manager import update_recording_status
-from backend.processing.LLM_Services import get_llm_backend
+
+if TYPE_CHECKING:
+    from backend.processing.embedding import cosine_similarity, merge_embeddings
+    from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
+    from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
+    from backend.processing.LLM_Services import get_llm_backend
+    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,10 @@ def process_recording_task(self, recording_id: int):
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
+    from backend.processing.embedding import cosine_similarity, merge_embeddings
+    from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
+    from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
+    from backend.processing.LLM_Services import get_llm_backend
 
     config_manager.reload()
     
@@ -600,6 +608,7 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
     Update the speaker embedding for a specific segment (Active Learning).
     """
     from backend.processing.embedding_core import extract_embedding_for_segments
+    from backend.processing.embedding import merge_embeddings
     session = self.session
     try:
         recording = session.get(Recording, recording_id)
@@ -905,6 +914,7 @@ def infer_speakers_task(self, recording_id: int):
     """
     Independent task to re-run speaker inference using LLM.
     """
+    from backend.processing.LLM_Services import get_llm_backend
     # Reload config
     config_manager.reload()
     
@@ -1053,6 +1063,7 @@ def generate_proxy_task(self, recording_id: int):
     """
     Generate a lightweight MP3 proxy file for frontend playback.
     """
+    from backend.utils.audio import convert_to_proxy_mp3
     session = self.session
     try:
         recording = session.get(Recording, recording_id)

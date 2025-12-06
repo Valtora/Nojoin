@@ -10,7 +10,7 @@ import ConfirmationModal from '@/components/ConfirmationModal';
 export default function SetupPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState(1); // 1: Account, 2: LLM, 3: HuggingFace, 4: Download
+  const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Download
   
   // Form Data
   const [formData, setFormData] = useState({
@@ -87,6 +87,11 @@ export default function SetupPage() {
       setAvailableModels([]);
       setFormData(prev => ({ ...prev, selected_model: '' }));
     }
+  };
+
+  // --- Step 0: Legal Disclaimer ---
+  const handleLegalSubmit = () => {
+    setStep(1);
   };
 
   // --- Step 1: Account ---
@@ -351,7 +356,7 @@ export default function SetupPage() {
 
         {/* Progress Steps */}
         <div className="flex border-b border-gray-200 dark:border-gray-700">
-          {[1, 2, 3, 4].map((s) => (
+          {[0, 1, 2, 3, 4].map((s) => (
             <div 
               key={s} 
               className={`flex-1 h-1 ${s <= step ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'}`}
@@ -364,6 +369,44 @@ export default function SetupPage() {
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Step 0: Legal Disclaimer */}
+          {step === 0 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Legal Disclaimer</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Please review and accept the terms of use</p>
+              </div>
+
+              <div className="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 max-h-64 overflow-y-auto">
+                <h3 className="text-base font-semibold mt-0">1. Compliance with Laws</h3>
+                <p>
+                  You acknowledge that many legal jurisdictions require the consent of all parties before a conversation can be recorded. 
+                  It is your sole responsibility to ensure compliance with all applicable laws and regulations regarding audio recording and transcription in your jurisdiction.
+                </p>
+                
+                <h3 className="text-base font-semibold">2. Data Privacy & Local Processing</h3>
+                <p>
+                  Nojoin is designed with a privacy-first architecture.
+                </p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Nojoin does not store or transmit audio data to third parties without your explicit consent.</li>
+                  <li>All audio processing (transcription, diarization, etc.) is performed locally on your machine or your self-hosted server, unless you explicitly configure an external provider.</li>
+                </ul>
+                
+                <p className="font-medium mt-4">
+                  By proceeding, you agree to these terms and accept full responsibility for the lawful use of this software.
+                </p>
+              </div>
+
+              <button
+                onClick={handleLegalSubmit}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                I Accept & Continue <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           )}
 

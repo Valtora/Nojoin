@@ -1,20 +1,17 @@
 # Use Python 3.11 slim image for lightweight API
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-# ffmpeg is needed for audio duration checks and basic processing
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     git \
     libpq-dev \
     libssl-dev \
     libffi-dev \
-    libsndfile1 \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,8 +21,35 @@ WORKDIR /app
 # Copy requirements folder
 COPY requirements/ /app/requirements/
 
-# Install Python dependencies
+# Install Python dependencies to a virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements/backend.txt
+
+# --- Runtime Stage ---
+FROM python:3.11-slim AS runtime
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install runtime dependencies
+# ffmpeg is needed for audio duration checks and basic processing
+# libpq5 is needed for psycopg2 (PostgreSQL)
+# libsndfile1 is needed for audio processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libpq5 \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Set work directory
+WORKDIR /app
 
 # Copy the rest of the application code
 COPY . .
