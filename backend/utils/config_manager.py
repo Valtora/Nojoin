@@ -62,6 +62,11 @@ DEFAULT_USER_SETTINGS = {
     "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "auto_generate_notes": True, # Automatically generate meeting notes after processing
+    "auto_generate_title": True, # Automatically infer meeting title after processing
+    "prefer_short_titles": True, # Prefer short (3-5 words) meeting titles
+    "auto_infer_speakers": True, # Automatically infer real speaker names using LLM
+    "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
+    "enable_diarization": True, # Enable Speaker Diarization (who said what)
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]

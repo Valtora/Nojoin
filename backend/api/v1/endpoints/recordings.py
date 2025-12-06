@@ -13,7 +13,7 @@ from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
-from backend.utils.audio import concatenate_wavs, get_audio_duration
+from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.LLM_Services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.models.transcript import Transcript
@@ -322,6 +322,185 @@ async def import_audio(
         if recorded_at.tzinfo is not None:
             recorded_at = recorded_at.astimezone(timezone.utc).replace(tzinfo=None)
         recording.created_at = recorded_at
+    
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    # Trigger processing task
+    process_recording_task.delay(recording.id)
+    
+    # Trigger proxy generation task
+    generate_proxy_task.delay(recording.id)
+    
+    return recording
+
+
+@router.post("/import/chunked/init", response_model=Recording)
+async def init_chunked_import(
+    filename: str = Query(..., description="Original filename with extension"),
+    name: Optional[str] = Query(None, description="Custom name for the recording"),
+    recorded_at: Optional[datetime] = Query(None, description="Original recording timestamp"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Initialize a chunked import for large files.
+    """
+    # Validate file extension
+    file_ext = os.path.splitext(filename)[1].lower()
+    if file_ext not in SUPPORTED_AUDIO_FORMATS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}"
+        )
+    
+    # Generate a unique filename
+    unique_filename = f"{uuid4()}{file_ext}"
+    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    
+    # Determine recording name
+    if name:
+        recording_name = name
+    else:
+        recording_name = os.path.splitext(filename)[0]
+        if not recording_name:
+            recording_name = generate_default_meeting_name()
+
+    recording = Recording(
+        id=generate_timestamp_id(),
+        name=recording_name,
+        audio_path=file_path,
+        status=RecordingStatus.UPLOADING,
+        user_id=current_user.id
+    )
+    
+    # Override created_at if recorded_at is provided
+    if recorded_at:
+        if recorded_at.tzinfo is not None:
+            recorded_at = recorded_at.astimezone(timezone.utc).replace(tzinfo=None)
+        recording.created_at = recorded_at
+    
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    # Create temp directory for segments
+    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
+    os.makedirs(recording_temp_dir, exist_ok=True)
+    
+    return recording
+
+
+@router.post("/import/chunked/segment")
+async def upload_chunked_segment(
+    recording_id: int,
+    sequence: int = Query(..., description="Sequence number of the segment"),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload a binary segment for a chunked import.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(status_code=400, detail="Recording is not in uploading state")
+    
+    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
+    if not os.path.exists(recording_temp_dir):
+        os.makedirs(recording_temp_dir, exist_ok=True)
+        
+    segment_path = os.path.join(recording_temp_dir, f"{sequence}.part")
+    
+    try:
+        async with aiofiles.open(segment_path, 'wb') as out_file:
+            content = await file.read()
+            await out_file.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save segment: {str(e)}")
+        
+    return {"status": "received", "segment": sequence}
+
+
+@router.post("/import/chunked/finalize", response_model=Recording)
+async def finalize_chunked_import(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Finalize a chunked import, reassemble the file, and trigger processing.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(status_code=400, detail="Recording is not in uploading state")
+        
+    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
+    if not os.path.exists(recording_temp_dir):
+        raise HTTPException(status_code=400, detail="No segments found for this recording")
+        
+    # List all segments and sort by sequence
+    segments = []
+    for filename in os.listdir(recording_temp_dir):
+        if filename.endswith(".part"):
+            try:
+                seq = int(os.path.splitext(filename)[0])
+                segments.append((seq, os.path.join(recording_temp_dir, filename)))
+            except ValueError:
+                continue
+                
+    segments.sort(key=lambda x: x[0])
+    
+    if not segments:
+        raise HTTPException(status_code=400, detail="No valid segments found")
+        
+    # Concatenate binary files
+    try:
+        segment_paths = [path for _, path in segments]
+        concatenate_binary_files(segment_paths, recording.audio_path)
+        
+        # Cleanup temp dir
+        shutil.rmtree(recording_temp_dir)
+        
+        # Get file stats
+        file_stats = os.stat(recording.audio_path)
+        recording.file_size_bytes = file_stats.st_size
+        
+        # Get duration
+        try:
+            recording.duration_seconds = get_audio_duration(recording.audio_path)
+        except Exception as e:
+            print(f"Failed to get duration: {e}")
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        
+        # Move failed segments to failed directory
+        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
+        try:
+            if os.path.exists(recording_temp_dir):
+                shutil.move(recording_temp_dir, failed_path)
+        except Exception:
+            pass
+            
+        if os.path.exists(recording.audio_path):
+            try:
+                os.remove(recording.audio_path)
+            except Exception:
+                pass
+            
+        raise HTTPException(status_code=500, detail=f"Failed to reassemble file: {str(e)}")
+        
+    # Update recording status
+    recording.status = RecordingStatus.QUEUED
     
     db.add(recording)
     await db.commit()

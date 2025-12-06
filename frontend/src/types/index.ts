@@ -96,6 +96,11 @@ export interface Settings {
   companion_url?: string;
   enable_auto_voiceprints?: boolean;
   auto_generate_notes?: boolean;
+  auto_generate_title?: boolean;
+  prefer_short_titles?: boolean;
+  auto_infer_speakers?: boolean;
+  enable_vad?: boolean;
+  enable_diarization?: boolean;
   chat_custom_instructions?: string;
   [key: string]: any;
 }

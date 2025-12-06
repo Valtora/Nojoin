@@ -50,7 +50,7 @@ Most meeting assistants require you to upload sensitive business conversations t
     *   **Companion App:** Lightweight Rust system tray app for capturing audio on client machines.
 *   **Advanced Audio Processing:**
     *   **Local-First Transcription:** Uses OpenAI's Whisper (Turbo) for accurate, private transcription.
-    *   **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote Community 3.1.
+    *   **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote Community 1.
     *   **Dual-Channel Recording:** Captures both system audio (what you hear) and microphone input (what you say).
 *   **Meeting Intelligence:**
     *   **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, Google Gemini, or Ollama.
@@ -87,7 +87,7 @@ To enable speaker diarization (identifying who is speaking), you need a Hugging 
 1.  Create an account on [Hugging Face](https://huggingface.co/).
 2.  Generate an Access Token (Read permissions).
 3.  Accept the user conditions for the following models:
-    *   [`pyannote/speaker-diarization-3.1`](https://huggingface.co/pyannote/speaker-diarization-3.1)
+    *   [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)
 4.  Enter this token in the Nojoin **Settings > AI Settings**.
 
 ### LLM Providers (Optional)

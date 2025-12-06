@@ -329,33 +329,58 @@ export const importAudio = async (
   file: File, 
   options?: ImportAudioOptions
 ): Promise<Recording> => {
-  const formData = new FormData();
-  formData.append('file', file);
+  // Use chunked upload for all files to ensure reliability and bypass Cloudflare limits
+  // Chunk size: 10MB
+  const CHUNK_SIZE = 10 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   
-  const params = new URLSearchParams();
-  if (options?.name) {
-    params.append('name', options.name);
-  }
-  if (options?.recordedAt) {
-    params.append('recorded_at', options.recordedAt.toISOString());
-  }
+  // 1. Initialize Import
+  const initParams = new URLSearchParams();
+  initParams.append('filename', file.name);
+  if (options?.name) initParams.append('name', options.name);
+  if (options?.recordedAt) initParams.append('recorded_at', options.recordedAt.toISOString());
   
-  const queryString = params.toString();
-  const url = `/recordings/import${queryString ? `?${queryString}` : ''}`;
+  const initResponse = await api.post<Recording>(
+    `/recordings/import/chunked/init?${initParams.toString()}`
+  );
+  const recording = initResponse.data;
   
-  const response = await api.post<Recording>(url, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-    onUploadProgress: (progressEvent) => {
-      if (options?.onUploadProgress && progressEvent.total) {
-        const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-        options.onUploadProgress(progress);
+  // 2. Upload Chunks
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
+    
+    const formData = new FormData();
+    formData.append('file', chunk);
+    
+    // Sequence is 1-based for consistency with backend logic
+    await api.post(
+      `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
       }
-    },
-  });
+    );
+    
+    // Update progress
+    if (options?.onUploadProgress) {
+      const progress = Math.round(((i + 1) / totalChunks) * 100);
+      // Cap at 99% until finalized
+      options.onUploadProgress(Math.min(progress, 99));
+    }
+  }
   
-  return response.data;
+  // 3. Finalize Import
+  const finalizeResponse = await api.post<Recording>(
+    `/recordings/import/chunked/finalize?recording_id=${recording.id}`
+  );
+  
+  if (options?.onUploadProgress) {
+    options.onUploadProgress(100);
+  }
+  
+  return finalizeResponse.data;
 };
 
 export const getSupportedAudioFormats = (): string[] => {

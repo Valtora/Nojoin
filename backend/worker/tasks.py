@@ -21,7 +21,7 @@ from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADN
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.processing.embedding import cosine_similarity, merge_embeddings
 from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
-from backend.utils.audio import get_audio_duration, convert_to_mp3
+from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.status_manager import update_recording_status
 from backend.processing.LLM_Services import get_llm_backend
@@ -117,56 +117,86 @@ def process_recording_task(self, recording_id: int):
                 logger.warning(f"Could not determine duration for recording {recording_id}: {e}")
     
         # --- VAD Stage ---
-        self.update_state(state='PROCESSING', meta={'progress': 10, 'stage': 'VAD'})
-        recording.processing_step = "Filtering silence and noise..."
-        session.add(recording)
-        session.commit()
+        enable_vad = merged_config.get("enable_vad", True)
         
-        # Preprocess for VAD (resample to 16k mono)
-        vad_input_path = preprocess_audio_for_vad(audio_path)
-        if not vad_input_path:
-            raise RuntimeError("VAD preprocessing failed")
-        temp_files.append(vad_input_path)
-            
-        # Run VAD (mute silence)
-        vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
-        vad_success, speech_duration = mute_non_speech_segments(vad_input_path, vad_output_path)
-        
-        if not vad_success:
-             raise RuntimeError("VAD execution failed")
-        temp_files.append(vad_output_path)
-
-        # Check for silence
-        if speech_duration < 1.0:
-            logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
-            recording.status = RecordingStatus.PROCESSED
-            recording.processing_step = "Completed (No speech detected)"
-            
-            # Create empty transcript
-            transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
-            if not transcript:
-                transcript = Transcript(recording_id=recording.id)
-            
-            transcript.text = "No Speech Detected"
-            transcript.segments = []
-            transcript.transcript_status = "completed"
-            
-            session.add(transcript)
+        if enable_vad:
+            self.update_state(state='PROCESSING', meta={'progress': 10, 'stage': 'VAD'})
+            recording.processing_step = "Filtering silence and noise..."
             session.add(recording)
             session.commit()
-            return
+            
+            # Preprocess for VAD (resample to 16k mono)
+            vad_input_path = preprocess_audio_for_vad(audio_path)
+            if not vad_input_path:
+                raise RuntimeError("VAD preprocessing failed")
+            temp_files.append(vad_input_path)
+                
+            # Run VAD (mute silence)
+            vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
+            vad_success, speech_duration = mute_non_speech_segments(vad_input_path, vad_output_path)
+            
+            if not vad_success:
+                 raise RuntimeError("VAD execution failed")
+            temp_files.append(vad_output_path)
 
-        # Convert to MP3 (aligning with pipeline.py)
-        vad_processed_mp3 = vad_output_path.replace(".wav", ".mp3")
-        try:
-            convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
-            temp_files.append(vad_processed_mp3)
-        except AudioFormatError:
-             logger.warning("MP3 conversion failed, falling back to WAV")
-             # processed_audio_path = vad_output_path # Already WAV
-        
-        # CRITICAL FIX: Use WAV for processing to avoid sample count mismatches in Pyannote
-        processed_audio_path = vad_output_path
+            # Check for silence
+            if speech_duration < 1.0:
+                logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
+                recording.status = RecordingStatus.PROCESSED
+                recording.processing_step = "Completed (No speech detected)"
+                
+                # Create empty transcript
+                transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
+                if not transcript:
+                    transcript = Transcript(recording_id=recording.id)
+                
+                transcript.text = "No Speech Detected"
+                transcript.segments = []
+                transcript.transcript_status = "completed"
+                
+                session.add(transcript)
+                session.add(recording)
+                session.commit()
+                return
+
+            # Convert to MP3 (aligning with pipeline.py)
+            vad_processed_mp3 = vad_output_path.replace(".wav", ".mp3")
+            try:
+                convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
+                temp_files.append(vad_processed_mp3)
+
+                # --- Update proxy with aligned audio ---
+                # We use the VAD-processed audio as the proxy to ensure perfect alignment with the transcript.
+                # This fixes "slippage" issues where playback drifts from the transcript.
+                base_path, _ = os.path.splitext(recording.audio_path)
+                proxy_path = f"{base_path}.mp3"
+                shutil.copy2(vad_processed_mp3, proxy_path)
+                recording.proxy_path = proxy_path
+                session.add(recording)
+                session.commit()
+                logger.info(f"Updated proxy file with VAD-processed audio for alignment: {proxy_path}")
+
+            except AudioFormatError:
+                 logger.warning("MP3 conversion failed, falling back to WAV")
+                 # processed_audio_path = vad_output_path # Already WAV
+            
+            # CRITICAL FIX: Use WAV for processing to avoid sample count mismatches in Pyannote
+            processed_audio_path = vad_output_path
+        else:
+            logger.info("VAD disabled, skipping silence filtering.")
+            # Still need to preprocess to ensure 16k mono wav for Whisper/Pyannote
+            vad_input_path = preprocess_audio_for_vad(audio_path)
+            if not vad_input_path:
+                raise RuntimeError("Audio preprocessing failed")
+            temp_files.append(vad_input_path)
+            processed_audio_path = vad_input_path
+            
+            # Update proxy path to original audio (or converted mp3 of it) if not already set
+            # Usually proxy is generated by generate_proxy_task, but if we want alignment...
+            # Actually, if we don't cut silence, the original audio is aligned.
+            # So we don't need to update proxy_path here, assuming generate_proxy_task ran or will run.
+            # However, generate_proxy_task runs in parallel.
+            pass
 
         logger.info(f"Using processed audio for transcription/diarization: {processed_audio_path}")
         if not os.path.exists(processed_audio_path):
@@ -182,20 +212,26 @@ def process_recording_task(self, recording_id: int):
         transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
         
         # --- Diarization Stage ---
-        self.update_state(state='PROCESSING', meta={'progress': 60, 'stage': 'Diarization'})
-        recording.processing_step = "Determining who said what..."
-        session.add(recording)
-        session.commit()
+        enable_diarization = merged_config.get("enable_diarization", True)
+        diarization_result = None
         
-        # Run Pyannote
-        diarization_result = diarize_audio(processed_audio_path, config=merged_config)
-        
-        if diarization_result is None:
-             msg = "Diarization failed (check HF token), falling back to single speaker."
-             logger.warning(msg)
-             recording.processing_step = msg
-             session.add(recording)
-             session.commit()
+        if enable_diarization:
+            self.update_state(state='PROCESSING', meta={'progress': 60, 'stage': 'Diarization'})
+            recording.processing_step = "Determining who said what..."
+            session.add(recording)
+            session.commit()
+            
+            # Run Pyannote
+            diarization_result = diarize_audio(processed_audio_path, config=merged_config)
+            
+            if diarization_result is None:
+                 msg = "Diarization failed (check HF token), falling back to single speaker."
+                 logger.warning(msg)
+                 recording.processing_step = msg
+                 session.add(recording)
+                 session.commit()
+        else:
+            logger.info("Diarization disabled, skipping speaker separation.")
         
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 80, 'stage': 'Saving'})
@@ -203,13 +239,20 @@ def process_recording_task(self, recording_id: int):
         # Combine Transcription and Diarization
         combined_segments = []
         if transcription_result:
-            combined_segments = combine_transcription_diarization(transcription_result, diarization_result)
+            # Only attempt combination if we have both results
+            if diarization_result:
+                combined_segments = combine_transcription_diarization(transcription_result, diarization_result)
+            else:
+                logger.info("Diarization result missing or disabled. Skipping combination.")
         
         logger.info(f"Combined segments count: {len(combined_segments) if combined_segments else 0}")
         
         if not combined_segments:
-            # Fallback if combination fails (e.g. no diarization segments)
-            logger.warning("Combination failed, using raw transcription segments with UNKNOWN speaker.")
+            # Fallback if combination fails or was skipped
+            if enable_diarization and diarization_result:
+                 logger.warning("Combination failed despite having diarization result. Using raw transcription segments with UNKNOWN speaker.")
+            else:
+                 logger.info("Using raw transcription segments (Diarization disabled or failed).")
             
             # Check if transcription_result is None before accessing
             if transcription_result and 'segments' in transcription_result:
@@ -237,8 +280,9 @@ def process_recording_task(self, recording_id: int):
         llm_provider = merged_config.get("llm_provider", "gemini")
         llm_api_key = merged_config.get(f"{llm_provider}_api_key")
         llm_model = merged_config.get(f"{llm_provider}_model")
+        auto_infer_speakers = merged_config.get("auto_infer_speakers", True)
         
-        if llm_api_key and llm_model:
+        if llm_api_key and llm_model and auto_infer_speakers:
             try:
                 self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Inferring Speakers'})
                 logger.info("Running LLM speaker inference...")
@@ -264,7 +308,10 @@ def process_recording_task(self, recording_id: int):
             except Exception as e:
                 logger.error(f"LLM speaker inference failed: {e}")
         else:
-            logger.info("LLM not available (missing key or model in merged config), skipping speaker inference.")
+            if not auto_infer_speakers:
+                logger.info("Skipping speaker inference (auto_infer_speakers=False)")
+            else:
+                logger.info("LLM not available (missing key or model in merged config), skipping speaker inference.")
 
         # Create or Update Transcript Record
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
@@ -423,6 +470,56 @@ def process_recording_task(self, recording_id: int):
         transcript.segments = updated_segments
         session.add(transcript)
 
+        # Construct transcript text with resolved names for LLM usage
+        transcript_text = ""
+        for seg in updated_segments:
+            seg_start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
+            seg_end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
+            speaker_label = seg['speaker']
+            speaker_name = label_map.get(speaker_label, speaker_label)
+            transcript_text += f"[{seg_start_time} - {seg_end_time}] {speaker_name}: {seg['text']}\n"
+
+        # Auto-generate Meeting Title
+        auto_generate_title = merged_config.get("auto_generate_title", True)
+        if auto_generate_title:
+            try:
+                self.update_state(state='PROCESSING', meta={'progress': 88, 'stage': 'Inferring Title'})
+                recording.processing_step = "Inferring meeting title..."
+                session.add(recording)
+                session.commit()
+
+                provider = merged_config.get("llm_provider", "gemini")
+                api_key = merged_config.get(f"{provider}_api_key")
+                model = merged_config.get(f"{provider}_model")
+                prefer_short_titles = merged_config.get("prefer_short_titles", True)
+
+                if api_key:
+                    llm = get_llm_backend(provider, api_key=api_key, model=model)
+                    
+                    # Construct prompt based on preference
+                    if prefer_short_titles:
+                        prompt_template = (
+                            "You are an expert meeting assistant. Given the full meeting transcript below, "
+                            "provide a very short, punchy title (3-5 words) that captures the core essence of the meeting. "
+                            "Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
+                            "# Transcript\n\n{transcript}\n"
+                        )
+                    else:
+                        # Use default prompt (longer/descriptive)
+                        prompt_template = None 
+
+                    title = llm.infer_meeting_title(transcript_text, prompt_template=prompt_template)
+                    recording.name = title
+                    session.add(recording)
+                    session.commit()
+                    logger.info(f"Inferred title for recording {recording_id}: {title}")
+                else:
+                    logger.warning(f"Skipping title inference: No API key for {provider}")
+
+            except Exception as e:
+                logger.error(f"Failed to infer meeting title: {e}")
+                # Don't fail the whole process
+
         # Auto-generate Meeting Notes
         auto_generate_notes = merged_config.get("auto_generate_notes", True)
         if auto_generate_notes:
@@ -431,13 +528,6 @@ def process_recording_task(self, recording_id: int):
                 recording.processing_step = "Generating meeting notes..."
                 session.add(recording)
                 session.commit()
-                
-                # Construct transcript text
-                transcript_text = ""
-                for seg in updated_segments:
-                    seg_start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
-                    seg_end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
-                    transcript_text += f"[{seg_start_time} - {seg_end_time}] {seg['speaker']}: {seg['text']}\n"
                 
                 provider = merged_config.get("llm_provider", "gemini")
                 api_key = merged_config.get(f"{provider}_api_key")
@@ -980,7 +1070,7 @@ def generate_proxy_task(self, recording_id: int):
 
         logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
         
-        if convert_to_mp3(recording.audio_path, proxy_path):
+        if convert_to_proxy_mp3(recording.audio_path, proxy_path):
             recording.proxy_path = proxy_path
             session.add(recording)
             session.commit()

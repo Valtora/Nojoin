@@ -1,21 +1,24 @@
 # Nojoin To-Do List
 
-After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
+After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project.
+
+Present a plan for approval before making any changes:
+
+## Review Contrast and Accessibility
+- Review the current color scheme and contrast ratios used in the Nojoin frontend, especially for text, buttons, and interactive elements.
+- Use tools like Lighthouse, Axe, or Contrast Checker to evaluate accessibility compliance (WCAG 2.1 AA standards).
+- Identify areas where contrast is insufficient and propose specific color adjustments to improve readability for users with visual impairments.
+- Compare Light mode and Dark mode to ensure both have adequate contrast. In Light mode I can see some areas where bounding boxes (like in the settings pages) and toggles have low contrast against the background.
+- Preserve the brand colour scheme as much as possible while enhancing accessibility. Orange, White, Black, Grey, and Blue are the primary colours used in Nojoin.
+
+## Update Docs and Guidance
+- Implement better usage docs and guidance, especially after first-run. Perhaps there could be some kind of 'tour' of the frontend that guides users like a mini tutorial (that can be skipped completely and is optional).
 
 ## Implement Robust Test Suites
 - Develop comprehensive unit and integration tests for all major components of Nojoin (api, frontend, worker, db, redis).
 - Focus on critical paths: audio ingestion, processing tasks, transcription accuracy, speaker diarization, and frontend playback.
 - Use pytest for backend tests, Jest for frontend tests.
 - Aim for at least 80% code coverage across the codebase.
-
-## Audio Playback Optimization (Proxy Files)
-- Implement a "Proxy File" strategy for robust audio playback across all browsers (especially Firefox) and network conditions.
-- **Strategy**: Keep the original high-quality WAV file as the "Master" for AI processing (Diarization, Transcription) but generate a lightweight compressed "Proxy" file (MP3, ~128kbps) for frontend playback.
-- **Database**: Update the `Recording` model to include a `proxy_path` field.
-- **Ingestion**: Update `finalize_upload` and `import_audio` to trigger a background task (`convert_to_proxy_task`) that generates the MP3 using `ffmpeg`.
-- **Streaming**: Update the `stream_recording` endpoint to check for and serve the `proxy_path` if available. Fallback to the WAV file (with existing chunking logic) if the proxy is missing.
-- **Frontend**: No major changes required, as the browser will transparently receive the MP3 stream.
-- **Note**: Ensure "Retry Processing" actions continue to use the Master WAV file to prevent generation loss.
 
 ## Realtime Transcription Feature
 - I want to implement realtime transcription as the default in Nojoin. I will list a few libraries and frameworks below for investigation. I want you to look at each library and assess suitability for Nojoin's architecture.

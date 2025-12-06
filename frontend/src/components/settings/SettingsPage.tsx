@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getSettings, updateSettings, getUserMe } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
 import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield } from 'lucide-react';
@@ -36,6 +36,9 @@ export default function SettingsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const { addNotification } = useNotificationStore();
+  
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isFirstLoad = useRef(true);
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
@@ -131,7 +134,7 @@ export default function SettingsPage() {
     load();
   }, [activeTab]);
 
-  const handleSave = async () => {
+  const saveSettings = useCallback(async () => {
     setSaving(true);
     try {
       await updateSettings(settings);
@@ -165,7 +168,30 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [settings, companionConfig, companionDevices, selectedInputDevice, selectedOutputDevice, addNotification]);
+
+  useEffect(() => {
+    if (loading) return;
+    
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      return;
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveSettings();
+    }, 1000);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [settings, companionConfig, selectedInputDevice, selectedOutputDevice, loading, saveSettings]);
 
   const tabs = useMemo(() => {
     const baseTabs = [
@@ -256,14 +282,19 @@ export default function SettingsPage() {
           </nav>
 
           <div className="p-4 border-t border-gray-300 dark:border-gray-700">
-            <button
-              onClick={handleSave}
-              disabled={saving || loading}
-              className="w-full flex items-center justify-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Changes
-            </button>
+            <div className="flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Saving changes...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  All changes saved
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -278,7 +309,13 @@ export default function SettingsPage() {
             <div className="max-w-4xl mx-auto">
               {activeTab === 'account' && <AccountSettings />}
               {activeTab === 'admin' && isAdmin && <AdminSettings />}
-              {activeTab === 'general' && <GeneralSettings searchQuery={searchQuery} />}
+              {activeTab === 'general' && (
+                <GeneralSettings 
+                  settings={settings} 
+                  onUpdate={setSettings} 
+                  searchQuery={searchQuery} 
+                />
+              )}
               {activeTab === 'ai' && isAdmin && (
                 <AISettings 
                   settings={settings} 

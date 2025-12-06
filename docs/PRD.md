@@ -65,9 +65,10 @@ A lightweight, cross-platform system tray application responsible for audio capt
 The system provides the following core capabilities:
 *   **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
 *   **Import:** Support for importing existing audio files.
+    *   **Chunked Uploads:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits (e.g., Cloudflare Tunnel 100MB limit) and ensure reliability.
 *   **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
 *   **Speaker Management:** Global speaker library with voiceprint identification.
-*   **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items) and Chat Q&A.
+*   **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items), Chat Q&A, and automatic meeting title inference.
 *   **Search & Organization:** Tagging, full-text search, and fuzzy search.
 *   **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
 *   **Settings:** Comprehensive server and user configuration.

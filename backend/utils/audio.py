@@ -87,6 +87,19 @@ def concatenate_wavs(segment_paths: List[str], output_path: str):
         if os.path.exists(list_file_path):
             os.remove(list_file_path)
 
+def concatenate_binary_files(segment_paths: List[str], output_path: str):
+    """
+    Concatenate multiple binary files into a single file.
+    Used for reassembling chunked uploads of arbitrary file types.
+    """
+    try:
+        with open(output_path, 'wb') as outfile:
+            for segment_path in segment_paths:
+                with open(segment_path, 'rb') as infile:
+                    shutil.copyfileobj(infile, outfile)
+    except Exception as e:
+        raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
+
 def convert_to_mono_16k(input_path: str, output_path: str):
     """
     Convert audio to mono 16kHz WAV using ffmpeg.
@@ -132,4 +145,33 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
         return False
     except Exception as e:
         logger.error(f"Unexpected error converting to MP3: {str(e)}")
+        return False
+
+def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
+    """
+    Convert audio to mono 16kHz MP3 (64kbps) for proxy playback.
+    Enforcing 16kHz mono ensures alignment with the transcript which is generated from 16kHz mono audio.
+    Returns True if successful, False otherwise.
+    """
+    ensure_ffmpeg_in_path()
+    
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-ac", "1",       # Mono
+        "-ar", "16000",   # 16kHz
+        "-codec:a", "libmp3lame",
+        "-b:a", "64k",    # Lower bitrate is sufficient for 16kHz mono
+        output_path
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to convert audio to proxy MP3: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error converting to proxy MP3: {str(e)}")
         return False

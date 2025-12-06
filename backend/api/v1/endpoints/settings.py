@@ -23,6 +23,12 @@ class SettingsUpdate(BaseModel):
     ollama_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
+    auto_generate_notes: Optional[bool] = None
+    auto_generate_title: Optional[bool] = None
+    prefer_short_titles: Optional[bool] = None
+    auto_infer_speakers: Optional[bool] = None
+    enable_vad: Optional[bool] = None
+    enable_diarization: Optional[bool] = None
     # System settings that might be passed but should be ignored or handled separately if we allowed admin to change them
     # For now, we only allow user settings update here.
 
