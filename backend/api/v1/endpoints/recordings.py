@@ -652,12 +652,17 @@ async def stream_recording(
                     requested_end = int(range_parts[1])
                     end = min(requested_end, file_size - 1)
                 else:
+                    # If no end specified, default to start + CHUNK_SIZE
+                    # This is CRITICAL for seeking. Browsers often ask for "bytes=X-"
+                    # If we default 'end' to 'file_size - 1', we might calculate a huge chunk
+                    # which we then clamp below. But explicitly setting it here clarifies intent.
                     end = file_size - 1
         except ValueError:
             pass # Fallback to default
             
     # Apply Chunk Size Limit
     # We enforce that we never send more than CHUNK_SIZE
+    # If the client requested a huge range (or open-ended range), we clamp it.
     chunk_end = min(end, start + CHUNK_SIZE - 1)
     end = chunk_end
 
@@ -674,6 +679,11 @@ async def stream_recording(
         
     # Calculate content length for this chunk
     content_length = end - start + 1
+    
+    # WAV Header Handling for Partial Content
+    # If the request starts at 0, we are sending the WAV header.
+    # If the request starts later, we are sending raw PCM data.
+    # Browsers are generally smart enough to handle this for WAVs.
     
     async def iterfile():
         async with aiofiles.open(file_path, "rb") as f:
@@ -695,6 +705,16 @@ async def stream_recording(
         "Pragma": "no-cache",
         "Expires": "0",
     }
+    
+    # If the request did NOT include a Range header, we should probably return 200 OK
+    # with the first chunk, OR 206. 
+    # Standard behavior for "no range" is 200 OK with full content.
+    # But we CANNOT send full content due to Cloudflare.
+    # So we must send 206 Partial Content even if no Range was requested, 
+    # effectively forcing the client to handle partials.
+    # Most modern browsers/players handle this fine, but some strict clients might expect 200.
+    # However, returning 200 with a partial body is a protocol violation.
+    # So 206 is the correct approach here.
     
     return StreamingResponse(
         iterfile(),
