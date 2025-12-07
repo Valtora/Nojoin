@@ -26,6 +26,12 @@ interface NavigationState {
   toggleRecordingSelection: (id: number) => void;
   selectAllRecordings: (ids: number[]) => void;
   clearSelection: () => void;
+
+    // Tour State
+  hasSeenTour: boolean;
+  setHasSeenTour: (seen: boolean) => void;
+  hasSeenTranscriptTour: boolean;
+  setHasSeenTranscriptTour: (seen: boolean) => void;
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -52,29 +58,33 @@ export const useNavigationStore = create<NavigationState>()(
       // Selection State
       selectionMode: false,
       selectedRecordingIds: [],
-      setSelectionMode: (enabled) => set({ selectionMode: enabled }),
+      setSelectionMode: (enabled) => set({ selectionMode: enabled, selectedRecordingIds: enabled ? [] : [] }),
       toggleSelectionMode: () => set((state) => ({ 
         selectionMode: !state.selectionMode,
-        selectedRecordingIds: [] // Clear selection when toggling mode
+        selectedRecordingIds: !state.selectionMode ? [] : [] 
       })),
-      toggleRecordingSelection: (id) => set((state) => {
-        const newSelectedIds = state.selectedRecordingIds.includes(id)
+      toggleRecordingSelection: (id) => set((state) => ({
+        selectedRecordingIds: state.selectedRecordingIds.includes(id)
           ? state.selectedRecordingIds.filter(rid => rid !== id)
-          : [...state.selectedRecordingIds, id];
-        
-        return {
-          selectedRecordingIds: newSelectedIds,
-          selectionMode: newSelectedIds.length > 0
-        };
-      }),
-      selectAllRecordings: (ids) => set({ selectedRecordingIds: ids, selectionMode: ids.length > 0 }),
-      clearSelection: () => set({ selectedRecordingIds: [], selectionMode: false }),
+          : [...state.selectedRecordingIds, id]
+      })),
+      selectAllRecordings: (ids) => set({ selectedRecordingIds: ids }),
+      clearSelection: () => set({ selectedRecordingIds: [] }),
+
+      // Tour State
+      hasSeenTour: false,
+      setHasSeenTour: (seen) => set({ hasSeenTour: seen }),
+      hasSeenTranscriptTour: false,
+      setHasSeenTranscriptTour: (seen) => set({ hasSeenTranscriptTour: seen }),
     }),
     {
-      name: 'nojoin-navigation',
+      name: 'navigation-storage',
       partialize: (state) => ({ 
-        isNavCollapsed: state.isNavCollapsed 
+        isNavCollapsed: state.isNavCollapsed,
+        hasSeenTour: state.hasSeenTour,
+        hasSeenTranscriptTour: state.hasSeenTranscriptTour
       }),
     }
   )
 );
+

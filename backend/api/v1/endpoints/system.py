@@ -12,6 +12,7 @@ from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager
 from backend.preload_models import check_model_status
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
+from backend.seed_demo import seed_demo_data
 
 router = APIRouter()
 
@@ -98,22 +99,19 @@ async def setup_system(
     # Persist key system-wide settings so workers and other processes can access them
     try:
         # Only persist a whitelist of system-level keys to avoid overwriting user-specific preferences
-        system_keys = [
-            "llm_provider",
-            "gemini_api_key",
-            "openai_api_key",
-            "anthropic_api_key",
-            "hf_token",
-            "whisper_model_size",
-        ]
-        for k, v in settings.items():
-            if k in system_keys or k.endswith("_model"):
-                if v is not None:
-                    config_manager.set(k, v)
+        system_keys = ["llm_provider", "hf_token", "whisper_model_size", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ollama_api_url", "ollama_model", "gemini_model", "openai_model", "anthropic_model"]
+        system_settings = {k: v for k, v in settings.items() if k in system_keys}
+        config_manager.update_config(system_settings)
     except Exception as e:
-        # Log but do not fail the setup if persisting to disk fails
-        import logging
-        logging.getLogger(__name__).warning(f"Failed to persist system settings: {e}")
+        print(f"Failed to persist system settings: {e}")
+
+    # Seed demo data on first setup
+    try:
+        await seed_demo_data()
+    except Exception as e:
+        print(f"Failed to seed demo data: {e}")
+
+    return {"message": "System initialized successfully"}
     return {"message": "System initialized successfully"}
 
 @router.post("/download-models")

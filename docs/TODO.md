@@ -10,9 +10,6 @@ After the colons I will provide a list of tasks/instructions that need to be com
 - The 'User Management' page should also allow admins to view and manage all users, including their roles and permissions.
 - We should also implement a better permission hierarchy system. There should be one 'Owner' that was the user that completes the setup and provided the API keys, this is the absolute owner of the system. Then there should be 'admins' that can be designated by the 'Owner'. This is a simple three tier system. Users cannot acccess admin settings and cannot manage other users. Admins can access admin settings and manage other users, except other admins, and except the Owner.
 
-## Update Docs and Guidance
-- Implement better usage docs and guidance, especially after first-run. Perhaps there could be some kind of 'tour' of the frontend that guides users like a mini tutorial (that can be skipped completely and is optional).
-
 ## Implement Robust Test Suites
 - Develop comprehensive unit and integration tests for all major components of Nojoin (api, frontend, worker, db, redis).
 - Focus on critical paths: audio ingestion, processing tasks, transcription accuracy, speaker diarization, and frontend playback.

@@ -101,8 +101,9 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   const handleResume = () => sendCommand('resume');
 
   return (
-    <div className="p-4 border-b border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-900">
-      <div className="flex flex-col gap-2">
+    <div className="p-4 border-b border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
         {error && <div className="text-xs text-red-500">{error}</div>}
         
         {companionStatus === 'idle' ? (
@@ -153,6 +154,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

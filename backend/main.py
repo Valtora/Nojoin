@@ -53,7 +53,6 @@ def run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_migrations()
-        
     yield
 
 app = FastAPI(

@@ -40,11 +40,13 @@ interface NavItemProps {
   onClick: () => void;
   collapsed: boolean;
   badge?: number;
+  id?: string;
 }
 
-function NavItem({ icon, label, isActive, onClick, collapsed, badge }: NavItemProps) {
+function NavItem({ icon, label, isActive, onClick, collapsed, badge, id }: NavItemProps) {
   return (
     <button
+      id={id}
       onClick={onClick}
       title={collapsed ? label : undefined}
       className={`
@@ -328,15 +330,16 @@ export default function MainNav() {
   const showAuthorizeButton = mounted && companion && !companionAuthenticated;
   const showUpdateCompanionButton = mounted && companion && companionUpdateAvailable;
 
-  const navItems: { view: ViewType; icon: React.ReactNode; label: string }[] = [
-    { view: 'recordings', icon: <Mic className="w-5 h-5" />, label: 'Recordings' },
-    { view: 'archived', icon: <Archive className="w-5 h-5" />, label: 'Archived' },
-    { view: 'deleted', icon: <Trash2 className="w-5 h-5" />, label: 'Deleted' },
+  const navItems: { view: ViewType; icon: React.ReactNode; label: string; id: string }[] = [
+    { view: 'recordings', icon: <Mic className="w-5 h-5" />, label: 'Recordings', id: 'nav-recordings' },
+    { view: 'archived', icon: <Archive className="w-5 h-5" />, label: 'Archived', id: 'nav-archived' },
+    { view: 'deleted', icon: <Trash2 className="w-5 h-5" />, label: 'Deleted', id: 'nav-deleted' },
   ];
 
   return (
     <>
       <aside 
+        id="main-nav"
         className={`
           flex-shrink-0 border-r border-gray-400 dark:border-gray-800 
           bg-gray-200 dark:bg-gray-900 h-screen sticky top-0 
@@ -373,9 +376,10 @@ export default function MainNav() {
 
         {/* Navigation Items */}
         <nav className="p-2 space-y-1">
-          {navItems.map(({ view, icon, label }) => (
+          {navItems.map(({ view, icon, label, id }) => (
             <NavItem
               key={view}
+              id={id}
               icon={icon}
               label={label}
               isActive={currentView === view && pathname === '/'}
@@ -477,6 +481,7 @@ export default function MainNav() {
           {/* Download Companion Button - Only shown when companion is not reachable */}
           {showDownloadButton && (
             <button
+              id="nav-download-companion"
               onClick={handleDownloadCompanion}
               title={collapsed ? 'Download Companion' : undefined}
               className={`
@@ -495,6 +500,7 @@ export default function MainNav() {
           {/* Authorize Companion Button - Only shown when companion is reachable but not authenticated */}
           {showAuthorizeButton && (
             <button
+              id="nav-connect-companion"
               onClick={handleAuthorizeCompanion}
               disabled={isAuthorizing}
               title={collapsed ? 'Connect to Companion' : undefined}
@@ -533,30 +539,35 @@ export default function MainNav() {
           )}
           
           <NavItem
+            id="nav-speakers"
             icon={<Users className="w-5 h-5" />}
             label="Speaker Library"
             onClick={() => setIsSpeakersModalOpen(true)}
             collapsed={collapsed}
           />
           <NavItem
+            id="nav-import"
             icon={<FilePlus className="w-5 h-5" />}
             label="Import Audio"
             onClick={() => setIsImportModalOpen(true)}
             collapsed={collapsed}
           />
           <NavItem
+            id="nav-notifications"
             icon={<Bell className="w-5 h-5" />}
             label="Notifications"
             onClick={() => setIsNotificationModalOpen(true)}
             collapsed={collapsed}
           />
           <NavItem
+            id="nav-settings"
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
             onClick={() => router.push('/settings')}
             collapsed={collapsed}
           />
           <NavItem
+            id="nav-logout"
             icon={<LogOut className="w-5 h-5" />}
             label="Log Out"
             onClick={handleLogout}

@@ -462,7 +462,10 @@ export default function Sidebar() {
   const view = mounted ? currentView : 'recordings';
 
   return (
-    <aside className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0">
+    <aside 
+      id="sidebar-recordings-list"
+      className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0"
+    >
       {view === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
       
       {/* Header */}

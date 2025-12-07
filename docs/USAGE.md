@@ -1,5 +1,36 @@
 # Nojoin User Guide
 
+## Getting Started
+
+Welcome to Nojoin! Follow these steps to get up and running quickly.
+
+### 1. First Run
+1.  **Install/Run Companion App**: Ensure the Nojoin Companion App is running in your system tray. This is required for audio capture.
+2.  **Verify Connection**: Open the Web Client. The status indicator in the bottom left should show "Connected".
+3.  **Make a Test Recording**:
+    *   Click the **Record** button (microphone icon) in the sidebar.
+    *   Speak a few words.
+    *   Click **Stop**.
+4.  **View Results**: The recording will appear in the list. Wait for processing to complete (transcription, diarization) to see the transcript and notes.
+
+### 2. Interactive Tour
+On your first visit to the dashboard, an interactive tour will guide you through the main features:
+1.  **Navigation**: Overview of the main sidebar.
+2.  **Recordings**: Where to find your processed meetings.
+3.  **Import**: How to upload existing audio files.
+4.  **Companion App**: Guidance on downloading and connecting the system tray app.
+5.  **Settings**: Where to configure models and preferences.
+
+**Transcript Tour:**
+When you first view a recording (such as the included "Demo Recording"), a second tour will guide you through the detailed view:
+1.  **Transcript View**: Reading and navigating the transcript.
+2.  **Audio Controls**: Playback and speed controls.
+3.  **Speakers**: Managing and identifying speakers.
+4.  **AI Notes**: Generating summaries and action items.
+5.  **Meeting Chat**: Asking questions about the meeting.
+
+You can restart these tours at any time by resetting your preferences in the browser.
+
 ## Core Features
 
 ### Audio Recording (Companion App)

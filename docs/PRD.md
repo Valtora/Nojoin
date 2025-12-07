@@ -30,6 +30,10 @@ The primary user interface for interacting with the system.
 *   **Framework:** Next.js (React) with TypeScript.
 *   **Styling:** Tailwind CSS for a responsive, modern design.
 *   **Functionality:** Dashboard, playback, transcript editing, speaker management, and system configuration.
+*   **Interactive Tour:** A guided tour for first-time users using `driver.js`.
+    *   **Dashboard Tour:** Highlights key features like navigation, recording, importing, and companion app setup.
+    *   **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
+    *   **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
 *   **Companion Status:** Visual indicator (warning bubble) when the Companion App is not detected.
 *   **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. Dynamically links to the correct installer for the user's OS (Windows/macOS/Linux) from GitHub Releases.
 

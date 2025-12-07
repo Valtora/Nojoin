@@ -93,6 +93,8 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
 
   const { addNotification } = useNotificationStore();
 
+  const isDemo = recording.name === "Welcome to Nojoin";
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
@@ -163,6 +165,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       {isRenaming ? (
         <div className="block">
           <div 
+            id={isDemo ? "demo-recording-card" : undefined}
             className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
             onContextMenu={handleContextMenu}
           >
@@ -202,6 +205,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       ) : (
         <Link href={`/recordings/${recording.id}`} className="block">
           <div 
+            id={isDemo ? "demo-recording-card" : undefined}
             className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
             onContextMenu={handleContextMenu}
           >

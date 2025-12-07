@@ -5,6 +5,7 @@ import MainNav from "@/components/MainNav";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
+import TourGuide from "@/components/TourGuide";
 
 export default function DashboardLayout({
   children,
@@ -16,6 +17,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen w-full">
+      <TourGuide />
       <MainNav />
       {!isSettingsPage && <Sidebar />}
       

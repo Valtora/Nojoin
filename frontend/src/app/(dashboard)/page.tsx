@@ -23,7 +23,7 @@ export default function Home() {
         Your self-hosted meeting intelligence platform.
       </p>
 
-      <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div id="getting-started-card" className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 text-center">
           <h3 className="font-semibold text-gray-900 dark:text-white text-lg">Getting Started</h3>
         </div>

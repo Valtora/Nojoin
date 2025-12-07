@@ -4,7 +4,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install -g npm@latest && npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -17,7 +17,7 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Build the application
-RUN npm run build
+RUN npm install -g npm@latest && npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner

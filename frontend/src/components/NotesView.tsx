@@ -227,7 +227,7 @@ export default function NotesView({
   };
 
   return (
-    <div className="flex flex-col h-full relative min-h-0">
+    <div id="meeting-notes" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
       <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}

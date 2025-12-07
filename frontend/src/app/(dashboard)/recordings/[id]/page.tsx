@@ -157,9 +157,23 @@ export default function RecordingPage({ params }: PageProps) {
             }
         }
     };
+
     window.addEventListener('recording-updated', handleUpdate);
     return () => window.removeEventListener('recording-updated', handleUpdate);
-  }, [recording, isEditingTitle]);
+  }, [recording]);
+
+  // Listen for tour events to switch panels
+  useEffect(() => {
+    const handleTourSwitch = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail === 'notes' || customEvent.detail === 'transcript') {
+        setActivePanel(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('tour:switch-panel', handleTourSwitch);
+    return () => window.removeEventListener('tour:switch-panel', handleTourSwitch);
+  }, []);
 
   // Initialize speaker colors
   useEffect(() => {
@@ -299,30 +313,29 @@ export default function RecordingPage({ params }: PageProps) {
       setNotesFuture([]);
   }, [recording]);
 
-  const handleUndo = async () => {
-      if (history.length === 0 || !recording?.transcript?.segments || isUndoing) return;
-      
-      setIsUndoing(true);
-      try {
-          const previousState = history[history.length - 1];
-          const currentSegments = JSON.parse(JSON.stringify(recording.transcript.segments));
-          
-          // Push current state to future
-          setFuture(prev => [{ segments: currentSegments, description: "Undo" }, ...prev]);
-          
-          // Restore previous state
-          await updateTranscriptSegments(recording.id, previousState.segments);
-          
-          // Update local state
-          setHistory(prev => prev.slice(0, -1));
-          const updated = await getRecording(recording.id);
-          setRecording(updated);
-      } catch (e) {
-          console.error("Undo failed", e);
-          alert("Undo failed.");
-      } finally {
-          setIsUndoing(false);
-      }
+  const handleUndo = () => {
+    if (history.length === 0 || !recording || !recording.transcript) return;
+    
+    setIsUndoing(true);
+    try {
+        const previousState = history[history.length - 1];
+        const currentSegments = JSON.parse(JSON.stringify(recording.transcript.segments));
+        
+        // Push current state to future
+        setFuture(prev => [{ segments: currentSegments, description: "Undo" }, ...prev]);
+        
+        // Restore previous state
+        updateTranscriptSegments(recording.id, previousState.segments).then(() => {
+            // Update local state
+            setHistory(prev => prev.slice(0, -1));
+            getRecording(recording.id).then(setRecording).catch(console.error);
+        });
+    } catch (e) {
+        console.error("Undo failed", e);
+        alert("Undo failed.");
+    } finally {
+        setIsUndoing(false);
+    }
   };
 
   const handleRedo = async () => {
@@ -694,9 +707,9 @@ export default function RecordingPage({ params }: PageProps) {
                         </div>
 
                         {/* Panel Content */}
-                        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full">
-                            {activePanel === 'transcript' ? (
-                                (recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
+                        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full relative">
+                            <div className={`absolute inset-0 flex flex-col ${activePanel === 'transcript' ? 'z-10 visible' : 'z-0 invisible'}`}>
+                                {(recording.transcript?.segments && recording.transcript.segments.length > 0) ? (
                                     <TranscriptView
                                         recordingId={recording.id}
                                         segments={recording.transcript.segments}
@@ -738,8 +751,10 @@ export default function RecordingPage({ params }: PageProps) {
                                             </p>
                                         )}
                                     </div>
-                                )
-                            ) : (
+                                )}
+                            </div>
+
+                            <div className={`absolute inset-0 flex flex-col ${activePanel === 'notes' ? 'z-10 visible' : 'z-0 invisible'}`}>
                                 <NotesView
                                     recordingId={recording.id}
                                     notes={recording.transcript?.notes || null}
@@ -753,7 +768,7 @@ export default function RecordingPage({ params }: PageProps) {
                                     isGenerating={isGeneratingNotes || recording.transcript?.notes_status === 'generating'}
                                     onExport={() => setShowExportModal(true)}
                                 />
-                            )}
+                            </div>
                         </div>
                     </div>
                 </Panel>
