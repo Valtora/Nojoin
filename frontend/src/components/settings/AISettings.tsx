@@ -224,7 +224,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
     <div className="space-y-6">
       {/* 1. LLM Settings Group */}
       {showLLMSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
             <Cpu className="w-5 h-5 text-orange-500" /> LLM Configuration
           </h3>

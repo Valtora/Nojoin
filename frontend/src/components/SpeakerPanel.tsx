@@ -290,7 +290,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
                                 <button 
                                     onClick={handleMergeSubmit}
                                     disabled={!mergeTargetLabel}
-                                    className="flex-1 px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 disabled:opacity-50"
+                                    className="flex-1 px-2 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 disabled:opacity-50"
                                 >
                                     Confirm
                                 </button>

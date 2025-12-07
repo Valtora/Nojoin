@@ -2,12 +2,13 @@
 
 After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
 
-## Review Contrast and Accessibility
-- Review the current color scheme and contrast ratios used in the Nojoin frontend, especially for text, buttons, and interactive elements.
-- Use tools like Lighthouse, Axe, or Contrast Checker to evaluate accessibility compliance (WCAG 2.1 AA standards).
-- Identify areas where contrast is insufficient and propose specific color adjustments to improve readability for users with visual impairments.
-- Compare Light mode and Dark mode to ensure both have adequate contrast. In Light mode I can see some areas where bounding boxes (like in the settings pages) and toggles have low contrast against the background.
-- Preserve the brand colour scheme as much as possible while enhancing accessibility. Orange, White, Black, Grey, and Blue are the primary colours used in Nojoin.
+## Design and Implement a Robust, Modern Invitation System for Admin Users
+- Allow admin users to invite others by creating special invite links they can distribute.
+- The link management system should be powerful, the admin should (via a dedicated invite configuration modal) be able to configure a link to expire (in days), toggle whether it is reusable or just valid on a one-link-one-user basis, etc.
+- Rather than implementing this under the 'Admin Panel', implement a new 'User Management' page under Settings, visible and editable only to admins.
+- Keep the Admin Panel for future use.
+- The 'User Management' page should also allow admins to view and manage all users, including their roles and permissions.
+- We should also implement a better permission hierarchy system. There should be one 'Owner' that was the user that completes the setup and provided the API keys, this is the absolute owner of the system. Then there should be 'admins' that can be designated by the 'Owner'. This is a simple three tier system. Users cannot acccess admin settings and cannot manage other users. Admins can access admin settings and manage other users, except other admins, and except the Owner.
 
 ## Update Docs and Guidance
 - Implement better usage docs and guidance, especially after first-run. Perhaps there could be some kind of 'tour' of the frontend that guides users like a mini tutorial (that can be skipped completely and is optional).

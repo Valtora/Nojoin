@@ -191,7 +191,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
           >
             <Download className="w-4 h-4" />
             Export

@@ -56,6 +56,15 @@ A lightweight, cross-platform system tray application responsible for audio capt
     *   **CORS:** Restricted to allowed origins. Configurable via `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
     *   **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
 
+### 2.5 Accessibility & Design System
+*   **Standards:** Adheres to WCAG 2.1 AA standards for contrast and accessibility.
+*   **Color Palette:**
+    *   **Primary Action:** Orange-600 (`#ea580c`) for buttons and active states to ensure sufficient contrast against white backgrounds.
+    *   **Hover States:** Orange-700 (`#c2410c`) for interactive feedback.
+    *   **Borders:** Gray-300 (`#d1d5db`) for light mode and Gray-600 (`#4b5563`) for dark mode to ensure visibility of UI boundaries.
+    *   **Backgrounds:** Gray-100 (`#f3f4f6`) for secondary backgrounds in light mode to differentiate from white containers.
+*   **Theme:** Fully responsive Light and Dark modes with semantic color mapping.
+
 ---
 
 ## 3. Core Features
@@ -89,7 +98,7 @@ The system provides the following core capabilities:
 ### 4.2 Web Client Stack
 *   **Framework:** Next.js (React)
 *   **Language:** TypeScript
-*   **Styling:** Tailwind CSS
+*   **Styling:** Tailwind CSS v4
 *   **State Management:** React Query / Zustand
 *   **Build:** Production optimized (`next build`) with multi-stage Docker build.
 

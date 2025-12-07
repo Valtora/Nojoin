@@ -50,7 +50,7 @@ export default function AudioSettings({
                   <select
                     value={selectedInputDevice || ''}
                     onChange={(e) => onSelectInputDevice(e.target.value || null)}
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   >
                     <option value="">System Default</option>
                     {companionDevices.input_devices.map((device) => (
@@ -71,7 +71,7 @@ export default function AudioSettings({
                   <select
                     value={selectedOutputDevice || ''}
                     onChange={(e) => onSelectOutputDevice(e.target.value || null)}
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   >
                     <option value="">System Default</option>
                     {companionDevices.output_devices.map((device) => (
@@ -84,7 +84,7 @@ export default function AudioSettings({
                 </div>
               </>
             ) : (
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
                   Companion app not connected. Start the Companion app to configure audio devices.
                 </p>

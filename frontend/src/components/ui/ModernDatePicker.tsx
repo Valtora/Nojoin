@@ -69,7 +69,7 @@ export default function ModernDatePicker({
             cn(
               "hover:!bg-orange-100 dark:hover:!bg-orange-900/30 !rounded-md",
               selected && date.getTime() === selected.getTime()
-                ? "!bg-orange-500 !text-white hover:!bg-orange-600"
+                ? "!bg-orange-600 !text-white hover:!bg-orange-700"
                 : "dark:!text-gray-100"
             )
           }

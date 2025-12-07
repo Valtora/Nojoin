@@ -42,7 +42,7 @@ export default function SystemSettings({
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Companion App</h3>
           <div className="max-w-xl space-y-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="p-4 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
                 The Companion App always runs on <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">localhost:12345</code> and connects to the backend via HTTPS.
               </p>
@@ -72,7 +72,7 @@ export default function SystemSettings({
             )}
 
             {!companionConfig && (
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
                   Companion App not connected. Start the Companion App to configure settings.
                 </p>

@@ -577,7 +577,7 @@ export default function TranscriptView({
                       className={`p-1.5 rounded-full transition-colors shadow-sm ${
                           isActive 
                           ? 'bg-green-500 text-white hover:bg-green-600' 
-                          : 'bg-gray-100 text-gray-500 hover:bg-orange-500 hover:text-white dark:bg-gray-800 dark:text-gray-400'
+                          : 'bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400'
                       }`}
                       title={isActive && isPlaying ? "Pause segment" : "Play segment"}
                   >

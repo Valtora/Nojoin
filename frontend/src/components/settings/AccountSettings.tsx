@@ -70,7 +70,7 @@ export default function AccountSettings() {
   return (
     <div className="space-y-8">
       {/* Profile Section */}
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-300 dark:border-gray-600">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
           <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           Profile Information
@@ -82,7 +82,7 @@ export default function AccountSettings() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
               required
             />
           </div>

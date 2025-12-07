@@ -295,7 +295,7 @@ export default function NotesView({
                 <button
                     onClick={onGenerateNotes}
                     disabled={isGenerating}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-sm rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Generate Notes with AI"
                 >
                     {isGenerating ? (
@@ -493,7 +493,7 @@ export default function NotesView({
             <button
               onClick={onGenerateNotes}
               disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

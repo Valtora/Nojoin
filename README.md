@@ -1,36 +1,23 @@
 <div align="center">
-  <!-- <img src="docs/images/logo.png" alt="Nojoin Logo" width="200"/> -->
-  <h1>Nojoin</h1>
-  <p>
-    <strong>Self-Hosted Meeting Intelligence. Privacy First.</strong>
-  </p>
-  
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml"><img src="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml/badge.svg" alt="Companion App Build"></a>
-  <!-- <a href="#"><img src="https://img.shields.io/badge/docker-ready-green.svg" alt="Docker"></a> -->
-  
-  <br/>
-  
-  <p>
-    Record system audio, transcribe with Whisper, diarize speakers, and chat with your meeting notes using local LLMs.
-    <br />
-    <strong>All running on your own hardware.</strong>
-  </p>
-</div>
+    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; margin-right: 10px;"/>Nojoin</h1>
+      <p>
+          <strong>Self-Hosted Meeting Intelligence. Privacy First.</strong>
+            </p>
+
+<!-- Screenshot 1 -->
+![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
 
 ---
 
-<!-- Screenshot Placeholder -->
-![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
-
 ## Why Nojoin?
 
-Most meeting assistants require you to upload sensitive business conversations to the cloud. Nojoin is different.
+Most meeting assistants require you to invite them to join your meetings or upload sensitive business conversations to the cloud. Nojoin is different.
 
 - 🔒 **100% Private:** Audio and transcripts never leave your server (unless you want them to for LLM processing).
 - 🚀 **Unlimited:** No monthly limits on recording minutes.
 - 🧠 **Smart:** Uses OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
 - 💬 **Interactive:** Chat with your meetings using ChatGPT, Claude, Gemini, or Ollama.
+- ✨ **Best of All:** Nojoin doesn't need to join awkwardly on your meetings.
 
 ## ⚡ Quick Start
 

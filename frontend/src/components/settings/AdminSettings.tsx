@@ -123,7 +123,7 @@ export default function AdminSettings() {
               placeholder="Username"
               value={newUser.username}
               onChange={e => setNewUser({...newUser, username: e.target.value})}
-              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
+              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
             <input
@@ -131,7 +131,7 @@ export default function AdminSettings() {
               type="password"
               value={newUser.password}
               onChange={e => setNewUser({...newUser, password: e.target.value})}
-              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
+              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
             <div className="flex items-center gap-2">
@@ -140,7 +140,7 @@ export default function AdminSettings() {
                 id="is_superuser"
                 checked={newUser.is_superuser}
                 onChange={e => setNewUser({...newUser, is_superuser: e.target.checked})}
-                className="rounded bg-white dark:bg-gray-900 border-gray-400 dark:border-gray-700"
+                className="rounded bg-white dark:bg-gray-900 border-gray-400 dark:border-gray-600"
               />
               <label htmlFor="is_superuser" className="text-sm text-gray-700 dark:text-gray-300">Is Admin?</label>
             </div>
@@ -152,7 +152,7 @@ export default function AdminSettings() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg border border-gray-400 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800/50 rounded-lg border border-gray-400 dark:border-gray-600 overflow-hidden">
         <table className="w-full text-left text-sm text-gray-700 dark:text-gray-400">
           <thead className="bg-gray-100 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200 uppercase font-medium">
             <tr>
@@ -163,11 +163,11 @@ export default function AdminSettings() {
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-400 dark:divide-gray-700">
+          <tbody className="divide-y divide-gray-400 dark:divide-gray-600">
             {loading ? (
               <tr><td colSpan={5} className="p-4 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
             ) : users.map(user => (
-              <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+              <tr key={user.id} className="hover:bg-gray-100 dark:hover:bg-gray-700/30">
                 <td className="px-4 py-3">{user.id}</td>
                 
                 {/* Username */}

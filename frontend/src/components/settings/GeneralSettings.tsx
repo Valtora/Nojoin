@@ -58,7 +58,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
           <div className="max-w-2xl space-y-4">
             
             {/* VAD Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1"><Mic className="w-5 h-5 text-blue-500" /></div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
@@ -75,7 +75,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
             </div>
 
             {/* Diarization Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1"><Users className="w-5 h-5 text-purple-500" /></div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
@@ -92,7 +92,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
             </div>
 
             {/* Title Inference Toggle */}
-            <div className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col gap-2 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="flex items-start gap-3">
                 <div className="mt-1"><Type className="w-5 h-5 text-green-500" /></div>
                 <div className="flex-1">
@@ -111,7 +111,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
 
               {/* Sub-toggle for Short Titles */}
               {settings.auto_generate_title !== false && (
-                <div className="ml-9 pl-3 border-l-2 border-gray-200 dark:border-gray-700">
+                <div className="ml-9 pl-3 border-l-2 border-gray-300 dark:border-gray-600">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Prefer Short Titles</label>
                     <Switch
@@ -127,7 +127,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
             </div>
 
             {/* Speaker Inference Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1"><Brain className="w-5 h-5 text-pink-500" /></div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
@@ -144,7 +144,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '' }
             </div>
 
             {/* Notes Generation Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1"><FileText className="w-5 h-5 text-yellow-500" /></div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
