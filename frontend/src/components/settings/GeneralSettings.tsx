@@ -115,7 +115,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
                   />
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Distinguishes between different speakers (e.g., "Speaker 1", "Speaker 2"). Disable this for single-speaker recordings to speed up processing.
+                  Distinguishes between different speakers (e.g., &quot;Speaker 1&quot;, &quot;Speaker 2&quot;). Disable this for single-speaker recordings to speed up processing.
                 </p>
               </div>
             </div>
@@ -167,7 +167,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
                   />
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Uses the LLM to infer real names (e.g., "John", "Interviewer") from context and replaces generic labels like "Speaker 1".
+                  Uses the LLM to infer real names (e.g., &quot;John&quot;, &quot;Interviewer&quot;) from context and replaces generic labels like &quot;Speaker 1&quot;.
                 </p>
               </div>
             </div>
@@ -203,7 +203,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
               <div>
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white">Restart Welcome Tour</h4>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Reset the "Welcome to Nojoin" tour and the transcript walkthrough.
+                  Reset the &quot;Welcome to Nojoin&quot; tour and the transcript walkthrough.
                 </p>
               </div>
               <button
@@ -219,7 +219,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
               <div>
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white">Re-create Demo Meeting</h4>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  If you deleted the "Welcome to Nojoin" meeting, this will create it again.
+                  If you deleted the &quot;Welcome to Nojoin&quot; meeting, this will create it again.
                 </p>
               </div>
               <button

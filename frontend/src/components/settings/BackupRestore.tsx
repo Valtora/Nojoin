@@ -9,6 +9,7 @@ export default function BackupRestore() {
   const [importing, setImporting] = useState(false);
   const [clearExisting, setClearExisting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isValidZip, setIsValidZip] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const handleExport = async () => {
@@ -88,8 +89,28 @@ export default function BackupRestore() {
                 <input
                   type="file"
                   accept=".zip"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-200"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    if (!f) {
+                      setSelectedFile(null);
+                      setIsValidZip(false);
+                      return;
+                    }
+
+                    // Validate extension and basic MIME type
+                    const nameValid = f.name.toLowerCase().endsWith('.zip');
+                    const typeValid = !f.type || f.type === 'application/zip' || f.type === 'application/x-zip-compressed';
+
+                    if (nameValid && typeValid) {
+                      setSelectedFile(f);
+                      setIsValidZip(true);
+                    } else {
+                      setSelectedFile(null);
+                      setIsValidZip(false);
+                      setMessage({ type: 'error', text: 'Please select a valid .zip backup file.' });
+                    }
+                  }}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100 dark:file:bg-gray-700 dark:file:text-gray-200"
                 />
               </div>
 
@@ -108,7 +129,7 @@ export default function BackupRestore() {
 
               <button
                 onClick={handleImport}
-                disabled={!selectedFile || importing}
+                disabled={!isValidZip || importing}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
               >
                 {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
