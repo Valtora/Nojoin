@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getSettings, updateSettings, getUserMe } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
-import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield } from 'lucide-react';
+import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield, Mail, Users } from 'lucide-react';
 import { getMatchScore } from '@/lib/searchUtils';
 import { TAB_KEYWORDS } from './keywords';
 import GeneralSettings from './GeneralSettings';
@@ -12,9 +12,11 @@ import AudioSettings from './AudioSettings';
 import SystemSettings from './SystemSettings';
 import AccountSettings from './AccountSettings';
 import AdminSettings from './AdminSettings';
+import InvitesTab from './InvitesTab';
+import UsersTab from './UsersTab';
 import { useNotificationStore } from '@/lib/notificationStore';
 
-type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin';
+type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin' | 'invites' | 'users';
 
 interface CompanionConfig {
   api_port: number;
@@ -35,10 +37,12 @@ export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
   
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstLoad = useRef(true);
+  const lastSavedState = useRef<string>('');
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
@@ -51,6 +55,8 @@ export default function SettingsPage() {
       system: getMatchScore(searchQuery, TAB_KEYWORDS.system),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
       admin: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.admin) : 1,
+      invites: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.invites) : 1,
+      users: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.users) : 1,
     };
 
     return matches;
@@ -94,6 +100,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const load = async () => {
+      let currentSettings = {};
+      let currentCompanionConfig: CompanionConfig | null = null;
+      let currentInputDevice: string | null = null;
+      let currentOutputDevice: string | null = null;
+
       try {
         const [settingsData, userData] = await Promise.all([
           getSettings(),
@@ -103,7 +114,9 @@ export default function SettingsPage() {
         // Ensure settingsData is an object (API might return null)
         const safeSettings = settingsData || {};
         setSettings(safeSettings);
+        currentSettings = safeSettings;
         setIsAdmin(userData.is_superuser);
+        setUserId(userData.id);
 
         // Try to load companion config (always at localhost:12345)
         try {
@@ -111,6 +124,7 @@ export default function SettingsPage() {
             if (res.ok) {
                 const companionData: CompanionConfig = await res.json();
                 setCompanionConfig(companionData);
+                currentCompanionConfig = companionData;
             }
             
             // Fetch available devices
@@ -120,6 +134,8 @@ export default function SettingsPage() {
                 setCompanionDevices(devicesData);
                 setSelectedInputDevice(devicesData.selected_input);
                 setSelectedOutputDevice(devicesData.selected_output);
+                currentInputDevice = devicesData.selected_input;
+                currentOutputDevice = devicesData.selected_output;
             }
         } catch (e) {
             console.error("Failed to load companion config/devices", e);
@@ -128,6 +144,14 @@ export default function SettingsPage() {
       } catch (e) {
         console.error("Failed to load settings", e);
       }
+
+      // Update last saved state to prevent auto-save on load
+      lastSavedState.current = JSON.stringify({
+        settings: currentSettings,
+        companionApiPort: currentCompanionConfig?.api_port,
+        selectedInputDevice: currentInputDevice,
+        selectedOutputDevice: currentOutputDevice
+      });
 
       setLoading(false);
     };
@@ -160,6 +184,14 @@ export default function SettingsPage() {
           });
       }
 
+      // Update last saved state
+      lastSavedState.current = JSON.stringify({
+        settings,
+        companionApiPort: companionConfig?.api_port,
+        selectedInputDevice,
+        selectedOutputDevice
+      });
+
       console.log("Settings saved successfully");
       addNotification({ type: 'success', message: 'Settings saved successfully' });
     } catch (e) {
@@ -176,6 +208,17 @@ export default function SettingsPage() {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
       return;
+    }
+
+    const currentState = JSON.stringify({
+        settings,
+        companionApiPort: companionConfig?.api_port,
+        selectedInputDevice,
+        selectedOutputDevice
+    });
+
+    if (currentState === lastSavedState.current) {
+        return;
     }
 
     if (saveTimeoutRef.current) {
@@ -204,6 +247,8 @@ export default function SettingsPage() {
 
     const aiTab = { id: 'ai', label: 'AI Services', icon: Cpu };
     const adminTab = { id: 'admin', label: 'Admin Panel', icon: Shield };
+    const invitesTab = { id: 'invites', label: 'Invites', icon: Mail };
+    // Users tab removed as per feedback - consolidated into Admin Panel
 
     if (isAdmin) {
       // Insert AI tab after Account (index 1)
@@ -215,6 +260,7 @@ export default function SettingsPage() {
       
       return [
         ...tabsWithAI,
+        invitesTab,
         adminTab,
       ];
     }
@@ -309,11 +355,13 @@ export default function SettingsPage() {
             <div className="max-w-4xl mx-auto">
               {activeTab === 'account' && <AccountSettings />}
               {activeTab === 'admin' && isAdmin && <AdminSettings />}
+              {activeTab === 'invites' && isAdmin && <InvitesTab />}
               {activeTab === 'general' && (
                 <GeneralSettings 
                   settings={settings} 
                   onUpdate={setSettings} 
                   searchQuery={searchQuery} 
+                  userId={userId}
                 />
               )}
               {activeTab === 'ai' && isAdmin && (
@@ -345,6 +393,7 @@ export default function SettingsPage() {
                   companionConfig={companionConfig}
                   onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
                   searchQuery={searchQuery}
+                  isAdmin={isAdmin}
                 />
               )}
             </div>

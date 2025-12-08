@@ -14,6 +14,35 @@ export enum ClientStatus {
   IDLE = "IDLE",
 }
 
+export enum UserRole {
+  OWNER = 'owner',
+  ADMIN = 'admin',
+  USER = 'user',
+}
+
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  role: UserRole;
+  force_password_change: boolean;
+}
+
+export interface Invitation {
+  id: number;
+  code: string;
+  role: UserRole;
+  expires_at?: string;
+  max_uses?: number;
+  used_count: number;
+  is_revoked: boolean;
+  created_by_id: number;
+  link: string;
+  users: string[];
+}
+
 export interface BaseDBModel {
   id: number;
   created_at: string;
@@ -133,6 +162,18 @@ export interface VoiceprintApplyResult {
   has_voiceprint: boolean;
   matched_speaker: { id: number; name: string } | null;
   message: string | null;
+}
+
+export interface DownloadProgress {
+  status: string;
+  progress: number;
+  model_name: string;
+  file_name: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  in_progress: boolean;
+  message?: string;
+  stage?: string;
 }
 
 export interface BatchVoiceprintResult {

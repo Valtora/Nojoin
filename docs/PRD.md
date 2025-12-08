@@ -55,12 +55,22 @@ A lightweight, cross-platform system tray application responsible for audio capt
 *   **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 *   **Authentication:** JWT-based authentication for API access.
 *   **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
-*   **Authorization:** Strict ownership checks ensure users can only access their own data.
+*   **Authorization:** Role-based access control (Owner/Admin/User) and strict ownership checks ensure users can only access their own data.
 *   **CORS & Remote Access:**
     *   **CORS:** Restricted to allowed origins. Configurable via `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
     *   **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
 
-### 2.5 Accessibility & Design System
+### 2.5 User Management & Invitations
+*   **Role-Based Access Control (RBAC):**
+    *   **Owner:** Full system access, including server settings and user management.
+    *   **Admin:** Can manage users and create invitations, but cannot modify critical server settings.
+    *   **User:** Standard access to personal recordings and settings.
+*   **Invitation System:**
+    *   **Invite Links:** Admins can generate unique, time-limited invite links.
+    *   **Management:** Dedicated UI for tracking and revoking active invitations.
+    *   **Registration:** Public registration page gated by valid invite codes.
+
+### 2.6 Accessibility & Design System
 *   **Standards:** Adheres to WCAG 2.1 AA standards for contrast and accessibility.
 *   **Color Palette:**
     *   **Primary Action:** Orange-600 (`#ea580c`) for buttons and active states to ensure sufficient contrast against white backgrounds.

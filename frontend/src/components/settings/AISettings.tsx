@@ -43,7 +43,9 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
   const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
-    getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
+    if (settings.whisper_model_size) {
+      getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
+    }
   }, [settings.whisper_model_size]);
 
   // Fetch models when provider or key changes (if valid)
@@ -110,7 +112,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                 setAvailableModels(modelsRes.models);
             }
         }
-        setValidationMsg({type: 'success', msg: res.message, provider});
+        setValidationMsg({type: 'success', msg: res.message || "Validation successful", provider});
     } catch (e: any) {
         setValidationMsg({type: 'error', msg: e.response?.data?.detail || e.message, provider});
     } finally {
@@ -200,7 +202,9 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
   };
 
   const refreshStatus = () => {
-      getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
+      if (settings.whisper_model_size) {
+        getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
+      }
   };
 
 

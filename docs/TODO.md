@@ -1,14 +1,9 @@
 # Nojoin To-Do List
 
-After the colons I will provide a list of tasks/instructions that need to be completed. Read completely (not just first 100 lines) the files in the docs directory (except the TODO.md file) to get an understanding of the project. Present a plan for approval before making any changes:
+After the colons I will provide a list of tasks/instructions that need to be completed. Now read completely (not just first 100 lines) the following files in the /docs directory to get an understanding of the project: AGENTS.md, DEPLOYMENT.md, PRD.md, and USAGE.md. Present a plan for approval before making any changes:
 
-## Design and Implement a Robust, Modern Invitation System for Admin Users
-- Allow admin users to invite others by creating special invite links they can distribute.
-- The link management system should be powerful, the admin should (via a dedicated invite configuration modal) be able to configure a link to expire (in days), toggle whether it is reusable or just valid on a one-link-one-user basis, etc.
-- Rather than implementing this under the 'Admin Panel', implement a new 'User Management' page under Settings, visible and editable only to admins.
-- Keep the Admin Panel for future use.
-- The 'User Management' page should also allow admins to view and manage all users, including their roles and permissions.
-- We should also implement a better permission hierarchy system. There should be one 'Owner' that was the user that completes the setup and provided the API keys, this is the absolute owner of the system. Then there should be 'admins' that can be designated by the 'Owner'. This is a simple three tier system. Users cannot acccess admin settings and cannot manage other users. Admins can access admin settings and manage other users, except other admins, and except the Owner.
+## Backup/Restore System
+- 
 
 ## Implement Robust Test Suites
 - Develop comprehensive unit and integration tests for all major components of Nojoin (api, frontend, worker, db, redis).

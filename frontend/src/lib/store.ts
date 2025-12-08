@@ -28,10 +28,10 @@ interface NavigationState {
   clearSelection: () => void;
 
     // Tour State
-  hasSeenTour: boolean;
-  setHasSeenTour: (seen: boolean) => void;
-  hasSeenTranscriptTour: boolean;
-  setHasSeenTranscriptTour: (seen: boolean) => void;
+  hasSeenTour: Record<number, boolean>;
+  setHasSeenTour: (userId: number, seen: boolean) => void;
+  hasSeenTranscriptTour: Record<number, boolean>;
+  setHasSeenTranscriptTour: (userId: number, seen: boolean) => void;
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -72,10 +72,14 @@ export const useNavigationStore = create<NavigationState>()(
       clearSelection: () => set({ selectedRecordingIds: [] }),
 
       // Tour State
-      hasSeenTour: false,
-      setHasSeenTour: (seen) => set({ hasSeenTour: seen }),
-      hasSeenTranscriptTour: false,
-      setHasSeenTranscriptTour: (seen) => set({ hasSeenTranscriptTour: seen }),
+      hasSeenTour: {},
+      setHasSeenTour: (userId, seen) => set((state) => ({ 
+        hasSeenTour: { ...state.hasSeenTour, [userId]: seen } 
+      })),
+      hasSeenTranscriptTour: {},
+      setHasSeenTranscriptTour: (userId, seen) => set((state) => ({ 
+        hasSeenTranscriptTour: { ...state.hasSeenTranscriptTour, [userId]: seen } 
+      })),
     }),
     {
       name: 'navigation-storage',

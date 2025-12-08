@@ -3,27 +3,21 @@ import { getUsers, createUser, deleteUser, updateUser } from '@/lib/api';
 import { Loader2, Shield, Trash2, UserPlus, Edit2, X, Check } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import ConfirmationModal from '../ConfirmationModal';
-
-interface UserData {
-  id: number;
-  email: string;
-  username: string;
-  is_active: boolean;
-  is_superuser: boolean;
-}
+import { User } from '@/types';
 
 export default function AdminSettings() {
-  const [users, setUsers] = useState<UserData[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotificationStore();
   
   // Create User State
   const [isCreating, setIsCreating] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', is_superuser: false });
+  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'user' });
 
   // Edit User State
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<Partial<UserData>>({});
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState<Partial<User>>({});
 
   // Delete User State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -52,7 +46,7 @@ export default function AdminSettings() {
       await createUser(newUser);
       addNotification({ message: 'User created successfully', type: 'success' });
       setIsCreating(false);
-      setNewUser({ username: '', password: '', is_superuser: false });
+      setNewUser({ username: '', email: '', password: '', role: 'user' });
       fetchUsers();
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to create user', type: 'error' });
@@ -78,21 +72,21 @@ export default function AdminSettings() {
     }
   };
 
-  const startEdit = (user: UserData) => {
-    setEditingId(user.id);
-    setEditForm({ username: user.username, is_superuser: user.is_superuser, is_active: user.is_active });
+  const startEdit = (user: User) => {
+    setEditingUser(user);
+    setEditForm({ username: user.username, role: user.role, is_active: user.is_active });
+    setEditModalOpen(true);
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
-
-  const saveEdit = async (id: number) => {
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    
     try {
-      await updateUser(id, editForm);
+      await updateUser(editingUser.id, editForm);
       addNotification({ message: 'User updated successfully', type: 'success' });
-      setEditingId(null);
+      setEditModalOpen(false);
+      setEditingUser(null);
       fetchUsers();
     } catch {
       addNotification({ message: 'Failed to update user', type: 'error' });
@@ -127,6 +121,14 @@ export default function AdminSettings() {
               required
             />
             <input
+              placeholder="Email"
+              type="email"
+              value={newUser.email}
+              onChange={e => setNewUser({...newUser, email: e.target.value})}
+              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
+              required
+            />
+            <input
               placeholder="Password"
               type="password"
               value={newUser.password}
@@ -134,16 +136,15 @@ export default function AdminSettings() {
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="is_superuser"
-                checked={newUser.is_superuser}
-                onChange={e => setNewUser({...newUser, is_superuser: e.target.checked})}
-                className="rounded bg-white dark:bg-gray-900 border-gray-400 dark:border-gray-600"
-              />
-              <label htmlFor="is_superuser" className="text-sm text-gray-700 dark:text-gray-300">Is Admin?</label>
-            </div>
+            <select
+              value={newUser.role}
+              onChange={e => setNewUser({...newUser, role: e.target.value})}
+              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
             <div className="md:col-span-2 flex justify-end gap-2">
               <button type="button" onClick={() => setIsCreating(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white text-sm px-3 py-1">Cancel</button>
               <button type="submit" className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm">Create User</button>
@@ -172,68 +173,96 @@ export default function AdminSettings() {
                 
                 {/* Username */}
                 <td className="px-4 py-3">
-                  {editingId === user.id ? (
-                    <input 
-                      value={editForm.username} 
-                      onChange={e => setEditForm({...editForm, username: e.target.value})}
-                      className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-2 py-1 w-full text-gray-900 dark:text-white"
-                    />
-                  ) : user.username}
+                  {user.username}
                 </td>
 
                 {/* Role */}
                 <td className="px-4 py-3">
-                  {editingId === user.id ? (
-                    <label className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={editForm.is_superuser} 
-                        onChange={e => setEditForm({...editForm, is_superuser: e.target.checked})}
-                      /> Admin
-                    </label>
-                  ) : (
-                    <span className={`px-2 py-0.5 rounded text-xs ${user.is_superuser ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
-                      {user.is_superuser ? 'Admin' : 'User'}
-                    </span>
-                  )}
+                  <span className={`px-2 py-0.5 rounded text-xs ${
+                    user.role === 'owner' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300' :
+                    user.role === 'admin' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300' : 
+                    'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                  }`}>
+                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                  </span>
                 </td>
 
                 {/* Status */}
                 <td className="px-4 py-3">
-                   {editingId === user.id ? (
-                    <label className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={editForm.is_active} 
-                        onChange={e => setEditForm({...editForm, is_active: e.target.checked})}
-                      /> Active
-                    </label>
-                  ) : (
-                    <span className={`px-2 py-0.5 rounded text-xs ${user.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'}`}>
-                      {user.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  )}
+                  <span className={`px-2 py-0.5 rounded text-xs ${user.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'}`}>
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </span>
                 </td>
 
                 {/* Actions */}
                 <td className="px-4 py-3 text-right flex justify-end gap-2">
-                  {editingId === user.id ? (
-                    <>
-                      <button onClick={() => saveEdit(user.id)} className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"><Check className="w-4 h-4" /></button>
-                      <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"><X className="w-4 h-4" /></button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => startEdit(user)} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"><Edit2 className="w-4 h-4" /></button>
-                      <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
-                    </>
-                  )}
+                  <button onClick={() => startEdit(user)} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"><Edit2 className="w-4 h-4" /></button>
+                  <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Edit User Modal */}
+      {editModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Edit User</h3>
+            <form onSubmit={saveEdit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                <input
+                  value={editForm.username || ''}
+                  onChange={e => setEditForm({...editForm, username: e.target.value})}
+                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                <select
+                  value={editForm.role || 'user'}
+                  onChange={e => setEditForm({...editForm, role: e.target.value as any})}
+                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={editForm.is_active || false}
+                  onChange={e => setEditForm({...editForm, is_active: e.target.checked})}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="is_active" className="text-sm font-medium text-gray-700 dark:text-gray-300">Active Account</label>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button 
+                  type="button" 
+                  onClick={() => setEditModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <ConfirmationModal
         isOpen={deleteModalOpen}

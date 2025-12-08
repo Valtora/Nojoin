@@ -40,8 +40,8 @@ class GlobalSpeakerWithCount(GlobalSpeakerRead):
 class RecordingSpeaker(BaseDBModel, table=True):
     __tablename__ = "recording_speakers"
     
-    recording_id: int = Field(foreign_key="recordings.id", sa_type=BigInteger)
-    global_speaker_id: Optional[int] = Field(default=None, foreign_key="global_speakers.id", sa_type=BigInteger)
+    recording_id: int = Field(sa_column=Column(BigInteger, ForeignKey("recordings.id", ondelete="CASCADE")))
+    global_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("global_speakers.id", ondelete="SET NULL")))
     
     diarization_label: str # e.g. SPEAKER_00
     

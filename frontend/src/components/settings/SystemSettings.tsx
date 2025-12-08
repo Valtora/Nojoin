@@ -10,15 +10,17 @@ interface SystemSettingsProps {
   companionConfig?: { api_port: number; local_port: number } | null;
   onUpdateCompanionConfig?: (config: { api_port: number }) => void;
   searchQuery?: string;
+  isAdmin?: boolean;
 }
 
 export default function SystemSettings({ 
   companionConfig, 
   onUpdateCompanionConfig, 
-  searchQuery = '' 
+  searchQuery = '',
+  isAdmin = false
 }: SystemSettingsProps) {
-  const showInfrastructure = fuzzyMatch(searchQuery, ['infrastructure', 'worker', 'redis', 'url', 'broker', 'connection']);
-  const showCompanion = fuzzyMatch(searchQuery, ['companion', 'app', 'backend', 'api', 'port', 'address']);
+  const showInfrastructure = isAdmin && fuzzyMatch(searchQuery, ['infrastructure', 'worker', 'redis', 'url', 'broker', 'connection']);
+  const showCompanion = isAdmin && fuzzyMatch(searchQuery, ['companion', 'app', 'backend', 'api', 'port', 'address']);
   const showBackup = fuzzyMatch(searchQuery, ['backup', 'restore', 'export', 'import', 'data', 'zip']);
 
   if (!showInfrastructure && !showCompanion && !showBackup && searchQuery) {

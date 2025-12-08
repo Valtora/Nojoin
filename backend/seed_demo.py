@@ -13,7 +13,7 @@ from backend.utils.path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
-async def seed_demo_data():
+async def seed_demo_data(user_id: int = None, force: bool = False):
     """
     Seeds the database with a demo recording if it doesn't exist.
     Creates a silent WAV file and populates DB with rich metadata.
@@ -21,49 +21,64 @@ async def seed_demo_data():
     logger.info("Checking for demo data...")
     
     # Ensure recordings directory exists
-    # In docker, this is mapped to /app/recordings
-    recordings_dir = "/app/recordings"
+    pm = PathManager()
+    recordings_dir = pm.recordings_directory
     if not os.path.exists(recordings_dir):
         os.makedirs(recordings_dir, exist_ok=True)
         
-    audio_filename = "demo_welcome.wav"
-    audio_path = os.path.join(recordings_dir, audio_filename)
+    # Use a unique filename per user to avoid unique constraint violations on audio_path
+    # If user_id is not provided (e.g. initial setup), we might use a default, 
+    # but usually user_id is provided or fetched.
+    # We'll fetch the user first to get the ID if not provided.
     
-    # Create silent WAV file if it doesn't exist
-    if not os.path.exists(audio_path):
-        logger.info(f"Generating silent demo audio at {audio_path}")
-        try:
-            with wave.open(audio_path, 'wb') as wav_file:
-                wav_file.setnchannels(1) # Mono
-                wav_file.setsampwidth(2) # 16-bit
-                wav_file.setframerate(16000) # 16kHz
-                # Generate 30 seconds of silence
-                n_frames = 16000 * 30
-                wav_file.writeframes(b'\x00' * n_frames * 2)
-        except Exception as e:
-            logger.error(f"Failed to create demo audio file: {e}")
-            return
-
     async with async_session_maker() as session:
-        # Get the first user (admin) to assign ownership
-        user_statement = select(User).limit(1)
-        user_result = await session.execute(user_statement)
-        admin_user = user_result.scalars().first()
+        target_user = None
+        if user_id:
+            target_user = await session.get(User, user_id)
+        else:
+            # Get the first user (admin) to assign ownership
+            user_statement = select(User).limit(1)
+            user_result = await session.execute(user_statement)
+            target_user = user_result.scalars().first()
         
-        if not admin_user:
+        if not target_user:
             logger.error("Cannot seed demo data: No users found.")
             return
 
-        # Check if demo recording exists
-        statement = select(Recording).where(Recording.name == "Welcome to Nojoin")
+        audio_filename = f"demo_welcome_{target_user.id}.wav"
+        audio_path = os.path.join(recordings_dir, audio_filename)
+        
+        # Create silent WAV file if it doesn't exist
+        if not os.path.exists(audio_path):
+            logger.info(f"Generating silent demo audio at {audio_path}")
+            try:
+                with wave.open(audio_path, 'wb') as wav_file:
+                    wav_file.setnchannels(1) # Mono
+                    wav_file.setsampwidth(2) # 16-bit
+                    wav_file.setframerate(16000) # 16kHz
+                    # Generate 30 seconds of silence
+                    n_frames = 16000 * 30
+                    wav_file.writeframes(b'\x00' * n_frames * 2)
+            except Exception as e:
+                logger.error(f"Failed to create demo audio file: {e}")
+                return
+
+        # Check if demo recording exists for this user
+        statement = select(Recording).where(Recording.name == "Welcome to Nojoin", Recording.user_id == target_user.id)
         results = await session.execute(statement)
         existing_recording = results.scalars().first()
         
         if existing_recording:
-            logger.info("Demo recording already exists.")
-            return
+            if force:
+                logger.info(f"Force re-seeding: Deleting existing demo recording for user {target_user.username}...")
+                await session.delete(existing_recording)
+                await session.commit()
+                # Proceed to create new data
+            else:
+                logger.info(f"Demo recording already exists for user {target_user.username}.")
+                return
 
-        logger.info("Creating demo recording...")
+        logger.info(f"Creating demo recording for user {target_user.username}...")
         
         # 1. Create Recording
         recording = Recording(
@@ -74,7 +89,7 @@ async def seed_demo_data():
             status=RecordingStatus.PROCESSED,
             is_archived=False,
             is_deleted=False,
-            user_id=admin_user.id,
+            user_id=target_user.id,
             # Use a fixed date for consistency
             created_at=datetime.now() - timedelta(days=1) 
         )
@@ -158,7 +173,7 @@ The team gathered to demonstrate the core features of the Nojoin platform, highl
         # 4. Create Chat Messages (Optional)
         chat_msg = ChatMessage(
             recording_id=recording.id,
-            user_id=admin_user.id,
+            user_id=target_user.id,
             role="user",
             content="What are the key features mentioned?"
         )
@@ -166,7 +181,7 @@ The team gathered to demonstrate the core features of the Nojoin platform, highl
         
         chat_response = ChatMessage(
             recording_id=recording.id,
-            user_id=admin_user.id,
+            user_id=target_user.id,
             role="assistant",
             content="The key features mentioned are local GPU processing, a user-friendly interface for transcript editing, speaker management tools, and AI-generated notes and action items."
         )

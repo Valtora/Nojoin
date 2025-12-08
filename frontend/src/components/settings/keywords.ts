@@ -24,6 +24,14 @@ export const ADMIN_KEYWORDS = [
   'admin', 'users', 'manage', 'create user', 'delete user', 'role', 'superuser'
 ];
 
+export const INVITES_KEYWORDS = [
+  'invite', 'invitation', 'link', 'code', 'join', 'register', 'create invite', 'revoke'
+];
+
+export const USERS_KEYWORDS = [
+  'users', 'manage', 'role', 'admin', 'owner', 'delete', 'permission', 'active', 'inactive'
+];
+
 export const TAB_KEYWORDS: Record<string, string[]> = {
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
@@ -31,4 +39,6 @@ export const TAB_KEYWORDS: Record<string, string[]> = {
   system: SYSTEM_KEYWORDS,
   account: ACCOUNT_KEYWORDS,
   admin: ADMIN_KEYWORDS,
+  invites: INVITES_KEYWORDS,
+  users: USERS_KEYWORDS,
 };

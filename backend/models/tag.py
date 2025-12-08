@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
 class RecordingTag(BaseDBModel, table=True):
     __tablename__ = "recording_tags"
-    recording_id: int = Field(foreign_key="recordings.id", sa_type=BigInteger)
-    tag_id: int = Field(foreign_key="tags.id", sa_type=BigInteger)
+    recording_id: int = Field(sa_column=Column(BigInteger, ForeignKey("recordings.id", ondelete="CASCADE")))
+    tag_id: int = Field(sa_column=Column(BigInteger, ForeignKey("tags.id", ondelete="CASCADE")))
     
     recording: "Recording" = Relationship(back_populates="tags")
     tag: "Tag" = Relationship(back_populates="recordings")

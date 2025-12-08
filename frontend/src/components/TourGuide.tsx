@@ -1,20 +1,28 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import '@/app/driver-theme.css';
 import { useNavigationStore } from '@/lib/store';
 import { dashboardSteps, transcriptSteps } from '@/lib/tour-config';
+import { getUserMe } from '@/lib/api';
 
 export default function TourGuide() {
   const pathname = usePathname();
   const { hasSeenTour, setHasSeenTour, hasSeenTranscriptTour, setHasSeenTranscriptTour } = useNavigationStore();
+  const [userId, setUserId] = useState<number | null>(null);
 
   useEffect(() => {
+    getUserMe().then(user => setUserId(user.id)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
     // Dashboard Tour
-    if (pathname === '/' && !hasSeenTour) {
+    if (pathname === '/' && !hasSeenTour[userId]) {
       const timer = setTimeout(() => {
         const driverObj = driver({
           showProgress: true,
@@ -24,7 +32,7 @@ export default function TourGuide() {
           prevBtnText: 'Previous',
           doneBtnText: 'Done',
           onDestroyed: () => {
-            setHasSeenTour(true);
+            setHasSeenTour(userId, true);
           },
         });
 
@@ -34,7 +42,7 @@ export default function TourGuide() {
     }
 
     // Transcript Tour
-    if (pathname?.startsWith('/recordings/') && !hasSeenTranscriptTour) {
+    if (pathname?.startsWith('/recordings/') && !hasSeenTranscriptTour[userId]) {
        const timer = setTimeout(() => {
         const driverObj = driver({
           showProgress: true,
@@ -44,7 +52,7 @@ export default function TourGuide() {
           prevBtnText: 'Previous',
           doneBtnText: 'Done',
           onDestroyed: () => {
-            setHasSeenTranscriptTour(true);
+            setHasSeenTranscriptTour(userId, true);
           },
         });
 
@@ -53,7 +61,7 @@ export default function TourGuide() {
       return () => clearTimeout(timer);
     }
 
-  }, [pathname, hasSeenTour, setHasSeenTour, hasSeenTranscriptTour, setHasSeenTranscriptTour]);
+  }, [pathname, hasSeenTour, setHasSeenTour, hasSeenTranscriptTour, setHasSeenTranscriptTour, userId]);
 
   return null;
 }

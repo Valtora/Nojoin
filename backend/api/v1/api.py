@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from backend.api.deps import get_current_user
-from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup
+from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup, invitations
 
 api_router = APIRouter()
 
@@ -17,7 +17,13 @@ api_router.include_router(
     users.router,
     prefix="/users",
     tags=["users"],
-    dependencies=[Depends(get_current_user)]
+    # Removed router-level dependency to allow public register endpoint
+)
+api_router.include_router(
+    invitations.router,
+    prefix="/invitations",
+    tags=["invitations"],
+    # Removed router-level dependency to allow public validate endpoint
 )
 api_router.include_router(
     recordings.router, 

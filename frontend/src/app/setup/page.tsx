@@ -132,7 +132,7 @@ export default function SetupPage() {
     try {
       // 1. Validate Key/URL
       const res = await validateLLM(formData.llm_provider, creds.key || '', undefined, creds.url);
-      setLlmValidationMsg({ valid: true, msg: res.message });
+      setLlmValidationMsg({ valid: true, msg: res.message || "Validation successful" });
       
       // 2. Fetch Models
       const modelsRes = await listModels(formData.llm_provider, creds.key || '', creds.url);
@@ -206,7 +206,7 @@ export default function SetupPage() {
     
     try {
       const res = await validateHF(formData.hf_token);
-      setHfValidationMsg({ valid: true, msg: res.message });
+      setHfValidationMsg({ valid: true, msg: res.message || "Validation successful" });
     } catch (err: any) {
       setHfValidationMsg({ valid: false, msg: err.response?.data?.detail || err.message });
     } finally {

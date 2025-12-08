@@ -651,6 +651,7 @@ export default function Sidebar() {
             <div>
               <Link 
                 href={`/recordings/${recording.id}`}
+                id={recording.name === "Welcome to Nojoin" ? "demo-recording-card" : undefined}
                 onClick={(e) => handleRecordingClick(e, recording, index)}
                 onContextMenu={(e) => handleContextMenu(e, recording)}
                 className={`block p-3 rounded-lg border transition-all shadow-sm ${

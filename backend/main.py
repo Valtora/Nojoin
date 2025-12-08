@@ -6,7 +6,7 @@ import os
 import time
 from sqlalchemy.exc import OperationalError
 from backend.core.audio_setup import setup_audio_environment
-from sqlmodel import SQLModel, Session, text
+from sqlmodel import SQLModel, Session, text, select
 from backend.core.db import sync_engine
 from backend.api.v1.api import api_router
 from backend.celery_app import celery_app
@@ -22,6 +22,33 @@ from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.models.chat import ChatMessage
+from backend.core.db import async_session_maker
+
+async def ensure_owner_exists():
+    """
+    Ensures that at least one user has the OWNER role.
+    If no owner exists, promotes the first user found.
+    """
+    async with async_session_maker() as session:
+        # Check if any owner exists
+        query = select(User).where(User.role == "owner")
+        result = await session.execute(query)
+        owner = result.scalar_one_or_none()
+        
+        if not owner:
+            print("No owner found. Promoting the first user to OWNER.")
+            # If no owner, promote the first user
+            query = select(User).order_by(User.id).limit(1)
+            result = await session.execute(query)
+            first_user = result.scalar_one_or_none()
+            
+            if first_user:
+                print(f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER")
+                first_user.role = "owner"
+                session.add(first_user)
+                await session.commit()
+            else:
+                print("No users found to promote.")
 
 def run_migrations():
     # Wait for DB to be ready
@@ -53,6 +80,7 @@ def run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_migrations()
+    await ensure_owner_exists()
     yield
 
 app = FastAPI(

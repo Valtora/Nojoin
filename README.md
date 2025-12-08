@@ -3,6 +3,7 @@
       <p>
           <strong>Self-Hosted Meeting Intelligence. Privacy First.</strong>
             </p>
+</div>
 
 <!-- Screenshot 1 -->
 ![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
@@ -46,6 +47,10 @@ Most meeting assistants require you to invite them to join your meetings or uplo
     *   **Global Speaker Library:** Centralized management of speaker identities across all recordings.
     *   **Full-Text Search:** Instantly find content across transcripts, titles, and notes.
     *   **Tagging:** Organize meetings with custom tags.
+*   **User Management & Security:**
+    *   **Role-Based Access:** Owner, Admin, and User roles with granular permissions.
+    *   **Invitation System:** Secure registration via invite links with expiration and usage limits.
+    *   **User Data:** Complete data cleanup on user deletion (files, database records, and logs).
 
 ## 🏗️ System Architecture
 
@@ -83,6 +88,27 @@ To use the "Chat with Meeting" and "Generate Notes" features, you need an API ke
 *   **Anthropic**
 *   **Google Gemini**
 *   **Ollama** (Local LLMs - no API key required, but requires setup)
+
+## 👥 User Management
+
+Nojoin includes a robust user management system designed for self-hosted environments.
+
+### Roles
+*   **Owner:** The first user created is automatically assigned the Owner role. Has full system access and cannot be deleted.
+*   **Admin:** Can manage users, create/revoke invites, and view system settings.
+*   **User:** Standard access to record and manage their own meetings.
+
+### Invitation System
+Registration is restricted to invited users only.
+1.  **Create Invite:** Admins generate invite links with specific roles (Admin/User), expiration dates, and usage limits.
+2.  **Revoke:** Invites can be revoked at any time to prevent further signups while keeping a record of the code.
+3.  **Delete:** Revoked invites can be permanently deleted from the system.
+
+### Data Cleanup
+When a user is deleted, Nojoin performs a **hard delete** of all associated data to ensure privacy:
+*   **Files:** Audio recordings and proxy files are physically removed from the disk.
+*   **Database:** User account, recordings, transcripts, chat history, and speaker profiles are cascaded and removed.
+*   **Anonymization:** Invitations created by the deleted user are preserved but anonymized (orphaned) to maintain invite code validity for other users.
 
 ## 🛠️ Installation & Setup
 

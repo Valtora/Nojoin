@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1` 
@@ -484,70 +484,101 @@ export const getTaskStatus = async (taskId: string): Promise<any> => {
   return response.data;
 };
 
+export const validateLLM = async (provider: string, apiKey: string, apiUrl?: string, model?: string): Promise<{ valid: boolean, message?: string, models?: string[] }> => {
+  const response = await api.post<{ valid: boolean, message?: string, models?: string[] }>('/setup/validate-llm', { provider, api_key: apiKey, api_url: apiUrl, model });
+  return response.data;
+};
+
+export const validateHF = async (token: string): Promise<{ valid: boolean, message?: string }> => {
+  const response = await api.post<{ valid: boolean, message?: string }>('/setup/validate-hf', { token });
+  return response.data;
+};
+
+export const getModelStatus = async (modelId: string): Promise<{ downloaded: boolean, size?: string }> => {
+  const response = await api.get<{ downloaded: boolean, size?: string }>(`/system/models/${modelId}`);
+  return response.data;
+};
+
+export const deleteModel = async (modelId: string): Promise<void> => {
+  await api.delete(`/system/models/${modelId}`);
+};
+
 // User Management
-export const getUsers = async (): Promise<any[]> => {
-  const response = await api.get<any[]>('/users/');
+export const getUsers = async (): Promise<User[]> => {
+  const response = await api.get<User[]>('/users/');
   return response.data;
 };
 
-export const createUser = async (data: any): Promise<any> => {
-  const response = await api.post('/users/', data);
+export const getUserMe = async (): Promise<User> => {
+  const response = await api.get<User>('/users/me');
   return response.data;
 };
 
-export const updateUser = async (id: number, data: any): Promise<any> => {
-  const response = await api.put(`/users/${id}`, data);
+export const updateUserMe = async (data: { email?: string, username?: string }): Promise<User> => {
+  const response = await api.put<User>('/users/me', data);
   return response.data;
 };
 
-export const deleteUser = async (id: number): Promise<any> => {
-  const response = await api.delete(`/users/${id}`);
+export const updatePasswordMe = async (data: { current_password: string, new_password: string }): Promise<void> => {
+  await api.post('/users/me/password', data);
+};
+
+export const createUser = async (data: { username: string, email: string, password: string, role: string }): Promise<User> => {
+  const response = await api.post<User>('/users/', data);
   return response.data;
 };
 
-export const updateUserMe = async (data: any): Promise<any> => {
-  const response = await api.put('/users/me', data);
+export const updateUser = async (userId: number, data: { username?: string, email?: string, password?: string, role?: string, is_active?: boolean }): Promise<User> => {
+  const response = await api.patch<User>(`/users/${userId}`, data);
   return response.data;
 };
 
-export const getUserMe = async (): Promise<any> => {
-  const response = await api.get('/users/me');
+export const updateUserRole = async (userId: number, role: string): Promise<User> => {
+  const response = await api.patch<User>(`/users/${userId}/role`, { role });
   return response.data;
 };
 
-export const updatePasswordMe = async (data: any): Promise<any> => {
-  const response = await api.put('/users/me/password', data);
+export const deleteUser = async (userId: number): Promise<User> => {
+  const response = await api.delete<User>(`/users/${userId}`);
   return response.data;
 };
 
-export const validateLLM = async (provider: string, apiKey?: string, model?: string, apiUrl?: string): Promise<{ valid: boolean, message: string, models?: string[] }> => {
-  const response = await api.post<{ valid: boolean, message: string, models?: string[] }>('/setup/validate-llm', { provider, api_key: apiKey, model, api_url: apiUrl });
+// Invitations
+export const getInvitations = async (): Promise<Invitation[]> => {
+  const response = await api.get<Invitation[]>('/invitations/');
   return response.data;
 };
 
-export const validateHF = async (token: string): Promise<{ valid: boolean, message: string }> => {
-  const response = await api.post<{ valid: boolean, message: string }>('/setup/validate-hf', { token });
+export const createInvitation = async (role: string, expires_in_days: number, max_uses: number): Promise<Invitation> => {
+  const response = await api.post<Invitation>('/invitations/', { role, expires_in_days, max_uses });
   return response.data;
 };
 
-export const getModelStatus = async (whisper_model_size?: string): Promise<any> => {
-  const response = await api.get('/system/models/status', { params: { whisper_model_size } });
+export const revokeInvitation = async (id: number): Promise<Invitation> => {
+  const response = await api.post<Invitation>(`/invitations/${id}/revoke`);
   return response.data;
 };
 
-export const deleteModel = async (modelName: string): Promise<void> => {
-  await api.delete(`/system/models/${modelName}`);
+export const deleteInvitation = async (id: number): Promise<Invitation> => {
+  const response = await api.delete<Invitation>(`/invitations/${id}`);
+  return response.data;
 };
 
-export interface DownloadProgress {
-  in_progress: boolean;
-  progress: number | null;
-  message: string | null;
-  speed: string | null;
-  eta: string | null;
-  status: 'downloading' | 'complete' | 'error' | null;
-  stage?: string | null;
-}
+export const validateInvitation = async (code: string): Promise<{ valid: boolean, role: string, inviter?: string }> => {
+  const response = await api.get<{ valid: boolean, role: string, inviter?: string }>(`/invitations/validate/${code}`);
+  return response.data;
+};
+
+export const registerUser = async (username: string, password: string, email: string | undefined | null, invite_code: string): Promise<User> => {
+  const payload = { 
+    username, 
+    password, 
+    invite_code, 
+    email: email || null 
+  };
+  const response = await api.post<User>('/users/register', payload);
+  return response.data;
+};
 
 export const getDownloadProgress = async (): Promise<DownloadProgress> => {
   const response = await api.get<DownloadProgress>('/system/download-progress');
@@ -678,6 +709,10 @@ export const importBackup = async (file: File, clearExisting: boolean): Promise<
       'Content-Type': 'multipart/form-data',
     },
   });
+};
+
+export const seedDemoData = async (): Promise<void> => {
+  await api.post('/system/seed-demo');
 };
 
 export default api;

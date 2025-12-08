@@ -12,6 +12,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
 
 # Import the database URL

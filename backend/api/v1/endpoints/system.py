@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from celery.result import AsyncResult
 
-from backend.api.deps import get_db
+from backend.api.deps import get_db, get_current_user
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
@@ -98,21 +98,12 @@ async def setup_system(
     await db.refresh(user)
     # Persist key system-wide settings so workers and other processes can access them
     try:
-        # Only persist a whitelist of system-level keys to avoid overwriting user-specific preferences
-        system_keys = ["llm_provider", "hf_token", "whisper_model_size", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ollama_api_url", "ollama_model", "gemini_model", "openai_model", "anthropic_model"]
-        system_settings = {k: v for k, v in settings.items() if k in system_keys}
-        config_manager.update_config(system_settings)
+        config_manager.update_config(settings)
     except Exception as e:
-        print(f"Failed to persist system settings: {e}")
+        # Log error but don't fail the request since DB is updated
+        print(f"Failed to update config file: {e}")
 
-    # Seed demo data on first setup
-    try:
-        await seed_demo_data()
-    except Exception as e:
-        print(f"Failed to seed demo data: {e}")
-
-    return {"message": "System initialized successfully"}
-    return {"message": "System initialized successfully"}
+    return user
 
 @router.post("/download-models")
 async def trigger_model_download(
@@ -234,3 +225,14 @@ async def delete_model_endpoint(
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/seed-demo")
+async def seed_demo(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Re-create the demo meeting for the current user if it doesn't exist.
+    """
+    if current_user.id:
+        await seed_demo_data(user_id=current_user.id, force=True)
+    return {"message": "Demo data seeding initiated"}
