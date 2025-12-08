@@ -17,6 +17,7 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag  # Import this to resolve the relationship
 from backend.models.user import User
+from backend.models.invitation import Invitation  # Import this to resolve the relationship
 from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
 # Heavy processing imports moved inside tasks to avoid loading torch in API

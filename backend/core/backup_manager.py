@@ -4,7 +4,8 @@ import os
 import shutil
 import tempfile
 import subprocess
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Type, Tuple
 from sqlmodel import select, SQLModel, delete
 from sqlalchemy import text
@@ -17,6 +18,8 @@ from backend.models.transcript import Transcript
 from backend.models.chat import ChatMessage
 from backend.utils.path_manager import PathManager
 from backend.utils.audio import ensure_ffmpeg_in_path
+
+logger = logging.getLogger(__name__)
 
 # Order matters for restoration
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
@@ -31,6 +34,34 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
 ]
 
 class BackupManager:
+    @staticmethod
+    def _get_app_version() -> str:
+        try:
+            path_manager = PathManager()
+            # Try to find VERSION file in docs folder relative to executable/project root
+            version_path = path_manager.executable_directory / "docs" / "VERSION"
+            if version_path.exists():
+                return version_path.read_text().strip()
+            return "0.0.0"
+        except Exception:
+            return "0.0.0"
+
+    @staticmethod
+    def _adapt_record(model_cls: Type[SQLModel], data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Adapts a record dictionary to match the current model schema.
+        Removes fields that no longer exist in the model.
+        """
+        # Get current field names
+        # SQLModel uses model_fields in Pydantic v2, __fields__ in v1
+        if hasattr(model_cls, "model_fields"):
+            current_fields = model_cls.model_fields.keys()
+        else:
+            current_fields = model_cls.__fields__.keys()
+            
+        # Filter data to only include fields that exist in the current model
+        return {k: v for k, v in data.items() if k in current_fields}
+
     @staticmethod
     def _compress_to_opus(input_path: str) -> str:
         """
@@ -128,6 +159,13 @@ class BackupManager:
                 if config_path.exists():
                     zipf.write(config_path, "config.json")
 
+                # 4. Add Backup Info
+                backup_info = {
+                    "version": BackupManager._get_app_version(),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                zipf.writestr("backup_info.json", json.dumps(backup_info, indent=2))
+
             return temp_zip.name
             
         except Exception as e:
@@ -147,6 +185,21 @@ class BackupManager:
         id_map: Dict[str, Dict[int, int]] = {name: {} for name, _ in MODELS}
 
         with zipfile.ZipFile(zip_path, 'r') as zipf:
+            # Check version compatibility
+            if "backup_info.json" in zipf.namelist():
+                try:
+                    info = json.loads(zipf.read("backup_info.json"))
+                    backup_version = info.get("version", "0.0.0")
+                    current_version = BackupManager._get_app_version()
+                    
+                    if backup_version != current_version:
+                        logger.info(f"Restoring backup from version {backup_version} to {current_version}")
+                        # Simple lexicographical check for now as a heuristic
+                        if backup_version > current_version:
+                            logger.warning(f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues.")
+                except Exception as e:
+                    logger.warning(f"Failed to read backup info: {e}")
+
             # 1. Clear Existing Data if requested
             if clear_existing:
                 # Clear DB
@@ -182,6 +235,9 @@ class BackupManager:
                     data = json.loads(zipf.read(f"{table_name}.json"))
                     
                     for item_data in data:
+                        # Adapt record to current schema (handle removed columns)
+                        item_data = BackupManager._adapt_record(model_cls, item_data)
+
                         old_id = item_data.get("id")
                         
                         # Handle Additive Logic (Remap IDs)
