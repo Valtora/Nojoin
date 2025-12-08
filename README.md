@@ -26,7 +26,7 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 2.  **Launch:** `docker compose up -d`
 3.  **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
-5.  **Companion App:** Download, install, and connect the companion app on client machines to start recording audio.
+5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio.
 
     *See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
 
