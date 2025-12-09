@@ -1,7 +1,7 @@
 <div align="center">
     <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <strong style="color: #F36012;">Nojoin</strong></h1>
         <p>
-           <strong>Self-Hosted Meeting Intelligence</strong>
+           <strong>A Self-Hosted Meeting Assistant</strong>
             </p>
 </div>
 
@@ -9,7 +9,6 @@
 ![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
 
 ---
-
 ## Why Nojoin?
 
 Most meeting assistants require you to invite them to join your meetings or upload sensitive business conversations to the cloud. Nojoin is different.
@@ -23,12 +22,14 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 ## ⚡ Quick Start
 
 1.  **Clone:** `git clone https://github.com/Valtora/Nojoin && cd Nojoin`
-2.  **Launch:** `docker compose up -d`
+2.  **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
 3.  **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
-5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio. *(macOS builds are currently paused)*.
+5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio.
 
-    *See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
+    - macOS builds are currently paused while we improve the user experience.
+
+    - See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
 
 ## ✨ Features
 
@@ -91,8 +92,8 @@ To enable speaker diarization (identifying who is speaking), you need a Hugging 
     *   [`pyannote/wespeaker-voxceleb-resnet34-LM`](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM)
 4.  Enter this token in the Nojoin **Settings > AI Settings**.
 
-### LLM Providers (Optional)
-To use the "Chat with Meeting", "Generate Notes", and other intelligence features, you need an API key from one of the supported providers.
+## LLM Providers (optional but recommended)
+**To use the meeting note generation, speaker/title inference, and meeting chat features, you need an API key from one of the supported providers.**
 
 **Privacy Note:** If you use cloud-based LLM providers (OpenAI, Anthropic, Google Gemini), your meeting transcripts and notes will be sent to their API for processing. To keep everything 100% local, use **Ollama**.
 
@@ -143,6 +144,7 @@ When a user is deleted, Nojoin performs a **hard delete** of all associated data
     ```bash
     docker compose up -d
     ```
+    *Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose up -d --build`.*
 
     **Option B: CPU**
     Works on all systems. Slower processing speeds.
@@ -158,7 +160,8 @@ When a user is deleted, Nojoin performs a **hard delete** of all associated data
 3.  **Access the Application:**
     *   **Web Interface:** Open `https://localhost:14443`
         *   *Note: You will see a "Not Secure" warning because of the self-signed certificate.*
-    *   **Remote Access:** To access from another machine or domain, configure `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS` in your `.env` file. See `.env.example` for details.
+    *   **Remote Access:** The Docker images are pre-configured to work on any domain. Simply access the server via its IP or domain name (e.g., `https://192.168.1.50:14443`).
+        *   *Note: You may need to add your domain to `ALLOWED_ORIGINS` in `.env` if you encounter CORS issues.*
 
 ### Using Local LLMs (Ollama)
 If you are running Ollama on the same machine as the Nojoin Docker containers, you must use the special Docker host address:
