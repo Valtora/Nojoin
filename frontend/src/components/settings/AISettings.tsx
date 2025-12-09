@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings } from '@/types';
+import { Settings, SystemModelStatus } from '@/types';
 import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, RefreshCw, Cpu, Key, MessageSquare, Layers, HardDrive, Server } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { validateLLM, validateHF, getModelStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
+import { validateLLM, validateHF, getModelsStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 const WHISPER_MODELS = [
@@ -33,7 +33,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
   // Validation & Model State
   const [validating, setValidating] = useState<string | null>(null);
   const [validationMsg, setValidationMsg] = useState<{type: 'success' | 'error', msg: string, provider: string} | null>(null);
-  const [modelStatus, setModelStatus] = useState<any>(null);
+  const [modelStatus, setModelStatus] = useState<SystemModelStatus | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{percent: number, message: string, speed?: string, eta?: string} | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -43,9 +43,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
   const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
-    if (settings.whisper_model_size) {
-      getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
-    }
+    getModelsStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
   }, [settings.whisper_model_size]);
 
   // Fetch models when provider or key changes (if valid)
@@ -202,9 +200,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
   };
 
   const refreshStatus = () => {
-      if (settings.whisper_model_size) {
-        getModelStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
-      }
+      getModelsStatus(settings.whisper_model_size).then(setModelStatus).catch(console.error);
   };
 
 
@@ -228,12 +224,12 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
     <div className="space-y-6">
       {/* 1. LLM Settings Group */}
       {showLLMSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 max-w-3xl">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
             <Cpu className="w-5 h-5 text-orange-500" /> LLM Configuration
           </h3>
           
-          <div className="space-y-6 max-w-3xl">
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Provider */}
                 <div>
@@ -455,11 +451,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
 
       {/* 2. HuggingFace Group */}
       {showHFSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
             <Key className="w-5 h-5 text-blue-500" /> Hugging Face
           </h3>
-          <div className="max-w-3xl space-y-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Access Token
@@ -506,11 +502,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
 
       {/* 3. Transcription Group */}
       {showTranscriptionSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                 <Layers className="w-5 h-5 text-purple-500" /> Transcription Settings
             </h3>
-            <div className="max-w-3xl space-y-4">
+            <div className="space-y-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                         Whisper Model Size
@@ -560,26 +556,20 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
 
       {/* 4. Dependencies Group */}
       {showDependenciesSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
             <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <HardDrive className="w-5 h-5 text-green-500" /> Model Dependencies
                 </h3>
-                <button 
-                    onClick={refreshStatus}
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
-                >
-                    <RefreshCw className="w-3 h-3" /> Refresh Status
-                </button>
             </div>
             
-            <div className="max-w-3xl space-y-6">
+            <div className="space-y-6">
                 <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                     <div className="space-y-3">
                         {[
-                            { id: 'whisper', label: 'Whisper (Transcription)', desc: 'OpenAI Whisper model for speech-to-text.' },
-                            { id: 'pyannote', label: 'Pyannote (Diarization)', desc: 'Speaker diarization pipeline.' },
-                            { id: 'embedding', label: 'Voice Embedding', desc: 'Speaker identification model.' }
+                            { id: 'whisper', label: 'Whisper (Transcription)', desc: 'OpenAI Whisper model for speech-to-text. (MIT License)' },
+                            { id: 'pyannote', label: 'Pyannote (Diarization)', desc: 'Speaker diarization model weights.' },
+                            { id: 'embedding', label: 'Voice Embedding', desc: 'Speaker identification model weights.' }
                         ].map((model) => (
                             <div key={model.id} className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm">
                                 <div>

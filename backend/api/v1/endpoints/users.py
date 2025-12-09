@@ -1,19 +1,21 @@
-from typing import List, Any
+from typing import List, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlmodel import select
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 import os
+import logging
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
 from backend.core.security import get_password_hash, verify_password
-from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole
+from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole, UserList
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/register", response_model=UserRead)
 async def register_user(
@@ -76,10 +78,11 @@ async def register_user(
     
     return user
 
-@router.get("", response_model=List[UserRead])
+@router.get("", response_model=UserList)
 async def read_users_root(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -88,12 +91,13 @@ async def read_users_root(
     """
     if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
-    return await read_users(skip=skip, limit=limit, current_user=current_user, db=db)
+    return await read_users(skip=skip, limit=limit, search=search, current_user=current_user, db=db)
 
-@router.get("/", response_model=List[UserRead])
+@router.get("/", response_model=UserList)
 async def read_users(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -103,10 +107,25 @@ async def read_users(
     if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    query = select(User).offset(skip).limit(limit).order_by(User.id)
+    query = select(User)
+    if search:
+        query = query.where(
+            or_(
+                User.username.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%")
+            )
+        )
+    
+    # Count total
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar_one()
+
+    # Pagination
+    query = query.offset(skip).limit(limit).order_by(User.id)
     result = await db.execute(query)
     users = result.scalars().all()
-    return users
+    
+    return UserList(items=users, total=total)
 
 @router.post("/", response_model=UserRead)
 async def create_user(
@@ -175,9 +194,16 @@ async def delete_user(
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
         
-    db.delete(user)
-    await db.commit()
-    return user
+    try:
+        logger.info(f"User {current_user.id} deleting user {user_id}")
+        await db.delete(user)
+        await db.commit()
+        logger.info(f"Successfully deleted user {user_id}")
+        return user
+    except Exception as e:
+        logger.error(f"Failed to delete user {user_id}: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
 
 @router.patch("/{user_id}/role", response_model=UserRead)
 async def update_user_role(

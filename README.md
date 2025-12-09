@@ -1,7 +1,7 @@
 <div align="center">
-    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; margin-right: 10px;"/>Nojoin</h1>
-      <p>
-          <strong>Self-Hosted Meeting Intelligence. Privacy First.</strong>
+    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <strong style="color: #F36012;">Nojoin</strong></h1>
+        <p>
+           <strong>Self-Hosted Meeting Intelligence</strong>
             </p>
 </div>
 
@@ -18,7 +18,7 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 - 🚀 **Unlimited:** No monthly limits on recording minutes.
 - 🧠 **Smart:** Uses OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
 - 💬 **Interactive:** Chat with your meetings using ChatGPT, Claude, Gemini, or Ollama.
-- ✨ **Best of All:** Nojoin doesn't need to join awkwardly on your meetings.
+- ✨ **Best of All:** Nojoin doesn't need to awkwardly join in on your meetings.
 
 ## ⚡ Quick Start
 
@@ -26,7 +26,7 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 2.  **Launch:** `docker compose up -d`
 3.  **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
-5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio.
+5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio. *(macOS builds are currently paused)*.
 
     *See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
 
@@ -66,7 +66,8 @@ Nojoin is composed of three distinct subsystems:
     *   Provides a dashboard for playback, transcript editing, and system configuration.
 
 3.  **The Companion App (Rust):**
-    *   Runs on client machines (Windows, macOS, Linux).
+    *   Runs on client machines (Windows, Linux).
+    *   *Note: macOS support is temporarily disabled pending permission handling updates.*
     *   Sits in the system tray and handles audio capture.
     *   Uploads audio to the server for processing.
 
@@ -76,14 +77,25 @@ Nojoin requires certain API keys to function fully. The first-run wizard will re
 
 ### Hugging Face Token (Required for Diarization)
 To enable speaker diarization (identifying who is speaking), you need a Hugging Face token.
+
+**Privacy Note:** This token is **only** used to download the model weights from Hugging Face. All audio processing and diarization happens locally on your server. No audio data is sent to Hugging Face.
+
 1.  Create an account on [Hugging Face](https://huggingface.co/).
-2.  Generate an Access Token (Read permissions).
+2.  Generate an Access Token. You can use a token with fine-grained permissions:
+    *   Select "Read access to contents of selected repos".
+    *   Select the following repositories:
+        *   `pyannote/speaker-diarization-community-1`
+        *   `pyannote/wespeaker-voxceleb-resnet34-LM`
 3.  Accept the user conditions for the following models:
     *   [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)
+    *   [`pyannote/wespeaker-voxceleb-resnet34-LM`](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM)
 4.  Enter this token in the Nojoin **Settings > AI Settings**.
 
 ### LLM Providers (Optional)
-To use the "Chat with Meeting" and "Generate Notes" features, you need an API key from one of the supported providers:
+To use the "Chat with Meeting", "Generate Notes", and other intelligence features, you need an API key from one of the supported providers.
+
+**Privacy Note:** If you use cloud-based LLM providers (OpenAI, Anthropic, Google Gemini), your meeting transcripts and notes will be sent to their API for processing. To keep everything 100% local, use **Ollama**.
+
 *   **OpenAI**
 *   **Anthropic**
 *   **Google Gemini**

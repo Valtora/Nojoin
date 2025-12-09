@@ -13,10 +13,9 @@ import SystemSettings from './SystemSettings';
 import AccountSettings from './AccountSettings';
 import AdminSettings from './AdminSettings';
 import InvitesTab from './InvitesTab';
-import UsersTab from './UsersTab';
 import { useNotificationStore } from '@/lib/notificationStore';
 
-type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin' | 'invites' | 'users';
+type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin' | 'invites';
 
 interface CompanionConfig {
   api_port: number;
@@ -44,6 +43,26 @@ export default function SettingsPage() {
   const isFirstLoad = useRef(true);
   const lastSavedState = useRef<string>('');
 
+  const refreshCompanionConfig = useCallback(async () => {
+    try {
+        const res = await fetch(`${COMPANION_URL}/config`);
+        if (res.ok) {
+            const companionData: CompanionConfig = await res.json();
+            setCompanionConfig(companionData);
+        }
+        
+        const devicesRes = await fetch(`${COMPANION_URL}/devices`);
+        if (devicesRes.ok) {
+            const devicesData: CompanionDevices = await devicesRes.json();
+            setCompanionDevices(devicesData);
+        }
+        return true;
+    } catch (e) {
+        console.error("Failed to refresh companion config", e);
+        return false;
+    }
+  }, []);
+
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
     if (!searchQuery) return null;
@@ -56,7 +75,6 @@ export default function SettingsPage() {
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
       admin: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.admin) : 1,
       invites: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.invites) : 1,
-      users: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.users) : 1,
     };
 
     return matches;
@@ -392,6 +410,7 @@ export default function SettingsPage() {
                   onUpdate={setSettings} 
                   companionConfig={companionConfig}
                   onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
+                  onRefreshCompanionConfig={refreshCompanionConfig}
                   searchQuery={searchQuery}
                   isAdmin={isAdmin}
                 />

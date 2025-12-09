@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress, SystemModelStatus } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1` 
@@ -494,8 +494,10 @@ export const validateHF = async (token: string): Promise<{ valid: boolean, messa
   return response.data;
 };
 
-export const getModelStatus = async (modelId: string): Promise<{ downloaded: boolean, size?: string }> => {
-  const response = await api.get<{ downloaded: boolean, size?: string }>(`/system/models/${modelId}`);
+export const getModelsStatus = async (whisperModelSize?: string): Promise<SystemModelStatus> => {
+  const params = new URLSearchParams();
+  if (whisperModelSize) params.append('whisper_model_size', whisperModelSize);
+  const response = await api.get<SystemModelStatus>(`/system/models/status?${params.toString()}`);
   return response.data;
 };
 
@@ -504,8 +506,14 @@ export const deleteModel = async (modelId: string): Promise<void> => {
 };
 
 // User Management
-export const getUsers = async (): Promise<User[]> => {
-  const response = await api.get<User[]>('/users/');
+export const getUsers = async (skip = 0, limit = 100, search = ''): Promise<{ items: User[], total: number }> => {
+  const params = new URLSearchParams({
+    skip: skip.toString(),
+    limit: limit.toString(),
+  });
+  if (search) params.append('search', search);
+  
+  const response = await api.get<{ items: User[], total: number }>(`/users?${params.toString()}`);
   return response.data;
 };
 

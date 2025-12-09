@@ -202,3 +202,16 @@ export interface CompanionDevices {
   selected_input: string | null;
   selected_output: string | null;
 }
+
+export interface ModelStatusInfo {
+  downloaded: boolean;
+  path: string | null;
+  checked_paths: string[];
+}
+
+export interface SystemModelStatus {
+  whisper: ModelStatusInfo;
+  pyannote: ModelStatusInfo;
+  embedding: ModelStatusInfo;
+  [key: string]: ModelStatusInfo;
+}

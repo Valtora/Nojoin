@@ -4,6 +4,7 @@ from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
 from backend.models.base import BaseDBModel
 from enum import Enum
+from datetime import datetime
 
 if TYPE_CHECKING:
     from backend.models.invitation import Invitation
@@ -52,7 +53,12 @@ class UserRead(SQLModel):
     is_superuser: bool
     force_password_change: bool
     role: str
-    settings: Optional[Dict[str, Any]] = {}
+    created_at: datetime
+    updated_at: datetime
+
+class UserList(SQLModel):
+    items: List[UserRead]
+    total: int
 
 class UserUpdate(SQLModel):
     username: Optional[str] = None

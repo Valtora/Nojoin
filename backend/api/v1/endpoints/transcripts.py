@@ -267,13 +267,13 @@ async def update_segment_speaker(
                 
     if not target_label:
         # Speaker not found in recording. Check Global Speakers.
-        stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == new_speaker_name)
+        stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == new_speaker_name, GlobalSpeaker.user_id == current_user.id)
         result = await db.execute(stmt)
         global_speaker = result.scalar_one_or_none()
         
         if not global_speaker:
             # Create new Global Speaker
-            global_speaker = GlobalSpeaker(name=new_speaker_name)
+            global_speaker = GlobalSpeaker(name=new_speaker_name, user_id=current_user.id)
             db.add(global_speaker)
             await db.commit()
             await db.refresh(global_speaker)

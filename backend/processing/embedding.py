@@ -1,10 +1,21 @@
 import numpy as np
-from typing import List
+from typing import List, Optional
 
-def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> float:
     """Compute cosine similarity between two vectors."""
-    a = np.array(v1)
-    b = np.array(v2)
+    if v1 is None or v2 is None:
+        return 0.0
+        
+    # Check for None values inside the lists which can cause numpy errors
+    if any(x is None for x in v1) or any(x is None for x in v2):
+        return 0.0
+
+    try:
+        a = np.array(v1, dtype=float)
+        b = np.array(v2, dtype=float)
+    except (ValueError, TypeError):
+        return 0.0
+
     norm_a = np.linalg.norm(a)
     norm_b = np.linalg.norm(b)
     if norm_a == 0 or norm_b == 0:
