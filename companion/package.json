@@ -7,7 +7,7 @@
     "build": "tauri build",
     "build:portable": "node scripts/package-portable.js"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-notification": "^2.3.3",

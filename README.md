@@ -1,8 +1,14 @@
 <div align="center">
-    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <strong style="color: #F36012;"><br>Nojoin</strong></h1>
+    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
            <strong>A Self-Hosted Meeting Assistant</strong>
             </p>
+    <p>
+        <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
+        <img src="https://img.shields.io/github/v/release/Valtora/Nojoin" alt="Release">
+        <img src="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml/badge.svg" alt="Companion Build">
+        <img src="https://github.com/Valtora/Nojoin/actions/workflows/docker-publish.yml/badge.svg" alt="Docker Build">
+    </p>
 </div>
 
 <!-- Screenshot 1 -->
@@ -18,6 +24,21 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 - 🧠 **Smart:** Uses OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
 - 💬 **Interactive:** Chat with your meetings using ChatGPT, Claude, Gemini, or Ollama.
 - ✨ **Best of All:** Nojoin doesn't need to awkwardly join in on your meetings.
+
+## 📚 Table of Contents
+- [Why Nojoin?](#why-nojoin)
+- [Quick Start](#-quick-start)
+- [Hardware Requirements](#%EF%B8%8F-hardware-requirements)
+- [Features](#-features)
+- [System Architecture](#-system-architecture)
+- [API Keys & Configuration](#-api-keys--configuration)
+- [User Management](#-user-management)
+- [Installation & Setup](#%EF%B8%8F-installation--setup)
+- [Troubleshooting](#-troubleshooting)
+- [Roadmap](#%EF%B8%8F-roadmap)
+- [Contributing](#-contributing)
+- [Editions](#-editions)
+- [Legal](#%EF%B8%8F-legal)
 
 ## ⚡ Quick Start
 
@@ -186,12 +207,62 @@ If you are running Ollama on the same machine as the Nojoin Docker containers, y
 
 > **🧪 Call for Testing:** The Companion App has been tested on Windows. We are looking for community feedback on **macOS** and **Linux** stability. Please report any OS-specific issues on GitHub.
 
+## ❓ Troubleshooting
+
+<details>
+<summary><strong>Transcription is slow / GPU not being used</strong></summary>
+
+Ensure you have passed the GPU to the container correctly.
+1. Check if `nvidia-smi` works on your host.
+2. Verify the `docker-compose.yml` has the `deploy: resources: reservations: devices` section uncommented.
+3. If on Windows, ensure you have the latest WSL2 drivers.
+</details>
+
+<details>
+<summary><strong>Cannot access Nojoin from another computer</strong></summary>
+
+1. Check your firewall settings on the host machine (port 14443).
+2. Ensure `ALLOWED_ORIGINS` in your `.env` file includes your server's IP or domain (e.g., `https://192.168.1.50:14443`).
+</details>
+
+<details>
+<summary><strong>Ollama connection failed</strong></summary>
+
+If running Ollama on the host, use `http://host.docker.internal:11434` instead of `localhost`. Docker containers cannot see `localhost` of the host directly.
+</details>
+
+## 🗺️ Roadmap
+
+- [x] **Windows & Linux Support** (Stable)
+- [ ] **macOS Support** (In Progress - Target: Jan 2026)
+    - Full stability for Apple Silicon & Intel.
+    - Native ScreenCaptureKit integration.
+- [ ] **Real-time Transcription** (Target: April 2026)
+    - Live transcript generation during recording.
+    - Instant feedback loop.
+    - Real-time suggestions and notes.
+- [ ] **Enterprise Features** (Target: July 2026)
+    - SSO Integration (OAuth, SAML).
+    - Advanced User Management.
+    - Audit Logs & Compliance Reports.
+
+## 🤝 Contributing
+
+We welcome contributions from the community! Whether it's fixing bugs, improving documentation, or adding new features, your help is appreciated.
+
+Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to get started.
+
 ## 📦 Editions
 
 *   **Community Edition:** This is the free and open-source version of Nojoin, designed for self-hosting and community support. It includes all core features for recording, processing, and analyzing meetings.
-*   **Enterprise Edition:** (Coming Soon) A paid version designed for larger organizations. It will include additional deployment options, advanced administration features, and dedicated support.
+*   **Enterprise Edition:** (See roadmap) An enterprise version designed for larger organizations. It will include additional deployment options, advanced administration features, and dedicated support.
 
 ## ⚖️ Legal
+
+**License**
+
+Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+This ensures that the software remains free and open-source, and that any modifications made to the code (even if run as a service) must be shared back with the community.
 
 Please review our [Legal Disclaimer](LEGAL.md) regarding the recording of conversations and compliance with local laws.
 

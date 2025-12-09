@@ -1,23 +1,47 @@
 use screencapturekit::{
-    sc_content_filter::{SCContentFilter, SCContentFilterInitParams},
+    sc_content_filter::SCContentFilter,
     sc_shareable_content::SCShareableContent,
-    sc_stream::{SCStream, SCStreamConfiguration, SCStreamOutputType},
-    sc_stream_output::SCStreamOutput,
-    sc_sys::CMSampleBuffer,
+    sc_stream::{SCStream, SCStreamConfiguration},
+    sc_output_handler::{SCStreamOutput, SCStreamOutputType},
 };
+// Assuming CMSampleBuffer is available via sc_stream or sc_output_handler or top level.
+// If sc_sys is missing, we try to find it elsewhere.
+// We will use CMSampleBufferRef from core_media_sys if the trait uses raw pointers,
+// but likely it uses a wrapper. We'll try to import it from sc_stream.
+// If that fails, the user might need to check where CMSampleBuffer is.
+// For now, we'll assume it's in sc_stream or we use the raw ref if the trait allows.
+// Let's try importing it from sc_stream as a best guess for v0.2.8.
+use screencapturekit::sc_stream::CMSampleBuffer; 
+
 use std::sync::mpsc::Sender;
 use log::{error, info};
 
 // Import sys crates for audio extraction
 #[cfg(target_os = "macos")]
 use core_media_sys::{
-    CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer, CMSampleBufferRef,
+    CMSampleBufferRef,
     kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment, CMBlockBufferRef,
 };
 #[cfg(target_os = "macos")]
-use core_audio_sys::{AudioBufferList, AudioBuffer};
+use coreaudio_sys::{AudioBufferList, AudioBuffer};
 #[cfg(target_os = "macos")]
 use core_foundation_sys::base::CFRelease;
+
+// Manually define the function missing from core-media-sys 0.1.2
+#[cfg(target_os = "macos")]
+#[link(name = "CoreMedia", kind = "framework")]
+extern "C" {
+    pub fn CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+        sbuf: CMSampleBufferRef,
+        bufferListSizeNeededOut: *mut usize,
+        bufferListOut: *mut AudioBufferList,
+        bufferListSize: usize,
+        bbufStructAllocator: *mut std::ffi::c_void,
+        bbufMemoryAllocator: *mut std::ffi::c_void,
+        flags: u32,
+        blockBufferOut: *mut CMBlockBufferRef,
+    ) -> i32;
+}
 
 struct AudioRecorder {
     tx: Sender<Vec<f32>>,
@@ -30,7 +54,6 @@ impl SCStreamOutput for AudioRecorder {
             #[cfg(target_os = "macos")]
             unsafe {
                 // 1. Define a buffer list capable of holding the audio data
-                // core-audio-sys defines mBuffers as [AudioBuffer; 1] which is fine for interleaved
                 let mut buffer_list = AudioBufferList {
                     mNumberBuffers: 1,
                     mBuffers: [AudioBuffer {
@@ -41,9 +64,13 @@ impl SCStreamOutput for AudioRecorder {
                 };
 
                 // 2. Retrieve the buffer list from the sample buffer
-                // We cast the sample (sc_sys type) to the core_media_sys type
-                // Note: sc_sys::CMSampleBuffer is likely a type alias or wrapper around the ref.
-                // We assume here it can be cast to CMSampleBufferRef.
+                // We assume sample can be cast to CMSampleBufferRef or has a method.
+                // If CMSampleBuffer is a wrapper, we might need .as_raw() or similar.
+                // We'll try casting as a fallback, but if it's a struct, this might fail.
+                // However, without docs, we assume it wraps the ref.
+                // Let's try `sample.as_raw()` if it exists, otherwise `sample as CMSampleBufferRef`.
+                // Since we can't check, we'll use `sample as CMSampleBufferRef` and hope it's a type alias.
+                // If it's a struct, the user will see an error "non-primitive cast".
                 let sample_ref = sample as CMSampleBufferRef;
                 
                 let mut block_buffer: CMBlockBufferRef = std::ptr::null_mut();
@@ -63,19 +90,15 @@ impl SCStreamOutput for AudioRecorder {
                     // 3. Extract data
                     let buffer = buffer_list.mBuffers[0];
                     if !buffer.mData.is_null() && buffer.mDataByteSize > 0 {
-                        // Assuming f32 (Float32) format as requested/configured in SCStreamConfiguration
-                        // SCK typically delivers 32-bit float PCM
                         let count = (buffer.mDataByteSize as usize) / std::mem::size_of::<f32>();
                         let src_ptr = buffer.mData as *const f32;
                         let samples = std::slice::from_raw_parts(src_ptr, count);
                         
-                        // 4. Send
                         if let Err(e) = self.tx.send(samples.to_vec()) {
                             error!("Failed to send audio samples: {}", e);
                         }
                     }
                     
-                    // Release the block buffer if it was retained
                     if !block_buffer.is_null() {
                         CFRelease(block_buffer as _);
                     }
@@ -90,20 +113,18 @@ impl SCStreamOutput for AudioRecorder {
 pub async fn start_capture(tx: Sender<Vec<f32>>, sample_rate: u32, channels: u16) -> Result<SCStream, String> {
     let content = SCShareableContent::current().await.map_err(|e| e.to_string())?;
     
-    // Find the main display to capture system audio
-    // Usually the first display is fine for system audio context
     let display = content.displays.first().ok_or("No display found")?;
 
-    let filter = SCContentFilter::new(SCContentFilterInitParams::Display(display.clone()));
+    // SCContentFilter::new(display)
+    let filter = SCContentFilter::new(display.clone());
 
-    let config = SCStreamConfiguration {
-        captures_audio: true,
-        captures_video: false,
-        sample_rate,
-        channel_count: channels as u32,
-        excludes_current_process_audio: true, // Don't record ourselves (feedback loop)
-        ..Default::default()
-    };
+    // SCStreamConfiguration with setters
+    let mut config = SCStreamConfiguration::default();
+    config.set_captures_audio(true);
+    config.set_captures_video(false);
+    config.set_sample_rate(sample_rate);
+    config.set_channel_count(channels as u32);
+    config.set_excludes_current_process_audio(true);
 
     let recorder = AudioRecorder { tx, channels };
     
