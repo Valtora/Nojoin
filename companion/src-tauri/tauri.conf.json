@@ -12,6 +12,13 @@
       "deb",
       "appimage"
     ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "entitlements": null
+    },
     "windows": {
       "nsis": {
         "template": "nsis/installer.nsi",
@@ -39,7 +46,7 @@
   },
   "productName": "Nojoin",
   "mainBinaryName": "Nojoin",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "identifier": "com.valtora.nojoin.companion",
   "plugins": {},
   "app": {

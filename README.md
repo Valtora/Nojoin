@@ -1,5 +1,5 @@
 <div align="center">
-    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <strong style="color: #F36012;">Nojoin</strong></h1>
+    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <strong style="color: #F36012;"><br>Nojoin</strong></h1>
         <p>
            <strong>A Self-Hosted Meeting Assistant</strong>
             </p>
@@ -27,9 +27,16 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
 5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio.
 
-    - macOS builds are currently paused while we improve the user experience.
-
     - See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
+
+## 🖥️ Hardware Requirements
+
+*   **Backend Server:**
+    *   **Recommended:** Linux system with NVIDIA GPU (CUDA 12.x support).
+    *   **Minimum:** 8GB VRAM for optimal performance (Whisper Large + Pyannote).
+    *   **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**. Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
+*   **Companion App:**
+    *   Fully supported on Windows, macOS (Apple Silicon & Intel), and Linux.
 
 ## ✨ Features
 
@@ -67,10 +74,10 @@ Nojoin is composed of three distinct subsystems:
     *   Provides a dashboard for playback, transcript editing, and system configuration.
 
 3.  **The Companion App (Rust):**
-    *   Runs on client machines (Windows, Linux).
-    *   *Note: macOS support is temporarily disabled pending permission handling updates.*
+    *   Runs on client machines (Windows, macOS, Linux).
     *   Sits in the system tray and handles audio capture.
     *   Uploads audio to the server for processing.
+    *   **macOS Support:** Uses native ScreenCaptureKit for system audio capture (requires macOS 12.3+).
 
 ## 🔑 API Keys & Configuration
 

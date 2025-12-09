@@ -1,6 +1,6 @@
 [package]
 name = "nojoin-companion"
-version = "0.1.7"
+version = "0.1.8"
 description = "A lightweight system tray companion app for Nojoin meeting intelligence"
 authors = ["Valtora"]
 edition = "2021"
@@ -38,9 +38,9 @@ win32_notif = "0.10.2"
 mac-notification-sys = "0.6"
 screencapturekit = "0.2"
 tauri-plugin-macos-permissions = "2.0"
-core-media-sys = "0.1"
-core-audio-sys = "0.1"
-core-foundation-sys = "0.1"
+core-media-sys = "0.1.2"
+coreaudio-sys = "0.2"
+core-foundation-sys = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"

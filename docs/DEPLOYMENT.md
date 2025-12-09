@@ -2,6 +2,12 @@
 
 ## Deployment
 
+### Hardware Requirements
+*   **Recommended:** Linux or Windows system with NVIDIA GPU (CUDA 12.x support).
+*   **Minimum:** 8GB VRAM for optimal performance (Whisper Turbo + Pyannote).
+*   **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**. Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
+    *   *Note:* The **Companion App** is fully supported on macOS.
+
 ### Server Stack
 *   **Language:** Python 3.11+ (FastAPI)
 *   **Task Queue:** Celery with Redis

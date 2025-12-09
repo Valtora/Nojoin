@@ -187,11 +187,18 @@ fn main() {
     }
     info!("Starting Nojoin Companion (Tauri)...");
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
-        .plugin(tauri_plugin_macos_permissions::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])));
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_plugin_macos_permissions::init());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
             #[cfg(target_os = "macos")]

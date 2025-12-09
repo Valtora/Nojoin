@@ -108,7 +108,8 @@ The system provides the following core capabilities:
 *   **Database:** PostgreSQL 16 (accessed via SQLModel/SQLAlchemy)
 *   **Migrations:** Alembic
 *   **Broker:** Redis
-*   **Container Runtime:** Docker (with NVIDIA Container Toolkit support)
+*   **Container Runtime:** Docker (Linux with NVIDIA Container Toolkit recommended)
+    *   *Constraint:* macOS hosting is CPU-only due to Docker limitations.
 
 ### 4.2 Web Client Stack
 *   **Framework:** Next.js (React)

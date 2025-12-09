@@ -10,8 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-22.04, windows-latest]
-        # platform: [macos-latest, ubuntu-22.04, windows-latest] # macOS disabled pending permission fixes
+        platform: [macos-latest, ubuntu-22.04, windows-latest]
+        # platform: [ubuntu-22.04, windows-latest]
     
     runs-on: ${{ matrix.platform }}
     steps:
