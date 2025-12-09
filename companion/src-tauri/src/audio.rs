@@ -13,8 +13,7 @@ use std::sync::{
 };
 use std::thread;
 
-#[cfg(target_os = "macos")]
-mod mac_sc;
+// Removed mod mac_sc; declaration from here as it should be in main.rs/lib.rs
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
@@ -328,7 +327,7 @@ fn start_segment(
                 info!("Starting ScreenCaptureKit for System Audio at {}Hz", target_sample_rate);
                 
                 let stream = rt.block_on(async {
-                    mac_sc::start_capture(tx, target_sample_rate, 2).await
+                    crate::mac_sc::start_capture(tx, target_sample_rate, 2).await
                 }).map_err(|e| anyhow::anyhow!("Failed to start SCK: {}", e))?;
                 
                 stream

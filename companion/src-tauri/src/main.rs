@@ -26,6 +26,9 @@ mod state;
 mod uploader;
 mod win_notifications;
 
+#[cfg(target_os = "macos")]
+mod mac_sc;
+
 use config::Config;
 use state::{AppState, AppStatus};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -201,11 +204,7 @@ fn main() {
     builder
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            {
-                use tauri_plugin_macos_permissions::MacOSPermissionsExt;
-                let _ = app.check_permissions(tauri_plugin_macos_permissions::PermissionType::ScreenRecording);
-            }
+            // Permission checks are handled by the frontend or implicitly by the OS in v2
 
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let config = Config::load();
