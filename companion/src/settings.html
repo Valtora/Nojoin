@@ -60,12 +60,9 @@
     <div class="container">
         <h2>Connection Settings</h2>
         <div class="form-group">
-            <label for="apiHost">API Host (IP or Hostname)</label>
-            <input type="text" id="apiHost" placeholder="localhost">
-        </div>
-        <div class="form-group">
-            <label for="apiPort">API Port</label>
-            <input type="number" id="apiPort" placeholder="14443">
+            <label for="serverUrl">Server Address</label>
+            <input type="text" id="serverUrl" placeholder="https://nojoin.mylocaldomain.lan">
+            <small style="color: #6b7280; display: block; margin-top: 4px; font-size: 0.85em;">Enter the full URL or hostname (e.g. 192.168.1.100)</small>
         </div>
         <button id="saveBtn">Save Settings</button>
         <div id="status" class="status"></div>
@@ -74,8 +71,7 @@
     <script>
         const { invoke } = window.__TAURI__.core;
 
-        const apiHostInput = document.getElementById('apiHost');
-        const apiPortInput = document.getElementById('apiPort');
+        const serverUrlInput = document.getElementById('serverUrl');
         const saveBtn = document.getElementById('saveBtn');
         const statusDiv = document.getElementById('status');
 
@@ -83,8 +79,18 @@
         async function loadConfig() {
             try {
                 const config = await invoke('get_config');
-                apiHostInput.value = config.api_host;
-                apiPortInput.value = config.api_port;
+                // Construct URL from config parts
+                const protocol = config.api_protocol || 'https';
+                const host = config.api_host || 'localhost';
+                const port = config.api_port || 14443;
+                
+                // Don't show port if it's standard for the protocol
+                let url = `${protocol}://${host}`;
+                if (!((protocol === 'http' && port === 80) || (protocol === 'https' && port === 443))) {
+                    url += `:${port}`;
+                }
+                
+                serverUrlInput.value = url;
             } catch (e) {
                 statusDiv.textContent = 'Failed to load config: ' + e;
                 statusDiv.className = 'status error';
@@ -93,17 +99,19 @@
 
         // Save config
         saveBtn.addEventListener('click', async () => {
-            const host = apiHostInput.value.trim() || 'localhost';
-            const port = parseInt(apiPortInput.value) || 14443;
+            const serverUrl = serverUrlInput.value.trim();
+            
+            if (!serverUrl) {
+                statusDiv.textContent = 'Server URL is required';
+                statusDiv.className = 'status error';
+                return;
+            }
 
             try {
                 saveBtn.disabled = true;
                 saveBtn.textContent = 'Saving...';
                 
-                await invoke('save_config', { 
-                    apiHost: host, 
-                    apiPort: port 
-                });
+                await invoke('save_config', { serverUrl });
                 
                 statusDiv.textContent = 'Settings saved successfully!';
                 statusDiv.className = 'status success';

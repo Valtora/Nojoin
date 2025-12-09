@@ -18,6 +18,7 @@ The application is composed of three distinct subsystems:
 
 ### 2.1 The Server (Dockerized)
 The core processing unit hosted on a machine with NVIDIA GPU capabilities.
+*   **Registry:** Images are hosted on GitHub Container Registry (GHCR).
 *   **API Service:** FastAPI-based REST API for data management and client communication. Runs in a lightweight container (Python Slim) without heavy ML dependencies.
 *   **Worker Service:** Celery-based background worker handling resource-intensive tasks (transcription, diarization) using the NVIDIA Runtime. Runs in a heavy container with PyTorch and CUDA support.
 *   **Database:** PostgreSQL serving as the single source of truth for all metadata, transcripts, and speaker profiles.
@@ -119,7 +120,7 @@ The system provides the following core capabilities:
 ### 4.3 Companion App Stack
 *   **Framework:** Tauri v1.5
 *   **Language:** Rust (Core Logic)
-*   **Audio:** cpal (Cross-Platform Audio Library)
+*   **Audio:** cpal (Windows/Linux), ScreenCaptureKit (macOS)
 *   **Async Runtime:** Tokio
 *   **HTTP Client:** Reqwest
 *   **GUI/Tray:** Tauri System Tray

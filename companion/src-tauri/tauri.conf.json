@@ -15,7 +15,6 @@
     "windows": {
       "nsis": {
         "template": "nsis/installer.nsi",
-        "license": "LICENSE_DISCLAIMER.txt",
         "installMode": "currentUser",
         "languages": [
           "English"
@@ -32,6 +31,7 @@
     ],
     "resources": [],
     "externalBin": [],
+    "licenseFile": "LICENSE_DISCLAIMER.txt",
     "copyright": "Valtora",
     "category": "Productivity",
     "shortDescription": "Nojoin Companion App",

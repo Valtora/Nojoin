@@ -10,11 +10,16 @@
 
 ### Deployment Method
 *   **Docker Compose:** Primary deployment method orchestrating API, Worker, DB, Redis, and Web Frontend containers.
+*   **Container Registry:** Images are automatically built and pushed to GHCR (`ghcr.io/valtora/nojoin-*`).
+    *   **Pull-First:** `docker compose up -d` pulls the latest pre-built images by default.
+    *   **Build-Local:** `docker compose up -d --build` forces a local build from source.
 *   **Hardware Support:**
     *   **NVIDIA GPU (Default):** The `docker-compose.yml` is configured for GPU inference by default.
     *   **CPU-Only (Optional):** CPU support is enabled by commenting out the `deploy` section in `docker-compose.yml`.
 
 ### Containerization Standards
+*   **Registry:** GitHub Container Registry (GHCR).
+*   **CI/CD:** GitHub Actions workflow (`docker-publish.yml`) builds and pushes images on push to `main` and release tags.
 *   **Base Images:** Optimized, pre-built images (e.g., `pytorch/pytorch`) are used.
 *   **Context Management:** `.dockerignore` excludes build artifacts.
 *   **Dependency Optimization:** `requirements.txt` is filtered during build to prevent redundant installations.

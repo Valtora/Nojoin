@@ -13,6 +13,9 @@ use std::sync::{
 };
 use std::thread;
 
+#[cfg(target_os = "macos")]
+mod mac_sc;
+
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
         if let Ok(devices) = host.input_devices() {
@@ -177,11 +180,14 @@ fn start_segment(
 
             // 2. Setup System Audio (Loopback) - use configured or default
             // On Windows WASAPI, we use the output device for loopback
+            #[cfg(not(target_os = "macos"))]
             let sys_device = find_output_device(&host, &config)
                 .ok_or_else(|| anyhow::anyhow!("No output device available"))?;
+            #[cfg(not(target_os = "macos"))]
             let sys_config = sys_device
                 .default_output_config()
                 .map_err(|e| anyhow::anyhow!("Failed to get sys config: {}", e))?;
+            #[cfg(not(target_os = "macos"))]
             let sys_channels = sys_config.channels();
 
             info!(
@@ -190,6 +196,8 @@ fn start_segment(
                 mic_channels,
                 mic_config.sample_rate().0
             );
+            
+            #[cfg(not(target_os = "macos"))]
             info!(
                 "Sys: {} ({}ch, {}Hz)",
                 sys_device.name().unwrap_or_default(),
@@ -257,31 +265,79 @@ fn start_segment(
             // 4. Build System Stream
             let is_recording_sys = is_recording.clone();
             let state_sys = state.clone();
-            let sys_stream = sys_device
-                .build_input_stream(
-                    &sys_config.into(),
-                    move |data: &[f32], _: &_| {
-                        let mono = to_mono(data, sys_channels);
-                        // Update output level (always, for monitoring)
-                        let rms = calculate_rms(&mono);
-                        state_sys.record_output_level(rms);
+            
+            #[cfg(not(target_os = "macos"))]
+            let sys_stream = {
+                let sys_device = find_output_device(&host, &config)
+                    .ok_or_else(|| anyhow::anyhow!("No output device available"))?;
+                let sys_config = sys_device
+                    .default_output_config()
+                    .map_err(|e| anyhow::anyhow!("Failed to get sys config: {}", e))?;
+                let sys_channels = sys_config.channels();
 
-                        if is_recording_sys.load(Ordering::SeqCst) {
-                            let _ = sys_tx.send(mono);
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to build sys stream: {}", e))?;
+                info!(
+                    "Sys: {} ({}ch, {}Hz)",
+                    sys_device.name().unwrap_or_default(),
+                    sys_channels,
+                    sys_config.sample_rate().0
+                );
+
+                let sys_stream = sys_device
+                    .build_input_stream(
+                        &sys_config.into(),
+                        move |data: &[f32], _: &_| {
+                            let mono = to_mono(data, sys_channels);
+                            // Update output level (always, for monitoring)
+                            let rms = calculate_rms(&mono);
+                            state_sys.record_output_level(rms);
+
+                            if is_recording_sys.load(Ordering::SeqCst) {
+                                let _ = sys_tx.send(mono);
+                            }
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| anyhow::anyhow!("Failed to build sys stream: {}", e))?;
+                
+                sys_stream.play().map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
+                sys_stream
+            };
+
+            #[cfg(target_os = "macos")]
+            let sys_stream = {
+                // Create a runtime for SCK async start
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                
+                // We need to bridge the SCK callback to our sys_tx
+                // The SCK implementation in mac_sc.rs handles the callback and sending to sys_tx
+                // We just need to start it.
+                
+                // Note: SCK usually captures at 48kHz. If mic is different, we might have drift.
+                // For now, we pass the mic sample rate to SCK config and hope it respects it or we accept the drift/resampling need.
+                let target_sample_rate = mic_config.sample_rate().0;
+                
+                // We need to wrap the sender to handle the data format
+                // Our sys_tx expects Vec<f32> (mono)
+                // The mac_sc implementation should handle mono conversion if needed or we do it here.
+                // Let's assume mac_sc sends Vec<f32> mono.
+                
+                // We need to clone the sender for the async block
+                let tx = sys_tx.clone();
+                
+                info!("Starting ScreenCaptureKit for System Audio at {}Hz", target_sample_rate);
+                
+                let stream = rt.block_on(async {
+                    mac_sc::start_capture(tx, target_sample_rate, 2).await
+                }).map_err(|e| anyhow::anyhow!("Failed to start SCK: {}", e))?;
+                
+                stream
+            };
 
             mic_stream
                 .play()
                 .map_err(|e| anyhow::anyhow!("Failed to play mic stream: {}", e))?;
-            sys_stream
-                .play()
-                .map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
-
+            
             // 5. Mixing Loop with automatic segmentation
             // Maximum segment duration: 5 minutes to keep files under ~27 MB
             const MAX_SEGMENT_DURATION_SECS: u64 = 5 * 60;

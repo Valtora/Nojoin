@@ -9,6 +9,8 @@ const DEFAULT_LOCAL_PORT: u16 = 12345;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
+    #[serde(default = "default_api_protocol")]
+    pub api_protocol: String,
     #[serde(default = "default_api_port")]
     pub api_port: u16,
     #[serde(default = "default_api_host")]
@@ -23,6 +25,10 @@ pub struct Config {
     pub output_device_name: Option<String>,
     #[serde(default)]
     pub last_version: Option<String>,
+}
+
+fn default_api_protocol() -> String {
+    "https".to_string()
 }
 
 fn default_api_port() -> u16 {
@@ -51,11 +57,11 @@ struct LegacyConfig {
 
 impl Config {
     pub fn get_api_url(&self) -> String {
-        format!("https://{}:{}/api/v1", self.api_host, self.api_port)
+        format!("{}://{}:{}/api/v1", self.api_protocol, self.api_host, self.api_port)
     }
 
     pub fn get_web_url(&self) -> String {
-        format!("https://{}:{}", self.api_host, self.api_port)
+        format!("{}://{}:{}", self.api_protocol, self.api_host, self.api_port)
     }
 
     fn get_config_path() -> PathBuf {
@@ -137,6 +143,7 @@ impl Config {
             .unwrap_or(DEFAULT_API_PORT);
 
         Some(Config {
+            api_protocol: default_api_protocol(),
             api_port,
             api_host: default_api_host(),
             api_token: legacy.api_token.unwrap_or_default(),
@@ -212,6 +219,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            api_protocol: default_api_protocol(),
             api_port: DEFAULT_API_PORT,
             api_host: default_api_host(),
             api_token: String::new(),

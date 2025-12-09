@@ -43,12 +43,23 @@ fn get_config(state: tauri::State<SharedAppState>) -> Config {
 #[tauri::command]
 fn save_config(
     state: tauri::State<SharedAppState>,
-    api_host: String,
-    api_port: u16,
+    server_url: String,
 ) -> Result<(), String> {
     let mut config = state.0.config.lock().unwrap();
-    config.api_host = api_host;
-    config.api_port = api_port;
+    
+    // Parse URL
+    // If it doesn't start with http:// or https://, assume https://
+    let url_str = if !server_url.contains("://") {
+        format!("https://{}", server_url)
+    } else {
+        server_url.clone()
+    };
+
+    let url = reqwest::Url::parse(&url_str).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    config.api_protocol = url.scheme().to_string();
+    config.api_host = url.host_str().unwrap_or("localhost").to_string();
+    config.api_port = url.port().unwrap_or_else(|| if config.api_protocol == "http" { 80 } else { 443 });
 
     config.save().map_err(|e| e.to_string())?;
     Ok(())
@@ -180,8 +191,15 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
+        .plugin(tauri_plugin_macos_permissions::init())
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                use tauri_plugin_macos_permissions::MacOSPermissionsExt;
+                let _ = app.check_permissions(tauri_plugin_macos_permissions::PermissionType::ScreenRecording);
+            }
+
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let config = Config::load();
             
@@ -210,7 +228,6 @@ fn main() {
 
             // Create Menu Items
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let restart = MenuItem::with_id(app, "restart", "Restart", true, None::<&str>)?;
             let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
             let help = MenuItem::with_id(app, "help", "Help", true, None::<&str>)?;
             let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
@@ -222,8 +239,9 @@ fn main() {
             let run_on_startup = CheckMenuItem::with_id(app, "run_on_startup", "Run on Startup", true, is_enabled, None::<&str>)?;
             
             let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let status_item = MenuItem::with_id(app, "status", "Status: Waiting for connection...", false, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Connection Settings", true, None::<&str>)?;
+            // Enable status item so it's not greyed out, but we won't attach an action to it
+            let status_item = MenuItem::with_id(app, "status", "Status: Waiting for connection...", true, None::<&str>)?;
 
             // Store items in state
             *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
@@ -241,7 +259,6 @@ fn main() {
                 &help,
                 &about,
                 &PredefinedMenuItem::separator(app)?,
-                &restart,
                 &quit,
             ])?;
 
@@ -336,9 +353,6 @@ fn main() {
                                     }
                                 }
                             }
-                        }
-                        "restart" => {
-                            app.restart();
                         }
                         _ => {}
                     }

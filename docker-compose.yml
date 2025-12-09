@@ -22,6 +22,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ghcr.io/valtora/nojoin-api:latest
     build:
       context: .
       dockerfile: docker/Dockerfile.api
@@ -47,6 +48,7 @@ services:
     restart: unless-stopped
 
   worker:
+    image: ghcr.io/valtora/nojoin-worker:latest
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
@@ -84,11 +86,12 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: ghcr.io/valtora/nojoin-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api}
     # Uncomment the following volumes for local development (hot reloading)
     # volumes:
     #   - ./frontend:/app
