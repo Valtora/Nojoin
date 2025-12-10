@@ -11,7 +11,11 @@ const bundleMacos = path.join(targetRelease, 'bundle', 'macos');
 const bundleDmg = path.join(targetRelease, 'bundle', 'dmg');
 const appName = 'Nojoin.app';
 const appPath = path.join(bundleMacos, appName);
-const dmgName = 'Nojoin_0.1.8_aarch64.dmg'; // TODO: Get version/arch dynamically if needed
+const packageJson = require('../package.json');
+const version = packageJson.version;
+// Assuming aarch64 for now as we are on Apple Silicon, but ideally should detect
+const arch = process.arch === 'arm64' ? 'aarch64' : 'x64'; 
+const dmgName = `Nojoin_${version}_${arch}.dmg`;
 const dmgPath = path.join(bundleDmg, dmgName);
 const createDmgScript = path.join(__dirname, 'create-dmg.sh');
 const licenseFile = path.join(srcTauri, 'LICENSE_DISCLAIMER.txt');
@@ -25,6 +29,17 @@ try {
 } catch (e) {
     console.error('Build failed');
     process.exit(1);
+}
+
+// Ad-hoc sign the app to prevent "App is damaged" error on macOS
+if (process.platform === 'darwin') {
+    console.log('Ad-hoc signing the app...');
+    try {
+        execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
+    } catch (e) {
+        console.error('Signing failed:', e);
+        process.exit(1);
+    }
 }
 
 // Only run DMG creation on macOS
@@ -59,7 +74,6 @@ if (process.platform === 'darwin') {
             --app-drop-link 480 170 \
             --window-size 660 400 \
             --hide-extension "${appName}" \
-            --eula "${licenseFile}" \
             "${dmgPath}" \
             "${appPath}"`;
 

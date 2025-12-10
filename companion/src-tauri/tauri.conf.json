@@ -37,7 +37,7 @@
     ],
     "resources": [],
     "externalBin": [],
-    "licenseFile": "LICENSE_DISCLAIMER.txt",
+    "licenseFile": null,
     "copyright": "Valtora",
     "category": "Productivity",
     "shortDescription": "Nojoin Companion App",
@@ -45,7 +45,7 @@
   },
   "productName": "Nojoin",
   "mainBinaryName": "Nojoin",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "identifier": "com.valtora.nojoin.companion",
   "plugins": {},
   "app": {
