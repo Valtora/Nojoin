@@ -709,12 +709,22 @@ export const exportBackup = async (): Promise<Blob> => {
   return response.data;
 };
 
-export const importBackup = async (file: File, clearExisting: boolean): Promise<void> => {
+export const importBackup = async (
+  file: File, 
+  clearExisting: boolean,
+  onUploadProgress?: (progress: number) => void
+): Promise<void> => {
   const formData = new FormData();
   formData.append('file', file);
   await api.post(`/backup/import?clear_existing=${clearExisting}`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
+    },
+    onUploadProgress: (progressEvent) => {
+      if (onUploadProgress && progressEvent.total) {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onUploadProgress(percentCompleted);
+      }
     },
   });
 };
