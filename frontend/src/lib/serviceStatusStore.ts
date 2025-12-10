@@ -62,7 +62,7 @@ interface ServiceStatusState {
 
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
 const NORMAL_INTERVAL = 10000;
-const COMPANION_URL = 'http://localhost:12345';
+const COMPANION_URL = 'http://127.0.0.1:12345';
 
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   let backendTimer: NodeJS.Timeout | null = null;

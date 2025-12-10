@@ -55,7 +55,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   const sendCommand = async (command: string, body?: any) => {
     setError(null);
     try {
-      const res = await fetch(`http://localhost:12345/${command}`, {
+      const res = await fetch(`http://127.0.0.1:12345/${command}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,

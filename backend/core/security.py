@@ -9,6 +9,8 @@ from pathlib import Path
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
+from backend.utils.path_manager import path_manager
+
 def _get_secret_key() -> str:
     """Get or generate a persistent SECRET_KEY.
     
@@ -20,7 +22,7 @@ def _get_secret_key() -> str:
     if env_key := os.getenv("SECRET_KEY"):
         return env_key
     
-    key_file = Path("/app/data/.secret_key")
+    key_file = path_manager.user_data_directory / ".secret_key"
     if key_file.exists():
         return key_file.read_text().strip()
     

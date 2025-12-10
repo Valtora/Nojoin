@@ -4,7 +4,7 @@
   "description": "Nojoin Companion App",
   "scripts": {
     "tauri": "tauri",
-    "build": "tauri build",
+    "build": "node scripts/build-with-dmg.js",
     "build:portable": "node scripts/package-portable.js"
   },
   "license": "AGPL-3.0-only",

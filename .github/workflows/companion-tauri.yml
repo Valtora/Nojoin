@@ -36,15 +36,17 @@ jobs:
           cd companion
           npm install
 
-      - name: Build and Upload
-        uses: tauri-apps/tauri-action@v0
+      - name: Make scripts executable
+        shell: bash
+        run: |
+          chmod +x companion/scripts/create-dmg.sh || true
+
+      - name: Build App
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: "./companion"
-          tagName: companion-v__VERSION__ # Automatically replaced with app version
-          releaseDraft: false
-          prerelease: false
+          CI: true
+        run: |
+          cd companion
+          npm run build
 
       - name: Package Portable
         run: |
@@ -57,11 +59,15 @@ jobs:
           cd companion
           echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
 
-      - name: Upload Portable Assets
-        if: matrix.platform != 'macos-latest'
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd companion/dist-portable
-          gh release upload "companion-v${{ env.VERSION }}" * --clobber
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: companion-v${{ env.VERSION }}
+          name: Companion App v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            companion/src-tauri/target/release/bundle/dmg/*.dmg
+            companion/src-tauri/target/release/bundle/nsis/*.exe
+            companion/src-tauri/target/release/bundle/deb/*.deb
+            companion/dist-portable/*

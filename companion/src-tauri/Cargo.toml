@@ -36,10 +36,8 @@ win32_notif = "0.10.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6"
-screencapturekit = "0.2"
+screencapturekit = "1.3"
 tauri-plugin-macos-permissions = "2.0"
-core-media-sys = "0.1.2"
-coreaudio-sys = "0.2"
 core-foundation-sys = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]

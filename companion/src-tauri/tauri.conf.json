@@ -8,13 +8,12 @@
     "active": true,
     "targets": [
       "nsis",
-      "dmg",
       "deb",
-      "appimage"
+      "app"
     ],
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.13",
+      "minimumSystemVersion": "12.3",
       "exceptionDomain": "",
       "signingIdentity": null,
       "entitlements": null

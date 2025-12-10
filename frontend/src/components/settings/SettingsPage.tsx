@@ -22,7 +22,7 @@ interface CompanionConfig {
   local_port: number;
 }
 
-const COMPANION_URL = 'http://localhost:12345';
+const COMPANION_URL = 'http://127.0.0.1:12345';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('general');
