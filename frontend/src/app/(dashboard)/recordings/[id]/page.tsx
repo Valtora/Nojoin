@@ -15,6 +15,7 @@ import { Recording, RecordingStatus, ClientStatus, TranscriptSegment, GlobalSpea
 import { useRouter } from 'next/navigation';
 import { COLOR_PALETTE } from '@/lib/constants';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { useNotificationStore } from '@/lib/notificationStore';
 
 type ActivePanel = 'transcript' | 'notes';
 
@@ -53,6 +54,7 @@ export default function RecordingPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { addNotification } = useNotificationStore();
   
   // Undo/Redo State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -133,8 +135,12 @@ export default function RecordingPage({ params }: PageProps) {
                     setRecording(data);
                     if (!isEditingTitle) setTitleValue(data.name);
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Polling failed", e);
+                if (e.response && e.response.status === 404) {
+                    addNotification({ type: 'info', message: 'Recording was discarded or deleted.' });
+                    router.push('/');
+                }
             }
         }
     }, 3000);

@@ -48,16 +48,17 @@ Most meeting assistants require you to invite them to join your meetings or uplo
 4.  **Configure:** Follow the first-run wizard to set up API keys and preferences.
 5.  **Companion App:** Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page download, install, and connect the companion app on client machines to start recording audio.
 
-    - See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.*
+    - See [Installation & Setup](#installation--setup) for CPU-only mode and configuration details.
 
 ## 🖥️ Hardware Requirements
 
 *   **Backend Server:**
-    *   **Recommended:** Linux system with NVIDIA GPU (CUDA 12.x support).
-    *   **Minimum:** 8GB VRAM for optimal performance (Whisper Large + Pyannote).
-    *   **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**. Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
+    *   **Recommended:** Windows 11 (with WSL2) or Linux system with a compatible NVIDIA GPU (CUDA 12.x support).
+    *   **Minimum:** 8GB VRAM for optimal performance (Whisper Turbo + Pyannote).
+    *   **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**.
+        - Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
 *   **Companion App:**
-    *   Fully supported on Windows, macOS (Apple Silicon & Intel), and Linux.
+    *   Fully supported on Windows, macOS, and Linux.
 
 ## ✨ Features
 
@@ -235,16 +236,12 @@ If running Ollama on the host, use `http://host.docker.internal:11434` instead o
 
 - [x] **Windows & Linux Support** (Stable)
 - [ ] **macOS Support** (In Progress - Target: Jan 2026)
-    - Full stability for Apple Silicon & Intel.
+    - Full stability for macOS companion app.
     - Native ScreenCaptureKit integration.
 - [ ] **Real-time Transcription** (Target: April 2026)
     - Live transcript generation during recording.
     - Instant feedback loop.
     - Real-time suggestions and notes.
-- [ ] **Enterprise Features** (Target: July 2026)
-    - SSO Integration (OAuth, SAML).
-    - Advanced User Management.
-    - Audit Logs & Compliance Reports.
 
 ## 🤝 Contributing
 
@@ -255,7 +252,6 @@ Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to get s
 ## 📦 Editions
 
 *   **Community Edition:** This is the free and open-source version of Nojoin, designed for self-hosting and community support. It includes all core features for recording, processing, and analyzing meetings.
-*   **Enterprise Edition:** (See roadmap) An enterprise version designed for larger organizations. It will include additional deployment options, advanced administration features, and dedicated support.
 
 ## ⚖️ Legal
 

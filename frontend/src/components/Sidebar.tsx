@@ -464,12 +464,12 @@ export default function Sidebar() {
   return (
     <aside 
       id="sidebar-recordings-list"
-      className="w-80 flex-shrink-0 border-r border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0"
+      className="w-80 flex-shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0"
     >
       {view === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
       
       {/* Header */}
-      <div className="p-4 border-b border-gray-400 dark:border-gray-800">
+      <div className="p-4 border-b border-gray-300 dark:border-gray-800">
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs text-gray-500">
@@ -656,10 +656,10 @@ export default function Sidebar() {
                 onContextMenu={(e) => handleContextMenu(e, recording)}
                 className={`block p-3 rounded-lg border transition-all shadow-sm ${
                   isActive && !selectionMode
-                    ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
+                    ? 'bg-orange-100 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
                     : isSelected
-                      ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
-                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-50 dark:hover:border-orange-700 dark:hover:bg-gray-800'
+                      ? 'bg-orange-100 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
+                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-100 dark:hover:border-orange-700 dark:hover:bg-gray-800'
                 }`}
               >
                 <div className="flex justify-between items-start mb-1">

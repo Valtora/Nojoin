@@ -329,12 +329,6 @@ async fn stop_recording(
         let mut status = state.status.lock().unwrap();
         *status = AppStatus::Uploading;
 
-        // Reset timing
-        let mut start_time = state.recording_start_time.lock().unwrap();
-        *start_time = None;
-        let mut acc = state.accumulated_duration.lock().unwrap();
-        *acc = std::time::Duration::new(0, 0);
-
         // Do NOT clear current_recording_id here. Audio thread needs it.
     }
     state.audio_command_tx.send(AudioCommand::Stop).unwrap();
@@ -423,6 +417,7 @@ async fn resume_recording(
 struct ConfigResponse {
     api_port: u16,
     local_port: u16,
+    min_meeting_length: Option<u32>,
 }
 
 async fn get_config(State(context): State<ServerContext>) -> Json<ConfigResponse> {
@@ -431,6 +426,7 @@ async fn get_config(State(context): State<ServerContext>) -> Json<ConfigResponse
     Json(ConfigResponse {
         api_port: config.api_port,
         local_port: config.local_port,
+        min_meeting_length: config.min_meeting_length,
     })
 }
 
@@ -499,6 +495,7 @@ struct ConfigUpdate {
     api_token: Option<String>,
     input_device_name: Option<String>,
     output_device_name: Option<String>,
+    min_meeting_length: Option<u32>,
 }
 
 async fn update_config(
@@ -520,6 +517,9 @@ async fn update_config(
     if payload.output_device_name.is_some() {
         config.output_device_name = payload.output_device_name;
     }
+    if let Some(min_len) = payload.min_meeting_length {
+        config.min_meeting_length = Some(min_len);
+    }
 
     if let Err(e) = config.save() {
         eprintln!("Failed to save config: {}", e);
@@ -529,6 +529,7 @@ async fn update_config(
     Ok(Json(ConfigResponse {
         api_port: config.api_port,
         local_port: config.local_port,
+        min_meeting_length: config.min_meeting_length,
     }))
 }
 

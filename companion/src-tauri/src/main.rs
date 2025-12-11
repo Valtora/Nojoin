@@ -399,9 +399,10 @@ fn main() {
 
             let state_audio = state.clone();
             // audio_tx is already in state, but we need to keep audio_rx here for the loop
+            let app_handle_audio = app.handle().clone();
             
             thread::spawn(move || {
-                audio::run_audio_loop(state_audio, audio_rx);
+                audio::run_audio_loop(state_audio, audio_rx, app_handle_audio);
             });
 
             let state_server = state.clone();

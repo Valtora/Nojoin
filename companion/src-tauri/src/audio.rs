@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::uploader;
+use crate::notifications;
 use anyhow;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Device;
@@ -12,6 +13,7 @@ use std::sync::{
     Arc,
 };
 use std::thread;
+use tauri::AppHandle;
 
 // Removed mod mac_sc; declaration from here as it should be in main.rs/lib.rs
 
@@ -55,7 +57,7 @@ fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     host.default_output_device()
 }
 
-pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) {
+pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, app_handle: AppHandle) {
     let host = cpal::default_host();
 
     // Log available devices on startup
@@ -128,16 +130,59 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
                 let id = *state.current_recording_id.lock().unwrap();
                 let config = state.config.lock().unwrap().clone();
 
+                // Calculate duration
+                let duration = {
+                    let acc = *state.accumulated_duration.lock().unwrap();
+                    let start = *state.recording_start_time.lock().unwrap();
+                    if let Some(s) = start {
+                        if let Ok(elapsed) = s.elapsed() {
+                            acc + elapsed
+                        } else {
+                            acc
+                        }
+                    } else {
+                        acc
+                    }
+                };
+
                 if let Some(rec_id) = id {
                     let state_finalize = state.clone();
+                    let app_handle_finalize = app_handle.clone();
                     // Create a new runtime for the async task since we are in a sync thread
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
-                            // No sleep needed anymore, we know upload is done
-                            match uploader::finalize_recording(rec_id, &config).await {
-                                Ok(_) => println!("Recording finalized"),
-                                Err(e) => eprintln!("Failed to finalize: {}", e),
+                            // Check minimum length
+                            let min_minutes = config.min_meeting_length.unwrap_or(0);
+                            let duration_secs = duration.as_secs();
+                            
+                            if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
+                                info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
+                                match uploader::delete_recording(rec_id, &config).await {
+                                    Ok(_) => {
+                                        info!("Deleted short recording.");
+                                        notifications::show_notification(
+                                            &app_handle_finalize,
+                                            "Recording Discarded",
+                                            &format!("Meeting was shorter than {} minutes, discarding meeting.", min_minutes)
+                                        );
+                                    },
+                                    Err(e) => {
+                                        eprintln!("Failed to delete short recording: {}", e);
+                                        // Fallback to finalize if delete fails? No, better to leave it or try finalize.
+                                        // If delete fails, maybe we should finalize so user can delete it manually.
+                                        match uploader::finalize_recording(rec_id, &config).await {
+                                            Ok(_) => println!("Recording finalized (after delete failed)"),
+                                            Err(e) => eprintln!("Failed to finalize: {}", e),
+                                        }
+                                    },
+                                }
+                            } else {
+                                // No sleep needed anymore, we know upload is done
+                                match uploader::finalize_recording(rec_id, &config).await {
+                                    Ok(_) => println!("Recording finalized"),
+                                    Err(e) => eprintln!("Failed to finalize: {}", e),
+                                }
                             }
 
                             // Cleanup State
@@ -150,6 +195,10 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>) 
 
                                 let mut seq = state_finalize.current_sequence.lock().unwrap();
                                 *seq = 1;
+
+                                // Reset duration
+                                *state_finalize.accumulated_duration.lock().unwrap() = std::time::Duration::new(0, 0);
+                                *state_finalize.recording_start_time.lock().unwrap() = None;
                             }
                         });
                     });
@@ -188,6 +237,15 @@ fn start_segment(
             let (mic_tx, mic_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
             let (sys_tx, sys_rx) = crossbeam_channel::unbounded::<Vec<f32>>();
 
+            // Helper to calculate RMS level (0.0 to 1.0)
+            fn calculate_rms(data: &[f32]) -> f32 {
+                if data.is_empty() {
+                    return 0.0;
+                }
+                let sum_squares: f32 = data.iter().map(|s| s * s).sum();
+                (sum_squares / data.len() as f32).sqrt()
+            }
+
             // 1. Setup Microphone (Input)
             // We attempt to find a real device. If none found or config fails, we fallback to a virtual silence generator.
             let (mic_stream, mic_sample_rate) = {
@@ -217,6 +275,7 @@ fn start_segment(
 
                                 let err_fn = |err| log::error!("Mic Stream error: {}", err);
                                 let tx = mic_tx.clone();
+                                let state_mic = state.clone();
                                 
                                 // Helper to convert interleaved to mono
                                 let to_mono_mic = move |data: &[f32], channels: u16| -> Vec<f32> {
@@ -235,6 +294,11 @@ fn start_segment(
                                     &mic_config.into(),
                                     move |data: &[f32], _: &_| {
                                         let mono = to_mono_mic(data, mic_channels);
+                                        
+                                        // Update input level
+                                        let rms = calculate_rms(&mono);
+                                        state_mic.record_input_level(rms);
+
                                         let _ = tx.send(mono);
                                     },
                                     err_fn,
@@ -323,18 +387,9 @@ fn start_segment(
                 mono
             };
 
-            // Helper to calculate RMS level (0.0 to 1.0)
-            fn calculate_rms(data: &[f32]) -> f32 {
-                if data.is_empty() {
-                    return 0.0;
-                }
-                let sum_squares: f32 = data.iter().map(|s| s * s).sum();
-                (sum_squares / data.len() as f32).sqrt()
-            }
-
             // 3. Build Sys Stream
             #[cfg(not(target_os = "macos"))]
-            let sys_stream = {
+            let _sys_stream = {
                 let is_recording_sys = is_recording.clone();
                 let state_sys = state.clone();
                 
@@ -480,7 +535,7 @@ fn run_mixing_loop(
                 }
 
                 // Mix
-                for (i, mic_sample) in mic_data.iter().enumerate() {
+                for (_i, mic_sample) in mic_data.iter().enumerate() {
                     let mut mixed = *mic_sample;
 
                     // Simple mixing: Add system audio if available
@@ -509,7 +564,7 @@ fn run_mixing_loop(
         info!("Segment {} recorded: {:?}", current_sequence, path);
 
         // Upload segment in background
-        let state_upload = state.clone();
+        let _state_upload = state.clone();
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();

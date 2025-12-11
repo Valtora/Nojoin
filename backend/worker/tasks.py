@@ -159,7 +159,7 @@ def process_recording_task(self, recording_id: int):
                 if not transcript:
                     transcript = Transcript(recording_id=recording.id)
                 
-                transcript.text = "No Speech Detected"
+                transcript.text = ""  # Empty string to prevent hallucinations
                 transcript.segments = []
                 transcript.transcript_status = "completed"
                 

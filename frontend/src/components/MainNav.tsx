@@ -53,7 +53,7 @@ function NavItem({ icon, label, isActive, onClick, collapsed, badge, id }: NavIt
         w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
         ${isActive 
           ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' 
-          : 'text-gray-700 dark:text-gray-300 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-gray-800'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-orange-200 hover:text-orange-800 dark:hover:bg-gray-800'
         }
         ${collapsed ? 'justify-center' : ''}
       `}
@@ -341,14 +341,14 @@ export default function MainNav() {
       <aside 
         id="main-nav"
         className={`
-          flex-shrink-0 border-r border-gray-400 dark:border-gray-800 
-          bg-gray-200 dark:bg-gray-900 h-screen sticky top-0 
+          flex-shrink-0 border-r border-gray-300 dark:border-gray-800 
+          bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 
           flex flex-col transition-all duration-300
           ${collapsed ? 'w-16' : 'w-56'}
         `}
       >
         {/* Header with collapse toggle */}
-        <div className="p-3 flex items-center justify-between border-b border-gray-400 dark:border-gray-800">
+        <div className="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-800">
           {!collapsed && (
             <div className="flex-1 text-center flex items-center justify-center gap-2">
               <Image 

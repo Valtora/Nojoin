@@ -60,7 +60,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
             {/* Transcript Option */}
             <label className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
               selected === 'transcript' 
-                ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
+                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20' 
                 : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
             }`}>
               <input
@@ -73,7 +73,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
               />
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                 selected === 'transcript' 
-                  ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600' 
+                  ? 'bg-orange-200 dark:bg-orange-900/40 text-orange-600' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
               }`}>
                 <FileText className="w-5 h-5" />
@@ -98,7 +98,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
               !hasNotes 
                 ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700' 
                 : selected === 'notes' 
-                  ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 cursor-pointer' 
+                  ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20 cursor-pointer' 
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer'
             }`}>
               <input
@@ -112,7 +112,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
               />
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                 selected === 'notes' 
-                  ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600' 
+                  ? 'bg-orange-200 dark:bg-orange-900/40 text-orange-600' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
               }`}>
                 <StickyNote className="w-5 h-5" />
@@ -141,7 +141,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
               !hasNotes 
                 ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700' 
                 : selected === 'both' 
-                  ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 cursor-pointer' 
+                  ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20 cursor-pointer' 
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer'
             }`}>
               <input
@@ -155,7 +155,7 @@ export default function ExportModal({ isOpen, onClose, onExport, hasNotes }: Exp
               />
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                 selected === 'both' 
-                  ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600' 
+                  ? 'bg-orange-200 dark:bg-orange-900/40 text-orange-600' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
               }`}>
                 <Files className="w-5 h-5" />

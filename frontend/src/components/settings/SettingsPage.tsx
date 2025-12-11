@@ -20,6 +20,7 @@ type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin' | 'invite
 interface CompanionConfig {
   api_port: number;
   local_port: number;
+  min_meeting_length?: number;
 }
 
 const COMPANION_URL = 'http://127.0.0.1:12345';
@@ -167,6 +168,7 @@ export default function SettingsPage() {
       lastSavedState.current = JSON.stringify({
         settings: currentSettings,
         companionApiPort: currentCompanionConfig?.api_port,
+        companionMinLength: currentCompanionConfig?.min_meeting_length,
         selectedInputDevice: currentInputDevice,
         selectedOutputDevice: currentOutputDevice
       });
@@ -186,7 +188,10 @@ export default function SettingsPage() {
           await fetch(`${COMPANION_URL}/config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ api_port: companionConfig.api_port })
+              body: JSON.stringify({ 
+                api_port: companionConfig.api_port,
+                min_meeting_length: companionConfig.min_meeting_length
+              })
           });
       }
       
@@ -206,6 +211,7 @@ export default function SettingsPage() {
       lastSavedState.current = JSON.stringify({
         settings,
         companionApiPort: companionConfig?.api_port,
+        companionMinLength: companionConfig?.min_meeting_length,
         selectedInputDevice,
         selectedOutputDevice
       });
@@ -231,6 +237,7 @@ export default function SettingsPage() {
     const currentState = JSON.stringify({
         settings,
         companionApiPort: companionConfig?.api_port,
+        companionMinLength: companionConfig?.min_meeting_length,
         selectedInputDevice,
         selectedOutputDevice
     });

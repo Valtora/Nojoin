@@ -209,7 +209,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
               <button
                 onClick={handleRestartTour}
                 disabled={!userId}
-                className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-50 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
               >
                 Restart Tour
               </button>
@@ -225,7 +225,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
               <button
                 onClick={handleRecreateDemo}
                 disabled={isSeeding}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-50 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
               >
                 {isSeeding && <RefreshCw className="w-3 h-3 animate-spin" />}
                 {isSeeding ? 'Creating...' : 'Re-create Meeting'}

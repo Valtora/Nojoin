@@ -202,7 +202,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
             className={`
               relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
               ${isDragging 
-                ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
+                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20' 
                 : selectedFile 
                   ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
                   : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'

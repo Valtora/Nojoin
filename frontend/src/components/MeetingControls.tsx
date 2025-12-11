@@ -101,10 +101,9 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   const handleResume = () => sendCommand('resume');
 
   return (
-    <div className="p-4 border-b border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-950">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-        {error && <div className="text-xs text-red-500">{error}</div>}
+    <div className="p-4 border-b border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
+      <div className="w-full">
+        {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
         
         {companionStatus === 'idle' ? (
           <button
@@ -115,7 +114,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
             Start Meeting
           </button>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg border border-red-100 dark:border-red-900/30">
               <div className={`w-2 h-2 rounded-full bg-red-500 ${companionStatus === 'recording' ? 'animate-pulse' : ''}`} />
               <span className="text-sm font-medium">
@@ -154,7 +153,6 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
           </div>
         )}
       </div>
-    </div>
     </div>
   );
 }

@@ -636,7 +636,7 @@ export default function TranscriptView({
                                     setEditValue(speakerName);
                                     setActivePopover(null);
                                 }}
-                                className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-600 dark:hover:text-orange-400 transition-colors text-left"
+                                className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-700 dark:hover:text-orange-400 transition-colors text-left"
                                 title="Click to change speaker, Double-click to rename"
                             >
                                 {speakerName}
