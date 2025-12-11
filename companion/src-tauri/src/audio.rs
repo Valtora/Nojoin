@@ -505,6 +505,7 @@ fn run_mixing_loop(
 ) -> anyhow::Result<()> {
     let mut sys_buffer: Vec<f32> = Vec::new();
     let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut upload_handles = Vec::new();
 
     while is_recording.load(Ordering::SeqCst) {
         let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
@@ -569,16 +570,29 @@ fn run_mixing_loop(
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();
 
-        rt.spawn(async move {
+        let handle = rt.spawn(async move {
             match uploader::upload_segment(recording_id, seq, &path_clone, &config).await {
                 Ok(_) => info!("Segment {} uploaded successfully", seq),
                 Err(e) => log::error!("Failed to upload segment {}: {}", seq, e),
             }
         });
+        upload_handles.push(handle);
 
         current_sequence += 1;
         *state.current_sequence.lock().unwrap() = current_sequence;
     }
+
+    // Wait for all uploads to complete
+    info!("Waiting for pending uploads to complete...");
+    rt.block_on(async {
+        for handle in upload_handles {
+            if let Err(e) = handle.await {
+                log::error!("Upload task join error: {}", e);
+            }
+        }
+    });
+    info!("All uploads completed.");
+
     Ok(())
 }
 

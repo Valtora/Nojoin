@@ -57,3 +57,18 @@ Configuration is split between system-wide infrastructure settings and user-spec
 *   **CORS & Remote Access:**
     *   **CORS:** Configurable via `ALLOWED_ORIGINS` environment variable.
     *   **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
+
+## Troubleshooting
+
+### MacOS Security Warning
+When opening the Nojoin Companion App on macOS, you may encounter a security warning stating that "Nojoin not opened. Apple could not verify that this app is free from malware."
+
+**Workaround:**
+1.  Open **System Settings**.
+2.  Go to **Privacy & Security**.
+3.  Scroll down to the **Security** section.
+4.  You should see a message about "Nojoin" being blocked. Click **Open Anyway**.
+5.  Enter your system password if prompted.
+6.  Click **Open** in the final dialog box.
+
+*Note: This only needs to be done once per installation.*

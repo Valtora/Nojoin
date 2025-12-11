@@ -32,14 +32,17 @@ try {
 }
 
 // Ad-hoc sign the app to prevent "App is damaged" error on macOS
-if (process.platform === 'darwin') {
-    console.log('Ad-hoc signing the app...');
+// Only do this if we are NOT using a real signing identity (which Tauri handles if configured)
+if (process.platform === 'darwin' && !process.env.APPLE_SIGNING_IDENTITY) {
+    console.log('No APPLE_SIGNING_IDENTITY found. Ad-hoc signing the app...');
     try {
         execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
     } catch (e) {
         console.error('Signing failed:', e);
         process.exit(1);
     }
+} else if (process.platform === 'darwin') {
+    console.log('APPLE_SIGNING_IDENTITY found. Skipping ad-hoc signing (Tauri should handle real signing).');
 }
 
 // Only run DMG creation on macOS

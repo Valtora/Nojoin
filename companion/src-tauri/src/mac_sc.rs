@@ -137,3 +137,16 @@ pub fn start_capture(
 
     Ok(AudioCaptureStream { _stream: stream })
 }
+
+/// Check permissions by attempting to fetch shareable content.
+/// This will trigger the system permission prompt if not already granted.
+pub fn check_permissions() -> bool {
+    match SCShareableContent::get() {
+        Ok(_) => true,
+        Err(e) => {
+            log::warn!("Permission check failed (this might trigger prompt): {:?}", e);
+            false
+        }
+    }
+}
+

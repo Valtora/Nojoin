@@ -46,8 +46,10 @@ The Companion App is a lightweight system tray application that handles audio ca
 *   **Visual Feedback:** Tray icon changes color/shape based on status. Native system notifications for status changes.
 
 ### macOS Permissions
-On macOS, the Companion App requires **Screen Recording** permission to capture system audio. This is a system requirement for accessing audio output from other applications.
-1.  On first launch, you will be prompted to allow Screen Recording.
+On macOS, the Companion App requires:
+1.  **Screen Recording** permission to capture system audio. This is a system requirement for accessing audio output from other applications.
+2.  **Notifications** permission to display status updates and alerts.
+1.  On first launch, you will be prompted to allow these permissions.
 2.  If denied, you can enable it manually in **System Settings > Privacy & Security > Screen Recording**.
 3.  **Note:** No video is recorded; this permission is strictly used for audio capture via Apple's ScreenCaptureKit framework.
 

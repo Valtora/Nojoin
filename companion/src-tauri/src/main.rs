@@ -205,6 +205,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
             // Permission checks are handled by the frontend or implicitly by the OS in v2
+            #[cfg(target_os = "macos")]
+            {
+                info!("Checking macOS ScreenCaptureKit permissions...");
+                mac_sc::check_permissions();
+                info!("Requesting macOS Notification permissions...");
+                mac_notifications::request_permission();
+            }
 
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let config = Config::load();

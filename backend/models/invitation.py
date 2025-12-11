@@ -3,15 +3,20 @@ from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import ForeignKey, Column, Integer
 from sqlmodel import Field, Relationship
 from backend.models.base import BaseDBModel
-import uuid
+import secrets
+import string
 
 if TYPE_CHECKING:
     from backend.models.user import User
 
+def generate_invite_code():
+    chars = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(8))
+
 class Invitation(BaseDBModel, table=True):
     __tablename__ = "invitations"
     
-    code: str = Field(default_factory=lambda: str(uuid.uuid4()), index=True, unique=True)
+    code: str = Field(default_factory=generate_invite_code, index=True, unique=True)
     role: str = Field(default="user") # "admin", "user"
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = 1 # None = unlimited

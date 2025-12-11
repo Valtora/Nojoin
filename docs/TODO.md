@@ -6,6 +6,7 @@ After the colons I will provide a list of tasks/instructions that need to be com
 - Review how input sanitisation is handled for all user inputs to prevent injection attacks.
 - Implement input validation for all settings to ensure they conform to expected formats and ranges. Provide a clear error notification toast if invalid inputs are detected. Use tooltips to inform users of valid input formats.
 
-## UI/UX Dashboard Improvements
-- The 'Start Meeting' button is not centred properly. Adjust the CSS to ensure it is centred on all screen sizes.
-- Review the UI/UX of the dashboard for consistency in font sizes, colors, and spacing. Suggest adjustments as appropriate to improve overall aesthetics and usability.
+## macOS Companion App
+- The companion app is not able to send notifications on macOS due to missing permissions.
+  - Research and implement a method to request the necessary permissions from the user on first launch.
+  - Update the macOS build configuration to include any required entitlements for sending notifications.

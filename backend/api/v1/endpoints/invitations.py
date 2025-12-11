@@ -1,5 +1,5 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -30,9 +30,29 @@ class InvitationRead(BaseModel):
     link: str
     users: List[str] = []
 
+def get_invite_base_url(request: Request) -> str:
+    system_config = config_manager.config
+    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+    
+    # If the configured URL is the default localhost, try to detect the actual domain
+    if "localhost" in web_app_url:
+        # Check for X-Forwarded headers (common in reverse proxies)
+        forwarded_host = request.headers.get("x-forwarded-host")
+        forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+        
+        if forwarded_host:
+            return f"{forwarded_proto}://{forwarded_host}"
+            
+        # Fallback to the request's base URL if not behind a proxy or headers missing
+        # request.base_url returns a URL object, convert to string
+        return str(request.base_url).rstrip("/")
+        
+    return web_app_url
+
 @router.post("/", response_model=InvitationRead)
 async def create_invitation(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     invitation_in: InvitationCreate,
     current_user: User = Depends(get_current_user),
@@ -58,8 +78,7 @@ async def create_invitation(
     await db.refresh(invitation)
     
     # Construct link
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+    web_app_url = get_invite_base_url(request)
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
@@ -70,6 +89,7 @@ async def create_invitation(
 
 @router.get("/", response_model=List[InvitationRead])
 async def read_invitations(
+    request: Request,
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
@@ -85,8 +105,7 @@ async def read_invitations(
     result = await db.execute(query)
     invitations = result.scalars().all()
     
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+    web_app_url = get_invite_base_url(request)
     
     res = []
     for inv in invitations:

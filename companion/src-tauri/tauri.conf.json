@@ -16,7 +16,7 @@
       "minimumSystemVersion": "12.3",
       "exceptionDomain": "",
       "signingIdentity": null,
-      "entitlements": null
+      "entitlements": "entitlements.plist"
     },
     "windows": {
       "nsis": {
