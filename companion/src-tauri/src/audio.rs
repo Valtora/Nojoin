@@ -14,6 +14,7 @@ use std::sync::{
 };
 use std::thread;
 use tauri::AppHandle;
+use tokio::sync::mpsc;
 
 // Removed mod mac_sc; declaration from here as it should be in main.rs/lib.rs
 
@@ -346,17 +347,13 @@ fn start_segment(
 
             // 2. Setup System Audio (Loopback) - use configured or default
             // On Windows WASAPI, we use the output device for loopback
-            #[cfg(not(target_os = "macos"))]
             let sys_device = find_output_device(&host, &config)
                 .ok_or_else(|| anyhow::anyhow!("No output device available"))?;
-            #[cfg(not(target_os = "macos"))]
             let sys_config = sys_device
                 .default_output_config()
                 .map_err(|e| anyhow::anyhow!("Failed to get sys config: {}", e))?;
-            #[cfg(not(target_os = "macos"))]
             let sys_channels = sys_config.channels();
             
-            #[cfg(not(target_os = "macos"))]
             info!(
                 "Sys: {} ({}ch, {}Hz)",
                 sys_device.name().unwrap_or_default(),
@@ -388,7 +385,6 @@ fn start_segment(
             };
 
             // 3. Build Sys Stream
-            #[cfg(not(target_os = "macos"))]
             let _sys_stream = {
                 let is_recording_sys = is_recording.clone();
                 let state_sys = state.clone();
@@ -427,24 +423,6 @@ fn start_segment(
                 
                 sys_stream.play().map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
                 sys_stream
-            };
-
-            #[cfg(target_os = "macos")]
-            let sys_stream = {
-                // Note: SCK usually captures at 48kHz. If mic is different, we might have drift.
-                // For now, we pass the mic sample rate to SCK config and hope it respects it.
-                let target_sample_rate = mic_sample_rate;
-                
-                // Clone the sender for the capture callback
-                let tx = sys_tx.clone();
-                
-                info!("Starting ScreenCaptureKit for System Audio at {}Hz", target_sample_rate);
-                
-                // Start capture using the synchronous API (screencapturekit 1.3)
-                let stream = crate::mac_sc::start_capture(tx, target_sample_rate, 2)
-                    .map_err(|e| anyhow::anyhow!("Failed to start SCK: {}", e))?;
-                
-                stream
             };
 
             if let Some(stream) = mic_stream {
@@ -506,6 +484,7 @@ fn run_mixing_loop(
     let mut sys_buffer: Vec<f32> = Vec::new();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut upload_handles = Vec::new();
+    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
 
     while is_recording.load(Ordering::SeqCst) {
         let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
@@ -569,10 +548,14 @@ fn run_mixing_loop(
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();
+        let tx = progress_tx.clone();
 
         let handle = rt.spawn(async move {
             match uploader::upload_segment(recording_id, seq, &path_clone, &config).await {
-                Ok(_) => info!("Segment {} uploaded successfully", seq),
+                Ok(_) => {
+                    info!("Segment {} uploaded successfully", seq);
+                    tx.send(seq).ok();
+                },
                 Err(e) => log::error!("Failed to upload segment {}: {}", seq, e),
             }
         });
@@ -584,7 +567,28 @@ fn run_mixing_loop(
 
     // Wait for all uploads to complete
     info!("Waiting for pending uploads to complete...");
+    drop(progress_tx); // Close the channel so rx finishes when all tasks are done
+
+    let total_segments = current_sequence;
+    let config = state.config.lock().unwrap().clone();
+
     rt.block_on(async {
+        // Set initial status
+        uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config).await.ok();
+
+        let mut completed_count = 0;
+        while let Some(_) = progress_rx.recv().await {
+            completed_count += 1;
+            // Scale upload progress to 0-20% of total progress
+            let progress = if total_segments > 0 {
+                ((completed_count as f32 / total_segments as f32) * 20.0) as i32
+            } else {
+                20
+            };
+            
+            uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config).await.ok();
+        }
+
         for handle in upload_handles {
             if let Err(e) = handle.await {
                 log::error!("Upload task join error: {}", e);

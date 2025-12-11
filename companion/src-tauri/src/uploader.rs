@@ -165,6 +165,36 @@ pub async fn update_client_status(recording_id: i64, status: &str, config: &Conf
     Ok(())
 }
 
+pub async fn update_status_with_progress(
+    recording_id: i64,
+    status: &str,
+    progress: i32,
+    config: &Config,
+) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let url = format!(
+        "{}/recordings/{}/client_status?status={}&upload_progress={}",
+        config.get_api_url(),
+        recording_id,
+        status,
+        progress
+    );
+
+    let res = client
+        .put(&url)
+        .header("Authorization", format!("Bearer {}", config.api_token))
+        .send()
+        .await?;
+
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
+    }
+
+    Ok(())
+}
+
 pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)

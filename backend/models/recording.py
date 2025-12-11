@@ -36,6 +36,8 @@ class Recording(BaseDBModel, table=True):
     file_size_bytes: Optional[int] = None
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
     client_status: Optional[ClientStatus] = Field(default=None)
+    # upload_progress is now used for overall progress (0-100) including upload and processing steps
+    upload_progress: int = Field(default=0)
     processing_step: Optional[str] = Field(default=None)
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
@@ -88,6 +90,7 @@ class RecordingRead(BaseDBModel):
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
     client_status: Optional[ClientStatus] = None
+    upload_progress: int = 0
     processing_step: Optional[str] = None
     is_archived: bool = False
     is_deleted: bool = False

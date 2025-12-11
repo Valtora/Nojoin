@@ -493,7 +493,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                     </p>
               )}
               <p className="text-xs text-gray-500 mt-2">
-                Required for Pyannote speaker diarization. Ensure you have accepted the user agreement for <code>pyannote/speaker-diarization-3.1</code> on Hugging Face.
+                Required for Pyannote speaker diarization. Ensure you have accepted the user agreement for <code>pyannote/speaker-diarization-community-1</code> on Hugging Face.
               </p>
             </div>
           </div>

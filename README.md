@@ -58,7 +58,8 @@ Most meeting assistants require you to invite them to join your meetings or uplo
     *   **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**.
         - Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
 *   **Companion App:**
-    *   Fully supported on Windows, macOS, and Linux.
+    *   Currently supported on **Windows only**.
+    *   macOS and Linux companion apps are not yet available. We welcome contributors to help build support for these platforms!
 
 ## ✨ Features
 
@@ -96,10 +97,10 @@ Nojoin is composed of three distinct subsystems:
     *   Provides a dashboard for playback, transcript editing, and system configuration.
 
 3.  **The Companion App (Rust):**
-    *   Runs on client machines (Windows, macOS, Linux).
+    *   Runs on Windows client machines.
     *   Sits in the system tray and handles audio capture.
     *   Uploads audio to the server for processing.
-    *   **macOS Support:** Uses native ScreenCaptureKit for system audio capture (requires macOS 12.3+).
+    *   **Platform Support:** Currently Windows-only. Community contributions welcome for macOS and Linux support!
 
 ## 🔑 API Keys & Configuration
 
@@ -200,13 +201,13 @@ If you are running Ollama on the same machine as the Nojoin Docker containers, y
 ### Running the Companion App
 
 1.  Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
-2.  Download the executable for your operating system (Windows, macOS, or Linux).
-3.  Run the application. It will appear in your system tray.
-4.  The web app also has a 'Download Companion App' button that will take you to the above link.
+2.  Download the Windows installer (`Nojoin_X.Y.Z_windows.exe`).
+3.  Run the installer. The application will appear in your system tray.
+4.  The web app also has a 'Download Companion App' button that will take you to the releases page.
 
-*Note: For developers, you can still build from source by navigating to the `companion` directory and running `cargo run --release`.*
+*Note: For developers, you can build from source by navigating to the `companion` directory and running `cargo build --release` on Windows.*
 
-> **🧪 Call for Testing:** The Companion App has been tested on Windows. We are looking for community feedback on **macOS** and **Linux** stability. Please report any OS-specific issues on GitHub.
+> **🤝 Contributors Wanted:** We are seeking developers to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support, making porting feasible. If you're interested in contributing, please check our [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss!
 
 ## ❓ Troubleshooting
 
@@ -234,11 +235,11 @@ If running Ollama on the host, use `http://host.docker.internal:11434` instead o
 
 ## 🗺️ Roadmap
 
-- [x] **Windows & Linux Support** (Stable)
-- [ ] **macOS Support** (In Progress - Target: Jan 2026)
-    - Full stability for macOS companion app.
-    - Native ScreenCaptureKit integration.
-- [ ] **Real-time Transcription** (Target: April 2026)
+- [x] **Windows Support** (Stable)
+- [ ] **macOS & Linux Support** (Seeking Contributors)
+    - Community-driven development for companion app.
+    - Windows implementation can serve as a reference.
+- [ ] **Real-time Transcription** (Target: Q2 2026)
     - Live transcript generation during recording.
     - Instant feedback loop.
     - Real-time suggestions and notes.

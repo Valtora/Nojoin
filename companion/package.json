@@ -1,10 +1,10 @@
 {
   "name": "nojoin-companion",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Nojoin Companion App",
   "scripts": {
     "tauri": "tauri",
-    "build": "node scripts/build-with-dmg.js",
+    "build": "tauri build",
     "build:portable": "node scripts/package-portable.js"
   },
   "license": "AGPL-3.0-only",

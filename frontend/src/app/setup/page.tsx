@@ -612,7 +612,7 @@ export default function SetupPage() {
 
               <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
                 <p className="text-sm text-blue-800 dark:text-blue-200">
-                  To enable speaker identification (who said what), you need a Hugging Face token with access to <code>pyannote/speaker-diarization-3.1</code>.
+                  To enable speaker identification (who said what), you need a Hugging Face token with access to <code>pyannote/speaker-diarization-community-1</code>.
                   <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline ml-1 font-medium">
                     Get one here
                   </a>.

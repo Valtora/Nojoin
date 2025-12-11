@@ -1,6 +1,6 @@
 const GITHUB_REPO = 'Valtora/Nojoin';
 
-export type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
+export type Platform = 'windows' | 'unknown';
 
 export function detectPlatform(): Platform {
   if (typeof window === 'undefined') {
@@ -15,23 +15,12 @@ export function detectPlatform(): Platform {
     return 'windows';
   }
 
-  // Check for macOS
-  if (userAgent.includes('mac') || platform.includes('mac')) {
-    return 'macos';
-  }
-
-  // Check for Linux (but not Android)
-  if ((userAgent.includes('linux') || platform.includes('linux')) && !userAgent.includes('android')) {
-    return 'linux';
-  }
-
+  // macOS and Linux are not currently supported for the companion app
   return 'unknown';
 }
 
 export function getDownloadUrl(): string {
-  // Robustness: Directing to the releases page is safer than hardcoding filenames
-  // which change with every version (e.g. including version numbers) and architecture.
-  // This allows the user to choose the correct installer (e.g. Apple Silicon vs Intel).
+  // Direct to releases page where users can download the Windows installer
   return `https://github.com/${GITHUB_REPO}/releases/latest`;
 }
 
@@ -43,10 +32,6 @@ export function getPlatformIcon(platform: Platform = detectPlatform()): string {
   switch (platform) {
     case 'windows':
       return 'windows';
-    case 'macos':
-      return 'apple';
-    case 'linux':
-      return 'linux';
     default:
       return 'download';
   }

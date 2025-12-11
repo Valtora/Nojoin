@@ -29,6 +29,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Structure**:
   - `src-tauri/`: Rust backend code.
   - `src/`: Frontend assets (currently minimal).
+- **Platform Support**: Windows only. macOS and Linux support is not currently available (contributions welcome).
 - **Concurrency**:
   - **Audio Thread**: Captures audio using `cpal`. Communicates via `crossbeam_channel`.
   - **Server/Upload Thread**: Uses `tokio` runtime.
@@ -45,7 +46,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
   - Web app sends token + current host/port to `/auth` endpoint.
   - App automatically updates config and connects.
   - Manual configuration available via System Tray > Settings.
-- **Installer**: Built via Tauri Bundler. Installs to `%LOCALAPPDATA%\Nojoin` on Windows.
+- **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.
 
 ## Critical Workflows
 
@@ -60,7 +61,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 - **Companion (Windows)**:
   - Development: `cd companion && npm run tauri dev`
   - Release Build: `cd companion && npm run tauri build`
-  - **Note**: When building from WSL2, copy the project to a Windows directory first to avoid UNC path issues with `npm`.
+  - **Note**: Build from a Windows environment. WSL2 may have UNC path issues.
   - **Environment Variables**: Ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` (if applicable) are set in your Windows environment variables or PowerShell session before building.
 - **Companion Installer (Windows)**:
   - Build: `cd companion && npm run tauri build`
@@ -70,7 +71,7 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 
 **The companion app uses a separate tag pattern** (`companion-v*`) to avoid rebuilds on every main app release.
 
-1. **Update Version Numbers** (both files must match):
+1. **Update Version Numbers** (all three files must match):
    - `companion/package.json`: `"version": "X.Y.Z"`
    - `companion/src-tauri/tauri.conf.json`: `"version": "X.Y.Z"`
    - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
@@ -85,16 +86,14 @@ Nojoin is a distributed meeting intelligence platform. It records system audio v
 4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
 
 5. **Trigger CI/CD Manually**: Go to GitHub Actions > "Companion App Build & Release" > "Run workflow". Select the branch or tag to build.
-   - This builds all platform installers:
-     - Windows: Tauri NSIS installer (`.exe`)
-     - macOS: Tauri DMG (`.dmg`)
-     - Linux: Tauri DEB (`.deb`)
+   - This builds the Windows installer (`.exe`).
 
-6. **Artifacts Uploaded**: All installers attached to the GitHub Release automatically.
+6. **Artifacts Uploaded**: Windows installer is attached to the GitHub Release automatically.
 
 **Important**:
 - **Versioning**: Must use strict 3-component Semantic Versioning (`X.Y.Z`, e.g., `0.1.6`). 4-component versions (`0.1.6.1`) are **NOT** supported by Tauri or Windows installers.
 - **Triggers**: Tags do NOT trigger companion builds automatically. You must manually trigger the workflow.
+- **Platform**: Only Windows builds are currently supported. macOS and Linux builds have been removed pending community contributions.
 
 ## Code Style & Conventions
 

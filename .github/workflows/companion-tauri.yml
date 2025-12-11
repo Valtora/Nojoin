@@ -8,12 +8,8 @@ jobs:
   release:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: windows-latest
     
-    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,21 +21,10 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libasound2-dev
-
       - name: install frontend dependencies
         run: |
           cd companion
           npm install
-
-      - name: Make scripts executable
-        shell: bash
-        run: |
-          chmod +x companion/scripts/create-dmg.sh || true
 
       - name: Build App
         env:
@@ -59,28 +44,15 @@ jobs:
           cd companion
           echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
 
-      - name: Rename Installers
+      - name: Rename Installer
         shell: bash
         run: |
           VERSION=${{ env.VERSION }}
-          # Windows
-          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
-            mv companion/src-tauri/target/release/bundle/nsis/*.exe companion/src-tauri/target/release/bundle/nsis/Nojoin_${VERSION}_windows.exe
-          fi
-          # macOS
-          if [ "${{ matrix.platform }}" == "macos-latest" ]; then
-            mv companion/src-tauri/target/release/bundle/dmg/*.dmg companion/src-tauri/target/release/bundle/dmg/Nojoin_${VERSION}_macos.dmg
-          fi
-          # Linux
-          if [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
-            mv companion/src-tauri/target/release/bundle/deb/*.deb companion/src-tauri/target/release/bundle/deb/Nojoin_${VERSION}_linux.deb
-          fi
+          mv companion/src-tauri/target/release/bundle/nsis/*.exe companion/src-tauri/target/release/bundle/nsis/Nojoin_${VERSION}_windows.exe
 
       - name: Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            companion/src-tauri/target/release/bundle/dmg/Nojoin_*.dmg
             companion/src-tauri/target/release/bundle/nsis/Nojoin_*.exe
-            companion/src-tauri/target/release/bundle/deb/Nojoin_*.deb
             companion/dist-portable/*

@@ -1136,6 +1136,7 @@ async def batch_permanently_delete_recordings(
 async def update_client_status(
     recording_id: int,
     status: ClientStatus = Query(..., description="Current status of the client"),
+    upload_progress: int = Query(0, description="Upload progress percentage"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1147,6 +1148,7 @@ async def update_client_status(
         raise HTTPException(status_code=404, detail="Recording not found")
     
     recording.client_status = status
+    recording.upload_progress = upload_progress
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

@@ -99,6 +99,7 @@ export interface Recording extends BaseDBModel {
   file_size_bytes?: number;
   status: RecordingStatus;
   client_status?: ClientStatus;
+  upload_progress?: number;
   processing_step?: string;
   is_archived: boolean;
   is_deleted: boolean;

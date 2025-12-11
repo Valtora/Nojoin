@@ -39,15 +39,15 @@ The primary user interface for interacting with the system.
 *   **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. Dynamically links to the correct installer for the user's OS (Windows/macOS/Linux) from GitHub Releases.
 
 ### 2.3 The Companion App (Tauri + Rust)
-A lightweight, cross-platform system tray application responsible for audio capture.
+A lightweight system tray application responsible for audio capture on Windows.
 *   **Directory:** `companion/`
 *   **Framework:** Tauri v1.5.
 *   **Language:** Rust (Backend) + HTML/JS (Frontend - currently minimal).
-*   **Platforms:** Windows, macOS, Linux (First-class support for all).
+*   **Platforms:** Windows (macOS and Linux support is not currently available - contributions welcome).
 *   **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 *   **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 *   **Local Server:** Always runs on `localhost:12345`. Remote access must be configured via a user-managed reverse proxy.
-*   **Distribution:** Installer binaries (MSI, EXE, DMG, DEB) are built via Tauri Bundler and hosted on GitHub Releases.
+*   **Distribution:** Windows installer (NSIS) is built via Tauri Bundler and hosted on GitHub Releases.
 *   **Auto-Update:** The app uses Tauri's built-in updater to check for new versions on GitHub.
 
 ### 2.4 Security
@@ -121,12 +121,13 @@ The system provides the following core capabilities:
 ### 4.3 Companion App Stack
 *   **Framework:** Tauri v1.5
 *   **Language:** Rust (Core Logic)
-*   **Audio:** cpal (Windows/Linux), ScreenCaptureKit (macOS)
+*   **Audio:** cpal (Windows)
 *   **Async Runtime:** Tokio
 *   **HTTP Client:** Reqwest
 *   **GUI/Tray:** Tauri System Tray
-*   **Installer:** Tauri Bundler (NSIS for Windows, DMG for macOS, DEB/AppImage for Linux) with:
-    *   Installation to `%LOCALAPPDATA%\Nojoin` (Windows)
+*   **Platforms:** Windows only (macOS and Linux support seeking contributors)
+*   **Installer:** Tauri Bundler (NSIS for Windows) with:
+    *   Installation to `%LOCALAPPDATA%\Nojoin`
     *   Start Menu and Desktop shortcuts
     *   Run on Startup option (via `tauri-plugin-autostart`)
     *   Automatic termination of running instances during update

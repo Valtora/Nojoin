@@ -1,4 +1,3 @@
-use directories::ProjectDirs;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -80,42 +79,12 @@ impl Config {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let exe_config = exe_dir.join(config_name);
-
-                // If it exists, use it
-                if exe_config.exists() {
-                    return exe_config;
-                }
-
-                // On Windows, default to creating it here if it doesn't exist
-                #[cfg(target_os = "windows")]
-                {
+                
+                // If it exists, use it; otherwise create it here on Windows
+                if exe_config.exists() || cfg!(target_os = "windows") {
                     return exe_config;
                 }
             }
-        }
-
-        // Check standard system locations using directories crate (Fallback / Linux / MacOS)
-        if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin") {
-            let config_dir = proj_dirs.config_dir();
-            let app_config = config_dir.join(config_name);
-
-            // If it exists, use it
-            if app_config.exists() {
-                return app_config;
-            }
-
-            // If we are on Linux or MacOS, we prefer this location for new configs
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            {
-                // Ensure directory exists
-                if let Err(e) = fs::create_dir_all(config_dir) {
-                    log::warn!("Failed to create config directory: {}", e);
-                } else {
-                    return app_config;
-                }
-            }
-
-            return app_config;
         }
 
         // Fallback to current directory if all else fails

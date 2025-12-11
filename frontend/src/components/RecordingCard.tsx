@@ -13,21 +13,31 @@ interface RecordingCardProps {
   recording: Recording;
 }
 
-const formatDuration = (seconds?: number) => {
+const formatDuration = (recording: Recording) => {
+  if (recording.status === RecordingStatus.UPLOADING) {
+    return '--';
+  }
+  const seconds = recording.duration_seconds;
   if (!seconds) return '00:00';
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString(undefined, {
+const formatDate = (dateString: string, recording: Recording) => {
+  const start = new Date(dateString).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+  
+  if (recording.status === RecordingStatus.UPLOADING) {
+    return `${start} - --:--`;
+  }
+  
+  return start;
 };
 
 const StatusBadge = ({ recording }: { recording: Recording }) => {
@@ -193,11 +203,11 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
             <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
-                {formatDate(recording.created_at)}
+                {formatDate(recording.created_at, recording)}
               </div>
               <div className="flex items-center">
                 <Clock className="w-4 h-4 mr-1" />
-                {formatDuration(recording.duration_seconds)}
+                {formatDuration(recording)}
               </div>
             </div>
           </div>
@@ -223,11 +233,11 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
             <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
-                {formatDate(recording.created_at)}
+                {formatDate(recording.created_at, recording)}
               </div>
               <div className="flex items-center">
                 <Clock className="w-4 h-4 mr-1" />
-                {formatDuration(recording.duration_seconds)}
+                {formatDuration(recording)}
               </div>
             </div>
           </div>

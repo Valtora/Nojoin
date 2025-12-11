@@ -18,20 +18,15 @@ use tauri::{
 
 mod audio;
 mod config;
-mod linux_notifications;
-mod mac_notifications;
 mod notifications;
 mod server;
 mod state;
 mod uploader;
 mod win_notifications;
 
-#[cfg(target_os = "macos")]
-mod mac_sc;
-
 use config::Config;
 use state::{AppState, AppStatus};
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_autostart::ManagerExt;
 
 // Define SharedAppState at module level so it's visible to commands
 struct SharedAppState(Arc<AppState>);
@@ -131,16 +126,6 @@ async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
             {
                 win_notifications::show_update_notification(app.clone(), version, url);
             }
-
-            #[cfg(target_os = "macos")]
-            {
-                mac_notifications::show_update_notification(app.clone(), version.clone(), url);
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                linux_notifications::show_update_notification(app.clone(), version, url);
-            }
         }
         Ok(None) => {
             if !silent {
@@ -190,29 +175,12 @@ fn main() {
     }
     info!("Starting Nojoin Companion (Tauri)...");
 
-    #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])));
-
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_plugin_macos_permissions::init());
-    }
-
-    builder
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
-            // Permission checks are handled by the frontend or implicitly by the OS in v2
-            #[cfg(target_os = "macos")]
-            {
-                info!("Checking macOS ScreenCaptureKit permissions...");
-                mac_sc::check_permissions();
-                info!("Requesting macOS Notification permissions...");
-                mac_notifications::request_permission();
-            }
-
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let config = Config::load();
             

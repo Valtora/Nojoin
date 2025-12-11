@@ -60,15 +60,10 @@ Configuration is split between system-wide infrastructure settings and user-spec
 
 ## Troubleshooting
 
-### MacOS Security Warning
-When opening the Nojoin Companion App on macOS, you may encounter a security warning stating that "Nojoin not opened. Apple could not verify that this app is free from malware."
+### Companion App Issues
+The Companion App currently supports Windows only. If you encounter issues:
+1. Ensure you have the latest version from the [Releases](https://github.com/Valtora/Nojoin/releases) page.
+2. Check the logs in the application directory.
+3. Report issues on GitHub.
 
-**Workaround:**
-1.  Open **System Settings**.
-2.  Go to **Privacy & Security**.
-3.  Scroll down to the **Security** section.
-4.  You should see a message about "Nojoin" being blocked. Click **Open Anyway**.
-5.  Enter your system password if prompted.
-6.  Click **Open** in the final dialog box.
-
-*Note: This only needs to be done once per installation.*
+**For macOS and Linux users:** We are seeking contributors to help build companion apps for these platforms. Please see our [Contributing Guide](../CONTRIBUTING.md) for more information.
