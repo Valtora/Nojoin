@@ -6,6 +6,7 @@ import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, Ref
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelsStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
+import Tooltip from '@/components/ui/Tooltip';
 
 const WHISPER_MODELS = [
   { id: 'tiny', label: 'Tiny', params: '39 M', vram: '~1 GB', speed: '~10x' },
@@ -234,7 +235,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                 {/* Provider */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Provider
+                    <Tooltip content="Select the AI provider for processing meetings." position="right">
+                        <span className="flex items-center gap-1 cursor-help">
+                            Provider <HelpCircle className="w-3 h-3 text-gray-400" />
+                        </span>
+                    </Tooltip>
                   </label>
                   <select
                     value={settings.llm_provider || 'gemini'}
@@ -281,7 +286,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                 {/* Model */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
-                        Model
+                        <Tooltip content="Select the specific model to use for this provider." position="right">
+                            <span className="flex items-center gap-1 cursor-help">
+                                Model <HelpCircle className="w-3 h-3 text-gray-400" />
+                            </span>
+                        </Tooltip>
                         <button 
                             onClick={() => {
                                 const provider = settings.llm_provider || 'gemini';
@@ -349,7 +358,11 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
             {!['ollama'].includes(settings.llm_provider || '') && (
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Key
+                    <Tooltip content="Enter the API key for the selected provider." position="right">
+                        <span className="flex items-center gap-1 cursor-help">
+                            API Key <HelpCircle className="w-3 h-3 text-gray-400" />
+                        </span>
+                    </Tooltip>
                 </label>
                 <div className="flex gap-2">
                     <div className="relative flex-1">

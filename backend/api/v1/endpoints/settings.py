@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,6 +84,13 @@ async def update_settings_root(
     current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
+    # Validate settings
+    try:
+        for key, value in update_data.items():
+            config_manager.validate_config_value(key, value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Merge new settings
     current_settings.update(update_data)
     current_user.settings = current_settings
@@ -108,6 +115,13 @@ async def update_settings(
     current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
+    # Validate settings
+    try:
+        for key, value in update_data.items():
+            config_manager.validate_config_value(key, value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Merge new settings
     current_settings.update(update_data)
     current_user.settings = current_settings

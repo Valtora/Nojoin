@@ -178,7 +178,25 @@ export default function SettingsPage() {
     load();
   }, [activeTab]);
 
+  const validateSettings = (settings: Settings): string | null => {
+    if (settings.whisper_model_size && !['tiny', 'base', 'small', 'medium', 'large', 'turbo'].includes(settings.whisper_model_size)) {
+        return "Invalid Whisper model size.";
+    }
+    if (settings.theme && !['dark', 'light'].includes(settings.theme)) {
+        return "Invalid theme.";
+    }
+    if (settings.llm_provider && !['gemini', 'openai', 'anthropic', 'ollama'].includes(settings.llm_provider)) {
+        return "Invalid LLM provider.";
+    }
+    return null;
+  };
+
   const saveSettings = useCallback(async () => {
+    const error = validateSettings(settings);
+    if (error) {
+        addNotification({ type: 'error', message: error });
+        return;
+    }
     setSaving(true);
     try {
       await updateSettings(settings);

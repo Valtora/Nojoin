@@ -65,6 +65,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Authentication:** JWT-based authentication is used for API access.
 - **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
 - **Authorization:** Role-based access control (Owner/Admin/User) and strict ownership checks ensure users can only access their own data.
+- **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
 - **CORS & Remote Access:**
   - **CORS:** Restricted to allowed origins. Configurable via the `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
   - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.

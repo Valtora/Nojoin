@@ -168,6 +168,16 @@ class ConfigManager:
                 logger.error(f"Failed to create directory {abs_recordings_dir}: {e}", exc_info=True)
                 # Potentially fallback to a default or raise an error
 
+    def validate_config_value(self, key, value):
+        """Validates a configuration value."""
+        if key == "whisper_model_size" and value not in WHISPER_MODEL_SIZES:
+            raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
+        if key == "theme" and value not in APP_THEMES:
+            raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
+        if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:
+             raise ValueError(f"Invalid llm_provider: {value}. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+        return True
+
     def get(self, key, default=None):
         """Gets a configuration value."""
         return self.config.get(key, default)
