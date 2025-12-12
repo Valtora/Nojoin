@@ -88,6 +88,7 @@ def process_recording_task(self, recording_id: int):
     
     try:
         recording.status = RecordingStatus.PROCESSING
+        recording.processing_progress = 20
         session.add(recording)
         session.commit()
         session.refresh(recording)
@@ -129,9 +130,9 @@ def process_recording_task(self, recording_id: int):
         enable_vad = merged_config.get("enable_vad", True)
         
         if enable_vad:
-            self.update_state(state='PROCESSING', meta={'progress': 25, 'stage': 'VAD'})
+            self.update_state(state='PROCESSING', meta={'progress': 30, 'stage': 'VAD'})
             recording.processing_step = "Filtering silence and noise..."
-            recording.upload_progress = 25
+            recording.processing_progress = 30
             session.add(recording)
             session.commit()
             
@@ -213,9 +214,9 @@ def process_recording_task(self, recording_id: int):
              raise FileNotFoundError(f"Processed audio file missing: {processed_audio_path}")
         
         # --- Transcription Stage ---
-        self.update_state(state='PROCESSING', meta={'progress': 45, 'stage': 'Transcription'})
+        self.update_state(state='PROCESSING', meta={'progress': 50, 'stage': 'Transcription'})
         recording.processing_step = "Transcribing audio..."
-        recording.upload_progress = 45
+        recording.processing_progress = 50
         session.add(recording)
         session.commit()
         
@@ -229,7 +230,7 @@ def process_recording_task(self, recording_id: int):
         if enable_diarization:
             self.update_state(state='PROCESSING', meta={'progress': 70, 'stage': 'Diarization'})
             recording.processing_step = "Determining who said what..."
-            recording.upload_progress = 70
+            recording.processing_progress = 70
             session.add(recording)
             session.commit()
             
@@ -247,7 +248,8 @@ def process_recording_task(self, recording_id: int):
         
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 85, 'stage': 'Saving'})
-        recording.upload_progress = 85
+        recording.processing_step = "Saving transcript..."
+        recording.processing_progress = 85
         session.add(recording)
         session.commit()
         
@@ -299,7 +301,11 @@ def process_recording_task(self, recording_id: int):
         
         if llm_api_key and llm_model and auto_infer_speakers:
             try:
-                self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Inferring Speakers'})
+                self.update_state(state='PROCESSING', meta={'progress': 88, 'stage': 'Inferring Speakers'})
+                recording.processing_step = "Inferring speaker names..."
+                recording.processing_progress = 88
+                session.add(recording)
+                session.commit()
                 logger.info("Running LLM speaker inference...")
                 
                 # Prepare transcript for LLM
@@ -372,7 +378,7 @@ def process_recording_task(self, recording_id: int):
         if enable_auto_voiceprints and diarization_result:
             self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Voiceprints'})
             recording.processing_step = "Learning voiceprints..."
-            recording.upload_progress = 90
+            recording.processing_progress = 90
             session.add(recording)
             session.commit()
             logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
@@ -503,9 +509,9 @@ def process_recording_task(self, recording_id: int):
         auto_generate_title = merged_config.get("auto_generate_title", True)
         if auto_generate_title:
             try:
-                self.update_state(state='PROCESSING', meta={'progress': 95, 'stage': 'Inferring Title'})
+                self.update_state(state='PROCESSING', meta={'progress': 94, 'stage': 'Inferring Title'})
                 recording.processing_step = "Inferring meeting title..."
-                recording.upload_progress = 95
+                recording.processing_progress = 94
                 session.add(recording)
                 session.commit()
 
@@ -545,9 +551,9 @@ def process_recording_task(self, recording_id: int):
         auto_generate_notes = merged_config.get("auto_generate_notes", True)
         if auto_generate_notes:
             try:
-                self.update_state(state='PROCESSING', meta={'progress': 98, 'stage': 'Generating Notes'})
+                self.update_state(state='PROCESSING', meta={'progress': 97, 'stage': 'Generating Notes'})
                 recording.processing_step = "Generating meeting notes..."
-                recording.upload_progress = 98
+                recording.processing_progress = 97
                 session.add(recording)
                 session.commit()
                 
@@ -583,7 +589,7 @@ def process_recording_task(self, recording_id: int):
 
         # Update Recording Status
         recording.processing_step = "Completed"
-        recording.upload_progress = 100
+        recording.processing_progress = 100
         session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)

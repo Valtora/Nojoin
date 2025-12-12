@@ -24,9 +24,7 @@ const getStatusMessage = (recording: Recording) => {
         if (recording.client_status === ClientStatus.RECORDING) return "Meeting is in progress...";
         if (recording.client_status === ClientStatus.PAUSED) return "Meeting is paused...";
         if (recording.client_status === ClientStatus.UPLOADING) {
-            return recording.upload_progress !== undefined 
-                ? `Finalizing Upload...` 
-                : "Meeting is being uploaded...";
+            return "Meeting is being uploaded...";
         }
         // Fallback for when client_status is not yet set or is IDLE but status is UPLOADING
         return "Meeting is in progress...";
@@ -132,8 +130,9 @@ export default function RecordingPage({ params }: PageProps) {
                 if (
                     data.status !== recording.status || 
                     data.client_status !== recording.client_status ||
-                    data.upload_progress !== recording.upload_progress ||
                     data.processing_step !== recording.processing_step ||
+                    data.upload_progress !== recording.upload_progress ||
+                    data.processing_progress !== recording.processing_progress ||
                     data.transcript?.notes_status !== recording.transcript?.notes_status ||
                     data.transcript?.notes !== recording.transcript?.notes ||
                     JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
@@ -678,21 +677,34 @@ export default function RecordingPage({ params }: PageProps) {
 
       <div className="flex-1 flex min-h-0">
         {(recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.QUEUED) ? (
-             <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-                <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    {recording.status === RecordingStatus.UPLOADING ? 
-                        (recording.client_status === ClientStatus.UPLOADING ? "Finalizing Upload" : "Meeting in Progress") : 
-                     recording.status === RecordingStatus.QUEUED ? "Queued for Processing" : "Processing Recording..."}
-                </h2>
-                <p className="text-gray-500 dark:text-gray-400">
-                    {getStatusMessage(recording)}
-                </p>
-                {(recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.QUEUED || (recording.client_status === ClientStatus.UPLOADING && recording.upload_progress !== undefined)) && (
-                    <div className="w-full max-w-md mt-4 bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                        <div className="bg-orange-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${recording.upload_progress || 0}%` }}></div>
-                    </div>
-                )}
+             <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center justify-center space-y-4 px-4">
+                    <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white text-center">
+                        {recording.status === RecordingStatus.UPLOADING ? 
+                            (recording.client_status === ClientStatus.UPLOADING ? "Finalizing Upload" : "Meeting in Progress") : 
+                         recording.status === RecordingStatus.QUEUED ? "Queued for Processing" : "Processing Recording..."}
+                    </h2>
+
+                    {/* Show detailed status text only for QUEUED/PROCESSING; hide during active recording to avoid duplicate text */}
+                    {(recording.status === RecordingStatus.QUEUED || recording.status === RecordingStatus.PROCESSING) && (
+                        <p className="text-gray-500 dark:text-gray-400 text-center">
+                            {getStatusMessage(recording)}
+                        </p>
+                    )}
+
+                    {/* Combined Progress Bar: hidden while meeting is in-progress (recording), shown for finalizing upload, queued, or processing */}
+                    {((recording.status === RecordingStatus.UPLOADING && recording.client_status === ClientStatus.UPLOADING) || recording.status === RecordingStatus.QUEUED || recording.status === RecordingStatus.PROCESSING) && (
+                        <div className="w-full max-w-md mt-4">
+                            <div className="relative w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                                <div 
+                                    className={`h-full rounded-full transition-all duration-500 ease-out ${recording.status === RecordingStatus.QUEUED ? 'bg-orange-400 animate-pulse' : 'bg-orange-500'}`}
+                                    style={{ width: `${recording.status === RecordingStatus.UPLOADING ? (recording.upload_progress || 0) : Math.max(20, recording.processing_progress || 20)}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         ) : (
                 <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full flex-1 min-w-0">
