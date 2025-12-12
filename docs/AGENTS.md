@@ -74,7 +74,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 
 ### Companion Release Workflow
 
-**The companion app uses a separate tag pattern** (`companion-v*`) to avoid rebuilds on every main app release.
+**The companion app uses the standard tag pattern** (`v*`) to align with the main app release.
 
 1. **Update Version Numbers** (all three files must match):
    - `companion/package.json`: `"version": "X.Y.Z"`
@@ -82,16 +82,16 @@ Nojoin is a distributed meeting intelligence platform. The system records system
    - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
 2. **Commit and Push**: Push changes to the `main` branch.
 
-3. **Create Companion Tag**: Use the `companion-v` prefix:
+3. **Create Tag**: Use the `v` prefix:
 
    ```bash
-   git tag companion-v0.2.0
-   git push origin companion-v0.2.0
+   git tag v0.2.0
+   git push origin v0.2.0
    ```
 
    *Note: Creating a tag locally via GUI does not automatically push it. The tag must be explicitly pushed to trigger the workflow.*
 
-4. **Create GitHub Release**: Create a release for the `companion-v*` tag on GitHub.
+4. **Create GitHub Release**: Create a release for the `v*` tag on GitHub.
 
 5. **Trigger CI/CD Manually**: Navigate to GitHub Actions > "Companion App Build & Release" > "Run workflow". Select the branch or tag to build.
    - This builds the Windows installer (`.exe`).

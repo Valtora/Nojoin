@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
-import { getTags, updateTag, deleteTag, createTag } from '@/lib/api';
+import { getTags, updateTag, deleteTag, createTag, getCompanionReleases, CompanionReleases } from '@/lib/api';
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
 import { InlineColorPicker } from './ColorPicker';
@@ -31,7 +31,7 @@ import GlobalSpeakersModal from './GlobalSpeakersModal';
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
 import NotificationHistoryModal from './NotificationHistoryModal';
-import { getDownloadUrl } from '@/lib/platform';
+import { getDownloadUrl, detectPlatform } from '@/lib/platform';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -198,6 +198,19 @@ export default function MainNav() {
     toggleNavCollapse 
   } = useNavigationStore();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [companionReleases, setCompanionReleases] = useState<CompanionReleases | null>(null);
+
+  useEffect(() => {
+    const fetchReleases = async () => {
+      try {
+        const releases = await getCompanionReleases();
+        setCompanionReleases(releases);
+      } catch (error) {
+        console.error('Failed to fetch companion releases:', error);
+      }
+    };
+    void fetchReleases();
+  }, []);
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -309,6 +322,13 @@ export default function MainNav() {
   };
 
   const handleDownloadCompanion = () => {
+    const platform = detectPlatform();
+    
+    if (platform === 'windows' && companionReleases?.windows_url) {
+      window.open(companionReleases.windows_url, '_blank');
+      return;
+    }
+
     const downloadUrl = getDownloadUrl();
     window.open(downloadUrl, '_blank');
   };

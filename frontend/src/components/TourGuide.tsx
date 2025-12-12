@@ -24,9 +24,19 @@ export default function TourGuide() {
     // Dashboard Tour
     if (pathname === '/' && !hasSeenTour[userId]) {
       const timer = setTimeout(() => {
+        // Filter steps to only include those that exist in the DOM
+        const validSteps = dashboardSteps.filter(step => {
+          if (typeof step.element === 'string') {
+            return !!document.querySelector(step.element);
+          }
+          return true;
+        });
+
+        if (validSteps.length === 0) return;
+
         const driverObj = driver({
           showProgress: true,
-          steps: dashboardSteps,
+          steps: validSteps,
           popoverClass: 'driverjs-theme',
           nextBtnText: 'Next',
           prevBtnText: 'Previous',

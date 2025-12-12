@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
 
@@ -88,9 +88,9 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
 
     if resp.status().is_success() {
         let release: GitHubRelease = resp.json().await.map_err(|e| e.to_string())?;
-        // tag_name is usually like "companion-v0.1.4" or "v0.1.4"
+        // tag_name is usually "v0.1.4"
         // We need to parse it.
-        let version_str = release.tag_name.trim_start_matches("companion-v").trim_start_matches('v');
+        let version_str = release.tag_name.trim_start_matches('v');
         
         // Simple version comparison (lexicographical might fail for 0.1.10 vs 0.1.9, but semver crate is better if available)
         // Since we don't have semver crate in Cargo.toml, let's try to use a simple split check or just string compare if format is consistent.
@@ -169,6 +169,27 @@ fn setup_logging() -> Result<(), fern::InitError> {
     Ok(())
 }
 
+fn open_web_interface(app: &tauri::AppHandle) {
+    let state_wrapper = app.state::<SharedAppState>();
+    let state = &state_wrapper.0;
+    
+    let url = {
+            let dynamic_url = state.web_url.lock().unwrap().clone();
+            if let Some(d_url) = dynamic_url {
+                Some(d_url)
+            } else {
+                let config = state.config.lock().unwrap();
+                Some(config.get_web_url())
+            }
+    };
+    
+    if let Some(target_url) = url {
+        let _ = open::that(target_url);
+    } else {
+        notifications::show_notification(app, "Error", "Backend URL not found.");
+    }
+}
+
 fn main() {
     if let Err(e) = setup_logging() {
         eprintln!("Failed to initialize logging: {}", e);
@@ -178,6 +199,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
+        }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
@@ -269,24 +293,7 @@ fn main() {
                             }
                         }
                         "open_web" => {
-                            let state_wrapper = app.state::<SharedAppState>();
-                            let state = &state_wrapper.0;
-                            
-                            let url = {
-                                 let dynamic_url = state.web_url.lock().unwrap().clone();
-                                 if let Some(d_url) = dynamic_url {
-                                     Some(d_url)
-                                 } else {
-                                     let config = state.config.lock().unwrap();
-                                     Some(config.get_web_url())
-                                 }
-                            };
-                            
-                            if let Some(target_url) = url {
-                                let _ = open::that(target_url);
-                            } else {
-                                notifications::show_notification(app, "Error", "Backend URL not found.");
-                            }
+                            open_web_interface(app);
                         }
                         "about" => {
                              notifications::show_notification(
@@ -336,6 +343,11 @@ fn main() {
                             }
                         }
                         _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
+                        open_web_interface(tray.app_handle());
                     }
                 })
                 .build(app)?;

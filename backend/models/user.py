@@ -17,7 +17,6 @@ class UserRole(str, Enum):
 class User(BaseDBModel, table=True):
     __tablename__ = "users"
     username: str = Field(index=True, unique=True)
-    email: Optional[str] = Field(default=None, index=True)
     hashed_password: str
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
@@ -40,7 +39,6 @@ class User(BaseDBModel, table=True):
 class UserCreate(SQLModel):
     username: str
     password: str
-    email: Optional[str] = None
     is_superuser: bool = False
     role: str = UserRole.USER
     invite_code: Optional[str] = None
@@ -48,7 +46,6 @@ class UserCreate(SQLModel):
 class UserRead(SQLModel):
     id: int
     username: str
-    email: Optional[str] = None
     is_active: bool
     is_superuser: bool
     force_password_change: bool
@@ -62,7 +59,6 @@ class UserList(SQLModel):
 
 class UserUpdate(SQLModel):
     username: Optional[str] = None
-    email: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None

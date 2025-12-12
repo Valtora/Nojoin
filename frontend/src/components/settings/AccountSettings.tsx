@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { updateUserMe, updatePasswordMe, getUserMe } from '@/lib/api';
 import { Loader2, User, Lock, Save } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
+import { trimString } from '@/lib/validation';
 
 export default function AccountSettings() {
   const [loading, setLoading] = useState(false);
@@ -33,11 +34,13 @@ export default function AccountSettings() {
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    const trimmedUsername = trimString(username);
     try {
-      await updateUserMe({ username });
+      await updateUserMe({ username: trimmedUsername });
       addNotification({ message: 'Profile updated successfully', type: 'success' });
       // Update local storage if username changed
-      localStorage.setItem('username', username);
+      localStorage.setItem('username', trimmedUsername);
+      setUsername(trimmedUsername);
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to update profile', type: 'error' });
     } finally {

@@ -1,4 +1,5 @@
 from typing import Any, Optional
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,7 +88,6 @@ async def setup_system(
 
     user = User(
         username=setup_in.username,
-        email=setup_in.email,
         hashed_password=get_password_hash(setup_in.password),
         is_superuser=True,
         force_password_change=False, # First user sets their own password, so no need to force change
@@ -236,3 +236,53 @@ async def seed_demo(
     if current_user.id:
         await seed_demo_data(user_id=current_user.id, force=True)
     return {"message": "Demo data seeding initiated"}
+
+@router.get("/companion-releases")
+async def get_companion_releases() -> Any:
+    """
+    Fetch the latest companion app release from GitHub.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://api.github.com/repos/Valtora/Nojoin/releases")
+            response.raise_for_status()
+            releases = response.json()
+            
+            for release in releases:
+                # Look for assets
+                assets = release.get("assets", [])
+                windows_asset = None
+                
+                for asset in assets:
+                    name = asset.get("name", "").lower()
+                    if name.endswith(".exe") and "portable" not in name:
+                        windows_asset = asset
+                        break
+                
+                if windows_asset:
+                    return {
+                        "version": release.get("tag_name"),
+                        "windows_url": windows_asset.get("browser_download_url"),
+                        # Add placeholders for other OSs when supported
+                        "macos_url": None,
+                        "linux_url": None
+                    }
+            
+            # If no suitable release found
+            return {
+                "version": None,
+                "windows_url": None,
+                "macos_url": None,
+                "linux_url": None
+            }
+            
+    except Exception as e:
+        print(f"Error fetching releases: {e}")
+        # Fallback to generic releases page
+        return {
+            "version": None,
+            "windows_url": "https://github.com/Valtora/Nojoin/releases",
+            "macos_url": "https://github.com/Valtora/Nojoin/releases",
+            "linux_url": "https://github.com/Valtora/Nojoin/releases"
+        }
+

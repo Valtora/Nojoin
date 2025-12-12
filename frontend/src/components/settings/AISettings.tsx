@@ -6,6 +6,7 @@ import { Eye, EyeOff, Check, X, Loader2, Download, Trash2, HelpCircle, Info, Ref
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { validateLLM, validateHF, getModelsStatus, downloadModels, deleteModel, getTaskStatus, listModels } from '@/lib/api';
 import { useNotificationStore } from '@/lib/notificationStore';
+import { trimString, sanitizeUrl } from '@/lib/validation';
 import Tooltip from '@/components/ui/Tooltip';
 
 const WHISPER_MODELS = [
@@ -265,7 +266,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                                 type="text"
                                 value={(settings.llm_provider === 'ollama' ? settings.ollama_api_url : '') || ''}
                                 onChange={(e) => {
-                                    const val = e.target.value;
+                                    const val = sanitizeUrl(e.target.value);
                                     const updates: any = { ...settings };
                                     if (settings.llm_provider === 'ollama') updates.ollama_api_url = val;
                                     onUpdate(updates);
@@ -379,7 +380,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                                 (settings.anthropic_api_key || '')
                             }
                             onChange={(e) => {
-                                const val = e.target.value;
+                                const val = trimString(e.target.value);
                                 if (settings.llm_provider === 'gemini') onUpdate({ ...settings, gemini_api_key: val });
                                 else if (settings.llm_provider === 'openai') onUpdate({ ...settings, openai_api_key: val });
                                 else onUpdate({ ...settings, anthropic_api_key: val });
@@ -478,7 +479,7 @@ export default function AISettings({ settings, onUpdate, searchQuery = '', isAdm
                   <input
                     type={showHfToken ? "text" : "password"}
                     value={settings.hf_token || ''}
-                    onChange={(e) => onUpdate({ ...settings, hf_token: e.target.value })}
+                    onChange={(e) => onUpdate({ ...settings, hf_token: trimString(e.target.value) })}
                     disabled={!isAdmin}
                     className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     placeholder="hf_..."

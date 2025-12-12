@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Pytest cache
+.pytest_cache/
+backend/tests/__pycache__/
+
 # Environment
 /.venv
 # User data directory, also contains the config.json file which may have sensitive info

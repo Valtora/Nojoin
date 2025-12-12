@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import urlparse
 
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
-from backend.utils.config_manager import get_default_user_settings, config_manager
+from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES
 
 router = APIRouter()
 
@@ -29,8 +30,35 @@ class SettingsUpdate(BaseModel):
     auto_infer_speakers: Optional[bool] = None
     enable_vad: Optional[bool] = None
     enable_diarization: Optional[bool] = None
-    # System settings that might be passed but should be ignored or handled separately if we allowed admin to change them
-    # For now, we only allow user settings update here.
+
+    @validator('whisper_model_size')
+    def validate_whisper_model_size(cls, v):
+        if v and v not in WHISPER_MODEL_SIZES:
+            raise ValueError(f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}")
+        return v
+
+    @validator('theme')
+    def validate_theme(cls, v):
+        if v and v not in APP_THEMES:
+            raise ValueError(f"Invalid theme. Must be one of {APP_THEMES}")
+        return v
+
+    @validator('llm_provider')
+    def validate_llm_provider(cls, v):
+        if v and v not in ["gemini", "openai", "anthropic", "ollama"]:
+            raise ValueError("Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+        return v
+
+    @validator('ollama_api_url')
+    def validate_ollama_api_url(cls, v):
+        if v:
+            try:
+                result = urlparse(v)
+                if not all([result.scheme, result.netloc]):
+                    raise ValueError("Invalid URL format")
+            except:
+                raise ValueError("Invalid URL format")
+        return v
 
 def _merge_settings(user_settings: dict) -> dict:
     """

@@ -63,7 +63,6 @@ function RegisterForm() {
       await registerUser(
         formData.username,
         formData.password,
-        "", // Email is optional/removed from UI
         formData.invite_code
       );
       

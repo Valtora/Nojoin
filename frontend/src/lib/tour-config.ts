@@ -51,10 +51,18 @@ export const dashboardSteps: DriveStep[] = [
     }
   },
   {
-    element: '#getting-started-card',
+    element: '#nav-download-companion',
     popover: {
-      title: 'Companion App',
-      description: 'After this tour, please download and connect the Companion App to start recording meetings. This is required for Nojoin to listen to your meetings.',
+      title: 'Download Companion App',
+      description: 'To start recording meetings, please download the Companion App. It runs in the background and captures audio securely.',
+      side: 'top',
+    }
+  },
+  {
+    element: '#nav-connect-companion',
+    popover: {
+      title: 'Connect Companion App',
+      description: 'Your Companion App is running! Click here to connect it to Nojoin and start recording.',
       side: 'top',
     }
   }

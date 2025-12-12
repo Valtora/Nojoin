@@ -4,6 +4,7 @@ import { Loader2, Shield, Trash2, UserPlus, Edit2, X, Check, Search, ChevronLeft
 import { useNotificationStore } from '@/lib/notificationStore';
 import ConfirmationModal from '../ConfirmationModal';
 import { User } from '@/types';
+import { trimString } from '@/lib/validation';
 
 export default function AdminSettings() {
   const [users, setUsers] = useState<User[]>([]);
@@ -19,7 +20,7 @@ export default function AdminSettings() {
 
   // Create User State
   const [isCreating, setIsCreating] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
 
   // Edit User State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -58,10 +59,14 @@ export default function AdminSettings() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createUser(newUser);
+      const userToCreate = {
+          ...newUser,
+          username: trimString(newUser.username),
+      };
+      await createUser(userToCreate);
       addNotification({ message: 'User created successfully', type: 'success' });
       setIsCreating(false);
-      setNewUser({ username: '', email: '', password: '', role: 'user' });
+      setNewUser({ username: '', password: '', role: 'user' });
       fetchUsers();
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to create user', type: 'error' });
@@ -98,7 +103,9 @@ export default function AdminSettings() {
     if (!editingUser) return;
     
     try {
-      await updateUser(editingUser.id, editForm);
+      const updates = { ...editForm };
+      if (updates.username) updates.username = trimString(updates.username);
+      await updateUser(editingUser.id, updates);
       addNotification({ message: 'User updated successfully', type: 'success' });
       setEditModalOpen(false);
       setEditingUser(null);
@@ -143,14 +150,6 @@ export default function AdminSettings() {
               placeholder="Username"
               value={newUser.username}
               onChange={e => setNewUser({...newUser, username: e.target.value})}
-              className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
-              required
-            />
-            <input
-              placeholder="Email"
-              type="email"
-              value={newUser.email}
-              onChange={e => setNewUser({...newUser, email: e.target.value})}
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />

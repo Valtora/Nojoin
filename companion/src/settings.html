@@ -99,10 +99,23 @@
 
         // Save config
         saveBtn.addEventListener('click', async () => {
-            const serverUrl = serverUrlInput.value.trim();
+            let serverUrl = serverUrlInput.value.trim();
             
             if (!serverUrl) {
                 statusDiv.textContent = 'Server URL is required';
+                statusDiv.className = 'status error';
+                return;
+            }
+
+            // Basic URL validation and sanitization
+            try {
+                // If user enters just "192.168.1.100", prepend https://
+                if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+                    serverUrl = 'https://' + serverUrl;
+                }
+                new URL(serverUrl); // Throws if invalid
+            } catch (e) {
+                statusDiv.textContent = 'Invalid URL format. Please include http:// or https://';
                 statusDiv.className = 'status error';
                 return;
             }
@@ -115,6 +128,9 @@
                 
                 statusDiv.textContent = 'Settings saved successfully!';
                 statusDiv.className = 'status success';
+                
+                // Update input with sanitized value
+                serverUrlInput.value = serverUrl;
                 
                 setTimeout(() => {
                     statusDiv.textContent = '';

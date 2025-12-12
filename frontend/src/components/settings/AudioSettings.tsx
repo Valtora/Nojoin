@@ -1,9 +1,11 @@
 'use client';
 
 import { Settings, CompanionDevices } from '@/types';
-import { Mic, Speaker } from 'lucide-react';
+import { Mic, Speaker, AlertCircle } from 'lucide-react';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { AUDIO_KEYWORDS } from './keywords';
+import { sanitizeIntegerString } from '@/lib/validation';
+import { useState } from 'react';
 
 interface AudioSettingsProps {
   settings: Settings;
@@ -29,6 +31,31 @@ export default function AudioSettings({
   searchQuery = '',
 }: AudioSettingsProps) {
   const showDevices = fuzzyMatch(searchQuery, AUDIO_KEYWORDS);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleMinLengthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    const sanitized = sanitizeIntegerString(val);
+    const num = parseInt(sanitized, 10);
+
+    if (isNaN(num)) {
+      onUpdateCompanionConfig({ min_meeting_length: 0 });
+      setLocalError(null);
+      return;
+    }
+
+    if (num > 1440) {
+      setLocalError("Maximum length is 1440 minutes (24 hours).");
+    } else {
+      setLocalError(null);
+    }
+    
+    // Update with the number, but we might want to let the user type freely if we were using local state for the input value.
+    // Since we are controlled by props, we pass the number up.
+    // If we pass a number > 1440, it will be saved if we don't block it in SettingsPage.
+    // But we want to show feedback here.
+    onUpdateCompanionConfig({ min_meeting_length: num });
+  };
 
   if (!showDevices && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;
@@ -90,12 +117,18 @@ export default function AudioSettings({
                     Minimum Meeting Length (Minutes)
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    value={companionConfig?.min_meeting_length || 0}
-                    onChange={(e) => onUpdateCompanionConfig({ min_meeting_length: parseInt(e.target.value) || 0 })}
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    type="text"
+                    inputMode="numeric"
+                    value={companionConfig?.min_meeting_length?.toString() || '0'}
+                    onChange={handleMinLengthChange}
+                    className={`w-full p-2 rounded-lg border ${localError ? 'border-red-500 focus:ring-red-500' : 'border-gray-400 dark:border-gray-600 focus:ring-orange-500'} bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:border-transparent`}
                   />
+                  {localError && (
+                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {localError}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-500 mt-1">
                     Recordings shorter than this will be automatically discarded. Set to 0 to disable.
                   </p>

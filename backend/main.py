@@ -23,6 +23,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.models.chat import ChatMessage
 from backend.core.db import async_session_maker
+from backend.seed_demo import seed_demo_data
 
 async def ensure_owner_exists():
     """
@@ -81,6 +82,11 @@ def run_migrations():
 async def lifespan(app: FastAPI):
     run_migrations()
     await ensure_owner_exists()
+    # Seed demo data for the initial user if needed
+    try:
+        await seed_demo_data()
+    except Exception as e:
+        print(f"Failed to seed demo data on startup: {e}")
     yield
 
 app = FastAPI(

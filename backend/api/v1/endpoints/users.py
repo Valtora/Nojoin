@@ -54,7 +54,6 @@ async def register_user(
     
     user = User(
         username=user_in.username,
-        email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         role=invitation.role,
         invitation_id=invitation.id,
@@ -110,10 +109,7 @@ async def read_users(
     query = select(User)
     if search:
         query = query.where(
-            or_(
-                User.username.ilike(f"%{search}%"),
-                User.email.ilike(f"%{search}%")
-            )
+            User.username.ilike(f"%{search}%")
         )
     
     # Count total
@@ -151,7 +147,6 @@ async def create_user(
     
     user = User(
         username=user_in.username,
-        email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         is_superuser=user_in.is_superuser,
         role=user_in.role,
@@ -270,9 +265,6 @@ async def update_user_me(
             )
         current_user.username = user_in.username
         
-    if user_in.email is not None:
-        current_user.email = user_in.email
-        
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
@@ -334,8 +326,6 @@ async def update_user(
         user.is_active = user_in.is_active
     if user_in.is_superuser is not None:
         user.is_superuser = user_in.is_superuser
-    if user_in.email is not None:
-        user.email = user_in.email
     if user_in.role is not None:
         # Prevent modifying owner if not owner
         if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:

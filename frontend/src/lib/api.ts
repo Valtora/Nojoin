@@ -522,7 +522,7 @@ export const getUserMe = async (): Promise<User> => {
   return response.data;
 };
 
-export const updateUserMe = async (data: { email?: string, username?: string }): Promise<User> => {
+export const updateUserMe = async (data: { username?: string }): Promise<User> => {
   const response = await api.put<User>('/users/me', data);
   return response.data;
 };
@@ -531,12 +531,12 @@ export const updatePasswordMe = async (data: { current_password: string, new_pas
   await api.post('/users/me/password', data);
 };
 
-export const createUser = async (data: { username: string, email: string, password: string, role: string }): Promise<User> => {
+export const createUser = async (data: { username: string, password: string, role: string }): Promise<User> => {
   const response = await api.post<User>('/users/', data);
   return response.data;
 };
 
-export const updateUser = async (userId: number, data: { username?: string, email?: string, password?: string, role?: string, is_active?: boolean }): Promise<User> => {
+export const updateUser = async (userId: number, data: { username?: string, password?: string, role?: string, is_active?: boolean }): Promise<User> => {
   const response = await api.patch<User>(`/users/${userId}`, data);
   return response.data;
 };
@@ -577,12 +577,11 @@ export const validateInvitation = async (code: string): Promise<{ valid: boolean
   return response.data;
 };
 
-export const registerUser = async (username: string, password: string, email: string | undefined | null, invite_code: string): Promise<User> => {
+export const registerUser = async (username: string, password: string, invite_code: string): Promise<User> => {
   const payload = { 
     username, 
     password, 
     invite_code, 
-    email: email || null 
   };
   const response = await api.post<User>('/users/register', payload);
   return response.data;
@@ -727,6 +726,18 @@ export const importBackup = async (
       }
     },
   });
+};
+
+export interface CompanionReleases {
+  version: string | null;
+  windows_url: string | null;
+  macos_url: string | null;
+  linux_url: string | null;
+}
+
+export const getCompanionReleases = async (): Promise<CompanionReleases> => {
+  const response = await api.get<CompanionReleases>('/system/companion-releases');
+  return response.data;
 };
 
 export const seedDemoData = async (): Promise<void> => {

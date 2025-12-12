@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getSettings, updateSettings, getUserMe } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
+import { isValidUrl } from '@/lib/validation';
 import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield, Mail, Users } from 'lucide-react';
 import { getMatchScore } from '@/lib/searchUtils';
 import { TAB_KEYWORDS } from './keywords';
@@ -178,7 +179,7 @@ export default function SettingsPage() {
     load();
   }, [activeTab]);
 
-  const validateSettings = (settings: Settings): string | null => {
+  const validateSettings = (settings: Settings, companionConfig: CompanionConfig | null): string | null => {
     if (settings.whisper_model_size && !['tiny', 'base', 'small', 'medium', 'large', 'turbo'].includes(settings.whisper_model_size)) {
         return "Invalid Whisper model size.";
     }
@@ -188,11 +189,21 @@ export default function SettingsPage() {
     if (settings.llm_provider && !['gemini', 'openai', 'anthropic', 'ollama'].includes(settings.llm_provider)) {
         return "Invalid LLM provider.";
     }
+    if (settings.ollama_api_url && !isValidUrl(settings.ollama_api_url)) {
+        return "Invalid Ollama API URL.";
+    }
+    if (companionConfig) {
+        if (companionConfig.min_meeting_length !== undefined) {
+            if (companionConfig.min_meeting_length < 0 || companionConfig.min_meeting_length > 1440) {
+                return "Meeting length must be between 0 and 1440 minutes.";
+            }
+        }
+    }
     return null;
   };
 
   const saveSettings = useCallback(async () => {
-    const error = validateSettings(settings);
+    const error = validateSettings(settings, companionConfig);
     if (error) {
         addNotification({ type: 'error', message: error });
         return;

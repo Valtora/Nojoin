@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from urllib.parse import urlparse
 from .path_manager import path_manager
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,13 @@ class ConfigManager:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:
              raise ValueError(f"Invalid llm_provider: {value}. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+        if key == "ollama_api_url" and value:
+            try:
+                result = urlparse(value)
+                if not all([result.scheme, result.netloc]) or result.scheme not in ['http', 'https']:
+                    raise ValueError(f"Invalid ollama_api_url: {value}")
+            except:
+                raise ValueError(f"Invalid ollama_api_url: {value}")
         return True
 
     def get(self, key, default=None):

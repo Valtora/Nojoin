@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Invitation, UserRole } from '@/types';
 import { getInvitations, createInvitation, revokeInvitation, deleteInvitation } from '@/lib/api';
+import { sanitizeIntegerString } from '@/lib/validation';
 import { Plus, Trash2, Copy, Check, Users, Clock, Shield, XCircle } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
 
@@ -198,11 +199,13 @@ export default function InvitesTab() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expires In (Days)</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={expiresIn}
-                  onChange={(e) => setExpiresIn(parseInt(e.target.value) || 7)}
+                  type="text"
+                  inputMode="numeric"
+                  value={expiresIn.toString()}
+                  onChange={(e) => {
+                      const val = sanitizeIntegerString(e.target.value, 1, 365);
+                      setExpiresIn(Number(val));
+                  }}
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>
@@ -210,11 +213,13 @@ export default function InvitesTab() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max Uses</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={maxUses}
-                  onChange={(e) => setMaxUses(parseInt(e.target.value) || 1)}
+                  type="text"
+                  inputMode="numeric"
+                  value={maxUses.toString()}
+                  onChange={(e) => {
+                      const val = sanitizeIntegerString(e.target.value, 1, 100);
+                      setMaxUses(Number(val));
+                  }}
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>

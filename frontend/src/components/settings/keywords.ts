@@ -17,7 +17,7 @@ export const SYSTEM_KEYWORDS = [
 ];
 
 export const ACCOUNT_KEYWORDS = [
-  'profile', 'username', 'email', 'password', 'change password', 'account', 'user'
+  'profile', 'username', 'password', 'change password', 'account', 'user'
 ];
 
 export const ADMIN_KEYWORDS = [
