@@ -108,7 +108,7 @@ The system provides the following core capabilities:
 - **Search Capabilities:**
   - **Global Search:** Backend-driven SQL pattern matching for finding recordings by title or content.
   - **Transcript Search:** Client-side fuzzy search for locating specific text within a transcript.
-  - **Organization:** Tagging and filtering options.
+  - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
 - **Settings:** Comprehensive server and user configuration.
 

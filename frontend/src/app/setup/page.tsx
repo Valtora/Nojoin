@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getSystemStatus, setupSystem, downloadModels, login, validateLLM, validateHF, getDownloadProgress, listModels } from '@/lib/api';
+import { getSystemStatus, setupSystem, downloadModels, login, validateLLM, validateHF, getDownloadProgress, listModels, getDemoRecording } from '@/lib/api';
 import { Loader2, CheckCircle, Check, X, AlertTriangle, ArrowRight } from 'lucide-react';
 import ConfirmationModal from '@/components/ConfirmationModal';
 
@@ -318,8 +318,18 @@ export default function SetupPage() {
     // Removed automatic redirect
   };
 
-  const handleCompleteSetup = () => {
-    router.push('/');
+  const handleCompleteSetup = async () => {
+    try {
+      const demo = await getDemoRecording();
+      if (demo.id) {
+        router.push(`/recordings/${demo.id}`);
+      } else {
+        router.push('/');
+      }
+    } catch (error) {
+      console.error('Failed to fetch demo recording:', error);
+      router.push('/');
+    }
   };
 
   if (loading) {

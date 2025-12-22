@@ -57,7 +57,7 @@ async def create_tag(
     if existing:
         return existing
         
-    tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id)
+    tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id, parent_id=tag_in.parent_id)
     db.add(tag)
     await db.commit()
     await db.refresh(tag)
@@ -88,6 +88,12 @@ async def update_tag(
     
     if tag_update.color is not None:
         tag.color = tag_update.color
+
+    if tag_update.parent_id is not None:
+        # Prevent circular dependency
+        if tag_update.parent_id == tag.id:
+             raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
+        tag.parent_id = tag_update.parent_id
     
     await db.commit()
     await db.refresh(tag)

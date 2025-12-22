@@ -10,7 +10,7 @@ from backend.utils.logging_config import setup_logging as configure_logging
 # Setup audio environment (patches torchaudio)
 setup_audio_environment()
 
-# Redis Configuration
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 @setup_logging.connect

@@ -21,18 +21,24 @@ class Tag(BaseDBModel, table=True):
     color: Optional[str] = Field(default=None, description="Color key for UI display")
     
     user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
+    parent_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("tags.id", ondelete="CASCADE")))
 
     recordings: List["RecordingTag"] = Relationship(back_populates="tag")
+    parent: Optional["Tag"] = Relationship(back_populates="children", sa_relationship_kwargs={"remote_side": "Tag.id"})
+    children: List["Tag"] = Relationship(back_populates="parent")
 
 class TagCreate(SQLModel):
     name: str
     color: Optional[str] = None
+    parent_id: Optional[int] = None
 
 class TagUpdate(SQLModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    parent_id: Optional[int] = None
 
 class TagRead(BaseDBModel):
     name: str
     color: Optional[str] = None
     user_id: Optional[int] = None
+    parent_id: Optional[int] = None

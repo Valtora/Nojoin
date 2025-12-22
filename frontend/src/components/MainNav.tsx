@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { 
@@ -13,13 +13,15 @@ import {
   Settings, 
   ChevronLeft, 
   ChevronRight,
+  ChevronDown,
   Plus,
   X,
   Bell,
   LogOut,
   Download,
   Link2,
-  RefreshCw
+  RefreshCw,
+  Edit2
 } from 'lucide-react';
 import { useNavigationStore, ViewType } from '@/lib/store';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
@@ -30,8 +32,10 @@ import { InlineColorPicker } from './ColorPicker';
 import GlobalSpeakersModal from './GlobalSpeakersModal';
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
+import CreateTagModal from './CreateTagModal';
 import NotificationHistoryModal from './NotificationHistoryModal';
 import { getDownloadUrl, detectPlatform } from '@/lib/platform';
+import ContextMenu from './ContextMenu';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -80,10 +84,16 @@ interface TagItemProps {
   onColorChange: (colorKey: string) => void;
   onDelete: () => void;
   onRename: (newName: string) => void;
+  onAddChild: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
   isEditing: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   collapsed: boolean;
+  level?: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }
 
 function TagItem({ 
@@ -93,10 +103,16 @@ function TagItem({
   onColorChange, 
   onDelete, 
   onRename,
+  onAddChild,
+  onContextMenu,
   isEditing,
   onStartEdit,
   onCancelEdit,
-  collapsed 
+  collapsed,
+  level = 0,
+  hasChildren,
+  isExpanded,
+  onToggleExpand
 }: TagItemProps) {
   const color = getColorByKey(tag.color);
   const [editValue, setEditValue] = useState(tag.name);
@@ -137,7 +153,9 @@ function TagItem({
         group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer
         ${isSelected ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}
       `}
+      style={{ paddingLeft: `${level * 12 + 12}px` }}
       onClick={isEditing ? undefined : onToggle}
+      onContextMenu={onContextMenu}
     >
       <InlineColorPicker 
         selectedColor={tag.color || undefined} 
@@ -147,21 +165,21 @@ function TagItem({
         <input
           type="text"
           value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditValue(e.target.value)}
+          onKeyDown={(e: React.KeyboardEvent) => {
             if (e.key === 'Enter') handleSubmit();
             if (e.key === 'Escape') onCancelEdit();
           }}
           onBlur={handleSubmit}
           autoFocus
           className="flex-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
         />
       ) : (
         <span 
           className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : ''}`}
           title={tag.name}
-          onDoubleClick={(e) => {
+          onDoubleClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onStartEdit();
           }}
@@ -170,16 +188,42 @@ function TagItem({
         </span>
       )}
       {!isEditing && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-all"
-          title="Delete tag"
-        >
-          <X className="w-3 h-3" />
-        </button>
+        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                onAddChild();
+              }}
+              className="p-1 hover:text-orange-500 transition-all"
+              title="Add sub-tag"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+            
+            {hasChildren && (
+              <button
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  onToggleExpand();
+                }}
+                className="p-1 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
+                title={isExpanded ? "Collapse" : "Expand"}
+              >
+                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </button>
+            )}
+
+            <button
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1 hover:text-red-500 transition-all"
+              title="Delete tag"
+            >
+              <X className="w-3 h-3" />
+            </button>
+        </div>
       )}
     </div>
   );
@@ -195,10 +239,18 @@ export default function MainNav() {
     selectedTagIds, 
     toggleTagFilter,
     isNavCollapsed, 
-    toggleNavCollapse 
+    toggleNavCollapse,
+    navWidth,
+    setNavWidth,
+    expandedTagIds: expandedTagIdsArray,
+    toggleExpandedTag
   } = useNavigationStore();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [companionReleases, setCompanionReleases] = useState<CompanionReleases | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const MIN_WIDTH = 224;
+  const MAX_WIDTH = 400;
+  const COLLAPSED_WIDTH = 64;
 
   useEffect(() => {
     const fetchReleases = async () => {
@@ -214,6 +266,26 @@ export default function MainNav() {
   
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
+  const [createTagModal, setCreateTagModal] = useState<{
+    isOpen: boolean;
+    parentId?: number;
+  }>({ isOpen: false });
+  
+  // Convert array to Set for easier lookup
+  const expandedTagIds = useMemo(() => new Set(expandedTagIdsArray), [expandedTagIdsArray]);
+
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    tagId: number;
+  } | null>(null);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   const handleUpdateCompanion = async () => {
     await triggerCompanionUpdate();
@@ -263,10 +335,61 @@ export default function MainNav() {
     return () => window.removeEventListener('tags-updated', handleTagsUpdated);
   }, [loadTags]);
 
+  // Handle resize
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = e.clientX;
+      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
+        setNavWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, setNavWidth]);
+
+  // Build tag tree
+  interface TagWithChildren extends Tag {
+    children: TagWithChildren[];
+  }
+
+  const tagTree = useMemo(() => {
+    const tagMap = new Map<number, TagWithChildren>();
+    const roots: TagWithChildren[] = [];
+
+    // First pass: create nodes
+    tags.forEach((tag: Tag) => {
+      tagMap.set(tag.id, { ...tag, children: [] });
+    });
+
+    // Second pass: build tree
+    tags.forEach((tag: Tag) => {
+      const node = tagMap.get(tag.id)!;
+      if (tag.parent_id && tagMap.has(tag.parent_id)) {
+        tagMap.get(tag.parent_id)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    return roots;
+  }, [tags]);
+
   const handleColorChange = async (tagId: number, colorKey: string) => {
     try {
       await updateTag(tagId, { color: colorKey });
-      setTags(prev => prev.map(t => t.id === tagId ? { ...t, color: colorKey } : t));
+      setTags((prev: Tag[]) => prev.map((t: Tag) => t.id === tagId ? { ...t, color: colorKey } : t));
       window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to update tag color:', error);
@@ -276,7 +399,7 @@ export default function MainNav() {
   const handleRenameTag = async (tagId: number, newName: string) => {
     try {
       await updateTag(tagId, { name: newName });
-      setTags(prev => prev.map(t => t.id === tagId ? { ...t, name: newName } : t));
+      setTags((prev: Tag[]) => prev.map((t: Tag) => t.id === tagId ? { ...t, name: newName } : t));
       setEditingTagId(null);
       window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
@@ -284,7 +407,10 @@ export default function MainNav() {
     }
   };
 
-  const handleDeleteTag = (tag: Tag) => {
+  const handleDeleteTag = (tagId: number) => {
+    const tag = tags.find((t: Tag) => t.id === tagId);
+    if (!tag) return;
+
     setConfirmModal({
       isOpen: true,
       title: 'Delete Tag',
@@ -293,7 +419,7 @@ export default function MainNav() {
       onConfirm: async () => {
         try {
           await deleteTag(tag.id);
-          setTags(prev => prev.filter(t => t.id !== tag.id));
+          setTags((prev: Tag[]) => prev.filter((t: Tag) => t.id !== tag.id));
           window.dispatchEvent(new CustomEvent('tags-updated'));
         } catch (error) {
           console.error('Failed to delete tag:', error);
@@ -302,19 +428,77 @@ export default function MainNav() {
     });
   };
 
-  const handleAddTag = async () => {
+  const handleAddTag = async (parentId?: number) => {
     if (!newTagName.trim()) return;
     
     try {
       const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
-      const newTag = await createTag(newTagName.trim(), randomColor);
-      setTags(prev => [...prev, newTag]);
+      const newTag = await createTag(newTagName.trim(), randomColor, parentId);
+      setTags((prev: Tag[]) => [...prev, newTag]);
       setNewTagName('');
       setIsAddingTag(false);
       window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to create tag:', error);
     }
+  };
+
+  const handleAddSubTag = (parentId: number) => {
+    setCreateTagModal({ isOpen: true, parentId });
+  };
+
+  const handleCreateTagConfirm = async (name: string) => {
+    try {
+      const parentId = createTagModal.parentId;
+      const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
+      const newTag = await createTag(name, randomColor, parentId);
+      setTags((prev: Tag[]) => [...prev, newTag]);
+      
+      // If adding a sub-tag, ensure parent is expanded
+      if (parentId && !expandedTagIds.has(parentId)) {
+        toggleExpandedTag(parentId);
+      }
+      
+      window.dispatchEvent(new CustomEvent('tags-updated'));
+    } catch (error) {
+      console.error('Failed to create tag:', error);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, tagId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      tagId
+    });
+  };
+
+  const renderTagTree = (nodes: TagWithChildren[], level = 0) => {
+    return nodes.map(node => (
+      <React.Fragment key={node.id}>
+        <TagItem
+          tag={node}
+          isSelected={selectedTagIds.includes(node.id)}
+          onToggle={() => toggleTagFilter(node.id)}
+          onColorChange={(color) => handleColorChange(node.id, color)}
+          onDelete={() => handleDeleteTag(node.id)}
+          onRename={(name) => handleRenameTag(node.id, name)}
+          onAddChild={() => handleAddSubTag(node.id)}
+          onContextMenu={(e) => handleContextMenu(e, node.id)}
+          isEditing={editingTagId === node.id}
+          onStartEdit={() => setEditingTagId(node.id)}
+          onCancelEdit={() => setEditingTagId(null)}
+          collapsed={isNavCollapsed}
+          level={level}
+          hasChildren={node.children.length > 0}
+          isExpanded={expandedTagIds.has(node.id)}
+          onToggleExpand={() => toggleExpandedTag(node.id)}
+        />
+        {node.children.length > 0 && expandedTagIds.has(node.id) && renderTagTree(node.children, level + 1)}
+      </React.Fragment>
+    ));
   };
 
   const handleImportSuccess = () => {
@@ -360,12 +544,11 @@ export default function MainNav() {
     <>
       <aside 
         id="main-nav"
-        className={`
-          flex-shrink-0 border-r border-gray-300 dark:border-gray-800 
-          bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 
-          flex flex-col transition-all duration-300
-          ${collapsed ? 'w-16' : 'w-56'}
-        `}
+        className="flex-shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 flex flex-col relative"
+        style={{ 
+          width: collapsed ? `${COLLAPSED_WIDTH}px` : `${navWidth}px`,
+          transition: isResizing ? 'none' : 'width 300ms'
+        }}
       >
         {/* Header with collapse toggle */}
         <div className="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-800">
@@ -469,21 +652,7 @@ export default function MainNav() {
 
           {/* Tag List */}
           <div className="space-y-0.5">
-            {tags.map(tag => (
-              <TagItem
-                key={tag.id}
-                tag={tag}
-                isSelected={selectedTagIds.includes(tag.id)}
-                onToggle={() => toggleTagFilter(tag.id)}
-                onColorChange={(colorKey) => handleColorChange(tag.id, colorKey)}
-                onDelete={() => handleDeleteTag(tag)}
-                onRename={(newName) => handleRenameTag(tag.id, newName)}
-                isEditing={editingTagId === tag.id}
-                onStartEdit={() => setEditingTagId(tag.id)}
-                onCancelEdit={() => setEditingTagId(null)}
-                collapsed={collapsed}
-              />
-            ))}
+            {renderTagTree(tagTree)}
           </div>
 
           {tags.length === 0 && !collapsed && (
@@ -492,6 +661,42 @@ export default function MainNav() {
             </p>
           )}
         </div>
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            items={[
+              {
+                label: 'Rename',
+                icon: <Edit2 className="w-4 h-4" />,
+                onClick: () => {
+                  setEditingTagId(contextMenu.tagId);
+                  setContextMenu(null);
+                }
+              },
+              {
+                label: 'Add Sub-tag',
+                icon: <Plus className="w-4 h-4" />,
+                onClick: () => {
+                  handleAddSubTag(contextMenu.tagId);
+                  setContextMenu(null);
+                }
+              },
+              {
+                label: 'Delete',
+                icon: <Trash2 className="w-4 h-4" />,
+                className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
+                onClick: () => {
+                  handleDeleteTag(contextMenu.tagId);
+                  setContextMenu(null);
+                }
+              }
+            ]}
+          />
+        )}
 
         {/* Divider */}
         <div className="mx-3 border-t border-gray-300 dark:border-gray-800" />
@@ -594,6 +799,17 @@ export default function MainNav() {
             collapsed={collapsed}
           />
         </div>
+
+        {/* Resize Handle */}
+        {!collapsed && (
+          <div
+            onMouseDown={() => setIsResizing(true)}
+            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 transition-colors group"
+            title="Drag to resize"
+          >
+            <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 group-hover:bg-orange-500 transition-colors" />
+          </div>
+        )}
       </aside>
 
       {/* Modals */}
@@ -619,6 +835,15 @@ export default function MainNav() {
         title={confirmModal.title}
         message={confirmModal.message}
         isDangerous={confirmModal.isDangerous}
+      />
+      
+      <CreateTagModal
+        isOpen={createTagModal.isOpen}
+        onClose={() => setCreateTagModal({ ...createTagModal, isOpen: false })}
+        onConfirm={handleCreateTagConfirm}
+        title={createTagModal.parentId ? "Add Sub-tag" : "Create Tag"}
+        placeholder={createTagModal.parentId ? "Sub-tag name..." : "Tag name..."}
+        confirmText="Create"
       />
     </>
   );

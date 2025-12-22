@@ -1,3 +1,4 @@
+<!-- markdownlint-disable -->
 <div align="center">
     <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
@@ -16,15 +17,15 @@
 
 ---
 
-## Why Nojoin?
+## ❔ Why Nojoin?
 
 Most meeting assistants require users to invite bots to join meetings or upload sensitive business conversations to the cloud. Nojoin offers a different approach.
 
-- 🔒 **100% Private:** Audio and transcripts remain on the user's server (unless explicitly configured for external LLM processing).
-- 🚀 **Unlimited:** No monthly limits on recording minutes.
-- 🧠 **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
-- 💬 **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
-- ✨ **Non-Intrusive:** Nojoin does not require joining meetings as a participant.
+- **Privacy First:** Audio and transcripts remain on the user's server (unless explicitly configured for external LLM processing).
+- **Unlimited:** No monthly limits on recording minutes.
+- **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
+- **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
+- **Non-Intrusive:** Nojoin does not require joining meetings as a participant.
 
 ## 📚 Table of Contents
 
@@ -219,13 +220,14 @@ If running Ollama on the same machine as the Nojoin Docker containers, the speci
 ### Running the Companion App
 
 1. Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
-2. Download the Windows installer (`Nojoin_X.Y.Z_windows.exe`).
+2. Download the Windows installer (`Nojoin_X.Y.Z_windows.exe`). There is also a portable binary available if preferred.
 3. Run the installer. The application will appear in the system tray.
 4. The web app also has a 'Download Companion App' button that will direct to the releases page.
 
 *Note: For developers, the app can be built from source by navigating to the `companion` directory and running `cargo build --release` on Windows.*
 
-> **🤝 Contributors Wanted:** Developers are sought to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support, making porting feasible. If interested in contributing, please check the [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss!
+> **🤝 Contributions Welcomed:** Contributions are welcomed to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support for Linux so I will focus on this first.
+> MacOS is trickier due to the need to use ScreenCaptureKit for system audio capture. If interested in contributing, please check the [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss.
 
 ## ❓ Troubleshooting
 
@@ -244,7 +246,7 @@ Ensure the GPU has been passed to the container correctly.
 <summary><strong>Cannot access Nojoin from another computer</strong></summary>
 
 1. Check firewall settings on the host machine (port 14443).
-2. Ensure `ALLOWED_ORIGINS` in the `.env` file includes the server's IP or domain (e.g., `https://192.168.1.50:14443`).
+2. Ensure `ALLOWED_ORIGINS` in the `.env` file includes the server's IP or domain (e.g., `https://example.yourdomain.com:14443`).
 
 </details>
 
@@ -258,7 +260,7 @@ If running Ollama on the host, use `http://host.docker.internal:11434` instead o
 ## 🗺️ Roadmap
 
 - [x] **Windows Support** (Stable)
-- [ ] **macOS & Linux Support** (Seeking Contributors)
+- [ ] **macOS & Linux Support** (Contributions Welcome)
   - Community-driven development for companion app.
     - Windows implementation can serve as a reference.
 - [ ] **Real-time Transcription** (Target: Q2 2026)
@@ -270,21 +272,34 @@ If running Ollama on the host, use `http://host.docker.internal:11434` instead o
 
 Contributions from the community are welcome! Whether it's fixing bugs, improving documentation, or adding new features, help is appreciated.
 
+**Important:** To ensure Nojoin can remain sustainable and offer a commercial SaaS version, by submitting a Pull Request, you agree to the **Contributor License Agreement (CLA)**. This grants Valtora the right to use your contributions in the commercial version of the platform while ensuring the Community Edition remains open source forever.
+
 Please see the [Contributing Guide](CONTRIBUTING.md) for details on how to get started.
 
 ## 📦 Editions
 
-- **Community Edition:** This is the free and open-source version of Nojoin, designed for self-hosting and community support. It includes all core features for recording, processing, and analyzing meetings.
+- **Community Edition:** The source code in this repository. Free, open-source (AGPLv3), and self-hosted. Ideal for individuals, developers, and privacy-focused users who want full control over their data.
+
+- **Nojoin Cloud:** A fully managed, hosted version of Nojoin allowing users to take advantage of powerful GPUs and pay a monthly subscription based on tiered usage. *(Coming Late 2026)*
+
+## 📃 Licence
+
+The **Community Edition** of Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+This ensures that the software remains free and open-source, and that any modifications made to the code (even if run as a service) must be shared back with the community.
+
+The **Nojoin Cloud (SaaS)** edition is a proprietary, closed-source service provided by Valtora.
+
+### Third-Party Components
+
+This project utilizes the following third-party models and libraries:
+
+- **Pyannote Audio** models (`pyannote/speaker-diarization-community-1` and `pyannote/wespeaker-voxceleb-resnet34-LM`) by [Pyannote](https://www.pyannote.ai/). Licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+- **OpenAI Whisper** by OpenAI. Licensed under the [MIT License](https://github.com/openai/whisper/blob/main/LICENSE).
 
 ## ⚖️ Legal
-
-### License
-
-Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
-This ensures that the software remains free and open-source, and that any modifications made to the code (even if run as a service) must be shared back with the community.
 
 Please review the [Legal Disclaimer](LEGAL.md) regarding the recording of conversations and compliance with local laws.
 
 ## ☕ Buy Me a Coffee
 
-If Nojoin is useful, please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support the project.
+If Nojoin is useful, please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support Nojoin.

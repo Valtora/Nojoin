@@ -16,7 +16,7 @@ use std::thread;
 use tauri::AppHandle;
 use tokio::sync::mpsc;
 
-// Removed mod mac_sc; declaration from here as it should be in main.rs/lib.rs
+
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
@@ -86,13 +86,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
     // Track the recording thread handle to ensure we wait for uploads
     let mut recording_handle: Option<std::thread::JoinHandle<()>> = None;
 
-    // We need to keep the device alive or clone it.
-    // Since we can't easily clone Device in a generic way without knowing the backend,
-    // we will just re-acquire it inside the thread or move it if possible.
-    // But we need it for multiple segments.
-    // Let's assume we can just use the host to get it by name or index if needed,
-    // but for now let's try to just pass a reference? No, thread needs 'static.
-    // We will re-acquire the default device in the thread for simplicity.
+    // We will re-acquire the default device in the thread to avoid lifetime/cloning issues with cpal::Device.
 
     loop {
         let command = command_rx.recv().unwrap();
@@ -170,8 +164,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
                                     },
                                     Err(e) => {
                                         eprintln!("Failed to delete short recording: {}", e);
-                                        // Fallback to finalize if delete fails? No, better to leave it or try finalize.
-                                        // If delete fails, maybe we should finalize so user can delete it manually.
+                                        // If delete fails, we attempt to finalize anyway so it's not stuck in limbo.
                                         match uploader::finalize_recording(rec_id, &config).await {
                                             Ok(_) => println!("Recording finalized (after delete failed)"),
                                             Err(e) => eprintln!("Failed to finalize: {}", e),

@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,11 @@ from backend.utils.config_manager import config_manager
 from backend.celery_app import celery_app
 from backend.processing.LLM_Services import get_llm_backend
 from backend.core.db import async_session_maker
+from backend.models.context_chunk import ContextChunk
+from backend.models.tag import Tag, RecordingTag
+from backend.processing.text_embedding import get_text_embedding_service
+from sqlalchemy import func
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,6 +51,8 @@ class NotesUpdate(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    tag_ids: Optional[List[int]] = None
+
 
 
 # --- Helper Functions ---
@@ -645,39 +652,9 @@ async def chat_with_meeting(
     db_messages = result.scalars().all()
     
     # Convert to format expected by LLMBackend
-    conversation_history = []
-    for msg in db_messages:
-        # Gemini expects "parts": [{"text": ...}], others simplify to "content": ...
-        # LLMBackend abstraction handles specific API format in `ask_question_streaming` if needed?
-        # Actually `LLMBackend` implementations loop over history and adapt it.
-        # But they expect a generic format.
-        # Gemini implementation expects: {"role": "user"|"model", "parts": [{"text": ...}]}
-        # OpenAI/Anthropic implementation expects: {"role": "user"|"assistant", "content": ...}
-        
-        # We need a unified format here or let the backend handle it.
-        # The implementations seem to expect different formats in `ask_question_about_meeting`.
-        # Gemini: Checks for "parts"
-        # OpenAI: Checks for "content" or "parts" (helper code I wrote handles both?)
-        
-        # Let's standardize on a simple dictionary and let the backend adapt.
-        # But looking at my `LLM_Services.py` code:
-        # Gemini: `if conversation_history: contents.extend(conversation_history)` -> expects Gemini format directly.
-        # OpenAI: `if conversation_history: ... if msg.get("role") and msg.get("parts")...` -> expects Gemini format?
-        
-        # Wait, I copied the logic from somewhere or wrote it to be compatible.
-        # Let's look at `LLM_Services.py` again (I just wrote it).
-        pass
-
-    # Re-reading `LLM_Services.py`:
-    # OpenAI:
-    # if conversation_history:
-    #     for msg in conversation_history:
-    #         if msg.get("role") and msg.get("parts"):
-    #             for part in msg["parts"]:
-    #                 messages.append({"role": msg["role"], "content": part["text"]})
-    
-    # This implies OpenAI backend expects Gemini-style format in `conversation_history` and converts it.
-    # So I should construct `conversation_history` in Gemini format.
+    # Google Gemini: {"role": "user"|"model", "parts": [{"text": ...}]}
+    # OpenAI/Anthropic: Adapted by backend logic, generally checks for standard roles.
+    # Standardizing on Gemini format for internal consistency before backend adaptation.
     
     formatted_history = []
     for msg in db_messages:
@@ -687,7 +664,6 @@ async def chat_with_meeting(
             "parts": [{"text": msg.content}]
         })
     
-    # 3. Save User Message to DB immediately
     user_msg = ChatMessage(
         recording_id=recording_id,
         user_id=current_user.id,
@@ -697,7 +673,90 @@ async def chat_with_meeting(
     db.add(user_msg)
     await db.commit()
     
-    # 4. Get User Settings
+    # --- RAG Context Retrieval ---
+    context_text = ""
+    relevant_chunks = []
+    
+    # --- RAG Context Retrieval ---
+    context_text = ""
+    relevant_chunks = []
+    
+    # Always attempt RAG, at least for the current recording
+    try:
+        # 1. Get embedding for the user query
+        embedding_service = get_text_embedding_service()
+        query_embedding = embedding_service.embed(request.message)[0] # Returns list of lists
+        
+        # 2. Build Query Condition
+        if request.tag_ids:
+            # Identify relevant recordings from tags
+            subquery = select(RecordingTag.recording_id).where(RecordingTag.tag_id.in_(request.tag_ids))
+            condition = (ContextChunk.recording_id.in_(subquery)) | (ContextChunk.recording_id == recording_id)
+        else:
+            # Only search current recording
+            condition = (ContextChunk.recording_id == recording_id)
+        
+        # 3. Vector Search
+        stmt = select(ContextChunk).where(
+            condition
+        ).order_by(
+            ContextChunk.embedding.cosine_distance(query_embedding)
+        ).limit(5)
+            
+        result = await db.execute(stmt)
+        relevant_chunks = result.scalars().all()
+        
+        if relevant_chunks:
+            context_sections = []
+            for chunk in relevant_chunks:
+                # Fetch recording with speakers for name resolution
+                stmt = select(Recording).where(Recording.id == chunk.recording_id).options(
+                    selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
+                )
+                rec_result = await db.execute(stmt)
+                rec = rec_result.scalar_one_or_none()
+                
+                rec_name = rec.name if rec else f"Recording {chunk.recording_id}"
+                
+                content = chunk.content
+                # If it's a transcript chunk with speaker info, resolve speaker names
+                if chunk.meta and chunk.meta.get("source") == "transcript" and rec:
+                    speaker_map = _build_speaker_map(rec.speakers)
+                    # Replace raw labels with names
+                    # Iterate to replace. Since labels are usually distinct (SPEAKER_00), simple replace is okay-ish
+                    # but safer to do strict match if possible.
+                    # Given the format "SPEAKER_XX: ", we can just replace that.
+                    for label, name in speaker_map.items():
+                        if label and name and label != name:
+                            content = content.replace(f"{label}:", f"{name}:")
+                    
+                context_sections.append(f"--- From {rec_name} ---\n{content}")
+            
+            context_text = "\n\n".join(context_sections)
+            logger.info(f"Retrieved {len(relevant_chunks)} context chunks for chat.")
+                
+    except Exception as e:
+            logger.error(f"RAG Retrieval failed: {e}")
+            # Continue without context rather than failing
+            
+    # Prepend Context to the last message or system prompt
+    # Since we are using formatted_history, we can inject a system message or augment the last user message.
+    # Augmenting last user message is usually effective.
+    
+    if context_text:
+        augmented_message = f"Context from related meetings/documents:\n{context_text}\n\nUser Question: {request.message}"
+        
+        formatted_history.append({
+            "role": "user",
+            "parts": [{"text": augmented_message}]
+        })
+    else:
+        formatted_history.append({
+            "role": "user",
+            "parts": [{"text": request.message}]
+        })
+
+
     user_settings = current_user.settings or {}
     provider = user_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
     api_key = user_settings.get(f"{provider}_api_key")
@@ -728,40 +787,9 @@ async def chat_with_meeting(
                 recording_id=recording_id
             )
             
-            # The generator from LLMBackend is synchronous or asynchronous?
-            # My implementation in `LLM_Services.py`:
-            # Gemini: `generate_content_stream` returns iterator (sync or async?)
-            # Google GenAI `generate_content_stream` is usually synchronous iterator in v1, but checking my code...
-            # I used `for chunk in response_stream: yield chunk.text`. This is synchronous yield.
-            # But `ask_question_streaming` is defined as `def ... -> Generator`.
-            # If it's a synchronous generator, I cannot `async for` it.
-            # `StreamingResponse` accepts both async generator and sync iterator.
-            # However, I need to do async DB operations at the end.
-            
-            # Wait, `google.genai` client... is it async? `genai.Client` usually is sync unless `genai.rest` or similar.
-            # My `LLM_Services` code used `self.client = genai.Client(...)`.
-            
-            # If the generator blocks, it blocks the event loop if not async.
-            # OpenAI `stream=True` returns a sync iterator by default unless `AsyncOpenAI` is used.
-            # I used `openai.OpenAI` (sync client).
-            # Anthropic `Anthropic` is sync client.
-            
-            # Ideally, I should use async clients for FastAPI.
-            # But the current codebase seems to use sync clients (based on `LLM_Services.py` existing code).
-            # If I use sync clients in `StreamingResponse` generator, I should run them in a threadpool?
-            # Or just accept it blocks for now (not ideal for high concurrency).
-            
-            # Since I didn't change the `LLM_Services.py` to use Async clients (Refactoring to async clients would be big), 
-            # I will assume sync execution is acceptable or I wrap it.
-            
-            # BUT, I need to save to DB at the end using `async_session_maker`. 
-            # So my generator wrapper MUST be `async def`.
-            # If `llm_backend.ask_question_streaming` is a sync generator, I can iterate it.
-            
-            # Let's verify `LLM_Services.py` signature I wrote:
-            # `def ask_question_streaming(...) -> Generator[str, None, None]:`
-            
-            # So:
+            # Iterate over the generator response
+            # Note: This generator might be synchronous (blocking) or asynchronous depending on the LLM client.
+            # Ideally should be fully async, but current implementation assumes sync iterator that we wrap in StreamingResponse.
             for chunk in generator:
                 if isinstance(chunk, dict) and chunk.get("type") == "notes_update":
                     yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"

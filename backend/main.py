@@ -134,7 +134,7 @@ async def health_check():
         }
     }
 
-    # Check Database
+
     try:
         with Session(sync_engine) as session:
             session.execute(text("SELECT 1"))
@@ -143,7 +143,7 @@ async def health_check():
         health_status["components"]["db"] = "disconnected"
         health_status["status"] = "error"
 
-    # Check Worker
+
     worker_status = "unknown"
     
     # 1. Check Heartbeat (Fast, non-blocking)

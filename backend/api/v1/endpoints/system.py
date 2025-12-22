@@ -237,6 +237,29 @@ async def seed_demo(
         await seed_demo_data(user_id=current_user.id, force=True)
     return {"message": "Demo data seeding initiated"}
 
+@router.get("/demo-recording")
+async def get_demo_recording(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    Get the demo recording for the current user.
+    Returns the recording ID if it exists, otherwise returns None.
+    """
+    from sqlmodel import select
+    from backend.models.recording import Recording
+    
+    query = select(Recording).where(
+        Recording.name == "Welcome to Nojoin",
+        Recording.user_id == current_user.id
+    )
+    result = await db.execute(query)
+    recording = result.scalar_one_or_none()
+    
+    if recording:
+        return {"id": recording.id}
+    return {"id": None}
+
 @router.get("/companion-releases")
 async def get_companion_releases() -> Any:
     """

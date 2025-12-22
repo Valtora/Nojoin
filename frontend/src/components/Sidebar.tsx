@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Recording, RecordingStatus } from '@/types';
+import { Recording, RecordingStatus, Tag } from '@/types';
 import { Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -16,7 +16,8 @@ import {
   archiveRecording,
   restoreRecording,
   softDeleteRecording,
-  permanentlyDeleteRecording
+  permanentlyDeleteRecording,
+  getTags
 } from '@/lib/api';
 import ContextMenu from './ContextMenu';
 import ConfirmationModal from './ConfirmationModal';
@@ -25,6 +26,7 @@ import { GlobalSpeaker } from '@/types';
 import { useNavigationStore } from '@/lib/store';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { createFuse } from '@/lib/searchUtils';
+import { getColorByKey } from '@/lib/constants';
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return '0s';
@@ -91,6 +93,7 @@ export default function Sidebar() {
   const { 
     currentView, 
     selectedTagIds, 
+    toggleTagFilter,
     clearTagFilters,
     selectionMode,
     selectedRecordingIds,
@@ -114,6 +117,24 @@ export default function Sidebar() {
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
   const [dateMode, setDateMode] = useState<'range' | 'before' | 'after'>('range');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+  const [tags, setTags] = useState<Tag[]>([]);
+
+  // Load tags for filter pills
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const data = await getTags();
+        setTags(data);
+      } catch (error) {
+        console.error('Failed to load tags:', error);
+      }
+    };
+    void loadTags();
+    
+    const handleTagsUpdated = () => { void loadTags(); };
+    window.addEventListener('tags-updated', handleTagsUpdated);
+    return () => window.removeEventListener('tags-updated', handleTagsUpdated);
+  }, []);
 
   useEffect(() => {
     recordings.forEach(rec => {
@@ -510,6 +531,40 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* Active Tag Filter Pills */}
+        {selectedTagIds.length > 0 && !selectionMode && (
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {selectedTagIds.map(tagId => {
+              const tag = tags.find(t => t.id === tagId);
+              if (!tag) return null;
+              const color = getColorByKey(tag.color);
+              return (
+                <div
+                  key={tagId}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs group hover:border-orange-300 dark:hover:border-orange-700 transition-colors"
+                >
+                  <span className={`w-2 h-2 rounded-full ${color.dot} flex-shrink-0`} />
+                  <span className="text-gray-700 dark:text-gray-200 font-medium">{tag.name}</span>
+                  <button
+                    onClick={() => toggleTagFilter(tagId)}
+                    className="ml-0.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                    title={`Remove ${tag.name} filter`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              onClick={clearTagFilters}
+              className="px-2.5 py-1 rounded-full text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 transition-colors"
+              title="Clear all tag filters"
+            >
+              Clear All
+            </button>
+          </div>
+        )}
+
         {showFilters && !selectionMode && (
             <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm mt-2">
               <div className="space-y-1">
@@ -598,19 +653,6 @@ export default function Sidebar() {
                     <X className="w-3 h-3" /> Clear Filters
                  </button>
               )}
-            </div>
-          )}
-
-          {/* Active tag filter indicators */}
-          {selectedTagIds.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
-              <span>Filtered by {selectedTagIds.length} tag{selectedTagIds.length > 1 ? 's' : ''}</span>
-              <button 
-                onClick={clearTagFilters}
-                className="hover:underline"
-              >
-                (clear)
-              </button>
             </div>
           )}
       </div>

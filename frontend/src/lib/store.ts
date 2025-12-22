@@ -17,6 +17,11 @@ interface NavigationState {
   isNavCollapsed: boolean;
   toggleNavCollapse: () => void;
   setNavCollapsed: (collapsed: boolean) => void;
+  navWidth: number;
+  setNavWidth: (width: number) => void;
+  expandedTagIds: number[];
+  toggleExpandedTag: (tagId: number) => void;
+  setExpandedTagIds: (ids: number[]) => void;
 
   // Selection State
   selectionMode: boolean;
@@ -54,6 +59,15 @@ export const useNavigationStore = create<NavigationState>()(
       isNavCollapsed: false,
       toggleNavCollapse: () => set((state) => ({ isNavCollapsed: !state.isNavCollapsed })),
       setNavCollapsed: (collapsed) => set({ isNavCollapsed: collapsed }),
+      navWidth: 224,
+      setNavWidth: (width) => set({ navWidth: width }),
+      expandedTagIds: [],
+      toggleExpandedTag: (tagId) => set((state) => ({
+        expandedTagIds: state.expandedTagIds.includes(tagId)
+          ? state.expandedTagIds.filter(id => id !== tagId)
+          : [...state.expandedTagIds, tagId]
+      })),
+      setExpandedTagIds: (ids) => set({ expandedTagIds: ids }),
 
       // Selection State
       selectionMode: false,
@@ -85,6 +99,8 @@ export const useNavigationStore = create<NavigationState>()(
       name: 'navigation-storage',
       partialize: (state) => ({ 
         isNavCollapsed: state.isNavCollapsed,
+        navWidth: state.navWidth,
+        expandedTagIds: state.expandedTagIds,
         hasSeenTour: state.hasSeenTour,
         hasSeenTranscriptTour: state.hasSeenTranscriptTour
       }),

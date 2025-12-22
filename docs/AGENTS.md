@@ -138,12 +138,12 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 
 ### The Workflow Loop
 
-1. **REQUIREMENT**: The user states a feature.
+1. **REQUIREMENT**: The user states a feature. You then read the AGENTS.md, DEPLOYMENT.md, PRD.md, and USAGE.md files for context.
 2. **PLANNING**: Produce a detailed plan. Consider signal propagation and dependencies.
 3. **APPROVAL**: Wait for user confirmation.
 4. **IMPLEMENTATION**: Generate robust code. Do not delete existing functionality unless planned.
 5. **TESTING**: The user performs manual testing.
-6. **COMPLETION**: Update the PRD if needed.
+6. **COMPLETION**: Update the docs as needed.
 
 ### Constraints
 

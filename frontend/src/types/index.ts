@@ -89,6 +89,8 @@ export interface Transcript extends BaseDBModel {
 export interface Tag extends BaseDBModel {
   name: string;
   color?: string;
+  parent_id?: number;
+  children?: Tag[];
 }
 
 export interface Recording extends BaseDBModel {

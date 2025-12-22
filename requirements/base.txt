@@ -9,3 +9,5 @@ aiofiles
 requests
 httpx
 alembic
+pgvector
+fastembed

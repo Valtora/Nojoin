@@ -115,7 +115,7 @@ async def init_upload(
     await db.commit()
     await db.refresh(recording)
     
-    # Create temp directory for this recording's segments
+
     recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
     os.makedirs(recording_temp_dir, exist_ok=True)
     
@@ -187,7 +187,7 @@ async def finalize_upload(
     if not segments:
         raise HTTPException(status_code=400, detail="No valid segments found")
         
-    # Concatenate using ffmpeg
+
     try:
         segment_paths = [path for _, path in segments]
         concatenate_wavs(segment_paths, recording.audio_path)
@@ -202,7 +202,7 @@ async def finalize_upload(
         import traceback
         traceback.print_exc()
         
-        # Move failed segments to failed directory for inspection
+
         failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
             if os.path.exists(recording_temp_dir):
@@ -211,7 +211,7 @@ async def finalize_upload(
         except Exception as move_error:
             print(f"Failed to move segments to failed dir: {move_error}")
             
-        # Cleanup potential partial output file
+
         if os.path.exists(recording.audio_path):
             try:
                 os.remove(recording.audio_path)
@@ -230,10 +230,10 @@ async def finalize_upload(
     await db.commit()
     await db.refresh(recording)
     
-    # Trigger processing task
+
     process_recording_task.delay(recording.id)
     
-    # Trigger proxy generation task
+
     generate_proxy_task.delay(recording.id)
     
     return recording
@@ -385,7 +385,7 @@ async def init_chunked_import(
     await db.commit()
     await db.refresh(recording)
     
-    # Create temp directory for segments
+
     recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
     os.makedirs(recording_temp_dir, exist_ok=True)
     
@@ -461,7 +461,7 @@ async def finalize_chunked_import(
     if not segments:
         raise HTTPException(status_code=400, detail="No valid segments found")
         
-    # Concatenate binary files
+
     try:
         segment_paths = [path for _, path in segments]
         concatenate_binary_files(segment_paths, recording.audio_path)
@@ -506,10 +506,10 @@ async def finalize_chunked_import(
     await db.commit()
     await db.refresh(recording)
     
-    # Trigger processing task
+
     process_recording_task.delay(recording.id)
     
-    # Trigger proxy generation task
+
     generate_proxy_task.delay(recording.id)
     
     return recording
@@ -540,11 +540,9 @@ async def upload_recording(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
     
-    # Get file stats
+
     file_stats = os.stat(file_path)
     
-    # Get duration
-    duration = 0.0
     try:
         duration = get_audio_duration(file_path)
     except Exception as e:
@@ -569,10 +567,10 @@ async def upload_recording(
     await db.commit()
     await db.refresh(recording)
     
-    # Trigger processing task
+
     process_recording_task.delay(recording.id)
     
-    # Trigger proxy generation task
+
     generate_proxy_task.delay(recording.id)
     
     return recording

@@ -108,10 +108,29 @@ export const transcriptSteps: DriveStep[] = [
     }
   },
   {
+    element: '#tab-documents',
+    popover: {
+      title: 'Documents',
+      description: 'Upload PDF or text files relevant to this meeting. Nojoin will index them so you can ask questions about them in the chat.',
+      side: 'right',
+    },
+    onHighlightStarted: () => {
+      window.dispatchEvent(new CustomEvent('tour:switch-panel', { detail: 'documents' }));
+    }
+  },
+  {
     element: '#meeting-chat',
     popover: {
       title: 'Meeting Chat',
-      description: 'Ask questions about the meeting using the AI chat assistant.',
+      description: 'Ask questions about the meeting using the AI chat assistant. Use the chat to get answers from the transcript and uploaded documents.',
+      side: 'left',
+    }
+  },
+  {
+    element: '#chat-context-toggle',
+    popover: {
+      title: 'Cross-Meeting Context',
+      description: 'Enable context from other meetings by selecting tags. This lets the AI answer questions using information from multiple related recordings.',
       side: 'left',
     }
   }

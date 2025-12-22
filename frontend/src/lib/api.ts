@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress, SystemModelStatus } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL 
-  ? `${process.env.NEXT_PUBLIC_API_URL}/v1` 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : 'https://localhost:14443/api/v1';
 
 const api = axios.create({
@@ -38,7 +38,7 @@ export const login = async (username: string, password: string): Promise<{ acces
   const formData = new FormData();
   formData.append('username', username);
   formData.append('password', password);
-  
+
   const response = await api.post<{ access_token: string, force_password_change: boolean, is_superuser: boolean, username: string }>('/login/access-token', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
@@ -61,7 +61,7 @@ export interface RecordingFilters {
 
 export const getRecordings = async (filters?: RecordingFilters): Promise<Recording[]> => {
   const params = new URLSearchParams();
-  
+
   if (filters) {
     if (filters.q) params.append('q', filters.q);
     if (filters.start_date) params.append('start_date', filters.start_date);
@@ -163,12 +163,12 @@ export const getTags = async (): Promise<Tag[]> => {
   return response.data;
 };
 
-export const createTag = async (name: string, color?: string): Promise<Tag> => {
-  const response = await api.post<Tag>('/tags/', { name, color });
+export const createTag = async (name: string, color?: string, parent_id?: number): Promise<Tag> => {
+  const response = await api.post<Tag>('/tags/', { name, color, parent_id });
   return response.data;
 };
 
-export const updateTag = async (tagId: number, data: { name?: string; color?: string }): Promise<Tag> => {
+export const updateTag = async (tagId: number, data: { name?: string; color?: string; parent_id?: number }): Promise<Tag> => {
   const response = await api.patch<Tag>(`/tags/${tagId}`, data);
   return response.data;
 };
@@ -222,8 +222,8 @@ export const updateTranscriptSegmentText = async (recordingId: number, segmentIn
 };
 
 export const findAndReplace = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
-  await api.post(`/transcripts/${recordingId}/replace`, { 
-    find_text: find, 
+  await api.post(`/transcripts/${recordingId}/replace`, {
+    find_text: find,
     replace_text: replace,
     case_sensitive: options.caseSensitive ?? false,
     use_regex: options.useRegex ?? false
@@ -237,12 +237,12 @@ export const exportContent = async (recordingId: number, contentType: ExportCont
     params: { content_type: contentType },
     responseType: 'blob',
   });
-  
+
   // Create a link and click it to download
   const url = window.URL.createObjectURL(new Blob([response.data]));
   const link = document.createElement('a');
   link.href = url;
-  
+
   // Extract filename from header if possible, or generate one
   const contentDisposition = response.headers['content-disposition'];
   let filename = `export-${recordingId}.txt`;
@@ -250,16 +250,16 @@ export const exportContent = async (recordingId: number, contentType: ExportCont
     // Try to match filename="name"
     const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
     if (filenameMatch && filenameMatch.length === 2) {
-        filename = filenameMatch[1];
+      filename = filenameMatch[1];
     } else {
-        // Try to match filename=name
-        const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
-        if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
-            filename = filenameSimpleMatch[1].trim();
-        }
+      // Try to match filename=name
+      const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
+      if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
+        filename = filenameSimpleMatch[1].trim();
+      }
     }
   }
-  
+
   link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
@@ -290,8 +290,8 @@ export const generateNotes = async (recordingId: number): Promise<{ notes: strin
 
 export const findAndReplaceNotes = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
   // Use the main replace endpoint since it applies to both transcript and notes
-  await api.post(`/transcripts/${recordingId}/replace`, { 
-    find_text: find, 
+  await api.post(`/transcripts/${recordingId}/replace`, {
+    find_text: find,
     replace_text: replace,
     case_sensitive: options.caseSensitive ?? false,
     use_regex: options.useRegex ?? false
@@ -326,34 +326,34 @@ export interface ImportAudioOptions {
 }
 
 export const importAudio = async (
-  file: File, 
+  file: File,
   options?: ImportAudioOptions
 ): Promise<Recording> => {
   // Use chunked upload for all files to ensure reliability and bypass Cloudflare limits
   // Chunk size: 10MB
   const CHUNK_SIZE = 10 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  
+
   // 1. Initialize Import
   const initParams = new URLSearchParams();
   initParams.append('filename', file.name);
   if (options?.name) initParams.append('name', options.name);
   if (options?.recordedAt) initParams.append('recorded_at', options.recordedAt.toISOString());
-  
+
   const initResponse = await api.post<Recording>(
     `/recordings/import/chunked/init?${initParams.toString()}`
   );
   const recording = initResponse.data;
-  
+
   // 2. Upload Chunks
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const end = Math.min(start + CHUNK_SIZE, file.size);
     const chunk = file.slice(start, end);
-    
+
     const formData = new FormData();
     formData.append('file', chunk);
-    
+
     // Sequence is 1-based for consistency with backend logic
     await api.post(
       `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
@@ -362,7 +362,7 @@ export const importAudio = async (
         headers: { 'Content-Type': 'multipart/form-data' },
       }
     );
-    
+
     // Update progress
     if (options?.onUploadProgress) {
       const progress = Math.round(((i + 1) / totalChunks) * 100);
@@ -370,16 +370,16 @@ export const importAudio = async (
       options.onUploadProgress(Math.min(progress, 99));
     }
   }
-  
+
   // 3. Finalize Import
   const finalizeResponse = await api.post<Recording>(
     `/recordings/import/chunked/finalize?recording_id=${recording.id}`
   );
-  
+
   if (options?.onUploadProgress) {
     options.onUploadProgress(100);
   }
-  
+
   return finalizeResponse.data;
 };
 
@@ -474,6 +474,11 @@ export const setupSystem = async (data: any): Promise<void> => {
   await api.post('/system/setup', data);
 };
 
+export const getDemoRecording = async (): Promise<{ id: number | null }> => {
+  const response = await api.get<{ id: number | null }>('/system/demo-recording');
+  return response.data;
+};
+
 export const downloadModels = async (data: { hf_token?: string, whisper_model_size?: string }): Promise<{ task_id: string }> => {
   const response = await api.post('/system/download-models', null, { params: data });
   return response.data;
@@ -512,7 +517,7 @@ export const getUsers = async (skip = 0, limit = 100, search = ''): Promise<{ it
     limit: limit.toString(),
   });
   if (search) params.append('search', search);
-  
+
   const response = await api.get<{ items: User[], total: number }>(`/users?${params.toString()}`);
   return response.data;
 };
@@ -578,10 +583,10 @@ export const validateInvitation = async (code: string): Promise<{ valid: boolean
 };
 
 export const registerUser = async (username: string, password: string, invite_code: string): Promise<User> => {
-  const payload = { 
-    username, 
-    password, 
-    invite_code, 
+  const payload = {
+    username,
+    password,
+    invite_code,
   };
   const response = await api.post<User>('/users/register', payload);
   return response.data;
@@ -592,6 +597,37 @@ export const getDownloadProgress = async (): Promise<DownloadProgress> => {
   return response.data;
 };
 
+
+export interface Document {
+  id: number;
+  recording_id: number;
+  title: string;
+  file_path: string;
+  file_type: string;
+  status: 'PENDING' | 'PROCESSING' | 'READY' | 'ERROR';
+  error_message?: string;
+  created_at: string;
+}
+
+export const getDocuments = async (recordingId: number): Promise<Document[]> => {
+  const response = await api.get<Document[]>(`/recordings/${recordingId}/documents`);
+  return response.data;
+};
+
+export const uploadDocument = async (recordingId: number, file: File): Promise<Document> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post<Document>(`/recordings/${recordingId}/documents`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const deleteDocument = async (documentId: number): Promise<void> => {
+  await api.delete(`/documents/${documentId}`);
+};
 
 // Chat API
 export const getChatHistory = async (recordingId: number): Promise<ChatMessage[]> => {
@@ -608,7 +644,8 @@ export const streamChatMessage = (
   message: string,
   onToken: (token: string) => void,
   onComplete: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  tagIds?: number[]
 ): AbortController => {
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -619,62 +656,62 @@ export const streamChatMessage = (
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, tag_ids: tagIds }),
     signal: controller.signal,
   }).then(async (response) => {
     if (!response.ok) {
-        try {
-            const err = await response.json();
-            onError(err.detail || 'Failed to send message');
-        } catch {
-            onError(`Error: ${response.statusText}`);
-        }
-        return;
+      try {
+        const err = await response.json();
+        onError(err.detail || 'Failed to send message');
+      } catch {
+        onError(`Error: ${response.statusText}`);
+      }
+      return;
     }
-    
+
     if (!response.body) {
-        onError("No response body");
-        return;
+      onError("No response body");
+      return;
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    
+
     while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            onComplete();
-            break;
-        }
-        
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') {
-                    continue;
-                }
-                try {
-                    const parsed = JSON.parse(data);
-                    if (parsed.token) {
-                        onToken(parsed.token);
-                    } else if (parsed.error) {
-                        onError(parsed.error);
-                    }
-                } catch (e) {
-                    console.error("Failed to parse SSE data", e);
-                }
+      const { done, value } = await reader.read();
+      if (done) {
+        onComplete();
+        break;
+      }
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.token) {
+              onToken(parsed.token);
+            } else if (parsed.error) {
+              onError(parsed.error);
             }
+          } catch (e) {
+            console.error("Failed to parse SSE data", e);
+          }
         }
+      }
     }
   }).catch(err => {
-      if (err.name === 'AbortError') {
-          console.log('Stream aborted');
-      } else {
-          onError(err.message || 'Network error');
-      }
+    if (err.name === 'AbortError') {
+      console.log('Stream aborted');
+    } else {
+      onError(err.message || 'Network error');
+    }
   });
 
   return controller;
@@ -695,7 +732,7 @@ export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey
   params.append('provider', provider);
   if (apiUrl) params.append('api_url', apiUrl);
   if (apiKey) params.append('api_key', apiKey);
-  
+
   const response = await api.get<string[]>(`/llm/models?${params.toString()}`);
   return response.data;
 };
@@ -709,7 +746,7 @@ export const exportBackup = async (): Promise<Blob> => {
 };
 
 export const importBackup = async (
-  file: File, 
+  file: File,
   clearExisting: boolean,
   onUploadProgress?: (progress: number) => void
 ): Promise<void> => {

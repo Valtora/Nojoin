@@ -14,6 +14,8 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
+from backend.models.document import Document
+from backend.models.context_chunk import ContextChunk
 
 # Import the database URL
 from backend.core.db import SYNC_DATABASE_URL

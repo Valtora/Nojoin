@@ -6,6 +6,12 @@ Thank you for your interest in Nojoin!
 
 This repository hosts the **Community Edition** of Nojoin, which is free and open-source software.
 
+## Contributor License Agreement (CLA)
+
+To ensure Nojoin can remain sustainable and offer a commercial SaaS version, by submitting a Pull Request, you agree to the **Contributor License Agreement (CLA)**.
+
+This agreement grants Valtora the right to use your contributions in the commercial version of the platform while ensuring the Community Edition remains open source forever.
+
 ## How to Contribute
 
 We **actively welcome** code contributions, bug fixes, and feature enhancements from the community.

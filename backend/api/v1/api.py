@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from backend.api.deps import get_current_user
-from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup, invitations
+from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup, invitations, documents
 
 api_router = APIRouter()
 
@@ -59,5 +59,12 @@ api_router.include_router(
     backup.router,
     prefix="/backup",
     tags=["backup"],
+    dependencies=[Depends(get_current_user)]
+)
+api_router.include_router(
+    documents.router,
+    # Actually the endpoints are mixed: /recordings/{id}/documents and /documents/{id}
+    # So we can just register it once.
+    tags=["documents"],
     dependencies=[Depends(get_current_user)]
 )

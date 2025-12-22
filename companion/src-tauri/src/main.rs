@@ -92,11 +92,8 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
         // We need to parse it.
         let version_str = release.tag_name.trim_start_matches('v');
         
-        // Simple version comparison (lexicographical might fail for 0.1.10 vs 0.1.9, but semver crate is better if available)
-        // Since we don't have semver crate in Cargo.toml, let's try to use a simple split check or just string compare if format is consistent.
-        // For robustness, let's assume if strings are different, it's an update (or downgrade).
-        // But we only want to notify on NEWER version.
-        // Let's just check inequality for now, or try to parse.
+        // Simple string comparison for version check.
+        // We assume that if the strings are different, it's an update.
         
         if version_str != current_version {
              // It's different. Is it newer?

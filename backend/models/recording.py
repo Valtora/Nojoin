@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from .transcript import Transcript
     from .user import User
     from .chat import ChatMessage
+    from .document import Document
+    from .context_chunk import ContextChunk
 
 class RecordingStatus(str, Enum):
     UPLOADING = "UPLOADING"
@@ -49,6 +51,8 @@ class Recording(BaseDBModel, table=True):
     tags: List["RecordingTag"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     transcript: Optional["Transcript"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     chat_messages: List["ChatMessage"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    documents: List["Document"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    context_chunks: List["ContextChunk"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 # Read Models
 # GlobalSpeakerRead is imported from .speaker to avoid circular imports if possible, 
