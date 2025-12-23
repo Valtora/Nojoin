@@ -23,6 +23,7 @@ class User(BaseDBModel, table=True):
     force_password_change: bool = Field(default=False)
     role: str = Field(default=UserRole.USER)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
+    has_seen_demo_recording: bool = Field(default=False)
     
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
     

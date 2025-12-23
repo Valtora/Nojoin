@@ -168,7 +168,7 @@ export const createTag = async (name: string, color?: string, parent_id?: number
   return response.data;
 };
 
-export const updateTag = async (tagId: number, data: { name?: string; color?: string; parent_id?: number }): Promise<Tag> => {
+export const updateTag = async (tagId: number, data: { name?: string; color?: string; parent_id?: number | null }): Promise<Tag> => {
   const response = await api.patch<Tag>(`/tags/${tagId}`, data);
   return response.data;
 };

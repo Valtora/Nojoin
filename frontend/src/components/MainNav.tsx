@@ -3,15 +3,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { 
-  Mic, 
-  Archive, 
-  Trash2, 
-  Tag as TagIcon, 
-  Users, 
-  FilePlus, 
-  Settings, 
-  ChevronLeft, 
+import {
+  Mic,
+  Archive,
+  Trash2,
+  Tag as TagIcon,
+  Users,
+  FilePlus,
+  Settings,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Plus,
@@ -23,6 +23,18 @@ import {
   RefreshCw,
   Edit2
 } from 'lucide-react';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  useDraggable,
+  useDroppable,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  pointerWithin
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { useNavigationStore, ViewType } from '@/lib/store';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 import { getTags, updateTag, deleteTag, createTag, getCompanionReleases, CompanionReleases } from '@/lib/api';
@@ -55,8 +67,8 @@ function NavItem({ icon, label, isActive, onClick, collapsed, badge, id }: NavIt
       title={collapsed ? label : undefined}
       className={`
         w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-        ${isActive 
-          ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' 
+        ${isActive
+          ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
           : 'text-gray-700 dark:text-gray-300 hover:bg-orange-200 hover:text-orange-800 dark:hover:bg-gray-800'
         }
         ${collapsed ? 'justify-center' : ''}
@@ -96,12 +108,14 @@ interface TagItemProps {
   onToggleExpand: () => void;
 }
 
-function TagItem({ 
-  tag, 
-  isSelected, 
-  onToggle, 
-  onColorChange, 
-  onDelete, 
+
+
+function TagItem({
+  tag,
+  isSelected,
+  onToggle,
+  onColorChange,
+  onDelete,
   onRename,
   onAddChild,
   onContextMenu,
@@ -116,14 +130,29 @@ function TagItem({
 }: TagItemProps) {
   const color = getColorByKey(tag.color);
   const [editValue, setEditValue] = useState(tag.name);
-  
+
+  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
+    id: `tag-${tag.id}`,
+    data: { tag }
+  });
+
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: `tag-${tag.id}`,
+    data: { tag },
+    disabled: isDragging
+  });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+  };
+
   // Reset edit value when editing starts
   useEffect(() => {
     if (isEditing) {
       setEditValue(tag.name);
     }
   }, [isEditing, tag.name]);
-  
+
   const handleSubmit = () => {
     if (editValue.trim() && editValue.trim() !== tag.name) {
       onRename(editValue.trim());
@@ -131,7 +160,7 @@ function TagItem({
       onCancelEdit();
     }
   };
-  
+
   if (collapsed) {
     return (
       <button
@@ -147,19 +176,25 @@ function TagItem({
     );
   }
 
-  return (
-    <div 
+  const content = (
+    <div
+      {...attributes}
+      {...listeners}
       className={`
-        group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer
+        group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer relative select-none touch-none
         ${isSelected ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}
+        ${isDragging ? 'opacity-50' : ''}
+        ${isOver ? 'bg-orange-50 dark:bg-orange-900/10 ring-2 ring-orange-400 dark:ring-orange-600' : ''}
       `}
       style={{ paddingLeft: `${level * 12 + 12}px` }}
-      onClick={isEditing ? undefined : onToggle}
+      onClick={(e) => {
+        if (!isEditing) onToggle();
+      }}
       onContextMenu={onContextMenu}
     >
-      <InlineColorPicker 
-        selectedColor={tag.color || undefined} 
-        onColorSelect={onColorChange} 
+      <InlineColorPicker
+        selectedColor={tag.color || undefined}
+        onColorSelect={onColorChange}
       />
       {isEditing ? (
         <input
@@ -172,11 +207,12 @@ function TagItem({
           }}
           onBlur={handleSubmit}
           autoFocus
-          className="flex-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+          className="flex-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none select-text"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         />
       ) : (
-        <span 
+        <span
           className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : ''}`}
           title={tag.name}
           onDoubleClick={(e: React.MouseEvent) => {
@@ -189,56 +225,68 @@ function TagItem({
       )}
       {!isEditing && (
         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                onAddChild();
-              }}
-              className="p-1 hover:text-orange-500 transition-all"
-              title="Add sub-tag"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-            
-            {hasChildren && (
-              <button
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  onToggleExpand();
-                }}
-                className="p-1 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
-                title={isExpanded ? "Collapse" : "Expand"}
-              >
-                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              </button>
-            )}
+          <button
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              onAddChild();
+            }}
+            className="p-1 hover:text-orange-500 transition-all"
+            title="Add sub-tag"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Plus className="w-3 h-3" />
+          </button>
 
+          {hasChildren && (
             <button
               onClick={(e: React.MouseEvent) => {
                 e.stopPropagation();
-                onDelete();
+                onToggleExpand();
               }}
-              className="p-1 hover:text-red-500 transition-all"
-              title="Delete tag"
+              className="p-1 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
+              title={isExpanded ? "Collapse" : "Expand"}
+              onPointerDown={(e) => e.stopPropagation()}
             >
-              <X className="w-3 h-3" />
+              {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
             </button>
+          )}
+
+          <button
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1 hover:text-red-500 transition-all"
+            title="Delete tag"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <X className="w-3 h-3" />
+          </button>
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div ref={setDroppableRef} style={style}>
+      <div ref={setDraggableRef}>
+        {content}
+      </div>
     </div>
   );
 }
 
 export default function MainNav() {
+
   const router = useRouter();
   const pathname = usePathname();
   const { companion, companionAuthenticated, authorizeCompanion, companionUpdateAvailable, triggerCompanionUpdate } = useServiceStatusStore();
-  const { 
-    currentView, 
-    setCurrentView, 
-    selectedTagIds, 
+  const {
+    currentView,
+    setCurrentView,
+    selectedTagIds,
     toggleTagFilter,
-    isNavCollapsed, 
+    isNavCollapsed,
     toggleNavCollapse,
     navWidth,
     setNavWidth,
@@ -263,14 +311,14 @@ export default function MainNav() {
     };
     void fetchReleases();
   }, []);
-  
+
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [createTagModal, setCreateTagModal] = useState<{
     isOpen: boolean;
     parentId?: number;
   }>({ isOpen: false });
-  
+
   // Convert array to Set for easier lookup
   const expandedTagIds = useMemo(() => new Set(expandedTagIdsArray), [expandedTagIdsArray]);
 
@@ -293,7 +341,7 @@ export default function MainNav() {
   const [newTagName, setNewTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
-  
+
   // Modal states
   const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -308,7 +356,7 @@ export default function MainNav() {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   const handleLogout = () => {
@@ -328,7 +376,7 @@ export default function MainNav() {
   useEffect(() => {
     setMounted(true);
     void loadTags();
-    
+
     // Listen for global tag updates
     const handleTagsUpdated = () => { void loadTags(); };
     window.addEventListener('tags-updated', handleTagsUpdated);
@@ -430,7 +478,7 @@ export default function MainNav() {
 
   const handleAddTag = async (parentId?: number) => {
     if (!newTagName.trim()) return;
-    
+
     try {
       const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
       const newTag = await createTag(newTagName.trim(), randomColor, parentId);
@@ -453,12 +501,12 @@ export default function MainNav() {
       const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
       const newTag = await createTag(name, randomColor, parentId);
       setTags((prev: Tag[]) => [...prev, newTag]);
-      
+
       // If adding a sub-tag, ensure parent is expanded
       if (parentId && !expandedTagIds.has(parentId)) {
         toggleExpandedTag(parentId);
       }
-      
+
       window.dispatchEvent(new CustomEvent('tags-updated'));
     } catch (error) {
       console.error('Failed to create tag:', error);
@@ -507,7 +555,7 @@ export default function MainNav() {
 
   const handleDownloadCompanion = () => {
     const platform = detectPlatform();
-    
+
     if (platform === 'windows' && companionReleases?.windows_url) {
       window.open(companionReleases.windows_url, '_blank');
       return;
@@ -528,7 +576,7 @@ export default function MainNav() {
 
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? isNavCollapsed : false;
-  
+
   // Determine which button to show
   const showDownloadButton = mounted && !companion;
   const showAuthorizeButton = mounted && companion && !companionAuthenticated;
@@ -540,12 +588,92 @@ export default function MainNav() {
     { view: 'deleted', icon: <Trash2 className="w-5 h-5" />, label: 'Deleted', id: 'nav-deleted' },
   ];
 
+  // Drag and drop logic
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    // Extract tag IDs
+    const activeIdString = String(active.id);
+    const overIdString = String(over.id);
+
+    const activeTagId = parseInt(activeIdString.replace('tag-', ''));
+    let newParentId: number | null = null;
+
+    if (overIdString === 'root-tags-drop-zone') {
+      newParentId = null;
+    } else if (overIdString.startsWith('tag-')) {
+      const overTagId = parseInt(overIdString.replace('tag-', ''));
+      // Don't do anything if dropped on itself
+      if (activeTagId === overTagId) return;
+
+      // Check for cycles: ensure overTagId is not a descendant of activeTagId
+      const isDescendant = (parentId: number, childId: number): boolean => {
+        if (parentId === childId) return true;
+        const child = tags.find(t => t.id === childId);
+        if (!child || !child.parent_id) return false;
+        return isDescendant(parentId, child.parent_id);
+      };
+
+      if (isDescendant(activeTagId, overTagId)) {
+        console.warn('Cannot move parent into child - cycle detected');
+        return;
+      }
+
+      newParentId = overTagId;
+    } else {
+      return; // Dropped somewhere else
+    }
+
+    // Find the active tag object
+    const activeTag = tags.find(t => t.id === activeTagId);
+    if (!activeTag) return;
+
+    // Don't update if parent hasn't changed
+    if (activeTag.parent_id === newParentId) return;
+
+    // Optimistic update - local state uses undefined for no parent
+    setTags((prev) => prev.map(t =>
+      t.id === activeTagId ? { ...t, parent_id: newParentId === null ? undefined : newParentId } : t
+    ));
+
+    try {
+      // API Call - MUST send null to explicitly unset parent
+      await updateTag(activeTagId, { parent_id: newParentId });
+      window.dispatchEvent(new CustomEvent('tags-updated'));
+
+      // If moved to a new parent, expand that parent
+      if (newParentId && !expandedTagIds.has(newParentId)) {
+        toggleExpandedTag(newParentId);
+      }
+    } catch (e) {
+      console.error("Failed to move tag", e);
+      // Revert optimistic update
+      setTags((prev) => prev.map(t =>
+        t.id === activeTagId ? { ...t, parent_id: activeTag.parent_id } : t
+      ));
+    }
+  };
+
+  const { isOver: isOverRoot, setNodeRef: setRootNodeRef } = useDroppable({
+    id: 'root-tags-drop-zone',
+  });
+
   return (
     <>
-      <aside 
+      <aside
         id="main-nav"
         className="flex-shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 flex flex-col relative"
-        style={{ 
+        style={{
           width: collapsed ? `${COLLAPSED_WIDTH}px` : `${navWidth}px`,
           transition: isResizing ? 'none' : 'width 300ms'
         }}
@@ -554,11 +682,11 @@ export default function MainNav() {
         <div className="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-800">
           {!collapsed && (
             <div className="flex-1 text-center flex items-center justify-center gap-2">
-              <Image 
-                src="/assets/NojoinLogo.png" 
-                alt="Nojoin Logo" 
-                width={24} 
-                height={24} 
+              <Image
+                src="/assets/NojoinLogo.png"
+                alt="Nojoin Logo"
+                width={24}
+                height={24}
                 className="object-contain"
               />
               <span className="font-semibold text-orange-600">Nojoin</span>
@@ -601,66 +729,82 @@ export default function MainNav() {
         <div className="mx-3 border-t border-gray-300 dark:border-gray-800" />
 
         {/* Tags Section */}
-        <div className="flex-1 overflow-y-auto p-2">
-          {!collapsed && (
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <TagIcon className="w-3 h-3" />
-                Tags
-              </span>
-              <button
-                onClick={() => setIsAddingTag(true)}
-                className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
-                title="Add tag"
+        <DndContext
+          sensors={sensors}
+          collisionDetection={pointerWithin}
+          onDragStart={() => { }}
+          onDragEnd={handleDragEnd}
+        >
+          <div
+            ref={setRootNodeRef}
+            className={`flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? 'border-orange-300 bg-orange-50/50 dark:border-orange-700 dark:bg-orange-900/10' : ''}`}
+          >
+            {!collapsed && (
+              <div
+                className="flex items-center justify-between px-3 py-2"
               >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-          
-          {collapsed && (
-            <div className="flex justify-center py-2">
-              <TagIcon className="w-4 h-4 text-gray-500" />
-            </div>
-          )}
+                <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <TagIcon className="w-3 h-3" />
+                  Tags
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsAddingTag(true);
+                  }}
+                  className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+                  title="Add tag"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+            )}
 
-          {/* Add Tag Input */}
-          {isAddingTag && !collapsed && (
-            <div className="px-2 pb-2">
-              <input
-                type="text"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddTag();
-                  if (e.key === 'Escape') {
-                    setIsAddingTag(false);
-                    setNewTagName('');
-                  }
-                }}
-                onBlur={() => {
-                  if (!newTagName.trim()) {
-                    setIsAddingTag(false);
-                  }
-                }}
-                placeholder="Tag name..."
-                autoFocus
-                className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded focus:ring-2 focus:ring-orange-500 focus:outline-none"
-              />
-            </div>
-          )}
+            {collapsed && (
+              <div className="flex justify-center py-2">
+                <TagIcon className="w-4 h-4 text-gray-500" />
+              </div>
+            )}
 
-          {/* Tag List */}
-          <div className="space-y-0.5">
-            {renderTagTree(tagTree)}
+            {/* Add Tag Input */}
+            {isAddingTag && !collapsed && (
+              <div className="px-2 pb-2">
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddTag();
+                    if (e.key === 'Escape') {
+                      setIsAddingTag(false);
+                      setNewTagName('');
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!newTagName.trim()) {
+                      setIsAddingTag(false);
+                    }
+                  }}
+                  placeholder="Tag name..."
+                  autoFocus
+                  className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {/* Tag List */}
+            <div className="space-y-0.5">
+              {renderTagTree(tagTree)}
+            </div>
+
+            {tags.length === 0 && !collapsed && (
+              <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                No tags yet. Create one to organize your recordings.
+              </p>
+            )}
           </div>
-
-          {tags.length === 0 && !collapsed && (
-            <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-              No tags yet. Create one to organize your recordings.
-            </p>
-          )}
-        </div>
+          <DragOverlay />
+        </DndContext>
 
         {/* Context Menu */}
         {contextMenu && (
@@ -685,6 +829,46 @@ export default function MainNav() {
                   setContextMenu(null);
                 }
               },
+              ...(tags.find(t => t.id === contextMenu.tagId)?.parent_id ? [
+                {
+                  label: 'Promote to Root',
+                  icon: <ChevronLeft className="w-4 h-4" />,
+                  onClick: async () => {
+                    try {
+                      await updateTag(contextMenu.tagId, { parent_id: null }); // Send null to API
+                      // Optimistic update (local state undefined)
+                      setTags((prev) => prev.map(t =>
+                        t.id === contextMenu.tagId ? { ...t, parent_id: undefined } : t
+                      ));
+                      window.dispatchEvent(new CustomEvent('tags-updated'));
+                    } catch (e) { console.error(e); }
+                    setContextMenu(null);
+                  }
+                },
+                ...(tags.find(t => t.id === tags.find(curr => curr.id === contextMenu.tagId)?.parent_id)?.parent_id ? [
+                  {
+                    label: 'Promote One Level',
+                    icon: <ChevronLeft className="w-4 h-4" />,
+                    onClick: async () => {
+                      const tag = tags.find(t => t.id === contextMenu.tagId);
+                      if (tag?.parent_id) {
+                        const parent = tags.find(t => t.id === tag.parent_id);
+                        if (parent?.parent_id) {
+                          try {
+                            await updateTag(tag.id, { parent_id: parent.parent_id });
+                            // Optimistic update
+                            setTags((prev) => prev.map(t =>
+                              t.id === tag.id ? { ...t, parent_id: parent.parent_id } : t
+                            ));
+                            window.dispatchEvent(new CustomEvent('tags-updated'));
+                          } catch (e) { console.error(e); }
+                        }
+                      }
+                      setContextMenu(null);
+                    }
+                  }
+                ] : [])
+              ] : []),
               {
                 label: 'Delete',
                 icon: <Trash2 className="w-4 h-4" />,
@@ -762,7 +946,7 @@ export default function MainNav() {
               )}
             </button>
           )}
-          
+
           <NavItem
             id="nav-speakers"
             icon={<Users className="w-5 h-5" />}
@@ -817,11 +1001,11 @@ export default function MainNav() {
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
       />
-      <GlobalSpeakersModal 
-        isOpen={isSpeakersModalOpen} 
-        onClose={() => setIsSpeakersModalOpen(false)} 
+      <GlobalSpeakersModal
+        isOpen={isSpeakersModalOpen}
+        onClose={() => setIsSpeakersModalOpen(false)}
       />
-      
+
       <ImportAudioModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -836,7 +1020,7 @@ export default function MainNav() {
         message={confirmModal.message}
         isDangerous={confirmModal.isDangerous}
       />
-      
+
       <CreateTagModal
         isOpen={createTagModal.isOpen}
         onClose={() => setCreateTagModal({ ...createTagModal, isOpen: false })}

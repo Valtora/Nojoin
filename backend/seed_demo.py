@@ -45,6 +45,11 @@ async def seed_demo_data(user_id: int = None, force: bool = False):
             logger.error("Cannot seed demo data: No users found.")
             return
 
+        # Check if user has already seen the demo (persisted flag)
+        if target_user.has_seen_demo_recording and not force:
+            logger.info(f"User {target_user.username} has already seen the demo recording. Skipping.")
+            return
+
         audio_filename = f"demo_welcome_{target_user.id}.wav"
         audio_path = os.path.join(recordings_dir, audio_filename)
         
@@ -72,10 +77,17 @@ async def seed_demo_data(user_id: int = None, force: bool = False):
             if force:
                 logger.info(f"Force re-seeding: Deleting existing demo recording for user {target_user.username}...")
                 await session.delete(existing_recording)
+                # Don't commit yet, we will commit when we add new stuff, or we can commit here.
+                # Committing here is safer for the delete.
                 await session.commit()
                 # Proceed to create new data
             else:
                 logger.info(f"Demo recording already exists for user {target_user.username}.")
+                # Ensure flag is set to True if it wasn't
+                if not target_user.has_seen_demo_recording:
+                    target_user.has_seen_demo_recording = True
+                    session.add(target_user)
+                    await session.commit()
                 return
 
         logger.info(f"Creating demo recording for user {target_user.username}...")
@@ -186,6 +198,12 @@ The team gathered to demonstrate the core features of the Nojoin platform, highl
             content="The key features mentioned are local GPU processing, a user-friendly interface for transcript editing, speaker management tools, and AI-generated notes and action items."
         )
         session.add(chat_response)
+        
+        session.add(chat_response)
+        
+        # Mark user as having seen the demo
+        target_user.has_seen_demo_recording = True
+        session.add(target_user)
         
         await session.commit()
         logger.info("Demo recording created successfully!")

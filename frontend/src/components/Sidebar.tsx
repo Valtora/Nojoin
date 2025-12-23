@@ -1,17 +1,19 @@
 'use client';
 
+
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Recording, RecordingStatus, Tag } from '@/types';
+import { buildTagPath } from '@/lib/tagUtils';
 import { Loader2, AlertCircle, HelpCircle, UploadCloud, Search, Filter, X, RotateCcw, Trash2, CheckSquare, Square } from 'lucide-react';
 import MeetingControls from './MeetingControls';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { 
-  getRecordings, 
-  renameRecording, 
-  retryProcessing, 
+import {
+  getRecordings,
+  renameRecording,
+  retryProcessing,
   inferSpeakers,
-  getGlobalSpeakers, 
+  getGlobalSpeakers,
   RecordingFilters,
   archiveRecording,
   restoreRecording,
@@ -33,9 +35,9 @@ const formatDurationString = (seconds?: number) => {
   if (seconds < 60) return `${Math.floor(seconds)}s`;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   if (hours > 0) {
-      return `${hours}hr ${minutes}${minutes === 1 ? 'min' : 'mins'}`;
+    return `${hours}hr ${minutes}${minutes === 1 ? 'min' : 'mins'}`;
   }
   return `${minutes}${minutes === 1 ? 'min' : 'mins'}`;
 };
@@ -49,7 +51,7 @@ const formatDate = (dateString: string) => {
 };
 
 const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
 const StatusIcon = ({ status }: { status: RecordingStatus }) => {
@@ -58,8 +60,8 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
       return null;
     case RecordingStatus.QUEUED:
       return (
-        <span 
-          className="cursor-help" 
+        <span
+          className="cursor-help"
           title="Meeting is in queue to be processed..."
         >
           <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
@@ -67,8 +69,8 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
       );
     case RecordingStatus.PROCESSING:
       return (
-        <span 
-          className="cursor-help" 
+        <span
+          className="cursor-help"
           title="Processing: transcription, diarization, voiceprints. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing."
         >
           <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
@@ -90,9 +92,9 @@ export default function Sidebar() {
   const prevRecordingsRef = useRef<Map<number, RecordingStatus>>(new Map());
   const prevNotesStatusRef = useRef<Map<number, string>>(new Map());
   const prevTranscriptStatusRef = useRef<Map<number, string>>(new Map());
-  const { 
-    currentView, 
-    selectedTagIds, 
+  const {
+    currentView,
+    selectedTagIds,
     toggleTagFilter,
     clearTagFilters,
     selectionMode,
@@ -101,14 +103,14 @@ export default function Sidebar() {
     selectAllRecordings,
     clearSelection
   } = useNavigationStore();
-  
+
   const [mounted, setMounted] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recording: Recording } | null>(null);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  
+
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -130,7 +132,7 @@ export default function Sidebar() {
       }
     };
     void loadTags();
-    
+
     const handleTagsUpdated = () => { void loadTags(); };
     window.addEventListener('tags-updated', handleTagsUpdated);
     return () => window.removeEventListener('tags-updated', handleTagsUpdated);
@@ -141,7 +143,7 @@ export default function Sidebar() {
       // Check Recording Status (General Processing)
       const prevStatus = prevRecordingsRef.current.get(rec.id);
       if (prevStatus && prevStatus !== RecordingStatus.PROCESSED && rec.status === RecordingStatus.PROCESSED) {
-         addNotification({
+        addNotification({
           type: 'success',
           message: `Processing completed for "${rec.name}"`,
         });
@@ -152,9 +154,9 @@ export default function Sidebar() {
       if (rec.transcript) {
         const prevNotesStatus = prevNotesStatusRef.current.get(rec.id);
         const currentNotesStatus = rec.transcript.notes_status;
-        
+
         if (prevNotesStatus && prevNotesStatus !== 'completed' && currentNotesStatus === 'completed') {
-           addNotification({
+          addNotification({
             type: 'success',
             message: `Meeting notes generated for "${rec.name}"`,
           });
@@ -164,9 +166,9 @@ export default function Sidebar() {
         // Check Transcript Status (Specific)
         const prevTranscriptStatus = prevTranscriptStatusRef.current.get(rec.id);
         const currentTranscriptStatus = rec.transcript.transcript_status;
-        
+
         if (prevTranscriptStatus && prevTranscriptStatus !== 'completed' && currentTranscriptStatus === 'completed') {
-           addNotification({
+          addNotification({
             type: 'success',
             message: `Transcript ready for "${rec.name}"`,
           });
@@ -178,15 +180,15 @@ export default function Sidebar() {
 
   const filteredRecordings = useMemo(() => {
     if (!debouncedSearchQuery) return recordings;
-    
+
     const fuse = createFuse(recordings, [
-      'name', 
+      'name',
       'status',
       'tags.name',
       'speakers.local_name',
       'speakers.global_speaker.name'
     ]);
-    
+
     return fuse.search(debouncedSearchQuery).map(result => result.item);
   }, [recordings, debouncedSearchQuery]);
 
@@ -209,7 +211,7 @@ export default function Sidebar() {
     isOpen: false,
     title: "",
     message: "",
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   const fetchRecordings = useCallback(async () => {
@@ -217,7 +219,7 @@ export default function Sidebar() {
       const filters: RecordingFilters = {};
       // Client-side search is now used, so we don't send 'q' to the backend
       // if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
-      
+
       if (dateMode === 'range') {
         if (dateRange.start) filters.start_date = new Date(dateRange.start).toISOString();
         if (dateRange.end) filters.end_date = new Date(dateRange.end).toISOString();
@@ -339,9 +341,9 @@ export default function Sidebar() {
 
   const handleRenameSubmit = async (id: number) => {
     if (!renameValue.trim()) return;
-    
-    setRecordings(prev => prev.map(r => 
-        r.id === id ? { ...r, name: renameValue } : r
+
+    setRecordings(prev => prev.map(r =>
+      r.id === id ? { ...r, name: renameValue } : r
     ));
     setRenamingId(null);
 
@@ -384,8 +386,8 @@ export default function Sidebar() {
     const isShift = e.shiftKey;
 
     if (isCtrl || isShift) {
-        e.preventDefault();
-        e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
     }
 
     if (isCtrl) {
@@ -398,14 +400,14 @@ export default function Sidebar() {
       const start = Math.min(lastSelectedIndex, index);
       const end = Math.max(lastSelectedIndex, index);
       const rangeIds = filteredRecordings.slice(start, end + 1).map(r => r.id);
-      
+
       const newSelection = Array.from(new Set([...selectedRecordingIds, ...rangeIds]));
       selectAllRecordings(newSelection);
       return;
     }
 
     if (selectionMode) {
-        clearSelection();
+      clearSelection();
     }
     setLastSelectedIndex(index);
   };
@@ -415,9 +417,9 @@ export default function Sidebar() {
 
     if (view === 'recordings') {
       items.push(
-        { 
-          label: 'Rename', 
-          onClick: () => handleRenameStart(recording.id, recording.name) 
+        {
+          label: 'Rename',
+          onClick: () => handleRenameStart(recording.id, recording.name)
         },
         {
           label: 'Retry Speaker Inference',
@@ -427,38 +429,38 @@ export default function Sidebar() {
           label: 'Retry Processing',
           onClick: () => handleRetry(recording.id)
         },
-        { 
+        {
           label: 'Archive',
           onClick: () => handleArchive(recording.id)
         },
-        { 
-          label: 'Delete', 
+        {
+          label: 'Delete',
           className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
           onClick: () => handleSoftDelete(recording.id)
         },
       );
     } else if (view === 'archived') {
       items.push(
-        { 
+        {
           label: 'Restore',
           icon: <RotateCcw className="w-4 h-4" />,
           onClick: () => handleRestore(recording.id)
         },
-        { 
-          label: 'Delete', 
+        {
+          label: 'Delete',
           className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
           onClick: () => handleSoftDelete(recording.id)
         },
       );
     } else if (view === 'deleted') {
       items.push(
-        { 
+        {
           label: 'Restore',
           icon: <RotateCcw className="w-4 h-4" />,
           onClick: () => handleRestore(recording.id)
         },
-        { 
-          label: 'Delete Permanently', 
+        {
+          label: 'Delete Permanently',
           icon: <Trash2 className="w-4 h-4" />,
           className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20',
           onClick: () => handlePermanentDelete(recording.id)
@@ -478,17 +480,17 @@ export default function Sidebar() {
   };
 
   const hasActiveFilters = searchQuery || dateRange.start || dateRange.end || selectedSpeakers.length > 0 || selectedTagIds.length > 0;
-  
+
   // Prevent hydration mismatch
   const view = mounted ? currentView : 'recordings';
 
   return (
-    <aside 
+    <aside
       id="sidebar-recordings-list"
       className="w-80 flex-shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0"
     >
       {view === 'recordings' && <MeetingControls onMeetingEnd={fetchRecordings} />}
-      
+
       {/* Header */}
       <div className="p-4 border-b border-gray-300 dark:border-gray-800">
         {selectionMode ? (
@@ -544,7 +546,7 @@ export default function Sidebar() {
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs group hover:border-orange-300 dark:hover:border-orange-700 transition-colors"
                 >
                   <span className={`w-2 h-2 rounded-full ${color.dot} flex-shrink-0`} />
-                  <span className="text-gray-700 dark:text-gray-200 font-medium">{tag.name}</span>
+                  <span className="text-gray-700 dark:text-gray-200 font-medium">{buildTagPath(tag, tags)}</span>
                   <button
                     onClick={() => toggleTagFilter(tagId)}
                     className="ml-0.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
@@ -566,32 +568,32 @@ export default function Sidebar() {
         )}
 
         {showFilters && !selectionMode && (
-            <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm mt-2">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500">Date Filter</label>
-                <div className="flex gap-2 mb-2">
-                    <button 
-                        onClick={() => setDateMode('range')}
-                        className={`text-xs px-2 py-1 rounded ${dateMode === 'range' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
-                    >
-                        Range
-                    </button>
-                    <button 
-                        onClick={() => setDateMode('after')}
-                        className={`text-xs px-2 py-1 rounded ${dateMode === 'after' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
-                    >
-                        After
-                    </button>
-                    <button 
-                        onClick={() => setDateMode('before')}
-                        className={`text-xs px-2 py-1 rounded ${dateMode === 'before' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
-                    >
-                        Before
-                    </button>
-                </div>
-                
-                <div className="flex gap-2">
-                  {(dateMode === 'range' || dateMode === 'after') && (
+          <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm mt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500">Date Filter</label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={() => setDateMode('range')}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === 'range' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                >
+                  Range
+                </button>
+                <button
+                  onClick={() => setDateMode('after')}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === 'after' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                >
+                  After
+                </button>
+                <button
+                  onClick={() => setDateMode('before')}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === 'before' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-gray-200 dark:bg-gray-800'}`}
+                >
+                  Before
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                {(dateMode === 'range' || dateMode === 'after') && (
                   <input
                     type="date"
                     value={dateRange.start}
@@ -599,8 +601,8 @@ export default function Sidebar() {
                     className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
                     placeholder="Start Date"
                   />
-                  )}
-                  {(dateMode === 'range' || dateMode === 'before') && (
+                )}
+                {(dateMode === 'range' || dateMode === 'before') && (
                   <input
                     type="date"
                     value={dateRange.end}
@@ -608,62 +610,61 @@ export default function Sidebar() {
                     className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
                     placeholder="End Date"
                   />
-                  )}
-                </div>
+                )}
               </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500">Speakers</label>
-                <div className="flex flex-wrap gap-1">
-                  {globalSpeakers.map(speaker => (
-                    <button
-                      key={speaker.id}
-                      onClick={() => {
-                        setSelectedSpeakers(prev => 
-                          prev.includes(speaker.id) 
-                            ? prev.filter(id => id !== speaker.id)
-                            : [...prev, speaker.id]
-                        );
-                      }}
-                      className={`px-2 py-1 rounded-full text-xs border ${
-                        selectedSpeakers.includes(speaker.id)
-                          ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
-                          : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
-                      }`}
-                    >
-                      {speaker.name}
-                    </button>
-                  ))}
-                  {globalSpeakers.length === 0 && (
-                    <span className="text-xs text-gray-400">No speakers yet</span>
-                  )}
-                </div>
-              </div>
-              
-              {hasActiveFilters && (
-                 <button 
-                    onClick={() => {
-                        setSearchQuery("");
-                        setDateRange({ start: "", end: "" });
-                        setSelectedSpeakers([]);
-                        clearTagFilters();
-                    }}
-                    className="text-xs text-red-500 hover:underline flex items-center gap-1"
-                 >
-                    <X className="w-3 h-3" /> Clear Filters
-                 </button>
-              )}
             </div>
-          )}
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500">Speakers</label>
+              <div className="flex flex-wrap gap-1">
+                {globalSpeakers.map(speaker => (
+                  <button
+                    key={speaker.id}
+                    onClick={() => {
+                      setSelectedSpeakers(prev =>
+                        prev.includes(speaker.id)
+                          ? prev.filter(id => id !== speaker.id)
+                          : [...prev, speaker.id]
+                      );
+                    }}
+                    className={`px-2 py-1 rounded-full text-xs border ${selectedSpeakers.includes(speaker.id)
+                      ? 'bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
+                      : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                      }`}
+                  >
+                    {speaker.name}
+                  </button>
+                ))}
+                {globalSpeakers.length === 0 && (
+                  <span className="text-xs text-gray-400">No speakers yet</span>
+                )}
+              </div>
+            </div>
+
+            {hasActiveFilters && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setDateRange({ start: "", end: "" });
+                  setSelectedSpeakers([]);
+                  clearTagFilters();
+                }}
+                className="text-xs text-red-500 hover:underline flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Clear Filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Recording List */}
       <div className="p-2 space-y-2">
         {filteredRecordings.length === 0 && (
-            <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
-                <p>{getEmptyMessage().main}</p>
-                <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
-            </div>
+          <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
+            <p>{getEmptyMessage().main}</p>
+            <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
+          </div>
         )}
         {filteredRecordings.map((recording, index) => {
           const isActive = pathname === `/recordings/${recording.id}`;
@@ -671,71 +672,70 @@ export default function Sidebar() {
           const endDate = new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000);
           const isRenaming = renamingId === recording.id;
           const isSelected = selectedRecordingIds.includes(recording.id);
-          
+
           return (
             <div key={recording.id} className="relative group">
-            {isRenaming ? (
+              {isRenaming ? (
                 <div className="p-3 rounded-lg border bg-white dark:bg-gray-900 border-orange-500">
-                    <input
-                        autoFocus
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onBlur={() => handleRenameSubmit(recording.id)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRenameSubmit(recording.id);
-                            if (e.key === 'Escape') setRenamingId(null);
-                        }}
-                        className="w-full text-sm font-semibold bg-transparent focus:outline-none"
-                    />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={() => handleRenameSubmit(recording.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRenameSubmit(recording.id);
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
+                    className="w-full text-sm font-semibold bg-transparent focus:outline-none"
+                  />
                 </div>
-            ) : (
-            <div>
-              <Link 
-                href={`/recordings/${recording.id}`}
-                id={recording.name === "Welcome to Nojoin" ? "demo-recording-card" : undefined}
-                onClick={(e) => handleRecordingClick(e, recording, index)}
-                onContextMenu={(e) => handleContextMenu(e, recording)}
-                className={`block p-3 rounded-lg border transition-all shadow-sm ${
-                  isActive && !selectionMode
-                    ? 'bg-orange-100 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500' 
-                    : isSelected
-                      ? 'bg-orange-100 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
-                      : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-100 dark:hover:border-orange-700 dark:hover:bg-gray-800'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {selectionMode && (
-                        <div className={`flex-shrink-0 ${isSelected ? 'text-orange-600' : 'text-gray-300'}`}>
-                          {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                        </div>
-                      )}
-                      <h3 
-                        className={`text-sm font-semibold truncate ${isActive && !selectionMode ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}
-                        title="Double-click to rename"
-                        onDoubleClick={(e) => {
+              ) : (
+                <div>
+                  <Link
+                    href={`/recordings/${recording.id}`}
+                    id={recording.name === "Welcome to Nojoin" ? "demo-recording-card" : undefined}
+                    onClick={(e) => handleRecordingClick(e, recording, index)}
+                    onContextMenu={(e) => handleContextMenu(e, recording)}
+                    className={`block p-3 rounded-lg border transition-all shadow-sm ${isActive && !selectionMode
+                      ? 'bg-orange-100 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500'
+                      : isSelected
+                        ? 'bg-orange-100 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600'
+                        : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-100 dark:hover:border-orange-700 dark:hover:bg-gray-800'
+                      }`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {selectionMode && (
+                          <div className={`flex-shrink-0 ${isSelected ? 'text-orange-600' : 'text-gray-300'}`}>
+                            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                          </div>
+                        )}
+                        <h3
+                          className={`text-sm font-semibold truncate ${isActive && !selectionMode ? 'text-orange-700 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}
+                          title="Double-click to rename"
+                          onDoubleClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             handleRenameStart(recording.id, recording.name);
-                        }}
-                      >
-                        {recording.name}
-                      </h3>
+                          }}
+                        >
+                          {recording.name}
+                        </h3>
+                      </div>
+                      <StatusIcon status={recording.status} />
                     </div>
-                    <StatusIcon status={recording.status} />
+
+                    <div className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode ? 'pl-6' : ''}`}>
+                      <span>{formatDate(recording.created_at)}</span>
+                      <span className="text-gray-300 dark:text-gray-700">|</span>
+                      <span>{formatTime(startDate)} - {formatTime(endDate)}</span>
+                      <span className="text-gray-300 dark:text-gray-700">|</span>
+                      <span>{formatDurationString(recording.duration_seconds)}</span>
+                    </div>
+                  </Link>
                 </div>
-                
-                <div className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode ? 'pl-6' : ''}`}>
-                  <span>{formatDate(recording.created_at)}</span>
-                  <span className="text-gray-300 dark:text-gray-700">|</span>
-                  <span>{formatTime(startDate)} - {formatTime(endDate)}</span>
-                  <span className="text-gray-300 dark:text-gray-700">|</span>
-                  <span>{formatDurationString(recording.duration_seconds)}</span>
-                </div>
-              </Link>
-            </div>
-            )}
+              )}
             </div>
           );
         })}
@@ -745,13 +745,13 @@ export default function Sidebar() {
 
       {contextMenu && (
         <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-            items={getContextMenuItems(contextMenu.recording)}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={getContextMenuItems(contextMenu.recording)}
         />
       )}
-      
+
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}

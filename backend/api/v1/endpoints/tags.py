@@ -42,6 +42,7 @@ async def read_tags(
     result = await db.execute(statement)
     return result.scalars().all()
 
+
 @router.post("/", response_model=TagRead)
 async def create_tag(
     tag_in: TagCreate,
@@ -89,11 +90,13 @@ async def update_tag(
     if tag_update.color is not None:
         tag.color = tag_update.color
 
-    if tag_update.parent_id is not None:
+    # Use model_fields_set to check for explicit updates, including explicit None
+    if "parent_id" in tag_update.model_fields_set:
+        new_parent_id = tag_update.parent_id
         # Prevent circular dependency
-        if tag_update.parent_id == tag.id:
+        if new_parent_id == tag.id:
              raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
-        tag.parent_id = tag_update.parent_id
+        tag.parent_id = new_parent_id
     
     await db.commit()
     await db.refresh(tag)
