@@ -71,12 +71,14 @@ Most meeting assistants require users to invite bots to join meetings or upload 
   - **Web Client:** Modern Next.js interface for managing meetings from anywhere.
   - **Companion App:** Lightweight Rust system tray app for capturing audio on client machines.
 - **Advanced Audio Processing:**
-  - **Local-First Transcription:** Uses OpenAI's Whisper (Turbo) for accurate, private transcription.
-  - **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote Community 1.
-  - **Dual-Channel Recording:** Captures both system audio (audio heard) and microphone input (audio spoken).
+  - **Local-First Transcription:** Uses OpenAI's Whisper (default Turbo) for accurate, private transcription.
+  - **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote.
+  - **System Audio Capture:** Captures both system audio out and microphone input.
 - **Meeting Intelligence:**
   - **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, Google Gemini, or Ollama.
   - **Chat Q&A:** "Chat with your meeting" to ask specific questions about the content or make edits to notes.
+  - **Documents:** Upload documents to be processed by the LLM.
+  - **Cross-Meeting Context:** Select tags to include meetings, notes, and documents from across all meetings with the same tag(s).
 - **Organization & Search:**
   - **Global Speaker Library:** Centralized management of speaker identities across all recordings.
   - **Full-Text Search:** Instantly find content across transcripts, titles, and notes.
