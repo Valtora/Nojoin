@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 import httpx
 from backend.processing.LLM_Services import get_llm_backend
+from backend.api.deps import get_db, get_current_admin_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+from backend.models.user import User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,11 +27,93 @@ class ListModelsRequest(BaseModel):
     api_key: Optional[str] = None
     api_url: Optional[str] = None
 
+async def check_setup_permission(db: AsyncSession, request: Request):
+    """
+    Check if the endpoint is allowed.
+    Allowed if:
+    1. System is NOT initialized (no users exist).
+    2. OR User is authenticated as Admin/Owner (JWT token in header).
+    """
+    # Check if system is initialized
+    query = select(User).limit(1)
+    result = await db.execute(query)
+    is_initialized = result.scalar_one_or_none() is not None
+
+    if not is_initialized:
+        return True
+
+    # If system is initialized, we try to authenticate the user manually
+    # We can't use Depends(get_current_admin_user) directly in the router args because
+    # it would block the unauthenticated case.
+    # So we resolve the dependency manually if needed.
+    
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+         raise HTTPException(status_code=401, detail="System is initialized. Authentication required.")
+
+    # We reuse the logic from get_current_admin_user but we need to call it.
+    # FastAPI doesn't easily let us call dependencies inside the function body without some hacks.
+    # But we can assume if the header is present, the client tries to authenticate.
+    
+    # Better approach:
+    # We can't easily resolve the complex dependency chain manually here without massive code duplication.
+    # Let's verify the token manually using the reusable functions.
+    from backend.api.deps import get_current_user, get_current_admin_user
+    
+    # We can use the deps but we need to pass dependencies manually which is hard.
+    # Actually, we can use a helper function that tries to get the user.
+    # But since we are inside a route, we can just fail if not initialized.
+    
+    # Alternative: Use a dependency that returns Optional[User] and handles the logic?
+    # No, because `get_current_admin_user` raises HTTPException.
+    
+    # Let's blindly trust the dependency injection mechanism isn't available dynamically.
+    # We will verify the token simply here for this specific edge case or fail.
+    # Or, simpler:
+    # If initialized, we require a valid token. 
+    # Since we can't easily invoke `get_current_admin_user` here, we will rely on 
+    # recreating the token validation logic or refactoring deps.
+    
+    # Refactor strategy: 
+    # 1. Decode token
+    # 2. Check user role
+    
+    from backend.core.security import ALGORITHM, SECRET_KEY
+    from jose import jwt, JWTError
+    
+    token = auth_header.replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        token_data = payload.get("sub")
+        if not token_data:
+             raise HTTPException(status_code=401, detail="Invalid token")
+             
+        query = select(User).where(User.username == token_data)
+        result = await db.execute(query)
+        user = result.scalar_one_or_none()
+        
+        if not user or not user.is_active:
+             raise HTTPException(status_code=401, detail="Invalid user")
+             
+        if user.role not in ["owner", "admin"] and not user.is_superuser:
+            raise HTTPException(status_code=403, detail="Not authorized")
+            
+        return True
+        
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
 @router.post("/validate-llm")
-async def validate_llm(request: ValidateLLMRequest):
+async def validate_llm(
+    request: ValidateLLMRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Validate LLM API Key.
     """
+    await check_setup_permission(db, req)
+    
     try:
         llm = get_llm_backend(request.provider, api_key=request.api_key, model=request.model, api_url=request.api_url)
         llm.validate_api_key()
@@ -44,10 +130,16 @@ async def validate_llm(request: ValidateLLMRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/validate-hf")
-async def validate_hf(request: ValidateHFRequest):
+async def validate_hf(
+    request: ValidateHFRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Validate Hugging Face Token.
     """
+    await check_setup_permission(db, req)
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -62,10 +154,16 @@ async def validate_hf(request: ValidateHFRequest):
         raise HTTPException(status_code=400, detail=f"Invalid Hugging Face token: {str(e)}")
 
 @router.post("/list-models")
-async def list_models(request: ListModelsRequest):
+async def list_models(
+    request: ListModelsRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """
     List available models for a given provider and API key.
     """
+    await check_setup_permission(db, req)
+
     try:
         llm = get_llm_backend(request.provider, api_key=request.api_key, api_url=request.api_url)
         models = llm.list_models()

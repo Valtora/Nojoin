@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Tag } from '@/types';
 import { X, Plus, Check, MoreVertical } from 'lucide-react';
-import { getTags, createTag, addTagToRecording, updateTag, deleteTag } from '@/lib/api';
+import { getTags, createTag, addTagToRecording, updateTag, deleteTag, removeTagFromRecording } from '@/lib/api';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
 import ContextMenu from './ContextMenu';
 
@@ -68,10 +68,9 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
       } else {
         const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
         await createTag(name.trim(), randomColor, parentId);
+        await loadAllTags(); // Always reload to ensure list is updated
         if (!parentId) {
           await handleAddTag(name.trim());
-        } else {
-          await loadAllTags();
         }
       }
       setInputValue('');
@@ -101,6 +100,16 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
       if (onTagsUpdated) onTagsUpdated();
     } catch (error) {
       console.error('Failed to delete tag:', error);
+    }
+  };
+
+  const handleRemoveTag = async (tagName: string) => {
+    try {
+      await removeTagFromRecording(recordingId, tagName);
+      window.dispatchEvent(new CustomEvent('tags-updated'));
+      if (onTagsUpdated) onTagsUpdated();
+    } catch (error) {
+      console.error('Failed to remove tag:', error);
     }
   };
 
@@ -166,7 +175,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
               ) : (
                 <button
                   className={`flex-1 text-left ${isSelected ? 'text-orange-700 dark:text-orange-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
-                  onClick={() => isSelected ? null : handleAddTag(node.name)}
+                  onClick={() => isSelected ? handleRemoveTag(node.name) : handleAddTag(node.name)}
                 >
                   {node.name}
                 </button>

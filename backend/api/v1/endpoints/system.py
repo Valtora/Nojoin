@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from celery.result import AsyncResult
 
-from backend.api.deps import get_db, get_current_user
+from backend.api.deps import get_db, get_current_user, get_current_admin_user
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
@@ -109,9 +109,7 @@ async def setup_system(
 async def trigger_model_download(
     hf_token: Optional[str] = None,
     whisper_model_size: Optional[str] = None,
-    # No auth dependency here because this is called during setup flow where user might not be fully logged in yet
-    # But we should probably protect it or ensure it's only callable if system is just initialized.
-    # For simplicity in this setup flow, we'll allow it.
+    current_user: User = Depends(get_current_admin_user),
 ) -> Any:
     """
     Trigger the background task to download models.
@@ -207,8 +205,9 @@ async def get_models_status(whisper_model_size: Optional[str] = None) -> Any:
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(
     model_name: str,
-    # db: AsyncSession = Depends(get_db), # Add auth if needed later
+    current_user: User = Depends(get_current_admin_user),
 ) -> Any:
+
     """
     Delete a specific model from the cache.
     """
