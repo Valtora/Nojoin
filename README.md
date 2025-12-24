@@ -13,7 +13,7 @@
 </div>
 
 <!-- Screenshot 1 -->
-![Nojoin Demo](https://iili.io/fGUY63N.gif)
+![Nojoin Demo](docs/images/nojoin-demo.gif)
 
 ---
 
