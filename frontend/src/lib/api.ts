@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress, SystemModelStatus } from '@/types';
+import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress, SystemModelStatus, VersionInfo } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
@@ -779,6 +779,11 @@ export const getCompanionReleases = async (): Promise<CompanionReleases> => {
 
 export const seedDemoData = async (): Promise<void> => {
   await api.post('/system/seed-demo');
+};
+
+export const getVersion = async (): Promise<VersionInfo> => {
+  const response = await api.get<VersionInfo>('/version');
+  return response.data;
 };
 
 export default api;

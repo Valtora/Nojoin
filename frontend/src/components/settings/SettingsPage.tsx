@@ -7,6 +7,7 @@ import { isValidUrl } from '@/lib/validation';
 import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield, Mail, Users } from 'lucide-react';
 import { getMatchScore } from '@/lib/searchUtils';
 import { TAB_KEYWORDS } from './keywords';
+import VersionTag from './VersionTag';
 import GeneralSettings from './GeneralSettings';
 import AISettings from './AISettings';
 import AudioSettings from './AudioSettings';
@@ -40,28 +41,28 @@ export default function SettingsPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
-  
+
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstLoad = useRef(true);
   const lastSavedState = useRef<string>('');
 
   const refreshCompanionConfig = useCallback(async () => {
     try {
-        const res = await fetch(`${COMPANION_URL}/config`);
-        if (res.ok) {
-            const companionData: CompanionConfig = await res.json();
-            setCompanionConfig(companionData);
-        }
-        
-        const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-        if (devicesRes.ok) {
-            const devicesData: CompanionDevices = await devicesRes.json();
-            setCompanionDevices(devicesData);
-        }
-        return true;
+      const res = await fetch(`${COMPANION_URL}/config`);
+      if (res.ok) {
+        const companionData: CompanionConfig = await res.json();
+        setCompanionConfig(companionData);
+      }
+
+      const devicesRes = await fetch(`${COMPANION_URL}/devices`);
+      if (devicesRes.ok) {
+        const devicesData: CompanionDevices = await devicesRes.json();
+        setCompanionDevices(devicesData);
+      }
+      return true;
     } catch (e) {
-        console.error("Failed to refresh companion config", e);
-        return false;
+      console.error("Failed to refresh companion config", e);
+      return false;
     }
   }, []);
 
@@ -87,7 +88,7 @@ export default function SettingsPage() {
     if (!tabMatches) return;
 
     const currentScore = tabMatches[activeTab];
-    
+
     // Find best matching tab
     let bestTab: Tab | null = null;
     let bestScore = 1.0;
@@ -130,7 +131,7 @@ export default function SettingsPage() {
           getSettings(),
           getUserMe()
         ]);
-        
+
         // Ensure settingsData is an object (API might return null)
         const safeSettings = settingsData || {};
         setSettings(safeSettings);
@@ -140,26 +141,26 @@ export default function SettingsPage() {
 
         // Try to load companion config (always at localhost:12345)
         try {
-            const res = await fetch(`${COMPANION_URL}/config`);
-            if (res.ok) {
-                const companionData: CompanionConfig = await res.json();
-                setCompanionConfig(companionData);
-                currentCompanionConfig = companionData;
-            }
-            
-            // Fetch available devices
-            const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-            if (devicesRes.ok) {
-                const devicesData: CompanionDevices = await devicesRes.json();
-                setCompanionDevices(devicesData);
-                setSelectedInputDevice(devicesData.selected_input);
-                setSelectedOutputDevice(devicesData.selected_output);
-                currentInputDevice = devicesData.selected_input;
-                currentOutputDevice = devicesData.selected_output;
-            }
+          const res = await fetch(`${COMPANION_URL}/config`);
+          if (res.ok) {
+            const companionData: CompanionConfig = await res.json();
+            setCompanionConfig(companionData);
+            currentCompanionConfig = companionData;
+          }
+
+          // Fetch available devices
+          const devicesRes = await fetch(`${COMPANION_URL}/devices`);
+          if (devicesRes.ok) {
+            const devicesData: CompanionDevices = await devicesRes.json();
+            setCompanionDevices(devicesData);
+            setSelectedInputDevice(devicesData.selected_input);
+            setSelectedOutputDevice(devicesData.selected_output);
+            currentInputDevice = devicesData.selected_input;
+            currentOutputDevice = devicesData.selected_output;
+          }
         } catch (e) {
-            console.error("Failed to load companion config/devices", e);
-            setCompanionDevices(null);
+          console.error("Failed to load companion config/devices", e);
+          setCompanionDevices(null);
         }
       } catch (e) {
         console.error("Failed to load settings", e);
@@ -181,23 +182,23 @@ export default function SettingsPage() {
 
   const validateSettings = (settings: Settings, companionConfig: CompanionConfig | null): string | null => {
     if (settings.whisper_model_size && !['tiny', 'base', 'small', 'medium', 'large', 'turbo'].includes(settings.whisper_model_size)) {
-        return "Invalid Whisper model size.";
+      return "Invalid Whisper model size.";
     }
     if (settings.theme && !['dark', 'light'].includes(settings.theme)) {
-        return "Invalid theme.";
+      return "Invalid theme.";
     }
     if (settings.llm_provider && !['gemini', 'openai', 'anthropic', 'ollama'].includes(settings.llm_provider)) {
-        return "Invalid LLM provider.";
+      return "Invalid LLM provider.";
     }
     if (settings.ollama_api_url && !isValidUrl(settings.ollama_api_url)) {
-        return "Invalid Ollama API URL.";
+      return "Invalid Ollama API URL.";
     }
     if (companionConfig) {
-        if (companionConfig.min_meeting_length !== undefined) {
-            if (companionConfig.min_meeting_length < 0 || companionConfig.min_meeting_length > 1440) {
-                return "Meeting length must be between 0 and 1440 minutes.";
-            }
+      if (companionConfig.min_meeting_length !== undefined) {
+        if (companionConfig.min_meeting_length < 0 || companionConfig.min_meeting_length > 1440) {
+          return "Meeting length must be between 0 and 1440 minutes.";
         }
+      }
     }
     return null;
   };
@@ -205,35 +206,35 @@ export default function SettingsPage() {
   const saveSettings = useCallback(async () => {
     const error = validateSettings(settings, companionConfig);
     if (error) {
-        addNotification({ type: 'error', message: error });
-        return;
+      addNotification({ type: 'error', message: error });
+      return;
     }
     setSaving(true);
     try {
       await updateSettings(settings);
-      
+
       // Save companion config (api_port) if available
       if (companionConfig) {
-          await fetch(`${COMPANION_URL}/config`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                api_port: companionConfig.api_port,
-                min_meeting_length: companionConfig.min_meeting_length
-              })
-          });
+        await fetch(`${COMPANION_URL}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_port: companionConfig.api_port,
+            min_meeting_length: companionConfig.min_meeting_length
+          })
+        });
       }
-      
+
       // Save device selections if companion is connected
       if (companionDevices) {
-          await fetch(`${COMPANION_URL}/config`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  input_device_name: selectedInputDevice,
-                  output_device_name: selectedOutputDevice
-              })
-          });
+        await fetch(`${COMPANION_URL}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input_device_name: selectedInputDevice,
+            output_device_name: selectedOutputDevice
+          })
+        });
       }
 
       // Update last saved state
@@ -257,22 +258,22 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (loading) return;
-    
+
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
       return;
     }
 
     const currentState = JSON.stringify({
-        settings,
-        companionApiPort: companionConfig?.api_port,
-        companionMinLength: companionConfig?.min_meeting_length,
-        selectedInputDevice,
-        selectedOutputDevice
+      settings,
+      companionApiPort: companionConfig?.api_port,
+      companionMinLength: companionConfig?.min_meeting_length,
+      selectedInputDevice,
+      selectedOutputDevice
     });
 
     if (currentState === lastSavedState.current) {
-        return;
+      return;
     }
 
     if (saveTimeoutRef.current) {
@@ -311,7 +312,7 @@ export default function SettingsPage() {
         aiTab,
         ...baseTabs.slice(1)
       ];
-      
+
       return [
         ...tabsWithAI,
         invitesTab,
@@ -331,6 +332,7 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and configurations.</p>
         </div>
+        <VersionTag />
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -348,7 +350,7 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          
+
           <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -363,8 +365,8 @@ export default function SettingsPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`
                     w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                    ${isActive 
-                      ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400' 
+                    ${isActive
+                      ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700/50'
                     }
                   `}
@@ -411,23 +413,23 @@ export default function SettingsPage() {
               {activeTab === 'admin' && isAdmin && <AdminSettings />}
               {activeTab === 'invites' && isAdmin && <InvitesTab />}
               {activeTab === 'general' && (
-                <GeneralSettings 
-                  settings={settings} 
-                  onUpdate={setSettings} 
-                  searchQuery={searchQuery} 
+                <GeneralSettings
+                  settings={settings}
+                  onUpdate={setSettings}
+                  searchQuery={searchQuery}
                   userId={userId}
                 />
               )}
               {activeTab === 'ai' && isAdmin && (
-                <AISettings 
-                  settings={settings} 
-                  onUpdate={setSettings} 
+                <AISettings
+                  settings={settings}
+                  onUpdate={setSettings}
                   searchQuery={searchQuery}
                   isAdmin={isAdmin}
                 />
               )}
               {activeTab === 'audio' && (
-                <AudioSettings 
+                <AudioSettings
                   settings={settings}
                   onUpdateSettings={setSettings}
                   companionConfig={companionConfig}
@@ -441,9 +443,9 @@ export default function SettingsPage() {
                 />
               )}
               {activeTab === 'system' && (
-                <SystemSettings 
-                  settings={settings} 
-                  onUpdate={setSettings} 
+                <SystemSettings
+                  settings={settings}
+                  onUpdate={setSettings}
                   companionConfig={companionConfig}
                   onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
                   onRefreshCompanionConfig={refreshCompanionConfig}

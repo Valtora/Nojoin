@@ -546,7 +546,7 @@ export default function Sidebar() {
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs group hover:border-orange-300 dark:hover:border-orange-700 transition-colors"
                 >
                   <span className={`w-2 h-2 rounded-full ${color.dot} flex-shrink-0`} />
-                  <span className="text-gray-700 dark:text-gray-200 font-medium">{buildTagPath(tag, tags)}</span>
+                  <span className="text-gray-700 dark:text-gray-200 font-medium">{tag.name}</span>
                   <button
                     onClick={() => toggleTagFilter(tagId)}
                     className="ml-0.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"

@@ -7,6 +7,8 @@ import Link from '@tiptap/extension-link';
 import { Markdown } from 'tiptap-markdown';
 import { useEffect } from 'react';
 
+import { SearchExtension } from '@/lib/SearchExtension';
+
 interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
@@ -31,6 +33,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
         },
       }),
       Markdown,
+      SearchExtension,
     ],
     content: content,
     editable: editable,

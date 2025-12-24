@@ -420,12 +420,19 @@ export default function RecordingPage({ params }: PageProps) {
         }
     };
 
-    const handleFindAndReplace = async (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => {
+    const handleGlobalFindAndReplace = async (find: string, replace: string, options?: { caseSensitive?: boolean, useRegex?: boolean }) => {
         if (!recording) return;
+
         // Push both transcript and notes to history since this affects both
-        pushBothHistories(`Replace "${find}" with "${replace}"`);
+        pushBothHistories(`Global Replace "${find}" with "${replace}"`);
+
         try {
-            await findAndReplace(recording.id, find, replace, options);
+            // Run both operations in parallel
+            await Promise.all([
+                findAndReplace(recording.id, find, replace, options),
+                findAndReplaceNotes(recording.id, find, replace, options)
+            ]);
+
             router.refresh();
             const updated = await getRecording(recording.id);
             setRecording(updated);
@@ -765,7 +772,7 @@ export default function RecordingPage({ params }: PageProps) {
                                                 onRenameSpeaker={handleRenameSpeaker}
                                                 onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
                                                 onUpdateSegmentText={handleUpdateSegmentText}
-                                                onFindAndReplace={handleFindAndReplace}
+                                                onFindAndReplace={handleGlobalFindAndReplace}
                                                 speakerColors={speakerColors}
                                                 onUndo={handleUndo}
                                                 onRedo={handleRedo}
@@ -801,7 +808,7 @@ export default function RecordingPage({ params }: PageProps) {
                                             notes={recording.transcript?.notes || null}
                                             onNotesChange={handleNotesChange}
                                             onGenerateNotes={handleGenerateNotes}
-                                            onFindAndReplace={handleNotesFindAndReplace}
+                                            onFindAndReplace={handleGlobalFindAndReplace}
                                             onUndo={handleNotesUndo}
                                             onRedo={handleNotesRedo}
                                             canUndo={notesHistory.length > 0}

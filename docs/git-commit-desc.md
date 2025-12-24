@@ -1,18 +1,27 @@
 # Git Commit Description - Use Conventional Commit Guidelines
 
-chore: remove redundant frontend .gitignore
+feat(settings): add version tag and update check
 
-Deleted `frontend/src/app/(dashboard)/.gitignore` as it was a duplicate of the root configuration and incorrectly placed.
+- Implemented `GET /api/v1/version` to check for updates via GitHub (30m cache).
+- Added `VersionTag` component to Settings header.
+- Displays "Current" vs "Latest" versions side-by-side when updates are available.
+- Added link to GitHub releases.
 
-fix(security): implement RBAC and fix SSRF in system/setup endpoints
+fix(ui): simplify tag display in active filters
 
-- Added `get_current_admin_user` dependency to enforce Owner/Admin roles.
-- Secured `system.py` endpoints (model download, deletion) to require admin privileges.
-- Implemented conditional authentication for `setup.py` (LLM validation) to prevent SSRF while allowing initial setup.
-- Updated `audit_script.py` to verify security fixes.
+- Removed hierarchical path (e.g., "Parent -> Child") from tag filter pills.
+- Now displays only the active tag name for a cleaner look.
+- Modified `Sidebar.tsx`.
 
-feat(ui): improve tag system UX and consistency
+docs(readme): add update instructions
 
-- Fix visibility of newly created tags in AddTagModal by explicitly reloading tags.
-- Enable toggle functionality for selecting/deselecting tags in AddTagModal.
-- Update tag styling in RecordingTagEditor to match sidebar design (neutral pill with colored dot).
+- Added "Updating Nojoin" section to README.
+- Included docker compose commands for updating and checking versions.
+- Added optional prune instruction for cleaning up old images.
+
+feat(frontend): unify search/replace and improve notes highlighting
+
+- Implemented Global Search and Replace: Calls to "Replace All" now execute across both Transcript and Notes simultaneously.
+- Fixed Notes Highlighting: Created custom `SearchExtension` (Tiptap) using ProseMirror Decorations to render persistent highlights (yellow/orange) independent of focus.
+- Improved Notes Scrolling: Implemented DOM-based scrolling mechanism to reliably jump to matches without stealing focus from the search input.
+- Refactored `NotesView` search logic to use node-based scanning for accurate positioning.

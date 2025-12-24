@@ -433,28 +433,26 @@ export default function TranscriptView({
                 {/* Row 2: Search & Replace Controls */}
                 {(showSearch || showReplace) && (
                     <div className="px-6 pb-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
-                        <div className="relative flex-1 flex items-center gap-1 min-w-0">
-                            <div className="relative flex-1 min-w-0">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    placeholder="Find..."
-                                    value={findText}
-                                    onChange={e => setFindText(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            if (e.shiftKey) prevMatch();
-                                            else nextMatch();
-                                        }
-                                    }}
-                                    className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
-                                    autoFocus
-                                />
-                            </div>
+                        <div className="relative flex-1 min-w-0">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                placeholder="Find..."
+                                value={findText}
+                                onChange={e => setFindText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        if (e.shiftKey) prevMatch();
+                                        else nextMatch();
+                                    }
+                                }}
+                                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
+                                autoFocus
+                            />
                             {matches.length > 0 && (
-                                <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap px-1">
+                                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap bg-white/50 dark:bg-black/50 backdrop-blur-sm rounded px-1">
                                     <span>{currentMatchIndex + 1} of {matches.length}</span>
-                                    <button onClick={prevMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronUp className="w-3 h-3" /></button>
-                                    <button onClick={nextMatch} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ChevronDown className="w-3 h-3" /></button>
+                                    <button onClick={prevMatch} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"><ChevronUp className="w-3 h-3" /></button>
+                                    <button onClick={nextMatch} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"><ChevronDown className="w-3 h-3" /></button>
                                 </div>
                             )}
                         </div>

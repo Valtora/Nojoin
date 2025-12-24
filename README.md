@@ -37,6 +37,7 @@ Most meeting assistants require users to invite bots to join meetings or upload 
 - [API Keys & Configuration](#-api-keys--configuration)
 - [User Management](#-user-management)
 - [Installation & Setup](#%EF%B8%8F-installation--setup)
+- [Updating Nojoin](#-updating-nojoin)
 - [Troubleshooting](#-troubleshooting)
 - [Roadmap](#%EF%B8%8F-roadmap)
 - [Contributing](#-contributing)
@@ -264,6 +265,30 @@ If running Ollama on the same machine as the Nojoin Docker containers, the speci
 
 > **🤝 Contributions Welcomed:** Contributions are welcomed to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support for Linux so I will focus on this first.
 > MacOS is trickier due to the need to use ScreenCaptureKit for system audio capture. If interested in contributing, please check the [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss.
+
+## 🔄 Updating Nojoin
+
+To update Nojoin to the latest version, in the Nojoin directory:
+
+1. **Stop the containers:**
+   
+   ```bash
+   docker compose down
+   ```
+
+2. **Pull the latest images:**
+
+   ```bash
+   docker compose pull
+   ```
+
+3. **Start the containers:**
+
+   ```bash
+   docker compose up -d
+   ```
+
+> **Note:** You can check your current version and view if a new version is available directly on the **Settings** page.
 
 ## ❓ Troubleshooting
 

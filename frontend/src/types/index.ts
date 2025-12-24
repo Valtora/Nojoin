@@ -218,3 +218,10 @@ export interface SystemModelStatus {
   embedding: ModelStatusInfo;
   [key: string]: ModelStatusInfo;
 }
+
+export interface VersionInfo {
+  current_version: string;
+  latest_version: string | null;
+  is_update_available: boolean;
+  release_url: string | null;
+}
