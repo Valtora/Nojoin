@@ -130,15 +130,18 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
       const color = getColorByKey(node.color);
       const isEditing = editingTagId === node.id;
 
-      if (inputValue && !node.name.toLowerCase().includes(inputValue.toLowerCase()) && 
-          !node.children?.some(c => c.name.toLowerCase().includes(inputValue.toLowerCase()))) {
+      if (inputValue && !node.name.toLowerCase().includes(inputValue.toLowerCase()) &&
+        !node.children?.some(c => c.name.toLowerCase().includes(inputValue.toLowerCase()))) {
         return null;
       }
 
       return (
         <div key={node.id} className="w-full">
-          <div 
-            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 group"
+          <div
+            className={`w-full flex items-center justify-between px-3 py-2 text-sm group transition-colors ${isSelected
+              ? 'bg-orange-100 dark:bg-orange-900/30'
+              : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
             style={{ paddingLeft: `${level * 12 + 12}px` }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -148,7 +151,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
             <div className="flex items-center gap-2 flex-1">
               <span className={`w-2 h-2 rounded-full ${color.dot}`} />
               {isEditing ? (
-                <input 
+                <input
                   autoFocus
                   className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 text-sm w-full"
                   value={editValue}
@@ -161,25 +164,27 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <button 
-                  className="text-gray-700 dark:text-gray-200 flex-1 text-left"
+                <button
+                  className={`flex-1 text-left ${isSelected ? 'text-orange-700 dark:text-orange-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
                   onClick={() => isSelected ? null : handleAddTag(node.name)}
                 >
                   {node.name}
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {isSelected && <Check className="w-3 h-3 text-orange-500 mr-2" />}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setContextMenu({ x: e.clientX, y: e.clientY, tag: node });
-                }}
-                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
-              >
-                <MoreVertical className="w-3 h-3 text-gray-500" />
-              </button>
+            <div className="flex items-center gap-2">
+              {isSelected && <Check className="w-3 h-3 text-orange-600 dark:text-orange-400" />}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setContextMenu({ x: e.clientX, y: e.clientY, tag: node });
+                  }}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+                >
+                  <MoreVertical className="w-3 h-3 text-gray-500" />
+                </button>
+              </div>
             </div>
           </div>
           {node.children && node.children.length > 0 && (
@@ -205,7 +210,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="p-6 flex-1 overflow-hidden flex flex-col">
           <div className="mb-4">
             <input
@@ -220,10 +225,10 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
               className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
             />
           </div>
-          
+
           <div className="flex-1 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg" style={{ minHeight: '200px', maxHeight: '400px' }}>
             {renderTagTree(tagTree)}
-            
+
             {inputValue && !allTags.some(t => t.name.toLowerCase() === inputValue.toLowerCase()) && (
               <button
                 onClick={() => handleCreateTag(inputValue)}
@@ -232,7 +237,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
                 + Create &quot;{inputValue}&quot;
               </button>
             )}
-            
+
             {allTags.length === 0 && !inputValue && (
               <div className="px-3 py-4 text-sm text-gray-500 text-center">
                 No tags found

@@ -13,7 +13,7 @@
 </div>
 
 <!-- Screenshot 1 -->
-![Nojoin Dashboard](https://iili.io/fuHyWPt.png)
+![Nojoin Demo](https://iili.io/fGUY63N.gif)
 
 ---
 
@@ -167,8 +167,42 @@ When a user is deleted, Nojoin performs a **hard delete** of all associated data
 
 ### Prerequisites
 
-- **Docker Desktop**
+#### For Hosting (Docker)
+
+- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
 - **NVIDIA GPU** (Optional, but highly recommended for faster processing).
+  - Requires **NVIDIA Container Toolkit** to be installed on Linux.
+  - Compute Capability 6.1+ (Pascal) recommended.
+
+#### For Local Development
+
+If you plan to develop or build Nojoin from source, you will need the following tools installed:
+
+**General:**
+- **Git**
+- **Docker** (Required for running Database and Redis services)
+
+**Backend (Python):**
+- **Python 3.11**
+- **FFmpeg** (Required for audio processing)
+  - Linux: `sudo apt install ffmpeg`
+  - Windows: Download and add to PATH.
+- **PostgreSQL Development Headers**
+  - Linux: `sudo apt install libpq-dev`
+- **Compiler Tools**
+  - Linux: `sudo apt install build-essential`
+  - Windows: Microsoft Visual C++ Build Tools
+
+**Frontend (Node.js):**
+- **Node.js v20+** (LTS recommended)
+- **npm** (comes with Node.js) or **pnpm**
+
+**Companion App (Rust):**
+- **Rust** (Latest Stable)
+- **CMake** (Used by some Rust build scripts)
+- **Platform-specific dependencies:**
+  - **Linux:** `sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`
+  - **Windows:** Microsoft Visual C++ Build Tools
 
 ### Quick Start (Docker Compose)
 

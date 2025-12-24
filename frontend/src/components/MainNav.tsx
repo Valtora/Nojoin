@@ -21,7 +21,9 @@ import {
   Download,
   Link2,
   RefreshCw,
-  Edit2
+  Edit2,
+  ChevronsDown,
+  ChevronsUp
 } from 'lucide-react';
 import {
   DndContext,
@@ -291,7 +293,8 @@ export default function MainNav() {
     navWidth,
     setNavWidth,
     expandedTagIds: expandedTagIdsArray,
-    toggleExpandedTag
+    toggleExpandedTag,
+    setExpandedTagIds
   } = useNavigationStore();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [companionReleases, setCompanionReleases] = useState<CompanionReleases | null>(null);
@@ -747,16 +750,41 @@ export default function MainNav() {
                   <TagIcon className="w-3 h-3" />
                   Tags
                 </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsAddingTag(true);
-                  }}
-                  className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
-                  title="Add tag"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const parentIds = tags
+                        .filter(t => tags.some(child => child.parent_id === t.id))
+                        .map(t => t.id);
+                      setExpandedTagIds(parentIds);
+                    }}
+                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    title="Expand All"
+                  >
+                    <ChevronsDown className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedTagIds([]);
+                    }}
+                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    title="Collapse All"
+                  >
+                    <ChevronsUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsAddingTag(true);
+                    }}
+                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    title="Add tag"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             )}
 
