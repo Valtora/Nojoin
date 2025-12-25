@@ -1,6 +1,6 @@
 {
   "name": "nojoin-companion",
-  "version": "0.2.6",
+  "version": "0.3.5",
   "description": "Nojoin Companion App",
   "scripts": {
     "tauri": "tauri",

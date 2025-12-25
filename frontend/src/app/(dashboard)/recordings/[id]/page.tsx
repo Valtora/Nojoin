@@ -670,7 +670,7 @@ export default function RecordingPage({ params }: PageProps) {
                         <Panel defaultSize={75} minSize={30}>
                             <div className="flex-1 flex flex-col min-h-0 h-full">
                                 {/* Header (Title, Tags, Audio Player) - Moved inside Panel */}
-                                <header className="p-6 border-b-2 border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
+                                <header className="p-6 border-b-2 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
                                     <div className="flex items-center justify-between">
                                         <div className="min-w-0 flex-1">
                                             {isEditingTitle ? (
@@ -727,7 +727,7 @@ export default function RecordingPage({ params }: PageProps) {
                                 </header>
 
                                 {/* Panel Tabs */}
-                                <div className="bg-gray-200 dark:bg-gray-900 border-b-2 border-gray-400 dark:border-gray-700 flex-shrink-0">
+                                <div className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700 flex-shrink-0">
                                     <div className="flex">
                                         <button
                                             id="tab-transcript"

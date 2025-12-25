@@ -26,17 +26,17 @@ interface SpeakerPanelProps {
 export default function SpeakerPanel({ speakers, segments, onPlaySegment, recordingId, speakerColors, onColorChange, currentTime, isPlaying, onPause, onResume, onRefresh }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; speaker: RecordingSpeaker } | null>(null);
-  
+
   // Rename State
   const [renamingSpeaker, setRenamingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  
+
   // Merge State
   const [mergingSpeaker, setMergingSpeaker] = useState<RecordingSpeaker | null>(null);
   const [mergeTargetLabel, setMergeTargetLabel] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Voiceprint State
   const [extractingVoiceprint, setExtractingVoiceprint] = useState<string | null>(null); // diarization_label
   const [voiceprintModalOpen, setVoiceprintModalOpen] = useState(false);
@@ -63,18 +63,18 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
   const handlePlaySnippet = (label: string, isSpeakerActive: boolean) => {
     if (isSpeakerActive) {
-        if (isPlaying) {
-            onPause();
-        } else {
-            onResume();
-        }
-        return;
+      if (isPlaying) {
+        onPause();
+      } else {
+        onResume();
+      }
+      return;
     }
 
     const speakerSegments = segments.filter(s => s.speaker === label);
     if (speakerSegments.length === 0) {
-        addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
-        return;
+      addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
+      return;
     }
     const randomSegment = speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
     onPlaySegment(randomSegment.start, randomSegment.end);
@@ -83,15 +83,15 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const handleNextSnippet = (label: string) => {
     const speakerSegments = segments.filter(s => s.speaker === label);
     if (speakerSegments.length === 0) {
-        addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
-        return;
+      addNotification({ type: 'warning', message: "No audio segments found for this speaker." });
+      return;
     }
-    
+
     // Try to find a segment that is not currently playing
     let candidates = speakerSegments;
     if (speakerSegments.length > 1) {
-        candidates = speakerSegments.filter(s => !(currentTime >= s.start && currentTime < s.end));
-        if (candidates.length === 0) candidates = speakerSegments;
+      candidates = speakerSegments.filter(s => !(currentTime >= s.start && currentTime < s.end));
+      if (candidates.length === 0) candidates = speakerSegments;
     }
 
     const randomSegment = candidates[Math.floor(Math.random() * candidates.length)];
@@ -117,17 +117,17 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
   const handleRenameSubmit = async () => {
     if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
-    
+
     setIsSubmitting(true);
     try {
-        await updateSpeaker(recordingId, renamingSpeaker.diarization_label, renameValue.trim());
-        setRenamingSpeaker(null);
-        onRefresh();
+      await updateSpeaker(recordingId, renamingSpeaker.diarization_label, renameValue.trim());
+      setRenamingSpeaker(null);
+      onRefresh();
     } catch (e) {
-        console.error("Failed to rename speaker", e);
-        addNotification({ type: 'error', message: "Failed to rename speaker." });
+      console.error("Failed to rename speaker", e);
+      addNotification({ type: 'error', message: "Failed to rename speaker." });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -136,18 +136,18 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
     setIsSubmitting(true);
     try {
-        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, mergingSpeaker.diarization_label);
-        setMergingSpeaker(null);
-        
-        // Dispatch custom event to notify parent components of the merge
-        window.dispatchEvent(new CustomEvent('recording-updated', { detail: { recordingId } }));
-        
-        onRefresh();
+      await mergeRecordingSpeakers(recordingId, mergeTargetLabel, mergingSpeaker.diarization_label);
+      setMergingSpeaker(null);
+
+      // Dispatch custom event to notify parent components of the merge
+      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { recordingId } }));
+
+      onRefresh();
     } catch (e) {
-        console.error("Failed to merge speakers", e);
-        addNotification({ type: 'error', message: "Failed to merge speakers." });
+      console.error("Failed to merge speakers", e);
+      addNotification({ type: 'error', message: "Failed to merge speakers." });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -155,30 +155,30 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
     const speakerName = getSpeakerName(speaker);
     const isGlobal = !!speaker.global_speaker_id;
     const message = isGlobal
-        ? `Remove ${speakerName} from this recording? Their segments will be marked as UNKNOWN. They will remain in your Speaker Library.`
-        : `Delete ${speakerName} from this recording? Their segments will be marked as UNKNOWN.`;
-    
+      ? `Remove ${speakerName} from this recording? Their segments will be marked as UNKNOWN. They will remain in your Speaker Library.`
+      : `Delete ${speakerName} from this recording? Their segments will be marked as UNKNOWN.`;
+
     if (!confirm(message)) {
-        return;
+      return;
     }
-    
+
     setIsSubmitting(true);
     try {
-        await deleteRecordingSpeaker(recordingId, speaker.diarization_label);
-        setContextMenu(null);
-        onRefresh();
+      await deleteRecordingSpeaker(recordingId, speaker.diarization_label);
+      setContextMenu(null);
+      onRefresh();
     } catch (e) {
-        console.error("Failed to delete speaker", e);
-        addNotification({ type: 'error', message: "Failed to delete speaker." });
+      console.error("Failed to delete speaker", e);
+      addNotification({ type: 'error', message: "Failed to delete speaker." });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleCreateVoiceprint = async (speaker: RecordingSpeaker) => {
     setContextMenu(null);
     setExtractingVoiceprint(speaker.diarization_label);
-    
+
     try {
       const result = await extractVoiceprint(recordingId, speaker.diarization_label);
       setVoiceprintExtractResult(result);
@@ -194,7 +194,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
 
   const handleCreateAllVoiceprints = async () => {
     setExtractingAllVoiceprints(true);
-    
+
     try {
       const result = await extractAllVoiceprints(recordingId);
       if (result.speakers_processed === 0) {
@@ -216,7 +216,7 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const handlePromoteToGlobal = async (speaker: RecordingSpeaker) => {
     setContextMenu(null);
     setIsSubmitting(true);
-    
+
     try {
       await promoteToGlobalSpeaker(recordingId, speaker.diarization_label);
       onRefresh();
@@ -237,10 +237,10 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
   const speakersWithoutVoiceprints = uniqueSpeakers.filter(s => !s.has_voiceprint);
 
   return (
-    <aside id="speaker-panel" className="flex-shrink-0 border-l border-gray-400 dark:border-gray-800 bg-gray-200 dark:bg-gray-900 h-full overflow-y-auto">
+    <aside id="speaker-panel" className="flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full overflow-y-auto">
       {/* Header with batch voiceprint action */}
       {uniqueSpeakers.length > 0 && speakersWithoutVoiceprints.length > 0 && (
-        <div className="p-2 border-b border-gray-300 dark:border-gray-700">
+        <div className="p-2 border-b border-gray-200 dark:border-gray-700">
           <button
             onClick={handleCreateAllVoiceprints}
             disabled={extractingAllVoiceprints}
@@ -256,183 +256,182 @@ export default function SpeakerPanel({ speakers, segments, onPlaySegment, record
           </button>
         </div>
       )}
-      
+
       <div className="p-2 space-y-2 mt-2">
         {uniqueSpeakers.length === 0 ? (
-            <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
-                No speakers detected.
-            </div>
+          <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
+            No speakers detected.
+          </div>
         ) : (
-            uniqueSpeakers.map((speaker) => {
-                const isRenaming = renamingSpeaker?.diarization_label === speaker.diarization_label;
-                const isMerging = mergingSpeaker?.diarization_label === speaker.diarization_label;
+          uniqueSpeakers.map((speaker) => {
+            const isRenaming = renamingSpeaker?.diarization_label === speaker.diarization_label;
+            const isMerging = mergingSpeaker?.diarization_label === speaker.diarization_label;
 
-                if (isMerging) {
-                    const otherSpeakers = uniqueSpeakers.filter(s => s.diarization_label !== speaker.diarization_label);
-                    return (
-                        <div key={speaker.id} className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
-                            <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
-                                Merge {getSpeakerName(speaker)} into:
-                            </p>
-                            <select 
-                                className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
-                                value={mergeTargetLabel}
-                                onChange={(e) => setMergeTargetLabel(e.target.value)}
-                            >
-                                <option value="">Select Speaker...</option>
-                                {otherSpeakers.map(s => (
-                                    <option key={s.diarization_label} value={s.diarization_label}>
-                                        {getSpeakerName(s)}
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={handleMergeSubmit}
-                                    disabled={!mergeTargetLabel}
-                                    className="flex-1 px-2 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 disabled:opacity-50"
-                                >
-                                    Confirm
-                                </button>
-                                <button 
-                                    onClick={() => setMergingSpeaker(null)}
-                                    className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    );
-                }
+            if (isMerging) {
+              const otherSpeakers = uniqueSpeakers.filter(s => s.diarization_label !== speaker.diarization_label);
+              return (
+                <div key={speaker.id} className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                  <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
+                    Merge {getSpeakerName(speaker)} into:
+                  </p>
+                  <select
+                    className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                    value={mergeTargetLabel}
+                    onChange={(e) => setMergeTargetLabel(e.target.value)}
+                  >
+                    <option value="">Select Speaker...</option>
+                    {otherSpeakers.map(s => (
+                      <option key={s.diarization_label} value={s.diarization_label}>
+                        {getSpeakerName(s)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleMergeSubmit}
+                      disabled={!mergeTargetLabel}
+                      className="flex-1 px-2 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 disabled:opacity-50"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setMergingSpeaker(null)}
+                      className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              );
+            }
 
-                const isSpeakerActive = segments.some(s => s.speaker === speaker.diarization_label && currentTime >= s.start && currentTime < s.end);
+            const isSpeakerActive = segments.some(s => s.speaker === speaker.diarization_label && currentTime >= s.start && currentTime < s.end);
 
-                return (
-                <div 
-                    key={speaker.id} 
-                    className="relative group flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
-                    onContextMenu={(e) => handleContextMenu(e, speaker)}
-                >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="relative flex-shrink-0">
-                        <div className="relative">
-                            <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
-                                {speaker.has_voiceprint ? (
-                                    <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
-                                ) : (
-                                    <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
-                                )}
-                            </div>
-                            <div className="absolute -bottom-1 -right-1">
-                                <InlineColorPicker
-                                    selectedColor={speakerColors[speaker.diarization_label]}
-                                    onColorSelect={(colorKey) => {
-                                        onColorChange(speaker.diarization_label, colorKey);
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        {/* Extracting indicator */}
-                        {extractingVoiceprint === speaker.diarization_label && (
-                          <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
-                            <Loader2 className="w-2 h-2 text-white animate-spin" />
-                          </div>
-                        )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        {isRenaming ? (
-                            <input
-                                autoFocus
-                                type="text"
-                                value={renameValue}
-                                onChange={(e) => setRenameValue(e.target.value)}
-                                onBlur={handleRenameSubmit}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleRenameSubmit();
-                                    if (e.key === 'Escape') setRenamingSpeaker(null);
-                                }}
-                                className="w-full text-sm font-medium bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none"
-                            />
+            return (
+              <div
+                key={speaker.id}
+                className="relative group flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
+                onContextMenu={(e) => handleContextMenu(e, speaker)}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="relative flex-shrink-0">
+                    <div className="relative">
+                      <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
+                        {speaker.has_voiceprint ? (
+                          <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
                         ) : (
-                            <>
-                                <p 
-                                    className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" 
-                                    title="Double-click to rename"
-                                    onDoubleClick={() => handleRenameStart(speaker)}
-                                >
-                                {getSpeakerName(speaker)}
-                                </p>
-                                {/* {speaker.global_speaker && (
+                          <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                        )}
+                      </div>
+                      <div className="absolute -bottom-1 -right-1">
+                        <InlineColorPicker
+                          selectedColor={speakerColors[speaker.diarization_label]}
+                          onColorSelect={(colorKey) => {
+                            onColorChange(speaker.diarization_label, colorKey);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {/* Extracting indicator */}
+                    {extractingVoiceprint === speaker.diarization_label && (
+                      <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                        <Loader2 className="w-2 h-2 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {isRenaming ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={handleRenameSubmit}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameSubmit();
+                          if (e.key === 'Escape') setRenamingSpeaker(null);
+                        }}
+                        className="w-full text-sm font-medium bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none"
+                      />
+                    ) : (
+                      <>
+                        <p
+                          className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                          title="Double-click to rename"
+                          onDoubleClick={() => handleRenameStart(speaker)}
+                        >
+                          {getSpeakerName(speaker)}
+                        </p>
+                        {/* {speaker.global_speaker && (
                                     <p className="text-xs text-gray-500 truncate">{speaker.diarization_label}</p>
                                 )} */}
-                            </>
-                        )}
-                    </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button 
-                        className={`p-1.5 rounded-full transition-colors ${
-                            isSpeakerActive && isPlaying
-                            ? 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'
-                            : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
-                        }`}
-                        title={isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"}
-                        onClick={() => handlePlaySnippet(speaker.diarization_label, isSpeakerActive)}
-                        >
-                        {isSpeakerActive && isPlaying ? (
-                            <Pause className="w-3 h-3 fill-current" />
-                        ) : (
-                            <Play className="w-3 h-3 fill-current" />
-                        )}
-                        </button>
-                        {isSpeakerActive && isPlaying && (
-                            <button 
-                            className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
-                            title="Next Snippet"
-                            onClick={() => handleNextSnippet(speaker.diarization_label)}
-                            >
-                            <ArrowRightToLine className="w-3 h-3 fill-current" />
-                            </button>
-                        )}
-                    </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-                );
-            })
+                <div className="flex items-center gap-1">
+                  <button
+                    className={`p-1.5 rounded-full transition-colors ${isSpeakerActive && isPlaying
+                        ? 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'
+                        : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                      }`}
+                    title={isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"}
+                    onClick={() => handlePlaySnippet(speaker.diarization_label, isSpeakerActive)}
+                  >
+                    {isSpeakerActive && isPlaying ? (
+                      <Pause className="w-3 h-3 fill-current" />
+                    ) : (
+                      <Play className="w-3 h-3 fill-current" />
+                    )}
+                  </button>
+                  {isSpeakerActive && isPlaying && (
+                    <button
+                      className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+                      title="Next Snippet"
+                      onClick={() => handleNextSnippet(speaker.diarization_label)}
+                    >
+                      <ArrowRightToLine className="w-3 h-3 fill-current" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
       {contextMenu && (
         <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-            items={[
-                { 
-                    label: 'Rename / Assign', 
-                    onClick: () => handleRenameStart(contextMenu.speaker) 
-                },
-                {
-                    label: 'Merge into...',
-                    onClick: () => handleMergeStart(contextMenu.speaker)
-                },
-                // Voiceprint option - only show if speaker doesn't have one
-                ...(!contextMenu.speaker.has_voiceprint ? [{
-                    label: 'Create Voiceprint',
-                    onClick: () => handleCreateVoiceprint(contextMenu.speaker)
-                }] : []),
-                // Add to Speaker Library option - only show if not already global
-                ...(!contextMenu.speaker.global_speaker_id ? [{
-                    label: 'Add to Speaker Library',
-                    onClick: () => handlePromoteToGlobal(contextMenu.speaker)
-                }] : []),
-                {
-                    label: 'Delete',
-                    onClick: () => handleDelete(contextMenu.speaker),
-                    className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-                }
-            ]}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Rename / Assign',
+              onClick: () => handleRenameStart(contextMenu.speaker)
+            },
+            {
+              label: 'Merge into...',
+              onClick: () => handleMergeStart(contextMenu.speaker)
+            },
+            // Voiceprint option - only show if speaker doesn't have one
+            ...(!contextMenu.speaker.has_voiceprint ? [{
+              label: 'Create Voiceprint',
+              onClick: () => handleCreateVoiceprint(contextMenu.speaker)
+            }] : []),
+            // Add to Speaker Library option - only show if not already global
+            ...(!contextMenu.speaker.global_speaker_id ? [{
+              label: 'Add to Speaker Library',
+              onClick: () => handlePromoteToGlobal(contextMenu.speaker)
+            }] : []),
+            {
+              label: 'Delete',
+              onClick: () => handleDelete(contextMenu.speaker),
+              className: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+            }
+          ]}
         />
       )}
-      
+
       {/* Voiceprint Modal */}
       <VoiceprintModal
         isOpen={voiceprintModalOpen}

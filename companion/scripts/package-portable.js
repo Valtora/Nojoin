@@ -27,17 +27,17 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 const packageJson = require('../package.json');
 const version = packageJson.version;
 
-console.log(`📦 Packaging portable version ${version} for Windows...`);
+console.log(`Packaging portable version ${version} for Windows...`);
 
 // 1. Build the app
 const skipBuild = process.argv.includes('--no-build');
 
 if (!skipBuild) {
-  console.log('🔨 Building Tauri app...');
+  console.log('Building Tauri app...');
   try {
     execSync('npm run tauri build', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
   } catch (error) {
-    console.error('❌ Build failed.');
+    console.error('Build failed.');
     process.exit(1);
   }
 } else {
@@ -50,22 +50,22 @@ const destFilename = `Nojoin_${version}_windows_portable.exe`;
 const destPath = path.join(OUTPUT_DIR, destFilename);
 
 if (fs.existsSync(sourcePath)) {
-  console.log(`📋 Packaging ${sourcePath} -> ${destPath}`);
+  console.log(`Packaging ${sourcePath} -> ${destPath}`);
   fs.copyFileSync(sourcePath, destPath);
-  console.log(`✅ Portable executable created: ${destPath}`);
-  
+  console.log(`Portable executable created: ${destPath}`);
+
   // Check for WebView2Loader.dll on Windows
   const dllName = 'WebView2Loader.dll';
   const dllPath = path.join(TARGET_DIR, dllName);
   if (fs.existsSync(dllPath)) {
     const destDll = path.join(OUTPUT_DIR, dllName);
-    console.log(`📋 Copying ${dllName} (required for some setups)...`);
+    console.log(`Copying ${dllName} (required for some setups)...`);
     fs.copyFileSync(dllPath, destDll);
   }
-  
-  console.log(`\n✅ Packaging complete!`);
+
+  console.log(`\nPackaging complete!`);
   console.log(`   Output: ${destPath}`);
 } else {
-  console.error(`❌ Source executable not found: ${sourcePath}`);
+  console.error(`Source executable not found: ${sourcePath}`);
   process.exit(1);
 }

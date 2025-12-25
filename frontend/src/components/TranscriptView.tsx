@@ -371,7 +371,7 @@ export default function TranscriptView({
     return (
         <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
             {/* Toolbar */}
-            <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
+            <div className="bg-gray-50 dark:bg-gray-900/95 border-b-2 border-gray-200 dark:border-gray-700 shadow-md z-10 flex flex-col">
                 {/* Row 1: Header & Global Actions */}
                 <div className="px-6 py-3 flex items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transcript</h2>
