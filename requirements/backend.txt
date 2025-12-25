@@ -6,3 +6,6 @@ numpy
 openai
 anthropic
 google-genai
+reportlab
+python-docx
+markdown

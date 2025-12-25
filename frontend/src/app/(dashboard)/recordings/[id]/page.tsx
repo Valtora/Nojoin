@@ -1,6 +1,6 @@
 'use client';
 
-import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor, generateNotes, updateNotes, findAndReplaceNotes, exportContent, ExportContentType } from '@/lib/api';
+import { getRecording, updateSpeaker, updateTranscriptSegmentSpeaker, updateTranscriptSegmentText, findAndReplace, renameRecording, updateTranscriptSegments, getGlobalSpeakers, updateSpeakerColor, generateNotes, updateNotes, findAndReplaceNotes, exportContent, ExportContentType, ExportFormat } from '@/lib/api';
 import ChatPanel from '@/components/ChatPanel';
 import AudioPlayer from '@/components/AudioPlayer';
 import SpeakerPanel from '@/components/SpeakerPanel';
@@ -585,9 +585,14 @@ export default function RecordingPage({ params }: PageProps) {
         }
     };
 
-    const handleExport = (contentType: ExportContentType) => {
+    const handleExport = async (contentType: ExportContentType, format: ExportFormat) => {
         if (!recording) return;
-        exportContent(recording.id, contentType);
+        try {
+            await exportContent(recording.id, contentType, format);
+        } catch (error: any) {
+            console.error("Export failed:", error);
+            alert("Export failed. Please check the logs.");
+        }
     };
 
     const speakerMap = useMemo(() => {
@@ -627,61 +632,7 @@ export default function RecordingPage({ params }: PageProps) {
 
     return (
         <div className="h-full flex flex-col">
-            <header className="p-6 border-b-2 border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
-                <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                        {isEditingTitle ? (
-                            <input
-                                autoFocus
-                                type="text"
-                                value={titleValue}
-                                onChange={(e) => setTitleValue(e.target.value)}
-                                onBlur={handleTitleSubmit}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleTitleSubmit();
-                                    if (e.key === 'Escape') {
-                                        setIsEditingTitle(false);
-                                        setTitleValue(recording.name);
-                                    }
-                                }}
-                                className="text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
-                            />
-                        ) : (
-                            <h1
-                                className="text-2xl font-bold text-gray-900 dark:text-white truncate mb-2 cursor-pointer hover:text-orange-600 dark:hover:text-orange-400 flex items-center gap-2 group"
-                                onClick={() => setIsEditingTitle(true)}
-                                title="Click to rename"
-                            >
-                                {recording.name}
-                                <Edit2 className="w-4 h-4 opacity-0 group-hover:opacity-50 transition-opacity" />
-                            </h1>
-                        )}
 
-                        <div className="flex flex-col items-start gap-2">
-                            <RecordingTagEditor
-                                recordingId={recording.id}
-                                tags={recording.tags || []}
-                                onTagsUpdated={() => {
-                                    // Refresh recording to get updated tags
-                                    getRecording(recording.id).then(setRecording).catch(console.error);
-                                }}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Audio Player in Header */}
-                {(recording.status !== RecordingStatus.UPLOADING && recording.status !== RecordingStatus.PROCESSING && recording.status !== RecordingStatus.QUEUED) && (
-                    <AudioPlayer
-                        recording={recording}
-                        audioRef={audioRef}
-                        currentTime={currentTime}
-                        onTimeUpdate={handleTimeUpdate}
-                        onPlay={() => setIsPlaying(true)}
-                        onPause={() => setIsPlaying(false)}
-                    />
-                )}
-            </header>
 
             <div className="flex-1 flex min-h-0">
                 {(recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PROCESSING || recording.status === RecordingStatus.QUEUED) ? (
@@ -718,6 +669,63 @@ export default function RecordingPage({ params }: PageProps) {
                     <PanelGroup direction="horizontal" autoSaveId="recording-layout-persistence" className="h-full flex-1 min-w-0">
                         <Panel defaultSize={75} minSize={30}>
                             <div className="flex-1 flex flex-col min-h-0 h-full">
+                                {/* Header (Title, Tags, Audio Player) - Moved inside Panel */}
+                                <header className="p-6 border-b-2 border-gray-400 dark:border-gray-800 bg-gray-300 dark:bg-gray-900 sticky top-0 z-10 flex-shrink-0 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="min-w-0 flex-1">
+                                            {isEditingTitle ? (
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    value={titleValue}
+                                                    onChange={(e) => setTitleValue(e.target.value)}
+                                                    onBlur={handleTitleSubmit}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleTitleSubmit();
+                                                        if (e.key === 'Escape') {
+                                                            setIsEditingTitle(false);
+                                                            setTitleValue(recording.name);
+                                                        }
+                                                    }}
+                                                    className="text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
+                                                />
+                                            ) : (
+                                                <h1
+                                                    className="text-2xl font-bold text-gray-900 dark:text-white truncate mb-2 cursor-pointer hover:text-orange-600 dark:hover:text-orange-400 flex items-center gap-2 group"
+                                                    onClick={() => setIsEditingTitle(true)}
+                                                    title="Click to rename"
+                                                >
+                                                    {recording.name}
+                                                    <Edit2 className="w-4 h-4 opacity-0 group-hover:opacity-50 transition-opacity" />
+                                                </h1>
+                                            )}
+
+                                            <div className="flex flex-col items-start gap-2">
+                                                <RecordingTagEditor
+                                                    recordingId={recording.id}
+                                                    tags={recording.tags || []}
+                                                    onTagsUpdated={() => {
+                                                        // Refresh recording to get updated tags
+                                                        getRecording(recording.id).then(setRecording).catch(console.error);
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Audio Player in Header */}
+                                    {(recording.status as string !== RecordingStatus.UPLOADING && recording.status as string !== RecordingStatus.PROCESSING && recording.status as string !== RecordingStatus.QUEUED) && (
+                                        <AudioPlayer
+                                            recording={recording}
+                                            audioRef={audioRef}
+                                            currentTime={currentTime}
+                                            onTimeUpdate={handleTimeUpdate}
+                                            onPlay={() => setIsPlaying(true)}
+                                            onPause={() => setIsPlaying(false)}
+                                        />
+                                    )}
+                                </header>
+
                                 {/* Panel Tabs */}
                                 <div className="bg-gray-200 dark:bg-gray-900 border-b-2 border-gray-400 dark:border-gray-700 flex-shrink-0">
                                     <div className="flex">
@@ -829,27 +837,33 @@ export default function RecordingPage({ params }: PageProps) {
                             <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
                         </PanelResizeHandle>
 
-                        <Panel defaultSize={25} minSize={15}>
-                            <SpeakerPanel
-                                speakers={recording.speakers || []}
-                                segments={recording.transcript?.segments || []}
-                                onPlaySegment={handlePlaySegment}
-                                recordingId={recording.id}
-                                speakerColors={speakerColors}
-                                onColorChange={handleColorChange}
-                                currentTime={currentTime}
-                                isPlaying={isPlaying}
-                                onPause={handlePause}
-                                onResume={handleResume}
-                                onRefresh={fetchRecording}
-                            />
-                        </Panel>
+                        {/* Sidebar: Stacked Speaker and Chat panels */}
+                        <Panel defaultSize={25} minSize={20}>
+                            <PanelGroup direction="vertical">
+                                <Panel defaultSize={50} minSize={20}>
+                                    <SpeakerPanel
+                                        speakers={recording.speakers || []}
+                                        segments={recording.transcript?.segments || []}
+                                        onPlaySegment={handlePlaySegment}
+                                        recordingId={recording.id}
+                                        speakerColors={speakerColors}
+                                        onColorChange={handleColorChange}
+                                        currentTime={currentTime}
+                                        isPlaying={isPlaying}
+                                        onPause={handlePause}
+                                        onResume={handleResume}
+                                        onRefresh={fetchRecording}
+                                    />
+                                </Panel>
 
-                        <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
-                            <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
-                        </PanelResizeHandle>
-                        <Panel defaultSize={20} minSize={15}>
-                            <ChatPanel />
+                                <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-t border-gray-400 dark:border-gray-800 h-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                                    <div className="w-8 h-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+                                </PanelResizeHandle>
+
+                                <Panel defaultSize={50} minSize={20}>
+                                    <ChatPanel />
+                                </Panel>
+                            </PanelGroup>
                         </Panel>
                     </PanelGroup>
                 )}

@@ -69,6 +69,8 @@ export interface RecordingSpeaker extends BaseDBModel {
   color?: string;
 }
 
+export type ExportContentType = 'transcript' | 'notes' | 'both';
+
 export interface TranscriptSegment {
   start: number;
   end: number;

@@ -231,40 +231,53 @@ export const findAndReplace = async (recordingId: number, find: string, replace:
 };
 
 export type ExportContentType = 'transcript' | 'notes' | 'both';
+export type ExportFormat = 'txt' | 'pdf' | 'docx';
 
-export const exportContent = async (recordingId: number, contentType: ExportContentType = 'transcript'): Promise<void> => {
-  const response = await api.get(`/transcripts/${recordingId}/export`, {
-    params: { content_type: contentType },
-    responseType: 'blob',
-  });
+export const exportContent = async (recordingId: number, contentType: ExportContentType = 'transcript', format: ExportFormat = 'txt'): Promise<void> => {
+  console.log(`[exportContent] Initiating export for recording ${recordingId}, type: ${contentType}, format: ${format}`);
+  try {
+    const response = await api.get(`/transcripts/${recordingId}/export`, {
+      params: {
+        content_type: contentType,
+        export_format: format
+      },
+      responseType: 'blob',
+    });
+    console.log('[exportContent] Response received, status:', response.status);
+    console.log('[exportContent] Headers:', response.headers);
 
-  // Create a link and click it to download
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-  link.href = url;
+    // Create a link and click it to download
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
 
-  // Extract filename from header if possible, or generate one
-  const contentDisposition = response.headers['content-disposition'];
-  let filename = `export-${recordingId}.txt`;
-  if (contentDisposition) {
-    // Try to match filename="name"
-    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-    if (filenameMatch && filenameMatch.length === 2) {
-      filename = filenameMatch[1];
-    } else {
-      // Try to match filename=name
-      const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
-      if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
-        filename = filenameSimpleMatch[1].trim();
+    // Extract filename from header if possible, or generate one
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `export-${recordingId}.${format}`;
+
+    if (contentDisposition) {
+      // Try to match filename="name"
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      if (filenameMatch && filenameMatch.length === 2) {
+        filename = filenameMatch[1];
+      } else {
+        // Try to match filename=name
+        const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
+        if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
+          filename = filenameSimpleMatch[1].trim();
+        }
       }
     }
-  }
 
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('[exportContent] Error during export:', error);
+    throw error;
+  }
 };
 
 // Keep for backward compatibility

@@ -11,6 +11,23 @@ import os
 import logging
 import json
 import re
+from io import BytesIO
+from datetime import datetime, timedelta
+import html
+import traceback
+
+# ReportLab imports for PDF
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+
+# Python-docx imports for DOCX
+from docx import Document as DocxDocument
+from docx.shared import Pt, RGBColor, Inches
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.oxml.ns import qn
 
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording
@@ -127,19 +144,235 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
     return segment_count
 
 
+def _parse_markdown_line(line: str) -> dict:
+    """
+    Parse a markdown line to identify type (heading, list, paragraph) and content.
+    Very basic parser for common notes format.
+    """
+    line = line.strip()
+    if not line:
+        return {"type": "empty", "content": ""}
+    
+    if line.startswith('#'):
+        level = len(line.split(' ')[0])
+        content = line.lstrip('#').strip()
+        return {"type": "heading", "level": level, "content": content}
+    
+    if line.startswith('- ') or line.startswith('* '):
+        content = line[2:].strip()
+        return {"type": "list_item", "content": content}
+        
+    return {"type": "paragraph", "content": line}
+
+
+def _format_markdown_text_for_pdf(text: str) -> str:
+    """
+    Convert markdown bold/italic to ReportLab XML tags.
+    """
+    text = html.escape(text)
+    # Bold **text** or __text__ -> <b>text</b>
+    text = re.sub(r'(\*\*|__)(.*?)\1', r'<b>\2</b>', text)
+    # Italic *text* or _text_ -> <i>text</i>
+    text = re.sub(r'(\*|_)(.*?)\1', r'<i>\2</i>', text)
+    return text
+
+
+def _generate_pdf_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
+    """Generate a PDF export."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Justify', alignment=TA_JUSTIFY))
+    styles.add(ParagraphStyle(name='SpeakerLabel', parent=styles['Normal'], fontName='Helvetica-Bold', spaceAfter=2))
+    styles.add(ParagraphStyle(name='TranscriptText', parent=styles['Normal'], leftIndent=20, spaceAfter=8))
+    
+    story = []
+    
+    # --- Header ---
+    story.append(Paragraph(html.escape(recording.name), styles['Title']))
+    story.append(Spacer(1, 12))
+    
+    # Metadata
+    date_str = recording.created_at.strftime("%B %d, %Y at %I:%M %p") if recording.created_at else "Unknown Date"
+    story.append(Paragraph(f"<b>Date:</b> {date_str}", styles['Normal']))
+    
+    duration_str = str(timedelta(seconds=int(recording.duration_seconds))) if recording.duration_seconds else "Unknown"
+    story.append(Paragraph(f"<b>Duration:</b> {duration_str}", styles['Normal']))
+    
+    # Speakers
+    if recording.speakers:
+        speaker_names = []
+        for s in recording.speakers:
+            name = s.local_name or (s.global_speaker.name if s.global_speaker else None) or s.name or s.diarization_label
+            speaker_names.append(html.escape(name))
+        story.append(Paragraph(f"<b>Speakers:</b> {', '.join(speaker_names)}", styles['Normal']))
+    
+    story.append(Spacer(1, 24))
+    
+    # --- Notes ---
+    if include_notes and transcript.notes:
+        story.append(Paragraph("Meeting Notes", styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        # Process Markdown Notes
+        for line in transcript.notes.split('\n'):
+            parsed = _parse_markdown_line(line)
+            formatted_content = _format_markdown_text_for_pdf(parsed['content'])
+            
+            if parsed['type'] == 'heading':
+                # Map markdown levels to ReportLab styles
+                style_name = 'Heading2' if parsed['level'] == 1 else 'Heading3' if parsed['level'] == 2 else 'Heading4'
+                story.append(Paragraph(formatted_content, styles[style_name]))
+            elif parsed['type'] == 'list_item':
+                story.append(ListFlowable(
+                    [ListItem(Paragraph(formatted_content, styles['Normal']))],
+                    bulletType='bullet',
+                    start='circle'
+                ))
+            elif parsed['type'] == 'paragraph':
+                story.append(Paragraph(formatted_content, styles['Normal']))
+            
+            # Add small space after items usually
+            if parsed['type'] != 'empty':
+                story.append(Spacer(1, 6))
+                
+        story.append(Spacer(1, 24))
+        
+        if include_transcript:
+            story.append(PageBreak())
+
+    # --- Transcript ---
+    if include_transcript and transcript.segments:
+        story.append(Paragraph("Transcript", styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        speaker_map = _build_speaker_map(recording.speakers)
+        
+        for seg in transcript.segments:
+            speaker_label = seg.get('speaker', 'Unknown')
+            speaker_name = speaker_map.get(speaker_label, speaker_label)
+            text = seg.get('text', '').strip()
+            
+            start = seg.get('start', 0)
+            minutes = int(start // 60)
+            seconds = int(start % 60)
+            time_str = f"[{minutes:02d}:{seconds:02d}]"
+            
+            # Speaker Line
+            story.append(Paragraph(f"{time_str} {html.escape(speaker_name)}", styles['SpeakerLabel']))
+            # Text Line
+            story.append(Paragraph(html.escape(text), styles['TranscriptText']))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def _generate_docx_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
+    """Generate a DOCX export."""
+    buffer = BytesIO()
+    doc = DocxDocument()
+    
+    # --- Header ---
+    doc.add_heading(recording.name, 0)
+    
+    # Metadata
+    p = doc.add_paragraph()
+    date_str = recording.created_at.strftime("%B %d, %Y at %I:%M %p") if recording.created_at else "Unknown Date"
+    runner = p.add_run(f"Date: {date_str}")
+    
+    p = doc.add_paragraph()
+    duration_str = str(timedelta(seconds=int(recording.duration_seconds))) if recording.duration_seconds else "Unknown"
+    p.add_run(f"Duration: {duration_str}")
+    
+    if recording.speakers:
+        speaker_names = []
+        for s in recording.speakers:
+            name = s.local_name or (s.global_speaker.name if s.global_speaker else None) or s.name or s.diarization_label
+            speaker_names.append(name)
+        p = doc.add_paragraph()
+        p.add_run(f"Speakers: {', '.join(speaker_names)}")
+    
+    doc.add_paragraph() # Spacer
+
+    # --- Notes ---
+    if include_notes and transcript.notes:
+        doc.add_heading("Meeting Notes", level=1)
+        
+        for line in transcript.notes.split('\n'):
+            parsed = _parse_markdown_line(line)
+            content = parsed['content']
+            
+            # Basic bold handling for DOCX
+            # Since python-docx runs don't support regex replace easily for mixed styling,
+            # we'll do a simple split.
+            # "Some **bold** text" -> ["Some ", "**bold**", " text"]
+            
+            def add_formatted_run(paragraph, text):
+                parts = re.split(r'(\*\*.*?\*\*)', text)
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        run = paragraph.add_run(part[2:-2])
+                        run.bold = True
+                    else:
+                        paragraph.add_run(part)
+
+            if parsed['type'] == 'heading':
+                doc.add_heading(content, level=min(parsed['level'] + 1, 9))
+            elif parsed['type'] == 'list_item':
+                p = doc.add_paragraph(style='List Bullet')
+                add_formatted_run(p, content)
+            elif parsed['type'] == 'paragraph':
+                p = doc.add_paragraph()
+                add_formatted_run(p, content)
+
+        if include_transcript:
+            doc.add_page_break()
+
+    # --- Transcript ---
+    if include_transcript and transcript.segments:
+        doc.add_heading("Transcript", level=1)
+        
+        speaker_map = _build_speaker_map(recording.speakers)
+        
+        for seg in transcript.segments:
+            speaker_label = seg.get('speaker', 'Unknown')
+            speaker_name = speaker_map.get(speaker_label, speaker_label)
+            text = seg.get('text', '').strip()
+            
+            start = seg.get('start', 0)
+            minutes = int(start // 60)
+            seconds = int(start % 60)
+            time_str = f"[{minutes:02d}:{seconds:02d}]"
+            
+            p = doc.add_paragraph()
+            # Speaker and Timestamp bold
+            run = p.add_run(f"{time_str} {speaker_name}: ")
+            run.bold = True
+            p.add_run(text)
+
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+
 # --- Export Endpoint ---
 
 @router.get("/{recording_id}/export")
 async def export_content(
     recording_id: int,
     content_type: Literal["transcript", "notes", "both"] = Query(default="transcript"),
+    export_format: Literal["txt", "pdf", "docx"] = Query(default="txt"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Export the transcript and/or notes as a text file.
+    Export the transcript and/or notes as a file.
     content_type: 'transcript', 'notes', or 'both'
+    export_format: 'txt', 'pdf', 'docx'
     """
+    logger.info(f"Received export request: recording_id={recording_id}, content_type={content_type}, format={export_format}, user={current_user.id}")
+    
     # 1. Fetch Recording with Speakers (for name resolution)
     stmt = select(Recording).where(Recording.id == recording_id).where(Recording.user_id == current_user.id).options(
         selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
@@ -158,50 +391,72 @@ async def export_content(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    # 3. Create Speaker Map
-    speaker_map = _build_speaker_map(recording.speakers)
-
-    # 4. Build Content based on content_type
-    sections = []
+    # 3. Handle Formats
+    include_transcript = content_type in ["transcript", "both"]
+    include_notes = content_type in ["notes", "both"]
     
-    if content_type in ["transcript", "both"]:
-        # Add Transcript Section
-        sections.append(f"{recording.name} - Transcript")
-        sections.append("=" * 50)
-        sections.append("")
-        sections.append(_format_transcript_text(transcript.segments, speaker_map))
+    if include_notes and not transcript.notes:
+         if content_type == "notes":
+             raise HTTPException(status_code=404, detail="No meeting notes available to export")
     
-    if content_type in ["notes", "both"]:
-        if transcript.notes:
-            if content_type == "both":
-                sections.append("")
-                sections.append("")
-                sections.append(f"{recording.name} - Meeting Notes")
-                sections.append("=" * 50)
-                sections.append("")
-            else:
-                sections.append(f"{recording.name} - Meeting Notes")
-                sections.append("=" * 50)
-                sections.append("")
-            sections.append(transcript.notes)
-        elif content_type == "notes":
-            raise HTTPException(status_code=404, detail="No meeting notes available for this recording")
-    
-    content = "\n".join(sections)
-    
-    # 5. Determine filename
+    # Generate Filename
+    timestamp = recording.created_at.strftime("%Y%m%d") if recording.created_at else "export"
     if content_type == "transcript":
-        filename = f"{recording.name} - Transcript.txt"
+        ftype = "Transcript"
     elif content_type == "notes":
-        filename = f"{recording.name} - Notes.txt"
+        ftype = "Notes"
     else:
-        filename = f"{recording.name} - Full Export.txt"
+        ftype = "FullExport"
     
-    filename = _sanitize_filename(filename)
+    filename = f"{timestamp}_{_sanitize_filename(recording.name)}_{ftype}.{export_format}"
     
+    # 4. Generate Content
+    try:
+        if export_format == "pdf":
+            content = _generate_pdf_export(recording, transcript, include_transcript, include_notes)
+            media_type = "application/pdf"
+        elif export_format == "docx":
+            content = _generate_docx_export(recording, transcript, include_transcript, include_notes)
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else: # txt
+            # Text Generation Logic
+            speaker_map = _build_speaker_map(recording.speakers)
+            sections = []
+            
+            # Add Header even for TXT
+            sections.append(recording.name)
+            if recording.created_at:
+                 sections.append(f"Date: {recording.created_at.strftime('%B %d, %Y at %I:%M %p')}")
+            if recording.duration_seconds:
+                 sections.append(f"Duration: {str(timedelta(seconds=int(recording.duration_seconds)))}")
+            if recording.speakers:
+                s_names = [s.local_name or (s.global_speaker.name if s.global_speaker else None) or s.name or s.diarization_label for s in recording.speakers]
+                sections.append(f"Speakers: {', '.join(s_names)}")
+            sections.append("=" * 50)
+            sections.append("")
+    
+            if include_transcript:
+                sections.append("Transcript")
+                sections.append("-" * 20)
+                sections.append(_format_transcript_text(transcript.segments, speaker_map))
+                sections.append("")
+            
+            if include_notes and transcript.notes:
+                sections.append("Meeting Notes")
+                sections.append("-" * 20)
+                sections.append(transcript.notes)
+                sections.append("")
+                
+            content = "\n".join(sections)
+            media_type = "text/plain"
+    except Exception as e:
+        logger.error(f"Export generation failed: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Export generation failed: {str(e)}")
+
     return Response(
         content=content,
-        media_type="text/plain",
+        media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"'
         }

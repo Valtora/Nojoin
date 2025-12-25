@@ -28,6 +28,8 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
 
+  const [processingTags, setProcessingTags] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -45,10 +47,14 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
     if (isOpen) {
       void loadAllTags();
       setInputValue('');
+      setProcessingTags(new Set());
     }
   }, [isOpen, loadAllTags]);
 
   const handleAddTag = async (tagName: string) => {
+    if (processingTags.has(tagName)) return;
+
+    setProcessingTags(prev => new Set(prev).add(tagName));
     try {
       await addTagToRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent('tags-updated'));
@@ -56,26 +62,48 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
       setInputValue('');
     } catch (error) {
       console.error('Failed to add tag:', error);
+    } finally {
+      setProcessingTags(prev => {
+        const next = new Set(prev);
+        next.delete(tagName);
+        return next;
+      });
     }
   };
 
   const handleCreateTag = async (name: string, parentId?: number) => {
     if (!name.trim()) return;
+    if (processingTags.has(name.trim())) return;
+
+    setProcessingTags(prev => new Set(prev).add(name.trim()));
     try {
       const existingTag = allTags.find(t => t.name.toLowerCase() === name.trim().toLowerCase());
       if (existingTag) {
-        await handleAddTag(existingTag.name);
+        await addTagToRecording(recordingId, existingTag.name);
+        window.dispatchEvent(new CustomEvent('tags-updated'));
+        if (onTagsUpdated) onTagsUpdated();
       } else {
         const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
         await createTag(name.trim(), randomColor, parentId);
         await loadAllTags(); // Always reload to ensure list is updated
         if (!parentId) {
-          await handleAddTag(name.trim());
+          // If we just created it, we need to add it to the recording too
+          // But createTag doesn't automatically add it to the recording unless we call addTagToRecording
+          // The previous logic called handleAddTag, let's stick to that but be careful about recursion/state
+          await addTagToRecording(recordingId, name.trim());
+          window.dispatchEvent(new CustomEvent('tags-updated'));
+          if (onTagsUpdated) onTagsUpdated();
         }
       }
       setInputValue('');
     } catch (error) {
       console.error('Failed to create tag:', error);
+    } finally {
+      setProcessingTags(prev => {
+        const next = new Set(prev);
+        next.delete(name.trim());
+        return next;
+      });
     }
   };
 
@@ -104,12 +132,21 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
   };
 
   const handleRemoveTag = async (tagName: string) => {
+    if (processingTags.has(tagName)) return;
+
+    setProcessingTags(prev => new Set(prev).add(tagName));
     try {
       await removeTagFromRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent('tags-updated'));
       if (onTagsUpdated) onTagsUpdated();
     } catch (error) {
       console.error('Failed to remove tag:', error);
+    } finally {
+      setProcessingTags(prev => {
+        const next = new Set(prev);
+        next.delete(tagName);
+        return next;
+      });
     }
   };
 
@@ -136,6 +173,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
   const renderTagTree = (nodes: TagWithChildren[], level = 0) => {
     return nodes.map(node => {
       const isSelected = currentTags.some(t => t.id === node.id);
+      const isProcessing = processingTags.has(node.name);
       const color = getColorByKey(node.color);
       const isEditing = editingTagId === node.id;
 
@@ -150,7 +188,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
             className={`w-full flex items-center justify-between px-3 py-2 text-sm group transition-colors ${isSelected
               ? 'bg-orange-100 dark:bg-orange-900/30'
               : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
+              } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ paddingLeft: `${level * 12 + 12}px` }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -175,7 +213,11 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
               ) : (
                 <button
                   className={`flex-1 text-left ${isSelected ? 'text-orange-700 dark:text-orange-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
-                  onClick={() => isSelected ? handleRemoveTag(node.name) : handleAddTag(node.name)}
+                  onClick={() => {
+                    if (isProcessing) return;
+                    isSelected ? handleRemoveTag(node.name) : handleAddTag(node.name);
+                  }}
+                  disabled={isProcessing}
                 >
                   {node.name}
                 </button>
@@ -242,6 +284,7 @@ export default function AddTagModal({ isOpen, onClose, recordingId, currentTags,
               <button
                 onClick={() => handleCreateTag(inputValue)}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-orange-600 dark:text-orange-400 font-medium border-t border-gray-100 dark:border-gray-700"
+                disabled={processingTags.has(inputValue)}
               >
                 + Create &quot;{inputValue}&quot;
               </button>
