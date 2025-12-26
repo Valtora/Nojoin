@@ -205,6 +205,7 @@ async def get_models_status(whisper_model_size: Optional[str] = None) -> Any:
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(
     model_name: str,
+    variant: Optional[str] = None,
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
 
@@ -217,7 +218,7 @@ async def delete_model_endpoint(
         raise HTTPException(status_code=400, detail="Invalid model name")
         
     try:
-        success = delete_model(model_name)
+        success = delete_model(model_name, whisper_model_size=variant)
         if success:
             return {"message": f"Model {model_name} deleted successfully"}
         else:

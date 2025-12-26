@@ -2,8 +2,8 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { exportBackup, importBackup } from '@/lib/api';
-import { Download, Upload, AlertTriangle, Loader2, CheckCircle, X, FileArchive, Trash2 } from 'lucide-react';
-import ConfirmationModal from '@/components/ConfirmationModal';
+import { Download, Upload, Loader2, CheckCircle, X, FileArchive, Trash2, AlertOctagon, AlertTriangle } from 'lucide-react';
+import RestoreOptionsModal from '@/components/settings/RestoreOptionsModal';
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
@@ -16,13 +16,12 @@ const formatFileSize = (bytes: number): string => {
 export default function BackupRestore() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [clearExisting, setClearExisting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isValidZip, setIsValidZip] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showRestoreOptions, setShowRestoreOptions] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -41,9 +40,10 @@ export default function BackupRestore() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       setMessage({ type: 'success', text: 'Backup exported successfully.' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Export failed:', error);
-      setMessage({ type: 'error', text: 'Failed to export backup.' });
+      const errorMsg = error.response?.data?.detail || 'Failed to export backup';
+      setMessage({ type: 'error', text: errorMsg });
     } finally {
       setExporting(false);
     }
@@ -52,7 +52,7 @@ export default function BackupRestore() {
   const validateFile = (file: File): boolean => {
     const nameValid = file.name.toLowerCase().endsWith('.zip');
     const typeValid = !file.type || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-    
+
     if (nameValid && typeValid) {
       return true;
     }
@@ -94,7 +94,7 @@ export default function BackupRestore() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileSelect(files[0]);
@@ -112,32 +112,35 @@ export default function BackupRestore() {
 
   const handleRestoreClick = () => {
     if (!selectedFile) return;
-    
-    if (clearExisting) {
-      setShowConfirmModal(true);
-    } else {
-      performRestore();
-    }
+    setShowRestoreOptions(true); // Open the options modal
   };
 
-  const performRestore = async () => {
+  const performRestore = async (clear: boolean, overwrite: boolean) => {
     if (!selectedFile) return;
 
     try {
       setImporting(true);
       setUploadProgress(0);
       setMessage(null);
-      
-      await importBackup(selectedFile, clearExisting, (progress) => {
+      setShowRestoreOptions(false); // Close the modal
+
+      await importBackup(selectedFile, clear, overwrite, (progress) => {
         setUploadProgress(progress);
       });
-      
+
       setMessage({ type: 'success', text: 'Backup restored successfully. Please refresh the page.' });
       setSelectedFile(null);
       setIsValidZip(false);
-    } catch (error) {
+
+      // Refresh page after short delay to show success message
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+
+    } catch (error: any) {
       console.error('Import failed:', error);
-      setMessage({ type: 'error', text: 'Failed to restore backup.' });
+      const errorMsg = error.response?.data?.detail || 'Failed to restore backup.';
+      setMessage({ type: 'error', text: errorMsg });
     } finally {
       setImporting(false);
       setUploadProgress(0);
@@ -149,12 +152,16 @@ export default function BackupRestore() {
       <div>
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Backup & Restore</h3>
         <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-6">
-          
+
           {/* Export Section */}
           <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
             <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Export Backup</h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Download a zip file containing your database, recordings, and settings.
+              <br />
+              <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+                Note: Sensitive API keys (e.g., OpenAI, Anthropic) are redacted for security and must be re-entered after restoration.
+              </span>
             </p>
             <button
               onClick={handleExport}
@@ -172,7 +179,7 @@ export default function BackupRestore() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Restore data from a previously exported backup file.
             </p>
-            
+
             <div className="space-y-4">
               {/* Drag & Drop Zone */}
               <div
@@ -184,10 +191,10 @@ export default function BackupRestore() {
                 onDrop={handleDrop}
                 className={`
                   relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${isDragging 
-                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
-                    : selectedFile 
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
+                  ${isDragging
+                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+                    : selectedFile
+                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                       : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'
                   }
                   ${importing ? 'pointer-events-none opacity-75' : ''}
@@ -203,7 +210,7 @@ export default function BackupRestore() {
                   }}
                   className="hidden"
                 />
-                
+
                 {selectedFile ? (
                   <div className="space-y-2">
                     <FileArchive className="w-12 h-12 mx-auto text-green-500" />
@@ -239,39 +246,36 @@ export default function BackupRestore() {
               {importing && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Restoring...</span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {uploadProgress < 100 ? 'Uploading...' : 'Processing on server (Do not close)...'}
+                    </span>
                     <span className="text-gray-900 dark:text-white font-medium">{uploadProgress}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                    <div
+                      className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`}
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center space-x-2">
-                <input
-                  id="clear-existing"
-                  type="checkbox"
-                  checked={clearExisting}
-                  onChange={(e) => setClearExisting(e.target.checked)}
-                  disabled={importing}
-                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
-                />
-                <label htmlFor="clear-existing" className="text-sm text-gray-700 dark:text-gray-300">
-                  Clear existing data before restoring (Warning: This will delete all current data)
-                </label>
-              </div>
-
               <button
                 onClick={handleRestoreClick}
                 disabled={!isValidZip || importing}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
               >
-                {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                {importing ? 'Restoring...' : 'Restore Backup'}
+                {importing ? (
+                  <>
+                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                    Restoring...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="-ml-1 mr-2 h-4 w-4" />
+                    Restore Backup
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -287,16 +291,11 @@ export default function BackupRestore() {
 
         </div>
       </div>
-
-      <ConfirmationModal
-        isOpen={showConfirmModal}
-        onClose={() => setShowConfirmModal(false)}
+      <RestoreOptionsModal
+        isOpen={showRestoreOptions}
+        onClose={() => setShowRestoreOptions(false)}
         onConfirm={performRestore}
-        title="Clear Existing Data?"
-        message="Are you sure you want to clear all existing data before restoring? This action cannot be undone and will delete all current recordings, transcripts, and settings."
-        confirmText="Yes, Clear and Restore"
-        cancelText="Cancel"
-        isDangerous={true}
+        fileName={selectedFile?.name || 'backup.zip'}
       />
     </div>
   );

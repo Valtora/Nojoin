@@ -3,9 +3,37 @@ name: Companion App Build & Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
-  release:
+  create-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get version
+        id: get_version
+        run: |
+          cd companion
+          echo "VERSION=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          gh release create $VERSION --generate-notes --title "Nojoin Companion $VERSION" --target main
+
+  build-and-upload:
+    if: github.event_name == 'release'
     permissions:
       contents: write
     runs-on: windows-latest

@@ -519,8 +519,10 @@ export const getModelsStatus = async (whisperModelSize?: string): Promise<System
   return response.data;
 };
 
-export const deleteModel = async (modelId: string): Promise<void> => {
-  await api.delete(`/system/models/${modelId}`);
+export const deleteModel = async (modelId: string, whisperModelSize?: string): Promise<void> => {
+  const params = new URLSearchParams();
+  if (whisperModelSize) params.append('variant', whisperModelSize);
+  await api.delete(`/system/models/${modelId}?${params.toString()}`);
 };
 
 // User Management
@@ -761,11 +763,12 @@ export const exportBackup = async (): Promise<Blob> => {
 export const importBackup = async (
   file: File,
   clearExisting: boolean,
+  overwriteExisting: boolean,
   onUploadProgress?: (progress: number) => void
 ): Promise<void> => {
   const formData = new FormData();
   formData.append('file', file);
-  await api.post(`/backup/import?clear_existing=${clearExisting}`, formData, {
+  await api.post(`/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },

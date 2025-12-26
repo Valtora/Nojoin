@@ -1,12 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException
+from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import FileResponse
 from backend.core.backup_manager import BackupManager
+from backend.api.deps import get_current_active_superuser
 import os
 from datetime import datetime
 
 router = APIRouter()
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(get_current_active_superuser)])
 async def export_backup(background_tasks: BackgroundTasks):
     try:
         zip_path = await BackupManager.create_backup()
@@ -22,10 +23,11 @@ async def export_backup(background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/import")
+@router.post("/import", dependencies=[Depends(get_current_active_superuser)])
 async def import_backup(
     file: UploadFile = File(...),
-    clear_existing: bool = Query(False, description="Clear existing data before restoring")
+    clear_existing: bool = Query(False, description="Clear existing data before restoring"),
+    overwrite_existing: bool = Query(False, description="Overwrite existing recordings if they exist")
 ):
     # Save uploaded file to temp
     temp_path = f"/tmp/{file.filename}"
@@ -34,7 +36,7 @@ async def import_backup(
             content = await file.read()
             f.write(content)
         
-        await BackupManager.restore_backup(temp_path, clear_existing)
+        await BackupManager.restore_backup(temp_path, clear_existing, overwrite_existing)
         return {"message": "Backup restored successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

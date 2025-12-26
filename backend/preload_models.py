@@ -407,16 +407,16 @@ def check_model_status(whisper_model_size=None):
 
     return status
 
-def delete_model(model_name: str):
+def delete_model(model_name: str, whisper_model_size: str = None):
     """
     Delete a specific model from the cache.
     model_name: 'whisper', 'pyannote', 'embedding'
     """
-    status = check_model_status()
+    status = check_model_status(whisper_model_size=whisper_model_size)
     model_info = status.get(model_name)
     
     if not model_info or not model_info["downloaded"] or not model_info["path"]:
-        logger.warning(f"Model {model_name} not found or not downloaded.")
+        logger.warning(f"Model {model_name} (variant: {whisper_model_size}) not found or not downloaded.")
         return False
 
     path = model_info["path"]

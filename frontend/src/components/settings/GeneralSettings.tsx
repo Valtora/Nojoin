@@ -1,10 +1,8 @@
-'use client';
-
 import { useTheme, Theme } from '@/lib/ThemeProvider';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { GENERAL_KEYWORDS } from './keywords';
 import { Settings } from '@/types';
-import { Brain, Mic, Activity, Users, FileText, Type, PlayCircle, RefreshCw } from 'lucide-react';
+import { Brain, Mic, Activity, Users, FileText, Type, Info, MessageSquare } from 'lucide-react';
 import { Switch } from '../ui/Switch';
 import { useNavigationStore } from '@/lib/store';
 import { seedDemoData } from '@/lib/api';
@@ -23,7 +21,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
   const { setHasSeenTour, setHasSeenTranscriptTour } = useNavigationStore();
   const { addNotification } = useNotificationStore();
   const [isSeeding, setIsSeeding] = useState(false);
-  
+
   const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setTheme(e.target.value as Theme);
   };
@@ -50,9 +48,8 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
 
   const showAppearance = fuzzyMatch(searchQuery, GENERAL_KEYWORDS);
   const showProcessing = fuzzyMatch(searchQuery, ['processing', 'vad', 'silence', 'diarization', 'title', 'inference', 'speakers', 'notes']);
-  const showTours = fuzzyMatch(searchQuery, ['tour', 'demo', 'welcome', 'tutorial', 'guide']);
 
-  if (!showAppearance && !showProcessing && !showTours && searchQuery) return <div className="text-gray-500">No matching settings found.</div>;
+  if (!showAppearance && !showProcessing && searchQuery) return <div className="text-gray-500">No matching settings found.</div>;
 
   return (
     <div className="space-y-8">
@@ -85,7 +82,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
             <Activity className="w-5 h-5 text-orange-500" /> Processing & Intelligence
           </h3>
           <div className="max-w-2xl space-y-4">
-            
+
             {/* VAD Toggle */}
             <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1"><Mic className="w-5 h-5 text-blue-500" /></div>
@@ -193,47 +190,31 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
         </div>
       )}
 
-      {showTours && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <PlayCircle className="w-5 h-5 text-orange-500" /> Tours & Demos
-          </h3>
-          <div className="max-w-2xl space-y-4">
-            <div className="flex items-center justify-between p-4 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Restart Welcome Tour</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Reset the &quot;Welcome to Nojoin&quot; tour and the transcript walkthrough.
-                </p>
-              </div>
-              <button
-                onClick={handleRestartTour}
-                disabled={!userId}
-                className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
-              >
-                Restart Tour
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Re-create Demo Meeting</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  If you deleted the &quot;Welcome to Nojoin&quot; meeting, this will create it again.
-                </p>
-              </div>
-              <button
-                onClick={handleRecreateDemo}
-                disabled={isSeeding}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors disabled:opacity-50"
-              >
-                {isSeeding && <RefreshCw className="w-3 h-3 animate-spin" />}
-                {isSeeding ? 'Creating...' : 'Re-create Meeting'}
-              </button>
-            </div>
+      {/* Custom Instructions (Moved from AI Settings) */}
+      <div>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-blue-500" /> LLM Customization
+        </h3>
+        <div className="max-w-2xl">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+            Custom Instructions
+          </label>
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
+            <Info className="w-4 h-4 flex-shrink-0" />
+            <span>These instructions are appended to every prompt sent to the LLM. Use this to define a custom persona or specific formatting rules.</span>
           </div>
+          <textarea
+            value={settings.chat_custom_instructions || ''}
+            onChange={(e) => onUpdate({ ...settings, chat_custom_instructions: e.target.value })}
+            className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none min-h-[100px] text-sm transition-all"
+            placeholder="E.g., You are a helpful meeting assistant. Always summarize key decisions first..."
+            maxLength={1000}
+          />
+          <p className="text-xs text-gray-500 mt-1 text-right">
+            {settings.chat_custom_instructions?.length || 0}/1000
+          </p>
         </div>
-      )}
+      </div>
     </div>
   );
 }

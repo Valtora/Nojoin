@@ -47,6 +47,20 @@ class BackupManager:
             return "0.0.0"
 
     @staticmethod
+    def _redact_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively redact sensitive keys from a dictionary.
+        """
+        redacted = data.copy()
+        for k, v in redacted.items():
+            if isinstance(v, dict):
+                redacted[k] = BackupManager._redact_sensitive_data(v)
+            elif isinstance(k, str) and (k.endswith("_key") or k.endswith("_token") or "password" in k):
+                if v: # Only redact if there is a value
+                    redacted[k] = "REDACTED"
+        return redacted
+
+    @staticmethod
     def _adapt_record(model_cls: Type[SQLModel], data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Adapts a record dictionary to match the current model schema.
@@ -123,6 +137,13 @@ class BackupManager:
                                         item["audio_path"] = base + ".opus"
                                         # Reset file size as it will change
                                         item["file_size_bytes"] = None
+                                        
+                        # Redact sensitive data from Users
+                        if table_name == "users":
+                            for item in data:
+                                if "settings" in item and item["settings"]:
+                                    # Redact API keys and tokens
+                                    item["settings"] = BackupManager._redact_sensitive_data(item["settings"])
 
                         zipf.writestr(f"{table_name}.json", json.dumps(data, indent=2))
 
@@ -157,7 +178,13 @@ class BackupManager:
 
                 # 3. Add Config
                 if config_path.exists():
-                    zipf.write(config_path, "config.json")
+                    try:
+                        config_data = json.loads(config_path.read_text())
+                        # Redact sensitive config
+                        config_data = BackupManager._redact_sensitive_data(config_data)
+                        zipf.writestr("config.json", json.dumps(config_data, indent=2))
+                    except Exception as e:
+                        logger.error(f"Failed to back up config: {e}")
 
                 # 4. Add Backup Info
                 backup_info = {
@@ -175,7 +202,7 @@ class BackupManager:
             raise e
 
     @staticmethod
-    async def restore_backup(zip_path: str, clear_existing: bool = False):
+    async def restore_backup(zip_path: str, clear_existing: bool = False, overwrite_existing: bool = False):
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
         config_path = path_manager.config_path
@@ -183,6 +210,12 @@ class BackupManager:
         # ID Mapping for additive restore
         # Map: table_name -> { old_id: new_id }
         id_map: Dict[str, Dict[int, int]] = {name: {} for name, _ in MODELS}
+        
+        # Map: audio_path -> new_id (Track processed paths to avoid self-deletion of duplicates in backup)
+        restored_audio_paths: Dict[str, int] = {}
+
+        # Set of skipped recording IDs (old_id) - used to skip children
+        skipped_recording_ids = set()
 
         with zipfile.ZipFile(zip_path, 'r') as zipf:
             # Check version compatibility
@@ -194,7 +227,6 @@ class BackupManager:
                     
                     if backup_version != current_version:
                         logger.info(f"Restoring backup from version {backup_version} to {current_version}")
-                        # Simple lexicographical check for now as a heuristic
                         if backup_version > current_version:
                             logger.warning(f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues.")
                 except Exception as e:
@@ -202,10 +234,12 @@ class BackupManager:
 
             # 1. Clear Existing Data if requested
             if clear_existing:
-                # Clear DB
+                # Clear DB, BUT SKIP USERS to prevent lockout
                 async with async_session_maker() as session:
                     # Delete in reverse order
                     for table_name, model_cls in reversed(MODELS):
+                        if table_name == "users":
+                            continue
                         await session.execute(delete(model_cls))
                     await session.commit()
                 
@@ -219,12 +253,53 @@ class BackupManager:
             for file in zipf.namelist():
                 if file.startswith("recordings/"):
                     # We need to be careful not to overwrite if not clear_existing?
-                    # If additive, we probably want to extract. If file exists, overwrite?
-                    # Standard unzip overwrites.
+                    # If overwrite_existing is True, standard unzip overwrites, which is what we want.
+                    # If overwrite_existing is False, we should ideally NOT extract if it exists.
+                    # HOWEVER, checking existence for every file might be slow.
+                    # AND the file path might be different from what's in the DB if we handle collisions?
+                    # But here the filenames are hashed/timestamped usually.
+                    
+                    # Optimization: Just extract all. If we skip the DB record, the file is orphaned but harmless.
                     zipf.extract(file, path_manager.user_data_directory)
                 elif file == "config.json":
                     if clear_existing:
-                        zipf.extract(file, path_manager.user_data_directory)
+                        # Only restore config if we are clearing data, otherwise keep current system config
+                        try:
+                            new_config = json.loads(zipf.read("config.json"))
+                            if config_path.exists():
+                                current_config = json.loads(config_path.read_text())
+                                # Merge: Update current with new, but keep current if new is REDACTED
+                                for k, v in new_config.items():
+                                    if v != "REDACTED":
+                                        current_config[k] = v
+                                config_path.write_text(json.dumps(current_config, indent=2))
+                            else:
+                                zipf.extract(file, path_manager.user_data_directory)
+                        except Exception as e:
+                            logger.error(f"Failed to restore config: {e}")
+
+            # 2a. Pre-flight Cleanup (Overwrite Strategy)
+            if overwrite_existing and not clear_existing:
+                if "recordings.json" in zipf.namelist():
+                    try:
+                        rec_data = json.loads(zipf.read("recordings.json"))
+                        audio_paths = [item.get("audio_path") for item in rec_data if item.get("audio_path")]
+                        
+                        if audio_paths:
+                            async with async_session_maker() as session:
+                                # We need to handle this in chunks if too many?
+                                # For now, simple IN clause.
+                                # Find existing IDs to log
+                                existing_stm = select(Recording.id).where(Recording.audio_path.in_(audio_paths))
+                                existing_ids = (await session.execute(existing_stm)).scalars().all()
+                                
+                                if existing_ids:
+                                    logger.info(f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings.")
+                                    # specific delete to trigger cascades if needed (though delete from recordings usually cascades)
+                                    await session.execute(delete(Recording).where(Recording.id.in_(existing_ids)))
+                                    await session.commit()
+                    except Exception as e:
+                        logger.error(f"Pre-flight cleanup failed: {e}")
 
             # 3. Restore Database
             async with async_session_maker() as session:
@@ -240,54 +315,216 @@ class BackupManager:
 
                         old_id = item_data.get("id")
                         
-                        # Handle Additive Logic (Remap IDs)
-                        if not clear_existing:
-                            # Remove ID to let DB generate new one
-                            if "id" in item_data:
-                                del item_data["id"]
-                            
-                            # Remap FKs
-                            if table_name == "global_speakers":
-                                if item_data.get("user_id") in id_map["users"]:
-                                    item_data["user_id"] = id_map["users"][item_data["user_id"]]
-                            
-                            elif table_name == "tags":
-                                if item_data.get("user_id") in id_map["users"]:
-                                    item_data["user_id"] = id_map["users"][item_data["user_id"]]
-
-                            elif table_name == "recordings":
-                                if item_data.get("user_id") in id_map["users"]:
-                                    item_data["user_id"] = id_map["users"][item_data["user_id"]]
-
-                            elif table_name == "recording_speakers":
-                                if item_data.get("recording_id") in id_map["recordings"]:
-                                    item_data["recording_id"] = id_map["recordings"][item_data["recording_id"]]
-                                if item_data.get("global_speaker_id") in id_map["global_speakers"]:
-                                    item_data["global_speaker_id"] = id_map["global_speakers"][item_data["global_speaker_id"]]
-                            
-                            elif table_name == "recording_tags":
-                                if item_data.get("recording_id") in id_map["recordings"]:
-                                    item_data["recording_id"] = id_map["recordings"][item_data["recording_id"]]
-                                if item_data.get("tag_id") in id_map["tags"]:
-                                    item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
-
-                            elif table_name == "transcripts":
-                                if item_data.get("recording_id") in id_map["recordings"]:
-                                    item_data["recording_id"] = id_map["recordings"][item_data["recording_id"]]
-
-                            elif table_name == "chat_messages":
-                                if item_data.get("recording_id") in id_map["recordings"]:
-                                    item_data["recording_id"] = id_map["recordings"][item_data["recording_id"]]
-                                if item_data.get("user_id") in id_map["users"]:
-                                    item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                        # Handle Conflict / Additive Logic
                         
+                        # Special handling for Users: Resolve by username
+                        if table_name == "users":
+                            username = item_data.get("username")
+                            existing_user = (await session.execute(select(User).where(User.username == username))).scalar_one_or_none()
+                            
+                            if existing_user:
+                                # User exists. Map old_id to existing_id.
+                                # Do NOT overwrite the user (security risk, plus passwords etc).
+                                if old_id is not None:
+                                    id_map["users"][old_id] = existing_user.id
+                                continue # Skip inserting this user
+                            
+                        # Special handling for Recordings: Resolve by audio_path
+                        elif table_name == "recordings":
+                            audio_path = item_data.get("audio_path")
+                            
+                            # DUPLICATE IN BACKUP CHECK:
+                            # If we already restored this path in this session, map to that ID and SKIP.
+                            if audio_path in restored_audio_paths:
+                                logger.warning(f"Duplicate audio path in backup JSON: {audio_path}. Linking old_id {old_id} to existing new_id {restored_audio_paths[audio_path]}")
+                                if old_id is not None:
+                                    id_map["recordings"][old_id] = restored_audio_paths[audio_path]
+                                continue # Skip insert
+
+                            existing_rec = (await session.execute(select(Recording).where(Recording.audio_path == audio_path))).scalar_one_or_none()
+                            
+                            if existing_rec:
+                                # If we are here, it means we found a conflict.
+                                # If overwrite_existing was True, we SHOULD have deleted it in pre-flight.
+                                # But maybe race condition or something? 
+                                # Or maybe clear_existing logic?
+                                
+                                if overwrite_existing:
+                                    # Fallback: Delete row
+                                    # NOTE: Pre-flight should have caught this. If we are here, it's a straggler or race condition.
+                                    logger.warning(f"Fallback delete triggered for audio_path={audio_path}. Deleting ID {existing_rec.id}.")
+                                    await session.delete(existing_rec)
+                                    await session.flush()
+                                else:
+                                    # Strategy: SKIP (Safe Merge)
+                                    # Use existing ID map.
+                                    if old_id is not None:
+                                        id_map["recordings"][old_id] = existing_rec.id
+                                        skipped_recording_ids.add(old_id)
+                                        # Also track it as restored/processed so subsequent dupes map to it
+                                        restored_audio_paths[audio_path] = existing_rec.id
+                                    continue # Skip inserting this recording
+                        
+                        else:
+                            # Child Records: Skip if parent recording was skipped
+                            if "recording_id" in item_data:
+                                old_rec_id = item_data["recording_id"]
+                                if old_rec_id in skipped_recording_ids:
+                                    # Parent was skipped, so we skip child to avoid duplication/errors
+                                    # NOTE: We do NOT need to check if the child exists because 
+                                    # if we are skipping, it means the parent exists, and we assume 
+                                    # the existing parent has its own children.
+                                    # We don't want to merge children from backup into existing parent 
+                                    # because that causes duplication (e.g. double transcripts).
+                                    continue
+
+                            # Tags: name + user_id is unique?
+                            if table_name == "tags":
+                                tag_name = item_data.get("name")
+                                # Fix possible FK resolution before check
+                                user_id = item_data.get("user_id")
+                                if user_id in id_map["users"]:
+                                    user_id = id_map["users"][user_id]
+                                
+                                existing_tag = (await session.execute(
+                                    select(Tag).where(Tag.name == tag_name).where(Tag.user_id == user_id)
+                                )).scalar_one_or_none()
+                                
+                                if existing_tag:
+                                    if old_id is not None:
+                                        id_map["tags"][old_id] = existing_tag.id
+                                    continue
+
+                        # Remap Foreign Keys for insertion
+                        
+                        # Remove ID to let DB generate new one (always additive in practice for safety)
+                        if "id" in item_data:
+                            del item_data["id"]
+                        
+                        # Remap FKs
+                        if table_name == "global_speakers":
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                            else:
+                                continue # Orphaned
+
+                        elif table_name == "tags":
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                            else:
+                                continue
+
+                        elif table_name == "recordings":
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                            else:
+                                continue
+
+                        elif table_name == "recording_speakers":
+                            old_rec_id = item_data.get("recording_id")
+                            if old_rec_id in id_map["recordings"]:
+                                new_rec_id = id_map["recordings"][old_rec_id]
+                                
+                                # SANITY CHECK: Does this recording exist?
+                                sanity_rec = (await session.execute(select(Recording).where(Recording.id == new_rec_id))).scalar_one_or_none()
+                                if not sanity_rec:
+                                    logger.error(f"CRITICAL: Recording ID {new_rec_id} (mapped from {old_rec_id}) DOES NOT EXIST! Skipping speaker.")
+                                    continue
+
+                                item_data["recording_id"] = new_rec_id
+                            else:
+                                continue
+                            if item_data.get("global_speaker_id") in id_map["global_speakers"]:
+                                item_data["global_speaker_id"] = id_map["global_speakers"][item_data["global_speaker_id"]]
+                        
+                        elif table_name == "recording_tags":
+                            old_rec_id = item_data.get("recording_id")
+                            if old_rec_id in id_map["recordings"]:
+                                new_rec_id = id_map["recordings"][old_rec_id]
+                                
+                                # SANITY CHECK
+                                sanity_rec = (await session.execute(select(Recording).where(Recording.id == new_rec_id))).scalar_one_or_none()
+                                if not sanity_rec:
+                                    logger.error(f"CRITICAL: Recording ID {new_rec_id} (mapped from {old_rec_id}) DOES NOT EXIST! Skipping tag link.")
+                                    continue
+                                    
+                                item_data["recording_id"] = new_rec_id
+                            else:
+                                continue
+                            if item_data.get("tag_id") in id_map["tags"]:
+                                item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
+                            else:
+                                continue
+                            
+                            # DUPLICATE CHECK: Does this tag link already exist?
+                            # (Important if we merged two recordings that both had the same tag)
+                            existing_link = (await session.execute(
+                                select(RecordingTag)
+                                .where(RecordingTag.recording_id == item_data["recording_id"])
+                                .where(RecordingTag.tag_id == item_data["tag_id"])
+                            )).scalar_one_or_none()
+                            
+                            if existing_link:
+                                logger.info(f"Skipping duplicate recording_tag link for recording_id={new_rec_id}, tag_id={item_data['tag_id']}")
+                                if old_id is not None:
+                                    id_map["recording_tags"][old_id] = existing_link.id # Just in case
+                                continue
+
+                        elif table_name == "transcripts":
+                            old_rec_id = item_data.get("recording_id")
+                            if old_rec_id in id_map["recordings"]:
+                                new_rec_id = id_map["recordings"][old_rec_id]
+                                
+                                # SANITY CHECK
+                                sanity_rec = (await session.execute(select(Recording).where(Recording.id == new_rec_id))).scalar_one_or_none()
+                                if not sanity_rec:
+                                    logger.error(f"CRITICAL: Recording ID {new_rec_id} (mapped from {old_rec_id}) DOES NOT EXIST! Skipping transcript.")
+                                    continue
+                                
+                                item_data["recording_id"] = new_rec_id
+                            else:
+                                continue
+                                
+                            # DUPLICATE CHECK: Does this recording already have a transcript?
+                            # (Important if we merged two recordings that both had transcripts)
+                            existing_transcript = (await session.execute(
+                                select(Transcript).where(Transcript.recording_id == new_rec_id)
+                            )).scalar_one_or_none()
+                            
+                            if existing_transcript:
+                                logger.info(f"Skipping duplicate transcript for recording_id={new_rec_id} (merged from {old_rec_id}). Keeping existing transcript.")
+                                if old_id is not None:
+                                    id_map["transcripts"][old_id] = existing_transcript.id
+                                continue
+
+                        elif table_name == "chat_messages":
+                            old_rec_id = item_data.get("recording_id")
+                            if old_rec_id in id_map["recordings"]:
+                                new_rec_id = id_map["recordings"][old_rec_id]
+                                
+                                # SANITY CHECK
+                                sanity_rec = (await session.execute(select(Recording).where(Recording.id == new_rec_id))).scalar_one_or_none()
+                                if not sanity_rec:
+                                    logger.error(f"CRITICAL: Recording ID {new_rec_id} (mapped from {old_rec_id}) DOES NOT EXIST! Skipping chat.")
+                                    continue
+                                    
+                                item_data["recording_id"] = new_rec_id
+                            else:
+                                continue
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                    
                         # Create instance
-                        instance = model_cls(**item_data)
+                        instance = model_cls.model_validate(item_data)
                         session.add(instance)
                         await session.flush() # To get the new ID
                         await session.refresh(instance)
                         
-                        if not clear_existing and old_id is not None:
+                        if old_id is not None:
                             id_map[table_name][old_id] = instance.id
+                        
+                        # Track restored audio paths for duplicate detection
+                        if table_name == "recordings" and instance.audio_path:
+                            restored_audio_paths[instance.audio_path] = instance.id
                 
                 await session.commit()

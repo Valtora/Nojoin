@@ -291,6 +291,8 @@ To update Nojoin to the latest version, in the Nojoin directory:
    ```
 
 > **Note:** You can check your current version and view if a new version is available directly on the **Settings** page.
+>
+> **Release Strategy:** Docker images (`ghcr.io/valtora/nojoin-*`) are automatically built and updated with every push to the `main` branch. GitHub Releases are generally reserved for updates to the Companion App binaries or major codebase milestones. If you want the absolute latest features, simply pull the latest Docker images.
 
 ## ❓ Troubleshooting
 

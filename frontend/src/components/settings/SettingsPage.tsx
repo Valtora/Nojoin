@@ -1,23 +1,21 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getSettings, updateSettings, getUserMe } from '@/lib/api';
 import { Settings, CompanionDevices } from '@/types';
 import { isValidUrl } from '@/lib/validation';
-import { Save, Loader2, Settings as SettingsIcon, Cpu, Mic, Server, Search, User, Shield, Mail, Users } from 'lucide-react';
+import { Save, Loader2, Settings as SettingsIcon, Mic, Search, User, Shield, PlayCircle } from 'lucide-react';
 import { getMatchScore } from '@/lib/searchUtils';
 import { TAB_KEYWORDS } from './keywords';
 import VersionTag from './VersionTag';
 import GeneralSettings from './GeneralSettings';
-import AISettings from './AISettings';
 import AudioSettings from './AudioSettings';
-import SystemSettings from './SystemSettings';
 import AccountSettings from './AccountSettings';
 import AdminSettings from './AdminSettings';
-import InvitesTab from './InvitesTab';
+import HelpSettings from './HelpSettings';
 import { useNotificationStore } from '@/lib/notificationStore';
 
-type Tab = 'general' | 'ai' | 'audio' | 'system' | 'account' | 'admin' | 'invites';
+type Tab = 'general' | 'audio' | 'help' | 'account' | 'admin';
 
 interface CompanionConfig {
   api_port: number;
@@ -72,12 +70,10 @@ export default function SettingsPage() {
 
     const matches: Record<Tab, number> = {
       general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
-      ai: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.ai) : 1,
       audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
-      system: getMatchScore(searchQuery, TAB_KEYWORDS.system),
+      help: getMatchScore(searchQuery, ['help', 'tour', 'demo', 'tutorial']),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
-      admin: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.admin) : 1,
-      invites: isAdmin ? getMatchScore(searchQuery, TAB_KEYWORDS.invites) : 1,
+      admin: isAdmin ? getMatchScore(searchQuery, [...TAB_KEYWORDS.admin, ...TAB_KEYWORDS.ai, ...TAB_KEYWORDS.invites, ...TAB_KEYWORDS.system, 'backup', 'restore']) : 1, // Admin now covers AI, Invites, System, Backup
     };
 
     return matches;
@@ -293,29 +289,17 @@ export default function SettingsPage() {
 
   const tabs = useMemo(() => {
     const baseTabs = [
-      { id: 'account', label: 'Account', icon: User },
-      // AI Services moved to conditional
-      { id: 'audio', label: 'Audio & Recording', icon: Mic },
       { id: 'general', label: 'General', icon: SettingsIcon },
-      { id: 'system', label: 'System', icon: Server },
+      { id: 'audio', label: 'Audio & Recording', icon: Mic },
+      { id: 'help', label: 'Help', icon: PlayCircle },
+      { id: 'account', label: 'Account', icon: User },
     ] as const;
 
-    const aiTab = { id: 'ai', label: 'AI Services', icon: Cpu };
     const adminTab = { id: 'admin', label: 'Admin Panel', icon: Shield };
-    const invitesTab = { id: 'invites', label: 'Invites', icon: Mail };
-    // Users tab removed as per feedback - consolidated into Admin Panel
 
     if (isAdmin) {
-      // Insert AI tab after Account (index 1)
-      const tabsWithAI = [
-        baseTabs[0], // Account
-        aiTab,
-        ...baseTabs.slice(1)
-      ];
-
       return [
-        ...tabsWithAI,
-        invitesTab,
+        ...baseTabs,
         adminTab,
       ];
     }
@@ -409,9 +393,6 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
-              {activeTab === 'account' && <AccountSettings />}
-              {activeTab === 'admin' && isAdmin && <AdminSettings />}
-              {activeTab === 'invites' && isAdmin && <InvitesTab />}
               {activeTab === 'general' && (
                 <GeneralSettings
                   settings={settings}
@@ -420,20 +401,13 @@ export default function SettingsPage() {
                   userId={userId}
                 />
               )}
-              {activeTab === 'ai' && isAdmin && (
-                <AISettings
-                  settings={settings}
-                  onUpdate={setSettings}
-                  searchQuery={searchQuery}
-                  isAdmin={isAdmin}
-                />
-              )}
               {activeTab === 'audio' && (
                 <AudioSettings
                   settings={settings}
                   onUpdateSettings={setSettings}
                   companionConfig={companionConfig}
                   onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
+                  onRefreshCompanionConfig={refreshCompanionConfig}
                   companionDevices={companionDevices}
                   selectedInputDevice={selectedInputDevice}
                   onSelectInputDevice={setSelectedInputDevice}
@@ -442,15 +416,19 @@ export default function SettingsPage() {
                   searchQuery={searchQuery}
                 />
               )}
-              {activeTab === 'system' && (
-                <SystemSettings
-                  settings={settings}
-                  onUpdate={setSettings}
-                  companionConfig={companionConfig}
-                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
-                  onRefreshCompanionConfig={refreshCompanionConfig}
+              {activeTab === 'help' && (
+                <HelpSettings
+                  userId={userId}
                   searchQuery={searchQuery}
+                />
+              )}
+              {activeTab === 'account' && <AccountSettings />}
+              {activeTab === 'admin' && isAdmin && (
+                <AdminSettings
+                  settings={settings}
+                  onUpdateSettings={setSettings}
                   isAdmin={isAdmin}
+                  searchQuery={searchQuery}
                 />
               )}
             </div>

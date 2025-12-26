@@ -23,7 +23,7 @@ _version_cache = {
 }
 _cache_lock = asyncio.Lock()
 
-GITHUB_RELEASE_URL = "https://api.github.com/repos/Valtora/Nojoin/releases/latest"
+GITHUB_RAW_VERSION_URL = "https://raw.githubusercontent.com/Valtora/Nojoin/main/docs/VERSION"
 # Try strict paths first, then relative
 VERSION_FILE_PATHS = [
     "/app/docs/VERSION",
@@ -56,23 +56,24 @@ async def get_version():
             if cached_data.latest_version:
                  cur = current_version.lstrip('v')
                  lat = cached_data.latest_version.lstrip('v')
-                 # Simple check: if strings differ, update is available (assuming we don't run newer-than-release often in prod)
+                 # Check if the latest version from main is newer than current
+                 # We simply compare strings for inequality if lengths match, or rely on semantic if possible
+                 # But keeping it simple: if strings differ and "latest" is intuitively "larger/newer"
+                 # Since we control both, we assume main's VERSION > local if different and reasonable.
                  cached_data.is_update_available = cur != lat
             
             return cached_data
 
-    # Fetch from GitHub
+    # Fetch from GitHub Main Branch
     latest_version = None
-    release_url = None
+    release_url = "https://github.com/Valtora/Nojoin/pkgs/container/nojoin-api"
     is_update_available = False
     
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(GITHUB_RELEASE_URL)
+            resp = await client.get(GITHUB_RAW_VERSION_URL)
             if resp.status_code == 200:
-                data = resp.json()
-                latest_version = data.get("tag_name", "").lstrip('v')
-                release_url = data.get("html_url")
+                latest_version = resp.text.strip().lstrip('v')
                 
                 clean_current = current_version.lstrip('v')
                 if clean_current and latest_version and clean_current != latest_version:
