@@ -12,8 +12,10 @@
     </p>
 </div>
 
-<!-- Screenshot 1 -->
-![Nojoin Demo](docs/images/nojoin-demo.gif)
+<!-- Demo Videos -->
+https://github.com/user-attachments/assets/27324ab4-4ad0-42cb-b723-69dfaa03cf10
+
+https://github.com/user-attachments/assets/c7a7e07c-ada5-441f-a8a2-18a67eeb14a9
 
 ---
 
