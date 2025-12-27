@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { exportBackup, importBackup } from '@/lib/api';
+import { importBackup } from '@/lib/api';
 import { Download, Upload, Loader2, CheckCircle, X, FileArchive, Trash2, AlertOctagon, AlertTriangle } from 'lucide-react';
 import RestoreOptionsModal from '@/components/settings/RestoreOptionsModal';
-import { BackupOptionsModal } from '@/components/settings/BackupOptionsModal';
+import BackupOptionsModal from '@/components/settings/BackupOptionsModal';
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
@@ -15,7 +15,6 @@ const formatFileSize = (bytes: number): string => {
 };
 
 export default function BackupRestore() {
-  const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isValidZip, setIsValidZip] = useState<boolean>(false);
@@ -30,30 +29,6 @@ export default function BackupRestore() {
 
   const handleExportClick = () => {
     setShowBackupOptions(true);
-  };
-
-  const performExport = async (includeAudio: boolean) => {
-    try {
-      setShowBackupOptions(false);
-      setExporting(true);
-      setMessage(null);
-      const blob = await exportBackup(includeAudio);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nojoin_backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}${includeAudio ? '' : '_no_audio'}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      setMessage({ type: 'success', text: 'Backup exported successfully.' });
-    } catch (error: any) {
-      console.error('Export failed:', error);
-      const errorMsg = error.response?.data?.detail || 'Failed to export backup';
-      setMessage({ type: 'error', text: errorMsg });
-    } finally {
-      setExporting(false);
-    }
   };
 
   const validateFile = (file: File): boolean => {
@@ -172,11 +147,10 @@ export default function BackupRestore() {
             </p>
             <button
               onClick={handleExportClick}
-              disabled={exporting}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
             >
-              {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              {exporting ? 'Exporting...' : 'Download Backup'}
+              <Download className="w-4 h-4 mr-2" />
+              Download Backup
             </button>
           </div>
 
@@ -307,8 +281,6 @@ export default function BackupRestore() {
       <BackupOptionsModal
         isOpen={showBackupOptions}
         onClose={() => setShowBackupOptions(false)}
-        onConfirm={performExport}
-        isLoading={exporting}
       />
     </div>
   );

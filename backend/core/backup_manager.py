@@ -118,8 +118,8 @@ class BackupManager:
         path_manager = PathManager() # Re-instantiate if needed, but easier to pass paths if they were simple strings. 
         # Actually PathManager is lightweight.
         
-        # Create a temporary file for the zip
-        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        # Create a temporary file for the zip explicitly in /tmp (which is mounted as volume)
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir="/tmp")
         temp_zip.close()
 
         try:

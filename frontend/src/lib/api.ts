@@ -753,11 +753,34 @@ export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey
 };
 
 // Backup & Restore
-export const exportBackup = async (includeAudio: boolean = true): Promise<Blob> => {
-  const response = await api.get(`/backup/export?include_audio=${includeAudio}`, {
+export const exportBackupAsync = async (includeAudio: boolean = true): Promise<{ task_id: string }> => {
+  const response = await api.post<{ task_id: string }>(`/backup/export?include_audio=${includeAudio}`);
+  return response.data;
+};
+
+export const getBackupStatus = async (taskId: string): Promise<{ state: string; status: string; result?: any }> => {
+  const response = await api.get<{ state: string; status: string; result?: any }>(`/backup/export/${taskId}`);
+  return response.data;
+};
+
+export const downloadBackupFile = async (taskId: string): Promise<void> => {
+  const response = await api.get(`/backup/export/${taskId}/download`, {
     responseType: 'blob',
   });
-  return response.data;
+
+  const blob = new Blob([response.data], { type: 'application/zip' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+
+  // Create filename with timestamp
+  const filename = `nojoin_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+  a.download = filename;
+
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 };
 
 export const importBackup = async (

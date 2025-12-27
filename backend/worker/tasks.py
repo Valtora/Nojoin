@@ -1364,3 +1364,31 @@ def index_transcript_task(self, recording_id: int):
     except Exception as e:
         logger.error(f"Failed to index transcript {recording_id}: {e}", exc_info=True)
 
+
+@celery_app.task(bind=True)
+def create_backup_task(self, include_audio: bool = True):
+    """
+    Background task to create a backup zip file.
+    Returns the path to the backup file.
+    """
+    from backend.core.backup_manager import BackupManager
+    import asyncio
+    
+    try:
+        logger.info(f"Starting backup task (include_audio={include_audio})")
+        self.update_state(state='PROCESSING', meta={'status': 'Creating backup...'})
+        
+        # BackupManager.create_backup is async, but we are in a sync celery task.
+        # We need to run it in an event loop.
+        # Since we are in a worker process, we can use asyncio.run
+        
+        zip_path = asyncio.run(BackupManager.create_backup(include_audio=include_audio))
+        
+        logger.info(f"Backup created successfully at {zip_path}")
+        return {"status": "success", "zip_path": zip_path}
+        
+    except Exception as e:
+        logger.error(f"Backup creation failed: {e}", exc_info=True)
+        self.update_state(state='FAILURE', meta={'error': str(e)})
+        # We re-raise so Celery marks it as failed
+        raise e

@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/lib/ThemeProvider";
 import { themeScript } from "@/lib/theme-script";
 import NotificationToast from "@/components/NotificationToast";
 import AuthGuard from "@/components/AuthGuard";
+import BackupPoller from "@/components/BackupPoller";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,6 +43,7 @@ export default function RootLayout({
             {children}
           </AuthGuard>
           <NotificationToast />
+          <BackupPoller />
         </ThemeProvider>
       </body>
     </html>
