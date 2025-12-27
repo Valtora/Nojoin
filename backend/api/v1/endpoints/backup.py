@@ -8,9 +8,12 @@ from datetime import datetime
 router = APIRouter()
 
 @router.get("/export", dependencies=[Depends(get_current_active_superuser)])
-async def export_backup(background_tasks: BackgroundTasks):
+async def export_backup(
+    background_tasks: BackgroundTasks,
+    include_audio: bool = Query(True, description="Include audio files in backup")
+):
     try:
-        zip_path = await BackupManager.create_backup()
+        zip_path = await BackupManager.create_backup(include_audio=include_audio)
         
         # Clean up file after sending
         background_tasks.add_task(os.remove, zip_path)

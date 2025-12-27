@@ -753,8 +753,8 @@ export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey
 };
 
 // Backup & Restore
-export const exportBackup = async (): Promise<Blob> => {
-  const response = await api.get('/backup/export', {
+export const exportBackup = async (includeAudio: boolean = true): Promise<Blob> => {
+  const response = await api.get(`/backup/export?include_audio=${includeAudio}`, {
     responseType: 'blob',
   });
   return response.data;

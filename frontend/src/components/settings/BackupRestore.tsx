@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { exportBackup, importBackup } from '@/lib/api';
 import { Download, Upload, Loader2, CheckCircle, X, FileArchive, Trash2, AlertOctagon, AlertTriangle } from 'lucide-react';
 import RestoreOptionsModal from '@/components/settings/RestoreOptionsModal';
+import { BackupOptionsModal } from '@/components/settings/BackupOptionsModal';
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
@@ -22,19 +23,25 @@ export default function BackupRestore() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
+  const [showBackupOptions, setShowBackupOptions] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  const handleExport = async () => {
+  const handleExportClick = () => {
+    setShowBackupOptions(true);
+  };
+
+  const performExport = async (includeAudio: boolean) => {
     try {
+      setShowBackupOptions(false);
       setExporting(true);
       setMessage(null);
-      const blob = await exportBackup();
+      const blob = await exportBackup(includeAudio);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `nojoin_backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}.zip`;
+      a.download = `nojoin_backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}${includeAudio ? '' : '_no_audio'}.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -164,7 +171,7 @@ export default function BackupRestore() {
               </span>
             </p>
             <button
-              onClick={handleExport}
+              onClick={handleExportClick}
               disabled={exporting}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
             >
@@ -296,6 +303,12 @@ export default function BackupRestore() {
         onClose={() => setShowRestoreOptions(false)}
         onConfirm={performRestore}
         fileName={selectedFile?.name || 'backup.zip'}
+      />
+      <BackupOptionsModal
+        isOpen={showBackupOptions}
+        onClose={() => setShowBackupOptions(false)}
+        onConfirm={performExport}
+        isLoading={exporting}
       />
     </div>
   );
