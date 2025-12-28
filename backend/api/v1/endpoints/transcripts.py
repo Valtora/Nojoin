@@ -1016,7 +1016,6 @@ async def chat_with_meeting(
     provider = user_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
     api_key = user_settings.get(f"{provider}_api_key")
     model = user_settings.get(f"{provider}_model")
-    custom_instructions = user_settings.get("chat_custom_instructions")
     
     if not api_key and provider != "ollama":
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
@@ -1038,7 +1037,6 @@ async def chat_with_meeting(
                 meeting_notes=meeting_notes,
                 diarized_transcript=None, # Will be fetched inside using recording_id
                 conversation_history=formatted_history,
-                custom_instructions=custom_instructions,
                 recording_id=recording_id
             )
             

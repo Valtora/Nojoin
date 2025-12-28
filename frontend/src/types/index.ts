@@ -135,7 +135,7 @@ export interface Settings {
   auto_infer_speakers?: boolean;
   enable_vad?: boolean;
   enable_diarization?: boolean;
-  chat_custom_instructions?: string;
+
   [key: string]: any;
 }
 

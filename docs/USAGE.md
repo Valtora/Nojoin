@@ -110,7 +110,25 @@ Audio processing occurs asynchronously on the server.
 - **Synced Transcript:** Clicking text seeks audio. Text highlights during playback.
 - **Edit Mode:** Correct transcript text and speaker assignments in the browser.
 
+### Backup & Restore
+
+Nojoin includes a comprehensive backup system located in **Settings > Backup & Restore**.
+
+- **Create Backup:**
+  - Generates a ZIP archive containing the database, configuration, and audio files.
+  - **Options:**
+    - **Include Audio:** Toggle to include or exclude audio files. Audio is automatically compressed to Opus format to reduce backup size.
+- **Restore Backup:**
+  - Upload a previously created backup file.
+  - **Conflict Resolution:** Choose how to handle data that already exists (Skip, Overwrite).
+  - **Selective Restore:** The system intelligently merges data, ensuring no data loss for existing users unless overwrite is explicitly selected.
+- **Redaction:** Sensitive keys (API keys, etc.) are redacted from backups for security. You may need to re-enter them after restoration if migrating to a new server.
+
 ### Settings & Configuration
 
 - **Server Settings:** Manage API keys, model selection, and storage paths.
+- **AI Settings:**
+  - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.
+  - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
+- **System Version:** The current version is displayed in the Settings header. If an update is available on GitHub, a notification will appear.

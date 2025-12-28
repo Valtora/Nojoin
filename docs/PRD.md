@@ -91,6 +91,20 @@ A lightweight system tray application responsible for audio capture on Windows.
   - **Backgrounds:** Gray-100 (`#f3f4f6`) for secondary backgrounds in light mode to differentiate from white containers.
 - **Theme:** Fully responsive Light and Dark modes with semantic color mapping.
 
+### 2.7 Backup System
+
+- **Strategy:** Zip-based export containing:
+  - **Database:** JSON dumps of all tables.
+  - **Audio:** Original audio files compressed to Opus format to save space.
+  - **Config:** System configuration (redacted).
+- **Security:**
+  - **Redaction:** Sensitive data (API keys, passwords, authentication tokens) is automatically redacted from the backup.
+  - **Ownership:** Backups include user mapping to ensure correct ownership upon restoration.
+- **Flexibility:**
+  - **Smart Deduplication:** Audio files are identified by hash to prevent duplication.
+  - **Additive Restore:** Can merge data into an existing installation.
+  - **Conflict Resolution:** Options to skip, overwrite, or create copies of conflicting data.
+
 ---
 
 ## 3. Core Features
@@ -111,6 +125,7 @@ The system provides the following core capabilities:
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
 - **Settings:** Comprehensive server and user configuration.
+- **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.
 
 ---
 

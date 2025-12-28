@@ -2,7 +2,7 @@ import { useTheme, Theme } from '@/lib/ThemeProvider';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { GENERAL_KEYWORDS } from './keywords';
 import { Settings } from '@/types';
-import { Brain, Mic, Activity, Users, FileText, Type, Info, MessageSquare } from 'lucide-react';
+import { Brain, Mic, Activity, Users, FileText, Type, Info } from 'lucide-react';
 import { Switch } from '../ui/Switch';
 import { useNavigationStore } from '@/lib/store';
 import { seedDemoData } from '@/lib/api';
@@ -191,30 +191,7 @@ export default function GeneralSettings({ settings, onUpdate, searchQuery = '', 
       )}
 
       {/* Custom Instructions (Moved from AI Settings) */}
-      <div>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-blue-500" /> LLM Customization
-        </h3>
-        <div className="max-w-2xl">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-            Custom Instructions
-          </label>
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3 text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
-            <Info className="w-4 h-4 flex-shrink-0" />
-            <span>These instructions are appended to every prompt sent to the LLM. Use this to define a custom persona or specific formatting rules.</span>
-          </div>
-          <textarea
-            value={settings.chat_custom_instructions || ''}
-            onChange={(e) => onUpdate({ ...settings, chat_custom_instructions: e.target.value })}
-            className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none min-h-[100px] text-sm transition-all"
-            placeholder="E.g., You are a helpful meeting assistant. Always summarize key decisions first..."
-            maxLength={1000}
-          />
-          <p className="text-xs text-gray-500 mt-1 text-right">
-            {settings.chat_custom_instructions?.length || 0}/1000
-          </p>
-        </div>
-      </div>
+
     </div>
   );
 }

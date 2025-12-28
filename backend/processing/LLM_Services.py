@@ -41,7 +41,7 @@ class LLMBackend:
         notes = self.generate_meeting_notes(transcript, mapping, prompt_template, timeout)
         return mapping, notes
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         """
         Ask a question about the meeting.
         """
@@ -50,7 +50,7 @@ class LLMBackend:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
         """
         Ask a question about the meeting and yield response chunks.
         """
@@ -72,7 +72,7 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def _build_chat_prompt(self, user_question: str, meeting_notes: str, diarized_transcript: str, custom_instructions: str = None) -> str:
+    def _build_chat_prompt(self, user_question: str, meeting_notes: str, diarized_transcript: str) -> str:
         base_prompt = f"""
 You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
@@ -85,8 +85,7 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
 # Full Diarized Transcript:
 {diarized_transcript}
 """
-        if custom_instructions:
-            base_prompt += f"\n# Custom User Instructions:\n{custom_instructions}\n"
+
 
         base_prompt += f"\nUser Question: {user_question}\n"
         return base_prompt
@@ -415,12 +414,12 @@ class GeminiLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         contents = []
         if conversation_history:
@@ -438,11 +437,11 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
             
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         contents = []
         if conversation_history:
@@ -617,11 +616,11 @@ class OpenAILLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
@@ -644,11 +643,11 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
             
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
@@ -848,12 +847,12 @@ class AnthropicLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
@@ -876,11 +875,11 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
@@ -1062,11 +1061,11 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (meeting notes): {e}")
             raise RuntimeError(f"Ollama API error (meeting notes): {e}")
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
@@ -1093,11 +1092,11 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (chat): {e}")
             raise RuntimeError(f"Ollama API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, custom_instructions: str = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
             
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript, custom_instructions)
+        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
         
         messages = []
         if conversation_history:
