@@ -326,7 +326,7 @@ def process_recording_task(self, recording_id: int):
                 
                 # Get backend and run inference
                 backend = get_llm_backend(llm_provider, api_key=llm_api_key, model=llm_model)
-                inferred_mapping = backend.infer_speakers(transcript_for_llm)
+                inferred_mapping = backend.infer_speakers(transcript_for_llm, timeout=300)
                 logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
                 
             except Exception as e:
@@ -572,7 +572,8 @@ def process_recording_task(self, recording_id: int):
                     
                     llm = get_llm_backend(provider, api_key=api_key, model=model)
                     # We pass empty mapping because names are already resolved in transcript_text
-                    notes = llm.generate_meeting_notes(transcript_text, {})
+                    # Use a generous timeout (300s) for meeting notes generation as it can be slow
+                    notes = llm.generate_meeting_notes(transcript_text, {}, timeout=300)
                     transcript.notes = notes
                     transcript.notes_status = "completed"
                     session.add(transcript)

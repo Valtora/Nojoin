@@ -560,7 +560,13 @@ class OpenAILLMBackend(LLMBackend):
         try:
             models = self.client.models.list()
             # Filter for gpt models to avoid clutter (dall-e, whisper, etc)
-            model_list = [m.id for m in models if "gpt" in m.id and "audio" not in m.id and "realtime" not in m.id]
+            # Also exclude models not supported by chat endpoint if possible, but it's hard to know for sure.
+            model_list = []
+            for m in models:
+                if "gpt" in m.id and "audio" not in m.id and "realtime" not in m.id:
+                    model_list.append(m.id)
+                elif "o1" in m.id: # Add support for reasoning models
+                    model_list.append(m.id)
             return sorted(model_list)
         except Exception as e:
             logger.error(f"OpenAI API error (list models): {e}")
@@ -577,16 +583,24 @@ class OpenAILLMBackend(LLMBackend):
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
-            response = self.client.chat.completions.create(
+            stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                timeout=timeout
+                timeout=timeout,
+                stream=True
             )
-            text = response.choices[0].message.content
+            text_chunks = []
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    text_chunks.append(chunk.choices[0].delta.content)
+            text = "".join(text_chunks)
             mapping = self.parse_mapping_table(text)
             return mapping
         except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (speaker mapping): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (speaker mapping): {e}")
             raise RuntimeError(f"OpenAI API error (speaker mapping): {e}")
 
@@ -601,16 +615,24 @@ class OpenAILLMBackend(LLMBackend):
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
-            response = self.client.chat.completions.create(
+            stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                timeout=timeout
+                timeout=timeout,
+                stream=True
             )
-            text = response.choices[0].message.content
+            text_chunks = []
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    text_chunks.append(chunk.choices[0].delta.content)
+            text = "".join(text_chunks)
             notes = self.parse_notes(text)
             return notes
         except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (meeting notes): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (meeting notes): {e}")
             raise RuntimeError(f"OpenAI API error (meeting notes): {e}")
 
@@ -626,8 +648,12 @@ class OpenAILLMBackend(LLMBackend):
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") and msg.get("parts"):
+                    role = msg["role"]
+                    # Map 'model' to 'assistant' for OpenAI compatibility
+                    if role == "model":
+                        role = "assistant"
                     for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
+                        messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
@@ -640,6 +666,9 @@ class OpenAILLMBackend(LLMBackend):
             )
             return response.choices[0].message.content
         except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (chat): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
 
@@ -653,8 +682,12 @@ class OpenAILLMBackend(LLMBackend):
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") and msg.get("parts"):
+                    role = msg["role"]
+                    # Map 'model' to 'assistant' for OpenAI compatibility
+                    if role == "model":
+                        role = "assistant"
                     for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
+                        messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         
         tools = [{
@@ -685,7 +718,9 @@ class OpenAILLMBackend(LLMBackend):
         }
         
         # Skip temperature for reasoning models (OpenAI) that enforce default temperature
-        if not (self.model.startswith("gpt") in self.model):
+        # Reasoning models (e.g. o1) do not support temperature.
+        # Traditional GPT models (gpt-4, gpt-3.5) do.
+        if self.model.startswith("gpt") or "gpt" in self.model:
             request_kwargs["temperature"] = 0.2
         
         try:
@@ -731,6 +766,9 @@ class OpenAILLMBackend(LLMBackend):
                         logger.error("Failed to parse tool arguments for update_meeting_notes")
 
         except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (streaming chat): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (streaming chat): {e}")
             raise RuntimeError(f"OpenAI API error (streaming chat): {e}")
 
@@ -754,6 +792,9 @@ class OpenAILLMBackend(LLMBackend):
             title = self.parse_title(response.choices[0].message.content)
             return title
         except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (meeting title): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
 
