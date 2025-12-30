@@ -14,12 +14,13 @@ export default function DashboardLayout({
 }>) {
   const pathname = usePathname();
   const isSettingsPage = pathname?.startsWith('/settings');
+  const isPeoplePage = pathname?.startsWith('/people');
 
   return (
     <div className="flex h-screen w-full">
       <TourGuide />
       <MainNav />
-      {!isSettingsPage && <Sidebar />}
+      {!isSettingsPage && !isPeoplePage && <Sidebar />}
       
       <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">
         <TopBar />

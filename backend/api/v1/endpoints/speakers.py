@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -7,7 +7,8 @@ from sqlmodel import select
 from pydantic import BaseModel
 
 from backend.api.deps import get_db, get_current_user
-from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeakerUpdate, GlobalSpeakerWithCount, RecordingSpeaker
+from backend.models.people_tag_schemas import PeopleTagRead
+from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeakerUpdate, GlobalSpeakerWithCount, RecordingSpeaker, GlobalSpeakerCreate
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -49,95 +50,132 @@ class VoiceprintResult(BaseModel):
     matched_speaker: Optional[dict] = None  # {id, name, similarity_score}
     message: Optional[str] = None
 
-class GlobalSpeakerWithCount(BaseModel):
-    """Global speaker with recording count."""
-    id: int
-    name: str
-    has_voiceprint: bool
-    recording_count: int
-    created_at: str
-    updated_at: str
-
-class SpeakerColorUpdate(BaseModel):
-    color: str
-
-@router.get("", response_model=List[GlobalSpeakerWithCount])
-async def read_speakers_root(
-    skip: int = 0,
-    limit: int = 100,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Retrieve global speakers (root path).
-    """
-    return await read_speakers(skip=skip, limit=limit, db=db, current_user=current_user)
-
 @router.get("/", response_model=List[GlobalSpeakerWithCount])
 async def list_global_speakers(
     skip: int = 0,
     limit: int = 100,
+    q: Optional[str] = None,
+    tags: Optional[List[int]] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    List all global speakers with their recording association counts.
+    List all global speakers (People) with filtering.
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
+    from sqlalchemy.orm import selectinload
+    from backend.models.people_tag import PeopleTagLink
     
     # Query with left join to count recordings
-    statement = (
+    query = (
         select(
             GlobalSpeaker,
             func.count(RecordingSpeaker.id).label('recording_count')
         )
         .outerjoin(RecordingSpeaker, GlobalSpeaker.id == RecordingSpeaker.global_speaker_id)
         .where(GlobalSpeaker.user_id == current_user.id)
-        .group_by(GlobalSpeaker.id)
-        .order_by(GlobalSpeaker.name)
-        .offset(skip)
-        .limit(limit)
+    )
+
+    if q:
+        search_term = f"%{q}%"
+        query = query.where(
+            or_(
+                GlobalSpeaker.name.ilike(search_term),
+                GlobalSpeaker.email.ilike(search_term),
+                GlobalSpeaker.company.ilike(search_term),
+                GlobalSpeaker.notes.ilike(search_term),
+                GlobalSpeaker.title.ilike(search_term)
+            )
+        )
+        
+    if tags:
+        # Filter by tags (has ANY of the tags)
+        query = query.join(GlobalSpeaker.tag_links).where(PeopleTagLink.tag_id.in_(tags))
+
+    query = query.group_by(GlobalSpeaker.id).order_by(GlobalSpeaker.name).offset(skip).limit(limit)
+    
+    # Ensure tag_links and tag are loaded using selectinload for consistency
+    query = query.options(
+        selectinload(GlobalSpeaker.tag_links).selectinload(PeopleTagLink.tag)
     )
     
-    result = await db.execute(statement)
+    result = await db.execute(query)
     rows = result.all()
     
     # Build response
     speakers_with_counts = []
     for row in rows:
-        speaker = row[0]
+        speaker: GlobalSpeaker = row[0]
         count = row[1]
+        
+        # Build tag list
+        tag_list = []
+        for link in speaker.tag_links:
+            if link.tag:
+                tag_list.append(PeopleTagRead(
+                    id=link.tag.id,
+                    name=link.tag.name,
+                    color=link.tag.color,
+                    parent_id=link.tag.parent_id
+                ))
+        
         speakers_with_counts.append(GlobalSpeakerWithCount(
             id=speaker.id,
             name=speaker.name,
+            color=speaker.color,
             has_voiceprint=speaker.has_voiceprint,
             recording_count=count,
             created_at=speaker.created_at.isoformat(),
-            updated_at=speaker.updated_at.isoformat()
+            updated_at=speaker.updated_at.isoformat(),
+            title=speaker.title,
+            company=speaker.company,
+            email=speaker.email,
+            phone_number=speaker.phone_number,
+            notes=speaker.notes,
+            tags=tag_list
         ))
     
     return speakers_with_counts
 
 @router.post("/", response_model=GlobalSpeaker)
 async def create_global_speaker(
-    name: str,
+    speaker_in: GlobalSpeakerCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Create a new global speaker manually.
+    Create a new global speaker (Person).
     """
     # Check if exists
-    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == name, GlobalSpeaker.user_id == current_user.id)
+    statement = select(GlobalSpeaker).where(GlobalSpeaker.name == speaker_in.name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
     existing = result.scalar_one_or_none()
     if existing:
-        raise HTTPException(status_code=400, detail="Speaker already exists")
+        raise HTTPException(status_code=400, detail=f"A person with the name '{speaker_in.name}' already exists in your library.")
         
-    speaker = GlobalSpeaker(name=name, user_id=current_user.id)
+    import backend.models.people_tag as pt
+
+    speaker = GlobalSpeaker(
+        name=speaker_in.name, 
+        user_id=current_user.id,
+        color=speaker_in.color,
+        title=speaker_in.title,
+        company=speaker_in.company,
+        email=speaker_in.email,
+        phone_number=speaker_in.phone_number,
+        notes=speaker_in.notes
+    )
     db.add(speaker)
     await db.commit()
     await db.refresh(speaker)
+    
+    if speaker_in.tag_ids:
+        for tag_id in speaker_in.tag_ids:
+            link = pt.PeopleTagLink(global_speaker_id=speaker.id, tag_id=tag_id)
+            db.add(link)
+        await db.commit()
+        await db.refresh(speaker)
+        
     return speaker
 
 @router.put("/recordings/{recording_id}", response_model=List[RecordingSpeaker])
@@ -202,9 +240,39 @@ async def update_recording_speaker(
                 db.add(global_speaker)
         else:
             # Set as local name only (not promoted to global)
-            rs.local_name = update.global_speaker_name
-            rs.global_speaker_id = None
-            rs.name = None  # Deprecated field
+            # WAIT: Requirement change -> Auto-promote if name is not generic
+            
+            import re
+            # Check if name is generic (Speaker X, Unknown, etc.)
+            is_generic = False
+            placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
+            if placeholder_pattern.match(update.global_speaker_name):
+                is_generic = True
+            
+            if not is_generic:
+                # Name is specific (e.g. "John Doe")
+                # Create new Global Speaker automatically
+                new_gs = GlobalSpeaker(
+                    name=update.global_speaker_name,
+                    embedding=rs.embedding,
+                    user_id=current_user.id
+                )
+                db.add(new_gs)
+                await db.flush() # Get ID
+                
+                rs.global_speaker_id = new_gs.id
+                rs.local_name = None
+                rs.name = None # Deprecated
+            else:
+                # Generic name, keep local
+                rs.local_name = update.global_speaker_name
+                rs.global_speaker_id = None
+                rs.name = None  # Deprecated field
+                
+            # If we just created it, we should theoretically loop back to merge/update embeddings?
+            # But here `new_gs` is fresh. If there were other recordings with "John Doe" local_name, they aren't automatically linked here.
+            # That's acceptable for now - this ensures *future* or *current* rename works.
+            # Ideally we'd search for other local occurrences, but that's expensive.
         
         db.add(rs)
 
@@ -369,35 +437,67 @@ async def merge_speakers(
 @router.put("/{speaker_id}", response_model=GlobalSpeaker)
 async def update_global_speaker(
     speaker_id: int,
-    name: str,
+    speaker_in: GlobalSpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Rename a global speaker.
+    Update a global speaker (Person).
     """
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
-    # Check name uniqueness
-    stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == name, GlobalSpeaker.user_id == current_user.id)
-    result = await db.execute(stmt)
-    existing = result.scalar_one_or_none()
-    if existing and existing.id != speaker_id:
-        raise HTTPException(status_code=400, detail="Speaker name already exists")
+    if speaker_in.name is not None and speaker_in.name != speaker.name:
+        # Check name uniqueness
+        stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == speaker_in.name, GlobalSpeaker.user_id == current_user.id)
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing and existing.id != speaker_id:
+            raise HTTPException(status_code=400, detail="Speaker name already exists")
+        speaker.name = speaker_in.name
         
-    speaker.name = name
-    db.add(speaker)
-    
-    # Propagate to RecordingSpeakers
-    stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
-    result = await db.execute(stmt)
-    linked_speakers = result.scalars().all()
-    for rs in linked_speakers:
-        rs.name = name
-        db.add(rs)
+        # Propagate name change to RecordingSpeakers
+        stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
+        result = await db.execute(stmt)
+        linked_speakers = result.scalars().all()
+        for rs in linked_speakers:
+            rs.name = speaker_in.name
+            db.add(rs)
 
+    if speaker_in.color is not None:
+        speaker.color = speaker_in.color
+        
+    # CRM Fields
+    if speaker_in.title is not None: speaker.title = speaker_in.title
+    if speaker_in.company is not None: speaker.company = speaker_in.company
+    if speaker_in.email is not None: speaker.email = speaker_in.email
+    if speaker_in.phone_number is not None: speaker.phone_number = speaker_in.phone_number
+    if speaker_in.notes is not None: speaker.notes = speaker_in.notes
+    
+    if speaker_in.tag_ids is not None:
+        # Update tags: Clear existing and add new
+        # Note: This is a full replacement strategy
+        from backend.models.people_tag import PeopleTagLink
+        stmt = select(PeopleTagLink).where(PeopleTagLink.global_speaker_id == speaker_id)
+        result = await db.execute(stmt)
+        existing_links = result.scalars().all()
+        
+        existing_tag_ids = {link.tag_id for link in existing_links}
+        new_tag_ids = set(speaker_in.tag_ids)
+        
+        # Remove tags not in new list
+        for link in existing_links:
+            if link.tag_id not in new_tag_ids:
+                await db.delete(link)
+                
+        # Add new tags
+        for tag_id in new_tag_ids:
+            if tag_id not in existing_tag_ids:
+                link = PeopleTagLink(global_speaker_id=speaker_id, tag_id=tag_id)
+                db.add(link)
+        
+    db.add(speaker)
     await db.commit()
     await db.refresh(speaker)
     return speaker
@@ -416,12 +516,6 @@ async def delete_global_speaker(
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
-    # The relationship is set to nullify on delete by default in SQLModel/SQLAlchemy 
-    # if nullable=True (which it is), but let's be explicit if needed.
-    # Actually, we defined the relationship in models/speaker.py.
-    # Let's just delete and let the DB handle the foreign key set null if configured,
-    # or we manually nullify.
-    
     # Manually nullify to be safe and preserve name
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
     result = await db.execute(stmt)
@@ -436,6 +530,25 @@ async def delete_global_speaker(
         
     await db.delete(speaker)
     await db.commit()
+
+@router.delete("/{speaker_id}/embedding")
+async def delete_global_speaker_embedding(
+    speaker_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete voiceprint (embedding) for a global speaker.
+    Does not delete the speaker itself.
+    """
+    speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not speaker or speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+        
+    speaker.embedding = None
+    db.add(speaker)
+    await db.commit()
+    return {"ok": True}
 
 @router.post("/recordings/{recording_id}/merge", response_model=Recording)
 async def merge_recording_speakers(
@@ -980,6 +1093,9 @@ async def extract_all_voiceprints(
         "results": results,
         "all_global_speakers": all_speakers_list
     }
+
+class SpeakerColorUpdate(BaseModel):
+    color: str
 
 @router.put("/recordings/{recording_id}/speakers/{label}/color", response_model=dict)
 async def update_speaker_color(

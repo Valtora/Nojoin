@@ -25,7 +25,7 @@ export default function UsersTab() {
     // Edit User State
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
-    const [editForm, setEditForm] = useState<Partial<User>>({});
+    const [editForm, setEditForm] = useState<Partial<User> & { password?: string }>({});
 
     // Delete User State
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -94,7 +94,7 @@ export default function UsersTab() {
 
     const startEdit = (user: User) => {
         setEditingUser(user);
-        setEditForm({ username: user.username, role: user.role, is_active: user.is_active });
+        setEditForm({ username: user.username, role: user.role, is_active: user.is_active, password: '' });
         setEditModalOpen(true);
     };
 
@@ -103,8 +103,12 @@ export default function UsersTab() {
         if (!editingUser) return;
 
         try {
-            const updates = { ...editForm };
+            const updates: any = { ...editForm };
             if (updates.username) updates.username = trimString(updates.username);
+            // Only send password if it's not empty
+            if (!updates.password || updates.password.trim() === '') {
+                delete updates.password;
+            }
             await updateUser(editingUser.id, updates);
             addNotification({ message: 'User updated successfully', type: 'success' });
             setEditModalOpen(false);
@@ -263,6 +267,19 @@ export default function UsersTab() {
                                 <input
                                     value={editForm.username || ''}
                                     onChange={e => setEditForm({ ...editForm, username: e.target.value })}
+                                    className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    New Password <span className="text-gray-400 font-normal">(Leave blank to keep current)</span>
+                                </label>
+                                <input
+                                    type="password"
+                                    value={editForm.password || ''}
+                                    onChange={e => setEditForm({ ...editForm, password: e.target.value })}
+                                    placeholder="Enter new password"
                                     className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 />
                             </div>

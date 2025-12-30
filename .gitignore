@@ -9,12 +9,14 @@ backend/tests/__pycache__/
 
 # Environment
 /.venv
-# User data directory, also contains the config.json file which may have sensitive info
+# User data directory when building from source or developing, also contains the config.json file which may have sensitive info
 /data
 
-# IDE files
+# IDE and AI/Agent
 *.mdc
 /.vscode
+.github/copilot-instructions.md
+.agent/*
 
 # Logs
 *.log
@@ -38,9 +40,6 @@ companion/src-tauri/schemas/
 # Node modules
 node_modules/
 
-# Personal Documentation
-companion/config.json
-
 # Security / Certificates
 *.key
 *.sig
@@ -54,5 +53,4 @@ nginx/*.pem
 
 # Audio Files
 *.wav
-.github/copilot-instructions.md
-.agent/*
+*.opus

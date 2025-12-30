@@ -1,20 +1,37 @@
-import axios from 'axios';
-import { Recording, GlobalSpeaker, Settings, Tag, TranscriptSegment, VoiceprintExtractResult, VoiceprintApplyResult, BatchVoiceprintResponse, RecordingSpeaker, ChatMessage, User, Invitation, DownloadProgress, SystemModelStatus, VersionInfo } from '@/types';
+import axios from "axios";
+import {
+  Recording,
+  GlobalSpeaker,
+  Settings,
+  Tag,
+  TranscriptSegment,
+  VoiceprintExtractResult,
+  VoiceprintApplyResult,
+  BatchVoiceprintResponse,
+  RecordingSpeaker,
+  ChatMessage,
+  User,
+  Invitation,
+  DownloadProgress,
+  SystemModelStatus,
+  VersionInfo,
+  PeopleTag,
+} from "@/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
-  : 'https://localhost:14443/api/v1';
+  : "https://localhost:14443/api/v1";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,22 +43,38 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.includes("/login")
+      ) {
+        window.location.href = "/login";
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
-export const login = async (username: string, password: string): Promise<{ access_token: string, force_password_change: boolean, is_superuser: boolean, username: string }> => {
+export const login = async (
+  username: string,
+  password: string,
+): Promise<{
+  access_token: string;
+  force_password_change: boolean;
+  is_superuser: boolean;
+  username: string;
+}> => {
   const formData = new FormData();
-  formData.append('username', username);
-  formData.append('password', password);
+  formData.append("username", username);
+  formData.append("password", password);
 
-  const response = await api.post<{ access_token: string, force_password_change: boolean, is_superuser: boolean, username: string }>('/login/access-token', formData, {
+  const response = await api.post<{
+    access_token: string;
+    force_password_change: boolean;
+    is_superuser: boolean;
+    username: string;
+  }>("/login/access-token", formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
+      "Content-Type": "multipart/form-data",
     },
   });
   return response.data;
@@ -59,26 +92,32 @@ export interface RecordingFilters {
   only_deleted?: boolean;
 }
 
-export const getRecordings = async (filters?: RecordingFilters): Promise<Recording[]> => {
+export const getRecordings = async (
+  filters?: RecordingFilters,
+): Promise<Recording[]> => {
   const params = new URLSearchParams();
 
   if (filters) {
-    if (filters.q) params.append('q', filters.q);
-    if (filters.start_date) params.append('start_date', filters.start_date);
-    if (filters.end_date) params.append('end_date', filters.end_date);
+    if (filters.q) params.append("q", filters.q);
+    if (filters.start_date) params.append("start_date", filters.start_date);
+    if (filters.end_date) params.append("end_date", filters.end_date);
     if (filters.speaker_ids) {
-      filters.speaker_ids.forEach(id => params.append('speaker_ids', id.toString()));
+      filters.speaker_ids.forEach((id) =>
+        params.append("speaker_ids", id.toString()),
+      );
     }
     if (filters.tag_ids) {
-      filters.tag_ids.forEach(id => params.append('tag_ids', id.toString()));
+      filters.tag_ids.forEach((id) => params.append("tag_ids", id.toString()));
     }
-    if (filters.include_archived) params.append('include_archived', 'true');
-    if (filters.include_deleted) params.append('include_deleted', 'true');
-    if (filters.only_archived) params.append('only_archived', 'true');
-    if (filters.only_deleted) params.append('only_deleted', 'true');
+    if (filters.include_archived) params.append("include_archived", "true");
+    if (filters.include_deleted) params.append("include_deleted", "true");
+    if (filters.only_archived) params.append("only_archived", "true");
+    if (filters.only_deleted) params.append("only_deleted", "true");
   }
 
-  const response = await api.get<Recording[]>(`/recordings/?${params.toString()}`);
+  const response = await api.get<Recording[]>(
+    `/recordings/?${params.toString()}`,
+  );
   return response.data;
 };
 
@@ -91,7 +130,10 @@ export const deleteRecording = async (id: number): Promise<void> => {
   await api.delete(`/recordings/${id}`);
 };
 
-export const renameRecording = async (id: number, name: string): Promise<Recording> => {
+export const renameRecording = async (
+  id: number,
+  name: string,
+): Promise<Recording> => {
   const response = await api.patch<Recording>(`/recordings/${id}`, { name });
   return response.data;
 };
@@ -102,8 +144,8 @@ export const retryProcessing = async (id: number): Promise<Recording> => {
 };
 
 export const getRecordingStreamUrl = (id: number): string => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
     if (token) {
       return `${API_BASE_URL}/recordings/${id}/stream?token=${token}`;
     }
@@ -112,46 +154,92 @@ export const getRecordingStreamUrl = (id: number): string => {
 };
 
 // Speaker Management
-export const getGlobalSpeakers = async (): Promise<GlobalSpeaker[]> => {
-  const response = await api.get<GlobalSpeaker[]>('/speakers/');
+export interface GlobalSpeakerFilters {
+  q?: string;
+  tags?: number[];
+}
+
+export const getGlobalSpeakers = async (
+  filters?: GlobalSpeakerFilters,
+): Promise<GlobalSpeaker[]> => {
+  const params = new URLSearchParams();
+  if (filters) {
+    if (filters.q) params.append("q", filters.q);
+    if (filters.tags) {
+      filters.tags.forEach((id) => params.append("tags", id.toString()));
+    }
+  }
+  const response = await api.get<GlobalSpeaker[]>(
+    `/speakers/?${params.toString()}`,
+  );
   return response.data;
 };
 
-export const updateGlobalSpeaker = async (id: number, name: string): Promise<GlobalSpeaker> => {
-  const response = await api.put<GlobalSpeaker>(`/speakers/${id}?name=${encodeURIComponent(name)}`);
+export const createGlobalSpeaker = async (
+  data: Partial<GlobalSpeaker> & { tag_ids?: number[] },
+): Promise<GlobalSpeaker> => {
+  const response = await api.post<GlobalSpeaker>("/speakers/", data);
   return response.data;
 };
 
-export const mergeSpeakers = async (sourceId: number, targetId: number): Promise<GlobalSpeaker> => {
-  const response = await api.post<GlobalSpeaker>('/speakers/merge', {
+export const updateGlobalSpeaker = async (
+  id: number,
+  data: Partial<GlobalSpeaker> & { tag_ids?: number[] },
+): Promise<GlobalSpeaker> => {
+  const response = await api.put<GlobalSpeaker>(`/speakers/${id}`, data);
+  return response.data;
+};
+
+export const mergeSpeakers = async (
+  sourceId: number,
+  targetId: number,
+): Promise<GlobalSpeaker> => {
+  const response = await api.post<GlobalSpeaker>("/speakers/merge", {
     source_speaker_id: sourceId,
     target_speaker_id: targetId,
   });
   return response.data;
 };
 
+export const deleteGlobalSpeakerEmbedding = async (
+  id: number,
+): Promise<void> => {
+  await api.delete(`/speakers/${id}/embedding`);
+};
+
 export const deleteGlobalSpeaker = async (id: number): Promise<void> => {
   await api.delete(`/speakers/${id}`);
 };
 
-export const deleteGlobalSpeakerEmbedding = async (id: number): Promise<void> => {
-  await api.delete(`/speakers/${id}/embedding`);
-};
-
-export const updateSpeaker = async (recordingId: number, diarizationLabel: string, newName: string): Promise<void> => {
+export const updateSpeaker = async (
+  recordingId: number,
+  diarizationLabel: string,
+  newName: string,
+): Promise<void> => {
   await api.put(`/speakers/recordings/${recordingId}`, {
     diarization_label: diarizationLabel,
     global_speaker_name: newName,
   });
 };
 
-export const updateSpeakerColor = async (recordingId: number, label: string, color: string): Promise<void> => {
-  await api.put(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(label)}/color`, {
-    color,
-  });
+export const updateSpeakerColor = async (
+  recordingId: number,
+  label: string,
+  color: string,
+): Promise<void> => {
+  await api.put(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(label)}/color`,
+    {
+      color,
+    },
+  );
 };
 
-export const updateTranscriptSegmentSpeaker = async (recordingId: number, segmentIndex: number, newSpeakerName: string): Promise<void> => {
+export const updateTranscriptSegmentSpeaker = async (
+  recordingId: number,
+  segmentIndex: number,
+  newSpeakerName: string,
+): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}`, {
     new_speaker_name: newSpeakerName,
   });
@@ -159,30 +247,74 @@ export const updateTranscriptSegmentSpeaker = async (recordingId: number, segmen
 
 // Tags
 export const getTags = async (): Promise<Tag[]> => {
-  const response = await api.get<Tag[]>('/tags/');
+  const response = await api.get<Tag[]>("/tags/");
   return response.data;
 };
 
-export const createTag = async (name: string, color?: string, parent_id?: number): Promise<Tag> => {
-  const response = await api.post<Tag>('/tags/', { name, color, parent_id });
+export const createTag = async (
+  name: string,
+  color?: string,
+  parent_id?: number,
+): Promise<Tag> => {
+  const response = await api.post<Tag>("/tags/", { name, color, parent_id });
   return response.data;
 };
 
-export const updateTag = async (tagId: number, data: { name?: string; color?: string; parent_id?: number | null }): Promise<Tag> => {
+export const updateTag = async (
+  tagId: number,
+  data: { name?: string; color?: string; parent_id?: number | null },
+): Promise<Tag> => {
   const response = await api.patch<Tag>(`/tags/${tagId}`, data);
   return response.data;
 };
 
-export const addTagToRecording = async (recordingId: number, tagName: string): Promise<void> => {
+export const addTagToRecording = async (
+  recordingId: number,
+  tagName: string,
+): Promise<void> => {
   await api.post(`/tags/recordings/${recordingId}`, { name: tagName });
 };
 
-export const removeTagFromRecording = async (recordingId: number, tagName: string): Promise<void> => {
+export const removeTagFromRecording = async (
+  recordingId: number,
+  tagName: string,
+): Promise<void> => {
   await api.delete(`/tags/recordings/${recordingId}/${tagName}`);
 };
 
 export const deleteTag = async (id: number): Promise<void> => {
   await api.delete(`/tags/${id}`);
+};
+
+// People Tags
+export const getPeopleTags = async (): Promise<PeopleTag[]> => {
+  const response = await api.get<PeopleTag[]>("/people-tags/");
+  return response.data;
+};
+
+export const createPeopleTag = async (
+  name: string,
+  color?: string,
+  parent_id?: number,
+): Promise<PeopleTag> => {
+  const response = await api.post<PeopleTag>("/people-tags/", {
+    name,
+    color,
+    parent_id,
+  });
+  return response.data;
+};
+
+export const updatePeopleTag = async (
+  id: number,
+  data: { name?: string; color?: string; parent_id?: number },
+): Promise<PeopleTag> => {
+  const response = await api.patch<PeopleTag>(`/people-tags/${id}`, data);
+  return response.data;
+};
+
+export const deletePeopleTag = async (id: number): Promise<void> => {
+  await api.delete(`/people-tags/${id}`);
 };
 
 // Archive & Delete Management
@@ -207,52 +339,69 @@ export const permanentlyDeleteRecording = async (id: number): Promise<void> => {
 
 // Settings
 export const getSettings = async (): Promise<Settings> => {
-  const response = await api.get<Settings>('/settings');
+  const response = await api.get<Settings>("/settings");
   return response.data;
 };
 
 export const updateSettings = async (settings: Settings): Promise<Settings> => {
-  const response = await api.post<Settings>('/settings', settings);
+  const response = await api.post<Settings>("/settings", settings);
   return response.data;
 };
 
 // Transcript Text
-export const updateTranscriptSegmentText = async (recordingId: number, segmentIndex: number, text: string): Promise<void> => {
-  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, { text });
+export const updateTranscriptSegmentText = async (
+  recordingId: number,
+  segmentIndex: number,
+  text: string,
+): Promise<void> => {
+  await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, {
+    text,
+  });
 };
 
-export const findAndReplace = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
+export const findAndReplace = async (
+  recordingId: number,
+  find: string,
+  replace: string,
+  options: { caseSensitive?: boolean; useRegex?: boolean } = {},
+): Promise<void> => {
   await api.post(`/transcripts/${recordingId}/replace`, {
     find_text: find,
     replace_text: replace,
     case_sensitive: options.caseSensitive ?? false,
-    use_regex: options.useRegex ?? false
+    use_regex: options.useRegex ?? false,
   });
 };
 
-export type ExportContentType = 'transcript' | 'notes' | 'both';
-export type ExportFormat = 'txt' | 'pdf' | 'docx';
+export type ExportContentType = "transcript" | "notes" | "both";
+export type ExportFormat = "txt" | "pdf" | "docx";
 
-export const exportContent = async (recordingId: number, contentType: ExportContentType = 'transcript', format: ExportFormat = 'txt'): Promise<void> => {
-  console.log(`[exportContent] Initiating export for recording ${recordingId}, type: ${contentType}, format: ${format}`);
+export const exportContent = async (
+  recordingId: number,
+  contentType: ExportContentType = "transcript",
+  format: ExportFormat = "txt",
+): Promise<void> => {
+  console.log(
+    `[exportContent] Initiating export for recording ${recordingId}, type: ${contentType}, format: ${format}`,
+  );
   try {
     const response = await api.get(`/transcripts/${recordingId}/export`, {
       params: {
         content_type: contentType,
-        export_format: format
+        export_format: format,
       },
-      responseType: 'blob',
+      responseType: "blob",
     });
-    console.log('[exportContent] Response received, status:', response.status);
-    console.log('[exportContent] Headers:', response.headers);
+    console.log("[exportContent] Response received, status:", response.status);
+    console.log("[exportContent] Headers:", response.headers);
 
     // Create a link and click it to download
     const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
 
     // Extract filename from header if possible, or generate one
-    const contentDisposition = response.headers['content-disposition'];
+    const contentDisposition = response.headers["content-disposition"];
     let filename = `export-${recordingId}.${format}`;
 
     if (contentDisposition) {
@@ -262,73 +411,113 @@ export const exportContent = async (recordingId: number, contentType: ExportCont
         filename = filenameMatch[1];
       } else {
         // Try to match filename=name
-        const filenameSimpleMatch = contentDisposition.match(/filename=([^;]+)/);
+        const filenameSimpleMatch =
+          contentDisposition.match(/filename=([^;]+)/);
         if (filenameSimpleMatch && filenameSimpleMatch.length === 2) {
           filename = filenameSimpleMatch[1].trim();
         }
       }
     }
 
-    link.setAttribute('download', filename);
+    link.setAttribute("download", filename);
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
   } catch (error) {
-    console.error('[exportContent] Error during export:', error);
+    console.error("[exportContent] Error during export:", error);
     throw error;
   }
 };
 
 // Keep for backward compatibility
 export const exportTranscript = async (recordingId: number): Promise<void> => {
-  return exportContent(recordingId, 'transcript');
+  return exportContent(recordingId, "transcript");
 };
 
 // Meeting Notes API
-export const getNotes = async (recordingId: number): Promise<{ notes: string | null }> => {
-  const response = await api.get<{ notes: string | null }>(`/transcripts/${recordingId}/notes`);
+export const getNotes = async (
+  recordingId: number,
+): Promise<{ notes: string | null }> => {
+  const response = await api.get<{ notes: string | null }>(
+    `/transcripts/${recordingId}/notes`,
+  );
   return response.data;
 };
 
-export const updateNotes = async (recordingId: number, notes: string): Promise<{ notes: string; status: string }> => {
-  const response = await api.put<{ notes: string; status: string }>(`/transcripts/${recordingId}/notes`, { notes });
+export const updateNotes = async (
+  recordingId: number,
+  notes: string,
+): Promise<{ notes: string; status: string }> => {
+  const response = await api.put<{ notes: string; status: string }>(
+    `/transcripts/${recordingId}/notes`,
+    { notes },
+  );
   return response.data;
 };
 
-export const generateNotes = async (recordingId: number): Promise<{ notes: string; status: string }> => {
-  const response = await api.post<{ notes: string; status: string }>(`/transcripts/${recordingId}/notes/generate`);
+export const generateNotes = async (
+  recordingId: number,
+): Promise<{ notes: string; status: string }> => {
+  const response = await api.post<{ notes: string; status: string }>(
+    `/transcripts/${recordingId}/notes/generate`,
+  );
   return response.data;
 };
 
-export const findAndReplaceNotes = async (recordingId: number, find: string, replace: string, options: { caseSensitive?: boolean, useRegex?: boolean } = {}): Promise<void> => {
+export const findAndReplaceNotes = async (
+  recordingId: number,
+  find: string,
+  replace: string,
+  options: { caseSensitive?: boolean; useRegex?: boolean } = {},
+): Promise<void> => {
   // Use the main replace endpoint since it applies to both transcript and notes
   await api.post(`/transcripts/${recordingId}/replace`, {
     find_text: find,
     replace_text: replace,
     case_sensitive: options.caseSensitive ?? false,
-    use_regex: options.useRegex ?? false
+    use_regex: options.useRegex ?? false,
   });
 };
 
-export const mergeRecordingSpeakers = async (recordingId: number, targetSpeakerLabel: string, sourceSpeakerLabel: string): Promise<Recording> => {
-  const response = await api.post<Recording>(`/speakers/recordings/${recordingId}/merge`, {
-    target_speaker_label: targetSpeakerLabel,
-    source_speaker_label: sourceSpeakerLabel,
-  });
+export const mergeRecordingSpeakers = async (
+  recordingId: number,
+  targetSpeakerLabel: string,
+  sourceSpeakerLabel: string,
+): Promise<Recording> => {
+  const response = await api.post<Recording>(
+    `/speakers/recordings/${recordingId}/merge`,
+    {
+      target_speaker_label: targetSpeakerLabel,
+      source_speaker_label: sourceSpeakerLabel,
+    },
+  );
   return response.data;
 };
 
-export const deleteRecordingSpeaker = async (recordingId: number, diarizationLabel: string): Promise<void> => {
-  await api.delete(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}`);
+export const deleteRecordingSpeaker = async (
+  recordingId: number,
+  diarizationLabel: string,
+): Promise<void> => {
+  await api.delete(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}`,
+  );
 };
 
-export const promoteToGlobalSpeaker = async (recordingId: number, diarizationLabel: string): Promise<RecordingSpeaker> => {
-  const response = await api.post<RecordingSpeaker>(`/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/promote`);
+export const promoteToGlobalSpeaker = async (
+  recordingId: number,
+  diarizationLabel: string,
+): Promise<RecordingSpeaker> => {
+  const response = await api.post<RecordingSpeaker>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/promote`,
+  );
   return response.data;
 };
 
-export const updateTranscriptSegments = async (recordingId: number, segments: TranscriptSegment[]): Promise<void> => {
+export const updateTranscriptSegments = async (
+  recordingId: number,
+  segments: TranscriptSegment[],
+): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments`, { segments });
 };
 
@@ -340,7 +529,7 @@ export interface ImportAudioOptions {
 
 export const importAudio = async (
   file: File,
-  options?: ImportAudioOptions
+  options?: ImportAudioOptions,
 ): Promise<Recording> => {
   // Use chunked upload for all files to ensure reliability and bypass Cloudflare limits
   // Chunk size: 10MB
@@ -349,12 +538,13 @@ export const importAudio = async (
 
   // 1. Initialize Import
   const initParams = new URLSearchParams();
-  initParams.append('filename', file.name);
-  if (options?.name) initParams.append('name', options.name);
-  if (options?.recordedAt) initParams.append('recorded_at', options.recordedAt.toISOString());
+  initParams.append("filename", file.name);
+  if (options?.name) initParams.append("name", options.name);
+  if (options?.recordedAt)
+    initParams.append("recorded_at", options.recordedAt.toISOString());
 
   const initResponse = await api.post<Recording>(
-    `/recordings/import/chunked/init?${initParams.toString()}`
+    `/recordings/import/chunked/init?${initParams.toString()}`,
   );
   const recording = initResponse.data;
 
@@ -365,15 +555,15 @@ export const importAudio = async (
     const chunk = file.slice(start, end);
 
     const formData = new FormData();
-    formData.append('file', chunk);
+    formData.append("file", chunk);
 
     // Sequence is 1-based for consistency with backend logic
     await api.post(
       `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
       formData,
       {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
+        headers: { "Content-Type": "multipart/form-data" },
+      },
     );
 
     // Update progress
@@ -386,7 +576,7 @@ export const importAudio = async (
 
   // 3. Finalize Import
   const finalizeResponse = await api.post<Recording>(
-    `/recordings/import/chunked/finalize?recording_id=${recording.id}`
+    `/recordings/import/chunked/finalize?recording_id=${recording.id}`,
   );
 
   if (options?.onUploadProgress) {
@@ -397,7 +587,18 @@ export const importAudio = async (
 };
 
 export const getSupportedAudioFormats = (): string[] => {
-  return ['.wav', '.mp3', '.m4a', '.aac', '.webm', '.ogg', '.flac', '.mp4', '.wma', '.opus'];
+  return [
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".webm",
+    ".ogg",
+    ".flac",
+    ".mp4",
+    ".wma",
+    ".opus",
+  ];
 };
 
 export const getMaxUploadSizeMB = (): number => {
@@ -407,21 +608,25 @@ export const getMaxUploadSizeMB = (): number => {
 // Voiceprint Management
 export const extractVoiceprint = async (
   recordingId: number,
-  diarizationLabel: string
+  diarizationLabel: string,
 ): Promise<VoiceprintExtractResult> => {
   const response = await api.post<VoiceprintExtractResult>(
-    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint/extract`
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint/extract`,
   );
   return response.data;
 };
 
-export type VoiceprintAction = 'create_new' | 'link_existing' | 'local_only' | 'force_link';
+export type VoiceprintAction =
+  | "create_new"
+  | "link_existing"
+  | "local_only"
+  | "force_link";
 
 export const applyVoiceprintAction = async (
   recordingId: number,
   diarizationLabel: string,
   action: VoiceprintAction,
-  options?: { globalSpeakerId?: number; newSpeakerName?: string }
+  options?: { globalSpeakerId?: number; newSpeakerName?: string },
 ): Promise<VoiceprintApplyResult> => {
   const response = await api.post<VoiceprintApplyResult>(
     `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint/apply`,
@@ -429,71 +634,91 @@ export const applyVoiceprintAction = async (
       action,
       global_speaker_id: options?.globalSpeakerId,
       new_speaker_name: options?.newSpeakerName,
-    }
+    },
   );
   return response.data;
 };
 
 export const deleteVoiceprint = async (
   recordingId: number,
-  diarizationLabel: string
+  diarizationLabel: string,
 ): Promise<void> => {
   await api.delete(
-    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint`
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/voiceprint`,
   );
 };
 
 export const extractAllVoiceprints = async (
-  recordingId: number
+  recordingId: number,
 ): Promise<BatchVoiceprintResponse> => {
   const response = await api.post<BatchVoiceprintResponse>(
-    `/speakers/recordings/${recordingId}/voiceprints/extract-all`
+    `/speakers/recordings/${recordingId}/voiceprints/extract-all`,
   );
   return response.data;
 };
 
 // Batch Operations
 export const batchArchiveRecordings = async (ids: number[]): Promise<void> => {
-  await api.post('/recordings/batch/archive', { recording_ids: ids });
+  await api.post("/recordings/batch/archive", { recording_ids: ids });
 };
 
 export const batchRestoreRecordings = async (ids: number[]): Promise<void> => {
-  await api.post('/recordings/batch/restore', { recording_ids: ids });
+  await api.post("/recordings/batch/restore", { recording_ids: ids });
 };
 
-export const batchSoftDeleteRecordings = async (ids: number[]): Promise<void> => {
-  await api.post('/recordings/batch/soft-delete', { recording_ids: ids });
+export const batchSoftDeleteRecordings = async (
+  ids: number[],
+): Promise<void> => {
+  await api.post("/recordings/batch/soft-delete", { recording_ids: ids });
 };
 
-export const batchPermanentlyDeleteRecordings = async (ids: number[]): Promise<void> => {
-  await api.post('/recordings/batch/permanent', { recording_ids: ids });
+export const batchPermanentlyDeleteRecordings = async (
+  ids: number[],
+): Promise<void> => {
+  await api.post("/recordings/batch/permanent", { recording_ids: ids });
 };
 
-export const batchAddTagToRecordings = async (ids: number[], tagName: string): Promise<void> => {
-  await api.post('/tags/batch/add', { recording_ids: ids, tag_name: tagName });
+export const batchAddTagToRecordings = async (
+  ids: number[],
+  tagName: string,
+): Promise<void> => {
+  await api.post("/tags/batch/add", { recording_ids: ids, tag_name: tagName });
 };
 
-export const batchRemoveTagFromRecordings = async (ids: number[], tagName: string): Promise<void> => {
-  await api.post('/tags/batch/remove', { recording_ids: ids, tag_name: tagName });
+export const batchRemoveTagFromRecordings = async (
+  ids: number[],
+  tagName: string,
+): Promise<void> => {
+  await api.post("/tags/batch/remove", {
+    recording_ids: ids,
+    tag_name: tagName,
+  });
 };
 
 // System Setup
 export const getSystemStatus = async (): Promise<{ initialized: boolean }> => {
-  const response = await api.get<{ initialized: boolean }>('/system/status');
+  const response = await api.get<{ initialized: boolean }>("/system/status");
   return response.data;
 };
 
 export const setupSystem = async (data: any): Promise<void> => {
-  await api.post('/system/setup', data);
+  await api.post("/system/setup", data);
 };
 
 export const getDemoRecording = async (): Promise<{ id: number | null }> => {
-  const response = await api.get<{ id: number | null }>('/system/demo-recording');
+  const response = await api.get<{ id: number | null }>(
+    "/system/demo-recording",
+  );
   return response.data;
 };
 
-export const downloadModels = async (data: { hf_token?: string, whisper_model_size?: string }): Promise<{ task_id: string }> => {
-  const response = await api.post('/system/download-models', null, { params: data });
+export const downloadModels = async (data: {
+  hf_token?: string;
+  whisper_model_size?: string;
+}): Promise<{ task_id: string }> => {
+  const response = await api.post("/system/download-models", null, {
+    params: data,
+  });
   return response.data;
 };
 
@@ -502,66 +727,118 @@ export const getTaskStatus = async (taskId: string): Promise<any> => {
   return response.data;
 };
 
-export const validateLLM = async (provider: string, apiKey: string, apiUrl?: string, model?: string): Promise<{ valid: boolean, message?: string, models?: string[] }> => {
-  const response = await api.post<{ valid: boolean, message?: string, models?: string[] }>('/setup/validate-llm', { provider, api_key: apiKey, api_url: apiUrl, model });
+export const validateLLM = async (
+  provider: string,
+  apiKey: string,
+  apiUrl?: string,
+  model?: string,
+): Promise<{ valid: boolean; message?: string; models?: string[] }> => {
+  const response = await api.post<{
+    valid: boolean;
+    message?: string;
+    models?: string[];
+  }>("/setup/validate-llm", {
+    provider,
+    api_key: apiKey,
+    api_url: apiUrl,
+    model,
+  });
   return response.data;
 };
 
-export const validateHF = async (token: string): Promise<{ valid: boolean, message?: string }> => {
-  const response = await api.post<{ valid: boolean, message?: string }>('/setup/validate-hf', { token });
+export const validateHF = async (
+  token: string,
+): Promise<{ valid: boolean; message?: string }> => {
+  const response = await api.post<{ valid: boolean; message?: string }>(
+    "/setup/validate-hf",
+    { token },
+  );
   return response.data;
 };
 
-export const getModelsStatus = async (whisperModelSize?: string): Promise<SystemModelStatus> => {
+export const getModelsStatus = async (
+  whisperModelSize?: string,
+): Promise<SystemModelStatus> => {
   const params = new URLSearchParams();
-  if (whisperModelSize) params.append('whisper_model_size', whisperModelSize);
-  const response = await api.get<SystemModelStatus>(`/system/models/status?${params.toString()}`);
+  if (whisperModelSize) params.append("whisper_model_size", whisperModelSize);
+  const response = await api.get<SystemModelStatus>(
+    `/system/models/status?${params.toString()}`,
+  );
   return response.data;
 };
 
-export const deleteModel = async (modelId: string, whisperModelSize?: string): Promise<void> => {
+export const deleteModel = async (
+  modelId: string,
+  whisperModelSize?: string,
+): Promise<void> => {
   const params = new URLSearchParams();
-  if (whisperModelSize) params.append('variant', whisperModelSize);
+  if (whisperModelSize) params.append("variant", whisperModelSize);
   await api.delete(`/system/models/${modelId}?${params.toString()}`);
 };
 
 // User Management
-export const getUsers = async (skip = 0, limit = 100, search = ''): Promise<{ items: User[], total: number }> => {
+export const getUsers = async (
+  skip = 0,
+  limit = 100,
+  search = "",
+): Promise<{ items: User[]; total: number }> => {
   const params = new URLSearchParams({
     skip: skip.toString(),
     limit: limit.toString(),
   });
-  if (search) params.append('search', search);
+  if (search) params.append("search", search);
 
-  const response = await api.get<{ items: User[], total: number }>(`/users?${params.toString()}`);
+  const response = await api.get<{ items: User[]; total: number }>(
+    `/users?${params.toString()}`,
+  );
   return response.data;
 };
 
 export const getUserMe = async (): Promise<User> => {
-  const response = await api.get<User>('/users/me');
+  const response = await api.get<User>("/users/me");
   return response.data;
 };
 
-export const updateUserMe = async (data: { username?: string }): Promise<User> => {
-  const response = await api.put<User>('/users/me', data);
+export const updateUserMe = async (data: {
+  username?: string;
+}): Promise<User> => {
+  const response = await api.put<User>("/users/me", data);
   return response.data;
 };
 
-export const updatePasswordMe = async (data: { current_password: string, new_password: string }): Promise<void> => {
-  await api.post('/users/me/password', data);
+export const updatePasswordMe = async (data: {
+  current_password: string;
+  new_password: string;
+}): Promise<void> => {
+  await api.post("/users/me/password", data);
 };
 
-export const createUser = async (data: { username: string, password: string, role: string }): Promise<User> => {
-  const response = await api.post<User>('/users/', data);
+export const createUser = async (data: {
+  username: string;
+  password: string;
+  role: string;
+}): Promise<User> => {
+  const response = await api.post<User>("/users/", data);
   return response.data;
 };
 
-export const updateUser = async (userId: number, data: { username?: string, password?: string, role?: string, is_active?: boolean }): Promise<User> => {
+export const updateUser = async (
+  userId: number,
+  data: {
+    username?: string;
+    password?: string;
+    role?: string;
+    is_active?: boolean;
+  },
+): Promise<User> => {
   const response = await api.patch<User>(`/users/${userId}`, data);
   return response.data;
 };
 
-export const updateUserRole = async (userId: number, role: string): Promise<User> => {
+export const updateUserRole = async (
+  userId: number,
+  role: string,
+): Promise<User> => {
   const response = await api.patch<User>(`/users/${userId}/role`, { role });
   return response.data;
 };
@@ -573,12 +850,20 @@ export const deleteUser = async (userId: number): Promise<User> => {
 
 // Invitations
 export const getInvitations = async (): Promise<Invitation[]> => {
-  const response = await api.get<Invitation[]>('/invitations/');
+  const response = await api.get<Invitation[]>("/invitations/");
   return response.data;
 };
 
-export const createInvitation = async (role: string, expires_in_days: number, max_uses: number): Promise<Invitation> => {
-  const response = await api.post<Invitation>('/invitations/', { role, expires_in_days, max_uses });
+export const createInvitation = async (
+  role: string,
+  expires_in_days: number,
+  max_uses: number,
+): Promise<Invitation> => {
+  const response = await api.post<Invitation>("/invitations/", {
+    role,
+    expires_in_days,
+    max_uses,
+  });
   return response.data;
 };
 
@@ -592,26 +877,35 @@ export const deleteInvitation = async (id: number): Promise<Invitation> => {
   return response.data;
 };
 
-export const validateInvitation = async (code: string): Promise<{ valid: boolean, role: string, inviter?: string }> => {
-  const response = await api.get<{ valid: boolean, role: string, inviter?: string }>(`/invitations/validate/${code}`);
+export const validateInvitation = async (
+  code: string,
+): Promise<{ valid: boolean; role: string; inviter?: string }> => {
+  const response = await api.get<{
+    valid: boolean;
+    role: string;
+    inviter?: string;
+  }>(`/invitations/validate/${code}`);
   return response.data;
 };
 
-export const registerUser = async (username: string, password: string, invite_code: string): Promise<User> => {
+export const registerUser = async (
+  username: string,
+  password: string,
+  invite_code: string,
+): Promise<User> => {
   const payload = {
     username,
     password,
     invite_code,
   };
-  const response = await api.post<User>('/users/register', payload);
+  const response = await api.post<User>("/users/register", payload);
   return response.data;
 };
 
 export const getDownloadProgress = async (): Promise<DownloadProgress> => {
-  const response = await api.get<DownloadProgress>('/system/download-progress');
+  const response = await api.get<DownloadProgress>("/system/download-progress");
   return response.data;
 };
-
 
 export interface Document {
   id: number;
@@ -619,24 +913,35 @@ export interface Document {
   title: string;
   file_path: string;
   file_type: string;
-  status: 'PENDING' | 'PROCESSING' | 'READY' | 'ERROR';
+  status: "PENDING" | "PROCESSING" | "READY" | "ERROR";
   error_message?: string;
   created_at: string;
 }
 
-export const getDocuments = async (recordingId: number): Promise<Document[]> => {
-  const response = await api.get<Document[]>(`/recordings/${recordingId}/documents`);
+export const getDocuments = async (
+  recordingId: number,
+): Promise<Document[]> => {
+  const response = await api.get<Document[]>(
+    `/recordings/${recordingId}/documents`,
+  );
   return response.data;
 };
 
-export const uploadDocument = async (recordingId: number, file: File): Promise<Document> => {
+export const uploadDocument = async (
+  recordingId: number,
+  file: File,
+): Promise<Document> => {
   const formData = new FormData();
-  formData.append('file', file);
-  const response = await api.post<Document>(`/recordings/${recordingId}/documents`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
+  formData.append("file", file);
+  const response = await api.post<Document>(
+    `/recordings/${recordingId}/documents`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
     },
-  });
+  );
   return response.data;
 };
 
@@ -645,8 +950,12 @@ export const deleteDocument = async (documentId: number): Promise<void> => {
 };
 
 // Chat API
-export const getChatHistory = async (recordingId: number): Promise<ChatMessage[]> => {
-  const response = await api.get<ChatMessage[]>(`/transcripts/${recordingId}/chat`);
+export const getChatHistory = async (
+  recordingId: number,
+): Promise<ChatMessage[]> => {
+  const response = await api.get<ChatMessage[]>(
+    `/transcripts/${recordingId}/chat`,
+  );
   return response.data;
 };
 
@@ -660,74 +969,77 @@ export const streamChatMessage = (
   onToken: (token: string) => void,
   onComplete: () => void,
   onError: (error: string) => void,
-  tagIds?: number[]
+  tagIds?: number[],
 ): AbortController => {
   const controller = new AbortController();
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   fetch(`${API_BASE_URL}/transcripts/${recordingId}/chat`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
     },
     body: JSON.stringify({ message, tag_ids: tagIds }),
     signal: controller.signal,
-  }).then(async (response) => {
-    if (!response.ok) {
-      try {
-        const err = await response.json();
-        onError(err.detail || 'Failed to send message');
-      } catch {
-        onError(`Error: ${response.statusText}`);
-      }
-      return;
-    }
-
-    if (!response.body) {
-      onError("No response body");
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        onComplete();
-        break;
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        try {
+          const err = await response.json();
+          onError(err.detail || "Failed to send message");
+        } catch {
+          onError(`Error: ${response.statusText}`);
+        }
+        return;
       }
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
+      if (!response.body) {
+        onError("No response body");
+        return;
+      }
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.token) {
-              onToken(parsed.token);
-            } else if (parsed.error) {
-              onError(parsed.error);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          onComplete();
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") {
+              continue;
             }
-          } catch (e) {
-            console.error("Failed to parse SSE data", e);
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.token) {
+                onToken(parsed.token);
+              } else if (parsed.error) {
+                onError(parsed.error);
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE data", e);
+            }
           }
         }
       }
-    }
-  }).catch(err => {
-    if (err.name === 'AbortError') {
-      console.log('Stream aborted');
-    } else {
-      onError(err.message || 'Network error');
-    }
-  });
+    })
+    .catch((err) => {
+      if (err.name === "AbortError") {
+        console.log("Stream aborted");
+      } else {
+        onError(err.message || "Network error");
+      }
+    });
 
   return controller;
 };
@@ -737,44 +1049,66 @@ export const inferSpeakers = async (recordingId: number): Promise<void> => {
   await api.post(`/recordings/${recordingId}/infer-speakers`);
 };
 
-export const listModels = async (provider: string, apiKey: string, apiUrl?: string): Promise<{ models: string[] }> => {
-  const response = await api.post<{ models: string[] }>('/setup/list-models', { provider, api_key: apiKey, api_url: apiUrl });
+export const listModels = async (
+  provider: string,
+  apiKey: string,
+  apiUrl?: string,
+): Promise<{ models: string[] }> => {
+  const response = await api.post<{ models: string[] }>("/setup/list-models", {
+    provider,
+    api_key: apiKey,
+    api_url: apiUrl,
+  });
   return response.data;
 };
 
-export const fetchProxyModels = async (provider: string, apiUrl?: string, apiKey?: string): Promise<string[]> => {
+export const fetchProxyModels = async (
+  provider: string,
+  apiUrl?: string,
+  apiKey?: string,
+): Promise<string[]> => {
   const params = new URLSearchParams();
-  params.append('provider', provider);
-  if (apiUrl) params.append('api_url', apiUrl);
-  if (apiKey) params.append('api_key', apiKey);
+  params.append("provider", provider);
+  if (apiUrl) params.append("api_url", apiUrl);
+  if (apiKey) params.append("api_key", apiKey);
 
   const response = await api.get<string[]>(`/llm/models?${params.toString()}`);
   return response.data;
 };
 
 // Backup & Restore
-export const exportBackupAsync = async (includeAudio: boolean = true): Promise<{ task_id: string }> => {
-  const response = await api.post<{ task_id: string }>(`/backup/export?include_audio=${includeAudio}`);
+export const exportBackupAsync = async (
+  includeAudio: boolean = true,
+): Promise<{ task_id: string }> => {
+  const response = await api.post<{ task_id: string }>(
+    `/backup/export?include_audio=${includeAudio}`,
+  );
   return response.data;
 };
 
-export const getBackupStatus = async (taskId: string): Promise<{ state: string; status: string; result?: any }> => {
-  const response = await api.get<{ state: string; status: string; result?: any }>(`/backup/export/${taskId}`);
+export const getBackupStatus = async (
+  taskId: string,
+): Promise<{ state: string; status: string; result?: any }> => {
+  const response = await api.get<{
+    state: string;
+    status: string;
+    result?: any;
+  }>(`/backup/export/${taskId}`);
   return response.data;
 };
 
 export const downloadBackupFile = async (taskId: string): Promise<void> => {
   const response = await api.get(`/backup/export/${taskId}/download`, {
-    responseType: 'blob',
+    responseType: "blob",
   });
 
-  const blob = new Blob([response.data], { type: 'application/zip' });
+  const blob = new Blob([response.data], { type: "application/zip" });
   const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
 
   // Create filename with timestamp
-  const filename = `nojoin_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+  const filename = `nojoin_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
   a.download = filename;
 
   document.body.appendChild(a);
@@ -787,21 +1121,27 @@ export const importBackup = async (
   file: File,
   clearExisting: boolean,
   overwriteExisting: boolean,
-  onUploadProgress?: (progress: number) => void
+  onUploadProgress?: (progress: number) => void,
 ): Promise<void> => {
   const formData = new FormData();
-  formData.append('file', file);
-  await api.post(`/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
+  formData.append("file", file);
+  await api.post(
+    `/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onUploadProgress && progressEvent.total) {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total,
+          );
+          onUploadProgress(percentCompleted);
+        }
+      },
     },
-    onUploadProgress: (progressEvent) => {
-      if (onUploadProgress && progressEvent.total) {
-        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-        onUploadProgress(percentCompleted);
-      }
-    },
-  });
+  );
 };
 
 export interface CompanionReleases {
@@ -812,16 +1152,18 @@ export interface CompanionReleases {
 }
 
 export const getCompanionReleases = async (): Promise<CompanionReleases> => {
-  const response = await api.get<CompanionReleases>('/system/companion-releases');
+  const response = await api.get<CompanionReleases>(
+    "/system/companion-releases",
+  );
   return response.data;
 };
 
 export const seedDemoData = async (): Promise<void> => {
-  await api.post('/system/seed-demo');
+  await api.post("/system/seed-demo");
 };
 
 export const getVersion = async (): Promise<VersionInfo> => {
-  const response = await api.get<VersionInfo>('/version');
+  const response = await api.get<VersionInfo>("/version");
   return response.data;
 };
 

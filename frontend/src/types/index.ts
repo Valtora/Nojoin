@@ -48,11 +48,28 @@ export interface BaseDBModel {
   updated_at: string;
 }
 
+export interface PeopleTag {
+  id: number;
+  name: string;
+  color?: string;
+  user_id?: number | null;
+  parent_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GlobalSpeaker extends BaseDBModel {
   name: string;
   has_voiceprint?: boolean;
   recording_count?: number; // Number of recordings this speaker is associated with
   color?: string;
+  // CRM Fields
+  title?: string | null;
+  company?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  notes?: string | null;
+  tags?: PeopleTag[];
 }
 
 export interface RecordingSpeaker extends BaseDBModel {

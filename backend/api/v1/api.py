@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from backend.api.deps import get_current_user
-from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup, invitations, documents, version
+from backend.api.v1.endpoints import recordings, speakers, tags, settings, login, transcripts, users, system, setup, llm, backup, invitations, documents, version, people_tags
 
 api_router = APIRouter()
 
@@ -41,6 +41,12 @@ api_router.include_router(
     speakers.router, 
     prefix="/speakers", 
     tags=["speakers"],
+    dependencies=[Depends(get_current_user)]
+)
+api_router.include_router(
+    people_tags.router, 
+    prefix="/people-tags", 
+    tags=["people-tags"],
     dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(

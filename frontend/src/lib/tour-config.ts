@@ -27,6 +27,14 @@ export const dashboardSteps: DriveStep[] = [
     }
   },
   {
+    element: '#nav-people',
+    popover: {
+      title: 'People & Speakers',
+      description: 'Manage your Global Speaker Library here. Identify speakers, merge duplicates, and manage voiceprints across all your meetings.',
+      side: 'right',
+    }
+  },
+  {
     element: '#demo-recording-card',
     popover: {
       title: 'Demo Recording',

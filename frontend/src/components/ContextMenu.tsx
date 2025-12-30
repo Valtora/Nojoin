@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface ContextMenuItem {
   label: string;
@@ -17,7 +17,12 @@ interface ContextMenuProps {
   onClose: () => void;
 }
 
-export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export default function ContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,16 +32,25 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [onClose]);
 
-  // Adjust position if it goes off screen (basic implementation)
+  // Adjust position logic
+  // If x is too close to right edge, shift left by width (approx 192px/12rem)
+  // Or simply always offset to left-bottom of cursor if requested.
+  // The user asked: "opens up to the left of the cursor"
+  // So we default to x - width.
+  const menuWidth = 192; // w-48 is 12rem = 192px
+
+  // Basic bounds check could be added here but user specifically asked for left alignment.
+  const finalX = x - menuWidth > 0 ? x - menuWidth : x;
+
   const style = {
     top: y,
-    left: x,
+    left: finalX,
   };
 
   return createPortal(
@@ -53,14 +67,16 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
             onClose();
           }}
           className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors flex items-center gap-2 ${
-            index !== items.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''
-          } ${item.className || 'text-gray-700 dark:text-gray-200'}`}
+            index !== items.length - 1
+              ? "border-b border-gray-100 dark:border-gray-700"
+              : ""
+          } ${item.className || "text-gray-700 dark:text-gray-200"}`}
         >
           {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
           {item.label}
         </button>
       ))}
     </div>,
-    document.body
+    document.body,
   );
 }

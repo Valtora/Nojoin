@@ -43,7 +43,7 @@ import { getTags, updateTag, deleteTag, createTag, getCompanionReleases, Compani
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
 import { InlineColorPicker } from './ColorPicker';
-import GlobalSpeakersModal from './GlobalSpeakersModal';
+
 import ImportAudioModal from './ImportAudioModal';
 import ConfirmationModal from './ConfirmationModal';
 import CreateTagModal from './CreateTagModal';
@@ -76,7 +76,7 @@ function NavItem({ icon, label, isActive, onClick, collapsed, badge, id }: NavIt
         ${collapsed ? 'justify-center' : ''}
       `}
     >
-      <span className="flex-shrink-0">{icon}</span>
+      <span className="shrink-0">{icon}</span>
       {!collapsed && (
         <>
           <span className="flex-1 text-left text-sm font-medium truncate">{label}</span>
@@ -189,7 +189,7 @@ function TagItem({
         ${isOver ? 'bg-orange-50 dark:bg-orange-900/10 ring-2 ring-orange-400 dark:ring-orange-600' : ''}
       `}
       style={{ paddingLeft: `${level * 12 + 12}px` }}
-      onClick={(e) => {
+      onClick={() => {
         if (!isEditing) onToggle();
       }}
       onContextMenu={onContextMenu}
@@ -346,7 +346,7 @@ export default function MainNav() {
   const [mounted, setMounted] = useState(false);
 
   // Modal states
-  const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
+  // const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -675,7 +675,7 @@ export default function MainNav() {
     <>
       <aside
         id="main-nav"
-        className="flex-shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 flex flex-col relative"
+        className="shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 flex flex-col"
         style={{
           width: collapsed ? `${COLLAPSED_WIDTH}px` : `${navWidth}px`,
           transition: isResizing ? 'none' : 'width 300ms'
@@ -927,7 +927,7 @@ export default function MainNav() {
                 ${collapsed ? 'justify-center' : ''}
               `}
             >
-              <Download className="w-5 h-5 flex-shrink-0" />
+              <Download className="w-5 h-5 shrink-0" />
               {!collapsed && (
                 <span className="text-sm truncate">Download Companion</span>
               )}
@@ -948,7 +948,7 @@ export default function MainNav() {
                 ${collapsed ? 'justify-center' : ''}
               `}
             >
-              <Link2 className={`w-5 h-5 flex-shrink-0 ${isAuthorizing ? 'animate-pulse' : ''}`} />
+              <Link2 className={`w-5 h-5 shrink-0 ${isAuthorizing ? 'animate-pulse' : ''}`} />
               {!collapsed && (
                 <span className="text-sm truncate">
                   {isAuthorizing ? 'Connecting...' : 'Connect to Companion'}
@@ -968,7 +968,7 @@ export default function MainNav() {
                 ${collapsed ? 'justify-center' : ''}
               `}
             >
-              <RefreshCw className="w-5 h-5 flex-shrink-0" />
+              <RefreshCw className="w-5 h-5 shrink-0" />
               {!collapsed && (
                 <span className="text-sm truncate">Update Companion App</span>
               )}
@@ -976,10 +976,11 @@ export default function MainNav() {
           )}
 
           <NavItem
-            id="nav-speakers"
+            id="nav-people"
             icon={<Users className="w-5 h-5" />}
-            label="Speaker Library"
-            onClick={() => setIsSpeakersModalOpen(true)}
+            label="People"
+            onClick={() => router.push('/people')}
+            isActive={pathname.startsWith('/people')}
             collapsed={collapsed}
           />
           <NavItem
@@ -1029,10 +1030,7 @@ export default function MainNav() {
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
       />
-      <GlobalSpeakersModal
-        isOpen={isSpeakersModalOpen}
-        onClose={() => setIsSpeakersModalOpen(false)}
-      />
+
 
       <ImportAudioModal
         isOpen={isImportModalOpen}
