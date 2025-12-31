@@ -13,8 +13,6 @@ def safe_read_audio(path: str, sampling_rate: int = 16000):
     Reads audio using torchaudio with 'soundfile' backend to avoid torchcodec issues.
     Replicates silero_vad.read_audio functionality.
     """
-    # In newer torchaudio versions, set_audio_backend is deprecated/removed.
-    # We rely on the 'backend' argument in load().
 
     wav, sr = torchaudio.load(path, backend="soundfile")
     
@@ -89,27 +87,47 @@ def mute_non_speech_segments(
         # Use CPU for VAD as it's lightweight and avoids potential CUDA issues with small models
         # Or check config if we really want GPU
         from backend.utils.config_manager import config_manager
+        
+        # Load configuration
+        vad_config = config_manager.get("vad_parameters", {})
         device_str = config_manager.get("processing_device", "auto")
+        device = torch.device("cpu") # Default to CPU
+
+        # Determine processing device
         if device_str == "auto":
-            device_str = "cuda" if torch.cuda.is_available() else "cpu"
-            
-        # Silero VAD usually runs fine on CPU, but let's respect the config if possible.
-        # Note: silero_vad.load_silero_vad() loads to CPU by default.
-        # If we want GPU, we might need to move the model.
-        model = silero_vad.load_silero_vad()
-        if device_str == "cuda":
-             model.to(torch.device("cuda"))
-             
-        logger.info(f"[VAD] Model loaded successfully on {device_str}")
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+                logger.info("[VAD] Auto-detected GPU available, using CUDA")
+            else:
+                logger.info("[VAD] Auto-detected GPU unavailable, using CPU")
+        elif device_str == "cuda":
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+                logger.info("[VAD] Configured for CUDA, using GPU")
+            else:
+                logger.warning("[VAD] Configured for CUDA but not available, falling back to CPU")
+                
+        # Load Silero VAD model
+        try:
+            model = silero_vad.load_silero_vad()
+            model.to(device)
+            logger.info(f"[VAD] Model loaded successfully on {device}")
+        except Exception as e:
+            logger.error(f"[VAD] Failed to load model on {device}: {e}")
+            if device.type == 'cuda':
+                logger.warning("[VAD] Attempting fallback to CPU")
+                device = torch.device("cpu")
+                model = silero_vad.load_silero_vad()
+                model.to(device)
+                logger.info(f"[VAD] Model loaded successfully on CPU (fallback)")
+            else:
+                raise e
 
         # Run VAD
         logger.info(f"[VAD] Running speech detection...")
         
         # Ensure wav is on the correct device
-        if device_str == "cuda":
-             wav_tensor = torch.from_numpy(wav_np).to(torch.device("cuda"))
-        else:
-             wav_tensor = torch.from_numpy(wav_np)
+        wav_tensor = torch.from_numpy(wav_np).to(device)
 
         speech_timestamps = silero_vad.get_speech_timestamps(
             wav_tensor, model, 
@@ -307,12 +325,21 @@ def _apply_vad_processing(
 
 
 def get_vad_config_from_settings() -> Dict[str, Any]:
-    """Get VAD configuration from application settings (placeholder for future config integration)."""
-    # TODO: Integrate with config_manager when available
-    return {
+    """Get VAD configuration from application settings."""
+    from backend.utils.config_manager import config_manager
+    
+    defaults = {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,
         "min_silence_duration_ms": 100,  
         "fade_duration_ms": 50,
         "silence_method": "mute"
     }
+    
+    config = config_manager.get("vad_parameters", {})
+    
+    # Merge with defaults
+    final_config = defaults.copy()
+    final_config.update(config)
+    
+    return final_config

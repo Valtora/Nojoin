@@ -78,20 +78,9 @@ async def get_current_admin_user(
     """
     Allow access if user is OWNER, ADMIN, or a SUPERUSER.
     """
-    # Import UserRole locally to avoid circular imports if needed, 
-    # but User model is already imported at top level.
-    # However UserRole enum might need to be imported or we check strings.
-    # User.role is a string in the model definition but typed as Enum in Pydantic usually.
-    # Let's check model definition again. UserRole is defined in user.py.
-    
-    # We need to import UserRole from backend.models.user
-    # To be safe regarding imports let's just use string values 'owner', 'admin' 
-    # or rely on the logic that they are strings in the DB.
-    
     allowed_roles = ["owner", "admin"]
     if current_user.role not in allowed_roles and not current_user.is_superuser:
          raise HTTPException(
             status_code=403, detail="Not authorized"
         )
     return current_user
-

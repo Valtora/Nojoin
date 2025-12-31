@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -705,11 +705,6 @@ async def get_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
         
     # Transform tags for response model
-    # The relationship is Recording -> RecordingTag -> Tag
-    # But RecordingRead expects a list of TagRead (which has name)
-    # We need to manually construct the response or adjust the model
-    
-    # Let's adjust the response construction manually for now to match Pydantic model
     recording_dict = recording.model_dump()
     
     # Manually populate relationships
@@ -726,6 +721,34 @@ async def get_recording(
         recording_dict['tags'] = []
         
     return recording_dict
+
+@router.get("/{recording_id}/info")
+async def get_recording_info(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Get detailed technical info about the recording audio file.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    from backend.processing.audio_preprocessing import analyze_audio_file
+    
+    info = {
+        "original": None,
+        "proxy": None
+    }
+    
+    if recording.audio_path and os.path.exists(recording.audio_path):
+        info["original"] = analyze_audio_file(recording.audio_path)
+        
+    if recording.proxy_path and os.path.exists(recording.proxy_path):
+        info["proxy"] = analyze_audio_file(recording.proxy_path)
+        
+    return info
 
 @router.patch("/{recording_id}", response_model=Recording)
 async def update_recording(

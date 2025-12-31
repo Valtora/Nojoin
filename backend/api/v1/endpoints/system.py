@@ -47,6 +47,27 @@ async def get_system_status(
         "web_app_url": web_app_url
     }
 
+@router.get("/check-ffmpeg")
+async def check_ffmpeg() -> Any:
+    """
+    Check if ffmpeg is available in the system PATH.
+    """
+    import shutil
+    from backend.utils.audio import ensure_ffmpeg_in_path
+    
+    # Try to ensure it's in path first
+    ensure_ffmpeg_in_path()
+    
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+    
+    return {
+        "ffmpeg": ffmpeg_path is not None,
+        "ffprobe": ffprobe_path is not None,
+        "ffmpeg_path": ffmpeg_path,
+        "ffprobe_path": ffprobe_path
+    }
+
 @router.post("/setup")
 async def setup_system(
     *,

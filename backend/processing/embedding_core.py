@@ -109,11 +109,6 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                     
                     emb = model.crop(audio_path, seg)
                     
-                    # Handle SlidingWindowFeature (it might be a wrapper around numpy)
-                    # If it has no shape, it might be a SlidingWindowFeature object that behaves like an array but fails hasattr check?
-                    # Or maybe it's returning something else.
-                    # Let's force conversion to numpy if possible.
-                    
                     if hasattr(emb, 'data'):
                         emb = emb.data
                         

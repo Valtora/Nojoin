@@ -18,11 +18,6 @@ async def list_people_tags(
     """
     List all tags for people.
     """
-    # Assuming tags might be user-specific or global.
-    # The model has user_id optional. Existing tags seem user-specific?
-    # Let's filter by user_id or null?
-    # In 'GlobalSpeaker', user_id is mandatory. In 'PeopleTag', user_id is optional but probably should be used.
-    
     query = select(PeopleTag).where(
         (PeopleTag.user_id == current_user.id) | (PeopleTag.user_id == None)
     ).order_by(PeopleTag.name)

@@ -718,8 +718,6 @@ class OpenAILLMBackend(LLMBackend):
         }
         
         # Skip temperature for reasoning models (OpenAI) that enforce default temperature
-        # Reasoning models (e.g. o1) do not support temperature.
-        # Traditional GPT models (gpt-4, gpt-3.5) do.
         if self.model.startswith("gpt") or "gpt" in self.model:
             request_kwargs["temperature"] = 0.2
         
@@ -1023,10 +1021,12 @@ class AnthropicLLMBackend(LLMBackend):
                 return True
             
             # Fallback if list_models not available (should not happen with recent SDK)
-            # Try a minimal generation with a known cheap model if self.model is not set
-            model_to_use = self.model or "claude-3-haiku-20240307"
+            if not self.model:
+                raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+
+            # Try a minimal generation with the configured model
             self.client.messages.create(
-                model=model_to_use,
+                model=self.model,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "Hi"}],
             )

@@ -23,7 +23,6 @@ def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True,
         # This function shouldn't be called in the API container anyway.
         raise ImportError("torch is required for audio loading but is not installed.")
 
-    
     # Map arguments to soundfile
     start = frame_offset
     stop = None if num_frames == -1 else start + num_frames

@@ -27,10 +27,6 @@ async def seed_demo_data(user_id: int = None, force: bool = False):
         os.makedirs(recordings_dir, exist_ok=True)
         
     # Use a unique filename per user to avoid unique constraint violations on audio_path
-    # If user_id is not provided (e.g. initial setup), we might use a default, 
-    # but usually user_id is provided or fetched.
-    # We'll fetch the user first to get the ID if not provided.
-    
     async with async_session_maker() as session:
         target_user = None
         if user_id:

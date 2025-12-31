@@ -42,7 +42,7 @@ class PathManager:
         self._initialized = True
         self._deployment_mode = None
         self._app_directory = None
-        self._executable_directory = None  # New: Directory where executable/assets are located
+        self._executable_directory = None
         self._user_data_directory = None
         
         # Initialize paths

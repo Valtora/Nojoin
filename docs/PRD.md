@@ -124,6 +124,7 @@ The system provides the following core capabilities:
   - **Transcript Search:** Client-side fuzzy search for locating specific text within a transcript.
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
+  - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
 - **Settings:** Comprehensive server and user configuration.
 - **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.
 
@@ -140,7 +141,7 @@ The system provides the following core capabilities:
 - **Migrations:** Alembic
 - **Broker:** Redis
 - **Container Runtime:** Docker (Linux with NVIDIA Container Toolkit recommended)
-  - *Constraint:* macOS hosting is CPU-only due to Docker limitations.
+  - _Constraint:_ macOS hosting is CPU-only due to Docker limitations.
 
 ### 4.2 Web Client Stack
 

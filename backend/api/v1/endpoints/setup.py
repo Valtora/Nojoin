@@ -51,33 +51,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     if not auth_header:
          raise HTTPException(status_code=401, detail="System is initialized. Authentication required.")
 
-    # We reuse the logic from get_current_admin_user but we need to call it.
-    # FastAPI doesn't easily let us call dependencies inside the function body without some hacks.
-    # But we can assume if the header is present, the client tries to authenticate.
-    
-    # Better approach:
-    # We can't easily resolve the complex dependency chain manually here without massive code duplication.
-    # Let's verify the token manually using the reusable functions.
     from backend.api.deps import get_current_user, get_current_admin_user
-    
-    # We can use the deps but we need to pass dependencies manually which is hard.
-    # Actually, we can use a helper function that tries to get the user.
-    # But since we are inside a route, we can just fail if not initialized.
-    
-    # Alternative: Use a dependency that returns Optional[User] and handles the logic?
-    # No, because `get_current_admin_user` raises HTTPException.
-    
-    # Let's blindly trust the dependency injection mechanism isn't available dynamically.
-    # We will verify the token simply here for this specific edge case or fail.
-    # Or, simpler:
-    # If initialized, we require a valid token. 
-    # Since we can't easily invoke `get_current_admin_user` here, we will rely on 
-    # recreating the token validation logic or refactoring deps.
-    
-    # Refactor strategy: 
-    # 1. Decode token
-    # 2. Check user role
-    
     from backend.core.security import ALGORITHM, SECRET_KEY
     from jose import jwt, JWTError
     

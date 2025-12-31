@@ -184,25 +184,87 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
     Analyze an audio file and return basic information.
     Returns None if analysis fails.
     """
-    # TODO: Implement using ffprobe if needed, for now returning dummy data or None
-    # Since we removed pydub, we can't easily get all this info without ffprobe parsing
-    return None
+    try:
+        from backend.utils.audio import ensure_ffmpeg_in_path
+        ensure_ffmpeg_in_path()
+        
+        cmd = [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        
+        format_info = data.get("format", {})
+        streams = data.get("streams", [])
+        audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), {})
+        
+        return {
+            "duration": float(format_info.get("duration", 0)),
+            "format": format_info.get("format_name"),
+            "bitrate": int(format_info.get("bit_rate", 0)) if format_info.get("bit_rate") else None,
+            "sample_rate": int(audio_stream.get("sample_rate", 0)) if audio_stream.get("sample_rate") else None,
+            "channels": int(audio_stream.get("channels", 0)) if audio_stream.get("channels") else None,
+            "codec": audio_stream.get("codec_name"),
+            "size": int(format_info.get("size", 0)) if format_info.get("size") else None
+        }
+    except Exception as e:
+        logger.error(f"Failed to analyze audio file {file_path}: {e}")
+        return None
 
 def normalize_audio_levels(input_path: str, output_path: str, target_dBFS: float = -20.0) -> bool:
     """
     Normalize audio levels to improve VAD accuracy.
-    Applies gentle normalization to bring audio to consistent levels.
+    Uses ffmpeg's loudnorm filter for EBU R128 normalization.
     """
-    # TODO: Implement normalization using ffmpeg-normalize or similar if needed
-    # For now, just copy the file
-    import shutil
+    from backend.utils.audio import ensure_ffmpeg_in_path
+    ensure_ffmpeg_in_path()
+
     try:
+        logger.info(f"Normalizing audio: {input_path} -> {output_path}")
+        
+        # If input and output are the same, we need a temp file
+        temp_path = None
+        target_out = output_path
+        
         if os.path.abspath(input_path) == os.path.abspath(output_path):
-            return True
-        shutil.copy2(input_path, output_path)
+            fd, temp_path = tempfile.mkstemp(suffix="_norm.wav")
+            os.close(fd)
+            target_out = temp_path
+            
+        # generic loudnorm parameters usually work well for speech
+        # I: integrated loudness target
+        # TP: true peak target
+        # LRA: loudness range target
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", input_path,
+            "-af", f"loudnorm=I={target_dBFS}:TP=-1.5:LRA=11",
+            "-ar", "16000",
+            target_out
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        
+        if temp_path:
+            import shutil
+            shutil.move(temp_path, output_path)
+            
         return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to normalize audio: {e.stderr.decode() if e.stderr else str(e)}")
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+        return False
     except Exception as e:
-        logger.error(f"Failed to normalize audio: {e}")
+        logger.error(f"Unexpected error normalizing audio: {e}")
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
         return False
 
 def get_audio_quality_metrics(file_path: str) -> Dict:
@@ -210,5 +272,17 @@ def get_audio_quality_metrics(file_path: str) -> Dict:
     Get audio quality metrics that might affect VAD performance.
     Returns metrics dictionary or empty dict on failure.
     """
-    # TODO: Implement using ffprobe or other tools
-    return {}
+    try:
+        data = analyze_audio_file(file_path)
+        if not data:
+            return {}
+            
+        return {
+            "sample_rate": data.get("sample_rate"),
+            "channels": data.get("channels"),
+            "bitrate": data.get("bitrate"),
+            "format": data.get("format")
+        }
+    except Exception as e:
+        logger.error(f"Failed to get audio metrics: {e}")
+        return {}

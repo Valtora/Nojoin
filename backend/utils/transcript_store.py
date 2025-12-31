@@ -8,7 +8,6 @@ with existing code.
 
 import logging
 from typing import Optional, Callable
-# from ..db import database as db_ops # TODO: Replace with new DB layer
 
 logger = logging.getLogger(__name__)
 

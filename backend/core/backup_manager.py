@@ -12,6 +12,7 @@ from sqlalchemy import text
 from backend.core.db import async_session_maker
 from backend.models.user import User
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.recording import Recording
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 # Order matters for restoration
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("users", User),
+    ("p_tags", PeopleTag),
     ("global_speakers", GlobalSpeaker),
+    ("people_tag_links", PeopleTagLink),
     ("tags", Tag),
     ("recordings", Recording),
     ("recording_speakers", RecordingSpeaker),
@@ -66,14 +69,13 @@ class BackupManager:
         Adapts a record dictionary to match the current model schema.
         Removes fields that no longer exist in the model.
         """
-        # Get current field names
-        # SQLModel uses model_fields in Pydantic v2, __fields__ in v1
+        # Gets current field names.
         if hasattr(model_cls, "model_fields"):
             current_fields = model_cls.model_fields.keys()
         else:
             current_fields = model_cls.__fields__.keys()
             
-        # Filter data to only include fields that exist in the current model
+        # Filters data to only include fields that exist in the current model.
         return {k: v for k, v in data.items() if k in current_fields}
 
     @staticmethod
@@ -113,12 +115,11 @@ class BackupManager:
     ) -> str:
         """
         Synchronous method to handle heavy file compression and zipping.
-        Running in a thread to verify blocking.
+        Runs in a thread to prevent blocking the main event loop.
         """
-        path_manager = PathManager() # Re-instantiate if needed, but easier to pass paths if they were simple strings. 
-        # Actually PathManager is lightweight.
+        path_manager = PathManager()
         
-        # Create a temporary file for the zip explicitly in /tmp (which is mounted as volume)
+        # Creates a temporary file for the zip explicitly in /tmp (mounted as volume).
         temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir="/tmp")
         temp_zip.close()
 
@@ -130,10 +131,9 @@ class BackupManager:
 
                 # 2. Add Recordings (Smart Deduplication & Audio Toggle)
                 if include_audio and recordings_dir.exists():
-                    # Map: base_filename_uuid -> best_file_path
                     # Strategies:
                     # 1. Prefer .opus (already compressed)
-                    # 2. Fallback to .wav/.mp3 etc (needs compression)
+                    # 2. Fallback to .wav/.mp3 etc (requires compression)
                     
                     file_map: Dict[str, str] = {}
                     
@@ -141,17 +141,14 @@ class BackupManager:
                         for file in files:
                             file_path = os.path.join(root, file)
                             ext = os.path.splitext(file)[1].lower()
-                            base_name = os.path.splitext(file)[0] # This is usually the UUID
+                            base_name = os.path.splitext(file)[0] # Usually the UUID
                             
-                            # Only specific audio formats
+                            # Include only specific audio formats.
                             if ext not in ['.wav', '.mp3', '.m4a', '.ogg', '.flac', '.opus']:
-                                # Non-audio files? Maybe backup? Sticking to behavior: include them directly.
-                                # But wait, the original logic just added everything?
-                                # Let's stick to audio for the "Smart" logic.
                                 pass
                             
                             if ext == '.opus':
-                                file_map[base_name] = file_path # Clean win, overrides others
+                                file_map[base_name] = file_path # Overrides others
                             elif base_name not in file_map:
                                 file_map[base_name] = file_path # Candidate
                             
@@ -234,18 +231,12 @@ class BackupManager:
                 if table_name == "recordings":
                     for item in data:
                         if "audio_path" in item and item["audio_path"]:
-                            # Assume it will be converted to .opus relative path
-                            # Or strict check? 
-                            # We standardized on .opus in the zip.
+                            # Assumes conversion to .opus relative path for backup consistency.
                             base, _ = os.path.splitext(item["audio_path"])
                             item["audio_path"] = base + ".opus"
                             
-                            # If we are NOT including audio, we should technically NOT clear the path here?
-                            # restoring a backup with `include_audio=False` means the DB will point to .opus
-                            # but the file won't exist. The player needs to handle this.
-                            # So this transformation is still correct (the "intended" path).
-                            
-                            item["file_size_bytes"] = None # Reset size
+                            # Resets size as the file is re-compressed or modified.
+                            item["file_size_bytes"] = None
                                 
                 # Redact sensitive data from Users
                 if table_name == "users":
@@ -313,18 +304,15 @@ class BackupManager:
                 recordings_dir.mkdir(parents=True, exist_ok=True)
 
             # 2. Restore Files
+            extracted_files = set()
+            
             # Extract recordings
             for file in zipf.namelist():
                 if file.startswith("recordings/"):
-                    # We need to be careful not to overwrite if not clear_existing?
-                    # If overwrite_existing is True, standard unzip overwrites, which is what we want.
-                    # If overwrite_existing is False, we should ideally NOT extract if it exists.
-                    # HOWEVER, checking existence for every file might be slow.
-                    # AND the file path might be different from what's in the DB if we handle collisions?
-                    # But here the filenames are hashed/timestamped usually.
-                    
-                    # Optimization: Just extract all. If we skip the DB record, the file is orphaned but harmless.
+                    # Optimization: Extract all files. If the DB record is skipped,
+                    # the file will be orphaned but cleaned up later.
                     zipf.extract(file, path_manager.user_data_directory)
+                    extracted_files.add(file)
                 elif file == "config.json":
                     if clear_existing:
                         # Only restore config if we are clearing data, otherwise keep current system config
@@ -359,7 +347,7 @@ class BackupManager:
                                 
                                 if existing_ids:
                                     logger.info(f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings.")
-                                    # specific delete to trigger cascades if needed (though delete from recordings usually cascades)
+                                    # Specific delete to trigger cascades if needed (though delete from recordings usually cascades)
                                     await session.execute(delete(Recording).where(Recording.id.in_(existing_ids)))
                                     await session.commit()
                     except Exception as e:
@@ -421,25 +409,22 @@ class BackupManager:
                                     await session.flush()
                                 else:
                                     # Strategy: SKIP (Safe Merge)
-                                    # Use existing ID map.
+                                    # Uses existing ID map.
                                     if old_id is not None:
                                         id_map["recordings"][old_id] = existing_rec.id
                                         skipped_recording_ids.add(old_id)
-                                        # Also track it as restored/processed so subsequent dupes map to it
+                                        # Tracks as restored/processed so subsequent duplicates map to it.
                                         restored_audio_paths[audio_path] = existing_rec.id
-                                    continue # Skip inserting this recording
+                                    continue
                         
                         else:
                             # Child Records: Skip if parent recording was skipped
                             if "recording_id" in item_data:
                                 old_rec_id = item_data["recording_id"]
                                 if old_rec_id in skipped_recording_ids:
-                                    # Parent was skipped, so we skip child to avoid duplication/errors
-                                    # NOTE: We do NOT need to check if the child exists because 
-                                    # if we are skipping, it means the parent exists, and we assume 
-                                    # the existing parent has its own children.
-                                    # We don't want to merge children from backup into existing parent 
-                                    # because that causes duplication (e.g. double transcripts).
+                                    # Parent was skipped, so the child is skipped to avoid duplication/errors.
+                                    # Assuming the existing parent has its own children, merging children
+                                    # from backup into existing parent is avoided to prevent duplication.
                                     continue
 
                             # Tags: name + user_id is unique?
@@ -450,32 +435,116 @@ class BackupManager:
                                 if user_id in id_map["users"]:
                                     user_id = id_map["users"][user_id]
                                 
-                                existing_tag = (await session.execute(
-                                    select(Tag).where(Tag.name == tag_name).where(Tag.user_id == user_id)
-                                )).scalar_one_or_none()
-                                
-                                if existing_tag:
                                     if old_id is not None:
                                         id_map["tags"][old_id] = existing_tag.id
                                     continue
 
+                            elif table_name == "p_tags":
+                                tag_name = item_data.get("name")
+                                user_id_val = item_data.get("user_id")
+                                
+                                # Remap user_id before checking existence
+                                if user_id_val in id_map["users"]:
+                                    user_id_val = id_map["users"][user_id_val]
+                                
+                                # Check existence
+                                existing_p_tag = (await session.execute(
+                                    select(PeopleTag)
+                                    .where(PeopleTag.name == tag_name)
+                                    .where(PeopleTag.user_id == user_id_val)
+                                )).scalar_one_or_none()
+                                
+                                if existing_p_tag:
+                                    if old_id is not None:
+                                        id_map["p_tags"][old_id] = existing_p_tag.id
+                                    continue
+
                         # Remap Foreign Keys for insertion
                         
-                        # Remove ID to let DB generate new one (always additive in practice for safety)
+                        # Removes ID to allow the database to generate a new one.
                         if "id" in item_data:
                             del item_data["id"]
                         
-                        # Remap FKs
+                        # Remaps Foreign Keys.
                         if table_name == "global_speakers":
                             if item_data.get("user_id") in id_map["users"]:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                             else:
-                                continue # Orphaned
+                                continue
+
+                            # Checks for existing duplicates to prevent redundant entries.
+                            speaker_name = item_data.get("name")
+                            user_id = item_data.get("user_id")
+                            
+                            existing_speaker = (await session.execute(
+                                select(GlobalSpeaker)
+                                .where(GlobalSpeaker.name == speaker_name)
+                                .where(GlobalSpeaker.user_id == user_id)
+                            )).scalar_one_or_none() # type: ignore
+
+                            if existing_speaker:
+                                if overwrite_existing:
+                                    # Updates existing speaker details from backup.
+                                    existing_speaker.title = item_data.get("title")
+                                    existing_speaker.company = item_data.get("company")
+                                    existing_speaker.email = item_data.get("email")
+                                    existing_speaker.phone_number = item_data.get("phone_number")
+                                    existing_speaker.notes = item_data.get("notes")
+                                    existing_speaker.color = item_data.get("color")
+                                    if item_data.get("embedding"):
+                                        existing_speaker.embedding = item_data.get("embedding")
+                                    
+                                    session.add(existing_speaker)
+
+                                if old_id is not None:
+                                    id_map["global_speakers"][old_id] = existing_speaker.id
+                                continue
 
                         elif table_name == "tags":
                             if item_data.get("user_id") in id_map["users"]:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                             else:
+                                continue
+                        
+                        elif table_name == "p_tags":
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                            else:
+                                # PeopleTags require a user. If user is missing, skip the tag.
+                                pass
+                                
+                            # Remap parent_id if it exists
+                            if item_data.get("parent_id") in id_map["p_tags"]:
+                                item_data["parent_id"] = id_map["p_tags"][item_data["parent_id"]]
+                            elif item_data.get("parent_id"):
+                                # Parent not found (maybe skipped or not yet processed?)
+                                # Since we process in order, it should be processed.
+                                # If not in map, it might have been skipped or failed.
+                                item_data["parent_id"] = None
+
+                        elif table_name == "people_tag_links":
+                            if item_data.get("global_speaker_id") in id_map["global_speakers"]:
+                                item_data["global_speaker_id"] = id_map["global_speakers"][item_data["global_speaker_id"]]
+                            else:
+                                logger.warning(f"Skipping people_tag_link: global_speaker_id {item_data.get('global_speaker_id')} not found in map.")
+                                continue
+                            
+                            if item_data.get("tag_id") in id_map["p_tags"]:
+                                item_data["tag_id"] = id_map["p_tags"][item_data["tag_id"]]
+                            else:
+                                logger.warning(f"Skipping people_tag_link: tag_id {item_data.get('tag_id')} not found in map.")
+                                continue
+                            
+                            # Checks for duplicates
+                            existing_link = (await session.execute(
+                                select(PeopleTagLink)
+                                .where(PeopleTagLink.global_speaker_id == item_data["global_speaker_id"])
+                                .where(PeopleTagLink.tag_id == item_data["tag_id"])
+                            )).scalar_one_or_none()
+                            
+                            if existing_link:
+                                if old_id is not None:
+                                    id_map["people_tag_links"][old_id] = existing_link.id
                                 continue
 
                         elif table_name == "recordings":
@@ -498,8 +567,17 @@ class BackupManager:
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
-                            if item_data.get("global_speaker_id") in id_map["global_speakers"]:
-                                item_data["global_speaker_id"] = id_map["global_speakers"][item_data["global_speaker_id"]]
+                            
+                            # Safely map Global Speaker ID
+                            old_gs_id = item_data.get("global_speaker_id")
+                            if old_gs_id and old_gs_id in id_map["global_speakers"]:
+                                item_data["global_speaker_id"] = id_map["global_speakers"][old_gs_id]
+                            elif old_gs_id:
+                                # Global speaker referenced but not found in map.
+                                # This can happen if the speaker was skipped or missing in backup.
+                                # Since global_speaker_id is Optional, we set it to None to avoid crash.
+                                logger.warning(f"RecordingSpeaker references missing GlobalSpeaker {old_gs_id}. Setting to None.")
+                                item_data["global_speaker_id"] = None
                         
                         elif table_name == "recording_tags":
                             old_rec_id = item_data.get("recording_id")
@@ -515,9 +593,11 @@ class BackupManager:
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
+                            
                             if item_data.get("tag_id") in id_map["tags"]:
                                 item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
                             else:
+                                logger.warning(f"Skipping recording_tag: tag_id {item_data.get('tag_id')} not found in map.")
                                 continue
                             
                             # DUPLICATE CHECK: Does this tag link already exist?
@@ -592,3 +672,31 @@ class BackupManager:
                             restored_audio_paths[instance.audio_path] = instance.id
                 
                 await session.commit()
+
+            # 4. Cleanup Orphaned Files
+            # Identifies files extracted from the backup that are not referenced in the database.
+            async with async_session_maker() as session:
+                # Fetches all audio paths currently in the DB to verify against extracted files.
+                all_recordings = (await session.execute(select(Recording.audio_path))).scalars().all()
+                valid_paths = set()
+                for vp in all_recordings:
+                    if vp:
+                         valid_paths.add(os.path.normpath(vp))
+                
+                orphans = []
+                for file_path in extracted_files:
+                    # extracted_files are relative paths like "recordings/xyz.opus"
+                    normalized_path = os.path.normpath(file_path)
+                    
+                    if normalized_path not in valid_paths:
+                        orphans.append(file_path)
+
+                if orphans:
+                    logger.info(f"Cleaning up {len(orphans)} orphaned files from restore.")
+                    for orphan in orphans:
+                        full_path = os.path.join(recordings_dir, orphan)
+                        if os.path.exists(full_path):
+                            try:
+                                os.remove(full_path)
+                            except OSError:
+                                logger.warning(f"Failed to delete orphaned file: {full_path}")

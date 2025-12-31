@@ -705,6 +705,23 @@ export const setupSystem = async (data: any): Promise<void> => {
   await api.post("/system/setup", data);
 };
 
+export const checkFFmpeg = async (): Promise<{
+  ffmpeg: boolean;
+  ffprobe: boolean;
+  ffmpeg_path: string | null;
+  ffprobe_path: string | null;
+}> => {
+  const response = await api.get("/system/check-ffmpeg");
+  return response.data;
+};
+
+export const getRecordingInfo = async (
+  recordingId: number,
+): Promise<{ original: any; proxy: any }> => {
+  const response = await api.get(`/recordings/${recordingId}/info`);
+  return response.data;
+};
+
 export const getDemoRecording = async (): Promise<{ id: number | null }> => {
   const response = await api.get<{ id: number | null }>(
     "/system/demo-recording",

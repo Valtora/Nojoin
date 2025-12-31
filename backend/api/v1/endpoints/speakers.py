@@ -239,9 +239,7 @@ async def update_recording_speaker(
                     global_speaker.embedding = rs.embedding
                 db.add(global_speaker)
         else:
-            # Set as local name only (not promoted to global)
-            # WAIT: Requirement change -> Auto-promote if name is not generic
-            
+            # Auto-promote if name is not generic
             import re
             # Check if name is generic (Speaker X, Unknown, etc.)
             is_generic = False
@@ -268,11 +266,6 @@ async def update_recording_speaker(
                 rs.local_name = update.global_speaker_name
                 rs.global_speaker_id = None
                 rs.name = None  # Deprecated field
-                
-            # If we just created it, we should theoretically loop back to merge/update embeddings?
-            # But here `new_gs` is fresh. If there were other recordings with "John Doe" local_name, they aren't automatically linked here.
-            # That's acceptable for now - this ensures *future* or *current* rename works.
-            # Ideally we'd search for other local occurrences, but that's expensive.
         
         db.add(rs)
 
@@ -386,6 +379,82 @@ async def promote_speaker_to_global(
     
     return recording_speaker
 
+async def _merge_local_speakers(
+    db: AsyncSession,
+    recording_id: int,
+    source_label: str,
+    target_label: str
+):
+    """
+    Helper to merge two local speakers (by diarization label) within a single recording.
+    Updates transcript segments, merges embeddings, and deletes source recording speaker.
+    """
+    # 1. Find the source and target speaker entries
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == source_label
+    )
+    result = await db.execute(statement)
+    source_speaker = result.scalar_one_or_none()
+
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == target_label
+    )
+    result = await db.execute(statement)
+    target_speaker = result.scalar_one_or_none()
+
+    if not source_speaker or not target_speaker:
+        # Should not happen if confirmed before calling, but safe to return or log
+        return
+
+    # Identify aliases for source to catch in transcript
+    source_aliases = {source_label}
+    if source_speaker.local_name:
+        source_aliases.add(source_speaker.local_name)
+    if source_speaker.name:
+        source_aliases.add(source_speaker.name)
+    # Check global link for alias
+    if source_speaker.global_speaker_id:
+        gs = await db.get(GlobalSpeaker, source_speaker.global_speaker_id)
+        if gs:
+            source_aliases.add(gs.name)
+
+    # 2. Update Transcript Segments
+    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(statement)
+    transcript = result.scalar_one_or_none()
+
+    if transcript and transcript.segments:
+        segments_updated = False
+        new_segments = []
+        for segment in transcript.segments:
+            segment_copy = dict(segment)
+            if segment_copy.get("speaker") in source_aliases:
+                segment_copy["speaker"] = target_label
+                segments_updated = True
+            new_segments.append(segment_copy)
+        
+        if segments_updated:
+            transcript.segments = new_segments
+            flag_modified(transcript, "segments")
+            db.add(transcript)
+
+    # 3. Merge embeddings
+    if source_speaker.embedding and target_speaker.embedding:
+        target_speaker.embedding = merge_embeddings(
+            target_speaker.embedding, 
+            source_speaker.embedding, 
+            alpha=0.5
+        )
+        db.add(target_speaker)
+    elif source_speaker.embedding and not target_speaker.embedding:
+        target_speaker.embedding = source_speaker.embedding
+        db.add(target_speaker)
+
+    # 4. Delete source speaker
+    await db.delete(source_speaker)
+
 @router.post("/merge", response_model=GlobalSpeaker)
 async def merge_speakers(
     request: MergeRequest,
@@ -410,15 +479,31 @@ async def merge_speakers(
         raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
 
     # 2. Reassign all recording speakers
+    # 2. Reassign all recording speakers
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == source.id)
     result = await db.execute(stmt)
-    recording_speakers = result.scalars().all()
+    source_recording_speakers = result.scalars().all()
     
-    for rs in recording_speakers:
-        rs.global_speaker_id = target.id
-        rs.name = None # Clear deprecated name
-        rs.local_name = None # Clear local name to ensure target global name takes precedence
-        db.add(rs)
+    for rs in source_recording_speakers:
+        # Check if target already has a speaker in this recording
+        stmt = select(RecordingSpeaker).where(
+            RecordingSpeaker.recording_id == rs.recording_id,
+            RecordingSpeaker.global_speaker_id == target.id
+        )
+        result = await db.execute(stmt)
+        target_rs = result.scalar_one_or_none()
+
+        if target_rs:
+            # COLLISION: Target exists in this recording.
+            # We must merge the LOCAL speakers to prevent duplicates in the meeting view.
+            if rs.id != target_rs.id: # Sanity check
+                await _merge_local_speakers(db, rs.recording_id, rs.diarization_label, target_rs.diarization_label)
+        else:
+            # No collision: Just reassign
+            rs.global_speaker_id = target.id
+            rs.name = target.name
+            rs.local_name = None 
+            db.add(rs)
         
     # 3. Merge embeddings
     if source.embedding and target.embedding:
@@ -571,7 +656,8 @@ async def merge_recording_speakers(
     if merge_data.source_speaker_label == merge_data.target_speaker_label:
         raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
 
-    # 3. Find the source and target speaker entries
+    # 3. Find the source and target speaker entries (validation only here, logic in helper)
+    # We verify they exist to raise proper HTTP errors before calling helper
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == merge_data.source_speaker_label
@@ -592,62 +678,19 @@ async def merge_recording_speakers(
     if not target_speaker:
         raise HTTPException(status_code=404, detail=f"Target speaker '{merge_data.target_speaker_label}' not found")
 
-    # Identify all aliases for the source speaker to catch in transcript
-    source_aliases = {merge_data.source_speaker_label}
-    if source_speaker.local_name:
-        source_aliases.add(source_speaker.local_name)
-    if source_speaker.name:
-        source_aliases.add(source_speaker.name)
-    # Also check if it was linked to a global speaker
-    if source_speaker.global_speaker_id:
-        gs = await db.get(GlobalSpeaker, source_speaker.global_speaker_id)
-        if gs:
-            source_aliases.add(gs.name)
+    # 4. Perform Merge
+    await _merge_local_speakers(
+        db, 
+        recording_id, 
+        merge_data.source_speaker_label, 
+        merge_data.target_speaker_label
+    )
 
-    # 4. Update Transcript Segments
-    statement = select(Transcript).where(Transcript.recording_id == recording_id)
-    result = await db.execute(statement)
-    transcript = result.scalar_one_or_none()
-
-    if transcript and transcript.segments:
-        segments_updated = False
-        # Create a new list to ensure SQLAlchemy detects the change
-        new_segments = []
-        for segment in transcript.segments:
-            segment_copy = dict(segment)
-            # Check if segment speaker matches any source alias
-            if segment_copy.get("speaker") in source_aliases:
-                segment_copy["speaker"] = merge_data.target_speaker_label
-                segments_updated = True
-            new_segments.append(segment_copy)
-        
-        if segments_updated:
-            # Explicitly set the segments to trigger SQLAlchemy change detection
-            transcript.segments = new_segments
-            flag_modified(transcript, "segments")
-            db.add(transcript)
-
-    # 5. Merge embeddings if both speakers have them
-    if source_speaker.embedding and target_speaker.embedding:
-        target_speaker.embedding = merge_embeddings(
-            target_speaker.embedding, 
-            source_speaker.embedding, 
-            alpha=0.5  # Equal weight for merge
-        )
-        db.add(target_speaker)
-    elif source_speaker.embedding and not target_speaker.embedding:
-        # Target has no embedding, copy from source
-        target_speaker.embedding = source_speaker.embedding
-        db.add(target_speaker)
-
-    # 6. Delete the source speaker entry
-    await db.delete(source_speaker)
-
-    # 7. Flush to ensure changes are written before commit
+    # 5. Flush and Commit
     await db.flush()
     await db.commit()
     
-    # 8. Refresh recording to get updated relationships
+    # 6. Refresh recording
     await db.refresh(recording)
     return recording
 

@@ -1,13 +1,29 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Recording, RecordingStatus } from '@/types';
-import { Calendar, Clock, Loader2, AlertCircle, HelpCircle, RefreshCw, Trash2, Edit } from 'lucide-react';
-import { useState } from 'react';
-import ContextMenu from './ContextMenu';
-import { retryProcessing, deleteRecording, inferSpeakers, renameRecording } from '@/lib/api';
-import { useNotificationStore } from '@/lib/notificationStore';
-import { useRouter } from 'next/navigation';
+import Link from "next/link";
+import { Recording, RecordingStatus } from "@/types";
+import {
+  Calendar,
+  Clock,
+  Loader2,
+  AlertCircle,
+  HelpCircle,
+  RefreshCw,
+  Trash2,
+  Edit,
+  FileAudio,
+} from "lucide-react";
+import RecordingInfoModal from "./RecordingInfoModal";
+import { useState } from "react";
+import ContextMenu from "./ContextMenu";
+import {
+  retryProcessing,
+  deleteRecording,
+  inferSpeakers,
+  renameRecording,
+} from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { useRouter } from "next/navigation";
 
 interface RecordingCardProps {
   recording: Recording;
@@ -15,28 +31,28 @@ interface RecordingCardProps {
 
 const formatDuration = (recording: Recording) => {
   if (recording.status === RecordingStatus.UPLOADING) {
-    return '--';
+    return "--";
   }
   const seconds = recording.duration_seconds;
-  if (!seconds) return '00:00';
+  if (!seconds) return "00:00";
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
 const formatDate = (dateString: string, recording: Recording) => {
   const start = new Date(dateString).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
-  
+
   if (recording.status === RecordingStatus.UPLOADING) {
     return `${start} - --:--`;
   }
-  
+
   return start;
 };
 
@@ -48,7 +64,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
       return null;
     case RecordingStatus.QUEUED:
       return (
-        <span 
+        <span
           className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-help"
           title="Meeting is in queue to be processed..."
         >
@@ -57,9 +73,12 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
         </span>
       );
     case RecordingStatus.PROCESSING:
-      if (transcript?.transcript_status === 'completed' && transcript?.notes_status === 'generating') {
+      if (
+        transcript?.transcript_status === "completed" &&
+        transcript?.notes_status === "generating"
+      ) {
         return (
-          <span 
+          <span
             className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
             title="Transcript ready. Generating notes..."
           >
@@ -69,7 +88,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
         );
       }
       return (
-        <span 
+        <span
           className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-help"
           title="Processing audio: transcription, diarization, and voiceprint extraction. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing if you prefer manual speaker management."
         >
@@ -96,7 +115,11 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
 
 export default function RecordingCard({ recording }: RecordingCardProps) {
   const router = useRouter();
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -122,28 +145,36 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
 
   const handleRenameSubmit = async () => {
     if (!renameValue.trim() || isSubmitting) return;
-    
+
     setIsSubmitting(true);
     try {
-        await renameRecording(recording.id, renameValue.trim());
-        setIsRenaming(false);
-        router.refresh();
+      await renameRecording(recording.id, renameValue.trim());
+      setIsRenaming(false);
+      router.refresh();
     } catch (e) {
-        console.error("Failed to rename recording", e);
-        addNotification({ message: "Failed to rename recording.", type: "error" });
+      console.error("Failed to rename recording", e);
+      addNotification({
+        message: "Failed to rename recording.",
+        type: "error",
+      });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleRetry = async () => {
     try {
       await retryProcessing(recording.id);
-      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id: recording.id } }));
+      window.dispatchEvent(
+        new CustomEvent("recording-updated", { detail: { id: recording.id } }),
+      );
       router.refresh();
     } catch (e) {
       console.error("Failed to retry processing", e);
-      addNotification({ message: "Failed to retry processing.", type: "error" });
+      addNotification({
+        message: "Failed to retry processing.",
+        type: "error",
+      });
     }
   };
 
@@ -154,15 +185,24 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       router.refresh();
     } catch (e) {
       console.error("Failed to delete recording", e);
-      addNotification({ message: "Failed to delete recording.", type: "error" });
+      addNotification({
+        message: "Failed to delete recording.",
+        type: "error",
+      });
     }
   };
 
   const handleInferSpeakers = async () => {
     try {
       await inferSpeakers(recording.id);
-      addNotification({ message: "Speaker inference started. The speaker names will be updated shortly.", type: "success" });
-      window.dispatchEvent(new CustomEvent('recording-updated', { detail: { id: recording.id } }));
+      addNotification({
+        message:
+          "Speaker inference started. The speaker names will be updated shortly.",
+        type: "success",
+      });
+      window.dispatchEvent(
+        new CustomEvent("recording-updated", { detail: { id: recording.id } }),
+      );
       router.refresh();
     } catch (e) {
       console.error("Failed to infer speakers", e);
@@ -174,32 +214,32 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     <>
       {isRenaming ? (
         <div className="block">
-          <div 
+          <div
             id={isDemo ? "demo-recording-card" : undefined}
             className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
               <input
-                  autoFocus
-                  type="text"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={handleRenameSubmit}
-                  onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleRenameSubmit();
-                      if (e.key === 'Escape') setIsRenaming(false);
-                      e.stopPropagation();
-                  }}
-                  onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                  }}
-                  className="text-lg font-semibold text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none flex-1 mr-4"
+                autoFocus
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleRenameSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSubmit();
+                  if (e.key === "Escape") setIsRenaming(false);
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="text-lg font-semibold text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none flex-1 mr-4"
               />
               <StatusBadge recording={recording} />
             </div>
-            
+
             <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
@@ -214,13 +254,13 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         </div>
       ) : (
         <Link href={`/recordings/${recording.id}`} className="block">
-          <div 
+          <div
             id={isDemo ? "demo-recording-card" : undefined}
             className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
-              <h3 
+              <h3
                 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1 hover:text-blue-600 dark:hover:text-blue-400"
                 title="Double-click to rename"
                 onDoubleClick={handleRenameStart}
@@ -229,7 +269,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               </h3>
               <StatusBadge recording={recording} />
             </div>
-            
+
             <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
@@ -251,30 +291,44 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
           onClose={() => setContextMenu(null)}
           items={[
             {
-              label: 'Rename',
+              label: "Rename",
               onClick: handleRenameStart,
               icon: <Edit className="w-4 h-4" />,
             },
             {
-              label: 'Retry Speaker Inference',
+              label: "Recording Details",
+              onClick: () => {
+                setContextMenu(null);
+                setShowInfoModal(true);
+              },
+              icon: <FileAudio className="w-4 h-4" />,
+            },
+            {
+              label: "Retry Speaker Inference",
               onClick: handleInferSpeakers,
               icon: <RefreshCw className="w-4 h-4" />,
             },
             {
-              label: 'Retry Processing',
+              label: "Retry Processing",
               onClick: handleRetry,
               icon: <RefreshCw className="w-4 h-4" />,
-              className: 'text-blue-600 dark:text-blue-400'
+              className: "text-blue-600 dark:text-blue-400",
             },
             {
-              label: 'Delete Recording',
+              label: "Delete Recording",
               onClick: handleDelete,
               icon: <Trash2 className="w-4 h-4" />,
-              className: 'text-red-600 dark:text-red-400'
-            }
+              className: "text-red-600 dark:text-red-400",
+            },
           ]}
         />
       )}
+
+      <RecordingInfoModal
+        isOpen={showInfoModal}
+        onClose={() => setShowInfoModal(false)}
+        recording={recording}
+      />
     </>
   );
 }

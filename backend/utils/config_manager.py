@@ -47,6 +47,13 @@ DEFAULT_SYSTEM_CONFIG = {
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
+    "vad_parameters": {
+        "threshold": 0.5,
+        "min_speech_duration_ms": 250,
+        "min_silence_duration_ms": 100,
+        "fade_duration_ms": 50,
+        "silence_method": "mute",
+    },
 }
 
 DEFAULT_USER_SETTINGS = {

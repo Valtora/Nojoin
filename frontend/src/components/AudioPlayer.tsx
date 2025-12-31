@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { Recording } from '@/types';
-import { getRecordingStreamUrl } from '@/lib/api';
-import { Play, Pause, Volume2, VolumeX } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Recording } from "@/types";
+import { getRecordingStreamUrl } from "@/lib/api";
+import { Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { useState, useEffect } from "react";
 
 interface AudioPlayerProps {
   recording: Recording;
@@ -19,7 +19,7 @@ const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return "00:00";
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
 export default function AudioPlayer({
@@ -29,7 +29,7 @@ export default function AudioPlayer({
   onTimeUpdate,
   onEnded,
   onPlay,
-  onPause
+  onPause,
 }: AudioPlayerProps) {
   const [hasError, setHasError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -63,20 +63,20 @@ export default function AudioPlayer({
       setIsPlaying(false);
     };
 
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('error', handleError);
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    if (onEnded) audio.addEventListener('ended', onEnded);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("error", handleError);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    if (onEnded) audio.addEventListener("ended", onEnded);
 
     return () => {
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('error', handleError);
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      if (onEnded) audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("error", handleError);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      if (onEnded) audio.removeEventListener("ended", onEnded);
     };
   }, [audioRef, onTimeUpdate, onEnded, onPlay, onPause]);
 
@@ -130,7 +130,10 @@ export default function AudioPlayer({
 
   if (hasError) {
     return (
-      <div id="audio-player" className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center justify-center gap-4 shadow-sm relative overflow-hidden">
+      <div
+        id="audio-player"
+        className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center justify-center gap-4 shadow-sm relative overflow-hidden"
+      >
         {/* Blurred background visual effect */}
         <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
           <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1 rounded-full text-sm font-medium border border-orange-200 dark:border-orange-800 flex items-center gap-2">
@@ -160,7 +163,10 @@ export default function AudioPlayer({
   }
 
   return (
-    <div id="audio-player" className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center gap-4 shadow-sm">
+    <div
+      id="audio-player"
+      className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center gap-4 shadow-sm"
+    >
       <audio
         ref={audioRef}
         src={getRecordingStreamUrl(recording.id)}
@@ -170,9 +176,13 @@ export default function AudioPlayer({
       {/* Play/Pause Button */}
       <button
         onClick={togglePlay}
-        className="w-10 h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm flex-shrink-0"
+        className="w-10 h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm shrink-0"
       >
-        {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+        {isPlaying ? (
+          <Pause className="w-5 h-5 fill-current" />
+        ) : (
+          <Play className="w-5 h-5 fill-current ml-0.5" />
+        )}
       </button>
 
       {/* Time & Progress */}
@@ -204,8 +214,15 @@ export default function AudioPlayer({
 
         {/* Volume */}
         <div className="flex items-center gap-2 group relative">
-          <button onClick={toggleMute} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-            {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+          <button
+            onClick={toggleMute}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            {isMuted || volume === 0 ? (
+              <VolumeX className="w-5 h-5" />
+            ) : (
+              <Volume2 className="w-5 h-5" />
+            )}
           </button>
           <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 ease-in-out">
             <input

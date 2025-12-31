@@ -17,13 +17,11 @@ api_router.include_router(
     users.router,
     prefix="/users",
     tags=["users"],
-    # Removed router-level dependency to allow public register endpoint
 )
 api_router.include_router(
     invitations.router,
     prefix="/invitations",
     tags=["invitations"],
-    # Removed router-level dependency to allow public validate endpoint
 )
 api_router.include_router(
     recordings.router, 
@@ -81,8 +79,6 @@ api_router.include_router(
 )
 api_router.include_router(
     documents.router,
-    # Actually the endpoints are mixed: /recordings/{id}/documents and /documents/{id}
-    # So we can just register it once.
     tags=["documents"],
     dependencies=[Depends(get_current_user)]
 )

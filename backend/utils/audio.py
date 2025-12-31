@@ -16,19 +16,34 @@ def ensure_ffmpeg_in_path():
         return
 
     possible_paths = [
+        # Windows
         os.path.join(os.getcwd(), "ffmpeg.exe"),
         r"C:\ffmpeg\bin\ffmpeg.exe",
         r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
-        # Add other common paths if needed
+        # Linux / Unix
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/snap/bin/ffmpeg",
+        # macOS
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/opt/ffmpeg/bin/ffmpeg",
     ]
     
+    found = False
     for p in possible_paths:
         if os.path.exists(p):
             ffmpeg_dir = os.path.dirname(p)
             if ffmpeg_dir not in os.environ["PATH"]:
                 logger.info(f"Adding ffmpeg directory to PATH: {ffmpeg_dir}")
                 os.environ["PATH"] += os.pathsep + ffmpeg_dir
-            return
+            found = True
+            break
+    
+    if not found and not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        logger.warning(
+            "FFmpeg/FFprobe not found in PATH or common locations. "
+            "Please install FFmpeg to enable audio processing features."
+        )
 
 def get_audio_duration(file_path: str) -> float:
     """
@@ -155,6 +170,17 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
     """
     ensure_ffmpeg_in_path()
     
+    # Check for in-place modification
+    input_abs = os.path.abspath(input_path)
+    output_abs = os.path.abspath(output_path)
+    is_same_file = input_abs == output_abs
+    
+    final_output_path = output_path
+    if is_same_file:
+         import uuid
+         # Use a unique temp file in the same directory to ensure atomic move/rename works usually
+         final_output_path = f"{output_path}.{uuid.uuid4().hex[:8]}.tmp"
+
     cmd = [
         "ffmpeg",
         "-y",
@@ -163,15 +189,34 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
         "-ar", "16000",   # 16kHz
         "-codec:a", "libmp3lame",
         "-b:a", "64k",    # Lower bitrate is sufficient for 16kHz mono
-        output_path
+        "-f", "mp3",      # Force MP3 format (crucial for .tmp files)
+        final_output_path
     ]
     
     try:
         subprocess.run(cmd, check=True, capture_output=True)
+        
+        if is_same_file:
+            # Atomic replacement if possible, or move
+            if os.path.exists(final_output_path):
+                shutil.move(final_output_path, output_path)
+                
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to convert audio to proxy MP3: {e.stderr.decode() if e.stderr else str(e)}")
+        # Cleanup temp file
+        if is_same_file and os.path.exists(final_output_path):
+            try:
+                os.remove(final_output_path)
+            except OSError:
+                pass
         return False
     except Exception as e:
         logger.error(f"Unexpected error converting to proxy MP3: {str(e)}")
+        # Cleanup temp file
+        if is_same_file and os.path.exists(final_output_path):
+            try:
+                os.remove(final_output_path)
+            except OSError:
+                pass
         return False
