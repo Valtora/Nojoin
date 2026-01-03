@@ -1,16 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  X,
-  Tag as TagIcon,
-  Fingerprint,
-  Trash2,
-  ArrowRight,
-} from "lucide-react";
-import { GlobalSpeaker, PeopleTag } from "@/types";
+import { X, Tag as TagIcon, Fingerprint, ArrowRight } from "lucide-react";
+import { PeopleTag } from "@/types";
 import { getPeopleTags } from "@/lib/api";
-import { getColorByKey } from "@/lib/constants";
 
 interface BatchEditModalProps {
   isOpen: boolean;

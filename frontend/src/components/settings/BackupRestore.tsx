@@ -1,24 +1,35 @@
-'use client';
+"use client";
 
-import { useState, useRef, useCallback } from 'react';
-import { importBackup } from '@/lib/api';
-import { Download, Upload, Loader2, CheckCircle, X, FileArchive, Trash2, AlertOctagon, AlertTriangle } from 'lucide-react';
-import RestoreOptionsModal from '@/components/settings/RestoreOptionsModal';
-import BackupOptionsModal from '@/components/settings/BackupOptionsModal';
+import { useState, useRef } from "react";
+import { importBackup } from "@/lib/api";
+import {
+  Download,
+  Upload,
+  Loader2,
+  CheckCircle,
+  FileArchive,
+  Trash2,
+  AlertTriangle,
+} from "lucide-react";
+import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
+import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
 
 const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes';
+  if (bytes === 0) return "0 Bytes";
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
 export default function BackupRestore() {
   const [importing, setImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isValidZip, setIsValidZip] = useState<boolean>(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
@@ -32,8 +43,11 @@ export default function BackupRestore() {
   };
 
   const validateFile = (file: File): boolean => {
-    const nameValid = file.name.toLowerCase().endsWith('.zip');
-    const typeValid = !file.type || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+    const nameValid = file.name.toLowerCase().endsWith(".zip");
+    const typeValid =
+      !file.type ||
+      file.type === "application/zip" ||
+      file.type === "application/x-zip-compressed";
 
     if (nameValid && typeValid) {
       return true;
@@ -49,7 +63,10 @@ export default function BackupRestore() {
     } else {
       setSelectedFile(null);
       setIsValidZip(false);
-      setMessage({ type: 'error', text: 'Please select a valid .zip backup file.' });
+      setMessage({
+        type: "error",
+        text: "Please select a valid .zip backup file.",
+      });
     }
   };
 
@@ -88,7 +105,7 @@ export default function BackupRestore() {
     setIsValidZip(false);
     setMessage(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -110,7 +127,10 @@ export default function BackupRestore() {
         setUploadProgress(progress);
       });
 
-      setMessage({ type: 'success', text: 'Backup restored successfully. Please refresh the page.' });
+      setMessage({
+        type: "success",
+        text: "Backup restored successfully. Please refresh the page.",
+      });
       setSelectedFile(null);
       setIsValidZip(false);
 
@@ -118,11 +138,11 @@ export default function BackupRestore() {
       setTimeout(() => {
         window.location.reload();
       }, 2000);
-
     } catch (error: any) {
-      console.error('Import failed:', error);
-      const errorMsg = error.response?.data?.detail || 'Failed to restore backup.';
-      setMessage({ type: 'error', text: errorMsg });
+      console.error("Import failed:", error);
+      const errorMsg =
+        error.response?.data?.detail || "Failed to restore backup.";
+      setMessage({ type: "error", text: errorMsg });
     } finally {
       setImporting(false);
       setUploadProgress(0);
@@ -132,17 +152,22 @@ export default function BackupRestore() {
   return (
     <div className="space-y-6 pt-6 border-t border-gray-200 dark:border-gray-700">
       <div>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Backup & Restore</h3>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+          Backup & Restore
+        </h3>
         <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-6">
-
           {/* Export Section */}
           <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Export Backup</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+              Export Backup
+            </h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Download a zip file containing your database, recordings, and settings.
+              Download a zip file containing your database, recordings, and
+              settings.
               <br />
               <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-                Note: Sensitive API keys (e.g., OpenAI, Anthropic) are redacted for security and must be re-entered after restoration.
+                Note: Sensitive API keys (e.g., OpenAI, Anthropic) are redacted
+                for security and must be re-entered after restoration.
               </span>
             </p>
             <button
@@ -156,7 +181,9 @@ export default function BackupRestore() {
 
           {/* Import Section */}
           <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Import Backup</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+              Import Backup
+            </h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Restore data from a previously exported backup file.
             </p>
@@ -172,13 +199,14 @@ export default function BackupRestore() {
                 onDrop={handleDrop}
                 className={`
                   relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${isDragging
-                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                    : selectedFile
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                      : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'
+                  ${
+                    isDragging
+                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                      : selectedFile
+                        ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                        : "border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600"
                   }
-                  ${importing ? 'pointer-events-none opacity-75' : ''}
+                  ${importing ? "pointer-events-none opacity-75" : ""}
                 `}
               >
                 <input
@@ -203,7 +231,10 @@ export default function BackupRestore() {
                     </p>
                     {!importing && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile();
+                        }}
                         className="text-sm text-red-500 hover:text-red-600 underline flex items-center justify-center gap-1 mx-auto"
                       >
                         <Trash2 className="w-3 h-3" /> Remove
@@ -214,11 +245,12 @@ export default function BackupRestore() {
                   <div className="space-y-2">
                     <Upload className="w-12 h-12 mx-auto text-gray-400" />
                     <p className="text-gray-600 dark:text-gray-400">
-                      <span className="font-medium text-orange-500">Click to browse</span> or drag and drop
+                      <span className="font-medium text-orange-500">
+                        Click to browse
+                      </span>{" "}
+                      or drag and drop
                     </p>
-                    <p className="text-xs text-gray-500">
-                      ZIP files only
-                    </p>
+                    <p className="text-xs text-gray-500">ZIP files only</p>
                   </div>
                 )}
               </div>
@@ -228,13 +260,17 @@ export default function BackupRestore() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600 dark:text-gray-400">
-                      {uploadProgress < 100 ? 'Uploading...' : 'Processing on server (Do not close)...'}
+                      {uploadProgress < 100
+                        ? "Uploading..."
+                        : "Processing on server (Do not close)..."}
                     </span>
-                    <span className="text-gray-900 dark:text-white font-medium">{uploadProgress}%</span>
+                    <span className="text-gray-900 dark:text-white font-medium">
+                      {uploadProgress}%
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div
-                      className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`}
+                      className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-green-500 animate-pulse" : "bg-orange-500"}`}
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
@@ -262,21 +298,26 @@ export default function BackupRestore() {
           </div>
 
           {message && (
-            <div className={`p-4 rounded-md ${message.type === 'success' ? 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300' : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300'}`}>
+            <div
+              className={`p-4 rounded-md ${message.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300" : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300"}`}
+            >
               <div className="flex">
-                {message.type === 'success' ? <CheckCircle className="h-5 w-5 mr-2" /> : <AlertTriangle className="h-5 w-5 mr-2" />}
+                {message.type === "success" ? (
+                  <CheckCircle className="h-5 w-5 mr-2" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 mr-2" />
+                )}
                 <p className="text-sm font-medium">{message.text}</p>
               </div>
             </div>
           )}
-
         </div>
       </div>
       <RestoreOptionsModal
         isOpen={showRestoreOptions}
         onClose={() => setShowRestoreOptions(false)}
         onConfirm={performRestore}
-        fileName={selectedFile?.name || 'backup.zip'}
+        fileName={selectedFile?.name || "backup.zip"}
       />
       <BackupOptionsModal
         isOpen={showBackupOptions}

@@ -17,6 +17,7 @@ backend/tests/__pycache__/
 /.vscode
 .github/copilot-instructions.md
 .agent/*
+*.code-workspace
 
 # Logs
 *.log

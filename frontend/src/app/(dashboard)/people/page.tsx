@@ -18,7 +18,7 @@ import {
   BatchEditModal,
   BatchUpdates,
 } from "@/components/people/BatchEditModal";
-import { Trash2, Edit2, CheckSquare, X } from "lucide-react";
+import { Trash2, Edit2, CheckSquare } from "lucide-react";
 import { deleteGlobalSpeakerEmbedding } from "@/lib/api"; // Ensure this is imported for batch voiceprint delete
 
 export default function PeoplePage() {

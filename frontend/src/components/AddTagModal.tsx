@@ -257,9 +257,11 @@ export default function AddTagModal({
                   className={`flex-1 text-left ${isSelected ? "text-orange-700 dark:text-orange-400 font-medium" : "text-gray-700 dark:text-gray-200"}`}
                   onClick={() => {
                     if (isProcessing) return;
-                    isSelected
-                      ? handleRemoveTag(node.name)
-                      : handleAddTag(node.name);
+                    if (isSelected) {
+                      handleRemoveTag(node.name);
+                    } else {
+                      handleAddTag(node.name);
+                    }
                   }}
                   disabled={isProcessing}
                 >
@@ -307,7 +309,7 @@ export default function AddTagModal({
                 >
                   ←
                 </button>
-                New Sub-tag for "{creatingSubTagFor.name}"
+                New Sub-tag for &quot;{creatingSubTagFor.name}&quot;
               </span>
             ) : (
               "Add Tags"

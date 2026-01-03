@@ -2,25 +2,45 @@ name: Nojoin
 services:
   db:
     container_name: nojoin-db
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18-trixie
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-nojoin}
-    ports:
-      - "5432:5432"
+    # ports:
+    #   - "5432:5432" # Uncomment to access DB from host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-nojoin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     container_name: nojoin-redis
     image: redis:alpine
-    ports:
-      - "6379:6379"
+    # ports:
+    #   - "6379:6379" # Uncomment to access Redis from host
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
 
   api:
     container_name: nojoin-api
@@ -44,11 +64,16 @@ services:
       - XDG_CACHE_HOME=/shared_model_cache
       - HF_HOME=/shared_model_cache/huggingface
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
 
   worker:
     container_name: nojoin-worker
@@ -84,11 +109,16 @@ services:
               count: 1
               capabilities: [ gpu ]
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
 
   frontend:
     container_name: nojoin-frontend
@@ -101,12 +131,15 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost:14443/api}
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
 
   nginx:
     container_name: nojoin-nginx
     image: nginx:alpine
     ports:
-      - "14141:80"
+      - "14141:80" # HTTP is not used and will be redirected to HTTPS
       - "14443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -116,6 +149,9 @@ services:
       - frontend
       - api
     restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
 
 volumes:
   postgres_data:
@@ -123,3 +159,7 @@ volumes:
   redis_data:
   frontend_node_modules:
   backup_temp:
+
+networks:
+  nojoin_net:
+    driver: bridge

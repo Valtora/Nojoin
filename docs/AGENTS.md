@@ -78,18 +78,19 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 
 1. **Update Version Numbers** (all three files must match):
    - `companion/package.json`: `"version": "X.Y.Z"`
+   - `companion/package-lock.json`: `"version": "X.Y.Z"`
    - `companion/src-tauri/tauri.conf.json`: `"version": "X.Y.Z"`
    - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
 2. **Commit and Push**: Push changes to the `main` branch.
 
-3. **Create Tag**: Use the `v` prefix:
+3. **Create Tag**: Use the `companion-v` prefix to distinguish from backend releases:
 
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag companion-v0.4.3
+   git push origin companion-v0.4.3
    ```
 
-   *Note: Creating a tag locally via GUI does not automatically push it. The tag must be explicitly pushed to trigger the workflow.*
+   _Note: Creating a tag locally via GUI does not automatically push it. The tag must be explicitly pushed to trigger the workflow._
 
 4. **Create GitHub Release**: Create a release for the `v*` tag on GitHub.
 

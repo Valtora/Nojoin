@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { X, Tag as TagIcon, Plus, Users } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { X, Plus, Users } from "lucide-react";
 import { GlobalSpeaker, PeopleTag } from "@/types";
 import ColorPicker from "@/components/ColorPicker";
 import { getPeopleTags, createPeopleTag } from "@/lib/api";
 import { getColorByKey } from "@/lib/constants";
-import { Fingerprint, Trash2, ArrowRight } from "lucide-react";
+import { Fingerprint, ArrowRight } from "lucide-react";
 import {
   getGlobalSpeakers,
   mergeSpeakers,

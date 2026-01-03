@@ -6,9 +6,6 @@ import {
   ChevronsDown,
   ChevronsUp,
   Plus,
-  Edit2,
-  Trash2,
-  FolderPlus,
   ChevronDown,
   ChevronRight,
   Search,
@@ -52,7 +49,6 @@ export function PeopleTagSidebar({
   const [newTagName, setNewTagName] = useState("");
 
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
-  const [editName, setEditName] = useState("");
 
   const [addingSubTagTo, setAddingSubTagTo] = useState<number | null>(null);
 
@@ -263,9 +259,8 @@ export function PeopleTagSidebar({
             selectedTagIds={selectedTagIds}
             onToggleTag={onToggleTag}
             editingTagId={editingTagId}
-            onEditStart={(id, name) => {
+            onEditStart={(id) => {
               setEditingTagId(id);
-              setEditName(name);
             }}
             onEditCancel={() => setEditingTagId(null)}
             onEditSave={handleUpdateTagName}

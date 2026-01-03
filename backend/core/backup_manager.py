@@ -209,6 +209,56 @@ class BackupManager:
             raise e
 
     @staticmethod
+    def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Sorts tags so that parents appear before children.
+        """
+        # 1. Build index and adjacency
+        by_id = {item["id"]: item for item in data if "id" in item}
+        children_map: Dict[Any, List[Dict[str, Any]]] = {} # parent_id -> list of children
+        roots = []
+
+        for item in data:
+            parent_id = item.get("parent_id")
+            if parent_id and parent_id in by_id:
+                if parent_id not in children_map:
+                    children_map[parent_id] = []
+                children_map[parent_id].append(item)
+            else:
+                roots.append(item)
+
+        # 2. Flatten
+        sorted_items = []
+        queue = list(roots) 
+        
+        # Sort roots by ID to be deterministic
+        queue.sort(key=lambda x: x.get("id", 0))
+
+        while queue:
+            node = queue.pop(0)
+            sorted_items.append(node)
+            
+            node_id = node.get("id")
+            if node_id in children_map:
+                children = children_map[node_id]
+                # Sort children by ID
+                children.sort(key=lambda x: x.get("id", 0))
+                # Insert at start of queue to process immediately (DFS-like) or end (BFS-like). 
+                # Order doesn't strictly matter for topology, but BFS is often safer for depth limits.
+                # Let's use append (BFS).
+                queue.extend(children)
+        
+        # checks for cycles or disconnected items (shouldn't happen in valid trees)
+        # If we missed any, just append them at the end (fallback)
+        if len(sorted_items) < len(data):
+            processed_ids = {x.get("id") for x in sorted_items}
+            for item in data:
+                if item.get("id") not in processed_ids:
+                    sorted_items.append(item)
+                    
+        return sorted_items
+
+    @staticmethod
     async def create_backup(include_audio: bool = True) -> str:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
@@ -221,6 +271,14 @@ class BackupManager:
         async with async_session_maker() as session:
             for table_name, model_cls in MODELS:
                 statement = select(model_cls)
+                
+                # Safe Order for Tags (Parents First)
+                if table_name in ["tags", "p_tags"]:
+                    # Order by parent_id NULLS FIRST, then ID
+                    # This isn't strictly perfect for deep nesting without recursive CTE,
+                    # but it helps simple 1-level nesting which is common.
+                    statement = statement.order_by(model_cls.parent_id.nullsfirst(), model_cls.id)
+
                 results = await session.execute(statement)
                 items = results.scalars().all()
                 
@@ -361,6 +419,11 @@ class BackupManager:
                     
                     data = json.loads(zipf.read(f"{table_name}.json"))
                     
+                    # Topological Sort for Tags to ensure Parents are created first
+                    if table_name in ["tags", "p_tags"]:
+                        data = BackupManager._topological_sort(data)
+
+                    
                     for item_data in data:
                         # Adapt record to current schema (handle removed columns)
                         item_data = BackupManager._adapt_record(model_cls, item_data)
@@ -435,6 +498,15 @@ class BackupManager:
                                 if user_id in id_map["users"]:
                                     user_id = id_map["users"][user_id]
                                 
+                                
+                                # Check existence
+                                existing_tag = (await session.execute(
+                                    select(Tag)
+                                    .where(Tag.name == tag_name)
+                                    .where(Tag.user_id == user_id)
+                                )).scalar_one_or_none()
+
+                                if existing_tag:
                                     if old_id is not None:
                                         id_map["tags"][old_id] = existing_tag.id
                                     continue
@@ -505,6 +577,14 @@ class BackupManager:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                             else:
                                 continue
+
+                            # Remap parent_id if it exists
+                            if item_data.get("parent_id") in id_map["tags"]:
+                                item_data["parent_id"] = id_map["tags"][item_data["parent_id"]]
+                            elif item_data.get("parent_id"):
+                                # Fallback: if parent not found despite sort, set to None?
+                                # Consistent with p_tags logic
+                                item_data["parent_id"] = None
                         
                         elif table_name == "p_tags":
                             if item_data.get("user_id") in id_map["users"]:

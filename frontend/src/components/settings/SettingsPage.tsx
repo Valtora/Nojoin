@@ -1,21 +1,36 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { getSettings, updateSettings, getUserMe } from '@/lib/api';
-import { Settings, CompanionDevices } from '@/types';
-import { isValidUrl } from '@/lib/validation';
-import { Save, Loader2, Settings as SettingsIcon, Mic, Search, User, Shield, PlayCircle } from 'lucide-react';
-import { getMatchScore } from '@/lib/searchUtils';
-import { TAB_KEYWORDS } from './keywords';
-import VersionTag from './VersionTag';
-import GeneralSettings from './GeneralSettings';
-import AudioSettings from './AudioSettings';
-import AccountSettings from './AccountSettings';
-import AdminSettings from './AdminSettings';
-import HelpSettings from './HelpSettings';
-import { useNotificationStore } from '@/lib/notificationStore';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
+import { getSettings, updateSettings, getUserMe } from "@/lib/api";
+import { Settings, CompanionDevices } from "@/types";
+import { isValidUrl } from "@/lib/validation";
+import {
+  Save,
+  Loader2,
+  Settings as SettingsIcon,
+  Mic,
+  Search,
+  User,
+  Shield,
+  PlayCircle,
+} from "lucide-react";
+import { getMatchScore } from "@/lib/searchUtils";
+import { TAB_KEYWORDS } from "./keywords";
+import VersionTag from "./VersionTag";
+import GeneralSettings from "./GeneralSettings";
+import AudioSettings from "./AudioSettings";
+import AccountSettings from "./AccountSettings";
+import AdminSettings from "./AdminSettings";
+import HelpSettings from "./HelpSettings";
+import { useNotificationStore } from "@/lib/notificationStore";
 
-type Tab = 'general' | 'audio' | 'help' | 'account' | 'admin';
+type Tab = "general" | "audio" | "help" | "account" | "admin";
 
 interface CompanionConfig {
   api_port: number;
@@ -23,26 +38,32 @@ interface CompanionConfig {
   min_meeting_length?: number;
 }
 
-const COMPANION_URL = 'http://127.0.0.1:12345';
+const COMPANION_URL = "http://127.0.0.1:12345";
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const [activeTab, setActiveTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings>({});
-  const [companionConfig, setCompanionConfig] = useState<CompanionConfig | null>(null);
-  const [companionDevices, setCompanionDevices] = useState<CompanionDevices | null>(null);
-  const [selectedInputDevice, setSelectedInputDevice] = useState<string | null>(null);
-  const [selectedOutputDevice, setSelectedOutputDevice] = useState<string | null>(null);
+  const [companionConfig, setCompanionConfig] =
+    useState<CompanionConfig | null>(null);
+  const [companionDevices, setCompanionDevices] =
+    useState<CompanionDevices | null>(null);
+  const [selectedInputDevice, setSelectedInputDevice] = useState<string | null>(
+    null,
+  );
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstLoad = useRef(true);
-  const lastSavedState = useRef<string>('');
+  const lastSavedState = useRef<string>("");
 
   const refreshCompanionConfig = useCallback(async () => {
     try {
@@ -71,9 +92,18 @@ export default function SettingsPage() {
     const matches: Record<Tab, number> = {
       general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
       audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
-      help: getMatchScore(searchQuery, ['help', 'tour', 'demo', 'tutorial']),
+      help: getMatchScore(searchQuery, ["help", "tour", "demo", "tutorial"]),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
-      admin: isAdmin ? getMatchScore(searchQuery, [...TAB_KEYWORDS.admin, ...TAB_KEYWORDS.ai, ...TAB_KEYWORDS.invites, ...TAB_KEYWORDS.system, 'backup', 'restore']) : 1, // Admin now covers AI, Invites, System, Backup
+      admin: isAdmin
+        ? getMatchScore(searchQuery, [
+            ...TAB_KEYWORDS.admin,
+            ...TAB_KEYWORDS.ai,
+            ...TAB_KEYWORDS.invites,
+            ...TAB_KEYWORDS.system,
+            "backup",
+            "restore",
+          ])
+        : 1, // Admin now covers AI, Invites, System, Backup
     };
 
     return matches;
@@ -125,7 +155,7 @@ export default function SettingsPage() {
       try {
         const [settingsData, userData] = await Promise.all([
           getSettings(),
-          getUserMe()
+          getUserMe(),
         ]);
 
         // Ensure settingsData is an object (API might return null)
@@ -168,7 +198,7 @@ export default function SettingsPage() {
         companionApiPort: currentCompanionConfig?.api_port,
         companionMinLength: currentCompanionConfig?.min_meeting_length,
         selectedInputDevice: currentInputDevice,
-        selectedOutputDevice: currentOutputDevice
+        selectedOutputDevice: currentOutputDevice,
       });
 
       setLoading(false);
@@ -176,14 +206,27 @@ export default function SettingsPage() {
     load();
   }, [activeTab]);
 
-  const validateSettings = (settings: Settings, companionConfig: CompanionConfig | null): string | null => {
-    if (settings.whisper_model_size && !['tiny', 'base', 'small', 'medium', 'large', 'turbo'].includes(settings.whisper_model_size)) {
+  const validateSettings = (
+    settings: Settings,
+    companionConfig: CompanionConfig | null,
+  ): string | null => {
+    if (
+      settings.whisper_model_size &&
+      !["tiny", "base", "small", "medium", "large", "turbo"].includes(
+        settings.whisper_model_size,
+      )
+    ) {
       return "Invalid Whisper model size.";
     }
-    if (settings.theme && !['dark', 'light'].includes(settings.theme)) {
+    if (settings.theme && !["dark", "light"].includes(settings.theme)) {
       return "Invalid theme.";
     }
-    if (settings.llm_provider && !['gemini', 'openai', 'anthropic', 'ollama'].includes(settings.llm_provider)) {
+    if (
+      settings.llm_provider &&
+      !["gemini", "openai", "anthropic", "ollama"].includes(
+        settings.llm_provider,
+      )
+    ) {
       return "Invalid LLM provider.";
     }
     if (settings.ollama_api_url && !isValidUrl(settings.ollama_api_url)) {
@@ -191,7 +234,10 @@ export default function SettingsPage() {
     }
     if (companionConfig) {
       if (companionConfig.min_meeting_length !== undefined) {
-        if (companionConfig.min_meeting_length < 0 || companionConfig.min_meeting_length > 1440) {
+        if (
+          companionConfig.min_meeting_length < 0 ||
+          companionConfig.min_meeting_length > 1440
+        ) {
           return "Meeting length must be between 0 and 1440 minutes.";
         }
       }
@@ -202,7 +248,7 @@ export default function SettingsPage() {
   const saveSettings = useCallback(async () => {
     const error = validateSettings(settings, companionConfig);
     if (error) {
-      addNotification({ type: 'error', message: error });
+      addNotification({ type: "error", message: error });
       return;
     }
     setSaving(true);
@@ -212,24 +258,24 @@ export default function SettingsPage() {
       // Save companion config (api_port) if available
       if (companionConfig) {
         await fetch(`${COMPANION_URL}/config`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             api_port: companionConfig.api_port,
-            min_meeting_length: companionConfig.min_meeting_length
-          })
+            min_meeting_length: companionConfig.min_meeting_length,
+          }),
         });
       }
 
       // Save device selections if companion is connected
       if (companionDevices) {
         await fetch(`${COMPANION_URL}/config`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             input_device_name: selectedInputDevice,
-            output_device_name: selectedOutputDevice
-          })
+            output_device_name: selectedOutputDevice,
+          }),
         });
       }
 
@@ -239,18 +285,28 @@ export default function SettingsPage() {
         companionApiPort: companionConfig?.api_port,
         companionMinLength: companionConfig?.min_meeting_length,
         selectedInputDevice,
-        selectedOutputDevice
+        selectedOutputDevice,
       });
 
       console.log("Settings saved successfully");
-      addNotification({ type: 'success', message: 'Settings saved successfully' });
+      addNotification({
+        type: "success",
+        message: "Settings saved successfully",
+      });
     } catch (e) {
       console.error("Failed to save settings", e);
-      addNotification({ type: 'error', message: 'Failed to save settings' });
+      addNotification({ type: "error", message: "Failed to save settings" });
     } finally {
       setSaving(false);
     }
-  }, [settings, companionConfig, companionDevices, selectedInputDevice, selectedOutputDevice, addNotification]);
+  }, [
+    settings,
+    companionConfig,
+    companionDevices,
+    selectedInputDevice,
+    selectedOutputDevice,
+    addNotification,
+  ]);
 
   useEffect(() => {
     if (loading) return;
@@ -265,7 +321,7 @@ export default function SettingsPage() {
       companionApiPort: companionConfig?.api_port,
       companionMinLength: companionConfig?.min_meeting_length,
       selectedInputDevice,
-      selectedOutputDevice
+      selectedOutputDevice,
     });
 
     if (currentState === lastSavedState.current) {
@@ -285,23 +341,27 @@ export default function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [settings, companionConfig, selectedInputDevice, selectedOutputDevice, loading, saveSettings]);
+  }, [
+    settings,
+    companionConfig,
+    selectedInputDevice,
+    selectedOutputDevice,
+    loading,
+    saveSettings,
+  ]);
 
   const tabs = useMemo(() => {
     const baseTabs = [
-      { id: 'general', label: 'General', icon: SettingsIcon },
-      { id: 'audio', label: 'Audio & Recording', icon: Mic },
-      { id: 'help', label: 'Help', icon: PlayCircle },
-      { id: 'account', label: 'Account', icon: User },
+      { id: "general", label: "General", icon: SettingsIcon },
+      { id: "audio", label: "Audio & Recording", icon: Mic },
+      { id: "help", label: "Help", icon: PlayCircle },
+      { id: "account", label: "Account", icon: User },
     ] as const;
 
-    const adminTab = { id: 'admin', label: 'Admin Panel', icon: Shield };
+    const adminTab = { id: "admin", label: "Admin Panel", icon: Shield };
 
     if (isAdmin) {
-      return [
-        ...baseTabs,
-        adminTab,
-      ];
+      return [...baseTabs, adminTab];
     }
     return baseTabs;
   }, [isAdmin]);
@@ -313,8 +373,12 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-8 py-6 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and configurations.</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Settings
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Manage your application preferences and configurations.
+          </p>
         </div>
         <VersionTag />
       </div>
@@ -349,14 +413,17 @@ export default function SettingsPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`
                     w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                    ${isActive
-                      ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700/50'
+                    ${
+                      isActive
+                        ? "bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400"
+                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700/50"
                     }
                   `}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-orange-700 dark:text-orange-400' : 'text-gray-500 dark:text-gray-500'}`} />
+                    <Icon
+                      className={`w-4 h-4 ${isActive ? "text-orange-700 dark:text-orange-400" : "text-gray-500 dark:text-gray-500"}`}
+                    />
                     {tab.label}
                   </div>
                   {hasMatch && (
@@ -393,20 +460,23 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
-              {activeTab === 'general' && (
+              {activeTab === "general" && (
                 <GeneralSettings
                   settings={settings}
                   onUpdate={setSettings}
                   searchQuery={searchQuery}
-                  userId={userId}
                 />
               )}
-              {activeTab === 'audio' && (
+              {activeTab === "audio" && (
                 <AudioSettings
                   settings={settings}
                   onUpdateSettings={setSettings}
                   companionConfig={companionConfig}
-                  onUpdateCompanionConfig={(config) => setCompanionConfig(prev => prev ? { ...prev, ...config } : null)}
+                  onUpdateCompanionConfig={(config) =>
+                    setCompanionConfig((prev) =>
+                      prev ? { ...prev, ...config } : null,
+                    )
+                  }
                   onRefreshCompanionConfig={refreshCompanionConfig}
                   companionDevices={companionDevices}
                   selectedInputDevice={selectedInputDevice}
@@ -416,14 +486,11 @@ export default function SettingsPage() {
                   searchQuery={searchQuery}
                 />
               )}
-              {activeTab === 'help' && (
-                <HelpSettings
-                  userId={userId}
-                  searchQuery={searchQuery}
-                />
+              {activeTab === "help" && (
+                <HelpSettings userId={userId} searchQuery={searchQuery} />
               )}
-              {activeTab === 'account' && <AccountSettings />}
-              {activeTab === 'admin' && isAdmin && (
+              {activeTab === "account" && <AccountSettings />}
+              {activeTab === "admin" && isAdmin && (
                 <AdminSettings
                   settings={settings}
                   onUpdateSettings={setSettings}

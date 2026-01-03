@@ -6,13 +6,10 @@ import {
   MoreVertical,
   Mail,
   Phone,
-  Building,
   MessageSquare,
   Edit2,
   Trash2,
-  Tag,
 } from "lucide-react";
-import { format } from "date-fns";
 import { getColorByKey } from "@/lib/constants";
 import ContextMenu from "@/components/ContextMenu";
 
@@ -112,7 +109,7 @@ export function PeopleTable({
               <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">
                 Tags
               </th>
-              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[80px] text-right">
+              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-20 text-right">
                 Actions
               </th>
             </tr>
@@ -193,7 +190,6 @@ export function PeopleTable({
                     )}
                     {person.company && (
                       <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-                        <Building className="w-3 h-3 text-gray-400" />
                         {person.company}
                       </div>
                     )}

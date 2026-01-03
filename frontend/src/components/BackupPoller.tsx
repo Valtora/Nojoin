@@ -21,11 +21,7 @@ export default function BackupPoller() {
 
     const poll = async () => {
       try {
-        const {
-          state,
-          result,
-          status: statusMsg,
-        } = await getBackupStatus(taskId);
+        const { state, status: statusMsg } = await getBackupStatus(taskId);
 
         if (state === "SUCCESS") {
           // Task complete

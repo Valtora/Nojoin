@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -35,18 +35,21 @@ export default function ConfirmationModal({
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            {title}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        
-        <p className="text-gray-600 dark:text-gray-300 mb-6">
-          {message}
-        </p>
+
+        <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
 
         <div className="flex justify-end gap-3">
           <button
@@ -61,9 +64,9 @@ export default function ConfirmationModal({
               onClose();
             }}
             className={`px-4 py-2 text-white rounded-lg text-sm font-medium ${
-              isDangerous 
-                ? 'bg-red-600 hover:bg-red-700' 
-                : 'bg-orange-600 hover:bg-orange-700'
+              isDangerous
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-orange-600 hover:bg-orange-700"
             }`}
           >
             {confirmText}
@@ -71,6 +74,6 @@ export default function ConfirmationModal({
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
