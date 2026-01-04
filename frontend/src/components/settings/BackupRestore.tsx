@@ -166,8 +166,8 @@ export default function BackupRestore() {
               settings.
               <br />
               <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-                Note: Sensitive API keys (e.g., OpenAI, Anthropic) are redacted
-                for security and must be re-entered after restoration.
+                Note: API keys are redacted for security and must be re-entered
+                after restoration.
               </span>
             </p>
             <button

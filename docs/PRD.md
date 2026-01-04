@@ -41,7 +41,7 @@ The primary user interface for interacting with the system.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
   - **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
 - **Companion Status:** A visual indicator (warning bubble) is displayed when the Companion App is not detected.
-- **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. It dynamically links to the correct installer for the user's OS (Windows/macOS/Linux) from GitHub Releases.
+- **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. It links to the Windows installer from GitHub Releases.
 
 ### 2.3 The Companion App (Tauri + Rust)
 
@@ -137,7 +137,7 @@ The system provides the following core capabilities:
 - **Language:** Python 3.11+
 - **Framework:** FastAPI
 - **Task Queue:** Celery
-- **Database:** PostgreSQL 16 (accessed via SQLModel/SQLAlchemy)
+- **Database:** PostgreSQL 18 (accessed via SQLModel/SQLAlchemy)
 - **Migrations:** Alembic
 - **Broker:** Redis
 - **Container Runtime:** Docker (Linux with NVIDIA Container Toolkit recommended)

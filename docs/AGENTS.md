@@ -17,7 +17,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **Heavy Processing**:
   - **Location**: `backend/worker/tasks.py`.
   - **Constraint**: Heavy libraries (torch, whisper, pyannote) must be imported **inside** the task function to keep the API lightweight and ensure fast startup times.
-  - **Pipeline**: VAD (Silero) -> Transcribe (Whisper) -> Diarize (Pyannote) -> Alignment.
+  - **Pipeline**: Validation -> VAD (Silero) -> Proxy Creation (Alignment) -> Transcribe (Whisper) -> Diarize (Pyannote) -> Merge -> Speaker Inference (LLM) -> Voiceprint Extraction -> Title Inference -> Notes Generation.
 - **Configuration**: `backend.utils.config_manager` is used to handle system and user-specific settings.
 
 ### Frontend (Next.js + Zustand)
@@ -74,7 +74,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 
 ### Companion Release Workflow
 
-**The companion app uses the standard tag pattern** (`v*`) to align with the main app release.
+**The companion app uses a specific tag pattern** (`companion-v*`) to distinguish its releases from the main backend/frontend releases.
 
 1. **Update Version Numbers** (all three files must match):
    - `companion/package.json`: `"version": "X.Y.Z"`
