@@ -13,6 +13,7 @@
 </div>
 
 <!-- Demo Videos -->
+
 https://github.com/user-attachments/assets/27324ab4-4ad0-42cb-b723-69dfaa03cf10
 
 https://github.com/user-attachments/assets/c7a7e07c-ada5-441f-a8a2-18a67eeb14a9
@@ -53,7 +54,6 @@ Most meeting assistants require users to invite bots to join meetings or upload 
 3. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 4. **Configure:** Follow the first-run wizard to set up API keys and preferences.
 5. **Companion App:** Navigate to the [Releases](https://github.com/Valtora/Nojoin/releases) page to download, install, and connect the companion app on client machines to start recording audio.
-
    - See [Installation & Setup](#%EF%B8%8F-installation--setup) for CPU-only mode and configuration details.
 
 ## 🖥️ Hardware Requirements
@@ -184,10 +184,12 @@ When a user is deleted, Nojoin performs a **hard delete** of all associated data
 If you plan to develop or build Nojoin from source, you will need the following tools installed:
 
 **General:**
+
 - **Git**
 - **Docker** (Required for running Database and Redis services)
 
 **Backend (Python):**
+
 - **Python 3.11**
 - **FFmpeg** (Required for audio processing)
   - Linux: `sudo apt install ffmpeg`
@@ -199,10 +201,12 @@ If you plan to develop or build Nojoin from source, you will need the following 
   - Windows: Microsoft Visual C++ Build Tools
 
 **Frontend (Node.js):**
+
 - **Node.js v20+** (LTS recommended)
 - **npm** (comes with Node.js) or **pnpm**
 
 **Companion App (Rust):**
+
 - **Rust** (Latest Stable)
 - **CMake** (Used by some Rust build scripts)
 - **Platform-specific dependencies:**
@@ -227,7 +231,7 @@ If you plan to develop or build Nojoin from source, you will need the following 
    docker compose up -d
    ```
 
-   *Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose up -d --build`.*
+   _Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose up -d --build`._
 
    **Option B: CPU**
    Works on all systems. Slower processing speeds.
@@ -240,14 +244,13 @@ If you plan to develop or build Nojoin from source, you will need the following 
    docker compose up -d
    ```
 
-   *Note: The first run may take several minutes as it needs to download large Docker images.*
+   _Note: The first run may take several minutes as it needs to download large Docker images._
 
 3. **Access the Application:**
-
    - **Web Interface:** Open `https://localhost:14443`
-     - *Note: A "Not Secure" warning will appear because of the self-signed certificate.*
+     - _Note: A "Not Secure" warning will appear because of the self-signed certificate._
    - **Remote Access:** The Docker images are pre-configured to work on any domain. Simply access the server via its IP or domain name (e.g., `https://192.168.1.50:14443`).
-     - *Note: The domain may need to be added to `ALLOWED_ORIGINS` in `.env` if CORS issues are encountered.*
+     - _Note: The domain may need to be added to `ALLOWED_ORIGINS` in `.env` if CORS issues are encountered._
 
 ### Using Local LLMs (Ollama)
 
@@ -263,7 +266,7 @@ If running Ollama on the same machine as the Nojoin Docker containers, the speci
 3. Run the installer. The application will appear in the system tray.
 4. The web app also has a 'Download Companion App' button that will direct to the releases page.
 
-*Note: For developers, the app can be built from source by navigating to the `companion` directory and running `cargo build --release` on Windows.*
+_Note: For developers, the app can be built from source by navigating to the `companion` directory and running `cargo build --release` on Windows._
 
 > **🤝 Contributions Welcomed:** Contributions are welcomed to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support for Linux so I will focus on this first.
 > MacOS is trickier due to the need to use ScreenCaptureKit for system audio capture. If interested in contributing, please check the [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss.
@@ -273,7 +276,7 @@ If running Ollama on the same machine as the Nojoin Docker containers, the speci
 To update Nojoin to the latest version, in the Nojoin directory:
 
 1. **Stop the containers:**
-   
+
    ```bash
    docker compose down
    ```
@@ -345,7 +348,7 @@ Please see the [Contributing Guide](CONTRIBUTING.md) for details on how to get s
 
 - **Community Edition:** The source code in this repository. Free, open-source (AGPLv3), and self-hosted. Ideal for individuals, developers, and privacy-focused users who want full control over their data.
 
-- **Nojoin Cloud:** A fully managed, hosted version of Nojoin allowing users to take advantage of powerful GPUs and pay a monthly subscription based on tiered usage. *(Coming Late 2026)*
+- **Nojoin Cloud:** A fully managed, hosted version of Nojoin allowing users to take advantage of powerful GPUs and pay a monthly subscription based on tiered usage. _(Coming Late 2026)_
 
 ## 📃 Licence
 
