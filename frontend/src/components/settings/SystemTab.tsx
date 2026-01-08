@@ -96,9 +96,15 @@ export default function SystemTab() {
     const token = localStorage.getItem("token");
 
     // Construct WS URL from API_BASE_URL to match Protocol and Host
-    const apiProtocol = API_BASE_URL.startsWith("https") ? "wss:" : "ws:";
-    // API_BASE_URL is like "https://localhost:14443/api/v1"
-    const urlObj = new URL(API_BASE_URL);
+    let apiBase = API_BASE_URL;
+
+    // Handle relative URLs (e.g. "/api/v1") by appending to window.location.origin
+    if (apiBase.startsWith("/")) {
+      apiBase = window.location.origin + apiBase;
+    }
+
+    const apiProtocol = apiBase.startsWith("https") ? "wss:" : "ws:";
+    const urlObj = new URL(apiBase);
 
     // We want: wss://<host>:<port>/api/v1/system/logs/live
     const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}&token=${token}`;

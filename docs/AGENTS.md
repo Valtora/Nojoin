@@ -134,6 +134,8 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Rule:** Do not use `any` unless absolutely necessary to bypass library bugs.
 - **Import Verification:**
   - **Rule:** When refactoring or moving code, verify that all imports in dependent files are updated. Use `grep_search` to find usages of moved symbols.
+- **Client-Side Safety:**
+  - **Rule:** Never assume `API_BASE_URL` is absolute. Always use safe URL construction (e.g., `new URL(path, window.location.origin)`) or manually check and prepend origin to handle both relative (production) and absolute (dev) paths.
 
 ## Agent Interaction Rules
 
