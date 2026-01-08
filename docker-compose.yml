@@ -46,6 +46,22 @@ services:
       - nojoin_net
     logging: *default-logging
 
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: nojoin-socket-proxy
+    privileged: true # Required for proper socket access
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - SERVICES=1 # Sometimes needed widely
+      - TASKS=1
+      - POST=0 # Disallow state-changing POST requests
+    restart: unless-stopped
+    networks:
+      - nojoin_net
+    logging: *default-logging
+
   api:
     container_name: nojoin-api
     image: ghcr.io/valtora/nojoin-api:latest
@@ -59,8 +75,8 @@ services:
       - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
       - backup_temp:/tmp
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
@@ -73,6 +89,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      socket-proxy:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

@@ -153,3 +153,4 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **NO GIT COMMANDS**: Never push/pull automatically. Provide text for messages.
 - **NO EMOJIS**: Keep output strict and professional.
 - **TONE**: Objective, results-oriented. No fluff.
+- **COMMENTS**: Add comments to code where the code is non-obvious. Comments should be brief, professional, and to the point with absolutely zero 'developer thought' or 'developer intent' or 'developer reasoning' style comments.

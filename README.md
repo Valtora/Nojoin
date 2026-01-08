@@ -49,6 +49,9 @@ Most meeting assistants require users to invite bots to join meetings or upload 
 
 ## ⚡ Quick Start
 
+> [WARNING]
+> Nojoin is still in development so updates may break instances. I will do my best to fix these issues ASAP but users should create regular backups just in case.
+
 1. **Clone:** `git clone https://github.com/Valtora/Nojoin && cd Nojoin`
 2. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
 3. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)

@@ -16,12 +16,12 @@ from datetime import datetime, timedelta
 import html
 import traceback
 
-# ReportLab imports for PDF
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+# ReportLab imports for PDF removed
+# from reportlab.lib import colors
+# ...
+
+# Markdown PDF imports
+from markdown_pdf import MarkdownPdf, Section
 
 # Python-docx imports for DOCX
 from docx import Document as DocxDocument
@@ -147,106 +147,76 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
 def _parse_markdown_line(line: str) -> dict:
     """
     Parse a markdown line to identify type (heading, list, paragraph) and content.
-    Very basic parser for common notes format.
+    Basic parser for common notes format, handling indentation.
     """
-    line = line.strip()
-    if not line:
+    stripped_line = line.strip()
+    if not stripped_line:
         return {"type": "empty", "content": ""}
     
-    if line.startswith('#'):
-        level = len(line.split(' ')[0])
-        content = line.lstrip('#').strip()
+    # Calculate indent level (2 spaces = 1 level)
+    # We count leading spaces
+    leading_spaces = len(line) - len(line.lstrip(' '))
+    indent_level = leading_spaces // 2
+
+    if stripped_line.startswith('#'):
+        level = len(stripped_line.split(' ')[0])
+        content = stripped_line.lstrip('#').strip()
         return {"type": "heading", "level": level, "content": content}
     
-    if line.startswith('- ') or line.startswith('* '):
-        content = line[2:].strip()
-        return {"type": "list_item", "content": content}
+    # Handle indent levels
+    if stripped_line.startswith('- ') or stripped_line.startswith('* '):
+        content = stripped_line[2:].strip()
+        return {"type": "list_item", "content": content, "indent": indent_level}
+    
+    # Simple numbered list detection (1. , 2. )
+    if re.match(r'^\d+\.\s', stripped_line):
+         content = re.sub(r'^\d+\.\s', '', stripped_line).strip()
+         return {"type": "list_item", "content": content, "indent": indent_level}
         
-    return {"type": "paragraph", "content": line}
+    return {"type": "paragraph", "content": stripped_line}
 
 
-def _format_markdown_text_for_pdf(text: str) -> str:
-    """
-    Convert markdown bold/italic to ReportLab XML tags.
-    """
-    text = html.escape(text)
-    # Bold **text** or __text__ -> <b>text</b>
-    text = re.sub(r'(\*\*|__)(.*?)\1', r'<b>\2</b>', text)
-    # Italic *text* or _text_ -> <i>text</i>
-    text = re.sub(r'(\*|_)(.*?)\1', r'<i>\2</i>', text)
-    return text
 
-
-def _generate_pdf_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
-    """Generate a PDF export."""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+def _generate_full_markdown(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> str:
+    """Generate a single markdown string for the entire export."""
+    md_lines = []
     
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Justify', alignment=TA_JUSTIFY))
-    styles.add(ParagraphStyle(name='SpeakerLabel', parent=styles['Normal'], fontName='Helvetica-Bold', spaceAfter=2))
-    styles.add(ParagraphStyle(name='TranscriptText', parent=styles['Normal'], leftIndent=20, spaceAfter=8))
+    # Header
+    md_lines.append(f"# {html.escape(recording.name)}")
+    md_lines.append("")
     
-    story = []
-    
-    # --- Header ---
-    story.append(Paragraph(html.escape(recording.name), styles['Title']))
-    story.append(Spacer(1, 12))
-    
-    # Metadata
     date_str = recording.created_at.strftime("%B %d, %Y at %I:%M %p") if recording.created_at else "Unknown Date"
-    story.append(Paragraph(f"<b>Date:</b> {date_str}", styles['Normal']))
+    md_lines.append(f"**Date:** {date_str}")
+    md_lines.append("")
     
     duration_str = str(timedelta(seconds=int(recording.duration_seconds))) if recording.duration_seconds else "Unknown"
-    story.append(Paragraph(f"<b>Duration:</b> {duration_str}", styles['Normal']))
+    md_lines.append(f"**Duration:** {duration_str}")
+    md_lines.append("")
     
-    # Speakers
     if recording.speakers:
         speaker_names = []
         for s in recording.speakers:
             name = s.local_name or (s.global_speaker.name if s.global_speaker else None) or s.name or s.diarization_label
             speaker_names.append(html.escape(name))
-        story.append(Paragraph(f"<b>Speakers:</b> {', '.join(speaker_names)}", styles['Normal']))
+        md_lines.append(f"**Speakers:** {', '.join(speaker_names)}")
+        md_lines.append("")
     
-    story.append(Spacer(1, 24))
-    
-    # --- Notes ---
-    if include_notes and transcript.notes:
-        story.append(Paragraph("Meeting Notes", styles['Heading1']))
-        story.append(Spacer(1, 12))
-        
-        # Process Markdown Notes
-        for line in transcript.notes.split('\n'):
-            parsed = _parse_markdown_line(line)
-            formatted_content = _format_markdown_text_for_pdf(parsed['content'])
-            
-            if parsed['type'] == 'heading':
-                # Map markdown levels to ReportLab styles
-                style_name = 'Heading2' if parsed['level'] == 1 else 'Heading3' if parsed['level'] == 2 else 'Heading4'
-                story.append(Paragraph(formatted_content, styles[style_name]))
-            elif parsed['type'] == 'list_item':
-                story.append(ListFlowable(
-                    [ListItem(Paragraph(formatted_content, styles['Normal']))],
-                    bulletType='bullet',
-                    start='circle'
-                ))
-            elif parsed['type'] == 'paragraph':
-                story.append(Paragraph(formatted_content, styles['Normal']))
-            
-            # Add small space after items usually
-            if parsed['type'] != 'empty':
-                story.append(Spacer(1, 6))
-                
-        story.append(Spacer(1, 24))
-        
-        if include_transcript:
-            story.append(PageBreak())
+    md_lines.append("---")
+    md_lines.append("")
 
-    # --- Transcript ---
-    if include_transcript and transcript.segments:
-        story.append(Paragraph("Transcript", styles['Heading1']))
-        story.append(Spacer(1, 12))
+    # Notes
+    if include_notes and transcript.notes:
+        md_lines.append("## Meeting Notes")
+        md_lines.append("")
+        md_lines.append(transcript.notes)
+        md_lines.append("")
+        md_lines.append("---")
+        md_lines.append("")
         
+    # Transcript
+    if include_transcript and transcript.segments:
+        md_lines.append("## Transcript")
+        md_lines.append("")
         speaker_map = _build_speaker_map(recording.speakers)
         
         for seg in transcript.segments:
@@ -259,13 +229,39 @@ def _generate_pdf_export(recording: Recording, transcript: Transcript, include_t
             seconds = int(start % 60)
             time_str = f"[{minutes:02d}:{seconds:02d}]"
             
-            # Speaker Line
-            story.append(Paragraph(f"{time_str} {html.escape(speaker_name)}", styles['SpeakerLabel']))
-            # Text Line
-            story.append(Paragraph(html.escape(text), styles['TranscriptText']))
+            # Use bold for speaker to make it visually distinct
+            md_lines.append(f"**{time_str} {html.escape(speaker_name)}**")
+            md_lines.append(f"{html.escape(text)}")
+            md_lines.append("")
 
-    doc.build(story)
-    return buffer.getvalue()
+    return "\n".join(md_lines)
+
+def _generate_pdf_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
+    """Generate a PDF export using markdown-pdf."""
+    markdown_content = _generate_full_markdown(recording, transcript, include_transcript, include_notes)
+    
+    pdf = MarkdownPdf(toc_level=2)
+    css = "body { font-family: Helvetica, sans-serif; }"
+    pdf.add_section(Section(markdown_content), user_css=css)
+    
+    # Save to buffer
+    buffer = BytesIO()
+    # Use a temporary file since the library requires a file path string for saving.
+    
+    import tempfile
+    
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = tmp.name
+        
+    try:
+        pdf.save(tmp_path)
+        with open(tmp_path, "rb") as f:
+            pdf_bytes = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+            
+    return pdf_bytes
 
 
 def _generate_docx_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
@@ -304,10 +300,6 @@ def _generate_docx_export(recording: Recording, transcript: Transcript, include_
             content = parsed['content']
             
             # Basic bold handling for DOCX
-            # Since python-docx runs don't support regex replace easily for mixed styling,
-            # we'll do a simple split.
-            # "Some **bold** text" -> ["Some ", "**bold**", " text"]
-            
             def add_formatted_run(paragraph, text):
                 parts = re.split(r'(\*\*.*?\*\*)', text)
                 for part in parts:
@@ -320,7 +312,21 @@ def _generate_docx_export(recording: Recording, transcript: Transcript, include_
             if parsed['type'] == 'heading':
                 doc.add_heading(content, level=min(parsed['level'] + 1, 9))
             elif parsed['type'] == 'list_item':
-                p = doc.add_paragraph(style='List Bullet')
+                # Map indent level to docx styles
+                # 'List Bullet', 'List Bullet 2', 'List Bullet 3'
+                indent = parsed.get('indent', 0)
+                if indent == 0:
+                    style = 'List Bullet'
+                else:
+                    style = f'List Bullet {min(indent + 1, 3)}'
+                
+                try:
+                    p = doc.add_paragraph(style=style)
+                except KeyError:
+                    # Fallback if style doesn't exist
+                    p = doc.add_paragraph(style='List Bullet')
+                    # Could modify p.paragraph_format.left_indent manually if needed
+                
                 add_formatted_run(p, content)
             elif parsed['type'] == 'paragraph':
                 p = doc.add_paragraph()

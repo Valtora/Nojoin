@@ -29,69 +29,14 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Initialize Docker client
+client = None
+client_init_error = None
 try:
     client = docker.from_env()
 except Exception as e:
     logger.error(f"Failed to initialize Docker client: {e}")
-    client = None
+    client_init_error = str(e)
 
-async def restart_tasks():
-    """
-    Restart the Nojoin containers.
-    We restart worker, frontend, nginx, redis, and db first.
-    The API container restarts itself last to allow the response to return.
-    """
-    if not client:
-        logger.error("Docker client not initialized.")
-        return
-
-    containers_to_restart = [
-        "nojoin-worker",
-        "nojoin-frontend",
-        "nojoin-nginx", 
-        "nojoin-redis",
-        "nojoin-db"
-    ]
-
-    # Allow time for the 202 Accepted response to reach the client
-    await asyncio.sleep(2)
-
-    for container_name in containers_to_restart:
-        try:
-            container = client.containers.get(container_name)
-            logger.info(f"Restarting container: {container_name}")
-            container.restart()
-        except docker.errors.NotFound:
-            logger.warning(f"Container {container_name} not found. Skipping.")
-        except Exception as e:
-            logger.error(f"Failed to restart {container_name}: {e}")
-
-    # Finally restart the API container
-    # This will kill the current process, so it must be last
-    try:
-        api_container = client.containers.get("nojoin-api")
-        logger.info("Restarting nojoin-api...")
-        api_container.restart()
-    except Exception as e:
-        logger.error(f"Failed to restart nojoin-api: {e}")
-
-@router.post("/restart", status_code=202)
-def restart_system(
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_superuser)
-):
-    """
-    Restart the entire Nojoin system.
-    Requires Superuser privileges.
-    """
-    if not client:
-        raise HTTPException(
-            status_code=503, 
-            detail="Docker integration is not available. Ensure Docker socket is mounted."
-        )
-    
-    background_tasks.add_task(restart_tasks)
-    return {"message": "System restart initiated. The API will be unavailable shortly."}
 
 @router.get("/logs/download")
 def download_logs(
@@ -138,7 +83,8 @@ async def websocket_logs(
     await websocket.accept()
     
     if not client:
-        await websocket.send_text("Error: Docker client unavailable")
+        error_msg = f"Error: Docker client unavailable. {client_init_error}" if client_init_error else "Error: Docker client unavailable"
+        await websocket.send_text(error_msg)
         await websocket.close()
         return
 

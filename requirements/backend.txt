@@ -11,3 +11,4 @@ google-genai
 reportlab
 python-docx
 markdown
+markdown-pdf

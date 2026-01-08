@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import axios from "axios";
+// import axios from "axios"; // Not used anymore
 import {
-  RefreshCw,
   Download,
   Terminal,
-  AlertTriangle,
   Play,
   Trash2,
   Settings,
@@ -17,8 +15,6 @@ export default function SystemTab() {
   const [filteredLogs, setFilteredLogs] = useState<string[]>([]);
   const [selectedContainer, setSelectedContainer] = useState("all");
   const [isConnected, setIsConnected] = useState(false);
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [logFilter, setLogFilter] = useState("");
   const [logLevel, setLogLevel] = useState("ALL");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -142,52 +138,6 @@ export default function SystemTab() {
     };
   }, [selectedContainer]);
 
-  const handleRestart = async () => {
-    try {
-      setIsRestarting(true);
-      setShowRestartConfirm(false);
-
-      await api.post("/system/restart");
-
-      // Poll immediately
-      pollHealth();
-    } catch (error) {
-      console.error("Restart request failed or interrupted:", error);
-
-      // Only alert if it's a client error (4xx), otherwise assume network error means success (server died)
-      if (
-        axios.isAxiosError(error) &&
-        error.response &&
-        error.response.status >= 400 &&
-        error.response.status < 500
-      ) {
-        alert(
-          "Failed to trigger restart: " +
-            (error.response.data.detail || "Unknown error"),
-        );
-        setIsRestarting(false);
-      } else {
-        // Assume network error means server is restarting
-        pollHealth();
-      }
-    }
-  };
-
-  const pollHealth = () => {
-    const interval = setInterval(async () => {
-      try {
-        // Short timeout to fail fast
-        await api.get("/health", { timeout: 2000 });
-        // If succeeds, we are back!
-        clearInterval(interval);
-        setIsRestarting(false);
-        window.location.reload();
-      } catch {
-        // Still down
-      }
-    }, 3000);
-  };
-
   const handleDownloadLogs = async () => {
     try {
       const response = await api.get(
@@ -263,78 +213,8 @@ export default function SystemTab() {
     );
   };
 
-  if (isRestarting) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <RefreshCw className="w-12 h-12 text-orange-500 animate-spin" />
-        <h3 className="text-xl font-medium text-gray-900 dark:text-white">
-          System Restarting...
-        </h3>
-        <p className="text-gray-500">
-          Please wait while the containers reboot. The page will reload
-          automatically.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* System Controls Section */}
-      <section>
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Controls
-            </h3>
-          </div>
-
-          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-md p-4 border border-gray-200 dark:border-gray-700">
-            <h4 className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
-              <RefreshCw className="w-4 h-4 text-orange-500" />
-              System Restart
-            </h4>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 max-w-2xl">
-              This will restart all Nojoin containers (API, Worker, Database,
-              etc.). Active tasks will be interrupted. The system will be
-              unavailable for approximately 10-20 seconds.
-            </p>
-
-            {!showRestartConfirm ? (
-              <button
-                onClick={() => setShowRestartConfirm(true)}
-                className="px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
-              >
-                Restart System
-              </button>
-            ) : (
-              <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-3 rounded-md animate-in slide-in-from-top-2 duration-200">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
-                  <span className="text-xs font-medium text-red-800 dark:text-red-300">
-                    Are you sure? All connections will be dropped.
-                  </span>
-                  <div className="flex gap-2 ml-auto">
-                    <button
-                      onClick={handleRestart}
-                      className="px-2 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 shadow-sm"
-                    >
-                      Confirm Restart
-                    </button>
-                    <button
-                      onClick={() => setShowRestartConfirm(false)}
-                      className="px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
       {/* Logs Section */}
       <section>
         <div className="flex items-center gap-2 mb-4">
