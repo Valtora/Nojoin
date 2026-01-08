@@ -1,12 +1,22 @@
 from typing import Any, Optional
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+import docker
+import asyncio
+import logging
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from celery.result import AsyncResult
 
-from backend.api.deps import get_db, get_current_user, get_current_admin_user
+from backend.api.deps import (
+    get_db, 
+    get_current_user, 
+    get_current_admin_user, 
+    get_current_active_superuser,
+    get_current_active_superuser_ws
+)
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
@@ -16,6 +26,193 @@ from backend.utils.download_progress import get_download_progress, is_download_i
 from backend.seed_demo import seed_demo_data
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Initialize Docker client
+try:
+    client = docker.from_env()
+except Exception as e:
+    logger.error(f"Failed to initialize Docker client: {e}")
+    client = None
+
+async def restart_tasks():
+    """
+    Restart the Nojoin containers.
+    We restart worker, frontend, nginx, redis, and db first.
+    The API container restarts itself last to allow the response to return.
+    """
+    if not client:
+        logger.error("Docker client not initialized.")
+        return
+
+    containers_to_restart = [
+        "nojoin-worker",
+        "nojoin-frontend",
+        "nojoin-nginx", 
+        "nojoin-redis",
+        "nojoin-db"
+    ]
+
+    # Allow time for the 202 Accepted response to reach the client
+    await asyncio.sleep(2)
+
+    for container_name in containers_to_restart:
+        try:
+            container = client.containers.get(container_name)
+            logger.info(f"Restarting container: {container_name}")
+            container.restart()
+        except docker.errors.NotFound:
+            logger.warning(f"Container {container_name} not found. Skipping.")
+        except Exception as e:
+            logger.error(f"Failed to restart {container_name}: {e}")
+
+    # Finally restart the API container
+    # This will kill the current process, so it must be last
+    try:
+        api_container = client.containers.get("nojoin-api")
+        logger.info("Restarting nojoin-api...")
+        api_container.restart()
+    except Exception as e:
+        logger.error(f"Failed to restart nojoin-api: {e}")
+
+@router.post("/restart", status_code=202)
+def restart_system(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """
+    Restart the entire Nojoin system.
+    Requires Superuser privileges.
+    """
+    if not client:
+        raise HTTPException(
+            status_code=503, 
+            detail="Docker integration is not available. Ensure Docker socket is mounted."
+        )
+    
+    background_tasks.add_task(restart_tasks)
+    return {"message": "System restart initiated. The API will be unavailable shortly."}
+
+@router.get("/logs/download")
+def download_logs(
+    container: str,
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """
+    Download logs for a specific container.
+    Requires Superuser privileges.
+    """
+    if not client:
+        raise HTTPException(status_code=503, detail="Docker client unavailable")
+    
+    try:
+        container_obj = client.containers.get(container)
+        logs = container_obj.logs().decode("utf-8")
+        
+        def iter_logs():
+            yield logs
+            
+        return StreamingResponse(
+            iter_logs(),
+            media_type="text/plain",
+            headers={"Content-Disposition": f"attachment; filename={container}_logs.txt"}
+        )
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail=f"Container {container} not found")
+    except Exception as e:
+        logger.error(f"Error fetching logs for {container}: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.websocket("/logs/live")
+async def websocket_logs(
+    websocket: WebSocket, 
+    container: str,
+    user: User = Depends(get_current_active_superuser_ws) 
+):
+    """
+    WebSocket endpoint for streaming logs.
+    Uses threaded workers to read Docker logs (which is blocking) 
+    and pushes to an asyncio queue to prevent blocking the main event loop.
+    Supports streaming from a single container or "all" containers.
+    """
+    await websocket.accept()
+    
+    if not client:
+        await websocket.send_text("Error: Docker client unavailable")
+        await websocket.close()
+        return
+
+    queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    active = True
+
+    def log_reader(container_name: str, q: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+        """
+        Thread target: reads logs from a container and puts them into the queue.
+        """
+        try:
+            c = client.containers.get(container_name)
+            # logs(stream=True) blocks until new log arrives
+            for line in c.logs(stream=True, tail=50, follow=True):
+                if not active: 
+                    break
+                text = line.decode("utf-8")
+                # Format: [container-name] log info...
+                formatted_line = f"[{container_name}] {text}"
+                # Schedule put_nowait/put to run in the main loop
+                asyncio.run_coroutine_threadsafe(q.put(formatted_line), loop)
+        except Exception as e:
+            if active:
+                err_msg = f"[{container_name}] Error reading logs: {e}"
+                asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
+
+    # Determine which containers to stream
+    targets = []
+    if container == "all":
+        # Get all Nojoin containers
+        try:
+            # Filter by name prefix or label if possible. For now, strict list.
+            containers_list = [
+                "nojoin-api", "nojoin-worker", "nojoin-frontend", 
+                "nojoin-nginx", "nojoin-redis", "nojoin-db"
+            ]
+            for c_name in containers_list:
+                targets.append(c_name)
+        except Exception as e:
+            await websocket.send_text(f"Error listing containers: {e}")
+            await websocket.close()
+            return
+    else:
+        targets.append(container)
+
+    # Start reader threads
+    import threading
+    threads = []
+    for target in targets:
+        t = threading.Thread(target=log_reader, args=(target, queue, loop), daemon=True)
+        t.start()
+        threads.append(t)
+
+    try:
+        while True:
+            # Wait for next line from any container
+            line = await queue.get()
+            await websocket.send_text(line)
+    except WebSocketDisconnect:
+        # Client disconnected
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket send error: {e}")
+    finally:
+        active = False
+        # Threads are daemon, they will eventually exit or be killed when app stops,
+        # but we can't easily kill them here since c.logs() is blocking.
+        # The 'active' flag tries to break the loop if new log comes in.
+        try:
+            await websocket.close()
+        except:
+            pass
+
 
 class SetupRequest(UserCreate):
     llm_provider: str = "gemini"

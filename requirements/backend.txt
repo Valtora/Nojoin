@@ -1,6 +1,8 @@
 -r base.txt
 fastapi
 uvicorn[standard]
+# Backend specific dependencies
+docker==7.1.0
 celery[redis]
 numpy
 openai

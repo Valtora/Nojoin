@@ -134,3 +134,17 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
   - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
 - **System Version:** The current version is displayed in the Settings header. If an update is available on GitHub, a notification will appear.
+
+### System Management (Admin Only)
+
+Accessible via **Settings > System**, this panel provides tools for server maintenance.
+
+- **System Restart:** safely restarts all Nojoin services (API, Worker, Database, etc.) directly from the UI.
+  - Handles backend startup delays and automatically reconnects when the system is back online.
+- **Log Streaming:** Real-time diagnostics for the entire stack.
+  - **Unified Log View:** Default view shows a merged stream of all container logs (`all`), with each line prefixed by the service name.
+  - **Single Service View:** Drill down into specific containers (e.g. `nojoin-worker`).
+  - **Filters:**
+    - **Text/Regex:** Filter logs by keyword or regex pattern.
+    - **Log Level:** Filter by severity (`DEBUG`, `INFO`, `WARN`, `ERROR`).
+  - **Download:** Export the current log stream to a text file for sharing or analysis.

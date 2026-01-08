@@ -18,7 +18,7 @@ import {
   PeopleTag,
 } from "@/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
 

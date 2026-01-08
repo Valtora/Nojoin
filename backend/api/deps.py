@@ -84,3 +84,56 @@ async def get_current_admin_user(
             status_code=403, detail="Not authorized"
         )
     return current_user
+
+async def get_current_user_ws(
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Query(None, alias="token")
+) -> User:
+    """
+    Dedicated dependency for WebSocket authentication.
+    Bypasses OAuth2PasswordBearer which fails in WS context.
+    """
+    if not token:
+        # For WebSockets, we can't easily raise HTTPException with headers.
+        # We'll just raise a standard 401/403 which FastAPI WS handles by closing connection usually,
+        # or handle gracefully in the endpoint.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        token_data = payload.get("sub")
+        if token_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials"
+            )
+    except (JWTError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
+    
+    query = select(User).where(User.username == token_data)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return user
+
+async def get_current_active_superuser_ws(
+    current_user: User = Depends(get_current_user_ws),
+) -> User:
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=400, detail="The user doesn't have enough privileges"
+        )
+    return current_user

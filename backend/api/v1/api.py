@@ -24,8 +24,8 @@ api_router.include_router(
     tags=["invitations"],
 )
 api_router.include_router(
-    recordings.router, 
-    prefix="/recordings", 
+    recordings.router,
+    prefix="/recordings",
     tags=["recordings"],
     dependencies=[Depends(get_current_user)]
 )
