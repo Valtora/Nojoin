@@ -52,7 +52,7 @@ def download_logs(
     
     try:
         container_obj = client.containers.get(container)
-        logs = container_obj.logs().decode("utf-8")
+        logs = container_obj.logs(timestamps=True).decode("utf-8")
         
         def iter_logs():
             yield logs
@@ -99,7 +99,7 @@ async def websocket_logs(
         try:
             c = client.containers.get(container_name)
             # logs(stream=True) blocks until new log arrives
-            for line in c.logs(stream=True, tail=50, follow=True):
+            for line in c.logs(stream=True, tail=50, follow=True, timestamps=True):
                 if not active: 
                     break
                 text = line.decode("utf-8")

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
+import { Popover, Transition } from "@headlessui/react";
 // import axios from "axios"; // Not used anymore
 import {
   Download,
@@ -7,8 +8,10 @@ import {
   Trash2,
   Settings,
   Pause,
+  Check,
 } from "lucide-react";
 import api, { API_BASE_URL } from "@/lib/api";
+import { useNavigationStore } from "@/lib/store";
 
 export default function SystemTab() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -21,6 +24,13 @@ export default function SystemTab() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    logShowTimestamps,
+    toggleLogShowTimestamps,
+    logWordWrap,
+    toggleLogWordWrap,
+  } = useNavigationStore();
 
   const containers = [
     "all",
@@ -161,54 +171,108 @@ export default function SystemTab() {
   };
 
   const LogLine = ({ text }: { text: string }) => {
-    // Attempt rudimentary parsing
-    // Format 1: HH:MM:SS LEVEL Message
-    // Format 2: Date Time | Message
+    // Expected format from backend (with timestamps enabled):
+    // [container-name] 2024-05-22T15:30:00.123456Z Log Message...
 
-    // Simple regex for "HH:MM:SS LEVEL"
-    const simpleMatch = text.match(
-      /^(\d{2}:\d{2}:\d{2})\s+([A-Z]{3,5})\s+(.*)$/,
-    );
+    let container = "";
+    let timestamp = "";
+    let content = text;
 
-    if (simpleMatch) {
-      const time = simpleMatch[1];
-      const level = simpleMatch[2];
-      const msg = simpleMatch[3];
+    let remainder = text;
 
-      let levelColor = "text-gray-400";
-      if (level.includes("INF")) levelColor = "text-green-500";
-      if (level.includes("WRN") || level.includes("WARN"))
-        levelColor = "text-yellow-500";
-      if (level.includes("ERR") || level.includes("FAIL"))
-        levelColor = "text-red-500";
-      if (level.includes("DBG")) levelColor = "text-blue-500";
-
-      return (
-        <div className="flex gap-3 hover:bg-gray-800/50 py-0.5 px-2 -mx-2 rounded">
-          <span className="text-gray-500 shrink-0 select-none w-[68px]">
-            {time}
-          </span>
-          <span
-            className={`${levelColor} font-bold shrink-0 w-10 select-none text-right`}
-          >
-            {level}
-          </span>
-          <span className="break-all whitespace-pre-wrap flex-1">{msg}</span>
-        </div>
-      );
+    // 1. Extract Container Prefix: [nojoin-api]
+    const containerMatch = remainder.match(/^(\[.*?\])\s*/);
+    if (containerMatch) {
+      container = containerMatch[1];
+      // Remove container and following whitespace from remainder
+      remainder = remainder.substring(containerMatch[0].length);
     }
 
-    const plainText = text;
-    let colorClass = "text-gray-300";
-    if (plainText.toLowerCase().includes("error")) colorClass = "text-red-400";
-    else if (plainText.toLowerCase().includes("warn"))
-      colorClass = "text-yellow-400";
+    // 2. Extract Timestamp: 2024-05-22T...
+    // Look for ISO-like timestamp at start of remainder
+    const timeMatch = remainder.match(/^(\d{4}-\d{2}-\d{2}T\S+)\s*/);
+    if (timeMatch) {
+      timestamp = timeMatch[1];
+      // Remove timestamp and following whitespace
+      remainder = remainder.substring(timeMatch[0].length);
+    }
+
+    // 3. Remaining text is the content
+    content = remainder;
+
+    // Determine Level and Color
+    // Default to INFO (Green) as requested for "LOG" level
+    let level = "INFO";
+    let levelColor = "text-green-500";
+    const upperContent = content.toUpperCase();
+
+    // Check for specific levels (overrides default INFO)
+    if (upperContent.includes("WARN") || upperContent.includes("WRN")) {
+      level = "WARN";
+      levelColor = "text-yellow-500";
+    } else if (
+      upperContent.includes("ERR") ||
+      upperContent.includes("FAIL") ||
+      upperContent.includes("CRIT")
+    ) {
+      level = "ERROR";
+      levelColor = "text-red-500";
+    } else if (upperContent.includes("DBG") || upperContent.includes("DEBUG")) {
+      level = "DEBUG";
+      levelColor = "text-blue-500";
+    }
+
+    // 4. Strip redundant level prefixes to avoid duplication (e.g. "INFO: ...")
+    // Matches start of string: Level + optional colon + whitespace
+    content = content.replace(
+      /^(INFO|WARN|WARNING|ERROR|ERR|DEBUG|DBG|LOG)(:|)\s+/i,
+      "",
+    );
+
+    // Format time for display (HH:mm:ss)
+    let timeDisplay = "--:--:--";
+    if (timestamp) {
+      const tParts = timestamp.split("T");
+      if (tParts.length > 1) {
+        // Take HH:mm:ss from "...T15:30:00.123Z"
+        timeDisplay = tParts[1].substring(0, 8);
+      } else {
+        timeDisplay = timestamp.substring(0, 8);
+      }
+    }
 
     return (
-      <div
-        className={`break-all whitespace-pre-wrap py-0.5 px-2 -mx-2 hover:bg-gray-800/50 rounded ${colorClass}`}
-      >
-        {text}
+      <div className="flex gap-3 hover:bg-gray-800/50 py-0.5 px-2 -mx-2 rounded">
+        {logShowTimestamps && (
+          <span
+            className="text-gray-500 shrink-0 select-none w-[68px] font-mono"
+            title={timestamp}
+          >
+            {timeDisplay}
+          </span>
+        )}
+
+        {/* Container Name */}
+        <span
+          className="text-gray-600 shrink-0 select-none w-[110px] truncate text-right"
+          title={container}
+        >
+          {container}
+        </span>
+
+        {/* Log Level */}
+        <span
+          className={`${levelColor} font-bold shrink-0 w-10 select-none text-right`}
+        >
+          {level}
+        </span>
+
+        {/* Content */}
+        <span
+          className={`break-all flex-1 ${logWordWrap ? "whitespace-pre-wrap" : "whitespace-nowrap"}`}
+        >
+          {content}
+        </span>
       </div>
     );
   };
@@ -294,15 +358,47 @@ export default function SystemTab() {
             >
               <Trash2 className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => {
-                /* Open settings? Maybe just visual for now as per screenshot */
-              }}
-              title="Settings"
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            <Popover className="relative">
+              <Popover.Button
+                className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors outline-none"
+                title="Log Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Popover.Button>
+
+              <Transition
+                as={Fragment}
+                enter="transition ease-out duration-100"
+                enterFrom="transform opacity-0 scale-95"
+                enterTo="transform opacity-100 scale-100"
+                leave="transition ease-in duration-75"
+                leaveFrom="transform opacity-100 scale-100"
+                leaveTo="transform opacity-0 scale-95"
+              >
+                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none border border-gray-700 p-1">
+                  <div className="p-1 space-y-1">
+                    <button
+                      onClick={toggleLogShowTimestamps}
+                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                    >
+                      <span>Show Timestamps</span>
+                      {logShowTimestamps && (
+                        <Check className="h-4 w-4 text-orange-500" />
+                      )}
+                    </button>
+                    <button
+                      onClick={toggleLogWordWrap}
+                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                    >
+                      <span>Word Wrap</span>
+                      {logWordWrap && (
+                        <Check className="h-4 w-4 text-orange-500" />
+                      )}
+                    </button>
+                  </div>
+                </Popover.Panel>
+              </Transition>
+            </Popover>
             <div className="w-px h-4 bg-gray-700 mx-1"></div>
             <button
               onClick={handleDownloadLogs}

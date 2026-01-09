@@ -39,6 +39,7 @@ import { useRouter } from "next/navigation";
 import { COLOR_PALETTE } from "@/lib/constants";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useNavigationStore } from "@/lib/store";
 
 type ActivePanel = "transcript" | "notes" | "documents";
 
@@ -83,6 +84,7 @@ export default function RecordingPage({ params }: PageProps) {
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
+  const { chatPanelHeight, setChatPanelHeight } = useNavigationStore();
 
   // Undo/Redo State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -947,8 +949,15 @@ export default function RecordingPage({ params }: PageProps) {
 
             {/* Sidebar: Stacked Speaker and Chat panels */}
             <Panel defaultSize={25} minSize={20}>
-              <PanelGroup direction="vertical">
-                <Panel defaultSize={50} minSize={20}>
+              <PanelGroup
+                direction="vertical"
+                onLayout={(sizes) => {
+                  if (sizes.length === 2) {
+                    setChatPanelHeight(sizes[1]);
+                  }
+                }}
+              >
+                <Panel defaultSize={100 - chatPanelHeight} minSize={20}>
                   <SpeakerPanel
                     speakers={recording.speakers || []}
                     segments={recording.transcript?.segments || []}
@@ -968,7 +977,7 @@ export default function RecordingPage({ params }: PageProps) {
                   <div className="w-8 h-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
                 </PanelResizeHandle>
 
-                <Panel defaultSize={50} minSize={20}>
+                <Panel defaultSize={chatPanelHeight} minSize={20}>
                   <ChatPanel />
                 </Panel>
               </PanelGroup>
