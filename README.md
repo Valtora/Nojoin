@@ -80,20 +80,11 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
 > [WARNING]
 > Nojoin is still in development so updates may break instances. I will do my best to fix these issues ASAP but users should create regular backups just in case.
 
-1. **Download:** Get the `docker-compose.yml` and the `.env` files, make sure you're in the directory you want to install Nojoin in.
-
-   **Linux / macOS:**
-
+1. **Clone:**
    ```bash
-   curl -O https://raw.githubusercontent.com/Valtora/Nojoin/main/docker-compose.yml && curl -o .env https://raw.githubusercontent.com/Valtora/Nojoin/main/.env.example
+   git clone https://github.com/Valtora/Nojoin
+   cd Nojoin
    ```
-
-   **Windows:**
-
-   ```powershell
-    Invoke-WebRequest -Uri https://raw.githubusercontent.com/Valtora/Nojoin/main/docker-compose.yml -OutFile docker-compose.yml; Invoke-WebRequest -Uri https://raw.githubusercontent.com/Valtora/Nojoin/main/.env.example -OutFile .env
-   ```
-
 2. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
 3. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 4. **Configure:** Follow the first-run wizard to set up API keys and preferences.
