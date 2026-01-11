@@ -20,16 +20,6 @@ https://github.com/user-attachments/assets/c7a7e07c-ada5-441f-a8a2-18a67eeb14a9
 
 ---
 
-## ❔ Why Nojoin?
-
-Most meeting assistants require users to invite bots to join meetings or upload sensitive business conversations to the cloud. Nojoin offers a different approach.
-
-- **Privacy First:** Audio and transcripts remain on the user's server (unless explicitly configured for external LLM processing).
-- **Unlimited:** No monthly limits on recording minutes.
-- **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
-- **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
-- **Non-Intrusive:** Nojoin does not require joining meetings as a participant.
-
 ## 📚 Table of Contents
 
 - [Why Nojoin?](#why-nojoin)
@@ -43,10 +33,21 @@ Most meeting assistants require users to invite bots to join meetings or upload 
 - [Installation & Setup](#%EF%B8%8F-installation--setup)
 - [Updating Nojoin](#-updating-nojoin)
 - [Troubleshooting](#-troubleshooting)
+- [Reverse Proxy](#-reverse-proxy)
 - [Roadmap](#%EF%B8%8F-roadmap)
 - [Contributing](#-contributing)
 - [Editions](#-editions)
 - [Legal](#%EF%B8%8F-legal)
+
+## ❔ Why Nojoin?
+
+Most meeting assistants require users to invite bots to join meetings or upload sensitive business conversations to the cloud. Nojoin offers a different approach.
+
+- **Privacy First:** Audio and transcripts remain on the user's server (unless explicitly configured for external LLM processing).
+- **Unlimited:** No monthly limits on recording minutes.
+- **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
+- **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
+- **Non-Intrusive:** Nojoin does not require joining meetings as a participant.
 
 ## 📋 Pre-Requisites
 
@@ -359,6 +360,41 @@ Ensure the GPU has been passed to the container correctly.
 If running Ollama on the host, use `http://host.docker.internal:11434` instead of `localhost`. Docker containers cannot see `localhost` of the host directly.
 
 </details>
+
+## 🌐 Reverse Proxy Setup
+
+If you are running Nojoin behind a reverse proxy (Nginx, Caddy, Traefik, etc.), please observe the following requirements:
+
+1.  **Upstream Protocol:** You **must** proxy to the HTTPS port.
+    - **Nojoin Internal Nginx:** Listens on port `443` (inside the container).
+    - **Host Mapping:** By default, this is mapped to port `14443` on your host.
+2.  **SSL/TLS Verification:** Nojoin uses a self-signed certificate internally. You must configure your reverse proxy to **skip backend certificate verification** (in Caddy: `tls_insecure_skip_verify`).
+3.  **Environment:** Ensure your domain is listed in `ALLOWED_ORIGINS` in your `.env` file to prevent CORS errors.
+
+#### Examples
+
+**Caddy:**
+
+```caddy
+nojoin.yourdomain.com {
+    reverse_proxy localhost:14443 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
+}
+```
+
+**Nginx:**
+
+```nginx
+location / {
+    proxy_pass https://localhost:14443;
+    proxy_ssl_verify off;
+    proxy_set_header Host $host;
+    # ... other standard headers
+}
+```
 
 ## 🗺️ Roadmap
 
