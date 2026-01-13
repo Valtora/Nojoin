@@ -246,9 +246,7 @@ class BackupManager:
                 children = children_map[node_id]
                 # Sort children by ID
                 children.sort(key=lambda x: x.get("id", 0))
-                # Insert at start of queue to process immediately (DFS-like) or end (BFS-like). 
-                # Order doesn't strictly matter for topology, but BFS is often safer for depth limits.
-                # Let's use append (BFS).
+                # Append children to the end of the queue (BFS traversal).
                 queue.extend(children)
         
         # checks for cycles or disconnected items (shouldn't happen in valid trees)
@@ -424,9 +422,7 @@ class BackupManager:
                             from backend.core.db import sync_engine
                             from sqlmodel import Session
                             with Session(sync_engine) as session:
-                                # We need to handle this in chunks if too many?
-                                # For now, simple IN clause.
-                                # Find existing IDs to log
+                                # Identify existing recording IDs for logging purposes.
                                 existing_stm = select(Recording.id).where(Recording.audio_path.in_(audio_paths))
                                 existing_ids = session.exec(existing_stm).all()
                                 
@@ -495,10 +491,8 @@ class BackupManager:
                             existing_rec = session.exec(select(Recording).where(Recording.audio_path == audio_path)).first()
                             
                             if existing_rec:
-                                # If we are here, it means we found a conflict.
-                                # If overwrite_existing was True, we SHOULD have deleted it in pre-flight.
-                                # But maybe race condition or something? 
-                                # Or maybe clear_existing logic?
+                                # Conflict detected. If overwrite_existing is True, this record should have been
+                                # removed during pre-flight cleanup, suggesting a potential race condition.
                                 
                                 if overwrite_existing:
                                     # Fallback: Delete row
@@ -601,6 +595,23 @@ class BackupManager:
                                         existing_speaker.embedding = item_data.get("embedding")
                                     
                                     session.add(existing_speaker)
+                                else:
+                                    # INTELLIGENT MERGE: Fill in missing fields only
+                                    updated = False
+                                    
+                                    # CRM Fields
+                                    for field in ["title", "company", "email", "phone_number", "notes", "color"]:
+                                        if not getattr(existing_speaker, field) and item_data.get(field):
+                                            setattr(existing_speaker, field, item_data.get(field))
+                                            updated = True
+                                    
+                                    # Voice Embedding: Restore only if missing locally
+                                    if (not existing_speaker.embedding or len(existing_speaker.embedding) == 0) and item_data.get("embedding"):
+                                        existing_speaker.embedding = item_data.get("embedding")
+                                        updated = True
+                                        
+                                    if updated:
+                                        session.add(existing_speaker)
 
                                 if old_id is not None:
                                     id_map["global_speakers"][old_id] = existing_speaker.id
