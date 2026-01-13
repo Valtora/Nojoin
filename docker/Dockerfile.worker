@@ -35,7 +35,7 @@ RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
 # Install pyannote.audio without dependencies to use system torch
-RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2
+RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.txt
 
 # Copy the rest of the application code
 COPY . .
