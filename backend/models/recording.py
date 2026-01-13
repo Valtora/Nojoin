@@ -21,6 +21,7 @@ class RecordingStatus(str, Enum):
     PROCESSING = "PROCESSING"
     PROCESSED = "PROCESSED"
     ERROR = "ERROR"
+    CANCELLED = "CANCELLED"
 
 class ClientStatus(str, Enum):
     RECORDING = "RECORDING"
@@ -34,6 +35,7 @@ class Recording(BaseDBModel, table=True):
     name: str
     audio_path: str = Field(unique=True, index=True)
     proxy_path: Optional[str] = Field(default=None)
+    celery_task_id: Optional[str] = Field(default=None)
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)

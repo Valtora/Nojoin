@@ -54,6 +54,9 @@ WORKDIR /app
 # Copy the rest of the application code
 COPY . .
 
+# Ensure entrypoint is executable
+RUN chmod +x /app/backend/entrypoint.sh
+
 # Create a non-root user and switch to it
 # Create directories for volumes to ensure they are owned by appuser
 RUN useradd -m -u 1000 appuser && \
@@ -65,6 +68,9 @@ USER appuser
 
 # Expose the port the app runs on
 EXPOSE 8000
+
+# Set entrypoint
+ENTRYPOINT ["/app/backend/entrypoint.sh"]
 
 # Default command
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

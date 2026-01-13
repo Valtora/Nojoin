@@ -32,6 +32,7 @@ import {
   softDeleteRecording,
   permanentlyDeleteRecording,
   getTags,
+  cancelProcessing,
 } from "@/lib/api";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
@@ -447,6 +448,23 @@ export default function Sidebar() {
     }
   };
 
+  const handleCancel = async (id: number) => {
+    try {
+      await cancelProcessing(id);
+      addNotification({
+        message: "Processing cancelled.",
+        type: "success",
+      });
+      fetchRecordings();
+    } catch (e) {
+      console.error("Failed to cancel processing", e);
+      addNotification({
+        message: "Failed to cancel processing.",
+        type: "error",
+      });
+    }
+  };
+
   const handleRecordingClick = (
     e: React.MouseEvent,
     recording: Recording,
@@ -499,6 +517,18 @@ export default function Sidebar() {
           label: "Retry Speaker Inference",
           onClick: () => handleInferSpeakers(recording.id),
         },
+        ...(recording.status === RecordingStatus.PROCESSING ||
+        recording.status === RecordingStatus.QUEUED ||
+        recording.status === RecordingStatus.UPLOADING
+          ? [
+              {
+                label: "Cancel Processing",
+                onClick: () => handleCancel(recording.id),
+                icon: <AlertCircle className="w-4 h-4" />,
+                className: "text-amber-600 dark:text-amber-400",
+              },
+            ]
+          : []),
         {
           label: "Retry Processing",
           onClick: () => handleRetry(recording.id),

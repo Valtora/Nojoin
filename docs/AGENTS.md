@@ -145,8 +145,12 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 2. **PLANNING**: Produce a detailed plan. Consider signal propagation and dependencies.
 3. **APPROVAL**: Wait for user confirmation.
 4. **IMPLEMENTATION**: Generate robust code. Do not delete existing functionality unless planned.
-5. **TESTING**: The user performs manual testing.
-6. **COMPLETION**: Update the docs as needed.
+5. **UI DUPLICATION**: When modifying the **Context Menu** for recordings, remember that there are TWO places to update:
+   - `frontend/src/components/RecordingCard.tsx`: The main grid view.
+   - `frontend/src/components/Sidebar.tsx`: The sidebar list view.
+   - **Failure to update both will result in inconsistent behavior.**
+6. **TESTING**: The user performs manual testing.
+7. **COMPLETION**: Update the docs as needed.
 
 ### Constraints
 

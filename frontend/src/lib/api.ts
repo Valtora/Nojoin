@@ -143,6 +143,11 @@ export const retryProcessing = async (id: number): Promise<Recording> => {
   return response.data;
 };
 
+export const cancelProcessing = async (id: number): Promise<Recording> => {
+  const response = await api.post<Recording>(`/recordings/${id}/cancel`);
+  return response.data;
+};
+
 export const getRecordingStreamUrl = (id: number): string => {
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("token");

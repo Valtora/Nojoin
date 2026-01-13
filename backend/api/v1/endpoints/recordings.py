@@ -12,7 +12,9 @@ from uuid import uuid4
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
+from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
+from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.LLM_Services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
@@ -231,7 +233,10 @@ async def finalize_upload(
     await db.refresh(recording)
     
 
-    process_recording_task.delay(recording.id)
+    task = process_recording_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
 
     generate_proxy_task.delay(recording.id)
@@ -328,7 +333,10 @@ async def import_audio(
     await db.refresh(recording)
     
     # Trigger processing task
-    process_recording_task.delay(recording.id)
+    task = process_recording_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
     # Trigger proxy generation task
     generate_proxy_task.delay(recording.id)
@@ -507,7 +515,10 @@ async def finalize_chunked_import(
     await db.refresh(recording)
     
 
-    process_recording_task.delay(recording.id)
+    task = process_recording_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
 
     generate_proxy_task.delay(recording.id)
@@ -568,7 +579,10 @@ async def upload_recording(
     await db.refresh(recording)
     
 
-    process_recording_task.delay(recording.id)
+    task = process_recording_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
 
     generate_proxy_task.delay(recording.id)
@@ -960,7 +974,11 @@ async def retry_processing(
     await db.refresh(recording)
     
     # Trigger Celery task
-    process_recording_task.delay(recording.id)
+    # Trigger Celery task
+    task = process_recording_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
     return recording
 
@@ -1048,6 +1066,13 @@ async def permanently_delete_recording(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
+    # Cancel any running task
+    if recording.celery_task_id:
+        try:
+            celery_app.control.revoke(recording.celery_task_id, terminate=True)
+        except Exception:
+            pass  # Task might not exist or already finished
+
     # Delete file from disk
     if recording.audio_path and os.path.exists(recording.audio_path):
         try:
@@ -1198,6 +1223,42 @@ async def infer_speakers_for_recording(
     await db.refresh(recording)
 
     # Trigger Celery task
-    infer_speakers_task.delay(recording.id)
+    task = infer_speakers_task.delay(recording.id)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
     
     return {"status": "queued", "message": "Speaker inference started in background."}
+
+@router.post("/{recording_id}/cancel", response_model=Recording)
+async def cancel_processing(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel the processing task for a recording.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    if recording.status not in [RecordingStatus.PROCESSING, RecordingStatus.QUEUED, RecordingStatus.UPLOADING]:
+        raise HTTPException(status_code=400, detail="Recording is not being processed")
+
+    if recording.celery_task_id:
+        try:
+            # Revoke the task and terminate it immediately
+            celery_app.control.revoke(recording.celery_task_id, terminate=True)
+        except Exception:
+            pass # Ignore if task is not found (maybe already finished or never started)
+            
+    recording.status = RecordingStatus.CANCELLED
+    recording.processing_step = "Cancelled by user"
+    recording.processing_progress = 0
+    
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    
+    return recording

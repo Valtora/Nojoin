@@ -21,6 +21,7 @@ import {
   deleteRecording,
   inferSpeakers,
   renameRecording,
+  cancelProcessing,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useRouter } from "next/navigation";
@@ -101,6 +102,13 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
           <AlertCircle className="w-3 h-3 mr-1" />
           Error
+        </span>
+      );
+    case RecordingStatus.CANCELLED:
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Cancelled
         </span>
       );
     default:
@@ -210,6 +218,30 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     }
   };
 
+  const handleCancel = async () => {
+    try {
+      await cancelProcessing(recording.id);
+      addNotification({
+        message: "Processing cancelled.",
+        type: "success",
+      });
+      router.refresh();
+      // Force reload after short delay to ensure UI updates
+      setTimeout(() => router.refresh(), 1000);
+    } catch (e) {
+      console.error("Failed to cancel processing", e);
+      addNotification({
+        message: "Failed to cancel processing.",
+        type: "error",
+      });
+    }
+  };
+
+  const showCancelOption =
+    recording.status === RecordingStatus.PROCESSING ||
+    recording.status === RecordingStatus.QUEUED ||
+    recording.status === RecordingStatus.UPLOADING;
+
   return (
     <>
       {isRenaming ? (
@@ -308,6 +340,16 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               onClick: handleInferSpeakers,
               icon: <RefreshCw className="w-4 h-4" />,
             },
+            ...(showCancelOption
+              ? [
+                  {
+                    label: "Cancel Processing",
+                    onClick: handleCancel,
+                    icon: <AlertCircle className="w-4 h-4" />,
+                    className: "text-amber-600 dark:text-amber-400",
+                  },
+                ]
+              : []),
             {
               label: "Retry Processing",
               onClick: handleRetry,

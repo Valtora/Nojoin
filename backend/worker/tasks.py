@@ -81,6 +81,11 @@ def process_recording_task(self, recording_id: int):
         logger.error(f"Recording {recording_id} not found.")
         return
     
+    # Check if cancelled
+    if recording.status == RecordingStatus.CANCELLED:
+         logger.info(f"Recording {recording_id} was cancelled. Aborting task.")
+         return
+
     user_settings = {}
     if recording.user_id:
         user = session.get(User, recording.user_id)
@@ -92,6 +97,15 @@ def process_recording_task(self, recording_id: int):
     merged_config = system_config.copy()
     merged_config.update(user_settings)
     
+    # Platform/Device detection for UX
+    import torch
+    device_type = "cpu"
+    if config_manager.get("use_gpu", True) and torch.cuda.is_available():
+        device_type = "cuda"
+    
+    # "Gentle" warning suffix
+    device_suffix = " (GPU)" if device_type == "cuda" else " (CPU, may take a while)"
+
     try:
         recording.status = RecordingStatus.PROCESSING
         recording.processing_progress = 20
@@ -137,7 +151,7 @@ def process_recording_task(self, recording_id: int):
         
         if enable_vad:
             self.update_state(state='PROCESSING', meta={'progress': 30, 'stage': 'VAD'})
-            recording.processing_step = "Filtering silence and noise..."
+            recording.processing_step = f"Filtering silence and noise...{device_suffix}"
             recording.processing_progress = 30
             session.add(recording)
             session.commit()
@@ -215,7 +229,7 @@ def process_recording_task(self, recording_id: int):
         
         # --- Transcription Stage ---
         self.update_state(state='PROCESSING', meta={'progress': 50, 'stage': 'Transcription'})
-        recording.processing_step = "Transcribing audio..."
+        recording.processing_step = f"Transcribing audio...{device_suffix}"
         recording.processing_progress = 50
         session.add(recording)
         session.commit()
@@ -229,7 +243,7 @@ def process_recording_task(self, recording_id: int):
         
         if enable_diarization:
             self.update_state(state='PROCESSING', meta={'progress': 70, 'stage': 'Diarization'})
-            recording.processing_step = "Determining who said what..."
+            recording.processing_step = f"Determining who said what...{device_suffix}"
             recording.processing_progress = 70
             session.add(recording)
             session.commit()
@@ -248,7 +262,7 @@ def process_recording_task(self, recording_id: int):
         
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 85, 'stage': 'Saving'})
-        recording.processing_step = "Saving transcript..."
+        recording.processing_step = f"Saving transcript...{device_suffix}"
         recording.processing_progress = 85
         session.add(recording)
         session.commit()
@@ -302,7 +316,7 @@ def process_recording_task(self, recording_id: int):
         if llm_api_key and llm_model and auto_infer_speakers:
             try:
                 self.update_state(state='PROCESSING', meta={'progress': 88, 'stage': 'Inferring Speakers'})
-                recording.processing_step = "Inferring speaker names..."
+                recording.processing_step = f"Inferring speaker names...{device_suffix}"
                 recording.processing_progress = 88
                 session.add(recording)
                 session.commit()
@@ -377,7 +391,7 @@ def process_recording_task(self, recording_id: int):
         
         if enable_auto_voiceprints and diarization_result:
             self.update_state(state='PROCESSING', meta={'progress': 90, 'stage': 'Voiceprints'})
-            recording.processing_step = "Learning voiceprints..."
+            recording.processing_step = f"Learning voiceprints...{device_suffix}"
             recording.processing_progress = 90
             session.add(recording)
             session.commit()
@@ -562,7 +576,7 @@ def process_recording_task(self, recording_id: int):
         if auto_generate_title:
             try:
                 self.update_state(state='PROCESSING', meta={'progress': 94, 'stage': 'Inferring Title'})
-                recording.processing_step = "Inferring meeting title..."
+                recording.processing_step = f"Inferring meeting title...{device_suffix}"
                 recording.processing_progress = 94
                 session.add(recording)
                 session.commit()
@@ -604,7 +618,7 @@ def process_recording_task(self, recording_id: int):
         if auto_generate_notes:
             try:
                 self.update_state(state='PROCESSING', meta={'progress': 97, 'stage': 'Generating Notes'})
-                recording.processing_step = "Generating meeting notes..."
+                recording.processing_step = f"Generating meeting notes...{device_suffix}"
                 recording.processing_progress = 97
                 session.add(recording)
                 session.commit()

@@ -5,6 +5,7 @@ export enum RecordingStatus {
   PROCESSING = "PROCESSING",
   PROCESSED = "PROCESSED",
   ERROR = "ERROR",
+  CANCELLED = "CANCELLED",
 }
 
 export enum ClientStatus {
@@ -15,9 +16,9 @@ export enum ClientStatus {
 }
 
 export enum UserRole {
-  OWNER = 'owner',
-  ADMIN = 'admin',
-  USER = 'user',
+  OWNER = "owner",
+  ADMIN = "admin",
+  USER = "user",
 }
 
 export interface User {
@@ -86,7 +87,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   color?: string;
 }
 
-export type ExportContentType = 'transcript' | 'notes' | 'both';
+export type ExportContentType = "transcript" | "notes" | "both";
 
 export interface TranscriptSegment {
   start: number;
@@ -159,7 +160,7 @@ export interface Settings {
 export interface ChatMessage extends BaseDBModel {
   recording_id: number;
   user_id: number;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -174,7 +175,11 @@ export interface VoiceprintMatchInfo {
 export interface VoiceprintExtractResult {
   embedding_extracted: boolean;
   matched_speaker: VoiceprintMatchInfo | null;
-  all_global_speakers: Array<{ id: number; name: string; has_voiceprint: boolean }>;
+  all_global_speakers: Array<{
+    id: number;
+    name: string;
+    has_voiceprint: boolean;
+  }>;
   speaker_id: number;
   diarization_label: string;
 }
@@ -210,7 +215,11 @@ export interface BatchVoiceprintResult {
 export interface BatchVoiceprintResponse {
   speakers_processed: number;
   results: BatchVoiceprintResult[];
-  all_global_speakers: Array<{ id: number; name: string; has_voiceprint: boolean }>;
+  all_global_speakers: Array<{
+    id: number;
+    name: string;
+    has_voiceprint: boolean;
+  }>;
 }
 
 export interface AudioDevice {
