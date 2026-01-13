@@ -32,6 +32,7 @@ export default function BackupRestore() {
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
   const [showBackupOptions, setShowBackupOptions] = useState(false);
 
@@ -123,9 +124,13 @@ export default function BackupRestore() {
       setMessage(null);
       setShowRestoreOptions(false); // Close the modal
 
-      await importBackup(selectedFile, clear, overwrite, (progress) => {
-        setUploadProgress(progress);
-      });
+      await importBackup(
+        selectedFile,
+        clear,
+        overwrite,
+        (progress) => setUploadProgress(progress),
+        (status) => setProcessingStatus(status),
+      );
 
       setMessage({
         type: "success",
@@ -146,6 +151,7 @@ export default function BackupRestore() {
     } finally {
       setImporting(false);
       setUploadProgress(0);
+      setProcessingStatus("");
     }
   };
 
@@ -274,6 +280,11 @@ export default function BackupRestore() {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
+                  {processingStatus && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center italic mt-1">
+                      {processingStatus}
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -323,6 +323,32 @@ class PathManager:
             logger.error(f"Migration failed: {e}")
             return False
 
+    def cleanup_temp_files(self, temp_dir: Path, max_age_hours: int = 24):
+        """
+        Clean up old temporary files from the specified directory.
+        
+        Args:
+            temp_dir: Directory to clean up
+            max_age_hours: Delete files older than this (default: 24h)
+        """
+        import time 
+        try:
+            current_time = time.time()
+            if not temp_dir.exists():
+                return
+                
+            for p in temp_dir.glob('*'):
+                if p.is_file():
+                    file_age_hours = (current_time - p.stat().st_mtime) / 3600
+                    if file_age_hours > max_age_hours:
+                        try:
+                            p.unlink()
+                            logger.info(f"Deleted old temporary file: {p}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete old temporary file {p}: {e}")
+        except Exception as e:
+            logger.warning(f"Error during temp file cleanup: {e}")
+
 
 # Global instance
 path_manager = PathManager() 

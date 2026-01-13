@@ -1143,27 +1143,84 @@ export const importBackup = async (
   file: File,
   clearExisting: boolean,
   overwriteExisting: boolean,
-  onUploadProgress?: (progress: number) => void,
+  onProgress?: (progress: number) => void,
+  onStatus?: (status: string) => void,
 ): Promise<void> => {
   const formData = new FormData();
   formData.append("file", file);
-  await api.post(
-    `/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`,
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data",
+
+  try {
+    // 1. Upload and Start Job
+    const response = await api.post<any>(
+      `/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        timeout: 300000, // 5 minutes for upload (large files)
+        onUploadProgress: (progressEvent) => {
+          if (onProgress && progressEvent.total) {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total,
+            );
+            // Cap at 99% during upload, save 100% for completion or processing start
+            onProgress(Math.min(percentCompleted, 99));
+          }
+        },
       },
-      onUploadProgress: (progressEvent) => {
-        if (onUploadProgress && progressEvent.total) {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
-          );
-          onUploadProgress(percentCompleted);
-        }
-      },
-    },
-  );
+    );
+
+    // If we get a job_id (202 Accepted), start polling
+    // Legacy support: If it returns 200 with message, it's done (old behavior, though we changed backend)
+    const jobId = response.data.job_id;
+
+    if (jobId) {
+      if (onProgress) onProgress(100);
+      if (onStatus) onStatus("Processing on server...");
+
+      // Poll for status
+      return new Promise<void>((resolve, reject) => {
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await api.get(`/backup/import/${jobId}`);
+            const { status, progress, error } = statusRes.data;
+
+            if (onStatus && progress) {
+              onStatus(progress);
+            }
+
+            if (status === "completed") {
+              clearInterval(pollInterval);
+              resolve();
+            } else if (status === "failed") {
+              clearInterval(pollInterval);
+              reject(new Error(error || "Restore failed during processing"));
+            }
+            // If 'pending' or 'processing', continue polling
+          } catch (err: any) {
+            // If polling fails (network error), maybe retry or fail?
+            // For now, log and assume temporary network glitch, but if 404/500 repeatedly...
+            console.warn("Polling status failed", err);
+            // If 404, job lost?
+            if (err.response && err.response.status === 404) {
+              clearInterval(pollInterval);
+              reject(new Error("Restore job lost on server"));
+            }
+          }
+        }, 2000); // Poll every 2 seconds
+      });
+    }
+
+    // Immediate success (fallback if backend logic changes)
+    if (onProgress) onProgress(100);
+    // If no jobId, it means the operation completed synchronously (e.g., for small files or older API versions)
+    // In this case, the backend would have returned a 200 OK directly, and we don't need to poll.
+    // The Promise<void> return type means we don't return response.data here.
+    return;
+  } catch (error) {
+    throw error;
+  }
 };
 
 export interface CompanionReleases {

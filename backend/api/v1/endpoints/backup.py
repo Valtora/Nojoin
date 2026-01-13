@@ -1,11 +1,14 @@
 from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from backend.core.backup_manager import BackupManager
+from backend.utils.path_manager import PathManager
 from backend.api.deps import get_current_active_superuser
 from backend.celery_app import celery_app
 from celery.result import AsyncResult
 import os
+import uuid
 from datetime import datetime
+from typing import Dict, Any
 
 router = APIRouter()
 
@@ -99,23 +102,68 @@ async def download_export(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/import", dependencies=[Depends(get_current_active_superuser)])
 async def import_backup(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     clear_existing: bool = Query(False, description="Clear existing data before restoring"),
     overwrite_existing: bool = Query(False, description="Overwrite existing recordings if they exist")
 ):
-    # Save uploaded file to temp
-    temp_path = f"/tmp/{file.filename}"
+    """
+    Trigger background backup restoration.
+    Returns: {"job_id": str, "message": str}
+    """
+    # Create persistent temporary connection for the file
+    path_manager = PathManager()
+    restore_temp_dir = path_manager.user_data_directory / "temp_restores"
+    restore_temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up old temp files (older than 1 day)
+    path_manager.cleanup_temp_files(restore_temp_dir, max_age_hours=24)
+
+    job_id = str(uuid.uuid4())
+    temp_path = restore_temp_dir / f"{job_id}_{file.filename}"
+    
     try:
         with open(temp_path, "wb") as f:
             content = await file.read()
             f.write(content)
         
-        await BackupManager.restore_backup(temp_path, clear_existing, overwrite_existing)
-        return {"message": "Backup restored successfully"}
+        # Initialize job in manager
+        BackupManager.restore_jobs[job_id] = {
+            "status": "pending",
+            "progress": "Queued",
+            "error": None
+        }
+
+        # Run in background
+        background_tasks.add_task(
+            BackupManager.restore_backup, 
+            job_id, 
+            str(temp_path), 
+            clear_existing, 
+            overwrite_existing
+        )
+        
+        return JSONResponse(
+            status_code=202,
+            content={"job_id": job_id, "message": "Restore started"}
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if os.path.exists(temp_path):
+        # Cleanup on immediate failure
+        if temp_path.exists():
             os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/import/{job_id}", dependencies=[Depends(get_current_active_superuser)])
+async def get_import_status(job_id: str):
+    """
+    Get status of restore job.
+    """
+    if job_id not in BackupManager.restore_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return BackupManager.restore_jobs[job_id]
+
