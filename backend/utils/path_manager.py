@@ -349,6 +349,42 @@ class PathManager:
         except Exception as e:
             logger.warning(f"Error during temp file cleanup: {e}")
 
+    def get_upload_temp_dir(self, upload_id: str) -> Path:
+        """
+        Get the temporary directory for a specific multipart upload.
+        """
+        path = self._user_data_directory / "temp_uploads" / upload_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def assemble_upload(self, upload_id: str, dest_path: Path) -> bool:
+        """
+        Assemble chunks from temp directory into final file.
+        """
+        import shutil
+        upload_dir = self.get_upload_temp_dir(upload_id)
+        
+        try:
+            # Get all part files, sorted by index
+            parts = sorted(upload_dir.glob("*.part"), key=lambda p: int(p.stem))
+            
+            if not parts:
+                raise ValueError("No parts found for upload")
+
+            with open(dest_path, "wb") as dest:
+                for part in parts:
+                    with open(part, "rb") as src:
+                        shutil.copyfileobj(src, dest)
+            
+            # Cleanup parts
+            shutil.rmtree(upload_dir)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to assemble upload {upload_id}: {e}")
+            if dest_path.exists():
+                os.remove(dest_path)
+            raise
+
 
 # Global instance
 path_manager = PathManager() 

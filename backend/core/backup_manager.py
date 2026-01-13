@@ -365,10 +365,10 @@ class BackupManager:
                 logger.info("Clearing existing data...")
                 # Clear DB, BUT SKIP USERS to prevent lockout
                 # NOTE: We need a new session here since we are in a thread
-                from backend.core.db import engine
+                from backend.core.db import sync_engine
                 from sqlmodel import Session
                 
-                with Session(engine) as session:
+                with Session(sync_engine) as session:
                     # Delete in reverse order
                     for table_name, model_cls in reversed(MODELS):
                         if table_name == "users":
@@ -421,9 +421,9 @@ class BackupManager:
                         audio_paths = [item.get("audio_path") for item in rec_data if item.get("audio_path")]
                         
                         if audio_paths:
-                            from backend.core.db import engine
+                            from backend.core.db import sync_engine
                             from sqlmodel import Session
-                            with Session(engine) as session:
+                            with Session(sync_engine) as session:
                                 # We need to handle this in chunks if too many?
                                 # For now, simple IN clause.
                                 # Find existing IDs to log
@@ -441,10 +441,10 @@ class BackupManager:
             # 3. Restore Database
             logger.info("Restoring database records...")
             BackupManager.restore_jobs[job_id]["progress"] = "Restoring database..."
-            from backend.core.db import engine
+            from backend.core.db import sync_engine
             from sqlmodel import Session
             
-            with Session(engine) as session:
+            with Session(sync_engine) as session:
                 for table_name, model_cls in MODELS:
                     if f"{table_name}.json" not in zipf.namelist():
                         continue
@@ -762,9 +762,9 @@ class BackupManager:
             # Identifies files extracted from the backup that are not referenced in the database.
             logger.info("Cleaning up orphaned files...")
             BackupManager.restore_jobs[job_id]["progress"] = "Cleaning up..."
-            from backend.core.db import engine
+            from backend.core.db import sync_engine
             from sqlmodel import Session
-            with Session(engine) as session:
+            with Session(sync_engine) as session:
                 # Fetches all audio paths currently in the DB to verify against extracted files.
                 all_recordings = session.exec(select(Recording.audio_path)).all()
                 valid_paths = set()

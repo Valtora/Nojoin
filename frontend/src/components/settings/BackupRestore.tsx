@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { importBackup } from "@/lib/api";
+import { uploadBackupChunked } from "@/lib/api";
 import {
   Download,
   Upload,
@@ -124,7 +124,10 @@ export default function BackupRestore() {
       setMessage(null);
       setShowRestoreOptions(false); // Close the modal
 
-      await importBackup(
+      setProcessingStatus("Preparing upload...");
+
+      // Use chunked upload for robustness
+      await uploadBackupChunked(
         selectedFile,
         clear,
         overwrite,

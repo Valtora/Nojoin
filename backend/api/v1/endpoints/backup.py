@@ -85,11 +85,8 @@ async def download_export(
              raise HTTPException(status_code=404, detail="Backup file not found (triggered expired?)")
         
         # Helper to clean up file after serving
-        def cleanup_file():
-             if os.path.exists(zip_path):
-                 os.remove(zip_path)
-                 
-        background_tasks.add_task(cleanup_file)
+        # Notes: We do NOT delete the file immediately here to support Resumable Downloads (Range requests).
+        # The file will be cleaned up by the periodic cleanup task or subsequent operations.
         
         return FileResponse(
             path=zip_path,
@@ -166,4 +163,97 @@ async def get_import_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     
     return BackupManager.restore_jobs[job_id]
+
+@router.post("/upload/init", dependencies=[Depends(get_current_active_superuser)])
+async def init_upload(
+    filename: str,
+    file_size: int,
+    total_chunks: int
+):
+    """
+    Initialize a multipart upload.
+    Returns: {"upload_id": str}
+    """
+    upload_id = str(uuid.uuid4())
+    path_manager = PathManager()
+    
+    # Create temp directory
+    upload_dir = path_manager.get_upload_temp_dir(upload_id)
+    
+    # Clean up old upload directories (older than 24h)
+    temp_uploads_root = path_manager.user_data_directory / "temp_uploads"
+    path_manager.cleanup_temp_files(temp_uploads_root, max_age_hours=24)
+
+    return {"upload_id": upload_id}
+
+@router.post("/upload/{upload_id}/chunk", dependencies=[Depends(get_current_active_superuser)])
+async def upload_chunk(
+    upload_id: str,
+    chunk_index: int,
+    file: UploadFile = File(...)
+):
+    """
+    Upload a single chunk.
+    """
+    path_manager = PathManager()
+    upload_dir = path_manager.get_upload_temp_dir(upload_id)
+    chunk_path = upload_dir / f"{chunk_index}.part"
+    
+    try:
+        with open(chunk_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        return {"status": "ok", "chunk_index": chunk_index}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save chunk: {str(e)}")
+
+@router.post("/upload/{upload_id}/complete", dependencies=[Depends(get_current_active_superuser)])
+async def complete_upload(
+    upload_id: str,
+    background_tasks: BackgroundTasks,
+    clear_existing: bool = Query(False),
+    overwrite_existing: bool = Query(False)
+):
+    """
+    Assemble chunks and trigger restore.
+    """
+    path_manager = PathManager()
+    
+    # Destination for assembled file (same as regular import)
+    restore_temp_dir = path_manager.user_data_directory / "temp_restores"
+    restore_temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    job_id = str(uuid.uuid4())
+    # We don't know the original filename here easily without persistence, using ID
+    final_path = restore_temp_dir / f"{job_id}_restored.zip"
+    
+    try:
+        # Assemble file
+        path_manager.assemble_upload(upload_id, final_path)
+        
+        # Initialize job
+        BackupManager.restore_jobs[job_id] = {
+            "status": "pending",
+            "progress": "Queued",
+            "error": None
+        }
+
+        # Trigger restore
+        background_tasks.add_task(
+            BackupManager.restore_backup, 
+            job_id, 
+            str(final_path), 
+            clear_existing, 
+            overwrite_existing
+        )
+        
+        return JSONResponse(
+            status_code=202,
+            content={"job_id": job_id, "message": "Restore started"}
+        )
+        
+    except Exception as e:
+        if final_path.exists():
+            os.remove(final_path)
+        raise HTTPException(status_code=500, detail=str(e))
 

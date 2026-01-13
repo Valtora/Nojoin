@@ -1223,6 +1223,110 @@ export const importBackup = async (
   }
 };
 
+interface UploadChunkInitResponse {
+  upload_id: string;
+}
+
+export const uploadBackupChunked = async (
+  file: File,
+  clearExisting: boolean,
+  overwriteExisting: boolean,
+  onProgress: (percent: number) => void,
+  onStatus: (status: string) => void,
+): Promise<void> => {
+  // 10MB chunks to stay well under Cloudflare 100MB limit
+  const CHUNK_SIZE = 10 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  try {
+    // 1. Initialize
+    onStatus("Initializing upload...");
+    const initRes = await api.post<UploadChunkInitResponse>(
+      "/backup/upload/init",
+      null,
+      {
+        params: {
+          filename: file.name,
+          file_size: file.size,
+          total_chunks: totalChunks,
+        },
+      },
+    );
+    const { upload_id } = initRes.data;
+
+    // 2. Upload Chunks
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      const formData = new FormData();
+      // blob name is important
+      formData.append("file", chunk, "blob");
+
+      await api.post(`/backup/upload/${upload_id}/chunk`, formData, {
+        params: { chunk_index: i },
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      // Update combined progress
+      const percent = Math.round(((i + 1) / totalChunks) * 100);
+      onProgress(Math.min(percent, 99)); // Keep 100 for processing
+      onStatus(`Uploading part ${i + 1} of ${totalChunks}...`);
+    }
+
+    // 3. Complete
+    onStatus("Finalizing upload and starting restore...");
+    const completeRes = await api.post(
+      `/backup/upload/${upload_id}/complete`,
+      null,
+      {
+        params: {
+          clear_existing: clearExisting,
+          overwrite_existing: overwriteExisting,
+        },
+      },
+    );
+
+    // 4. Poll Status (Reusing logic pattern from importBackup)
+    const jobId = completeRes.data.job_id;
+    if (jobId) {
+      if (onProgress) onProgress(100);
+      if (onStatus) onStatus("Processing on server...");
+
+      return new Promise<void>((resolve, reject) => {
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await api.get(`/backup/import/${jobId}`);
+            const { status, progress, error } = statusRes.data;
+
+            if (onStatus && progress) {
+              onStatus(progress);
+            }
+
+            if (status === "completed") {
+              clearInterval(pollInterval);
+              resolve();
+            } else if (status === "failed") {
+              clearInterval(pollInterval);
+              reject(new Error(error || "Restore failed during processing"));
+            }
+          } catch (err: any) {
+            console.warn("Polling status failed", err);
+            // If 404, job lost?
+            if (err.response && err.response.status === 404) {
+              clearInterval(pollInterval);
+              reject(new Error("Restore job lost on server"));
+            }
+          }
+        }, 2000);
+      });
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
 export interface CompanionReleases {
   version: string | null;
   windows_url: string | null;
