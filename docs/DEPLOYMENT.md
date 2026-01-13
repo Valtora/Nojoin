@@ -23,8 +23,8 @@
   - **Pull-First:** `docker compose up -d` pulls the latest pre-built images by default.
   - **Build-Local:** `docker compose up -d --build` forces a local build from source.
 - **Hardware Support:**
-  - **NVIDIA GPU (Default):** The `docker-compose.yml` is configured for GPU inference by default.
-  - **CPU-Only (Optional):** CPU support is enabled by commenting out the `deploy` section in `docker-compose.yml`.
+  - **NVIDIA GPU (Default):** The `docker-compose.example.yml` (copied to `docker-compose.yml`) is configured for GPU inference by default.
+  - **CPU-Only (Optional):** CPU support is enabled by commenting out the `deploy` section in `docker-compose.yml` (after copying from example).
 
 ### Containerization Standards
 

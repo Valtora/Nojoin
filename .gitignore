@@ -55,3 +55,7 @@ nginx/*.pem
 # Audio Files
 *.wav
 *.opus
+
+# Docker Compose
+docker-compose.yml
+docker-compose.yaml

@@ -86,10 +86,11 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
    git clone https://github.com/Valtora/Nojoin
    cd Nojoin
    ```
-2. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
-3. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
-4. **Configure:** Follow the first-run wizard to set up API keys and preferences.
-5. **Companion App:** Navigate to the [Releases](https://github.com/Valtora/Nojoin/releases) page to download, install, and connect the companion app on client machines to start recording audio.
+2. **Setup:** `cp docker-compose.example.yml docker-compose.yml`
+3. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
+4. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
+5. **Configure:** Follow the first-run wizard to set up API keys and preferences.
+6. **Companion App:** Navigate to the [Releases](https://github.com/Valtora/Nojoin/releases) page to download, install, and connect the companion app on client machines to start recording audio.
    - See [Installation & Setup](#%EF%B8%8F-installation--setup) for CPU-only mode and configuration details.
 
 ## 🖥️ Hardware Requirements
