@@ -16,6 +16,8 @@ import {
   SystemModelStatus,
   VersionInfo,
   PeopleTag,
+  SpeakerSegment,
+  SegmentSelection,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -749,6 +751,24 @@ export const getTaskStatus = async (taskId: string): Promise<any> => {
   return response.data;
 };
 
+export const getInitialConfig = async (): Promise<{
+  llm_provider?: string;
+  gemini_api_key?: string;
+  openai_api_key?: string;
+  anthropic_api_key?: string;
+  ollama_api_url?: string;
+  hf_token?: string;
+  selected_model?: string;
+}> => {
+  try {
+    const response = await api.get("/setup/initial-config");
+    return response.data;
+  } catch (error) {
+    console.error("Failed to fetch initial config", error);
+    return {};
+  }
+};
+
 export const validateLLM = async (
   provider: string,
   apiKey: string,
@@ -1347,6 +1367,29 @@ export const seedDemoData = async (): Promise<void> => {
 
 export const getVersion = async (): Promise<VersionInfo> => {
   const response = await api.get<VersionInfo>("/version");
+  return response.data;
+};
+
+export const getSpeakerSegments = async (
+  speakerId: number,
+): Promise<SpeakerSegment[]> => {
+  const response = await api.get<SpeakerSegment[]>(
+    `/speakers/${speakerId}/segments`,
+  );
+  return response.data;
+};
+
+export const recalibrateSpeaker = async (
+  speakerId: number,
+  segments: SegmentSelection[],
+): Promise<void> => {
+  await api.post(`/speakers/${speakerId}/recalibrate`, segments);
+};
+
+export const scanMatches = async (
+  speakerId: number,
+): Promise<{ matches_found: number; recordings_updated: number }> => {
+  const response = await api.post(`/speakers/${speakerId}/scan-matches`);
   return response.data;
 };
 

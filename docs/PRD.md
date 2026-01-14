@@ -118,6 +118,8 @@ The system provides the following core capabilities:
   - **Chunked Uploads:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits (e.g., Cloudflare Tunnel 100MB limit) and ensure reliability.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
 - **Speaker Management:** Global speaker library with voiceprint identification.
+  - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
+  - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items), Chat Q&A, and automatic meeting title inference.
 - **Search Capabilities:**
   - **Global Search:** Backend-driven SQL pattern matching for finding recordings by title or content.

@@ -14,6 +14,7 @@ import {
   listModels,
   getDemoRecording,
   checkFFmpeg,
+  getInitialConfig,
 } from "@/lib/api";
 import {
   Loader2,
@@ -98,6 +99,34 @@ export default function SetupPage() {
         if (status.initialized) {
           router.push("/login");
         } else {
+          // Fetch initial config from env
+          try {
+            const initialConfig = await getInitialConfig();
+            if (Object.keys(initialConfig).length > 0) {
+              setFormData((prev) => ({
+                ...prev,
+                llm_provider: initialConfig.llm_provider || prev.llm_provider,
+                gemini_api_key:
+                  initialConfig.gemini_api_key || prev.gemini_api_key,
+                openai_api_key:
+                  initialConfig.openai_api_key || prev.openai_api_key,
+                anthropic_api_key:
+                  initialConfig.anthropic_api_key || prev.anthropic_api_key,
+                ollama_api_url:
+                  initialConfig.ollama_api_url || prev.ollama_api_url,
+                hf_token: initialConfig.hf_token || prev.hf_token,
+                selected_model:
+                  initialConfig.selected_model || prev.selected_model,
+              }));
+
+              // If we have a model selected from env, populate available models for that provider so UI is consistent
+              if (initialConfig.selected_model) {
+                setAvailableModels([initialConfig.selected_model]);
+              }
+            }
+          } catch (e) {
+            console.error("Error loading initial config", e);
+          }
           setLoading(false);
         }
       } catch (err) {

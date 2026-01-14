@@ -43,6 +43,19 @@ class VoiceprintAction(BaseModel):
     global_speaker_id: Optional[int] = None  # Required for "link_existing" and "force_link"
     new_speaker_name: Optional[str] = None  # Required for "create_new"
 
+class SpeakerSegment(BaseModel):
+    recording_id: int
+    recording_name: Optional[str] = None
+    recording_date: Optional[str] = None
+    start: float
+    end: float
+    text: str
+
+class SegmentSelection(BaseModel):
+    recording_id: int
+    start: float
+    end: float
+
 class VoiceprintResult(BaseModel):
     """Response for voiceprint operations."""
     success: bool
@@ -234,7 +247,8 @@ async def update_recording_speaker(
             # Active Learning: Update Global Speaker embedding from user feedback
             if rs.embedding:
                 if global_speaker.embedding:
-                    global_speaker.embedding = merge_embeddings(global_speaker.embedding, rs.embedding, alpha=0.3)
+                    if not global_speaker.is_voiceprint_locked:
+                        global_speaker.embedding = merge_embeddings(global_speaker.embedding, rs.embedding, alpha=0.3)
                 else:
                     global_speaker.embedding = rs.embedding
                 db.add(global_speaker)
@@ -593,28 +607,142 @@ async def delete_global_speaker(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+        
+    await db.delete(speaker)
+    await db.commit()
+    return {"ok": True}
+
+@router.get("/{speaker_id}/segments", response_model=List[SpeakerSegment])
+async def get_speaker_segments(
+    speaker_id: int,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
-    Delete a global speaker.
-    Sets global_speaker_id to NULL for all associated recording speakers.
+    Get recent audio segments attributed to this global speaker.
+    Used for manual voiceprint recalibration.
     """
+    # Verify speaker
+    speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not speaker or speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+
+    # Fetch recordings with this speaker
+    # Join RecordingSpeaker, Recording, Transcript
+    statement = (
+        select(RecordingSpeaker, Recording, Transcript)
+        .join(Recording, Recording.id == RecordingSpeaker.recording_id)
+        .outerjoin(Transcript, Transcript.recording_id == RecordingSpeaker.recording_id)
+        .where(RecordingSpeaker.global_speaker_id == speaker_id)
+        .where(Recording.is_deleted == False)
+        .order_by(Recording.created_at.desc())
+        .limit(20) # Scan last 20 recordings
+    )
+    result = await db.execute(statement)
+    rows = result.all() 
+    
+    segments = []
+    
+    for rs, rec, trans in rows:
+        if not trans or not trans.segments: continue
+        
+        # Determine labels to look for
+        labels = {rs.diarization_label}
+        if rs.local_name: labels.add(rs.local_name)
+        if rs.name: labels.add(rs.name)
+        labels.add(speaker.name)
+        
+        # Find matching segments
+        rec_segments = []
+        for seg in trans.segments:
+            if seg.get("speaker") in labels:
+                 # Skip segments > 10 seconds (often noisy/interrupted)
+                 duration = seg["end"] - seg["start"]
+                 if duration > 10.0: continue
+                 
+                 rec_segments.append(SpeakerSegment(
+                     recording_id=rec.id,
+                     recording_name=rec.name,
+                     recording_date=rec.created_at.isoformat() if rec.created_at else None,
+                     start=seg["start"],
+                     end=seg["end"],
+                     text=seg["text"]
+                 ))
+        
+        # Add to main list (reverse to have oldest first? No, recent first usually better for selection, but we want variety)
+        # Let's just add them
+        segments.extend(rec_segments)
+        
+        if len(segments) >= limit: 
+            break
+            
+    return segments[:limit]
+
+@router.post("/{speaker_id}/recalibrate")
+async def recalibrate_voiceprint(
+    speaker_id: int,
+    segments: List[SegmentSelection],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Manually recalibrate (reset) a speaker's voiceprint using specific audio segments.
+    Locks the voiceprint to prevent auto-updates.
+    """
+    # 1. Verify speaker
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
         
-    # Manually nullify to be safe and preserve name
-    stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
-    result = await db.execute(stmt)
-    recording_speakers = result.scalars().all()
-    
-    for rs in recording_speakers:
-        # If the local name is missing, snapshot the global name so the transcript doesn't revert to SPEAKER_XX
-        if not rs.name:
-            rs.name = speaker.name
-        rs.global_speaker_id = None
-        db.add(rs)
+    if not segments:
+         raise HTTPException(status_code=400, detail="No segments provided")
+         
+    # 2. Group segments by recording
+    from collections import defaultdict
+    recording_segments = defaultdict(list)
+    for s in segments:
+        recording_segments[s.recording_id].append((s.start, s.end))
         
-    await db.delete(speaker)
+    all_embeddings = []
+    device_str = config_manager.get("processing_device", "cpu")
+    
+    # 3. Extract embeddings
+    for rec_id, segs in recording_segments.items():
+        rec = await db.get(Recording, rec_id)
+        if not rec or rec.user_id != current_user.id: continue
+        
+        # Call Celery task synchronously
+        # Try to get token from user settings, then config
+        user_settings = current_user.settings or {}
+        hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
+        
+        task = celery_app.send_task(
+            "backend.worker.tasks.extract_embedding_task",
+            args=[rec.audio_path, segs, device_str, hf_token]
+        )
+        try:
+            emb = await run_in_threadpool(task.get, timeout=120) # 2 min timeout
+            if emb:
+                all_embeddings.append(emb)
+        except Exception as e:
+            logger.error(f"Failed to extract embedding for recalibration (Rec {rec_id}): {e}")
+            
+    if not all_embeddings:
+        raise HTTPException(status_code=500, detail="Failed to extract embeddings from selected segments")
+        
+    # 4. Average embeddings
+    final_emb = all_embeddings[0]
+    for i in range(1, len(all_embeddings)):
+        final_emb = merge_embeddings(final_emb, all_embeddings[i])
+        
+    # 5. Update and Lock
+    speaker.embedding = final_emb
+    speaker.is_voiceprint_locked = True
+    db.add(speaker)
     await db.commit()
+    
+    return {"success": True, "message": "Voiceprint recalibrated and locked."}
 
 @router.delete("/{speaker_id}/embedding")
 async def delete_global_speaker_embedding(
@@ -631,6 +759,7 @@ async def delete_global_speaker_embedding(
         raise HTTPException(status_code=404, detail="Speaker not found")
         
     speaker.embedding = None
+    speaker.is_voiceprint_locked = False
     db.add(speaker)
     await db.commit()
     return {"ok": True}
@@ -808,9 +937,15 @@ async def extract_voiceprint(
     # 4. Extract embedding
     device_str = config_manager.get("processing_device", "cpu")
     # Offload to worker
+    device_str = config_manager.get("processing_device", "cpu")
+    
+    # Try to get token from user settings, then config
+    user_settings = current_user.settings or {}
+    hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
+    
     task = celery_app.send_task(
         "backend.worker.tasks.extract_embedding_task",
-        args=[recording.audio_path, speaker_segments, device_str]
+        args=[recording.audio_path, speaker_segments, device_str, hf_token]
     )
     embedding = await run_in_threadpool(task.get)
     
@@ -1076,9 +1211,13 @@ async def extract_all_voiceprints(
         
         # Extract embedding
         # Offload to worker
+        # Try to get token from user settings, then config
+        user_settings = current_user.settings or {}
+        hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
+        
         task = celery_app.send_task(
             "backend.worker.tasks.extract_embedding_task",
-            args=[recording.audio_path, speaker_segments, device_str]
+            args=[recording.audio_path, speaker_segments, device_str, hf_token]
         )
         embedding = await run_in_threadpool(task.get)
         
@@ -1184,21 +1323,65 @@ async def update_speaker_color(
     
     return {"status": "success", "color": update.color}
 
-@router.delete("/{speaker_id}/embedding")
-async def delete_global_speaker_embedding(
-    speaker_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Delete the voice embedding for a global speaker, but keep the speaker entry.
-    """
-    speaker = await db.get(GlobalSpeaker, speaker_id)
-    if not speaker or speaker.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Speaker not found")
-    
     speaker.embedding = None
     db.add(speaker)
     await db.commit()
     await db.refresh(speaker)
     return {"ok": True}
+
+@router.post("/{speaker_id}/scan-matches")
+async def scan_for_matches(
+    speaker_id: int,
+    threshold: float = 0.65,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Scan all 'unlinked' speakers in the library and link them to this Global Speaker
+    if their embedding similarity is above the threshold.
+    """
+    speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not speaker or speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+        
+    if not speaker.embedding:
+         raise HTTPException(status_code=400, detail="Speaker has no voiceprint to match against")
+         
+    # Find all RecordingSpeakers that:
+    # 1. Are NOT linked to a Global Speaker
+    # 2. Have an embedding
+    # 3. Are in recordings owned by this user
+    stmt = (
+        select(RecordingSpeaker)
+        .join(Recording)
+        .where(
+            RecordingSpeaker.global_speaker_id == None,
+            RecordingSpeaker.embedding != None,
+            Recording.user_id == current_user.id
+        )
+    )
+    result = await db.execute(stmt)
+    candidates = result.scalars().all()
+    
+    matches_found = 0
+    recordings_updated = set()
+    
+    for cand in candidates:
+        if not cand.embedding: continue
+        
+        score = cosine_similarity(speaker.embedding, cand.embedding)
+        if score >= threshold:
+            cand.global_speaker_id = speaker.id
+            cand.name = speaker.name
+            db.add(cand)
+            matches_found += 1
+            recordings_updated.add(cand.recording_id)
+            
+    if matches_found > 0:
+        await db.commit()
+        
+    return {
+        "success": True,
+        "matches_found": matches_found,
+        "recordings_updated": len(recordings_updated)
+    }

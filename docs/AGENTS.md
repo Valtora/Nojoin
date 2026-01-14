@@ -18,6 +18,9 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Location**: `backend/worker/tasks.py`.
   - **Constraint**: Heavy libraries (torch, whisper, pyannote) must be imported **inside** the task function to keep the API lightweight and ensure fast startup times.
   - **Pipeline**: Validation -> VAD (Silero) -> Proxy Creation (Alignment) -> Transcribe (Whisper) -> Diarize (Pyannote) -> Merge -> Speaker Inference (LLM) -> Voiceprint Extraction -> Title Inference -> Notes Generation.
+  - **PyTorch 2.6+ & Safe Globals**: The project uses PyTorch 2.6+, which defaults `weights_only=True` in `torch.load` for security.
+    - **Issue**: This blocks loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints.
+    - **Solution**: These classes must be explicitly added to the safe globals list using `torch.serialization.add_safe_globals([...])` **before** loading the model. This is handled at the module level in `embedding_core.py` and `diarize.py`.
 - **Configuration**: `backend.utils.config_manager` is used to handle system and user-specific settings.
 
 ### Frontend (Next.js + Zustand)

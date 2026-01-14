@@ -59,6 +59,8 @@ export function PersonModal({
     target: GlobalSpeaker;
   } | null>(null);
 
+  const [confirmVoiceprintDelete, setConfirmVoiceprintDelete] = useState(false);
+
   // Load available tags
   useEffect(() => {
     if (isOpen) {
@@ -210,27 +212,24 @@ export function PersonModal({
     }
   };
 
-  const handleDeleteVoiceprint = async () => {
+  const handleDeleteVoiceprint = () => {
     if (!person) return;
-    if (
-      !confirm(
-        "Are you sure you want to delete this voiceprint? Speaker recognition for this person will stop working until a new voiceprint is created.",
-      )
-    )
-      return;
+    setConfirmVoiceprintDelete(true);
+  };
+
+  const executeDeleteVoiceprint = async () => {
+    if (!person) return;
 
     setIsDeletingVoiceprint(true);
     try {
       await deleteGlobalSpeakerEmbedding(person.id);
-      // Update local state to show 'None' immediately
-      // We need to mutate the person object prop effectively for UI, but props are read-only.
-      // We can force close or just alert.
+      setIsDeletingVoiceprint(false);
+      setConfirmVoiceprintDelete(false);
       alert("Voiceprint deleted.");
       onClose();
     } catch (error) {
       console.error("Failed to delete voiceprint:", error);
       alert("Failed to delete voiceprint.");
-    } finally {
       setIsDeletingVoiceprint(false);
     }
   };
@@ -516,6 +515,17 @@ export function PersonModal({
               title="Merge Speakers"
               message={`Are you sure you want to merge "${person?.name}" into "${confirmMerge?.target.name}"? This will delete "${person?.name}" and move all data to "${confirmMerge?.target.name}". This action cannot be undone.`}
               confirmText="Confirm Merge"
+              isDangerous
+            />
+
+            {/* Voiceprint Delete Confirmation Modal */}
+            <ConfirmationModal
+              isOpen={confirmVoiceprintDelete}
+              onClose={() => setConfirmVoiceprintDelete(false)}
+              onConfirm={executeDeleteVoiceprint}
+              title="Delete Voiceprint"
+              message="Are you sure you want to delete this voiceprint? Speaker recognition for this person will stop working until a new voiceprint is created."
+              confirmText="Delete Voiceprint"
               isDangerous
             />
 

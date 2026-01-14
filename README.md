@@ -78,8 +78,11 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
 
 ## ⚡ Quick Start
 
-> [WARNING]
+> [⚠️WARNING⚠️]
+>
 > Nojoin is still in development so updates may break instances. I will do my best to fix these issues ASAP but users should create regular backups just in case.
+>
+> Please bear in mind that this is my first open source project so you may see things which you find to be suboptimal. I would be grateful if you could provide feedback and suggestions for improvement or even submit a pull request if you have the skills to do so.
 
 1. **Clone:**
    ```bash
@@ -121,6 +124,7 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
   - **Cross-Meeting Context:** Select tags to include meetings, notes, and documents from across all meetings with the same tag(s).
 - **Organization & Search:**
   - **Global Speaker Library:** Centralized management of speaker identities across all recordings.
+  - **Voiceprint Recalibration:** Manually improve speaker identification by selecting high-quality samples.
   - **Full-Text Search:** Instantly find content across transcripts, titles, and notes.
   - **Tagging:** Organize meetings with custom tags.
 - **User Management & Security:**

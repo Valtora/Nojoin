@@ -16,6 +16,7 @@ class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
     name: str = Field(index=True) # Removed unique=True to allow same name for different users
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    is_voiceprint_locked: bool = Field(default=False, description="If True, voiceprint is manually verified and won't be auto-updated")
     color: Optional[str] = None
     
     # CRM Fields

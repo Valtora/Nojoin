@@ -229,20 +229,24 @@ async def setup_system(
             detail="System is already initialized.",
         )
     
+    # Helper to resolve value (use input if valid, else fallback to config)
+    def resolve(val, config_key):
+        if val and "..." not in val:
+            return val
+        return config_manager.get(config_key)
+
     # Construct settings dict
     settings = {
         "llm_provider": setup_in.llm_provider,
-        "hf_token": setup_in.hf_token,
+        "hf_token": resolve(setup_in.hf_token, "hf_token"),
         "whisper_model_size": setup_in.whisper_model_size
     }
-    if setup_in.gemini_api_key:
-        settings["gemini_api_key"] = setup_in.gemini_api_key
-    if setup_in.openai_api_key:
-        settings["openai_api_key"] = setup_in.openai_api_key
-    if setup_in.anthropic_api_key:
-        settings["anthropic_api_key"] = setup_in.anthropic_api_key
-    if setup_in.ollama_api_url:
-        settings["ollama_api_url"] = setup_in.ollama_api_url
+
+    # Handle API Keys with fallback
+    settings["gemini_api_key"] = resolve(setup_in.gemini_api_key, "gemini_api_key")
+    settings["openai_api_key"] = resolve(setup_in.openai_api_key, "openai_api_key")
+    settings["anthropic_api_key"] = resolve(setup_in.anthropic_api_key, "anthropic_api_key")
+    settings["ollama_api_url"] = resolve(setup_in.ollama_api_url, "ollama_api_url")
     
     if setup_in.selected_model:
         if setup_in.llm_provider == "ollama":
@@ -278,6 +282,10 @@ async def trigger_model_download(
     """
     Trigger the background task to download models.
     """
+    # Resolve token if masked (e.g. if coming from pre-filled frontend state)
+    if hf_token and "..." in hf_token:
+         hf_token = config_manager.get("hf_token")
+
     task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
     return {"task_id": task.id}
 

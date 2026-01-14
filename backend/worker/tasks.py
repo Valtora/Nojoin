@@ -453,12 +453,13 @@ def process_recording_task(self, recording_id: int):
                     
                     # Active Learning: Update Global Speaker embedding with new data
                     # This keeps the profile up-to-date with latest voice samples
-                    try:
-                        new_emb = merge_embeddings(best_match.embedding, embedding)
-                        best_match.embedding = new_emb
-                        session.add(best_match)
-                    except Exception as e:
-                        logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
+                    if not best_match.is_voiceprint_locked:
+                        try:
+                            new_emb = merge_embeddings(best_match.embedding, embedding)
+                            best_match.embedding = new_emb
+                            session.add(best_match)
+                        except Exception as e:
+                            logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
                 else:
                     logger.info(f"No match found for {label} (Best score: {best_score:.2f}).")
 
@@ -758,13 +759,18 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
         session.rollback()
 
 @celery_app.task(bind=True)
-def extract_embedding_task(self, audio_path: str, segments: list, device_str: str = "cpu"):
+def extract_embedding_task(self, audio_path: str, segments: list, device_str: str = "cpu", hf_token: str = None):
     """
     Extract embedding from segments. Used by API for synchronous-like operations.
     """
     from backend.processing.embedding_core import extract_embedding_for_segments
     try:
-        return extract_embedding_for_segments(audio_path, segments, device_str)
+        # If token not passed, try to get from config in worker
+        if not hf_token:
+            from backend.utils.config_manager import config_manager
+            hf_token = config_manager.get("hf_token")
+            
+        return extract_embedding_for_segments(audio_path, segments, device_str, hf_token)
     except Exception as e:
         logger.error(f"Failed to extract embedding task: {e}", exc_info=True)
         return None

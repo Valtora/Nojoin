@@ -66,6 +66,19 @@ Configuration is split between system-wide infrastructure settings and user-spec
   - **CORS:** Configurable via the `ALLOWED_ORIGINS` environment variable.
   - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
 
+### Environment Variables
+
+The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
+
+| Variable | Description |
+| t --- | --- |
+| `HF_TOKEN` | Hugging Face User Access Token (Read) |
+| `LLM_PROVIDER` | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`) |
+| `GEMINI_API_KEY` | Google Gemini API Key |
+| `OPENAI_API_KEY` | OpenAI API Key |
+| `ANTHROPIC_API_KEY` | Anthropic API Key |
+| `OLLAMA_API_URL` | Ollama API URL (default: `http://host.docker.internal:11434`) |
+
 ## Troubleshooting
 
 ### Companion App Issues

@@ -7,6 +7,7 @@ from backend.api.deps import get_db, get_current_admin_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from backend.models.user import User
+from backend.utils.config_manager import config_manager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,32 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     except (JWTError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token")
 
+@router.get("/initial-config")
+async def get_initial_config(
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get initial configuration from environment variables relative to the config manager.
+    Returns masked values for security.
+    """
+    await check_setup_permission(db, req)
+    
+    # helper to mask key
+    def mask_key(key):
+        if not key or len(key) < 8:
+            return None
+        return f"{key[:3]}...{key[-4:]}"
+
+    return {
+        "llm_provider": config_manager.get("llm_provider"),
+        "gemini_api_key": mask_key(config_manager.get("gemini_api_key")),
+        "openai_api_key": mask_key(config_manager.get("openai_api_key")),
+        "anthropic_api_key": mask_key(config_manager.get("anthropic_api_key")),
+        "ollama_api_url": config_manager.get("ollama_api_url"),
+        "hf_token": mask_key(config_manager.get("hf_token"))
+    }
+
 @router.post("/validate-llm")
 async def validate_llm(
     request: ValidateLLMRequest,
@@ -89,7 +116,16 @@ async def validate_llm(
     await check_setup_permission(db, req)
     
     try:
-        llm = get_llm_backend(request.provider, api_key=request.api_key, model=request.model, api_url=request.api_url)
+        # Fallback to config manager if api_key/url is missing or looks masked
+        api_key = request.api_key
+        if not api_key or "..." in api_key:
+             api_key = config_manager.get(f"{request.provider}_api_key")
+             
+        api_url = request.api_url
+        if request.provider == "ollama" and (not api_url or "..." in api_url):
+             api_url = config_manager.get("ollama_api_url")
+
+        llm = get_llm_backend(request.provider, api_key=api_key, model=request.model, api_url=api_url)
         llm.validate_api_key()
         
         models = []
@@ -118,7 +154,7 @@ async def validate_hf(
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://huggingface.co/api/whoami-v2",
-                headers={"Authorization": f"Bearer {request.token}"}
+                headers={"Authorization": f"Bearer {request.token if request.token and '...' not in request.token else config_manager.get('hf_token')}"}
             )
             response.raise_for_status()
             user_info = response.json()
@@ -139,7 +175,16 @@ async def list_models(
     await check_setup_permission(db, req)
 
     try:
-        llm = get_llm_backend(request.provider, api_key=request.api_key, api_url=request.api_url)
+        # Fallback logic
+        api_key = request.api_key
+        if not api_key or "..." in api_key:
+             api_key = config_manager.get(f"{request.provider}_api_key")
+             
+        api_url = request.api_url
+        if request.provider == "ollama" and (not api_url or "..." in api_url):
+             api_url = config_manager.get("ollama_api_url")
+
+        llm = get_llm_backend(request.provider, api_key=api_key, api_url=api_url)
         models = llm.list_models()
         return {"models": models}
     except Exception as e:

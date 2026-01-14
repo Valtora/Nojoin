@@ -9,6 +9,8 @@ import {
   MessageSquare,
   Edit2,
   Trash2,
+  Fingerprint,
+  Lock,
 } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import ContextMenu from "@/components/ContextMenu";
@@ -21,6 +23,7 @@ interface PeopleTableProps {
   onSelectAll: (selected: boolean) => void;
   onEdit: (person: GlobalSpeaker) => void;
   onDelete: (person: GlobalSpeaker) => void;
+  onRecalibrate?: (person: GlobalSpeaker) => void;
 }
 
 export function PeopleTable({
@@ -31,6 +34,7 @@ export function PeopleTable({
   onSelectAll,
   onEdit,
   onDelete,
+  onRecalibrate,
 }: PeopleTableProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -145,8 +149,16 @@ export function PeopleTable({
                       {person.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                      <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
                         {person.name}
+                        {person.is_voiceprint_locked && (
+                          <div className="group/lock relative">
+                            <Lock className="w-3.5 h-3.5 text-green-500" />
+                            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover/lock:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                              Voiceprint Locked
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -274,6 +286,11 @@ export function PeopleTable({
               label: "Edit Details",
               icon: <Edit2 className="w-4 h-4" />,
               onClick: () => onEdit(contextMenu.person),
+            },
+            {
+              label: "Recalibrate Voiceprint",
+              icon: <Fingerprint className="w-4 h-4" />,
+              onClick: () => onRecalibrate && onRecalibrate(contextMenu.person),
             },
             {
               label: "Delete Person",

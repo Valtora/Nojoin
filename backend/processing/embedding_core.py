@@ -12,6 +12,25 @@ logger = logging.getLogger(__name__)
 # Default embedding model
 DEFAULT_EMBEDDING_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
 
+
+# Add safe globals for Pyannote (Matches pattern in diarize.py + TorchVersion for embedding model)
+try:
+    from pyannote.audio.core.task import Specifications, Problem, Resolution
+    import torch
+    
+    safe_globals_list = [Specifications, Problem, Resolution]
+    
+    # Add TorchVersion which is required for wespeaker-voxceleb-resnet34-LM
+    try:
+        from torch.torch_version import TorchVersion
+        safe_globals_list.append(TorchVersion)
+    except ImportError:
+        pass
+        
+    torch.serialization.add_safe_globals(safe_globals_list)
+except ImportError:
+    pass # Should not happen if pyannote/torch is installed
+
 _embedding_model_cache = {}
 
 def load_embedding_model(device_str: str, hf_token: str = None):
@@ -23,18 +42,14 @@ def load_embedding_model(device_str: str, hf_token: str = None):
         if not hf_token:
             raise ValueError("Hugging Face token (hf_token) not found in configuration.")
 
-        # Explicitly load the model first using Model.from_pretrained which accepts 'token'
-        # Then pass the loaded model object to Inference, which doesn't accept token arguments in __init__
+        # Explicitly load the model first using Model.from_pretrained
         logger.info(f"Loading embedding model: {DEFAULT_EMBEDDING_MODEL}")
         
-        # Fix for PyTorch 2.6+ weights_only=True default
         # We trust the source of the model (pyannote/wespeaker-voxceleb-resnet34-LM)
-        try:
-            with torch.serialization.safe_globals([torch.torch_version.TorchVersion]):
-                loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
-        except AttributeError:
-            # Fallback for older torch versions that don't have safe_globals
-            loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
+        # Safe globals are added at module level.
+        # Note: Passing weights_only=False to Model.from_pretrained does NOT work because 
+        # pyannote doesn't propagate it to torch.load. We MUST rely on safe_globals.
+        loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
         
         model = Inference(loaded_model, window="sliding")
         model.to(torch.device(device_str))
@@ -138,7 +153,8 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
 def extract_embedding_for_segments(
     audio_path: str,
     segments: List[Tuple[float, float]],
-    device_str: str = "auto"
+    device_str: str = "auto",
+    hf_token: str = None
 ) -> Optional[List[float]]:
     """
     Extract a single aggregated embedding from specific time segments.
@@ -150,6 +166,7 @@ def extract_embedding_for_segments(
         audio_path: Path to the audio file.
         segments: List of (start_time, end_time) tuples in seconds.
         device_str: Device to use for inference ("cpu" or "cuda").
+        hf_token: Hugging Face token.
         
     Returns:
         Aggregated embedding vector as a list of floats, or None if extraction fails.
@@ -160,13 +177,17 @@ def extract_embedding_for_segments(
     
     if device_str == "auto":
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
+        
+    # fallback if not provided
+    if not hf_token:
+        hf_token = config_manager.get("hf_token")
     
     logger.info(f"Extracting embedding from {len(segments)} segments in {audio_path}")
     
     try:
         cache_key = (DEFAULT_EMBEDDING_MODEL, device_str)
         if cache_key not in _embedding_model_cache:
-            _embedding_model_cache[cache_key] = load_embedding_model(device_str)
+            _embedding_model_cache[cache_key] = load_embedding_model(device_str, hf_token)
         model = _embedding_model_cache[cache_key]
         
         # Sort segments by duration (longest first) and take top segments

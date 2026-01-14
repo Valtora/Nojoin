@@ -62,6 +62,7 @@ export interface PeopleTag {
 export interface GlobalSpeaker extends BaseDBModel {
   name: string;
   has_voiceprint?: boolean;
+  is_voiceprint_locked?: boolean;
   recording_count?: number; // Number of recordings this speaker is associated with
   color?: string;
   // CRM Fields
@@ -252,4 +253,19 @@ export interface VersionInfo {
   latest_version: string | null;
   is_update_available: boolean;
   release_url: string | null;
+}
+
+export interface SpeakerSegment {
+  recording_id: number;
+  recording_name: string | null;
+  recording_date: string | null;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface SegmentSelection {
+  recording_id: number;
+  start: number;
+  end: number;
 }

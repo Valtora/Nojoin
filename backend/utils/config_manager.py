@@ -194,8 +194,23 @@ class ConfigManager:
         return True
 
     def get(self, key, default=None):
-        """Gets a configuration value."""
-        return self.config.get(key, default)
+        """Gets a configuration value, falling back to environment variables."""
+        val = self.config.get(key)
+        if val is not None:
+            return val
+            
+        # Check environment variable (uppercase)
+        env_val = os.environ.get(key.upper())
+        if env_val is not None:
+            # Try to parse boolean/int if it looks like one, or just return string
+            if env_val.lower() == "true": return True
+            if env_val.lower() == "false": return False
+            try:
+                return int(env_val)
+            except ValueError:
+                return env_val
+            
+        return default
 
     def set(self, key, value):
         """Sets a configuration value and saves the config."""
