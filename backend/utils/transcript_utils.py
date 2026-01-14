@@ -206,11 +206,12 @@ def _combine_word_level(segments, speaker_turns):
     
     return final_segments 
 
-def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
+def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_duration_s: float = 10.0):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
     Filters out final consolidated segments that are shorter than min_duration_s.
+    Forces a split if the segment duration exceeds max_duration_s.
     """
     if not segments:
         return []
@@ -224,24 +225,102 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
         curr_end = curr['end']
         curr_speaker = curr['speaker']
         curr_text = curr['text']
+        
+        # --- Fix for Giant Single Segments ---
+        # If the input segment ITSELF is longer than max_duration_s, we must split it.
+        # This handles cases where Whisper returned a 30s block that needs breaking.
+        if (curr_end - curr_start) > max_duration_s:
+            # Calculate how many full chunks we have
+            duration = curr_end - curr_start
+            
+            # Create the first chunk strictly at max_duration
+            # We treat this as the "consolidated" segment and push it immediately.
+            # Then we pretend the remainder is the "next" segment effectively by manipulating pointers,
+            # but since we are inside a loop over `segments`, it's safer to just emit the chunk 
+            # and modify `curr` to represent the remainder, then CONTINUE the loop to process the remainder.
+            
+            # Split point
+            split_end = curr_start + max_duration_s
+            
+            # Approximate text split (naive) because we lack word timestamps here if they weren't used upstream
+            # If we had word timestamps, they are lost in this dict structure usually (unless passed through).
+            # We'll just do a rough ratio split for text.
+            ratio = max_duration_s / duration
+            split_idx = int(len(curr_text) * ratio)
+            
+            # Try to split at a space near the ratio to avoid cutting words
+            # Search within a window
+            search_window = 10
+            found_space = False
+            for offset in range(search_window):
+                # Check forward
+                if split_idx + offset < len(curr_text) and curr_text[split_idx + offset] == ' ':
+                    split_idx += offset
+                    found_space = True
+                    break
+                # Check backward
+                if split_idx - offset > 0 and curr_text[split_idx - offset] == ' ':
+                    split_idx -= offset
+                    found_space = True
+                    break
+            
+            chunk_text = curr_text[:split_idx].strip()
+            remainder_text = curr_text[split_idx:].strip()
+            
+            consolidated.append({
+                'start': curr_start,
+                'end': split_end,
+                'speaker': curr_speaker,
+                'text': chunk_text
+            })
+            
+            # Now we set up the remainder as the new 'curr' for the next iteration of the loop
+            # But we can't easily modify `segments` list in place safely or insert.
+            # Easiest way: Update `segments[i]` to be the remainder and STAY on `i` (don't increment).
+            # BUT we need to avoid infinite loops if we don't make progress.
+            # Since `split_end` > `curr_start` (guaranteed by max_duration_s > 0), the remainder is shorter.
+            # Eventually it will be < max_duration_s.
+            
+            segments[i] = {
+                'start': split_end,
+                'end': curr_end, # Original end
+                'speaker': curr_speaker,
+                'text': remainder_text
+            }
+            # Continue loop WITHOUT incrementing `i` to process the remainder
+            continue
+
         overlap_speakers = set([curr_speaker])
         j = i + 1
+        
         while j < n:
             next_seg = segments[j]
+            
+            # Predictive check: Would merging this segment exceed the max duration?
+            # We check if (next_seg.end - curr_start) > max_duration_s
+            # If so, we STOP merging here, unless it's a single segment that is already too long (which we can't help without word split)
+            # But the logic here merges consecutive small segments.
+            
+            potential_end = max(curr_end, next_seg['end'])
+            if (potential_end - curr_start) > max_duration_s:
+                 # Break the merge loop to enforce the split
+                 break
+
             # Check for overlap
             if next_seg['start'] < curr_end:
                 # Overlapping segment
                 overlap_speakers.add(next_seg['speaker'])
-                curr_end = max(curr_end, next_seg['end'])
+                curr_end = potential_end
                 curr_text += ' ' + next_seg['text']
                 j += 1
             elif next_seg['speaker'] == curr_speaker and abs(next_seg['start'] - curr_end) < 0.01:
                 # Consecutive, same speaker, no gap
-                curr_end = next_seg['end']
+                curr_end = next_seg['end'] # potential_end is next_seg['end'] here
                 curr_text += ' ' + next_seg['text']
                 j += 1
             else:
                 break
+                
         # Format speaker label
         if len(overlap_speakers) > 1:
             speaker_label = ' and '.join(sorted(overlap_speakers)) + ' (Overlap)'
@@ -249,7 +328,9 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 1.0):
             speaker_label = curr_speaker
 
         # Add the consolidated segment only if its duration is long enough
-        if (curr_end - curr_start) >= min_duration_s:
+        # OR if it's the only segment we have (to avoid dropping data for short recordings)
+        # We check if (duration >= min) OR (we are at the end AND we have no consolidated segments yet)
+        if (curr_end - curr_start) >= min_duration_s or (len(consolidated) == 0 and j == n):
             consolidated.append({
                 'start': curr_start,
                 'end': curr_end,

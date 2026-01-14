@@ -290,6 +290,10 @@ export default function TranscriptView({
     return `${colorOption.bg} ${colorOption.border}`;
   };
 
+  const activeSegmentIndex = segments.findIndex(
+    (s) => currentTime >= s.start && currentTime < s.end,
+  );
+
   useEffect(() => {
     if (activeSegmentRef.current) {
       activeSegmentRef.current.scrollIntoView({
@@ -297,7 +301,7 @@ export default function TranscriptView({
         block: "center",
       });
     }
-  }, [currentTime]);
+  }, [activeSegmentIndex]);
 
   const handleSpeakerRenameSubmit = async () => {
     if (editingSpeaker && editValue.trim()) {
