@@ -1,12 +1,5 @@
 # Nojoin To-Do List
 
-## Meeting Processing UX - Retry Processing Improvements
-
-- Currently, if the user has taken the time to rename speakers in a meeting but they wish to reprocess the transcript, the speaker names will be lost as the system attempts to infer speaker names again.
-- There should be logic or guardrails in place that checks to see if speakers have been named manually already by the user, if so, the speaker inference step should be skipped and the existing speaker names should be preserved.
-- This may involve some refactoring of the processing pipeline to allow for more flexible speaker inference, especially with regards to the diarization step as the step will now need to consider if speaker names have already been manually assigned and then consider this is the segmentation of the transcript.
-- Let's discuss how this could be implemented.
-
 ## People Management UX
 
 - Currently all speakers are automatically added/promoted to the global People list. This results the messy creation of speakers after every meeting is processed. Instead People/speakers should exist locally on a per meeting basis unless promoted to a global Person/speaker by the user explicitly. They can do this with the existing 'Add to Speaker Library' button in the context menua available in the speaker management panel. That being said, we should rename that context menu entry to 'Add Person to Library' to make it more clear what it does.

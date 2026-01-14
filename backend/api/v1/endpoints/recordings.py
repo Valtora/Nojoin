@@ -708,7 +708,7 @@ async def get_recording(
         .where(Recording.user_id == current_user.id)
         .options(
             selectinload(Recording.transcript),
-            selectinload(Recording.speakers).selectinload(RecordingSpeaker.global_speaker),
+            selectinload(Recording.speakers.and_(RecordingSpeaker.merged_into_id == None)).selectinload(RecordingSpeaker.global_speaker),
             selectinload(Recording.tags).selectinload(RecordingTag.tag)
         )
     )

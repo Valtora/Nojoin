@@ -75,6 +75,15 @@ Audio processing occurs asynchronously on the server.
 - **Progress Tracking:** Real-time status updates are displayed in the Web Client (e.g., "Transcribing...", "Determining speakers...").
 - **Export:** Transcripts can be exported to `.txt` format via the Web Client (Transcript Only, Notes Only, or Both).
 
+#### Reprocessing
+
+If a recording fails or if you wish to re-run the pipeline (e.g., after updating models), you can trigger **Retry Processing** from the context menu.
+
+- **Preservation:** The system intelligently preserves:
+  - **Manual Speaker Names:** If you have renamed "Speaker 01" to "Alice", reprocessing will keep this assignment.
+  - **Speaker Merges:** If you have merged two speakers, they will remain merged after reprocessing.
+  - **Notes:** LLM-generated notes are regenerated based on the new transcript.
+
 ### Speaker Management
 
 - **Global Speaker Library:** Centralized database of known speakers.

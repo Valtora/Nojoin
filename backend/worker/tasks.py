@@ -417,8 +417,47 @@ def process_recording_task(self, recording_id: int):
             global_speaker_id = None
             is_identified = False
             
-            # Try to identify speaker using embedding
-            if embedding:
+            # --- LOGIC UPDATE: Check for Manual Names & Merges ---
+            if existing_speaker:
+                # 1. Check if this speaker was merged into another
+                if existing_speaker.merged_into_id:
+                    logger.info(f"Speaker {label} is merged. Resolving target...")
+                    current_spk = existing_speaker
+                    visited_ids = {current_spk.id}
+                    
+                    # Follow the merge chain (prevent infinite loops)
+                    while current_spk.merged_into_id:
+                        next_spk = session.get(RecordingSpeaker, current_spk.merged_into_id)
+                        if not next_spk:
+                            logger.warning(f"Merge chain broken for speaker {label} at ID {current_spk.merged_into_id}")
+                            break
+                        if next_spk.id in visited_ids:
+                            logger.warning(f"Circular merge detected for speaker {label}")
+                            break
+                        visited_ids.add(next_spk.id)
+                        current_spk = next_spk
+                    
+                    # Use the target speaker's name
+                    resolved_name = current_spk.name or current_spk.local_name or current_spk.diarization_label
+                    logger.info(f"Resolved {label} (Merged) -> {resolved_name}")
+                    if current_spk.global_speaker_id:
+                        global_speaker_id = current_spk.global_speaker_id
+                        is_identified = True # Don't re-identify
+                    else:
+                        # It's a local merge, so we trust the local name
+                        is_identified = True 
+                
+                # 2. Check for manual rename (if not merged)
+                elif existing_speaker.local_name:
+                    resolved_name = existing_speaker.local_name
+                    logger.info(f"Preserving manual name for {label}: {existing_speaker.local_name}")
+                    is_identified = True # Skip inference
+                    
+                    if existing_speaker.global_speaker_id:
+                         global_speaker_id = existing_speaker.global_speaker_id
+
+            # Try to identify speaker using embedding (ONLY if not manually named/merged)
+            if not is_identified and embedding:
                 # Fetch all global speakers with embeddings belonging to this user
                 # Filter out any potential placeholder names from the global list to prevent bad linking
                 all_global_speakers = session.exec(

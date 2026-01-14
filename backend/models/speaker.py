@@ -103,6 +103,12 @@ class RecordingSpeaker(BaseDBModel, table=True):
     recording: "Recording" = Relationship(back_populates="speakers")
     global_speaker: Optional["GlobalSpeaker"] = Relationship(back_populates="recording_speakers")
     
+    # Self-referential merge pointer (if merged into another local speaker)
+    merged_into_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("recording_speakers.id", ondelete="SET NULL")))
+    merged_into: Optional["RecordingSpeaker"] = Relationship(
+        sa_relationship_kwargs={"remote_side": "RecordingSpeaker.id"}
+    )
+    
     @computed_field
     @property
     def has_voiceprint(self) -> bool:

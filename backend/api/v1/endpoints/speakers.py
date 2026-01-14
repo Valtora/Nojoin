@@ -466,8 +466,12 @@ async def _merge_local_speakers(
         target_speaker.embedding = source_speaker.embedding
         db.add(target_speaker)
 
-    # 4. Delete source speaker
-    await db.delete(source_speaker)
+    # 4. Soft-Merge source speaker (set merged_into_id)
+    # Instead of deleting, we keep it to preserve the merge history for reprocessing
+    source_speaker.merged_into_id = target_speaker.id
+    source_speaker.embedding = None # Clear embedding as it's merged
+    db.add(source_speaker)
+    # kw: was await db.delete(source_speaker)
 
 @router.post("/merge", response_model=GlobalSpeaker)
 async def merge_speakers(
