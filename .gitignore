@@ -41,6 +41,9 @@ companion/src-tauri/schemas/
 # Node modules
 node_modules/
 
+# macOS
+.DS_Store
+
 # Security / Certificates
 *.key
 *.sig
