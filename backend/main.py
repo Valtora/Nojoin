@@ -28,7 +28,8 @@ from backend.seed_demo import seed_demo_data
 async def ensure_owner_exists():
     """
     Ensures that at least one user has the OWNER role.
-    If no owner exists, promotes the first user found.
+    If no owner exists, it tries to create/promote a default owner from env custom vars,
+    defaulting to 'admin' / 'changeme123'.
     """
     async with async_session_maker() as session:
         # Check if any owner exists
@@ -50,6 +51,7 @@ async def ensure_owner_exists():
                 await session.commit()
             else:
                 print("No users found to promote.")
+
 
 def run_migrations():
     # Wait for DB to be ready

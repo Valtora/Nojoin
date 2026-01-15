@@ -1,4 +1,5 @@
 import os
+import logging
 import shutil
 from typing import List, Optional, Any
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.utils.config_manager import config_manager, is_llm_available
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Configuration for recordings storage
 # In production docker, this should be mapped to a volume
@@ -88,6 +90,109 @@ def generate_timestamp_id() -> int:
     # mm is microseconds // 10000 (0-99)
     timestamp_str = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 10000:02d}"
     return int(timestamp_str)
+
+from pydantic import BaseModel
+
+class BatchRecordingIds(BaseModel):
+    recording_ids: List[int]
+
+@router.post("/batch/archive")
+async def batch_archive_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Archive multiple recordings.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    logger.info(f"Batch archive request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
+
+    for recording in recordings:
+        if not recording.is_deleted:
+            recording.is_archived = True
+            db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.post("/batch/restore")
+async def batch_restore_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Restore multiple recordings from archive or trash.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+
+    logger.info(f"Batch restore request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
+    
+    for recording in recordings:
+        if recording.is_deleted:
+            # Restore from Deleted -> Previous State
+            recording.is_deleted = False
+        else:
+            # Restore from Archived -> Active
+            recording.is_archived = False
+        db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.post("/batch/soft-delete")
+async def batch_soft_delete_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Soft-delete multiple recordings.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+
+    logger.info(f"Batch soft-delete request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
+    
+    for recording in recordings:
+        recording.is_deleted = True
+        # recording.is_archived = False # Keep previous state
+        db.add(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
+
+@router.post("/batch/permanent")
+async def batch_permanently_delete_recordings(
+    batch: BatchRecordingIds,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently delete multiple recordings and their files.
+    """
+    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
+    result = await db.execute(stmt)
+    recordings = result.scalars().all()
+    
+    for recording in recordings:
+        # Delete file from disk
+        if recording.audio_path and os.path.exists(recording.audio_path):
+            try:
+                os.remove(recording.audio_path)
+            except OSError:
+                pass
+        await db.delete(recording)
+            
+    await db.commit()
+    return {"ok": True, "count": len(recordings)}
 
 @router.post("/init", response_model=Recording)
 async def init_upload(
@@ -1021,7 +1126,14 @@ async def restore_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
         
     recording.is_archived = False
-    recording.is_deleted = False
+    if recording.is_deleted:
+        # Restore from Deleted -> Previous State
+        recording.is_deleted = False
+        # If it was archived, it remains archived. If active, remains active.
+    else:
+        # Restore from Archived -> Active
+        recording.is_archived = False
+        
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
@@ -1044,7 +1156,7 @@ async def soft_delete_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
         
     recording.is_deleted = True
-    recording.is_archived = False  # Remove from archived if it was there
+    # recording.is_archived = False  # Keep previous state (so we can restore back to it)
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
@@ -1085,98 +1197,7 @@ async def permanently_delete_recording(
     
     return {"ok": True}
 
-from pydantic import BaseModel
 
-class BatchRecordingIds(BaseModel):
-    recording_ids: List[int]
-
-@router.post("/batch/archive")
-async def batch_archive_recordings(
-    batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Archive multiple recordings.
-    """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
-    
-    for recording in recordings:
-        if not recording.is_deleted:
-            recording.is_archived = True
-            db.add(recording)
-            
-    await db.commit()
-    return {"ok": True, "count": len(recordings)}
-
-@router.post("/batch/restore")
-async def batch_restore_recordings(
-    batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Restore multiple recordings from archive or trash.
-    """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
-    
-    for recording in recordings:
-        recording.is_archived = False
-        recording.is_deleted = False
-        db.add(recording)
-            
-    await db.commit()
-    return {"ok": True, "count": len(recordings)}
-
-@router.post("/batch/soft-delete")
-async def batch_soft_delete_recordings(
-    batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Soft-delete multiple recordings.
-    """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
-    
-    for recording in recordings:
-        recording.is_deleted = True
-        recording.is_archived = False
-        db.add(recording)
-            
-    await db.commit()
-    return {"ok": True, "count": len(recordings)}
-
-@router.post("/batch/permanent")
-async def batch_permanently_delete_recordings(
-    batch: BatchRecordingIds,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Permanently delete multiple recordings and their files.
-    """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
-    
-    for recording in recordings:
-        # Delete file from disk
-        if recording.audio_path and os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
-        await db.delete(recording)
-            
-    await db.commit()
-    return {"ok": True, "count": len(recordings)}
 
 @router.put("/{recording_id}/client_status", response_model=Recording)
 async def update_client_status(

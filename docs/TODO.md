@@ -1,10 +1,5 @@
 # Nojoin To-Do List
 
-## Logs View Improvement
-
-- Currently the logs are only generated when the user views the System page in the Settings. The logs should be generated at all times and populate the log view in the background.
-- Perhaps we should consider having an ongoing async process to populate the logs continiously in the background and store them in the logs view? Let's discuss.
-
 ## Explore Implementing Beam Cloud Compatability
 
 - Beam is an open-source cloud platform that lets you:

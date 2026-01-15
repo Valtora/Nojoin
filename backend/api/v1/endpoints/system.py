@@ -99,7 +99,7 @@ async def websocket_logs(
         try:
             c = client.containers.get(container_name)
             # logs(stream=True) blocks until new log arrives
-            for line in c.logs(stream=True, tail=50, follow=True, timestamps=True):
+            for line in c.logs(stream=True, tail=2000, follow=True, timestamps=True):
                 if not active: 
                     break
                 text = line.decode("utf-8")

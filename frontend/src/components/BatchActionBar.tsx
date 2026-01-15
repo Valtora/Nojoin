@@ -1,29 +1,30 @@
-'use client';
+"use client";
 
-import { useNavigationStore } from '@/lib/store';
-import { Archive, Trash2, RotateCcw, Tag, X } from 'lucide-react';
-import { useState } from 'react';
-import ConfirmationModal from './ConfirmationModal';
-import BatchTagModal from './BatchTagModal';
-import { 
-  batchArchiveRecordings, 
-  batchRestoreRecordings, 
-  batchSoftDeleteRecordings, 
+import { useNavigationStore } from "@/lib/store";
+import { Archive, Trash2, RotateCcw, Tag, X } from "lucide-react";
+import { useState } from "react";
+import ConfirmationModal from "./ConfirmationModal";
+import BatchTagModal from "./BatchTagModal";
+import {
+  batchArchiveRecordings,
+  batchRestoreRecordings,
+  batchSoftDeleteRecordings,
   batchPermanentlyDeleteRecordings,
   batchAddTagToRecordings,
-  batchRemoveTagFromRecordings
-} from '@/lib/api';
+  batchRemoveTagFromRecordings,
+} from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface BatchActionBarProps {
   onActionComplete: () => void;
 }
 
-export default function BatchActionBar({ onActionComplete }: BatchActionBarProps) {
-  const { 
-    selectedRecordingIds, 
-    clearSelection, 
-    currentView 
-  } = useNavigationStore();
+export default function BatchActionBar({
+  onActionComplete,
+}: BatchActionBarProps) {
+  const { selectedRecordingIds, clearSelection, currentView } =
+    useNavigationStore();
+  const { addNotification } = useNotificationStore();
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -33,64 +34,108 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
     isDangerous?: boolean;
   }>({
     isOpen: false,
-    title: '',
-    message: '',
+    title: "",
+    message: "",
     onConfirm: () => {},
   });
 
   const [tagModal, setTagModal] = useState<{
     isOpen: boolean;
-    mode: 'add' | 'remove';
+    mode: "add" | "remove";
   }>({
     isOpen: false,
-    mode: 'add',
+    mode: "add",
   });
 
   if (selectedRecordingIds.length === 0) return null;
 
   const handleArchive = async () => {
+    console.log(
+      "[BatchActionBar] handleArchive called for:",
+      selectedRecordingIds,
+    );
     try {
       await batchArchiveRecordings(selectedRecordingIds);
+      addNotification({
+        type: "success",
+        message: `Archived ${selectedRecordingIds.length} recordings`,
+      });
       onActionComplete();
       clearSelection();
     } catch (error) {
-      console.error('Batch archive failed:', error);
+      console.error("Batch archive failed:", error);
+      addNotification({
+        type: "error",
+        message: "Failed to archive recordings",
+      });
     }
   };
 
   const handleRestore = async () => {
+    console.log(
+      "[BatchActionBar] handleRestore called for:",
+      selectedRecordingIds,
+    );
     try {
       await batchRestoreRecordings(selectedRecordingIds);
+      addNotification({
+        type: "success",
+        message: `Restored ${selectedRecordingIds.length} recordings`,
+      });
       onActionComplete();
       clearSelection();
     } catch (error) {
-      console.error('Batch restore failed:', error);
+      console.error("Batch restore failed:", error);
+      addNotification({
+        type: "error",
+        message: "Failed to restore recordings",
+      });
     }
   };
 
   const handleSoftDelete = async () => {
+    console.log(
+      "[BatchActionBar] handleSoftDelete called for:",
+      selectedRecordingIds,
+    );
     try {
       await batchSoftDeleteRecordings(selectedRecordingIds);
+      addNotification({
+        type: "success",
+        message: `Moved ${selectedRecordingIds.length} recordings to trash`,
+      });
       onActionComplete();
       clearSelection();
     } catch (error) {
-      console.error('Batch delete failed:', error);
+      console.error("Batch delete failed:", error);
+      addNotification({
+        type: "error",
+        message: "Failed to delete recordings",
+      });
     }
   };
 
   const handlePermanentDelete = () => {
     setConfirmModal({
       isOpen: true,
-      title: 'Permanently Delete Recordings',
+      title: "Permanently Delete Recordings",
       message: `Are you sure you want to permanently delete ${selectedRecordingIds.length} recordings? This action cannot be undone.`,
       isDangerous: true,
       onConfirm: async () => {
         try {
           await batchPermanentlyDeleteRecordings(selectedRecordingIds);
+          addNotification({
+            type: "success",
+            message: `Permanently deleted ${selectedRecordingIds.length} recordings`,
+          });
           onActionComplete();
           clearSelection();
         } catch (error) {
-          console.error('Batch permanent delete failed:', error);
+          console.error("Batch permanent delete failed:", error);
+          addNotification({
+            type: "error",
+            message: "Failed to permanently delete recordings",
+          });
         }
       },
     });
@@ -98,16 +143,25 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
 
   const handleTagAction = async (tagName: string) => {
     try {
-      if (tagModal.mode === 'add') {
+      if (tagModal.mode === "add") {
         await batchAddTagToRecordings(selectedRecordingIds, tagName);
+        addNotification({
+          type: "success",
+          message: `Added tag "${tagName}" to ${selectedRecordingIds.length} recordings`,
+        });
       } else {
         await batchRemoveTagFromRecordings(selectedRecordingIds, tagName);
+        addNotification({
+          type: "success",
+          message: `Removed tag "${tagName}" from ${selectedRecordingIds.length} recordings`,
+        });
       }
-      window.dispatchEvent(new CustomEvent('tags-updated'));
+      window.dispatchEvent(new CustomEvent("tags-updated"));
       onActionComplete();
       clearSelection();
     } catch (error) {
-      console.error('Batch tag action failed:', error);
+      console.error("Batch tag action failed:", error);
+      addNotification({ type: "error", message: "Failed to update tags" });
     }
   };
 
@@ -118,7 +172,7 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
           <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-1 rounded-md text-xs font-medium">
             {selectedRecordingIds.length} selected
           </span>
-          <button 
+          <button
             onClick={clearSelection}
             className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
           >
@@ -130,7 +184,7 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
           {/* Tag Actions */}
           <div className="flex gap-1 border-r border-gray-200 dark:border-gray-700 pr-2 mr-1">
             <button
-              onClick={() => setTagModal({ isOpen: true, mode: 'add' })}
+              onClick={() => setTagModal({ isOpen: true, mode: "add" })}
               className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
               title="Add Tag"
             >
@@ -139,7 +193,7 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
           </div>
 
           {/* View Specific Actions */}
-          {currentView === 'recordings' && (
+          {currentView === "recordings" && (
             <>
               <button
                 onClick={handleArchive}
@@ -158,7 +212,7 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
             </>
           )}
 
-          {currentView === 'archived' && (
+          {currentView === "archived" && (
             <>
               <button
                 onClick={handleRestore}
@@ -177,7 +231,7 @@ export default function BatchActionBar({ onActionComplete }: BatchActionBarProps
             </>
           )}
 
-          {currentView === 'deleted' && (
+          {currentView === "deleted" && (
             <>
               <button
                 onClick={handleRestore}
