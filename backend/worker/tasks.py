@@ -512,61 +512,7 @@ def process_recording_task(self, recording_id: int):
                     resolved_name = f"Speaker {speaker_counter}"
                     speaker_counter += 1
 
-            # Check if resolved_name is not generic. If so, create Global Speaker
-            if not global_speaker_id and resolved_name:
-                import re
-                placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
-                if not placeholder_pattern.match(resolved_name):
-                     # Feature: Auto-promote inferred speakers to Global Library
-                     logger.info(f"Auto-promoting inferred speaker '{resolved_name}' to Global Library")
-                     try:
-                         # Double check existence
-                         # Note: This runs in a sync session context
-                         # Check existence (sync session)
-                         existing_gs = session.exec(select(GlobalSpeaker).where(GlobalSpeaker.name == resolved_name, GlobalSpeaker.user_id == recording.user_id)).first()
-                         
-                         if existing_gs:
-                             # Name conflict! Do NOT link to existing to prevent accidental voiceprint contamination.
-                             # Instead, create a new speaker with a suffixed name.
-                             logger.info(f"Speaker '{resolved_name}' exists but was not identified by voiceprint. Creating numbered variant to avoid bad merge.")
-                             
-                             base_name = resolved_name
-                             counter = 1
-                             
-                             while True:
-                                 new_name = f"{base_name} ({counter})"
-                                 check_dup = session.exec(select(GlobalSpeaker).where(GlobalSpeaker.name == new_name, GlobalSpeaker.user_id == recording.user_id)).first()
-                                 if not check_dup:
-                                     resolved_name = new_name
-                                     break
-                                 counter += 1
-                             
-                             logger.info(f"Resolved duplicate name to: {resolved_name}")
-                             
-                             # Create new GlobalSpeaker with new name
-                             new_gs = GlobalSpeaker(
-                                name=resolved_name,
-                                embedding=embedding,
-                                user_id=recording.user_id
-                             )
-                             session.add(new_gs)
-                             session.flush()
-                             session.refresh(new_gs)
-                             global_speaker_id = new_gs.id
-                             
-                         else:
-                             # Create new
-                             new_gs = GlobalSpeaker(
-                                name=resolved_name,
-                                embedding=embedding,
-                                user_id=recording.user_id
-                             )
-                             session.add(new_gs)
-                             session.flush() # Get ID
-                             session.refresh(new_gs)
-                             global_speaker_id = new_gs.id
-                     except Exception as e:
-                         logger.error(f"Failed to auto-promote speaker {resolved_name}: {e}")
+            # Auto-promotion logic removed. Speakers must be manually promoted.
 
             label_map[label] = resolved_name
             logger.info(f"Mapped {label} -> {resolved_name}")

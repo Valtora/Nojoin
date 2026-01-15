@@ -1,8 +1,9 @@
 # Nojoin To-Do List
 
-## People Management UX
+## Logs View Improvement
 
-- Currently all speakers are automatically added/promoted to the global People list. This results the messy creation of speakers after every meeting is processed. Instead People/speakers should exist locally on a per meeting basis unless promoted to a global Person/speaker by the user explicitly. They can do this with the existing 'Add to Speaker Library' button in the context menua available in the speaker management panel. That being said, we should rename that context menu entry to 'Add Person to Library' to make it more clear what it does.
+- Currently the logs are only generated when the user views the System page in the Settings. The logs should be generated at all times and populate the log view in the background.
+- Perhaps we should consider having an ongoing async process to populate the logs continiously in the background and store them in the logs view? Let's discuss.
 
 ## Explore Implementing Beam Cloud Compatability
 

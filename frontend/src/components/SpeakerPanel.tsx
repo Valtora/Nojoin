@@ -562,7 +562,7 @@ export default function SpeakerPanel({
             ...(!contextMenu.speaker.global_speaker_id
               ? [
                   {
-                    label: "Add to Speaker Library",
+                    label: "Add to People",
                     onClick: () => handlePromoteToGlobal(contextMenu.speaker),
                   },
                 ]

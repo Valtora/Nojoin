@@ -253,33 +253,11 @@ async def update_recording_speaker(
                     global_speaker.embedding = rs.embedding
                 db.add(global_speaker)
         else:
-            # Auto-promote if name is not generic
-            import re
-            # Check if name is generic (Speaker X, Unknown, etc.)
-            is_generic = False
-            placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE)
-            if placeholder_pattern.match(update.global_speaker_name):
-                is_generic = True
-            
-            if not is_generic:
-                # Name is specific (e.g. "John Doe")
-                # Create new Global Speaker automatically
-                new_gs = GlobalSpeaker(
-                    name=update.global_speaker_name,
-                    embedding=rs.embedding,
-                    user_id=current_user.id
-                )
-                db.add(new_gs)
-                await db.flush() # Get ID
-                
-                rs.global_speaker_id = new_gs.id
-                rs.local_name = None
-                rs.name = None # Deprecated
-            else:
-                # Generic name, keep local
-                rs.local_name = update.global_speaker_name
-                rs.global_speaker_id = None
-                rs.name = None  # Deprecated field
+            # Match not found in Global Library.
+            # Treat as a local rename only.
+            rs.local_name = update.global_speaker_name
+            rs.global_speaker_id = None
+            rs.name = None  # Deprecated field
         
         db.add(rs)
 
@@ -611,7 +589,10 @@ async def delete_global_speaker(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-        
+    speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not speaker or speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+
     await db.delete(speaker)
     await db.commit()
     return {"ok": True}
