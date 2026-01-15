@@ -84,6 +84,13 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - XDG_CACHE_HOME=/shared_model_cache
       - HF_HOME=/shared_model_cache/huggingface
+      # Initial config variables
+      - HF_TOKEN=${HF_TOKEN:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_API_URL=${OLLAMA_API_URL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -123,6 +130,13 @@ services:
       # Force cache location to match the mounted volume
       - XDG_CACHE_HOME=/home/appuser/.cache
       - HF_HOME=/home/appuser/.cache/huggingface
+      # Initial config variables
+      - HF_TOKEN=${HF_TOKEN:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_API_URL=${OLLAMA_API_URL:-}
     # Comment out the 'deploy' section below if you do not have an NVIDIA GPU
     deploy:
       resources:
