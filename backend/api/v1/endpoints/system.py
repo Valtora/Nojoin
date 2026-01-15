@@ -271,6 +271,12 @@ async def setup_system(
         # Log error but don't fail the request since DB is updated
         print(f"Failed to update config file: {e}")
 
+    # Seed demo data for the new admin user
+    try:
+        await seed_demo_data(user.id)
+    except Exception as e:
+        logger.error(f"Failed to seed demo data during setup: {e}")
+
     return user
 
 @router.post("/download-models")
