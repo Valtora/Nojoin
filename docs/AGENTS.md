@@ -75,38 +75,29 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - Build: `cd companion && npm run tauri build`
   - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin Setup X.Y.Z.exe`
 
-### Companion Release Workflow
+### Release Workflow (Unified Lock-step)
 
-**The companion app uses a specific tag pattern** (`companion-v*`) to distinguish its releases from the main backend/frontend releases.
+The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX.Y.Z`) triggers a unified release for both the Server (Docker) and the Companion App (Windows Installer).
 
-1. **Update Version Numbers** (all three files must match):
-   - `companion/package.json`: `"version": "X.Y.Z"`
-   - `companion/package-lock.json`: `"version": "X.Y.Z"`
-   - `companion/src-tauri/tauri.conf.json`: `"version": "X.Y.Z"`
-   - `companion/src-tauri/Cargo.toml`: `version = "X.Y.Z"`
-2. **Commit and Push**: Push changes to the `main` branch.
+1. **Update Version**: Update `docs/VERSION` to the new version (e.g., `0.6.0`).
+2. **Commit and Tag**:
+   - Commit the change.
+   - Create a tag matching the version: `git tag v0.6.0`
+   - Push the tag: `git push origin v0.6.0`
 
-3. **Create Tag**: Use the `companion-v` prefix to distinguish from backend releases:
-
-   ```bash
-   git tag companion-v0.4.3
-   git push origin companion-v0.4.3
-   ```
-
-   _Note: Creating a tag locally via GUI does not automatically push it. The tag must be explicitly pushed to trigger the workflow._
-
-4. **Create GitHub Release**: Create a release for the `v*` tag on GitHub.
-
-5. **Trigger CI/CD Manually**: Navigate to GitHub Actions > "Companion App Build & Release" > "Run workflow". Select the branch or tag to build.
-   - This builds the Windows installer (`.exe`).
-
-6. **Artifacts Uploaded**: The Windows installer is attached to the GitHub Release automatically.
+3. **CI/CD Pipeline** (`.github/workflows/release.yml`):
+   - **Trigger**: The push of the `v*` tag automatically triggers the pipeline.
+   - **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`.
+   - **Step 2: Companion Build**:
+     - **Auto-Sync**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.**
+     - **Build**: Compiles the Windows installer (`.exe`) and Portable build.
+     - **Release**: Uploads these artifacts to the GitHub Release created by the tag.
 
 **Important**:
 
-- **Versioning**: Strict 3-component Semantic Versioning (`X.Y.Z`, e.g., `0.1.6`) must be used. 4-component versions (`0.1.6.1`) are **NOT** supported by Tauri or Windows installers.
-- **Triggers**: Tags do NOT trigger companion builds automatically. The workflow must be triggered manually.
-- **Platform**: Only Windows builds are currently supported. macOS and Linux builds have been removed pending community contributions.
+- **Versioning**: Strict Semantic Versioning (`vX.Y.Z`).
+- **Source of Truth**: The Git Tag (and `docs/VERSION`) is the single source of truth. The companion app files are transiently updated during the build process.
+- **Platform**: Only Windows builds are currently supported for the Companion App.
 
 ## Code Style & Conventions
 

@@ -29,7 +29,7 @@
 ### Containerization Standards
 
 - **Registry:** GitHub Container Registry (GHCR).
-- **CI/CD:** The GitHub Actions workflow (`docker-publish.yml`) builds and pushes images on push to `main` and release tags.
+- **CI/CD:** The unified GitHub Actions workflow (`release.yml`) builds and pushes Docker images AND compiles the Companion App binaries on every release tag (`v*`). Version numbers are automatically synchronized across all components.
 - **Base Images:** Optimized, pre-built images (e.g., `pytorch/pytorch`) are used.
 - **Context Management:** `.dockerignore` excludes build artifacts.
 - **Dependency Optimization:** `requirements.txt` is filtered during build to prevent redundant installations.
@@ -78,15 +78,3 @@ The following environment variables can be used to pre-configure the system (e.g
 | `OPENAI_API_KEY` | OpenAI API Key |
 | `ANTHROPIC_API_KEY` | Anthropic API Key |
 | `OLLAMA_API_URL` | Ollama API URL (default: `http://host.docker.internal:11434`) |
-
-## Troubleshooting
-
-### Companion App Issues
-
-The Companion App currently supports Windows only. If issues are encountered:
-
-1. Ensure the latest version is installed from the [Releases](https://github.com/Valtora/Nojoin/releases) page.
-2. Check the logs in the application directory.
-3. Report issues on GitHub.
-
-**For macOS and Linux users:** Contributors are being sought to help build companion apps for these platforms. Please see the [Contributing Guide](../CONTRIBUTING.md) for more information.

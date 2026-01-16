@@ -1,6 +1,8 @@
-name: Docker Publish
+name: Release & Publish
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
 env:
@@ -8,7 +10,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  server-release:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,10 +62,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
             type=ref,event=branch
             type=ref,event=tag
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
@@ -81,3 +83,63 @@ jobs:
           build-args: ${{ matrix.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  companion-release:
+    name: Build & Release Companion App
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    needs: server-release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # CRITICAL: Sync Versions from Tag/Docs
+      # We trust the tag as the primary source of truth for the Release artifact.
+      # We overwrite docs/VERSION with the tag (minus 'v') to ensure consistency
+      # Then we run the sync script to propagate that to companion files.
+      - name: Sync Version Numbers
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Syncing version to $VERSION"
+
+          # Overwrite docs/VERSION with the tag version (removes 'v')
+          echo "$VERSION" > docs/VERSION
+
+          # Run the sync script
+          node scripts/sync-version.js
+
+      - name: install frontend dependencies
+        run: |
+          cd companion
+          npm install
+
+      - name: Build App
+        env:
+          CI: true
+        run: |
+          cd companion
+          npm run build
+
+      - name: Package Portable
+        run: |
+          cd companion
+          npm run build:portable -- --no-build
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            companion/src-tauri/target/release/bundle/nsis/Nojoin_*.exe
+            companion/dist-portable/*
+          generate_release_notes: true

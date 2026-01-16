@@ -54,8 +54,8 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 - **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
-- **Distribution:** The Windows installer (NSIS) is built via Tauri Bundler and hosted on GitHub Releases.
-- **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub.
+- **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
+- **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub matched to the server version.
 
 ### 2.4 Security
 
