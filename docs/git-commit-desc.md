@@ -1,12 +1,6 @@
 # Git Commit Description
 
-feat(ui): hide 'Add to People' if speaker exists
+fix(ui): maintain sidebar highlight for active parent page
 
-Refined the Speaker Management UX to hide the "Add to People" context menu option if the speaker is already present in the Global Library.
-
-The duplication check logic now considers both:
-
-1. Explicit linkage (global_speaker_id is present).
-2. Implicit linkage by name match (speaker name matches an existing global speaker).
-
-This prevents the accidental creation of duplicate global speakers.
+Updated the Main Sidebar navigation logic to ensure the current page (Recordings, Archived, or Deleted) remains highlighted when viewing a specific recording.
+The highlighting now considers both the `currentView` state and whether the current path is a recording detail page (`/recordings/*`), preventing the active state from being lost during navigation.

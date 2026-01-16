@@ -794,7 +794,10 @@ export default function MainNav() {
               id={id}
               icon={icon}
               label={label}
-              isActive={currentView === view && pathname === "/"}
+              isActive={
+                currentView === view &&
+                (pathname === "/" || pathname.startsWith("/recordings/"))
+              }
               onClick={() => {
                 setCurrentView(view);
                 if (pathname !== "/") {
