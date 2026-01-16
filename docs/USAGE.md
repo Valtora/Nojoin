@@ -89,6 +89,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 - **Global Speaker Library:** Centralized database of known speakers.
 - **Intelligent Linking:**
   - Link "Unknown Speakers" to existing Global Speakers.
+  - **Add to People:** Right-click a speaker to add them to the Global Library. This option is hidden if the speaker is already in the library (matched by name or ID).
   - Renaming a speaker offers to update the Global Speaker or create a new one.
 - **Voiceprint Management:**
   - **Auto-Extraction:** Can be enabled in Settings.

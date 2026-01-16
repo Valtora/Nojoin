@@ -42,6 +42,7 @@ interface SpeakerPanelProps {
   onPause: () => void;
   onResume: () => void;
   onRefresh: () => void;
+  globalSpeakers: import("@/types").GlobalSpeaker[];
 }
 
 export default function SpeakerPanel({
@@ -56,6 +57,7 @@ export default function SpeakerPanel({
   onPause,
   onResume,
   onRefresh,
+  globalSpeakers,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{
@@ -558,8 +560,11 @@ export default function SpeakerPanel({
                   },
                 ]
               : []),
-            // Add to Speaker Library option - only show if not already global
-            ...(!contextMenu.speaker.global_speaker_id
+            // Add to Speaker Library option - only show if not already global (and no name match)
+            ...(!contextMenu.speaker.global_speaker_id &&
+            !globalSpeakers.some(
+              (gs) => gs.name === getSpeakerName(contextMenu.speaker),
+            )
               ? [
                   {
                     label: "Add to People",

@@ -970,6 +970,7 @@ export default function RecordingPage({ params }: PageProps) {
                     onPause={handlePause}
                     onResume={handleResume}
                     onRefresh={fetchRecording}
+                    globalSpeakers={globalSpeakers}
                   />
                 </Panel>
 
