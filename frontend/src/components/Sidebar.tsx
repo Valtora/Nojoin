@@ -12,8 +12,6 @@ import {
   Search,
   Filter,
   X,
-  RotateCcw,
-  Trash2,
   CheckSquare,
   Square,
 } from "lucide-react";
@@ -524,7 +522,6 @@ export default function Sidebar() {
               {
                 label: "Cancel Processing",
                 onClick: () => handleCancel(recording.id),
-                icon: <AlertCircle className="w-4 h-4" />,
                 className: "text-amber-600 dark:text-amber-400",
               },
             ]
@@ -555,7 +552,6 @@ export default function Sidebar() {
       items.push(
         {
           label: "Restore",
-          icon: <RotateCcw className="w-4 h-4" />,
           onClick: () => handleRestore(recording.id),
         },
         {
@@ -569,12 +565,10 @@ export default function Sidebar() {
       items.push(
         {
           label: "Restore",
-          icon: <RotateCcw className="w-4 h-4" />,
           onClick: () => handleRestore(recording.id),
         },
         {
           label: "Delete Permanently",
-          icon: <Trash2 className="w-4 h-4" />,
           className:
             "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
           onClick: () => handlePermanentDelete(recording.id),

@@ -19,6 +19,7 @@ import {
   BatchUpdates,
 } from "@/components/people/BatchEditModal";
 import RecalibrateModal from "@/components/people/RecalibrateModal";
+import SplitPersonModal from "@/components/people/SplitPersonModal";
 import { Trash2, Edit2, CheckSquare } from "lucide-react";
 import { deleteGlobalSpeakerEmbedding } from "@/lib/api"; // Ensure this is imported for batch voiceprint delete
 
@@ -40,6 +41,9 @@ export default function PeoplePage() {
   );
   const [personToRecalibrate, setPersonToRecalibrate] =
     useState<GlobalSpeaker | null>(null);
+  const [personToSplit, setPersonToSplit] = useState<GlobalSpeaker | null>(
+    null,
+  );
 
   // Batch Edit State
   const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
@@ -301,6 +305,7 @@ export default function PeoplePage() {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onRecalibrate={(person) => setPersonToRecalibrate(person)}
+              onSplit={(person) => setPersonToSplit(person)}
             />
           </div>
         </main>
@@ -322,6 +327,18 @@ export default function PeoplePage() {
           onComplete={() => {
             fetchPeople();
             setPersonToRecalibrate(null);
+          }}
+        />
+      )}
+
+      {personToSplit && (
+        <SplitPersonModal
+          isOpen={!!personToSplit}
+          onClose={() => setPersonToSplit(null)}
+          speaker={personToSplit}
+          onComplete={() => {
+            fetchPeople();
+            setPersonToSplit(null);
           }}
         />
       )}

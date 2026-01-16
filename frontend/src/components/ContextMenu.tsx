@@ -7,7 +7,7 @@ interface ContextMenuItem {
   label: string;
   onClick: () => void;
   className?: string;
-  icon?: React.ReactNode;
+  // icon removed
 }
 
 interface ContextMenuProps {
@@ -56,7 +56,7 @@ export default function ContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[999999] w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 overflow-hidden"
+      className="fixed z-`999999` w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 overflow-hidden"
       style={style}
     >
       {items.map((item, index) => (
@@ -72,7 +72,6 @@ export default function ContextMenu({
               : ""
           } ${item.className || "text-gray-700 dark:text-gray-200"}`}
         >
-          {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
           {item.label}
         </button>
       ))}

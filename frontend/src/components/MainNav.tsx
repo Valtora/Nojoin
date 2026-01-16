@@ -922,7 +922,6 @@ export default function MainNav() {
             items={[
               {
                 label: "Rename",
-                icon: <Edit2 className="w-4 h-4" />,
                 onClick: () => {
                   setEditingTagId(contextMenu.tagId);
                   setContextMenu(null);
@@ -930,7 +929,6 @@ export default function MainNav() {
               },
               {
                 label: "Add Sub-tag",
-                icon: <Plus className="w-4 h-4" />,
                 onClick: () => {
                   handleAddSubTag(contextMenu.tagId);
                   setContextMenu(null);
@@ -940,7 +938,6 @@ export default function MainNav() {
                 ? [
                     {
                       label: "Promote to Root",
-                      icon: <ChevronLeft className="w-4 h-4" />,
                       onClick: async () => {
                         try {
                           await updateTag(contextMenu.tagId, {
@@ -970,7 +967,6 @@ export default function MainNav() {
                       ? [
                           {
                             label: "Promote One Level",
-                            icon: <ChevronLeft className="w-4 h-4" />,
                             onClick: async () => {
                               const tag = tags.find(
                                 (t) => t.id === contextMenu.tagId,
@@ -1012,7 +1008,6 @@ export default function MainNav() {
                 : []),
               {
                 label: "Delete",
-                icon: <Trash2 className="w-4 h-4" />,
                 className:
                   "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
                 onClick: () => {

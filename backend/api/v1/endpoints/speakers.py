@@ -749,6 +749,223 @@ async def delete_global_speaker_embedding(
     await db.commit()
     return {"ok": True}
 
+class SpeakerSplitRequest(BaseModel):
+    new_speaker_name: str
+    segments: List[SegmentSelection]
+
+@router.post("/{speaker_id}/split", response_model=GlobalSpeaker)
+async def split_speaker(
+    speaker_id: int,
+    request: SpeakerSplitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Split a global speaker into a new speaker based on selected audio segments.
+    Recalibrates both the new speaker (using selected segments) and the original speaker (using remaining segments).
+    """
+    # 1. Verify Source Speaker
+    original_speaker = await db.get(GlobalSpeaker, speaker_id)
+    if not original_speaker or original_speaker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Original speaker not found")
+
+    if not request.segments:
+         raise HTTPException(status_code=400, detail="No segments provided for splitting")
+
+    # 2. Create New Speaker
+    # Check if name exists
+    stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == request.new_speaker_name, GlobalSpeaker.user_id == current_user.id)
+    result = await db.execute(stmt)
+    existing_new = result.scalar_one_or_none()
+    
+    new_speaker = None
+    if existing_new:
+        # If it exists, we are effectively merging *into* another existing speaker manually
+        new_speaker = existing_new
+    else:
+        new_speaker = GlobalSpeaker(
+            name=request.new_speaker_name,
+            user_id=current_user.id,
+            is_voiceprint_locked=True 
+        )
+        db.add(new_speaker)
+        await db.flush()
+
+    # Group segments by recording
+    from collections import defaultdict
+    recording_segments = defaultdict(list)
+    for s in request.segments:
+        recording_segments[s.recording_id].append(s)
+
+    # 3. Process each affected recording
+    import time
+    timestamp_suffix = int(time.time())
+    
+    device_str = config_manager.get("processing_device", "cpu")
+    user_settings = current_user.settings or {}
+    hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
+    
+    new_speaker_embeddings = []
+    
+    for rec_id, segments in recording_segments.items():
+        rec = await db.get(Recording, rec_id)
+        if not rec or rec.user_id != current_user.id: continue
+        
+        # Determine a new local label for the splits
+        # We need a unique label to separate these segments in the diarization/transcript
+        # e.g. SPLIT_123456_SPEAKER_00
+        split_label = f"SPLIT_{timestamp_suffix}_{new_speaker.id}"
+        
+        # Update Transcript Segments
+        stmt = select(Transcript).where(Transcript.recording_id == rec_id)
+        result = await db.execute(stmt)
+        transcript = result.scalar_one_or_none()
+        
+        if transcript and transcript.segments:
+            new_trans_segments = []
+            segments_modified = False
+            
+            for t_seg in transcript.segments:
+                # Check if this segment overlaps significantly with any selected segment
+                is_selected = False
+                t_start = t_seg['start']
+                t_end = t_seg['end']
+                
+                for sel in segments:
+                    # Simple intersection check with tolerance
+                    # If the selected range covers most of the segment
+                    overlap_start = max(t_start, sel.start)
+                    overlap_end = min(t_end, sel.end)
+                    overlap = max(0, overlap_end - overlap_start)
+                    duration = t_end - t_start
+                    
+                    if duration > 0 and (overlap / duration) > 0.5:
+                        is_selected = True
+                        break
+                
+                seg_copy = dict(t_seg)
+                if is_selected:
+                    seg_copy['speaker'] = split_label
+                    segments_modified = True
+                new_trans_segments.append(seg_copy)
+            
+            if segments_modified:
+                transcript.segments = new_trans_segments
+                flag_modified(transcript, "segments")
+                db.add(transcript)
+        
+        # Create RecordingSpeaker entry for the new label
+        # Check if one already exists (unlikely given timestamp, but safe)
+        stmt = select(RecordingSpeaker).where(
+            RecordingSpeaker.recording_id == rec_id, 
+            RecordingSpeaker.diarization_label == split_label
+        )
+        result = await db.execute(stmt)
+        existing_rs = result.scalar_one_or_none()
+        
+        if not existing_rs:
+            # Extract embedding for this new speaker's segments in this recording
+            # We use the selected segments for extraction
+            seg_tuples = [(s.start, s.end) for s in segments]
+            
+            # Run extraction task synchronously
+            task = celery_app.send_task(
+                "backend.worker.tasks.extract_embedding_task",
+                args=[rec.audio_path, seg_tuples, device_str, hf_token]
+            )
+            try:
+                emb = await run_in_threadpool(task.get, timeout=60)
+                if emb:
+                    new_speaker_embeddings.append(emb)
+            except Exception as e:
+                logger.error(f"Failed embedding extract during split (Rec {rec_id}): {e}")
+                emb = None
+
+            rs = RecordingSpeaker(
+                recording_id=rec_id,
+                diarization_label=split_label,
+                name=new_speaker.name,
+                global_speaker_id=new_speaker.id,
+                embedding=emb
+            )
+            db.add(rs)
+
+    # 4. Update New Speaker Voiceprint
+    if new_speaker_embeddings:
+        final_new_emb = new_speaker_embeddings[0]
+        for i in range(1, len(new_speaker_embeddings)):
+            final_new_emb = merge_embeddings(final_new_emb, new_speaker_embeddings[i])
+        
+        if new_speaker.embedding:
+             new_speaker.embedding = merge_embeddings(new_speaker.embedding, final_new_emb)
+        else:
+             new_speaker.embedding = final_new_emb
+        
+        new_speaker.is_voiceprint_locked = True
+        db.add(new_speaker)
+
+    # 5. Recalibrate Original Speaker
+    # Re-calculate the original speaker's embedding using only the remaining valid segments
+    # from the affected recordings.
+    
+    original_speaker_embeddings = []
+    
+    for rec_id in recording_segments.keys():
+        rec = await db.get(Recording, rec_id)
+        if not rec: continue
+        
+        stmt = select(Transcript).where(Transcript.recording_id == rec_id)
+        result = await db.execute(stmt)
+        transcript = result.scalar_one_or_none()
+        if not transcript: continue
+        
+        # Find segments still assigned to original speaker (by checking mapped name or global ID?)
+        # This is tricky because the transcript only has labels.
+        # We need to find which labels map to the original speaker.
+        
+        stmt = select(RecordingSpeaker).where(
+            RecordingSpeaker.recording_id == rec_id,
+            RecordingSpeaker.global_speaker_id == original_speaker.id
+        )
+        result = await db.execute(stmt)
+        original_rss = result.scalars().all()
+        valid_labels = {rs.diarization_label for rs in original_rss}
+        
+        remaining_seg_tuples = []
+        for t_seg in transcript.segments:
+            if t_seg.get("speaker") in valid_labels:
+                remaining_seg_tuples.append((t_seg['start'], t_seg['end']))
+        
+        if remaining_seg_tuples:
+             # Extract
+            task = celery_app.send_task(
+                "backend.worker.tasks.extract_embedding_task",
+                args=[rec.audio_path, remaining_seg_tuples, device_str, hf_token]
+            )
+            try:
+                emb = await run_in_threadpool(task.get, timeout=60)
+                if emb:
+                    original_speaker_embeddings.append(emb)
+            except Exception as e:
+                logger.error(f"Failed embedding extract for original (Rec {rec_id}): {e}")
+
+    if original_speaker_embeddings:
+        # Calculate the new "gold standard" embedding from the remaining verified segments.
+        # This replaces the previous embedding entirely to ensure purity.
+        
+        final_orig_emb = original_speaker_embeddings[0]
+        for i in range(1, len(original_speaker_embeddings)):
+            final_orig_emb = merge_embeddings(final_orig_emb, original_speaker_embeddings[i])
+            
+        original_speaker.embedding = final_orig_emb
+        original_speaker.is_voiceprint_locked = True
+        db.add(original_speaker)
+
+    await db.commit()
+    await db.refresh(new_speaker)
+    
+    return new_speaker
+
 @router.post("/recordings/{recording_id}/merge", response_model=Recording)
 async def merge_recording_speakers(
     recording_id: int,
@@ -1370,3 +1587,95 @@ async def scan_for_matches(
         "matches_found": matches_found,
         "recordings_updated": len(recordings_updated)
     }
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/split", response_model=List[RecordingSpeaker])
+async def split_local_speaker(
+    recording_id: int,
+    diarization_label: str,
+    request: SpeakerSplitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Split a LOCAL speaker in a specific recording.
+    Moves selected segments to a NEW or EXISTING speaker label (local name).
+    """
+    # 1. Verify Recording and Speaker
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    stmt = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.diarization_label == diarization_label
+    )
+    result = await db.execute(stmt)
+    source_speaker = result.scalar_one_or_none()
+    if not source_speaker:
+         raise HTTPException(status_code=404, detail="Source speaker not found")
+         
+    if not request.segments:
+         raise HTTPException(status_code=400, detail="No segments provided")
+
+    # 2. Determine Target Speaker (New Name)
+    target_label = None
+    
+    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    result = await db.execute(stmt)
+    all_rec_speakers = result.scalars().all()
+    
+    for rs in all_rec_speakers:
+        if (rs.local_name == request.new_speaker_name or 
+            rs.name == request.new_speaker_name or 
+            rs.diarization_label == request.new_speaker_name):
+            target_label = rs.diarization_label
+            break
+            
+    if not target_label:
+        import uuid
+        target_label = f"SPLIT_{uuid.uuid4().hex[:8]}"
+        new_rs = RecordingSpeaker(
+            recording_id=recording_id,
+            diarization_label=target_label,
+            local_name=request.new_speaker_name,
+        )
+        db.add(new_rs)
+        await db.flush()
+    
+    # 3. Update Transcript Segments
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+    
+    if transcript and transcript.segments:
+        segments_to_move = set()
+        for s in request.segments:
+            segments_to_move.add((s.recording_id, s.start, s.end))
+            
+        new_segments = []
+        segments_updated = False
+        
+        for segment in transcript.segments:
+            seg_copy = dict(segment)
+            matches = False
+            for r_id, start, end in segments_to_move:
+                if r_id == recording_id and abs(segment["start"] - start) < 0.01 and abs(segment["end"] - end) < 0.01:
+                    matches = True
+                    break
+            
+            if matches:
+                seg_copy["speaker"] = target_label
+                segments_updated = True
+                
+            new_segments.append(seg_copy)
+            
+        if segments_updated:
+            transcript.segments = new_segments
+            flag_modified(transcript, "segments")
+            db.add(transcript)
+            
+    await db.commit()
+    
+    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    result = await db.execute(stmt)
+    return result.scalars().all()

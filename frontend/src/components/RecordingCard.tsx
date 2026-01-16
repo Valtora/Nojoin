@@ -8,10 +8,6 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
-  RefreshCw,
-  Trash2,
-  Edit,
-  FileAudio,
 } from "lucide-react";
 import RecordingInfoModal from "./RecordingInfoModal";
 import { useState } from "react";
@@ -325,7 +321,6 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
             {
               label: "Rename",
               onClick: handleRenameStart,
-              icon: <Edit className="w-4 h-4" />,
             },
             {
               label: "Recording Details",
@@ -333,19 +328,16 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                 setContextMenu(null);
                 setShowInfoModal(true);
               },
-              icon: <FileAudio className="w-4 h-4" />,
             },
             {
               label: "Retry Speaker Inference",
               onClick: handleInferSpeakers,
-              icon: <RefreshCw className="w-4 h-4" />,
             },
             ...(showCancelOption
               ? [
                   {
                     label: "Cancel Processing",
                     onClick: handleCancel,
-                    icon: <AlertCircle className="w-4 h-4" />,
                     className: "text-amber-600 dark:text-amber-400",
                   },
                 ]
@@ -353,13 +345,11 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
             {
               label: "Retry Processing",
               onClick: handleRetry,
-              icon: <RefreshCw className="w-4 h-4" />,
               className: "text-blue-600 dark:text-blue-400",
             },
             {
               label: "Delete Recording",
               onClick: handleDelete,
-              icon: <Trash2 className="w-4 h-4" />,
               className: "text-red-600 dark:text-red-400",
             },
           ]}

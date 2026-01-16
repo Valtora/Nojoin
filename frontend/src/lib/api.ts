@@ -1386,6 +1386,37 @@ export const recalibrateSpeaker = async (
   await api.post(`/speakers/${speakerId}/recalibrate`, segments);
 };
 
+export const splitSpeaker = async (
+  speakerId: number,
+  newSpeakerName: string,
+  segments: SegmentSelection[],
+): Promise<GlobalSpeaker> => {
+  const response = await api.post<GlobalSpeaker>(
+    `/speakers/${speakerId}/split`,
+    {
+      new_speaker_name: newSpeakerName,
+      segments,
+    },
+  );
+  return response.data;
+};
+
+export const splitLocalSpeaker = async (
+  recordingId: number,
+  diarizationLabel: string,
+  newSpeakerName: string,
+  segments: SegmentSelection[],
+) => {
+  const response = await api.post(
+    `/speakers/recordings/${recordingId}/speakers/${diarizationLabel}/split`,
+    {
+      new_speaker_name: newSpeakerName,
+      segments,
+    },
+  );
+  return response.data;
+};
+
 export const scanMatches = async (
   speakerId: number,
 ): Promise<{ matches_found: number; recordings_updated: number }> => {

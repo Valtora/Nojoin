@@ -404,6 +404,10 @@ def process_recording_task(self, recording_id: int):
         label_map = {} 
         speaker_counter = 1
         
+        # Track which names have been assigned to which speaker ID/Label to detect duplicates
+        # Format: name -> {'id': recording_speaker_id, 'label': diarization_label}
+        resolved_names_map = {}
+        
         for label in ordered_speakers:
             # Check if speaker already exists for this recording (idempotency)
             existing_speaker = session.exec(
@@ -514,14 +518,58 @@ def process_recording_task(self, recording_id: int):
 
             # Auto-promotion logic removed. Speakers must be manually promoted.
 
+            # Check for Auto-Merge (Duplicate Name Detection)
+            # If this resolved name has already been assigned to a previous speaker in this loop,
+            # we should merge this speaker into the previous one.
+            if resolved_name and resolved_name in resolved_names_map:
+                target_info = resolved_names_map[resolved_name]
+                target_label = target_info['label']
+                target_id = target_info['id']
+                
+                if target_label != label:
+                    logger.info(f"Auto-Merge: '{resolved_name}' already assigned to {target_label}. Merging {label} into {target_label}.")
+                    
+                    if existing_speaker:
+                        existing_speaker.merged_into_id = target_id
+                        existing_speaker.name = resolved_name # Keep consistent name
+                        existing_speaker.local_name = None 
+                        session.add(existing_speaker)
+                        session.flush() # Ensure it's saved
+                    else:
+                        # Create the record but immediately merge it
+                        rec_speaker = RecordingSpeaker(
+                            recording_id=recording.id,
+                            diarization_label=label,
+                            name=resolved_name,
+                            embedding=embedding,
+                            global_speaker_id=global_speaker_id,
+                            merged_into_id=target_id
+                        )
+                        session.add(rec_speaker)
+                        session.flush() 
+                    
+                    # rewrite segments in memory to point to the target label
+                    # This ensures the transcript assumes they are the same speaker
+                    for seg in final_segments:
+                        if seg['speaker'] == label:
+                            seg['speaker'] = target_label
+                            
+                    # We don't add to resolved_names_map as it's already there pointing to the canonical one
+                    label_map[label] = resolved_name
+                    continue
+
+
             label_map[label] = resolved_name
             logger.info(f"Mapped {label} -> {resolved_name}")
 
+            current_speaker_id = None
             if existing_speaker:
                 existing_speaker.embedding = embedding
                 existing_speaker.name = resolved_name
                 existing_speaker.global_speaker_id = global_speaker_id
                 session.add(existing_speaker)
+                session.flush()
+                current_speaker_id = existing_speaker.id
             else:
                 rec_speaker = RecordingSpeaker(
                     recording_id=recording.id,
@@ -531,6 +579,12 @@ def process_recording_task(self, recording_id: int):
                     global_speaker_id=global_speaker_id
                 )
                 session.add(rec_speaker)
+                session.flush()
+                current_speaker_id = rec_speaker.id
+            
+            # Register this name as taken
+            if resolved_name and current_speaker_id:
+                resolved_names_map[resolved_name] = {'id': current_speaker_id, 'label': label}
         
         # Keep the diarization_label in the segments to maintain the link to RecordingSpeaker
         # The frontend will resolve the display name using the speaker map

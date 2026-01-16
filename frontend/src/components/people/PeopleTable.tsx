@@ -2,16 +2,7 @@
 
 import React, { useState } from "react";
 import { GlobalSpeaker } from "@/types";
-import {
-  MoreVertical,
-  Mail,
-  Phone,
-  MessageSquare,
-  Edit2,
-  Trash2,
-  Fingerprint,
-  Lock,
-} from "lucide-react";
+import { MoreVertical, Mail, Phone, MessageSquare, Lock } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import ContextMenu from "@/components/ContextMenu";
 
@@ -24,6 +15,7 @@ interface PeopleTableProps {
   onEdit: (person: GlobalSpeaker) => void;
   onDelete: (person: GlobalSpeaker) => void;
   onRecalibrate?: (person: GlobalSpeaker) => void;
+  onSplit?: (person: GlobalSpeaker) => void;
 }
 
 export function PeopleTable({
@@ -35,6 +27,7 @@ export function PeopleTable({
   onEdit,
   onDelete,
   onRecalibrate,
+  onSplit,
 }: PeopleTableProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -284,17 +277,18 @@ export function PeopleTable({
           items={[
             {
               label: "Edit Details",
-              icon: <Edit2 className="w-4 h-4" />,
               onClick: () => onEdit(contextMenu.person),
             },
             {
               label: "Recalibrate Voiceprint",
-              icon: <Fingerprint className="w-4 h-4" />,
               onClick: () => onRecalibrate && onRecalibrate(contextMenu.person),
             },
             {
+              label: "Split / Unmerge Speaker",
+              onClick: () => onSplit && onSplit(contextMenu.person),
+            },
+            {
               label: "Delete Person",
-              icon: <Trash2 className="w-4 h-4" />,
               className: "text-red-600",
               onClick: () => onDelete(contextMenu.person),
             },

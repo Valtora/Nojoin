@@ -12,20 +12,19 @@ import {
   ArrowRightToLine,
   User,
   UserCheck,
-  Fingerprint,
   Loader2,
 } from "lucide-react";
 import { useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
+import SplitPersonModal from "./people/SplitPersonModal";
 import { InlineColorPicker } from "./ColorPicker";
 import {
   updateSpeaker,
   mergeRecordingSpeakers,
   deleteRecordingSpeaker,
   extractVoiceprint,
-  extractAllVoiceprints,
   promoteToGlobalSpeaker,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -92,8 +91,12 @@ export default function SpeakerPanel({
     useState<VoiceprintExtractResult | null>(null);
   const [batchVoiceprintResults, setBatchVoiceprintResults] =
     useState<BatchVoiceprintResponse | null>(null);
-  const [extractingAllVoiceprints, setExtractingAllVoiceprints] =
-    useState(false);
+
+  // Split Speaker State
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [speakerToSplit, setSpeakerToSplit] = useState<RecordingSpeaker | null>(
+    null,
+  );
 
   // Helper to get the display name for a speaker
   const getSpeakerName = (speaker: RecordingSpeaker): string => {
@@ -185,6 +188,12 @@ export default function SpeakerPanel({
   const handleMergeStart = (speaker: RecordingSpeaker) => {
     setMergingSpeaker(speaker);
     setMergeTargetLabel("");
+    setContextMenu(null);
+  };
+
+  const handleSplitStart = (speaker: RecordingSpeaker) => {
+    setSpeakerToSplit(speaker);
+    setSplitModalOpen(true);
     setContextMenu(null);
   };
 
@@ -281,33 +290,6 @@ export default function SpeakerPanel({
     }
   };
 
-  const handleCreateAllVoiceprints = async () => {
-    setExtractingAllVoiceprints(true);
-
-    try {
-      const result = await extractAllVoiceprints(recordingId);
-      if (result.speakers_processed === 0) {
-        addNotification({
-          type: "info",
-          message: "All speakers already have voiceprints.",
-        });
-        onRefresh(); // Refresh to ensure UI is in sync
-        return;
-      }
-      setBatchVoiceprintResults(result);
-      setVoiceprintExtractResult(null);
-      setVoiceprintModalOpen(true);
-    } catch (e: any) {
-      console.error("Failed to extract voiceprints", e);
-      addNotification({
-        type: "error",
-        message: e.response?.data?.detail || "Failed to extract voiceprints.",
-      });
-    } finally {
-      setExtractingAllVoiceprints(false);
-    }
-  };
-
   const handlePromoteToGlobal = async (speaker: RecordingSpeaker) => {
     setContextMenu(null);
     setIsSubmitting(true);
@@ -336,37 +318,12 @@ export default function SpeakerPanel({
     onRefresh();
   };
 
-  // Check if any speakers are missing voiceprints
-  const speakersWithoutVoiceprints = uniqueSpeakers.filter(
-    (s) => !s.has_voiceprint,
-  );
-
   return (
     <aside
       id="speaker-panel"
       className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full overflow-y-auto"
     >
       {/* Header with batch voiceprint action */}
-      {uniqueSpeakers.length > 0 && speakersWithoutVoiceprints.length > 0 && (
-        <div className="p-2 border-b border-gray-200 dark:border-gray-700">
-          <button
-            onClick={handleCreateAllVoiceprints}
-            disabled={extractingAllVoiceprints}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors disabled:opacity-50"
-            title="Create voice fingerprints for all speakers without one. This enables automatic speaker recognition in future recordings."
-          >
-            {extractingAllVoiceprints ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Fingerprint className="w-3.5 h-3.5" />
-            )}
-            <span>
-              Add All ({speakersWithoutVoiceprints.length}) Voiceprints to
-              Speaker Library
-            </span>
-          </button>
-        </div>
-      )}
 
       <div className="p-2 space-y-2 mt-2">
         {uniqueSpeakers.length === 0 ? (
@@ -551,6 +508,10 @@ export default function SpeakerPanel({
               label: "Merge into...",
               onClick: () => handleMergeStart(contextMenu.speaker),
             },
+            {
+              label: "Split / Unmerge Speaker",
+              onClick: () => handleSplitStart(contextMenu.speaker),
+            },
             // Voiceprint option - only show if speaker doesn't have one
             ...(!contextMenu.speaker.has_voiceprint
               ? [
@@ -579,6 +540,60 @@ export default function SpeakerPanel({
                 "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
             },
           ]}
+        />
+      )}
+
+      {/* Split Person Modal */}
+      {speakerToSplit && (
+        <SplitPersonModal
+          isOpen={splitModalOpen}
+          onClose={() => {
+            setSplitModalOpen(false);
+            setSpeakerToSplit(null);
+          }}
+          speaker={
+            globalSpeakers.find(
+              (gs) => gs.id === speakerToSplit.global_speaker_id,
+            ) ||
+            (speakerToSplit.global_speaker_id
+              ? ({
+                  id: speakerToSplit.global_speaker_id,
+                  name: getSpeakerName(speakerToSplit),
+                } as any)
+              : null)
+          }
+          localSpeaker={
+            !speakerToSplit.global_speaker_id
+              ? {
+                  recordingId: recordingId,
+                  label: speakerToSplit.diarization_label,
+                  name: getSpeakerName(speakerToSplit),
+                }
+              : null
+          }
+          initialSegments={
+            !speakerToSplit.global_speaker_id
+              ? segments
+                  .filter((s) => s.speaker === speakerToSplit.diarization_label)
+                  .map((s) => ({
+                    recording_id: recordingId,
+                    recording_name: "", // Not needed for local play
+                    recording_date: "",
+                    start: s.start,
+                    end: s.end,
+                    text: s.text,
+                  }))
+              : undefined
+          }
+          onComplete={() => {
+            setSplitModalOpen(false);
+            setSpeakerToSplit(null);
+            onRefresh();
+            addNotification({
+              type: "success",
+              message: `Split complete.`,
+            });
+          }}
         />
       )}
 
