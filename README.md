@@ -93,6 +93,7 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
 3. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
 4. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
 5. **Configure:** Follow the first-run wizard to set up API keys and preferences.
+   - _Note: If you configured environment variables in `.env`, these fields will be pre-filled._
 6. **Companion App:** Navigate to the [Releases](https://github.com/Valtora/Nojoin/releases) page to download, install, and connect the companion app on client machines to start recording audio.
    - See [Installation & Setup](#%EF%B8%8F-installation--setup) for CPU-only mode and configuration details.
 
@@ -154,6 +155,8 @@ Nojoin is composed of three distinct subsystems:
 ## 🔑 API Keys & Configuration
 
 Nojoin requires certain API keys to function fully. The first-run wizard will request these keys, but they can also be entered in the **Settings** -> **AI Services** page of the web interface after installation.
+
+> **Tip:** You can pre-fill these values by setting them in your `.env` file before starting the application. See [Deployment > Environment Variables](docs/DEPLOYMENT.md#environment-variables) for a full list of available options.
 
 ### Hugging Face Token (Required for Diarization)
 

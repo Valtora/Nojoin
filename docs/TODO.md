@@ -1,13 +1,5 @@
 # Nojoin To-Do List
 
-## Speaker Inference Logic Improvements - Auto-merging and Unmerging Features
-
-- The speaker inference logic already exists to infer speaker names from the transcript via LLM calls however sometimes the logic results in two speakers being inferred with the same name. We should explore ways to automatically merge these speakers into a single speaker given that the system has inferred the same name for both.
-- Conversely, we should also explore ways to UNmerge speakers, regardless of whether they were merged automatically or manually by the user.
-- I'm not sure how this would work mechanically, perhaps we could make use of the existing voiceprint recalibration tool/modal/logic to do this since it can be used to pick voice snippets.
-- The user could allocate the different voice snippets to two different speakers resulting in the one original speaker being split and a new speaker being created. That way the new speaker starts off with a voiceprint too thanks to the snippets selected by the user. This would require the original speaker being unmerged to have sufficient snippets from both speakers contained within, assuming that a good voiceprint creation requires 3-5 good quality snippets from each speaker.
-- Let's discuss this further and see if we can come up with a good plan for implementing this feature.
-
 ## Explore Implementing Beam Cloud Compatability
 
 - Beam is an open-source cloud platform that lets you:

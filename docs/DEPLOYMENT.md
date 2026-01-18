@@ -46,6 +46,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 ### Initial Setup
 
 - **Setup Wizard:** Collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account.
+  - Can be pre-filled via Environment Variables (e.g., `HF_TOKEN`, `GEMINI_API_KEY`) to streamline deployment.
 - **Database Initialization:** Automatically handles schema creation and migrations on startup.
 
 ### Companion Config

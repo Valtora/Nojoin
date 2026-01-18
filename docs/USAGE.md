@@ -23,6 +23,7 @@ On the first visit to the dashboard, an interactive tour guides the user through
 3. **Import:** Procedure for uploading existing audio files.
 4. **Companion App:** Guidance on downloading and connecting the system tray app.
 5. **Settings:** Configuration of models and preferences.
+   - _Note: If environment variables are detected, the setup wizard will be pre-filled with your provided keys._
 
 **Transcript Tour:**
 When a recording is viewed for the first time (such as the included "Demo Recording"), a second tour guides the user through the detailed view:

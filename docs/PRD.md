@@ -26,6 +26,9 @@ The core processing unit is hosted on a machine with NVIDIA GPU capabilities.
 - **Worker Service:** A Celery-based background worker handles resource-intensive tasks (transcription, diarization) using the NVIDIA Runtime. It runs in a container with PyTorch and CUDA support.
 - **Database:** PostgreSQL serves as the single source of truth for all metadata, transcripts, and speaker profiles.
 - **Broker:** Redis manages the task queue and caching.
+- **Setup Wizard:** Collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account.
+  - **Auto-Fill:** Settings can be pre-configured via environment variables (defined in `.env`) to simplify the setup process for valid keys.
+- **Database Initialization:** Automatically handles schema creation and migrations on startup.
 - **Storage:** Docker Volumes provide persistent storage for raw audio and model artifacts.
 - **Reverse Proxy:** Nginx handles SSL termination and routing (Port 14443).
 
