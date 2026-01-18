@@ -13,6 +13,10 @@
 
 <!-- Screenshots -->
 
+<img width="2560" height="1438" alt="Untitled" src="https://github.com/user-attachments/assets/1e13ca6b-c8ed-4872-a150-605f42bb9608" />
+
+<img width="2560" height="1440" alt="Untitled3" src="https://github.com/user-attachments/assets/9112950c-5eee-45e4-8f14-488f5acbfdb4" />
+
 ---
 
 ## 📚 Table of Contents
