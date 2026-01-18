@@ -7,16 +7,11 @@
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
         <img src="https://img.shields.io/github/v/release/Valtora/Nojoin" alt="Release">
-        <img src="https://github.com/Valtora/Nojoin/actions/workflows/companion-tauri.yml/badge.svg" alt="Companion Build">
-        <img src="https://github.com/Valtora/Nojoin/actions/workflows/docker-publish.yml/badge.svg" alt="Docker Build">
+        <img src="https://github.com/Valtora/Nojoin/actions/workflows/release.yml/badge.svg" alt="Release">
     </p>
 </div>
 
-<!-- Demo Videos -->
-
-https://github.com/user-attachments/assets/27324ab4-4ad0-42cb-b723-69dfaa03cf10
-
-https://github.com/user-attachments/assets/c7a7e07c-ada5-441f-a8a2-18a67eeb14a9
+<!-- Screenshots -->
 
 ---
 
