@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
-// Threshold below which we consider the audio "silent" (0-100 scale)
+// Silence threshold (0-100 scale).
 const SILENCE_THRESHOLD = 2;
 // Number of consecutive checks before showing warning
 const SILENCE_CHECK_COUNT = 3;
@@ -57,7 +57,7 @@ export default function ServiceStatusAlerts() {
     const updateNotifications = () => {
       // Backend
       if (!backend && !notificationIds.current.backend) {
-        // Only show error if not in startup grace period AND we have > 2 failures
+        // Shows error only after startup grace period and > 2 failures.
         if (!isStartupRef.current && backendFailCount > 2) {
           notificationIds.current.backend = addNotification({
             type: "error",
@@ -120,6 +120,8 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    backendFailCount,
+    companionFailCount,
     addNotification,
     removeActiveNotification,
   ]);

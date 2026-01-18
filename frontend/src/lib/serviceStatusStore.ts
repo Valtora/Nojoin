@@ -218,7 +218,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             const isLocal = (h: string) =>
               h === "localhost" || h === "127.0.0.1";
 
-            // If current is local, companion must be local (or we don't care? usually local)
+            // Companion expected local if current is local.
             // If current is remote, companion must match remote
             if (isLocal(currentHost)) {
               if (!isLocal(data.api_host)) isAuthenticated = false;

@@ -40,9 +40,7 @@ export default function ContextMenu({
 
   // Adjust position logic
   // If x is too close to right edge, shift left by width (approx 192px/12rem)
-  // Or simply always offset to left-bottom of cursor if requested.
-  // The user asked: "opens up to the left of the cursor"
-  // So we default to x - width.
+  // Default left alignment.
   const menuWidth = 192; // w-48 is 12rem = 192px
 
   // Basic bounds check could be added here but user specifically asked for left alignment.

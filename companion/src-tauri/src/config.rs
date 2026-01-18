@@ -75,7 +75,7 @@ impl Config {
         }
 
         // Check executable directory
-        // On Windows, we install to AppData/Local/Nojoin, so we want the config there to keep everything in one place.
+        // Installs to AppData on Windows for config centralization.
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let exe_config = exe_dir.join(config_name);

@@ -21,6 +21,7 @@ interface PersonModalProps {
   onSave: (
     data: Partial<GlobalSpeaker> & { tag_ids: number[] },
   ) => Promise<void>;
+  onDelete?: (id: number) => void;
 }
 
 export function PersonModal({
@@ -28,6 +29,7 @@ export function PersonModal({
   isOpen,
   onClose,
   onSave,
+  onDelete,
 }: PersonModalProps) {
   const [formData, setFormData] = useState<
     Partial<GlobalSpeaker> & { tag_ids: number[] }
@@ -201,8 +203,12 @@ export function PersonModal({
     try {
       await mergeSpeakers(person.id, confirmMerge.target.id);
       onClose();
-      // Force reload to update list since we don't have a callback for delete
-      window.location.reload();
+      // Optimistic update via callback
+      if (onDelete) {
+        onDelete(person.id);
+      } else {
+        window.location.reload();
+      }
     } catch (error) {
       console.error("Merge failed:", error);
       alert("Failed to merge speakers.");

@@ -120,7 +120,7 @@ export default function AddTagModal({
         await createTag(name.trim(), randomColor, parentId);
         await loadAllTags(); // Always reload to ensure list is updated
         if (!parentId) {
-          // If we just created it, we need to add it to the recording too
+          // Adds newly created tag to the recording.
           // But createTag doesn't automatically add it to the recording unless we call addTagToRecording
           // The previous logic called handleAddTag, let's stick to that but be careful about recursion/state
           await addTagToRecording(recordingId, name.trim());

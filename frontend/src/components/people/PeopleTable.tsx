@@ -253,7 +253,7 @@ export function PeopleTable({
                       // Actually, let's just pass clientX/Y of the click if possible, or Button rect.
                       const rect = e.currentTarget.getBoundingClientRect();
                       setContextMenu({
-                        x: rect.right, // We pass right edge, ContextMenu now shifts left if needed or by default
+                        x: rect.right, // ContextMenu handles shifting.
                         y: rect.bottom,
                         person,
                       });

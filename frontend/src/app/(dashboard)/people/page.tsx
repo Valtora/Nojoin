@@ -143,6 +143,15 @@ export default function PeoplePage() {
     }
   };
 
+  const handleOptimisticDelete = (id: number) => {
+    setPeople((prev) => prev.filter((p) => p.id !== id));
+    if (selectedIds.has(id)) {
+      const newSet = new Set(selectedIds);
+      newSet.delete(id);
+      setSelectedIds(newSet);
+    }
+  };
+
   // Batch Actions
   const handleBatchDelete = () => {
     setIsBatchDeleteConfirmOpen(true);
@@ -317,6 +326,7 @@ export default function PeoplePage() {
         onClose={() => setIsModalOpen(false)}
         person={editingPerson}
         onSave={handleSave}
+        onDelete={handleOptimisticDelete}
       />
 
       {personToRecalibrate && (

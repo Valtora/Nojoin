@@ -19,7 +19,7 @@ def _patched_torchaudio_load(uri, frame_offset=0, num_frames=-1, normalize=True,
     try:
         import torch
     except ImportError:
-        # If torch is not available (e.g. in API container), we can't return a tensor.
+        # Returns None if torch is unavailable.
         # This function shouldn't be called in the API container anyway.
         raise ImportError("torch is required for audio loading but is not installed.")
 
@@ -144,7 +144,7 @@ def setup_audio_environment():
         logger.info("Patched torchaudio.info to force soundfile backend")
         
     # Patch Torchaudio load
-    # We force this patch because the default load is broken in this env
+    # Forces patch due to known incompatibility in default load.
     if not hasattr(torchaudio, 'load') or torchaudio.load != _patched_torchaudio_load:
         torchaudio.load = _patched_torchaudio_load
         logger.info("Patched torchaudio.load to force soundfile backend")

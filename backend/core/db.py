@@ -19,7 +19,7 @@ if not DATABASE_URL:
     POSTGRES_DB = os.getenv("POSTGRES_DB", "nojoin")
     DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
-# Ensure we are using the async driver
+# Ensures usage of the async driver
 if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
     ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     SYNC_DATABASE_URL = DATABASE_URL # Keep original for sync

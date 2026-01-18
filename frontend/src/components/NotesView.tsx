@@ -90,15 +90,11 @@ export default function NotesView({
   // Update localNotes when notes prop changes externally
   useEffect(() => {
     const normalizedProp = displayNotes || "";
-    // If the incoming prop is different from what we have locally
-    if (normalizedProp !== localNotes) {
-      // AND it is different from what we last saved (meaning it's not just an echo)
-      if (normalizedProp !== lastSavedNotes.current) {
-        setLocalNotes(normalizedProp);
-        lastSavedNotes.current = normalizedProp;
-      }
+    // Updates local state if prop differs from local and last saved value.
+    if (normalizedProp !== lastSavedNotes.current) {
+      setLocalNotes(normalizedProp);
+      lastSavedNotes.current = normalizedProp;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayNotes]);
 
   const handleEditorChange = (newContent: string) => {
@@ -148,7 +144,7 @@ export default function NotesView({
         /* ignore */
       }
     } else if (isFuzzy) {
-      // For fuzzy search, we will only search within text nodes to ensure we can map back to exact positions.
+      // Searches only text nodes to ensure exact position mapping.
       // This is a tradeoff for reliability of highlighting.
       doc.descendants((node, pos) => {
         if (!node.isText) return;
@@ -220,7 +216,7 @@ export default function NotesView({
     if (!editor) return;
 
     // 1. Sync matches to the extension for highlighting
-    // We check if the command exists (it should with the extension)
+    // Verifies command existence.
     if (editor.commands.setSearchMatches) {
       editor.commands.setSearchMatches(matches, currentMatchIndex);
     }

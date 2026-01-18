@@ -83,10 +83,10 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
     // Shared flag to stop the stream thread
     let is_recording = Arc::new(AtomicBool::new(false));
 
-    // Track the recording thread handle to ensure we wait for uploads
+    // Tracks recording thread handle to await uploads.
     let mut recording_handle: Option<std::thread::JoinHandle<()>> = None;
 
-    // We will re-acquire the default device in the thread to avoid lifetime/cloning issues with cpal::Device.
+    // Re-acquires default device in thread.
 
     loop {
         let command = command_rx.recv().unwrap();
@@ -143,7 +143,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
                 if let Some(rec_id) = id {
                     let state_finalize = state.clone();
                     let app_handle_finalize = app_handle.clone();
-                    // Create a new runtime for the async task since we are in a sync thread
+                    // Creates new runtime for async task within sync thread.
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
@@ -164,7 +164,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
                                     },
                                     Err(e) => {
                                         eprintln!("Failed to delete short recording: {}", e);
-                                        // If delete fails, we attempt to finalize anyway so it's not stuck in limbo.
+                                        // Attempts finalization if delete fails.
                                         match uploader::finalize_recording(rec_id, &config).await {
                                             Ok(_) => println!("Recording finalized (after delete failed)"),
                                             Err(e) => eprintln!("Failed to finalize: {}", e),
@@ -172,7 +172,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
                                     },
                                 }
                             } else {
-                                // No sleep needed anymore, we know upload is done
+                                // Sleep unnecessary; upload verified complete.
                                 match uploader::finalize_recording(rec_id, &config).await {
                                     Ok(_) => println!("Recording finalized"),
                                     Err(e) => eprintln!("Failed to finalize: {}", e),
@@ -241,7 +241,7 @@ fn start_segment(
             }
 
             // 1. Setup Microphone (Input)
-            // We attempt to find a real device. If none found or config fails, we fallback to a virtual silence generator.
+            // Attempts to find real device; falls back to virtual generator.
             let (mic_stream, mic_sample_rate) = {
                 let device_opt = find_input_device(&host, &config);
                 
@@ -339,7 +339,7 @@ fn start_segment(
             }
 
             // 2. Setup System Audio (Loopback) - use configured or default
-            // On Windows WASAPI, we use the output device for loopback
+            // Uses output device for loopback on Windows WASAPI.
             let sys_device = find_output_device(&host, &config)
                 .ok_or_else(|| anyhow::anyhow!("No output device available"))?;
             let sys_config = sys_device
@@ -361,6 +361,16 @@ fn start_segment(
                 bits_per_sample: 16,
                 sample_format: hound::SampleFormat::Int,
             };
+
+            // Check for sample rate mismatch between Input (Mic) and Output (System Loopback)
+            let sys_rate = sys_config.sample_rate().0;
+            if (mic_sample_rate.abs_diff(sys_rate) > 1000) {
+                warn!(
+                   "Sample rate mismatch! Mic: {}Hz, System: {}Hz. Audio drift or artifacts may occur.", 
+                   mic_sample_rate, 
+                   sys_rate
+                );
+            }
 
             let err_fn = |err: cpal::StreamError| log::error!("Stream error: {}", err);
 
@@ -490,7 +500,7 @@ fn run_mixing_loop(
 
         // Record for up to MAX_SEGMENT_DURATION_SECS or until stopped
         while is_recording.load(Ordering::SeqCst) {
-            // Check if we've exceeded the maximum segment duration
+            // Checks if maximum segment duration is exceeded.
             if segment_start.elapsed().as_secs() >= max_duration {
                 info!(
                     "Segment {} reached maximum duration, starting new segment",
@@ -513,7 +523,7 @@ fn run_mixing_loop(
 
                     // Simple mixing: Add system audio if available
                     // Note: This is a naive mix. Real mixing needs resampling if rates differ.
-                    // We assume rates are close enough or identical for now.
+                    // Sample rate mismatch warning is logged at startup if significant.
                     if !sys_buffer.is_empty() {
                         let sys_sample = sys_buffer.remove(0);
                         mixed += sys_sample;

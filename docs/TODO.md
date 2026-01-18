@@ -15,3 +15,33 @@
 - Let's explore how Nojoin could allow users to make use of a Beam Cloud instance to process their meetings. This would allow users to process their meetings at scale and potentially even process their meetings in parallel without requiring a local machine to do so.
 - The user would need to authenticate with their own Beam Cloud account.
 - The main reason we are considering implementing Beam Cloud is because it would allow Nojoin to become a fully hosted SaaS solution for those users that are not technical and just want to go to a website, download a companion, and begin recording meetings with zero technical setup and knowledge.
+
+## Frontend: Remove setTimeOut in NotesView
+
+- **Context**: `frontend/src/components/NotesView.tsx:229` uses `setTimeout` to ensure decorations are rendered.
+- **Issue**: This is flaky and race-condition prone.
+- **Task**: Replace with `MutationObserver`, `useLayoutEffect`, or editor callback to detect DOM readiness reliably.
+
+## Frontend: Robust Popover Positioning
+
+- **Context**: `frontend/src/components/SpeakerAssignmentPopover.tsx:55` uses manual calculation for positioning.
+- **Issue**: Fragile, may detach from element.
+- **Task**: Refactor to use `floating-ui` for robust positioning and portal handling.
+
+## Companion: Semantic Versioning
+
+- **Context**: `companion/src-tauri/src/main.rs:96` assumes any string difference is an update.
+- **Issue**: String inequality != update (could be downgrade).
+- **Task**: Use `semver` crate to compare versions properly (`new > current`).
+
+## Companion: Standardize AppData Usage
+
+- **Context**: `companion/src-tauri/src/main.rs:141` uses exe dir or current dir.
+- **Issue**: Non-standard practice.
+- **Task**: Standardize on `AppData` (or XDG equivalent) for all user data.
+
+## Backend: Investigate Word-Level Timestamps in Transcript Utils
+
+- **Context**: `backend/utils/transcript_utils.py:230-247` mentions naive text splitting due to missing word timestamps.
+- **Issue**: Large segments are split arbitrarily, potentially breaking sentences or context.
+- **Task**: Investigate passing word-level timestamps through the dict structure to enable precise semantic splitting.

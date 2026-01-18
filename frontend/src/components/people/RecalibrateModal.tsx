@@ -134,7 +134,7 @@ export default function RecalibrateModal({
     };
 
     audio.onpause = () => {
-      if (playingIndex === index) setPlayingIndex(null); // Only clear if we are the current player
+      if (playingIndex === index) setPlayingIndex(null); // Clears only if currently playing.
       audio.removeEventListener("timeupdate", timeUpdateHandler);
     };
 

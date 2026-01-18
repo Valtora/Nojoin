@@ -265,7 +265,7 @@ export default function Sidebar() {
   const fetchRecordings = useCallback(async () => {
     try {
       const filters: RecordingFilters = {};
-      // Client-side search is now used, so we don't send 'q' to the backend
+      // Uses client-side search; 'q' parameter omitted.
       // if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
 
       if (dateMode === "range") {

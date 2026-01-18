@@ -84,8 +84,7 @@ def mute_non_speech_segments(
 
         # Load Silero VAD model
         logger.info("[VAD] Loading Silero VAD model...")
-        # Use CPU for VAD as it's lightweight and avoids potential CUDA issues with small models
-        # Or check config if we really want GPU
+        # Defaults to CPU but uses GPU if available/configured.
         from backend.utils.config_manager import config_manager
         
         # Load configuration

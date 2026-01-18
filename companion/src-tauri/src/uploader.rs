@@ -36,7 +36,7 @@ pub async fn upload_segment(
         attempts += 1;
 
         // Re-create the form for each attempt because the stream is consumed
-        // We need to read the file again or clone the bytes
+        // Re-reads file or clones bytes.
         let part = multipart::Part::bytes(contents.clone()).file_name("segment.wav");
         let form = multipart::Form::new().part("file", part);
 

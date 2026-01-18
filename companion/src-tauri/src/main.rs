@@ -89,7 +89,7 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
     if resp.status().is_success() {
         let release: GitHubRelease = resp.json().await.map_err(|e| e.to_string())?;
         // tag_name is usually "v0.1.4"
-        // We need to parse it.
+        // Parsing required.
         let version_str = release.tag_name.trim_start_matches('v');
         
         // Simple string comparison for version check.
@@ -242,7 +242,7 @@ fn main() {
             
             let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Connection Settings", true, None::<&str>)?;
-            // Enable status item so it's not greyed out, but we won't attach an action to it
+            // Enables status item without attaching action.
             let status_item = MenuItem::with_id(app, "status", "Status: Waiting for connection...", true, None::<&str>)?;
 
             // Store items in state
@@ -382,7 +382,7 @@ fn main() {
             });
 
             let state_audio = state.clone();
-            // audio_tx is already in state, but we need to keep audio_rx here for the loop
+            // audio_tx resides in state; audio_rx retained locally for loop.
             let app_handle_audio = app.handle().clone();
             
             thread::spawn(move || {

@@ -23,7 +23,7 @@ def update_recording_status(session: Session, recording_id: int):
     
     if not transcript:
         # If no transcript exists yet, it might be in early processing or queued
-        # We leave it as is or set to QUEUED/PROCESSING depending on context, 
+        # Retains current state or sets to QUEUED/PROCESSING based on context, 
         # but usually this function is called when we have a transcript.
         return
 

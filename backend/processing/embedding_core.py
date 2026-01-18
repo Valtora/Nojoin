@@ -45,10 +45,10 @@ def load_embedding_model(device_str: str, hf_token: str = None):
         # Explicitly load the model first using Model.from_pretrained
         logger.info(f"Loading embedding model: {DEFAULT_EMBEDDING_MODEL}")
         
-        # We trust the source of the model (pyannote/wespeaker-voxceleb-resnet34-LM)
+        # Trusts model source (pyannote/wespeaker-voxceleb-resnet34-LM).
         # Safe globals are added at module level.
         # Note: Passing weights_only=False to Model.from_pretrained does NOT work because 
-        # pyannote doesn't propagate it to torch.load. We MUST rely on safe_globals.
+        # Requires safe_globals as pyannote excludes it from torch.load.
         loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
         
         model = Inference(loaded_model, window="sliding")
@@ -104,7 +104,7 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
             speaker_segments[label].append(turn)
             
         # For each speaker, extract embedding from the longest segment(s)
-        # We can average embeddings from multiple segments for better robustness
+        # Averages embeddings from multiple segments for robustness.
         for label, segments in speaker_segments.items():
             # Sort by duration, take top 3
             segments.sort(key=lambda s: s.duration, reverse=True)
@@ -117,10 +117,7 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                 # model.crop(audio_path, seg) returns the embedding for that segment.
                 try:
                     # Pyannote 3.1 / SpeechBrain 1.0+ change:
-                    # model(path) returns SlidingWindowFeature
-                    # We need to crop it manually or use the inference object correctly.
-                    # The 'Inference' class from pyannote.audio is a wrapper.
-                    # Calling model.crop(path, segment) is the correct way for the Inference wrapper.
+                    # Extracts embedding for segment using model.crop (correct usage for Inference wrapper).
                     
                     emb = model.crop(audio_path, seg)
                     

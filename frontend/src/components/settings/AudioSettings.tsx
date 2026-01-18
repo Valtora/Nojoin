@@ -104,10 +104,7 @@ export default function AudioSettings({
       setLocalError(null);
     }
 
-    // Update with the number, but we might want to let the user type freely if we were using local state for the input value.
-    // Since we are controlled by props, we pass the number up.
-    // If we pass a number > 1440, it will be saved if we don't block it in SettingsPage.
-    // But we want to show feedback here.
+    // Updates value. Input allows free typing; validation handled by parent.
     onUpdateCompanionConfig({ min_meeting_length: num });
   };
 

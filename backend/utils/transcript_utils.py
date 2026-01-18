@@ -227,14 +227,14 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
         curr_text = curr['text']
         
         # --- Fix for Giant Single Segments ---
-        # If the input segment ITSELF is longer than max_duration_s, we must split it.
+        # Splits segment if longer than max duration.
         # This handles cases where Whisper returned a 30s block that needs breaking.
         if (curr_end - curr_start) > max_duration_s:
-            # Calculate how many full chunks we have
+            # Calculates number of full chunks.
             duration = curr_end - curr_start
             
             # Create the first chunk strictly at max_duration
-            # We treat this as the "consolidated" segment and push it immediately.
+            # Treats as consolidated segment and emits immediately.
             # Then we pretend the remainder is the "next" segment effectively by manipulating pointers,
             # but since we are inside a loop over `segments`, it's safer to just emit the chunk 
             # and modify `curr` to represent the remainder, then CONTINUE the loop to process the remainder.
@@ -242,7 +242,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
             # Split point
             split_end = curr_start + max_duration_s
             
-            # Approximate text split (naive) because we lack word timestamps here if they weren't used upstream
+            # Uses naive text split due to missing word timestamps.
             # If we had word timestamps, they are lost in this dict structure usually (unless passed through).
             # We'll just do a rough ratio split for text.
             ratio = max_duration_s / duration
@@ -297,7 +297,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
             next_seg = segments[j]
             
             # Predictive check: Would merging this segment exceed the max duration?
-            # We check if (next_seg.end - curr_start) > max_duration_s
+            # Checks if merging exceeds max duration.
             # If so, we STOP merging here, unless it's a single segment that is already too long (which we can't help without word split)
             # But the logic here merges consecutive small segments.
             
@@ -329,7 +329,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
 
         # Add the consolidated segment only if its duration is long enough
         # OR if it's the only segment we have (to avoid dropping data for short recordings)
-        # We check if (duration >= min) OR (we are at the end AND we have no consolidated segments yet)
+        # ... OR (end of stream AND no prepared segments).
         if (curr_end - curr_start) >= min_duration_s or (len(consolidated) == 0 and j == n):
             consolidated.append({
                 'start': curr_start,

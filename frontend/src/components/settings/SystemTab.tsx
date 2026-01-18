@@ -65,7 +65,7 @@ export default function SystemTab() {
       result = result.filter((log) => {
         // Simple heuristic: check if line contains level string
         // Assuming logs contain "INFO", "WARN", "ERROR", "DEBUG"
-        // Strict match might be better if we parsed, but simple includes is safer for mixed formats.
+        // Uses includes for safety across mixed formats.
         // Also handling mapping: "WARNING" -> "WARN", "CRITICAL" -> "ERROR"
         const upper = log.toUpperCase();
         if (logLevel === "INFO") return upper.includes("INFO");
@@ -112,7 +112,7 @@ export default function SystemTab() {
     const apiProtocol = apiBase.startsWith("https") ? "wss:" : "ws:";
     const urlObj = new URL(apiBase);
 
-    // We want: wss://<host>:<port>/api/v1/system/logs/live
+    // Target URL format: wss://<host>:<port>/api/v1/system/logs/live
     const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}&token=${token}`;
 
     const ws = new WebSocket(wsUrl);
