@@ -45,3 +45,7 @@
 - **Context**: `backend/utils/transcript_utils.py:230-247` mentions naive text splitting due to missing word timestamps.
 - **Issue**: Large segments are split arbitrarily, potentially breaking sentences or context.
 - **Task**: Investigate passing word-level timestamps through the dict structure to enable precise semantic splitting.
+
+## Frontend: Context menu in Speaker Panel
+
+- The context menu in the speaker panel is rendered below the adjacent panels when opened up near the left hand side of the panel. Investigate the logic around rendering or z-order and report back.

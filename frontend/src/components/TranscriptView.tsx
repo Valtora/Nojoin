@@ -414,9 +414,16 @@ export default function TranscriptView({
   };
 
   const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
+
+  // Map to preserve original indices before filtering
+  const indexedSegments = segments.map((segment, index) => ({
+    segment,
+    index,
+  }));
+
   const displaySegments = hasKnownSpeakers
-    ? segments.filter((s) => s.speaker !== "UNKNOWN")
-    : segments;
+    ? indexedSegments.filter(({ segment }) => segment.speaker !== "UNKNOWN")
+    : indexedSegments;
 
   return (
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
@@ -628,13 +635,14 @@ export default function TranscriptView({
       </div>
 
       <div className="space-y-4 px-4 py-3 overflow-y-auto flex-1 min-h-0">
-        {displaySegments.map((segment, index) => {
+        {displaySegments.map(({ segment, index: originalIndex }) => {
           const isActive =
             currentTime >= segment.start && currentTime < segment.end;
           const speakerName = speakerMap[segment.speaker] || segment.speaker;
           const isEditingSpeaker = editingSpeaker === segment.speaker;
-          const isEditingSegmentSpeaker = editingSegmentSpeakerIndex === index;
-          const isEditingText = editingTextIndex === index;
+          const isEditingSegmentSpeaker =
+            editingSegmentSpeakerIndex === originalIndex;
+          const isEditingText = editingTextIndex === originalIndex;
 
           // Determine bubble color
           const bubbleColor = isActive
@@ -643,7 +651,7 @@ export default function TranscriptView({
 
           return (
             <div
-              key={index}
+              key={originalIndex}
               ref={isActive ? activeSegmentRef : null}
               className={`flex gap-3 px-2 group ${isActive ? "opacity-100" : "opacity-90"} transition-opacity`}
             >
@@ -702,9 +710,9 @@ export default function TranscriptView({
                       type="text"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => handleSegmentSpeakerSubmit(index)}
+                      onBlur={() => handleSegmentSpeakerSubmit(originalIndex)}
                       onKeyDown={(e) =>
-                        handleKeyDown(e, "segmentSpeaker", index)
+                        handleKeyDown(e, "segmentSpeaker", originalIndex)
                       }
                       onClick={(e) => e.stopPropagation()}
                       className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -714,11 +722,11 @@ export default function TranscriptView({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (activePopover?.index === index) {
+                          if (activePopover?.index === originalIndex) {
                             setActivePopover(null);
                           } else {
                             setActivePopover({
-                              index,
+                              index: originalIndex,
                               target: e.currentTarget,
                             });
                           }
@@ -734,7 +742,7 @@ export default function TranscriptView({
                       >
                         {speakerName}
                       </button>
-                      {activePopover?.index === index && (
+                      {activePopover?.index === originalIndex && (
                         <SpeakerAssignmentPopover
                           currentSpeakerName={speakerName}
                           availableSpeakers={speakers}
@@ -742,7 +750,7 @@ export default function TranscriptView({
                           speakerColors={speakerColors}
                           targetElement={activePopover.target}
                           onSelect={(name) => {
-                            onUpdateSegmentSpeaker(index, name);
+                            onUpdateSegmentSpeaker(originalIndex, name);
                             setActivePopover(null);
                           }}
                           onClose={() => setActivePopover(null)}
@@ -754,7 +762,7 @@ export default function TranscriptView({
 
                 {/* Transcript Text */}
                 <div
-                  id={`segment-${index}`}
+                  id={`segment-${originalIndex}`}
                   className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
                     isEditingText ? "ring-2 ring-blue-500" : ""
                   }`}
@@ -764,18 +772,20 @@ export default function TranscriptView({
                       autoFocus
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => handleTextSubmit(index)}
-                      onKeyDown={(e) => handleKeyDown(e, "text", index)}
+                      onBlur={() => handleTextSubmit(originalIndex)}
+                      onKeyDown={(e) => handleKeyDown(e, "text", originalIndex)}
                       className="w-full bg-transparent resize-none outline-none text-gray-900 dark:text-white leading-relaxed"
                       rows={Math.max(2, Math.ceil(editValue.length / 80))}
                     />
                   ) : (
                     <p
                       className="leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 cursor-text hover:text-gray-900 dark:hover:text-white"
-                      onClick={(e) => handleTextClick(index, segment.text, e)}
+                      onClick={(e) =>
+                        handleTextClick(originalIndex, segment.text, e)
+                      }
                       title="Click to edit text"
                     >
-                      {renderHighlightedText(segment.text, index)}
+                      {renderHighlightedText(segment.text, originalIndex)}
                     </p>
                   )}
                 </div>
