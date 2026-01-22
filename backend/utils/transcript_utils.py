@@ -171,6 +171,7 @@ def _combine_word_level(segments, speaker_turns):
             # Strip leading space from first word if present
             current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
+            current_segment["words"].append(word_data)
             continue
         
         gap = w_start - current_segment["end"]
@@ -184,7 +185,7 @@ def _combine_word_level(segments, speaker_turns):
                 "speaker": speaker,
                 # Strip leading space from first word of new segment
                 "text": w_text.lstrip(),
-                "words": []
+                "words": [word_data]
             }
         else:
             # Whisper word tokens include leading space (e.g., " hello")
@@ -194,6 +195,7 @@ def _combine_word_level(segments, speaker_turns):
             else:
                 current_segment["text"] += ' ' + w_text
             current_segment["end"] = w_end
+            current_segment["words"].append(word_data)
             
     final_segments.append(current_segment)
     
@@ -225,76 +227,178 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
         curr_end = curr['end']
         curr_speaker = curr['speaker']
         curr_text = curr['text']
+        curr_words = curr.get('words', [])
         
         # --- Fix for Giant Single Segments ---
         # Splits segment if longer than max duration.
         # This handles cases where Whisper returned a 30s block that needs breaking.
         if (curr_end - curr_start) > max_duration_s:
-            # Calculates number of full chunks.
-            duration = curr_end - curr_start
             
-            # Create the first chunk strictly at max_duration
-            # Treats as consolidated segment and emits immediately.
-            # Then we pretend the remainder is the "next" segment effectively by manipulating pointers,
-            # but since we are inside a loop over `segments`, it's safer to just emit the chunk 
-            # and modify `curr` to represent the remainder, then CONTINUE the loop to process the remainder.
+            # Smart Word-Level Splitting (Soft Limit Strategy)
+            if curr_words:
+                # Target splitting window: 8s to 12s (centered around 10s default)
+                # But hard cap is usually max_duration_s (10s) passed in.
+                # If the user wants a soft limit up to 12s, they should ideally pass max_duration_s=12.0
+                # However, the requirement says "limit to 10s... soft limit 8-12s".
+                # Let's interpret max_duration_s as the "ideal target" (10s).
+                
+                # Logic:
+                # 1. Look for a sentence break (.!?) between curr_start + 8s and curr_start + 12s.
+                # 2. If found, split there.
+                # 3. If not, split at the word boundary closest to curr_start + 10s (but not exceeding 12s).
+                
+                soft_min = curr_start + 8.0
+                soft_max = curr_start + 12.0
+                hard_target = curr_start + 10.0
+                
+                # split_idx = -1 # Not used directly in loop
+                
+                # Track best sentence break vs best word break separately
+                best_sentence_idx = -1
+                min_sentence_dist = float('inf')
+                
+                best_word_idx = -1
+                min_word_dist = float('inf')
+
+                for idx, w in enumerate(curr_words):
+                    w_end_time = w['end']
+                    
+                    if w_end_time < soft_min:
+                        continue
+                    if w_end_time > soft_max:
+                        break # Exceeded strict search window
+                    
+                    dist = abs(w_end_time - hard_target)
+                    
+                    # Check for sentence punctuation
+                    is_sentence_end = w['word'].strip().endswith(('.', '!', '?'))
+                    
+                    if is_sentence_end:
+                         if dist < min_sentence_dist:
+                             best_sentence_idx = idx + 1
+                             min_sentence_dist = dist
+                    
+                    # Always track best fallback word
+                    if dist < min_word_dist:
+                        best_word_idx = idx + 1
+                        min_word_dist = dist
+                
+                # Decision time: Prefer sentence break if found
+                if best_sentence_idx != -1:
+                    split_idx = best_sentence_idx
+                elif best_word_idx != -1:
+                    split_idx = best_word_idx
+                else:
+                    # Fallback: Just slice at 10s if we couldn't find anything in 8-12s window
+                    # (e.g. maybe the first word ends at 13s? rare)
+                    # Find first word ending after 10s
+                    split_idx = -1
+                    for idx, w in enumerate(curr_words):
+                        if w['end'] >= hard_target:
+                            split_idx = idx + 1
+                            break
+                    if split_idx == -1:
+                        split_idx = len(curr_words)
+                
+                # Perform the split
+                first_chunk_words = curr_words[:split_idx]
+                remainder_words = curr_words[split_idx:]
+                
+                if not first_chunk_words:
+                     # Edge case: first word is already super long? Force split at 1 word.
+                     first_chunk_words = curr_words[:1]
+                     remainder_words = curr_words[1:]
+                
+                # Reconstruct Text
+                # Whisper words have leading spaces often. Join carefully.
+                def reconstruct_text(words):
+                    return "".join([w['word'] for w in words]).strip()
+
+                chunk_text = reconstruct_text(first_chunk_words)
+                remainder_text = reconstruct_text(remainder_words)
+                
+                split_end_time = first_chunk_words[-1]['end']
+                
+                consolidated.append({
+                    'start': curr_start,
+                    'end': split_end_time,
+                    'speaker': curr_speaker,
+                    'text': chunk_text,
+                    'words': first_chunk_words
+                })
+                
+                segments[i] = {
+                    'start': split_end_time,
+                    'end': curr_end, 
+                    'speaker': curr_speaker,
+                    'text': remainder_text,
+                    'words': remainder_words
+                }
+                logger.debug(f"Smart split at {split_end_time:.2f}s (Target: 10s). Sentence break: {best_sentence_idx != -1}")
+                continue
             
-            # Split point
-            split_end = curr_start + max_duration_s
-            
-            # Uses naive text split due to missing word timestamps.
-            # If we had word timestamps, they are lost in this dict structure usually (unless passed through).
-            # We'll just do a rough ratio split for text.
-            ratio = max_duration_s / duration
-            split_idx = int(len(curr_text) * ratio)
-            
-            # Try to split at a space near the ratio to avoid cutting words
-            # Search within a window
-            search_window = 10
-            found_space = False
-            for offset in range(search_window):
-                # Check forward
-                if split_idx + offset < len(curr_text) and curr_text[split_idx + offset] == ' ':
-                    split_idx += offset
-                    found_space = True
-                    break
-                # Check backward
-                if split_idx - offset > 0 and curr_text[split_idx - offset] == ' ':
-                    split_idx -= offset
-                    found_space = True
-                    break
-            
-            chunk_text = curr_text[:split_idx].strip()
-            remainder_text = curr_text[split_idx:].strip()
-            
-            consolidated.append({
-                'start': curr_start,
-                'end': split_end,
-                'speaker': curr_speaker,
-                'text': chunk_text
-            })
-            
-            # Now we set up the remainder as the new 'curr' for the next iteration of the loop
-            # But we can't easily modify `segments` list in place safely or insert.
-            # Easiest way: Update `segments[i]` to be the remainder and STAY on `i` (don't increment).
-            # BUT we need to avoid infinite loops if we don't make progress.
-            # Since `split_end` > `curr_start` (guaranteed by max_duration_s > 0), the remainder is shorter.
-            # Eventually it will be < max_duration_s.
-            
-            segments[i] = {
-                'start': split_end,
-                'end': curr_end, # Original end
-                'speaker': curr_speaker,
-                'text': remainder_text
-            }
-            # Continue loop WITHOUT incrementing `i` to process the remainder
-            continue
+            # --- Fallback: Naive Character Split (No Words) ---
+            else:
+                # Calculates number of full chunks.
+                duration = curr_end - curr_start
+                
+                # Split point
+                split_end = curr_start + max_duration_s
+                
+                # Uses naive text split due to missing word timestamps.
+                # If we had word timestamps, they are lost in this dict structure usually (unless passed through).
+                # We'll just do a rough ratio split for text.
+                ratio = max_duration_s / duration
+                split_idx = int(len(curr_text) * ratio)
+                
+                # Try to split at a space near the ratio to avoid cutting words
+                # Search within a window
+                search_window = 10
+                found_space = False
+                for offset in range(search_window):
+                    # Check forward
+                    if split_idx + offset < len(curr_text) and curr_text[split_idx + offset] == ' ':
+                        split_idx += offset
+                        found_space = True
+                        break
+                    # Check backward
+                    if split_idx - offset > 0 and curr_text[split_idx - offset] == ' ':
+                        split_idx -= offset
+                        found_space = True
+                        break
+                
+                chunk_text = curr_text[:split_idx].strip()
+                remainder_text = curr_text[split_idx:].strip()
+                
+                consolidated.append({
+                    'start': curr_start,
+                    'end': split_end,
+                    'speaker': curr_speaker,
+                    'text': chunk_text
+                })
+                
+                # Now we set up the remainder as the new 'curr' for the next iteration of the loop
+                # But we can't easily modify `segments` list in place safely or insert.
+                # Easiest way: Update `segments[i]` to be the remainder and STAY on `i` (don't increment).
+                # BUT we need to avoid infinite loops if we don't make progress.
+                # Since `split_end` > `curr_start` (guaranteed by max_duration_s > 0), the remainder is shorter.
+                # Eventually it will be < max_duration_s.
+                
+                segments[i] = {
+                    'start': split_end,
+                    'end': curr_end, # Original end
+                    'speaker': curr_speaker,
+                    'text': remainder_text
+                }
+                # Continue loop WITHOUT incrementing `i` to process the remainder
+                continue
 
         overlap_speakers = set([curr_speaker])
         j = i + 1
         
         while j < n:
             next_seg = segments[j]
+            next_words = next_seg.get('words', [])
             
             # Predictive check: Would merging this segment exceed the max duration?
             # Checks if merging exceeds max duration.
@@ -312,11 +416,13 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                 overlap_speakers.add(next_seg['speaker'])
                 curr_end = potential_end
                 curr_text += ' ' + next_seg['text']
+                curr_words.extend(next_words)
                 j += 1
             elif next_seg['speaker'] == curr_speaker and abs(next_seg['start'] - curr_end) < 0.01:
                 # Consecutive, same speaker, no gap
                 curr_end = next_seg['end'] # potential_end is next_seg['end'] here
                 curr_text += ' ' + next_seg['text']
+                curr_words.extend(next_words)
                 j += 1
             else:
                 break
@@ -335,7 +441,8 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                 'start': curr_start,
                 'end': curr_end,
                 'speaker': speaker_label,
-                'text': curr_text.strip()
+                'text': curr_text.strip(),
+                'words': curr_words
             })
         else:
             logger.info(f"Filtering out short consolidated segment: "
