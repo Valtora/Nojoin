@@ -222,9 +222,9 @@ export default function NotesView({
     }
 
     // 2. Scroll to Current Match
-    // We use a small timeout to ensure the decorations have rendered in the DOM
+    // Use MutationObserver to ensure we scroll only after the decoration is actually in the DOM
     if (matches.length > 0 && currentMatchIndex !== -1) {
-      requestAnimationFrame(() => {
+      const scrollToMatch = () => {
         const currentMatchElement =
           editor.view.dom.querySelector(".bg-orange-400");
         if (currentMatchElement) {
@@ -232,8 +232,37 @@ export default function NotesView({
             behavior: "smooth",
             block: "center",
           });
+          return true;
+        }
+        return false;
+      };
+
+      // Try immediately
+      if (scrollToMatch()) return;
+
+      // If not found, wait for it
+      const observer = new MutationObserver((mutations, obs) => {
+        if (scrollToMatch()) {
+          obs.disconnect();
         }
       });
+
+      observer.observe(editor.view.dom, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+
+      // Safety timeout
+      const timeoutId = setTimeout(() => {
+        observer.disconnect();
+      }, 2000);
+
+      return () => {
+        observer.disconnect();
+        clearTimeout(timeoutId);
+      };
     }
   }, [currentMatchIndex, matches, editor]); // Removed showSearch dependency as matches will be empty if search hidden
 

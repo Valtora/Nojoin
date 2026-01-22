@@ -312,6 +312,9 @@ export default function RecordingPage({ params }: PageProps) {
   const handlePlaySegment = async (start: number, end?: number) => {
     if (audioRef.current) {
       try {
+        // Optimistic update for instant UI response (scrolling)
+        setCurrentTime(start);
+
         // Pause first to interrupt any pending play requests
         audioRef.current.pause();
 

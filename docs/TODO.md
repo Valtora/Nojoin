@@ -16,18 +16,6 @@
 - The user would need to authenticate with their own Beam Cloud account.
 - The main reason we are considering implementing Beam Cloud is because it would allow Nojoin to become a fully hosted SaaS solution for those users that are not technical and just want to go to a website, download a companion, and begin recording meetings with zero technical setup and knowledge.
 
-## Frontend: Remove setTimeOut in NotesView
-
-- **Context**: `frontend/src/components/NotesView.tsx:229` uses `setTimeout` to ensure decorations are rendered.
-- **Issue**: This is flaky and race-condition prone.
-- **Task**: Replace with `MutationObserver`, `useLayoutEffect`, or editor callback to detect DOM readiness reliably.
-
-## Frontend: Robust Popover Positioning
-
-- **Context**: `frontend/src/components/SpeakerAssignmentPopover.tsx:55` uses manual calculation for positioning.
-- **Issue**: Fragile, may detach from element.
-- **Task**: Refactor to use `floating-ui` for robust positioning and portal handling.
-
 ## Companion: Semantic Versioning
 
 - **Context**: `companion/src-tauri/src/main.rs:96` assumes any string difference is an update.
