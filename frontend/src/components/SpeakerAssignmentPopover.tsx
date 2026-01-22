@@ -123,7 +123,7 @@ export default function SpeakerAssignmentPopover({
   return createPortal(
     <div
       ref={containerRef}
-      className="absolute z-`9999` mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className="absolute z-9999 mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
       style={{
         top: position.top,
         left: position.left,

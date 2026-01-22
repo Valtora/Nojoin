@@ -43,9 +43,5 @@
 ## Backend: Investigate Word-Level Timestamps in Transcript Utils
 
 - **Context**: `backend/utils/transcript_utils.py:230-247` mentions naive text splitting due to missing word timestamps.
-- **Issue**: Large segments are split arbitrarily, potentially breaking sentences or context.
+- **Issue**: Large segments are split arbitrarily, potentially breaking sentences or context. The exception to this is that each segment has a maximum length of 10 seconds. If this is causing issues report then let me know. The purpose of the 10 second limit to segment length is to prevent huge segments forming big chat bubbles in the Transcript View. If the 10 second limit at the segment level is causing issues then we can explore having segments in the backend that are split based on word-level timestamps but then processed so that visually they are still displayed as chat bubbles of 10 seconds in length.
 - **Task**: Investigate passing word-level timestamps through the dict structure to enable precise semantic splitting.
-
-## Frontend: Context menu in Speaker Panel
-
-- The context menu in the speaker panel is rendered below the adjacent panels when opened up near the left hand side of the panel. Investigate the logic around rendering or z-order and report back.
