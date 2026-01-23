@@ -1,21 +1,28 @@
-# Release v0.5.5
+# Release v0.5.6
 
 ## Features & Improvements
 
-### Enhanced Speaker Management
+### Audio & Processing
 
-- **Split Local Speakers:** You can now split or unmerge _any_ speaker directly from the Speaker Panel, even if they haven't been added to your Global People Library yet. This makes correcting diarization errors much faster.
-- **Smarter "Add to People":** The "Add to People" option is now intelligently hidden if a speaker already exists in your library (checking both explicit links and name matches) to prevent duplicates.
-- **UI Polish:** We've cleaned up the Speaker Panel by removing the legacy "Add All Voiceprints" banner (extraction is now automatic!) and refining the context menus for a sleeker, icon-free look.
+- **High Fidelity Audio:** We've significantly increased the proxy audio bitrate from 64kbps to **320kbps**, ensuring crystal clear playback quality in the web player.
+- **Smart Transcript Splitting:** The processing pipeline now utilizes word-level timestamps to split transcript segments intelligently, preventing words from being cut in half during segmentation.
 
-### UI/UX Refinements
+### Companion App
 
-- **Context Menu Consistency:** All context menus across the app have been standardized to a clean, text-only design with improved layering (Z-index) fixes.
-- **Navigation Highlighting:** Fixed an issue where the sidebar navigation wouldn't stay highlighted when viewing a specific recording.
+- **Standardized Storage:** The Companion App now correctly stores configuration and logs in the system's standard `AppData/Roaming` directory on Windows, improving reliability and convention compliance.
+- **Semantic Update Checks:** Implemented robust semantic versioning (`semver`) for update checks to ensure accurate comparison between installed and available versions.
 
-## Infrastructure & Workflow
+### User Interface
 
-### Unified Release Pipeline
+- **Report a Bug:** A new section in **Settings > Help** provides a direct link to our GitHub Issues page, making it easier to report bugs and feedback.
 
-- **Lock-step Versioning:** We've unified our release process. Every Server release (`vX.Y.Z`) now automatically produces a corresponding Companion App release with the exact same version number.
-- **Automated Sync:** A new auto-sync system ensures version numbers are consistent across all configuration files (`package.json`, `tauri.conf.json`, `Cargo.toml`), eliminating manual errors.
+## Bug Fixes
+
+- **Context Menus:** Fixed Z-index layering issues where context menus and popovers would appear behind other elements.
+- **Notes Navigation:** Resolved race conditions in the Notes View to ensure search matches rely on reliable scrolling behavior.
+- **Transcript View:** Fixed index mismatch errors that could occur in the transcript display.
+
+## Documentation
+
+- Updated `README.md` with new screenshots and configuration details.
+- Refactored code comments and addressed accumulated technical debt.

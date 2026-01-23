@@ -54,7 +54,7 @@ Before installing Nojoin, ensure your system meets the following requirements:
 
 ### General
 
-- **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux).
+- **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux).
 - **Git** (Optional, only if cloning the repository).
 
 ### For NVIDIA GPU Support (Highly Recommended)

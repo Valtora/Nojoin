@@ -143,6 +143,9 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
 - **AI Settings:**
   - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.
   - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
+- **Help:**
+  - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
+  - **Report a Bug:** Direct link to report issues on the GitHub repository.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
 - **System Version:** The current version is displayed in the Settings header. If an update is available on GitHub, a notification will appear.
 

@@ -1,4 +1,4 @@
-import { PlayCircle, RefreshCw } from "lucide-react";
+import { PlayCircle, RefreshCw, Bug } from "lucide-react";
 import { useNavigationStore } from "@/lib/store";
 import { seedDemoData } from "@/lib/api";
 import { useState } from "react";
@@ -104,6 +104,32 @@ export default function HelpSettings({
               {isSeeding && <RefreshCw className="w-3 h-3 animate-spin" />}
               {isSeeding ? "Creating..." : "Re-create Meeting"}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <Bug className="w-5 h-5 text-orange-500" /> Report a Bug
+        </h3>
+        <div className="max-w-2xl space-y-4">
+          <div className="flex items-center justify-between p-4 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                Report an Issue
+              </h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Found a bug? Report it on our GitHub Issues page.
+              </p>
+            </div>
+            <a
+              href="https://github.com/Valtora/Nojoin/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 rounded-md transition-colors"
+            >
+              Report Issue
+            </a>
           </div>
         </div>
       </div>
