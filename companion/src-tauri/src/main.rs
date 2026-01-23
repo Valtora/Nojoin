@@ -138,12 +138,12 @@ async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
 }
 
 fn get_log_path() -> PathBuf {
-    // In Tauri, we might want to use the app data directory, but for now let's stick to exe dir or current dir
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("nojoin-companion.log")
+    let app_data = Config::get_app_data_dir();
+    // Ensure directory exists
+    if let Err(e) = std::fs::create_dir_all(&app_data) {
+        eprintln!("Failed to create app data directory: {}", e);
+    }
+    app_data.join("nojoin-companion.log")
 }
 
 fn setup_logging() -> Result<(), fern::InitError> {

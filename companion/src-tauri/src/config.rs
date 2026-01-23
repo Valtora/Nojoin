@@ -1,5 +1,6 @@
 use log::info;
 use serde::{Deserialize, Serialize};
+use directories::{BaseDirs, ProjectDirs};
 use std::fs;
 use std::path::PathBuf;
 
@@ -64,31 +65,50 @@ impl Config {
     pub fn get_web_url(&self) -> String {
         format!("{}://{}:{}", self.api_protocol, self.api_host, self.api_port)
     }
+    
+    pub fn get_app_data_dir() -> PathBuf {
+        if cfg!(target_os = "windows") {
+             // User requested: %APPDATA%\Nojoin Companion
+             // BaseDirs::config_dir() on Windows returns Roaming AppData
+             if let Some(base_dirs) = BaseDirs::new() {
+                 return base_dirs.config_dir().join("Nojoin Companion");
+             }
+        } else {
+             // Linux: ~/.config/nojoin-companion
+             // macOS: ~/Library/Application Support/com.Valtora.Nojoin-Companion
+             if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin-Companion") {
+                 return proj_dirs.config_dir().to_path_buf();
+             }
+        }
+        
+        // Fallback to local directory if we can't determine system paths
+        PathBuf::from(".")
+    }
 
     fn get_config_path() -> PathBuf {
         let config_name = "config.json";
 
-        // First check current directory (development override)
+        // 1. Dev Override: Check current working directory
         let cwd_path = PathBuf::from(config_name);
         if cwd_path.exists() {
+            info!("Found config in current directory (Dev Override)");
             return cwd_path;
         }
 
-        // Check executable directory
-        // Installs to AppData on Windows for config centralization.
+        // 2. Legacy Check: Check executable directory
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let exe_config = exe_dir.join(config_name);
-                
-                // If it exists, use it; otherwise create it here on Windows
-                if exe_config.exists() || cfg!(target_os = "windows") {
+                if exe_config.exists() {
+                    info!("Found config in executable directory (Legacy)");
                     return exe_config;
                 }
             }
         }
 
-        // Fallback to current directory if all else fails
-        PathBuf::from(config_name)
+        // 3. Standard Location
+        let app_data_dir = Self::get_app_data_dir();
+        app_data_dir.join(config_name)
     }
 
     fn migrate_from_legacy(content: &str) -> Option<Config> {

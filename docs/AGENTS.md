@@ -45,6 +45,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Retries**: Implemented in `src-tauri/src/uploader.rs` with exponential backoff.
 - **UI**: The system tray is managed by Tauri.
 - **Configuration** (`config.json`):
+  - **Location**: `%APPDATA%\Nojoin Companion` (Windows).
   - `api_host`: Backend API hostname/IP (default: "localhost").
   - `api_port`: Backend API port (default: 14443).
   - `local_port`: Local server port (default: 12345).

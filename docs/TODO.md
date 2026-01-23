@@ -21,9 +21,3 @@
 - **Context**: `companion/src-tauri/src/main.rs:96` assumes any string difference is an update.
 - **Issue**: String inequality != update (could be downgrade).
 - **Task**: Use `semver` crate to compare versions properly (`new > current`).
-
-## Companion: Standardize AppData Usage
-
-- **Context**: `companion/src-tauri/src/main.rs:141` uses exe dir or current dir.
-- **Issue**: Non-standard practice.
-- **Task**: Standardize on `AppData` (or XDG equivalent) for all user data.

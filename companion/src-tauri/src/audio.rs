@@ -364,7 +364,7 @@ fn start_segment(
 
             // Check for sample rate mismatch between Input (Mic) and Output (System Loopback)
             let sys_rate = sys_config.sample_rate().0;
-            if (mic_sample_rate.abs_diff(sys_rate) > 1000) {
+            if mic_sample_rate.abs_diff(sys_rate) > 1000 {
                 warn!(
                    "Sample rate mismatch! Mic: {}Hz, System: {}Hz. Audio drift or artifacts may occur.", 
                    mic_sample_rate, 
