@@ -15,9 +15,3 @@
 - Let's explore how Nojoin could allow users to make use of a Beam Cloud instance to process their meetings. This would allow users to process their meetings at scale and potentially even process their meetings in parallel without requiring a local machine to do so.
 - The user would need to authenticate with their own Beam Cloud account.
 - The main reason we are considering implementing Beam Cloud is because it would allow Nojoin to become a fully hosted SaaS solution for those users that are not technical and just want to go to a website, download a companion, and begin recording meetings with zero technical setup and knowledge.
-
-## Companion: Semantic Versioning
-
-- **Context**: `companion/src-tauri/src/main.rs:96` assumes any string difference is an update.
-- **Issue**: String inequality != update (could be downgrade).
-- **Task**: Use `semver` crate to compare versions properly (`new > current`).

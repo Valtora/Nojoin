@@ -16,6 +16,8 @@ use tauri::{
     Manager,
 };
 
+use semver::Version;
+
 mod audio;
 mod config;
 mod notifications;
@@ -89,16 +91,15 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
     if resp.status().is_success() {
         let release: GitHubRelease = resp.json().await.map_err(|e| e.to_string())?;
         // tag_name is usually "v0.1.4"
-        // Parsing required.
         let version_str = release.tag_name.trim_start_matches('v');
         
-        // Simple string comparison for version check.
-        // We assume that if the strings are different, it's an update.
-        
-        if version_str != current_version {
-             // It's different. Is it newer?
-             // Let's just return it if it's different for now, user can decide.
-             // Or better, let's try to parse major.minor.patch
+        let remote_version = Version::parse(version_str)
+            .map_err(|e| format!("Failed to parse remote version: {}", e))?;
+            
+        let current = Version::parse(current_version)
+            .map_err(|e| format!("Failed to parse current version: {}", e))?;
+
+        if remote_version > current {
              return Ok(Some((version_str.to_string(), release.html_url)));
         }
         Ok(None)
