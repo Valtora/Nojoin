@@ -188,7 +188,7 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
         "-ac", "1",       # Mono
         "-ar", "16000",   # 16kHz
         "-codec:a", "libmp3lame",
-        "-b:a", "64k",    # Lower bitrate is sufficient for 16kHz mono
+        "-b:a", "320k",   # High quality bitrate for proxy audio
         "-f", "mp3",      # Force MP3 format (crucial for .tmp files)
         final_output_path
     ]
