@@ -72,7 +72,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
 
 | Variable | Description |
-| t --- | --- |
+| --- | --- |
 | `HF_TOKEN` | Hugging Face User Access Token (Read) |
 | `LLM_PROVIDER` | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`) |
 | `GEMINI_API_KEY` | Google Gemini API Key |
