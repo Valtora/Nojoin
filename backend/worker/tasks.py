@@ -190,27 +190,6 @@ def process_recording_task(self, recording_id: int):
                 session.commit()
                 return
 
-            # Convert to MP3 (aligning with pipeline.py)
-            vad_processed_mp3 = vad_output_path.replace(".wav", ".mp3")
-            try:
-                convert_wav_to_mp3(vad_output_path, vad_processed_mp3)
-                temp_files.append(vad_processed_mp3)
-
-                # --- Update proxy with aligned audio ---
-                # We use the VAD-processed audio as the proxy to ensure perfect alignment with the transcript.
-                # This fixes "slippage" issues where playback drifts from the transcript.
-                base_path, _ = os.path.splitext(recording.audio_path)
-                proxy_path = f"{base_path}.mp3"
-                shutil.copy2(vad_processed_mp3, proxy_path)
-                recording.proxy_path = proxy_path
-                session.add(recording)
-                session.commit()
-                logger.info(f"Updated proxy file with VAD-processed audio for alignment: {proxy_path}")
-
-            except AudioFormatError:
-                 logger.warning("MP3 conversion failed, falling back to WAV")
-                 # processed_audio_path = vad_output_path # Already WAV
-            
             # Use WAV for processing to avoid sample count mismatches in Pyannote
             processed_audio_path = vad_output_path
         else:
