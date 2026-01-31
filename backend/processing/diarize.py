@@ -35,6 +35,16 @@ OFFLINE_DIARIZATION_CONFIG = "backend/processing/offline_diarization_config.yaml
 # Cache for loaded pipelines
 _pipeline_cache = {}
 
+def release_pipeline_cache():
+    """Releases all loaded Pyannote pipelines from memory and clears CUDA cache."""
+    global _pipeline_cache
+    if _pipeline_cache:
+        logger.info(f"Releasing {_pipeline_cache.keys()} from Pyannote pipeline cache.")
+        _pipeline_cache.clear()
+        
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 def _filter_short_segments(annotation: Annotation, min_duration_s: float = 0.3) -> Annotation:
     """
     Filters out segments shorter than a minimum duration from a pyannote Annotation.

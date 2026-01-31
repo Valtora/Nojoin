@@ -31,6 +31,15 @@ class TextEmbeddingService:
                 logger.error(f"Failed to load text embedding model: {e}")
                 raise
 
+    @classmethod
+    def release_model(cls):
+        """Releases the embedding model from memory."""
+        if cls._instance:
+            logger.info("Releasing TextEmbeddingService model.")
+            cls._instance._model = None
+            cls._instance = None
+
+
     def embed(self, texts: Union[str, List[str]]) -> List[List[float]]:
         """
         Generate embeddings for a list of texts.
@@ -57,3 +66,9 @@ def get_text_embedding_service():
     if _service is None:
         _service = TextEmbeddingService()
     return _service
+
+def release_embedding_model():
+    """Global function to release the text embedding model."""
+    global _service
+    TextEmbeddingService.release_model()
+    _service = None

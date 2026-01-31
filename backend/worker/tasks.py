@@ -714,6 +714,36 @@ def process_recording_task(self, recording_id: int):
         # Robust cleanup of all temporary files
         for temp_file in temp_files:
             cleanup_temp_file(temp_file)
+            
+        # --- VRAM Management ---
+        # Explicitly release models if configured to do so (default behavior for shared hosts)
+        keep_loaded = config_manager.get("keep_models_loaded", False)
+        
+        if not keep_loaded:
+            try:
+                logger.info("Releasing VRAM (keep_models_loaded=False)...")
+                
+                # 1. Whisper
+                from backend.processing.transcribe import release_model_cache
+                release_model_cache()
+                
+                # 2. Pyannote
+                from backend.processing.diarize import release_pipeline_cache
+                release_pipeline_cache()
+                
+                # 3. Text Embeddings
+                from backend.processing.text_embedding import release_embedding_model
+                release_embedding_model()
+                
+                # 4. Garbage Collection
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+                logger.info("VRAM released successfully.")
+            except Exception as e:
+                logger.error(f"Error releasing VRAM: {e}")
 
 @celery_app.task(base=DatabaseTask, bind=True)
 def update_speaker_embedding_task(self, recording_id: int, start: float, end: float, recording_speaker_id: int):

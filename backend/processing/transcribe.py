@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 # Cache for loaded models to avoid reloading
 _model_cache = {}
 
+def release_model_cache():
+    """Releases all loaded Whisper models from memory and clears CUDA cache."""
+    global _model_cache
+    if _model_cache:
+        logger.info(f"Releasing {_model_cache.keys()} from Whisper model cache.")
+        _model_cache.clear()
+    
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 # --- Whisper Progress Listener Infrastructure ---
 class ProgressListener:
     def __init__(self, callback):
