@@ -249,7 +249,7 @@ async def upload_segment(
     if not os.path.exists(recording_temp_dir):
         os.makedirs(recording_temp_dir, exist_ok=True)
         
-    filename = os.path.basename(f"{sequence}.wav")
+    filename = os.path.basename(f"{int(sequence)}.wav")
     segment_path = os.path.join(recording_temp_dir, filename)
     
     try:
@@ -528,7 +528,7 @@ async def upload_chunked_segment(
     if not os.path.exists(recording_temp_dir):
         os.makedirs(recording_temp_dir, exist_ok=True)
         
-    filename = os.path.basename(f"{sequence}.part")
+    filename = os.path.basename(f"{int(sequence)}.part")
     segment_path = os.path.join(recording_temp_dir, filename)
     
     try:
