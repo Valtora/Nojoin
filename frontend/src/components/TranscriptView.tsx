@@ -17,6 +17,7 @@ import {
 import { getColorByKey } from "@/lib/constants";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import Fuse from "fuse.js";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface TranscriptViewProps {
   recordingId: number;
@@ -76,6 +77,7 @@ export default function TranscriptView({
   onExport,
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
+  const { addNotification } = useNotificationStore();
 
   // Editing State
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
@@ -359,6 +361,15 @@ export default function TranscriptView({
 
   const handleFindReplaceSubmit = async () => {
     if (!findText || isSubmitting) return;
+
+    if (findText.length > 1000) {
+      addNotification({
+        type: 'warning',
+        message: 'Search pattern is too long (max 1000 characters).',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await onFindAndReplace(findText, replaceText, {

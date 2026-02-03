@@ -106,42 +106,59 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
     Apply find and replace to both transcript segments and notes.
     Returns the number of segment replacements made.
     """
-    segment_count = 0
-    
-    # Prepare regex pattern
-    flags = 0 if case_sensitive else re.IGNORECASE
-    
-    if use_regex:
-        pattern = find_text
-    else:
-        pattern = re.escape(find_text)
-        
-    try:
-        regex = re.compile(pattern, flags)
-    except re.error:
-        # If regex is invalid, fallback to exact match or raise error?
-        # For now, let's just return 0 or log it. 
-        # But since we validate on frontend usually, let's assume it's okay or fail gracefully.
-        return 0
+    if len(find_text) > 1000:
+        raise HTTPException(status_code=400, detail="Search pattern is too long (max 1000 characters)")
 
-    # Replace in transcript segments
-    for segment in transcript.segments:
-        # Check if match exists first to avoid unnecessary writes/updates
-        if regex.search(segment['text']):
-            segment['text'] = regex.sub(replace_text, segment['text'])
-            segment_count += 1
+    segment_count = 0
+    total_segment_replacements = 0
     
-    if segment_count > 0:
+    # Path 1: Simple string replacement (Case Sensitive + No Regex)
+    # this is the fastest and safest path
+    if not use_regex and case_sensitive:
+        for segment in transcript.segments:
+            if find_text in segment['text']:
+                new_text = segment['text'].replace(find_text, replace_text)
+                if new_text != segment['text']:
+                   segment['text'] = new_text
+                   total_segment_replacements += 1
+                   
+        if transcript.notes and find_text in transcript.notes:
+             transcript.notes = transcript.notes.replace(find_text, replace_text)
+
+    # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
+    else:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        
+        if use_regex:
+            pattern = find_text
+        else:
+            pattern = re.escape(find_text)
+            
+        try:
+            regex = re.compile(pattern, flags)
+        except re.error:
+             # Invalid regex provided by user
+             raise HTTPException(status_code=400, detail="Invalid regular expression")
+
+        # Replace in transcript segments
+        for segment in transcript.segments:
+            # subn returns (new_string, number_of_subs_made)
+            new_text, count = regex.subn(replace_text, segment['text'])
+            if count > 0:
+                segment['text'] = new_text
+                total_segment_replacements += 1
+        
+        # Replace in notes
+        if transcript.notes:
+            transcript.notes = regex.sub(replace_text, transcript.notes)
+    
+    if total_segment_replacements > 0:
         flag_modified(transcript, "segments")
         # Reconstruct full text
         full_text = " ".join([s['text'] for s in transcript.segments])
         transcript.text = full_text
     
-    # Replace in notes
-    if transcript.notes and regex.search(transcript.notes):
-        transcript.notes = regex.sub(replace_text, transcript.notes)
-    
-    return segment_count
+    return total_segment_replacements
 
 
 def _parse_markdown_line(line: str) -> dict:
