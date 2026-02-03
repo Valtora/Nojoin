@@ -12,3 +12,4 @@ reportlab
 python-docx
 markdown
 markdown-pdf
+google-re2

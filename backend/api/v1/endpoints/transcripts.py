@@ -101,6 +101,8 @@ def _sanitize_filename(filename: str) -> str:
     return "".join([c for c in filename if c.isalpha() or c.isdigit() or c in (' ', '-', '_', '.')]).strip()
 
 
+import re2
+
 def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: str, case_sensitive: bool = False, use_regex: bool = False) -> int:
     """
     Apply find and replace to both transcript segments and notes.
@@ -109,7 +111,6 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
     if len(find_text) > 1000:
         raise HTTPException(status_code=400, detail="Search pattern is too long (max 1000 characters)")
 
-    segment_count = 0
     total_segment_replacements = 0
     
     # Path 1: Simple string replacement (Case Sensitive + No Regex)
@@ -127,22 +128,22 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
 
     # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
     else:
-        flags = 0 if case_sensitive else re.IGNORECASE
+        flags = 0 if case_sensitive else re2.IGNORECASE
         
         if use_regex:
             pattern = find_text
         else:
-            pattern = re.escape(find_text)
+            pattern = re2.escape(find_text)
             
         try:
-            regex = re.compile(pattern, flags)
-        except re.error:
+            regex = re2.compile(pattern, flags)
+        except re2.error:
              # Invalid regex provided by user
              raise HTTPException(status_code=400, detail="Invalid regular expression")
 
         # Replace in transcript segments
         for segment in transcript.segments:
-            # subn returns (new_string, number_of_subs_made)
+            # google-re2 python bindings support subn.
             new_text, count = regex.subn(replace_text, segment['text'])
             if count > 0:
                 segment['text'] = new_text
