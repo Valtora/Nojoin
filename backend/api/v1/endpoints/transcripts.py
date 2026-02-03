@@ -475,7 +475,7 @@ async def export_content(
     except Exception as e:
         logger.error(f"Export generation failed: {e}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Export generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export generation failed")
 
     return Response(
         content=content,
@@ -1076,7 +1076,7 @@ async def chat_with_meeting(
                  
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'error': 'An internal error occurred'})}\n\n"
             return
 
         # 6. Save Assistant Response to DB

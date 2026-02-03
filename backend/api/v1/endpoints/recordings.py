@@ -231,7 +231,7 @@ async def init_upload(
 @router.post("/{recording_id}/segment")
 async def upload_segment(
     recording_id: int,
-    sequence: int = Query(..., description="Sequence number of the segment"),
+    sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
@@ -508,7 +508,7 @@ async def init_chunked_import(
 @router.post("/import/chunked/segment")
 async def upload_chunked_segment(
     recording_id: int,
-    sequence: int = Query(..., description="Sequence number of the segment"),
+    sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -641,10 +641,17 @@ async def upload_recording(
     Upload a new audio recording (used by Companion app).
     """
     # Generate a unique filename to prevent collisions
-    file_ext = os.path.splitext(file.filename)[1]
+    file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if not file_ext:
         file_ext = ".wav" # Default to wav if unknown
-        
+    
+    # Validate extension
+    if file_ext not in SUPPORTED_AUDIO_FORMATS and file_ext != ".wav":
+         raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}"
+        )
+
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = os.path.join(RECORDINGS_DIR, unique_filename)
     
