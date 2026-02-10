@@ -185,9 +185,10 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
         "ffmpeg",
         "-y",
         "-i", input_path,
-        "-ar", "44100",   # 44.1kHz (Standard Audio)
+        "-ar", "48000",   # 48kHz (Match source/Standard Video Audio)
+        "-ac", "2",       # Stereo (Required for high bitrate compatibility)
         "-codec:a", "libmp3lame",
-        "-b:a", "320k",   # High quality bitrate
+        "-b:a", "192k",   # High quality bitrate (Near CD)
         "-f", "mp3",      # Force MP3 format
         final_output_path
     ]
