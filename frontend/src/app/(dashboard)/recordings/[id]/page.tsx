@@ -720,7 +720,9 @@ export default function RecordingPage({ params }: PageProps) {
                 {recording.status === RecordingStatus.UPLOADING
                   ? recording.client_status === ClientStatus.UPLOADING
                     ? "Finalizing Upload"
-                    : "Meeting in Progress"
+                    : recording.client_status === ClientStatus.PAUSED
+                      ? "Meeting recording is paused..."
+                      : "Meeting in Progress"
                   : recording.status === RecordingStatus.QUEUED
                     ? "Queued for Processing"
                     : "Processing Recording..."}

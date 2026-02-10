@@ -575,9 +575,18 @@ fn run_mixing_loop(
     let total_segments = current_sequence;
     let config = state.config.lock().unwrap().clone();
 
+    // Check if we should report "UPLOADING" status
+    // We only want to do this if we are STOPPING/UPLOADING, not if we are PAUSED.
+    let should_report_uploading = {
+        let status = state.status.lock().unwrap();
+        matches!(*status, AppStatus::Uploading)
+    };
+
     rt.block_on(async {
         // Set initial status
-        uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config).await.ok();
+        if should_report_uploading {
+            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config).await.ok();
+        }
 
         let mut completed_count = 0;
         while let Some(_) = progress_rx.recv().await {
@@ -589,7 +598,9 @@ fn run_mixing_loop(
                 20
             };
             
-            uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config).await.ok();
+            if should_report_uploading {
+                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config).await.ok();
+            }
         }
 
         for handle in upload_handles {
