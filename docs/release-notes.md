@@ -1,15 +1,13 @@
-# Release v0.5.7
+# Release v0.5.8
 
-## Features & Improvements
+## Security Enhancements
 
-### Performance & Resource Management
+- **Strict Path Sanitization**: Addressed potential path injection and information exposure vulnerabilities by enforcing strict path validation on API endpoints.
+- **Regex Safety**: Mitigated Regex Denial of Service (ReDoS) vulnerabilities in the find/replace functionality by implementing `google-re2`.
+- **Companion Security**: Resolved an integer overflow vulnerability in the `bytes` crate dependency within the Companion App.
 
-- **VRAM Optimization:** Implemented model unloading for Whisper and Pyannote. AI models are now unloaded from GPU memory after processing tasks, reducing idle VRAM usage and improving system stability.
+## Bug Fixes & Improvements
 
-### Audio & Processing
-
-- **High Fidelity Audio:** Fixed an issue preventing proxy audio from reaching the target bitrate. Audio is now correctly processed at **320kbps / 44.1kHz**, ensuring consistent high quality.
-
-## Bug Fixes
-
-- **Documentation:** Fixed markdown table rendering in the Deployment guide environment variables section.
+- **Audio Playback**: Fixed an issue causing loud static noise during speaker snippet playback.
+- **Build**: Updated `next.js` to version 16.1.5 for improved performance and stability.
+- **Code Quality**: Applied explicit integer casting for sequence parameters to improve type safety and prevent potential runtime errors.
