@@ -128,15 +128,23 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
 
     # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
     else:
-        flags = 0 if case_sensitive else re2.IGNORECASE
+        # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
         
+        # google-re2 does not support flags arg in compile. We must use inline flags.
+        # e.g. (?i) for ignore case.
+        
+        prefix = ""
+        if not case_sensitive:
+            prefix = "(?i)"
+            
         if use_regex:
-            pattern = find_text
+            pattern = prefix + find_text
         else:
-            pattern = re2.escape(find_text)
+            # Escape the text, then prepend flag
+            pattern = prefix + re2.escape(find_text)
             
         try:
-            regex = re2.compile(pattern, flags)
+            regex = re2.compile(pattern)
         except re2.error:
              # Invalid regex provided by user
              raise HTTPException(status_code=400, detail="Invalid regular expression")
