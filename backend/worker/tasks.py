@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from backend.processing.embedding import cosine_similarity, merge_embeddings
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
-    from backend.processing.LLM_Services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend
     import torch
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def process_recording_task(self, recording_id: int):
     from backend.processing.embedding import cosine_similarity, merge_embeddings
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
-    from backend.processing.LLM_Services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend
 
     config_manager.reload()
     
@@ -352,7 +352,7 @@ def process_recording_task(self, recording_id: int):
         
         # Save Speakers & Embeddings
         # Extract unique speakers from the final segments
-        # We want to process them in order of appearance to assign "Speaker 1", "Speaker 2", etc.
+        # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
         ordered_speakers = []
         seen_speakers = set()
         for seg in final_segments:
@@ -497,9 +497,8 @@ def process_recording_task(self, recording_id: int):
 
             # Auto-promotion logic removed. Speakers must be manually promoted.
 
-            # Check for Auto-Merge (Duplicate Name Detection)
-            # If this resolved name has already been assigned to a previous speaker in this loop,
-            # we should merge this speaker into the previous one.
+            # Auto-merge duplicate name detection: if this resolved name was already
+            # assigned to a previous speaker in this loop, merge into the existing one.
             if resolved_name and resolved_name in resolved_names_map:
                 target_info = resolved_names_map[resolved_name]
                 target_label = target_info['label']
@@ -533,7 +532,7 @@ def process_recording_task(self, recording_id: int):
                         if seg['speaker'] == label:
                             seg['speaker'] = target_label
                             
-                    # We don't add to resolved_names_map as it's already there pointing to the canonical one
+                    # No addition to resolved_names_map needed; the canonical entry already exists.
                     label_map[label] = resolved_name
                     continue
 
@@ -653,7 +652,7 @@ def process_recording_task(self, recording_id: int):
                     update_recording_status(session, recording.id)
                     
                     llm = get_llm_backend(provider, api_key=api_key, model=model)
-                    # We pass empty mapping because names are already resolved in transcript_text
+                    # Passes an empty mapping because names are already resolved in transcript_text.
                     # Use a generous timeout (300s) for meeting notes generation as it can be slow
                     notes = llm.generate_meeting_notes(transcript_text, {}, timeout=300)
                     transcript.notes = notes
@@ -684,7 +683,7 @@ def process_recording_task(self, recording_id: int):
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         
         # Trigger Transcript Indexing for RAG
-        # We do this after everything is committed
+        # Triggers transcript indexing after all data is committed.
         from backend.worker.tasks import index_transcript_task
         index_transcript_task.delay(recording_id)
         
@@ -767,7 +766,7 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
         device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
         
         # Extract embedding for this segment
-        # We pass a list of segments [(start, end)]
+        # Passes a list of segments [(start, end)] for embedding extraction.
         new_embedding = extract_embedding_for_segments(
             recording.audio_path, 
             [(start, end)], 
@@ -958,7 +957,7 @@ def generate_notes_task(self, recording_id: int):
     """
     Generate meeting notes for a recording.
     """
-    from backend.processing.LLM_Services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend
     
     session = self.session
     recording = None
@@ -1014,7 +1013,6 @@ def generate_notes_task(self, recording_id: int):
             return
 
         # Build Speaker Map and Transcript Text
-        # We need to fetch speakers
         speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
         speaker_map = {s.diarization_label: s.name for s in speakers}
 
@@ -1107,7 +1105,7 @@ def infer_speakers_task(self, recording_id: int):
     """
     Independent task to re-run speaker inference using LLM.
     """
-    from backend.processing.LLM_Services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend
     # Reload config
     config_manager.reload()
     
@@ -1284,7 +1282,7 @@ def generate_proxy_task(self, recording_id: int):
 
     except Exception as e:
         logger.error(f"Error in generate_proxy_task for recording {recording_id}: {e}")
-        # We don't re-raise here because proxy generation is optional/secondary
+        # Not re-raised because proxy generation is optional/secondary.
 
 @celery_app.task(base=DatabaseTask, bind=True)
 def process_document_task(self, document_id: int):
@@ -1480,9 +1478,8 @@ def create_backup_task(self, include_audio: bool = True):
         logger.info(f"Starting backup task (include_audio={include_audio})")
         self.update_state(state='PROCESSING', meta={'status': 'Creating backup...'})
         
-        # BackupManager.create_backup is async, but we are in a sync celery task.
-        # We need to run it in an event loop.
-        # Since we are in a worker process, we can use asyncio.run
+        # BackupManager.create_backup is async; run it in a new event loop
+        # within this synchronous Celery worker process.
         
         zip_path = asyncio.run(BackupManager.create_backup(include_audio=include_audio))
         
@@ -1492,5 +1489,5 @@ def create_backup_task(self, include_audio: bool = True):
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)
         self.update_state(state='FAILURE', meta={'error': str(e)})
-        # We re-raise so Celery marks it as failed
+        # Re-raises so Celery marks the task as failed.
         raise e

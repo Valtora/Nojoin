@@ -342,12 +342,7 @@ class GeminiLLMBackend(LLMBackend):
         """
         try:
             models = self.client.models.list()
-            # Filter for generateContent models if possible, or just return all
-            # The google-genai library returns model objects.
-            # We want to return a list of model names (ids).
-            # Based on docs, it might be 'name' or 'display_name'. Usually 'name' is the ID (e.g. 'models/gemini-pro').
-            # But the user wants 'gemini-pro-latest' etc.
-            # Let's return the names.
+            # Extract model IDs (e.g. 'models/gemini-pro') from the API response.
             model_list = []
             for m in models:
                 # Check attributes
@@ -460,7 +455,7 @@ class GeminiLLMBackend(LLMBackend):
         
         try:
             # Use streaming API
-            # We disable automatic function calling to handle it manually and stream the event
+            # Automatic function calling is disabled to allow manual handling and event streaming.
             response_stream = self.client.models.generate_content_stream(
                 model=self.model,
                 contents=contents,

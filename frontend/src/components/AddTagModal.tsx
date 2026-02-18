@@ -120,9 +120,7 @@ export default function AddTagModal({
         await createTag(name.trim(), randomColor, parentId);
         await loadAllTags(); // Always reload to ensure list is updated
         if (!parentId) {
-          // Adds newly created tag to the recording.
-          // But createTag doesn't automatically add it to the recording unless we call addTagToRecording
-          // The previous logic called handleAddTag, let's stick to that but be careful about recursion/state
+          // Explicitly associates the newly created root tag with the current recording.
           await addTagToRecording(recordingId, name.trim());
           window.dispatchEvent(new CustomEvent("tags-updated"));
           if (onTagsUpdated) onTagsUpdated();

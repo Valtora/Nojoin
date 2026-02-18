@@ -167,7 +167,6 @@ export function PersonModal({
     e.preventDefault();
     if (!formData.name) return;
 
-    console.log("[PersonModal] Saving data:", formData);
 
     setIsSubmitting(true);
     try {

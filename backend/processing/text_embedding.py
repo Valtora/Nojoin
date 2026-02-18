@@ -5,10 +5,7 @@ from fastembed import TextEmbedding
 logger = logging.getLogger(__name__)
 
 # Model configuration
-EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5" # Or "sentence-transformers/all-MiniLM-L6-v2"
-# FastEmbed supports "BAAI/bge-small-en-v1.5" effectively. 
-# Let's use "sentence-transformers/all-MiniLM-L6-v2" as it is standard and 384 dim.
-# FastEmbed name: "sentence-transformers/all-MiniLM-L6-v2"
+# Default embedding model
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 class TextEmbeddingService:
@@ -51,8 +48,7 @@ class TextEmbeddingService:
         try:
             # fastembed returns a generator of vectors
             embeddings = list(self._model.embed(texts))
-            # Convert numpy arrays to lists if necessary (fastembed returns numpy arrays usually, depends on version or usage)
-            # Actually fastembed returns distinct vectors.
+            # fastembed returns numpy arrays
             return [e.tolist() for e in embeddings]
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")

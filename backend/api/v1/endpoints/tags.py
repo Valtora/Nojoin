@@ -257,8 +257,7 @@ async def batch_add_tag(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        # In batch, calculating exact count after fallback is hard, but usually fine
-        # We could retry or just accept that some might have failed due to race
+        # Exact count after fallback may be approximate if concurrent modifications occurred.
         pass
     return {"ok": True, "count": count, "tag": tag}
 

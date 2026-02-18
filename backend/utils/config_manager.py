@@ -19,9 +19,9 @@ def _get_default_device():
     return "auto"
 
 def _get_default_models():
-    """Get default models from LLM_Services to avoid circular imports."""
+    """Get default models from llm_services to avoid circular imports."""
     try:
-        from backend.processing.LLM_Services import get_default_model_for_provider
+        from backend.processing.llm_services import get_default_model_for_provider
         return {
             "gemini_model": get_default_model_for_provider("gemini"),
             "openai_model": get_default_model_for_provider("openai"),
@@ -300,10 +300,10 @@ def migrate_file_if_needed(old_path, new_path):
 def get_default_model_for_provider(provider: str) -> str | None:
     """
     Get the default model for a specific LLM provider.
-    This imports from LLM_Services to maintain single source of truth.
+    This imports from llm_services to maintain single source of truth.
     """
     try:
-        from backend.processing.LLM_Services import get_default_model_for_provider as _get_default
+        from backend.processing.llm_services import get_default_model_for_provider as _get_default
         return _get_default(provider)
     except ImportError:
         # Fallback values

@@ -17,7 +17,7 @@ from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
-from backend.processing.LLM_Services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
@@ -315,17 +315,17 @@ async def finalize_upload(
         try:
             if os.path.exists(recording_temp_dir):
                 shutil.move(recording_temp_dir, failed_path)
-                print(f"Moved failed segments to {failed_path}")
+                logger.info(f"Moved failed segments to {failed_path}")
         except Exception as move_error:
-            print(f"Failed to move segments to failed dir: {move_error}")
+            logger.error(f"Failed to move segments to failed dir: {move_error}")
             
 
         if os.path.exists(recording.audio_path):
             try:
                 os.remove(recording.audio_path)
-                print(f"Removed partial recording file: {recording.audio_path}")
+                logger.info(f"Removed partial recording file: {recording.audio_path}")
             except Exception as cleanup_error:
-                print(f"Failed to remove partial recording file: {cleanup_error}")
+                logger.error(f"Failed to remove partial recording file: {cleanup_error}")
             
         raise HTTPException(status_code=500, detail=f"Failed to concatenate segments: {str(e)}")
         
@@ -407,7 +407,7 @@ async def import_audio(
     try:
         duration = get_audio_duration(file_path)
     except Exception as e:
-        print(f"Failed to get duration: {e}")
+        logger.warning(f"Failed to get duration: {e}")
     
     # Determine recording name
     if name:
@@ -592,7 +592,7 @@ async def finalize_chunked_import(
         try:
             recording.duration_seconds = get_audio_duration(recording.audio_path)
         except Exception as e:
-            print(f"Failed to get duration: {e}")
+            logger.warning(f"Failed to get duration: {e}")
         
     except Exception as e:
         import traceback
@@ -671,7 +671,7 @@ async def upload_recording(
     try:
         duration = get_audio_duration(file_path)
     except Exception as e:
-        print(f"Failed to get duration: {e}")
+        logger.warning(f"Failed to get duration: {e}")
     
     # Create DB entry
     name = os.path.splitext(file.filename)[0]
@@ -968,7 +968,7 @@ async def stream_recording(
     file_size = os.path.getsize(file_path)
     
     # Cloudflare limit is 100MB.
-    # We use a smaller chunk size to support responsive seeking and scrubbing.
+    # Uses a smaller chunk size to support responsive seeking and scrubbing.
     # 2.5MB is approx 15 seconds of CD-quality WAV audio (44.1kHz/16bit/Stereo).
     # This balances request overhead vs. seek responsiveness.
     CHUNK_SIZE = 2500 * 1024 
@@ -1004,8 +1004,8 @@ async def stream_recording(
             pass # Fallback to default
             
     # Apply Chunk Size Limit
-    # We enforce that we never send more than CHUNK_SIZE
-    # If the client requested a huge range (or open-ended range), we clamp it.
+    # Enforces a maximum of CHUNK_SIZE bytes per response.
+    # If the client requested a huge range (or open-ended range), the value is clamped.
     chunk_end = min(end, start + CHUNK_SIZE - 1)
     end = chunk_end
 
@@ -1049,15 +1049,9 @@ async def stream_recording(
         "Expires": "0",
     }
     
-    # If the request did NOT include a Range header, we should probably return 200 OK
-    # with the first chunk, OR 206. 
-    # Standard behavior for "no range" is 200 OK with full content.
-    # But we CANNOT send full content due to Cloudflare.
-    # So we must send 206 Partial Content even if no Range was requested, 
-    # effectively forcing the client to handle partials.
-    # Most modern browsers/players handle this fine, but some strict clients might expect 200.
-    # However, returning 200 with a partial body is a protocol violation.
-    # So 206 is the correct approach here.
+    # Always return 206 Partial Content. Cloudflare's 100 MB response limit
+    # prevents serving full files; 206 is the protocol-correct approach
+    # and modern browsers/players handle it transparently.
     
     return StreamingResponse(
         iterfile(),
@@ -1165,7 +1159,7 @@ async def soft_delete_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
         
     recording.is_deleted = True
-    # recording.is_archived = False  # Keep previous state (so we can restore back to it)
+    # Preserve is_archived state so the recording can be restored to its prior view.
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

@@ -42,11 +42,7 @@ export default function LoginPage() {
       localStorage.setItem("token", response.access_token);
 
       if (response.force_password_change) {
-        // Redirect to settings with a query param or hash to open account tab
-        // Since we don't have a dedicated change password page yet, we'll send them to settings
-        // Ideally we would have a forced change password screen.
-        // Redirects to dashboard.
-        // Future improvement: Consider storing a flag in local storage to trigger a welcome modal.
+        // Persists flag so the dashboard can prompt the user to change their password.
         localStorage.setItem("force_password_change", "true");
       }
 

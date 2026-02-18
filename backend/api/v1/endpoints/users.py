@@ -73,7 +73,7 @@ async def register_user(
     try:
         await seed_demo_data(user.id)
     except Exception as e:
-        print(f"Failed to seed demo data: {e}")
+        logger.warning(f"Failed to seed demo data: {e}")
     
     return user
 
@@ -160,7 +160,7 @@ async def create_user(
     try:
         await seed_demo_data(user.id)
     except Exception as e:
-        print(f"Failed to seed demo data: {e}")
+        logger.warning(f"Failed to seed demo data: {e}")
 
     return user
 
@@ -240,7 +240,6 @@ async def read_user_me(
     """
     Get current user.
     """
-    # print(f"DEBUG: read_user_me hit for {current_user.username}")
     return current_user
 
 @router.put("/me", response_model=UserRead)

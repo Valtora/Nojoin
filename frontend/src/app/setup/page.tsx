@@ -119,7 +119,7 @@ export default function SetupPage() {
                   initialConfig.selected_model || prev.selected_model,
               }));
 
-              // If we have a model selected from env, populate available models for that provider so UI is consistent
+              // Pre-populates the available models list when a default model is set via environment variable.
               if (initialConfig.selected_model) {
                 setAvailableModels([initialConfig.selected_model]);
               }

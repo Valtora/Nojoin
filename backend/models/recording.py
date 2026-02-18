@@ -57,15 +57,7 @@ class Recording(BaseDBModel, table=True):
     context_chunks: List["ContextChunk"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 # Read Models
-# GlobalSpeakerRead is imported from .speaker to avoid circular imports if possible, 
-# but here we need it for RecordingSpeakerRead.
-# Ideally, we should import it. 
-# However, due to potential circular imports (speaker imports recording for type checking), 
-# we might need to be careful. 
-# Let's try importing it inside the file or at top if not circular.
-# Actually, speaker.py only imports Recording for TYPE_CHECKING.
-# So we can import GlobalSpeakerRead from .speaker here.
-
+# Safe to import here; speaker.py only references Recording under TYPE_CHECKING.
 from .speaker import GlobalSpeakerRead
 
 class RecordingSpeakerRead(BaseDBModel):

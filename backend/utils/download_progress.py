@@ -75,9 +75,8 @@ def set_download_progress(
             existing = None
             existing_stage = None
 
-        # If we're actively downloading, avoid decreasing the numeric progress
-        # BUT only if we are in the same stage. If stage changes (e.g. vad -> whisper),
-        # we want to allow the progress to reset to 0.
+        # Avoids decreasing the numeric progress within the same stage.
+        # If the stage changes (e.g. vad -> whisper), the progress resets to 0.
         write_progress = progress
         if status == "downloading" and existing is not None and stage == existing_stage:
             try:

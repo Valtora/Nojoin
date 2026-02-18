@@ -234,7 +234,7 @@ async def update_recording_speaker(
     for rs in recording_speakers:
         if rs.local_name: old_names.add(rs.local_name)
         if rs.name: old_names.add(rs.name)
-        # We also want to catch if the transcript has the *new* name stored directly
+        # Also captures the new name in case the transcript already stores it directly.
         old_names.add(update.global_speaker_name)
 
     for rs in recording_speakers:
@@ -491,7 +491,7 @@ async def merge_speakers(
 
         if target_rs:
             # COLLISION: Target exists in this recording.
-            # We must merge the LOCAL speakers to prevent duplicates in the meeting view.
+            # Merges the local speakers to prevent duplicates in the meeting view.
             if rs.id != target_rs.id: # Sanity check
                 await _merge_local_speakers(db, rs.recording_id, rs.diarization_label, target_rs.diarization_label)
         else:
@@ -655,8 +655,6 @@ async def get_speaker_segments(
                      text=seg["text"]
                  ))
         
-        # Add to main list (reverse to have oldest first? No, recent first usually better for selection, but we want variety)
-        # Let's just add them
         segments.extend(rec_segments)
         
         if len(segments) >= limit: 
@@ -811,9 +809,7 @@ async def split_speaker(
         rec = await db.get(Recording, rec_id)
         if not rec or rec.user_id != current_user.id: continue
         
-        # Determine a new local label for the splits
-        # We need a unique label to separate these segments in the diarization/transcript
-        # e.g. SPLIT_123456_SPEAKER_00
+        # Generate a unique label to separate split segments in the transcript
         split_label = f"SPLIT_{timestamp_suffix}_{new_speaker.id}"
         
         # Update Transcript Segments
@@ -865,7 +861,7 @@ async def split_speaker(
         
         if not existing_rs:
             # Extract embedding for this new speaker's segments in this recording
-            # We use the selected segments for extraction
+            # Uses the selected segments for embedding extraction.
             seg_tuples = [(s.start, s.end) for s in segments]
             
             # Run extraction task synchronously
@@ -919,9 +915,7 @@ async def split_speaker(
         transcript = result.scalar_one_or_none()
         if not transcript: continue
         
-        # Find segments still assigned to original speaker (by checking mapped name or global ID?)
-        # This is tricky because the transcript only has labels.
-        # We need to find which labels map to the original speaker.
+        # Identify transcript labels still mapped to the original speaker.
         
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
@@ -988,7 +982,7 @@ async def merge_recording_speakers(
         raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
 
     # 3. Find the source and target speaker entries (validation only here, logic in helper)
-    # We verify they exist to raise proper HTTP errors before calling helper
+    # Verifies existence of both entries to raise proper HTTP errors before calling the helper.
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == merge_data.source_speaker_label

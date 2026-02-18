@@ -26,9 +26,9 @@ class CheckpointFilter(logging.Filter):
         ]
 
     def filter(self, record):
-        # Check if the log message matches any of the unwanted patterns
-        # We also check if it's a DEBUG message from speechbrain.utils.checkpoints
-        # as an extra precaution, though the string match should be sufficient.
+        # Filters out unwanted log messages by pattern. Also verifies the record
+        # originates from speechbrain.utils.checkpoints at DEBUG level as an
+        # additional guard, though the string match should be sufficient.
         is_speechbrain_debug = record.name == 'speechbrain.utils.checkpoints' and record.levelno == logging.DEBUG
         
         if is_speechbrain_debug:

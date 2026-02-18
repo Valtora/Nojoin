@@ -288,7 +288,7 @@ export default function SettingsPage() {
         selectedOutputDevice,
       });
 
-      console.log("Settings saved successfully");
+
       addNotification({
         type: "success",
         message: "Settings saved successfully",

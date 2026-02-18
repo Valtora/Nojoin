@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 import httpx
-from backend.processing.LLM_Services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import get_db, get_current_admin_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -43,10 +43,9 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     if not is_initialized:
         return True
 
-    # If system is initialized, we try to authenticate the user manually
-    # We can't use Depends(get_current_admin_user) directly in the router args because
-    # it would block the unauthenticated case.
-    # So we resolve the dependency manually if needed.
+    # Initialised system: authenticate manually. Depends(get_current_admin_user)
+    # cannot be used at the router level as it would block the unauthenticated
+    # (pre-initialisation) case.
     
     auth_header = request.headers.get('Authorization')
     if not auth_header:

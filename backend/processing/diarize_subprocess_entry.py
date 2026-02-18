@@ -15,6 +15,10 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Setup logging to stdout (must be before any logger usage)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
+
 # Ensure audio environment is setup
 try:
     from backend.core.audio_setup import setup_audio_environment
@@ -22,13 +26,9 @@ try:
 except ImportError:
     # Fallback if running in a context where backend package isn't fully resolvable
     # This might happen if PYTHONPATH isn't set correctly, but the sys.path insert above should fix it.
-    print("Warning: Could not import backend.core.audio_setup")
+    logger.warning("Could not import backend.core.audio_setup")
 except ImportError:
-    print("Warning: Could not import backend.utils.hf_patch in subprocess", file=sys.stderr)
-
-# Setup logging to stdout
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-logger = logging.getLogger(__name__)
+    logger.warning("Could not import backend.utils.hf_patch in subprocess")
 
 class StdoutProgressHook:
     def __init__(self):
@@ -43,7 +43,7 @@ class StdoutProgressHook:
 # Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>
 def main():
     if len(sys.argv) < 5:
-        print("Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>", file=sys.stderr)
+        logger.error("Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>")
         sys.exit(1)
     audio_path = sys.argv[1]
     output_path = sys.argv[2]
@@ -51,7 +51,7 @@ def main():
     device_str = sys.argv[4]
 
     if not os.path.exists(audio_path):
-        print(f"Audio file not found: {audio_path}", file=sys.stderr)
+        logger.error(f"Audio file not found: {audio_path}")
         sys.exit(2)
 
     try:
@@ -66,7 +66,7 @@ def main():
             pickle.dump(diarization_result, f)
         print("DONE", flush=True)
     except Exception as e:
-        print(f"Error in offline diarization subprocess: {e}", file=sys.stderr)
+        logger.error(f"Error in offline diarization subprocess: {e}")
         traceback.print_exc(file=sys.stderr)
         sys.exit(3)
     finally:

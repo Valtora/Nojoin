@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+import logging
 import redis
 from celery import Celery, bootsteps
 from backend.core.audio_setup import setup_audio_environment
@@ -9,6 +10,8 @@ from backend.utils.logging_config import setup_logging as configure_logging
 
 # Setup audio environment (patches torchaudio)
 setup_audio_environment()
+
+logger = logging.getLogger(__name__)
 
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -56,10 +59,10 @@ class HeartbeatThread(threading.Thread):
                     r.set("nojoin:worker:heartbeat", "1", ex=self.expire)
                 except Exception as e:
                     # Log error but don't crash the thread immediately
-                    print(f"Heartbeat error: {e}")
+                    logger.warning(f"Heartbeat error: {e}")
                 time.sleep(self.interval)
         except Exception as e:
-            print(f"Heartbeat thread failed to start: {e}")
+            logger.error(f"Heartbeat thread failed to start: {e}")
 
     def stop(self):
         self.stop_event.set()

@@ -37,7 +37,7 @@ from backend.models.user import User
 from backend.models.chat import ChatMessage
 from backend.utils.config_manager import config_manager
 from backend.celery_app import celery_app
-from backend.processing.LLM_Services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend
 from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
@@ -179,8 +179,7 @@ def _parse_markdown_line(line: str) -> dict:
     if not stripped_line:
         return {"type": "empty", "content": ""}
     
-    # Calculate indent level (2 spaces = 1 level)
-    # We count leading spaces
+    # Counts leading spaces to determine indent level (2 spaces = 1 level).
     leading_spaces = len(line) - len(line.lstrip(' '))
     indent_level = leading_spaces // 2
 
@@ -529,13 +528,13 @@ async def update_segment_speaker(
     old_label = segment.get('speaker')
     
     # 2. Resolve Target Speaker
-    # We need to find the diarization_label to use for the segment.
+    # Determine the diarization_label to assign to the segment.
     
     target_label = None
     target_recording_speaker = None
     
     # Check if speaker exists in this recording (by name or global name)
-    # We need to fetch all recording speakers to check names
+    # Fetch all recording speakers for name comparison
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
     result = await db.execute(stmt)
     recording_speakers = result.scalars().all()
@@ -611,7 +610,7 @@ async def update_segment_speaker(
                 )
     except Exception as e:
         # Log error but don't fail the request
-        print(f"Failed to dispatch embedding update task: {e}")
+        logger.error(f"Failed to dispatch embedding update task: {e}")
         
     # 5. Cleanup Old Speaker (if unused)
     if old_label and old_label != target_label:
@@ -931,9 +930,7 @@ async def chat_with_meeting(
     meeting_notes = transcript_obj.notes or ""
     
     # 2. Get Chat History
-    # We only need recent history to fit in context window, but for now let's get all 
-    # and LLMBackend can handle truncation if implemented, or we truncate here.
-    # Simple truncation: last 20 messages.
+    # Retrieve full history; truncation is deferred to the LLM backend if required.
     stmt = select(ChatMessage).where(ChatMessage.recording_id == recording_id).order_by(ChatMessage.created_at)
     result = await db.execute(stmt)
     db_messages = result.scalars().all()
@@ -1010,9 +1007,7 @@ async def chat_with_meeting(
                 if chunk.meta and chunk.meta.get("source") == "transcript" and rec:
                     speaker_map = _build_speaker_map(rec.speakers)
                     # Replace raw labels with names
-                    # Iterate to replace. Since labels are usually distinct (SPEAKER_00), simple replace is okay-ish
-                    # but safer to do strict match if possible.
-                    # Given the format "SPEAKER_XX: ", we can just replace that.
+                    # Replace raw diarization labels (e.g. "SPEAKER_XX:") with resolved names.
                     for label, name in speaker_map.items():
                         if label and name and label != name:
                             content = content.replace(f"{label}:", f"{name}:")
@@ -1026,9 +1021,7 @@ async def chat_with_meeting(
             logger.error(f"RAG Retrieval failed: {e}")
             # Continue without context rather than failing
             
-    # Prepend Context to the last message or system prompt
-    # Since we are using formatted_history, we can inject a system message or augment the last user message.
-    # Augmenting last user message is usually effective.
+    # Augment the final user message with retrieved RAG context.
     
     if context_text:
         augmented_message = f"Context from related meetings/documents:\n{context_text}\n\nUser Question: {request.message}"

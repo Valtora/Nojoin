@@ -50,10 +50,6 @@ export default function BatchActionBar({
   if (selectedRecordingIds.length === 0) return null;
 
   const handleArchive = async () => {
-    console.log(
-      "[BatchActionBar] handleArchive called for:",
-      selectedRecordingIds,
-    );
     try {
       await batchArchiveRecordings(selectedRecordingIds);
       addNotification({
@@ -72,10 +68,6 @@ export default function BatchActionBar({
   };
 
   const handleRestore = async () => {
-    console.log(
-      "[BatchActionBar] handleRestore called for:",
-      selectedRecordingIds,
-    );
     try {
       await batchRestoreRecordings(selectedRecordingIds);
       addNotification({
@@ -94,10 +86,6 @@ export default function BatchActionBar({
   };
 
   const handleSoftDelete = async () => {
-    console.log(
-      "[BatchActionBar] handleSoftDelete called for:",
-      selectedRecordingIds,
-    );
     try {
       await batchSoftDeleteRecordings(selectedRecordingIds);
       addNotification({

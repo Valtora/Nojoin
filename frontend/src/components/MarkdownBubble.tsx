@@ -37,9 +37,7 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
 
   useEffect(() => {
     if (editor) {
-        // Only update if content changed significantly to avoid cursor jumps (though it's read-only)
-        // Tiptap's markdown extension might not perfectly round-trip, so be careful.
-        // For chat streaming, we want to update.
+        // Updates editor content on each change to support streaming responses.
         editor.commands.setContent(content);
     }
   }, [content, editor]);

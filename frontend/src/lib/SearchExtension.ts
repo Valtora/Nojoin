@@ -58,7 +58,7 @@ export const SearchExtension = Extension.create<any, SearchStorage>({
                     apply: (tr, oldSet) => {
                         const meta = tr.getMeta('search');
 
-                        // If we have new matches from the command, rebuild decorations
+                        // Rebuilds decorations when new match data is received from the command.
                         if (meta) {
                             const { matches, currentIndex } = meta as SearchStorage;
                             const decorations: Decoration[] = [];

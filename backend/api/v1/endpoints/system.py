@@ -151,9 +151,8 @@ async def websocket_logs(
         logger.error(f"WebSocket send error: {e}")
     finally:
         active = False
-        # Threads are daemon, they will eventually exit or be killed when app stops,
-        # but we can't easily kill them here since c.logs() is blocking.
-        # The 'active' flag tries to break the loop if new log comes in.
+        # Daemon threads exit when the process stops. The 'active' flag
+        # breaks the read loop on the next log line, since c.logs() blocks.
         try:
             await websocket.close()
         except:
@@ -269,7 +268,7 @@ async def setup_system(
         config_manager.update_config(settings)
     except Exception as e:
         # Log error but don't fail the request since DB is updated
-        print(f"Failed to update config file: {e}")
+        logger.error(f"Failed to update config file: {e}")
 
     # Seed demo data for the new admin user
     try:
@@ -478,7 +477,7 @@ async def get_companion_releases() -> Any:
             }
             
     except Exception as e:
-        print(f"Error fetching releases: {e}")
+        logger.error(f"Error fetching releases: {e}")
         # Fallback to generic releases page
         return {
             "version": None,

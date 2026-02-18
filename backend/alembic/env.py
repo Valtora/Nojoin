@@ -94,7 +94,8 @@ def run_migrations_online() -> None:
             
             # If core tables exist but alembic_version doesn't, stamp it
             if "recordings" in tables and "alembic_version" not in tables:
-                print("Database initialized but not versioned. Stamping as head.")
+                from logging import getLogger
+                getLogger(__name__).info("Database initialised but not versioned. Stamping as head.")
                 context.stamp(context.config, "head")
 
             context.run_migrations()

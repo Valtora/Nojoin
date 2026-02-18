@@ -388,9 +388,6 @@ export const exportContent = async (
   contentType: ExportContentType = "transcript",
   format: ExportFormat = "txt",
 ): Promise<void> => {
-  console.log(
-    `[exportContent] Initiating export for recording ${recordingId}, type: ${contentType}, format: ${format}`,
-  );
   try {
     const response = await api.get(`/transcripts/${recordingId}/export`, {
       params: {
@@ -399,8 +396,6 @@ export const exportContent = async (
       },
       responseType: "blob",
     });
-    console.log("[exportContent] Response received, status:", response.status);
-    console.log("[exportContent] Headers:", response.headers);
 
     // Create a link and click it to download
     const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -1077,7 +1072,7 @@ export const streamChatMessage = (
     })
     .catch((err) => {
       if (err.name === "AbortError") {
-        console.log("Stream aborted");
+        return;
       } else {
         onError(err.message || "Network error");
       }
@@ -1219,10 +1214,7 @@ export const importBackup = async (
             }
             // If 'pending' or 'processing', continue polling
           } catch (err: any) {
-            // If polling fails (network error), maybe retry or fail?
-            // For now, log and assume temporary network glitch, but if 404/500 repeatedly...
-            console.warn("Polling status failed", err);
-            // If 404, job lost?
+            // Retries on transient network errors; aborts on 404 (lost job).
             if (err.response && err.response.status === 404) {
               clearInterval(pollInterval);
               reject(new Error("Restore job lost on server"));
@@ -1234,9 +1226,7 @@ export const importBackup = async (
 
     // Immediate success (fallback if backend logic changes)
     if (onProgress) onProgress(100);
-    // If no jobId, it means the operation completed synchronously (e.g., for small files or older API versions)
-    // In this case, the backend would have returned a 200 OK directly, and we don't need to poll.
-    // The Promise<void> return type means we don't return response.data here.
+    // Synchronous completion fallback for older API versions or small files.
     return;
   } catch (error) {
     throw error;

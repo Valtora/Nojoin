@@ -240,7 +240,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                 # But hard cap is usually max_duration_s (10s) passed in.
                 # If the user wants a soft limit up to 12s, they should ideally pass max_duration_s=12.0
                 # However, the requirement says "limit to 10s... soft limit 8-12s".
-                # Let's interpret max_duration_s as the "ideal target" (10s).
+                # Treats max_duration_s as the ideal target (10s).
                 
                 # Logic:
                 # 1. Look for a sentence break (.!?) between curr_start + 8s and curr_start + 12s.
@@ -289,8 +289,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                 elif best_word_idx != -1:
                     split_idx = best_word_idx
                 else:
-                    # Fallback: Just slice at 10s if we couldn't find anything in 8-12s window
-                    # (e.g. maybe the first word ends at 13s? rare)
+                    # Fallback: split at 10s if no candidate found in the 8-12s window
                     # Find first word ending after 10s
                     split_idx = -1
                     for idx, w in enumerate(curr_words):
@@ -380,9 +379,8 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                 # Now we set up the remainder as the new 'curr' for the next iteration of the loop
                 # But we can't easily modify `segments` list in place safely or insert.
                 # Easiest way: Update `segments[i]` to be the remainder and STAY on `i` (don't increment).
-                # BUT we need to avoid infinite loops if we don't make progress.
-                # Since `split_end` > `curr_start` (guaranteed by max_duration_s > 0), the remainder is shorter.
-                # Eventually it will be < max_duration_s.
+                # Infinite-loop safety: split_end > curr_start is guaranteed by max_duration_s > 0,
+                # so the remainder shrinks on each iteration.
                 
                 segments[i] = {
                     'start': split_end,

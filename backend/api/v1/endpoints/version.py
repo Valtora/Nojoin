@@ -56,10 +56,7 @@ async def get_version():
             if cached_data.latest_version:
                  cur = current_version.lstrip('v')
                  lat = cached_data.latest_version.lstrip('v')
-                 # Check if the latest version from main is newer than current
-                 # We simply compare strings for inequality if lengths match, or rely on semantic if possible
-                 # But keeping it simple: if strings differ and "latest" is intuitively "larger/newer"
-                 # Since we control both, we assume main's VERSION > local if different and reasonable.
+                 # Flags an update as available when the local and remote version strings differ.
                  cached_data.is_update_available = cur != lat
             
             return cached_data

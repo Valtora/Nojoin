@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 import os
 import time
+import logging
 from sqlalchemy.exc import OperationalError
 from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import SQLModel, Session, text, select
@@ -14,6 +15,8 @@ from alembic.config import Config
 from alembic import command
 
 setup_audio_environment()
+
+logger = logging.getLogger(__name__)
 
 # Import models to register them with SQLModel
 from backend.models.recording import Recording
@@ -38,19 +41,19 @@ async def ensure_owner_exists():
         owner = result.scalar_one_or_none()
         
         if not owner:
-            print("No owner found. Promoting the first user to OWNER.")
+            logger.warning("No owner found. Promoting the first user to OWNER.")
             # If no owner, promote the first user
             query = select(User).order_by(User.id).limit(1)
             result = await session.execute(query)
             first_user = result.scalar_one_or_none()
             
             if first_user:
-                print(f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER")
+                logger.info(f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER")
                 first_user.role = "owner"
                 session.add(first_user)
                 await session.commit()
             else:
-                print("No users found to promote.")
+                logger.warning("No users found to promote.")
 
 
 def run_migrations():
@@ -58,18 +61,18 @@ def run_migrations():
     max_retries = 30
     retry_interval = 1
     
-    print("Waiting for database connection...")
+    logger.info("Waiting for database connection...")
     for i in range(max_retries):
         try:
             with sync_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            print("Database connection established.")
+            logger.info("Database connection established.")
             break
         except OperationalError:
             if i == max_retries - 1:
-                print("Could not connect to database after multiple retries.")
+                logger.error("Could not connect to database after multiple retries.")
                 raise
-            print(f"Database not ready, retrying in {retry_interval}s...")
+            logger.info(f"Database not ready, retrying in {retry_interval}s...")
             time.sleep(retry_interval)
 
     try:
@@ -78,7 +81,7 @@ def run_migrations():
         # Use the same python interpreter to run alembic module
         subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
     except Exception as e:
-        print(f"Error running migrations: {e}")
+        logger.error(f"Error running migrations: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,7 +91,7 @@ async def lifespan(app: FastAPI):
     try:
         await seed_demo_data()
     except Exception as e:
-        print(f"Failed to seed demo data on startup: {e}")
+        logger.error(f"Failed to seed demo data on startup: {e}")
     yield
 
 app = FastAPI(

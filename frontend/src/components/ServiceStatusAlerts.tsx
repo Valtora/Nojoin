@@ -99,7 +99,7 @@ export default function ServiceStatusAlerts() {
 
       // Companion
       if (!companion && !notificationIds.current.companion) {
-        // Only show error if not in startup grace period AND we have > 2 failures
+        // Displays error only after the startup grace period with > 2 consecutive failures.
         if (!isStartupRef.current && companionFailCount > 2) {
           notificationIds.current.companion = addNotification({
             type: "error",

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
-from backend.processing.LLM_Services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import get_current_user
 import logging
 

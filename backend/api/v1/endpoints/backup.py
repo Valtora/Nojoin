@@ -22,7 +22,7 @@ async def export_backup(
     """
     try:
         # Trigger Celery task
-        # We use send_task to avoid importing the task function directly (which avoids heavy imports here)
+        # Uses send_task to avoid importing the task function directly (bypasses heavy imports).
         task = celery_app.send_task(
             "backend.worker.tasks.create_backup_task",
             kwargs={"include_audio": include_audio}
@@ -224,7 +224,7 @@ async def complete_upload(
     restore_temp_dir.mkdir(parents=True, exist_ok=True)
     
     job_id = str(uuid.uuid4())
-    # We don't know the original filename here easily without persistence, using ID
+    # The original filename is not readily available; the job ID is used instead.
     final_path = restore_temp_dir / f"{job_id}_restored.zip"
     
     try:

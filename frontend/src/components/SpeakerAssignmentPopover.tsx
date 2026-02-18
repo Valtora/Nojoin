@@ -38,12 +38,7 @@ export default function SpeakerAssignmentPopover({
         const spaceAbove = rect.top;
         const popoverHeight = 300; // Approximate max height
 
-        // If not enough space below, show above
-        if (spaceBelow < popoverHeight && spaceAbove > popoverHeight) {
-          // top = rect.top + window.scrollY - popoverHeight; // This is rough, better to let it flow or measure
-          // Actually, let's just stick to below for now unless requested,
-          // but to be safe let's just use rect.bottom + scrollY
-        }
+        // Reserved for above-viewport positioning if space below is insufficient.
 
         setPosition({
           top: rect.bottom + window.scrollY,
@@ -52,10 +47,7 @@ export default function SpeakerAssignmentPopover({
       };
 
       updatePosition();
-      // We need to update position on scroll/resize to keep it attached visually
-      // although with a portal it might detach if we don't track it perfectly.
-      // A simpler approach for a modal-like popover is to close it on scroll,
-      // but let's try to track it.
+      // Re-calculates position on scroll and resize to keep the popover anchored.
       window.addEventListener("resize", updatePosition);
       window.addEventListener("scroll", updatePosition, true);
 

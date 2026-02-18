@@ -243,14 +243,8 @@ export function PeopleTable({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      // For button click, standard positioning relative to button is fine, or cursor
-                      // User asked for "opens up to the left of the cursor" generally, but here it's a specific button click.
-                      // Let's rely on clientX/Y for consistent behavior if triggered by click,
-                      // OR just use rect.right but ensure ContextMenu handles left-shift logic.
-                      // The user said: "The context menu that opens up where 'Edit Details' can be selected often opens up to the right of the cursor... Ensure the context menu opens up to the left of the cursor."
-                      // We updated ContextMenu.tsx to handle shifting.
-                      // However, for the button click, we should perhaps pass the button location?
-                      // Actually, let's just pass clientX/Y of the click if possible, or Button rect.
+                      // Anchors the context menu to the button's bounding rectangle; the
+                      // ContextMenu component handles viewport-edge shifting internally.
                       const rect = e.currentTarget.getBoundingClientRect();
                       setContextMenu({
                         x: rect.right, // ContextMenu handles shifting.

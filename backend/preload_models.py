@@ -215,10 +215,9 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
              url = "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
 
         if not url:
-             # Fallback if model size not in our local dict, try to let whisper handle it or error
+             # Fallback: model size not in local dict; attempt resolution via whisper internals.
              logger.warning(f"Unknown whisper model size: {whisper_model_size}, letting whisper handle it.")
-             # We can't get URL easily without importing whisper._MODELS which we want to avoid at top level
-             # But here we HAVE imported whisper.
+             # whisper is already imported; attempt to resolve via whisper._MODELS.
              if hasattr(whisper, "_MODELS"):
                  url = whisper._MODELS.get(whisper_model_size)
 
@@ -247,8 +246,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     
     if hf_token:
         try:
-            # We just need to download it, not necessarily run it.
-            # from_pretrained will download and cache it.
+            # from_pretrained downloads and caches the pipeline.
             Pipeline.from_pretrained(pipeline_name, token=hf_token)
             report(f"Pyannote pipeline ({pipeline_name}) loaded.", 100, stage="pyannote")
         except OSError as e:
@@ -281,15 +279,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             # The error message suggests adding torch.torch_version.TorchVersion
             try:
                 import torch
-                # We need to allowlist specific globals that might be in the checkpoint
-                # Based on the error: torch.torch_version.TorchVersion
-                # And potentially others.
-                # Since we trust the source (Hugging Face pyannote official), we can try to be permissive
-                # or just add the specific one requested.
+                # Allowlist checkpoint globals required by the Pyannote embedding model.
                 
                 # Note: torch.serialization.add_safe_globals is available in newer torch versions
                 if hasattr(torch.serialization, 'add_safe_globals'):
-                    # We need to import the class to add it
+                    # Import and register the class with torch safe globals.
                     from torch.torch_version import TorchVersion
                     torch.serialization.add_safe_globals([TorchVersion])
             except ImportError:
