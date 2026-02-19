@@ -86,6 +86,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   has_voiceprint?: boolean;
   global_speaker?: GlobalSpeaker;
   color?: string;
+  merged_into_id?: number | null;
 }
 
 export type ExportContentType = "transcript" | "notes" | "both";

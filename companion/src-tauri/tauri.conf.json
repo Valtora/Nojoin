@@ -35,7 +35,7 @@
   },
   "productName": "Nojoin",
   "mainBinaryName": "Nojoin",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "identifier": "com.valtora.nojoin.companion",
   "plugins": {},
   "app": {

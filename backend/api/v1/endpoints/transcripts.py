@@ -414,6 +414,10 @@ async def export_content(
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
 
+    # Exclude soft-merged speakers from export output
+    if recording.speakers:
+        recording.speakers = [s for s in recording.speakers if not s.merged_into_id]
+
     # 2. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(stmt)

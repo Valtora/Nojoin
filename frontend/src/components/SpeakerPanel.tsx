@@ -108,8 +108,9 @@ export default function SpeakerPanel({
     );
   };
 
-  // Deduplicate speakers based on diarization_label
+  // Filter out soft-merged speakers, then deduplicate by diarization_label
   const uniqueSpeakers = speakers
+    .filter((s) => !s.merged_into_id)
     .reduce((acc, current) => {
       const x = acc.find(
         (item) => item.diarization_label === current.diarization_label,
