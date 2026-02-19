@@ -117,6 +117,7 @@ export interface Tag extends BaseDBModel {
 export interface Recording extends BaseDBModel {
   name: string;
   audio_path: string;
+  has_proxy?: boolean;
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;

@@ -1,8 +1,8 @@
 "use client";
 
-import { Recording } from "@/types";
+import { Recording, RecordingStatus } from "@/types";
 import { getRecordingStreamUrl } from "@/lib/api";
-import { Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface AudioPlayerProps {
@@ -128,6 +128,35 @@ export default function AudioPlayer({
     }
   };
 
+  // Proxy audio not yet available -- disable playback
+  const proxyUnavailable = recording.has_proxy === false &&
+    recording.status !== RecordingStatus.UPLOADING;
+
+  if (proxyUnavailable) {
+    return (
+      <div
+        id="audio-player"
+        className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center justify-center gap-4 shadow-sm relative overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
+          <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-sm font-medium border border-blue-200 dark:border-blue-800 flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Audio is being processed, please wait...
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4 w-full opacity-30 pointer-events-none filter blur-[1px]">
+          <button className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-400 text-white">
+            <Play className="w-5 h-5 fill-current ml-0.5" />
+          </button>
+          <div className="flex-1 flex flex-col gap-1">
+            <div className="w-full h-2.5 bg-gray-200 rounded-full"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (hasError) {
     return (
       <div
@@ -155,7 +184,7 @@ export default function AudioPlayer({
         <audio
           ref={audioRef}
           src={getRecordingStreamUrl(recording.id)}
-          preload="metadata"
+          preload="auto"
           className="hidden"
         />
       </div>
@@ -170,7 +199,7 @@ export default function AudioPlayer({
       <audio
         ref={audioRef}
         src={getRecordingStreamUrl(recording.id)}
-        preload="metadata"
+        preload="auto"
       />
 
       {/* Play/Pause Button */}

@@ -84,6 +84,7 @@ class TagRead(BaseDBModel):
 class RecordingRead(BaseDBModel):
     name: str
     audio_path: str
+    has_proxy: bool = False
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus

@@ -164,8 +164,7 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
 
 def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
     """
-    Convert audio to mono 16kHz MP3 (64kbps) for proxy playback.
-    Enforcing 16kHz mono ensures alignment with the transcript which is generated from 16kHz mono audio.
+    Convert audio to 48kHz mono MP3 (128kbps) for proxy playback.
     Returns True if successful, False otherwise.
     """
     ensure_ffmpeg_in_path()
@@ -185,10 +184,10 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
         "ffmpeg",
         "-y",
         "-i", input_path,
-        "-ar", "48000",   # 48kHz (Match source/Standard Video Audio)
-        "-ac", "2",       # Stereo (Required for high bitrate compatibility)
+        "-ar", "48000",   # 48kHz sample rate
+        "-ac", "1",       # Mono (speech-optimised)
         "-codec:a", "libmp3lame",
-        "-b:a", "192k",   # High quality bitrate (Near CD)
+        "-b:a", "128k",   # Transparent quality for speech
         "-f", "mp3",      # Force MP3 format
         final_output_path
     ]

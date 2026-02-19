@@ -834,6 +834,7 @@ async def get_recording(
         
     # Transform tags for response model
     recording_dict = recording.model_dump()
+    recording_dict['has_proxy'] = bool(recording.proxy_path and os.path.exists(recording.proxy_path))
     
     # Manually populate relationships
     if recording.transcript:
@@ -944,26 +945,17 @@ async def stream_recording(
     if not recording.audio_path or not os.path.exists(recording.audio_path):
         raise HTTPException(status_code=404, detail="Audio file not found on server")
         
-    # Check for proxy file first
-    file_path = recording.audio_path
-    media_type = "audio/wav" # Default fallback
-    
-    if recording.proxy_path and os.path.exists(recording.proxy_path):
-        file_path = recording.proxy_path
-        media_type = "audio/mpeg"
-    else:
-        # Fallback to original file
-        ext = os.path.splitext(recording.audio_path)[1].lower()
-        if ext == ".opus":
-            media_type = "audio/ogg"
-        elif ext == ".mp3":
-            media_type = "audio/mpeg"
-        elif ext == ".m4a":
-            media_type = "audio/mp4"
-        elif ext == ".ogg":
-            media_type = "audio/ogg"
-        elif ext == ".flac":
-            media_type = "audio/flac"
+    # Only serve the proxy MP3. Raw audio formats (WAV, etc.) cannot be
+    # chunked via 206 because subsequent chunks lack the header needed
+    # for the browser to decode sample rate, bit depth, and channels.
+    if not recording.proxy_path or not os.path.exists(recording.proxy_path):
+        raise HTTPException(
+            status_code=202,
+            detail="Audio proxy is being prepared. Please try again shortly."
+        )
+
+    file_path = recording.proxy_path
+    media_type = "audio/mpeg"
         
     file_size = os.path.getsize(file_path)
     
@@ -973,11 +965,13 @@ async def stream_recording(
     # This balances request overhead vs. seek responsiveness.
     CHUNK_SIZE = 2500 * 1024 
     
+    is_range_request = False
     start = 0
     end = min(file_size - 1, CHUNK_SIZE - 1)
     
     range_header = request.headers.get("range")
     if range_header:
+        is_range_request = True
         try:
             # Parse "bytes=0-" or "bytes=0-100" or "bytes=-500"
             range_str = range_header.replace("bytes=", "")
@@ -1023,11 +1017,6 @@ async def stream_recording(
     # Calculate content length for this chunk
     content_length = end - start + 1
     
-    # WAV Header Handling for Partial Content
-    # If the request starts at 0, we are sending the WAV header.
-    # If the request starts later, we are sending raw PCM data.
-    # Browsers are generally smart enough to handle this for WAVs.
-    
     async def iterfile():
         async with aiofiles.open(file_path, "rb") as f:
             await f.seek(start)
@@ -1040,22 +1029,25 @@ async def stream_recording(
                 yield data
                 bytes_to_read -= len(data)
                 
+    # Proxy MP3 files are immutable after generation; allow browser caching.
+    cache_control = "private, max-age=3600"
+
+    # Return 200 for non-Range requests when the entire file fits in the chunk.
+    # Return 206 for Range requests or when chunking is required.
+    use_partial = is_range_request or content_length < file_size
+
     headers = {
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Accept-Ranges": "bytes",
         "Content-Length": str(content_length),
-        "Cache-Control": "no-cache, no-store, must-revalidate", # Prevent caching of partial responses
-        "Pragma": "no-cache",
-        "Expires": "0",
+        "Cache-Control": cache_control,
     }
-    
-    # Always return 206 Partial Content. Cloudflare's 100 MB response limit
-    # prevents serving full files; 206 is the protocol-correct approach
-    # and modern browsers/players handle it transparently.
-    
+
+    if use_partial:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+
     return StreamingResponse(
         iterfile(),
-        status_code=206,
+        status_code=206 if use_partial else 200,
         headers=headers,
         media_type=media_type
     )

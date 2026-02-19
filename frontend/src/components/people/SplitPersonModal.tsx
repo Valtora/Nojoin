@@ -116,14 +116,23 @@ export default function SplitPersonModal({
 
     const url = getRecordingStreamUrl(segment.recording_id);
     const audio = new Audio(url);
-    audio.currentTime = segment.start;
-
-    audio.play().catch((e) => {
-      console.error("Audio play error", e);
-      addNotification({ type: "error", message: "Failed to play audio." });
-    });
+    audio.preload = "auto";
 
     const stopTime = segment.end;
+
+    const seekAndPlay = () => {
+      audio.currentTime = segment.start;
+      audio.play().catch((e) => {
+        console.error("Audio play error", e);
+        addNotification({ type: "error", message: "Failed to play audio." });
+      });
+    };
+
+    if (audio.readyState >= 1) {
+      seekAndPlay();
+    } else {
+      audio.addEventListener("loadedmetadata", seekAndPlay, { once: true });
+    }
 
     const timeUpdateHandler = () => {
       if (audio.currentTime >= stopTime) {
