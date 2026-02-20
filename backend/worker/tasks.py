@@ -65,7 +65,7 @@ def process_recording_task(self, recording_id: int):
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
-    from backend.processing.embedding import cosine_similarity, merge_embeddings
+    from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
     from backend.processing.llm_services import get_llm_backend
@@ -457,17 +457,15 @@ def process_recording_task(self, recording_id: int):
                     if not placeholder_pattern.match(gs.name) and gs.embedding and len(gs.embedding) > 0 and not any(x is None for x in gs.embedding)
                 ]
                 
-                best_match = None
-                best_score = 0.0
-                SIMILARITY_THRESHOLD = 0.65 # Adjust based on model (wespeaker usually needs ~0.5-0.7)
+                # Use centralized matching logic with 0.75 threshold and margin of victory
+                best_match, best_score = find_matching_global_speaker(
+                    embedding, 
+                    global_speakers,
+                    threshold=0.75,
+                    margin=0.05
+                )
                 
-                for gs in global_speakers:
-                    score = cosine_similarity(embedding, gs.embedding)
-                    if score > best_score:
-                        best_score = score
-                        best_match = gs
-                
-                if best_match and best_score > SIMILARITY_THRESHOLD:
+                if best_match:
                     logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
                     resolved_name = best_match.name
                     global_speaker_id = best_match.id

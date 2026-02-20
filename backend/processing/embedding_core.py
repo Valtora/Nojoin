@@ -103,12 +103,19 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                 speaker_segments[label] = []
             speaker_segments[label].append(turn)
             
-        # For each speaker, extract embedding from the longest segment(s)
+        # For each speaker, extract embedding from the longest high-quality segment(s).
         # Averages embeddings from multiple segments for robustness.
         for label, segments in speaker_segments.items():
-            # Sort by duration, take top 3
-            segments.sort(key=lambda s: s.duration, reverse=True)
-            top_segments = segments[:3]
+            # Filter out segments that are too short to provide a reliable voiceprint (< 0.5s)
+            valid_segments = [s for s in segments if s.duration >= 0.5]
+            
+            # If no valid segments exist, fall back to whatever segments are available
+            if not valid_segments:
+                valid_segments = segments
+                
+            # Sort by duration, take top 10 segments for a more robust average
+            valid_segments.sort(key=lambda s: s.duration, reverse=True)
+            top_segments = valid_segments[:10]
             
             speaker_embeddings = []
             for seg in top_segments:
@@ -228,42 +235,3 @@ def extract_embedding_for_segments(
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
         return None
-
-
-def find_matching_global_speaker(
-    embedding: List[float],
-    global_speakers: List,
-    threshold: float = 0.65
-) -> Tuple[Optional[object], float]:
-    """
-    Find the best matching GlobalSpeaker for a given embedding.
-    
-    Args:
-        embedding: The embedding vector to match.
-        global_speakers: List of GlobalSpeaker objects with embeddings.
-        threshold: Minimum similarity score to consider a match.
-        
-    Returns:
-        Tuple of (best_matching_speaker, similarity_score).
-        Returns (None, 0.0) if no match above threshold.
-    """
-    import re
-    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE)
-    
-    best_match = None
-    best_score = 0.0
-    
-    for gs in global_speakers:
-        # Skip placeholder names and speakers without embeddings
-        if not gs.embedding or placeholder_pattern.match(gs.name):
-            continue
-            
-        score = cosine_similarity(embedding, gs.embedding)
-        if score > best_score:
-            best_score = score
-            best_match = gs
-    
-    if best_match and best_score >= threshold:
-        return best_match, best_score
-    
-    return None, best_score

@@ -49,7 +49,8 @@ def merge_embeddings(current_embedding: List[float], new_embedding: List[float],
 def find_matching_global_speaker(
     embedding: List[float],
     global_speakers: List,
-    threshold: float = 0.65
+    threshold: float = 0.75,
+    margin: float = 0.05
 ):
     """
     Find the best matching GlobalSpeaker for a given embedding.
@@ -58,16 +59,19 @@ def find_matching_global_speaker(
         embedding: The embedding vector to match.
         global_speakers: List of GlobalSpeaker objects with embeddings.
         threshold: Minimum similarity score to consider a match.
+        margin: The minimum difference required between the best and second best match
+                to avoid ambiguous assignments.
         
     Returns:
         Tuple of (best_matching_speaker, similarity_score).
-        Returns (None, 0.0) if no match above threshold.
+        Returns (None, 0.0) if no match above threshold or if match is ambiguous.
     """
     import re
     placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE)
     
     best_match = None
     best_score = 0.0
+    second_best_score = 0.0
     
     for gs in global_speakers:
         # Skip placeholder names and speakers without embeddings
@@ -75,11 +79,21 @@ def find_matching_global_speaker(
             continue
             
         score = cosine_similarity(embedding, gs.embedding)
+        
         if score > best_score:
+            second_best_score = best_score
             best_score = score
             best_match = gs
-    
+        elif score > second_best_score:
+            second_best_score = score
+            
+    # Check if the best match passes the threshold
     if best_match and best_score >= threshold:
-        return best_match, best_score
-    
+        # Check for ambiguity using the margin of victory
+        if (best_score - second_best_score) >= margin:
+            return best_match, best_score
+        else:
+            # It's an ambiguous match, better to return nothing than a false positive
+            return None, 0.0
+            
     return None, best_score

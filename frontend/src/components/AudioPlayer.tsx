@@ -129,9 +129,13 @@ export default function AudioPlayer({
   };
 
   // Proxy audio not yet available -- disable playback
+  // The demo recording ("Welcome to Nojoin") intentionally has no proxy audio
+  const isDemo = recording.name === "Welcome to Nojoin";
   const proxyUnavailable = recording.has_proxy === false &&
-    recording.status !== RecordingStatus.UPLOADING;
+    recording.status !== RecordingStatus.UPLOADING &&
+    !isDemo;
 
+  // Render the "processing" disabled state if proxy is unavailable
   if (proxyUnavailable) {
     return (
       <div
