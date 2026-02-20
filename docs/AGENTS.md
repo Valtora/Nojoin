@@ -4,7 +4,7 @@
 
 Nojoin is a distributed meeting intelligence platform. The system records system audio via a local Rust companion app, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
 
-**Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Privacy First (Self-hosted).
+**Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Configurable Privacy (Self-hosted with optional local-only AI).
 
 ## Architecture & Patterns
 

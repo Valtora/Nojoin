@@ -42,7 +42,7 @@
 
 Most meeting assistants require users to invite bots to join meetings or upload sensitive business conversations to the cloud. Nojoin offers a different approach.
 
-- **Privacy First:** Audio and transcripts remain on the user's server (unless explicitly configured for external LLM processing).
+- **Configurable Privacy:** Audio and transcripts remain on your server. Using remote LLM features will send transcripts to external providers. For 100% privacy, configure a local Ollama instance.
 - **Unlimited:** No monthly limits on recording minutes.
 - **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
 - **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
@@ -178,7 +178,7 @@ To enable speaker diarization (identifying who is speaking), a Hugging Face toke
 
 **To use the meeting note generation, speaker/title inference, and meeting chat features, an API key from one of the supported providers is required.**
 
-**Privacy Note:** If cloud-based LLM providers (OpenAI, Anthropic, Google Gemini) are used, meeting transcripts and notes will be sent to their API for processing. To keep everything 100% local, use **Ollama**.
+**Privacy Note:** Configuring a cloud-based LLM provider (OpenAI, Anthropic, Google Gemini) trades absolute privacy for these features, as meeting transcripts and notes will be sent to their APIs for processing. A pure private mode where data never leaves your environment is achievable **only** by using a local **Ollama** instance.
 
 - **OpenAI**
 - **Anthropic**

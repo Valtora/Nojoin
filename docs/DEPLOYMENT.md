@@ -47,6 +47,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 
 - **Setup Wizard:** Collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account.
   - Can be pre-filled via Environment Variables (e.g., `HF_TOKEN`, `GEMINI_API_KEY`) to streamline deployment.
+  - **Privacy Note:** To deploy Nojoin in a pure 'Private' mode where no data leaves your server, explicitly configure it to use Ollama as the LLM provider. Using other remote providers (OpenAI, Anthropic, Gemini) will send meeting transcripts to these external services for processing.
 - **Database Initialization:** Automatically handles schema creation and migrations on startup.
 
 ### Companion Config
@@ -71,11 +72,11 @@ Configuration is split between system-wide infrastructure settings and user-spec
 
 The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
 
-| Variable | Description |
-| --- | --- |
-| `HF_TOKEN` | Hugging Face User Access Token (Read) |
-| `LLM_PROVIDER` | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`) |
-| `GEMINI_API_KEY` | Google Gemini API Key |
-| `OPENAI_API_KEY` | OpenAI API Key |
-| `ANTHROPIC_API_KEY` | Anthropic API Key |
-| `OLLAMA_API_URL` | Ollama API URL (default: `http://host.docker.internal:11434`) |
+| Variable            | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `HF_TOKEN`          | Hugging Face User Access Token (Read)                            |
+| `LLM_PROVIDER`      | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`) |
+| `GEMINI_API_KEY`    | Google Gemini API Key                                            |
+| `OPENAI_API_KEY`    | OpenAI API Key                                                   |
+| `ANTHROPIC_API_KEY` | Anthropic API Key                                                |
+| `OLLAMA_API_URL`    | Ollama API URL (default: `http://host.docker.internal:11434`)    |

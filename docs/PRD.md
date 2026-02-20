@@ -9,7 +9,7 @@
 
 - **Centralized Intelligence:** Computationally intensive tasks (Whisper/Pyannote) are executed on a dedicated server.
 - **Ubiquitous Access:** Meeting management and viewing are accessible from any device with a web browser.
-- **Privacy First:** The self-hosted architecture ensures audio and transcripts remain within the user's control unless explicitly configured for external LLM services.
+- **Configurable Privacy:** The self-hosted architecture ensures audio and transcripts remain within the user's control. Users can run Nojoin in a pure 'Private' mode using a local Ollama instance for AI features. Utilizing remote LLM features (OpenAI, Anthropic, Gemini) will send transcripts to external providers.
 
 ---
 

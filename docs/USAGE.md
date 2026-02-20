@@ -143,6 +143,7 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
 - **AI Settings:**
   - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.
   - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
+    - **Privacy Note:** Using a remote LLM provider (OpenAI, Anthropic, Gemini) will send your meeting transcripts to external services. For a pure private mode where data never leaves your server, you must configure a local Ollama instance.
 - **Help:**
   - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
   - **Report a Bug:** Direct link to report issues on the GitHub repository.
