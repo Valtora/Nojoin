@@ -64,8 +64,8 @@ Configuration is split between system-wide infrastructure settings and user-spec
 - **HTTPS Enforcement:** HTTP requests to port 14141 are redirected to HTTPS on port 14443.
 - **Authentication:** JWT-based authentication.
 - **JWT Secret Key:** Automatically generated on first startup and persisted to `data/.secret_key`. Can be overridden by the `SECRET_KEY` environment variable.
-- **CORS & Remote Access:**
-  - **CORS:** Configurable via the `ALLOWED_ORIGINS` environment variable.
+- **CORS, Security & Remote Access:**
+  - **CORS & Host Whitelist:** Configurable via the `ALLOWED_ORIGINS` environment variable. This also acts as an allow-list to prevent Host Header Injection on generated invitation links.
   - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
 
 ### Environment Variables

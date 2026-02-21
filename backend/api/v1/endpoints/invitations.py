@@ -30,6 +30,9 @@ class InvitationRead(BaseModel):
     link: str
     users: List[str] = []
 
+import os
+from urllib.parse import urlparse
+
 def get_invite_base_url(request: Request) -> str:
     system_config = config_manager.config
     web_app_url = system_config.get("web_app_url", "https://localhost:14443")
@@ -40,12 +43,31 @@ def get_invite_base_url(request: Request) -> str:
         forwarded_host = request.headers.get("x-forwarded-host")
         forwarded_proto = request.headers.get("x-forwarded-proto", "https")
         
-        if forwarded_host:
+        allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
+        allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
+        
+        def is_host_allowed(host: str) -> bool:
+            if not host:
+                return False
+            host_without_port = host.split(":")[0]
+            if host_without_port in ["localhost", "127.0.0.1"]:
+                return True
+            for origin in allowed_origins:
+                try:
+                    parsed = urlparse(origin)
+                    if parsed.hostname == host_without_port or parsed.netloc == host:
+                        return True
+                except:
+                    pass
+            return False
+        
+        if forwarded_host and is_host_allowed(forwarded_host):
             return f"{forwarded_proto}://{forwarded_host}"
             
         # Fallback to the request's base URL if not behind a proxy or headers missing
-        # request.base_url returns a URL object, convert to string
-        return str(request.base_url).rstrip("/")
+        if is_host_allowed(request.base_url.hostname):
+            # request.base_url returns a URL object, convert to string
+            return str(request.base_url).rstrip("/")
         
     return web_app_url
 

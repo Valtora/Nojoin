@@ -233,13 +233,14 @@ async def upload_segment(
     recording_id: int,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Upload a segment for a recording.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     if recording.status != RecordingStatus.UPLOADING:
@@ -264,13 +265,14 @@ async def upload_segment(
 @router.post("/{recording_id}/finalize", response_model=Recording)
 async def finalize_upload(
     recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Finalize the upload, concatenate segments, and trigger processing.
     """
     recording = await db.get(Recording, recording_id)
-    if not recording:
+    if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
     if recording.status != RecordingStatus.UPLOADING:

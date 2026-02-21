@@ -32,7 +32,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
       // 2. Check if user is authenticated
       const token = localStorage.getItem('token');
-      const publicPaths = ['/login', '/setup'];
+      const publicPaths = ['/login', '/setup', '/register'];
       
       if (!token && !publicPaths.includes(pathname || '')) {
         router.push('/login');
