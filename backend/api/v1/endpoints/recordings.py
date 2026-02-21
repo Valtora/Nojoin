@@ -353,7 +353,6 @@ async def finalize_upload(
 
 # Supported audio formats for import
 SUPPORTED_AUDIO_FORMATS = {'.wav', '.mp3', '.m4a', '.aac', '.webm', '.ogg', '.flac', '.mp4', '.wma', '.opus'}
-MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
 
 
 @router.post("/import", response_model=Recording)
@@ -380,19 +379,10 @@ async def import_audio(
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = os.path.join(RECORDINGS_DIR, unique_filename)
     
-    # Save the file with size validation
+    # Save the file
     try:
-        total_size = 0
         async with aiofiles.open(file_path, 'wb') as out_file:
             while chunk := await file.read(1024 * 1024):  # Read in 1MB chunks
-                total_size += len(chunk)
-                if total_size > MAX_UPLOAD_SIZE_BYTES:
-                    await out_file.close()
-                    os.remove(file_path)
-                    raise HTTPException(
-                        status_code=413, 
-                        detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB"
-                    )
                 await out_file.write(chunk)
     except HTTPException:
         raise

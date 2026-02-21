@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, FileAudio, Loader2, CheckCircle, AlertCircle, Calendar, FileText } from 'lucide-react';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
-import { importAudio, getSupportedAudioFormats, getMaxUploadSizeMB } from '@/lib/api';
+import { importAudio, getSupportedAudioFormats } from '@/lib/api';
 
 interface ImportAudioModalProps {
   isOpen: boolean;
@@ -41,7 +41,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const supportedFormats = getSupportedAudioFormats();
-  const maxSizeMB = getMaxUploadSizeMB();
 
   useEffect(() => {
     setMounted(true);
@@ -68,9 +67,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     const extension = getFileExtension(file.name);
     if (!supportedFormats.includes(extension)) {
       return `Unsupported format "${extension}". Supported: ${supportedFormats.join(', ')}`;
-    }
-    if (file.size > maxSizeMB * 1024 * 1024) {
-      return `File too large (${formatFileSize(file.size)}). Maximum: ${maxSizeMB} MB`;
     }
     return null;
   };
@@ -175,7 +171,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
@@ -243,7 +239,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                   <span className="font-medium text-orange-500">Click to browse</span> or drag and drop
                 </p>
                 <p className="text-xs text-gray-500">
-                  {supportedFormats.map(f => f.toUpperCase().replace('.', '')).join(', ')} up to {maxSizeMB}MB
+                  {supportedFormats.map(f => f.toUpperCase().replace('.', '')).join(', ')}
                 </p>
               </div>
             )}
@@ -268,7 +264,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
           {/* Success Message */}
           {uploadState === 'success' && (
             <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg">
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <CheckCircle className="w-5 h-5 shrink-0" />
               <span>Audio imported successfully! Processing will begin shortly.</span>
             </div>
           )}
@@ -276,7 +272,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
           {/* Error Message */}
           {uploadState === 'error' && errorMessage && (
             <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <AlertCircle className="w-5 h-5 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}

@@ -603,9 +603,7 @@ export const getSupportedAudioFormats = (): string[] => {
   ];
 };
 
-export const getMaxUploadSizeMB = (): number => {
-  return 500;
-};
+
 
 // Voiceprint Management
 export const extractVoiceprint = async (
