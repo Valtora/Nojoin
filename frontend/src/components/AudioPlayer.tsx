@@ -131,7 +131,8 @@ export default function AudioPlayer({
   // Proxy audio not yet available -- disable playback
   // The demo recording ("Welcome to Nojoin") intentionally has no proxy audio
   const isDemo = recording.name === "Welcome to Nojoin";
-  const proxyUnavailable = recording.has_proxy === false &&
+  const proxyUnavailable =
+    recording.has_proxy === false &&
     recording.status !== RecordingStatus.UPLOADING &&
     !isDemo;
 
@@ -140,7 +141,7 @@ export default function AudioPlayer({
     return (
       <div
         id="audio-player"
-        className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center justify-center gap-4 shadow-sm relative overflow-hidden"
+        className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
           <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-sm font-medium border border-blue-200 dark:border-blue-800 flex items-center gap-2">
@@ -149,23 +150,30 @@ export default function AudioPlayer({
           </span>
         </div>
 
-        <div className="flex items-center gap-4 w-full opacity-30 pointer-events-none filter blur-[1px]">
-          <button className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-400 text-white">
+        <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
+          {/* Mock Play Button */}
+          <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gray-400 text-white shadow-sm shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
           </button>
-          <div className="flex-1 flex flex-col gap-1">
+          {/* Mock Timeline */}
+          <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
             <div className="w-full h-2.5 bg-gray-200 rounded-full"></div>
+          </div>
+          {/* Mock Controls Group */}
+          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
+             <div className="w-8 h-4 bg-gray-200 rounded"></div>
+             <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
           </div>
         </div>
       </div>
     );
   }
 
-  if (hasError) {
+  if (hasError || isDemo) {
     return (
       <div
         id="audio-player"
-        className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center justify-center gap-4 shadow-sm relative overflow-hidden"
+        className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm relative overflow-hidden"
       >
         {/* Blurred background visual effect */}
         <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
@@ -176,21 +184,30 @@ export default function AudioPlayer({
         </div>
 
         {/* Disabled UI underneath for visual context */}
-        <div className="flex items-center gap-4 w-full opacity-30 pointer-events-none filter blur-[1px]">
-          <button className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-400 text-white">
+        <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
+          {/* Mock Play Button */}
+          <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gray-400 text-white shadow-sm shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
           </button>
-          <div className="flex-1 flex flex-col gap-1">
+          {/* Mock Timeline */}
+          <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
             <div className="w-full h-2.5 bg-gray-200 rounded-full"></div>
+          </div>
+           {/* Mock Controls Group */}
+           <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
+             <div className="w-8 h-4 bg-gray-200 rounded"></div>
+             <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
           </div>
         </div>
 
-        <audio
-          ref={audioRef}
-          src={getRecordingStreamUrl(recording.id)}
-          preload="auto"
-          className="hidden"
-        />
+        {!isDemo && (
+          <audio
+            ref={audioRef}
+            src={getRecordingStreamUrl(recording.id)}
+            preload="auto"
+            className="hidden"
+          />
+        )}
       </div>
     );
   }
@@ -198,7 +215,7 @@ export default function AudioPlayer({
   return (
     <div
       id="audio-player"
-      className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-3 flex items-center gap-4 shadow-sm"
+      className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm"
     >
       <audio
         ref={audioRef}
@@ -209,7 +226,7 @@ export default function AudioPlayer({
       {/* Play/Pause Button */}
       <button
         onClick={togglePlay}
-        className="w-10 h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm shrink-0"
+        className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm shrink-0 order-1"
       >
         {isPlaying ? (
           <Pause className="w-5 h-5 fill-current" />
@@ -219,7 +236,7 @@ export default function AudioPlayer({
       </button>
 
       {/* Time & Progress */}
-      <div className="flex-1 flex flex-col justify-center gap-1">
+      <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
         <div className="flex justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
           <span>{formatTime(currentTime)}</span>
           <span>{formatTime(duration)}</span>
@@ -235,7 +252,7 @@ export default function AudioPlayer({
       </div>
 
       {/* Controls Group */}
-      <div className="flex items-center gap-3 pl-2 border-l border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
         {/* Speed Toggle */}
         <button
           onClick={changePlaybackRate}

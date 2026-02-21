@@ -156,12 +156,12 @@ export default function UsersTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
           <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           User Management
         </h3>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -171,7 +171,7 @@ export default function UsersTab() {
                 setPage(1);
               }}
               placeholder="Search users..."
-              className="pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
           </div>
           <button
@@ -240,8 +240,8 @@ export default function UsersTab() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg border border-gray-400 dark:border-gray-600 overflow-hidden">
-        <table className="w-full text-left text-sm text-gray-700 dark:text-gray-400">
+      <div className="bg-white dark:bg-gray-800/50 rounded-lg border border-gray-400 dark:border-gray-600 overflow-x-auto">
+        <table className="w-full text-left text-sm text-gray-700 dark:text-gray-400 whitespace-nowrap">
           <thead className="bg-gray-100 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200 uppercase font-medium">
             <tr>
               <th className="px-4 py-3">ID</th>

@@ -26,7 +26,7 @@ import DocumentsView from "@/components/DocumentsView";
 import ExportModal from "@/components/ExportModal";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import Link from "next/link";
-import { Loader2, Edit2 } from "lucide-react";
+import { Loader2, Edit2, MessageSquare, X } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -112,6 +112,10 @@ export default function RecordingPage({ params }: PageProps) {
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
+  // Mobile State
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
@@ -140,6 +144,14 @@ export default function RecordingPage({ params }: PageProps) {
   useEffect(() => {
     fetchRecording();
   }, [fetchRecording]);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    // Initial check
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   useEffect(() => {
     if (!recording) return;
@@ -683,6 +695,194 @@ export default function RecordingPage({ params }: PageProps) {
     return map;
   }, [recording?.speakers]);
 
+  // View Components
+  const renderMainContent = () => (
+    <div className="flex-1 flex flex-col min-h-0 h-full">
+      {/* Header (Title, Tags, Audio Player) */}
+      <header className="p-4 pl-14 md:p-6 border-b-2 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10 shrink-0 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="min-w-0 flex-1">
+            {isEditingTitle ? (
+              <input
+                autoFocus
+                type="text"
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={handleTitleSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleTitleSubmit();
+                  if (e.key === "Escape") {
+                    setIsEditingTitle(false);
+                    setTitleValue(recording?.name || "");
+                  }
+                }}
+                className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
+              />
+            ) : (
+              <h1
+                className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white truncate mb-2 cursor-pointer hover:text-orange-600 dark:hover:text-orange-400 flex items-center gap-2 group"
+                onClick={() => setIsEditingTitle(true)}
+                title="Click to rename"
+              >
+                {recording?.name}
+                <Edit2 className="w-4 h-4 opacity-0 group-hover:opacity-50 transition-opacity" />
+              </h1>
+            )}
+
+            <div className="flex flex-col items-start gap-2">
+              <RecordingTagEditor
+                recordingId={recording!.id}
+                tags={recording!.tags || []}
+                onTagsUpdated={() => {
+                  getRecording(recording!.id)
+                    .then(setRecording)
+                    .catch(console.error);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Audio Player in Header */}
+        {recording && 
+         recording.status !== RecordingStatus.UPLOADING &&
+         recording.status !== RecordingStatus.PROCESSING &&
+         recording.status !== RecordingStatus.QUEUED && (
+            <AudioPlayer
+              recording={recording}
+              audioRef={audioRef}
+              currentTime={currentTime}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+            />
+          )}
+      </header>
+
+      {/* Panel Tabs */}
+      <div className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700 shrink-0 overflow-x-auto">
+        <div className="flex w-max min-w-full">
+          <button
+            id="tab-transcript"
+            onClick={() => setActivePanel("transcript")}
+            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+              activePanel === "transcript"
+                ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
+                : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            Transcript
+          </button>
+          <button
+            id="tab-notes"
+            onClick={() => setActivePanel("notes")}
+            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+              activePanel === "notes"
+                ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
+                : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            Notes
+          </button>
+          <button
+            id="tab-documents"
+            onClick={() => setActivePanel("documents")}
+            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+              activePanel === "documents"
+                ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
+                : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            Documents
+          </button>
+        </div>
+      </div>
+
+      {/* Panel Content */}
+      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full relative">
+        <div
+          className={`absolute inset-0 flex flex-col ${activePanel === "transcript" ? "z-10 visible" : "z-0 invisible"}`}
+        >
+          {recording &&
+          recording.transcript?.segments &&
+          recording.transcript.segments.length > 0 ? (
+            <TranscriptView
+              recordingId={recording.id}
+              segments={recording.transcript.segments}
+              currentTime={currentTime}
+              onPlaySegment={handlePlaySegment}
+              isPlaying={isPlaying}
+              onPause={handlePause}
+              onResume={handleResume}
+              speakerMap={speakerMap}
+              speakers={recording.speakers || []}
+              globalSpeakers={globalSpeakers}
+              onRenameSpeaker={handleRenameSpeaker}
+              onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
+              onUpdateSegmentText={handleUpdateSegmentText}
+              onFindAndReplace={handleGlobalFindAndReplace}
+              speakerColors={speakerColors}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              canUndo={history.length > 0 && !isUndoing}
+              canRedo={future.length > 0 && !isUndoing}
+              onExport={() => setShowExportModal(true)}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
+              {recording?.transcript?.text ? (
+                <>
+                  <div className="p-4 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-md">
+                    <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                      {recording.transcript.text.replace(/[\[\]]/g, "")}
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    The audio file was processed, but no speech segments were
+                    generated.
+                  </p>
+                </>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400 italic">
+                  No transcript available yet.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div
+          className={`absolute inset-0 flex flex-col ${activePanel === "notes" ? "z-10 visible" : "z-0 invisible"}`}
+        >
+          {recording && (
+            <NotesView
+              recordingId={recording.id}
+              notes={recording.transcript?.notes || null}
+              onNotesChange={handleNotesChange}
+              onGenerateNotes={handleGenerateNotes}
+              onFindAndReplace={handleGlobalFindAndReplace}
+              onUndo={handleNotesUndo}
+              onRedo={handleNotesRedo}
+              canUndo={notesHistory.length > 0}
+              canRedo={notesFuture.length > 0}
+              isGenerating={
+                isGeneratingNotes ||
+                recording.transcript?.notes_status === "generating"
+              }
+              onExport={() => setShowExportModal(true)}
+            />
+          )}
+        </div>
+
+        <div
+          className={`absolute inset-0 flex flex-col ${activePanel === "documents" ? "z-10 visible" : "z-0 invisible"}`}
+        >
+          {recording && <DocumentsView recordingId={recording.id} />}
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center text-gray-500">
@@ -754,6 +954,40 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </div>
           </div>
+        ) : isMobile ? (
+          <div className="h-full flex-1 flex flex-col min-w-0 relative">
+            {renderMainContent()}
+
+            {/* Mobile Chat FAB */}
+            <button
+              onClick={() => setIsMobileChatOpen(true)}
+              className="absolute bottom-6 right-6 w-14 h-14 bg-orange-600 hover:bg-orange-700 text-white rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-20"
+              title="Open Chat"
+            >
+              <MessageSquare className="w-6 h-6" />
+            </button>
+
+            {/* Mobile Chat Full-Screen Modal */}
+            {isMobileChatOpen && (
+              <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col animate-in slide-in-from-bottom flex-1 h-dvh">
+                <header className="px-4 py-3 border-b-2 border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-950">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-orange-500" />
+                    Meeting Chat
+                  </h2>
+                  <button
+                    onClick={() => setIsMobileChatOpen(false)}
+                    className="p-2 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </header>
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
+                  <ChatPanel />
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <PanelGroup
             direction="horizontal"
@@ -761,191 +995,7 @@ export default function RecordingPage({ params }: PageProps) {
             className="h-full flex-1 min-w-0"
           >
             <Panel defaultSize={75} minSize={30}>
-              <div className="flex-1 flex flex-col min-h-0 h-full">
-                {/* Header (Title, Tags, Audio Player) - Moved inside Panel */}
-                <header className="p-6 border-b-2 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10 shrink-0 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      {isEditingTitle ? (
-                        <input
-                          autoFocus
-                          type="text"
-                          value={titleValue}
-                          onChange={(e) => setTitleValue(e.target.value)}
-                          onBlur={handleTitleSubmit}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleTitleSubmit();
-                            if (e.key === "Escape") {
-                              setIsEditingTitle(false);
-                              setTitleValue(recording.name);
-                            }
-                          }}
-                          className="text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
-                        />
-                      ) : (
-                        <h1
-                          className="text-2xl font-bold text-gray-900 dark:text-white truncate mb-2 cursor-pointer hover:text-orange-600 dark:hover:text-orange-400 flex items-center gap-2 group"
-                          onClick={() => setIsEditingTitle(true)}
-                          title="Click to rename"
-                        >
-                          {recording.name}
-                          <Edit2 className="w-4 h-4 opacity-0 group-hover:opacity-50 transition-opacity" />
-                        </h1>
-                      )}
-
-                      <div className="flex flex-col items-start gap-2">
-                        <RecordingTagEditor
-                          recordingId={recording.id}
-                          tags={recording.tags || []}
-                          onTagsUpdated={() => {
-                            // Refresh recording to get updated tags
-                            getRecording(recording.id)
-                              .then(setRecording)
-                              .catch(console.error);
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Audio Player in Header */}
-                  {(recording.status as string) !== RecordingStatus.UPLOADING &&
-                    (recording.status as string) !==
-                      RecordingStatus.PROCESSING &&
-                    (recording.status as string) !== RecordingStatus.QUEUED && (
-                      <AudioPlayer
-                        recording={recording}
-                        audioRef={audioRef}
-                        currentTime={currentTime}
-                        onTimeUpdate={handleTimeUpdate}
-                        onPlay={() => setIsPlaying(true)}
-                        onPause={() => setIsPlaying(false)}
-                      />
-                    )}
-                </header>
-
-                {/* Panel Tabs */}
-                <div className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700 shrink-0">
-                  <div className="flex">
-                    <button
-                      id="tab-transcript"
-                      onClick={() => setActivePanel("transcript")}
-                      className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
-                        activePanel === "transcript"
-                          ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
-                          : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-                      }`}
-                    >
-                      Transcript
-                    </button>
-                    <button
-                      id="tab-notes"
-                      onClick={() => setActivePanel("notes")}
-                      className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
-                        activePanel === "notes"
-                          ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
-                          : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-                      }`}
-                    >
-                      Notes
-                    </button>
-                    <button
-                      id="tab-documents"
-                      onClick={() => setActivePanel("documents")}
-                      className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 ${
-                        activePanel === "documents"
-                          ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
-                          : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-                      }`}
-                    >
-                      Documents
-                    </button>
-                  </div>
-                </div>
-
-                {/* Panel Content */}
-                <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full relative">
-                  <div
-                    className={`absolute inset-0 flex flex-col ${activePanel === "transcript" ? "z-10 visible" : "z-0 invisible"}`}
-                  >
-                    {recording.transcript?.segments &&
-                    recording.transcript.segments.length > 0 ? (
-                      <TranscriptView
-                        recordingId={recording.id}
-                        segments={recording.transcript.segments}
-                        currentTime={currentTime}
-                        onPlaySegment={handlePlaySegment}
-                        isPlaying={isPlaying}
-                        onPause={handlePause}
-                        onResume={handleResume}
-                        speakerMap={speakerMap}
-                        speakers={recording.speakers || []}
-                        globalSpeakers={globalSpeakers}
-                        onRenameSpeaker={handleRenameSpeaker}
-                        onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
-                        onUpdateSegmentText={handleUpdateSegmentText}
-                        onFindAndReplace={handleGlobalFindAndReplace}
-                        speakerColors={speakerColors}
-                        onUndo={handleUndo}
-                        onRedo={handleRedo}
-                        canUndo={history.length > 0 && !isUndoing}
-                        canRedo={future.length > 0 && !isUndoing}
-                        onExport={() => setShowExportModal(true)}
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
-                        {recording.transcript?.text ? (
-                          <>
-                            <div className="p-4 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-md">
-                              <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
-                                {recording.transcript.text.replace(
-                                  /[\[\]]/g,
-                                  "",
-                                )}
-                              </p>
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              The audio file was processed, but no speech
-                              segments were generated.
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-gray-500 dark:text-gray-400 italic">
-                            No transcript available yet.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div
-                    className={`absolute inset-0 flex flex-col ${activePanel === "notes" ? "z-10 visible" : "z-0 invisible"}`}
-                  >
-                    <NotesView
-                      recordingId={recording.id}
-                      notes={recording.transcript?.notes || null}
-                      onNotesChange={handleNotesChange}
-                      onGenerateNotes={handleGenerateNotes}
-                      onFindAndReplace={handleGlobalFindAndReplace}
-                      onUndo={handleNotesUndo}
-                      onRedo={handleNotesRedo}
-                      canUndo={notesHistory.length > 0}
-                      canRedo={notesFuture.length > 0}
-                      isGenerating={
-                        isGeneratingNotes ||
-                        recording.transcript?.notes_status === "generating"
-                      }
-                      onExport={() => setShowExportModal(true)}
-                    />
-                  </div>
-
-                  <div
-                    className={`absolute inset-0 flex flex-col ${activePanel === "documents" ? "z-10 visible" : "z-0 invisible"}`}
-                  >
-                    <DocumentsView recordingId={recording.id} />
-                  </div>
-                </div>
-              </div>
+              {renderMainContent()}
             </Panel>
 
             <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
@@ -997,7 +1047,7 @@ export default function RecordingPage({ params }: PageProps) {
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
-        hasNotes={!!recording.transcript?.notes}
+        hasNotes={!!recording?.transcript?.notes}
       />
     </div>
   );

@@ -292,7 +292,7 @@ export default function SystemTab() {
 
         <div className="bg-[#0d1117] rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[600px]">
           {/* Toolbar */}
-          <div className="flex items-center gap-3 p-2 bg-[#161b22] border-b border-gray-800">
+          <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-gray-800">
             {/* Container Select */}
             <div className="relative">
               <select

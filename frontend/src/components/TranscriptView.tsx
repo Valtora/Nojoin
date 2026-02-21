@@ -441,8 +441,8 @@ export default function TranscriptView({
       {/* Toolbar */}
       <div className="bg-gray-50 dark:bg-gray-900/95 border-b-2 border-gray-200 dark:border-gray-700 shadow-md z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
-        <div className="px-6 py-3 flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-1 md:gap-2 overflow-x-auto">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white shrink-0">
             Transcript
           </h2>
 
@@ -502,7 +502,7 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-6 pb-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
+          <div className="px-4 md:px-6 pb-3 flex flex-col md:flex-row items-stretch md:items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -550,7 +550,7 @@ export default function TranscriptView({
               </div>
             )}
             {showReplace && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mt-1 md:mt-0 w-full md:w-auto justify-end">
                 {/* Settings Toggle */}
                 <div className="relative">
                   <button
@@ -645,7 +645,7 @@ export default function TranscriptView({
         )}
       </div>
 
-      <div className="space-y-4 px-4 py-3 overflow-y-auto flex-1 min-h-0">
+      <div className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0">
         {displaySegments.map(({ segment, index: originalIndex }) => {
           const isActive =
             currentTime >= segment.start && currentTime < segment.end;
@@ -667,7 +667,7 @@ export default function TranscriptView({
               className={`flex gap-3 px-2 group ${isActive ? "opacity-100" : "opacity-90"} transition-opacity`}
             >
               {/* Timestamp & Play Control */}
-              <div className="flex flex-col items-end min-w-[60px] pt-1">
+              <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1">
                 <span className="text-sm text-gray-400 font-mono mb-1">
                   {formatTime(segment.start)}
                 </span>
@@ -680,7 +680,7 @@ export default function TranscriptView({
                       onPlaySegment(segment.start, segment.end);
                     }
                   }}
-                  className={`p-1.5 rounded-full transition-colors shadow-sm ${
+                  className={`p-2 md:p-1.5 rounded-full transition-colors shadow-sm ${
                     isActive
                       ? "bg-green-500 text-white hover:bg-green-600"
                       : "bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400"
@@ -690,9 +690,9 @@ export default function TranscriptView({
                   }
                 >
                   {isActive && isPlaying ? (
-                    <Pause className="w-3 h-3 fill-current" />
+                    <Pause className="w-5 h-5 md:w-3 md:h-3 fill-current" />
                   ) : (
-                    <Play className="w-3 h-3 fill-current" />
+                    <Play className="w-5 h-5 md:w-3 md:h-3 fill-current" />
                   )}
                 </button>
               </div>

@@ -17,12 +17,12 @@ export default function DashboardLayout({
   const isPeoplePage = pathname?.startsWith('/people');
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex h-screen w-full overflow-hidden">
       <TourGuide />
       <MainNav />
       {!isSettingsPage && !isPeoplePage && <Sidebar />}
       
-      <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0">
+      <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full">
         <TopBar />
         {children}
         <ServiceStatusAlerts />

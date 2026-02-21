@@ -23,6 +23,11 @@ interface NavigationState {
   toggleExpandedTag: (tagId: number) => void;
   setExpandedTagIds: (ids: number[]) => void;
 
+  // Mobile Nav State
+  isMobileNavOpen: boolean;
+  setMobileNavOpen: (open: boolean) => void;
+  toggleMobileNav: () => void;
+
   // Selection State
   selectionMode: boolean;
   selectedRecordingIds: number[];
@@ -81,6 +86,12 @@ export const useNavigationStore = create<NavigationState>()(
             : [...state.expandedTagIds, tagId],
         })),
       setExpandedTagIds: (ids) => set({ expandedTagIds: ids }),
+
+      // Mobile Nav State
+      isMobileNavOpen: false,
+      setMobileNavOpen: (open) => set({ isMobileNavOpen: open }),
+      toggleMobileNav: () =>
+        set((state) => ({ isMobileNavOpen: !state.isMobileNavOpen })),
 
       // Selection State
       selectionMode: false,

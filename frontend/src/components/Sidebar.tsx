@@ -609,17 +609,24 @@ export default function Sidebar() {
   // Prevent hydration mismatch
   const view = mounted ? currentView : "recordings";
 
+  // Determine if we should hide the sidebar on mobile
+  const isRecordingView = pathname?.startsWith("/recordings/");
+
   return (
     <aside
       id="sidebar-recordings-list"
-      className="w-80 shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0"
+      className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0 transition-opacity ${
+        isRecordingView ? "hidden md:block md:w-80" : "w-full md:w-80"
+      }`}
     >
       {view === "recordings" && (
-        <MeetingControls onMeetingEnd={fetchRecordings} />
+        <div className="hidden md:block">
+          <MeetingControls onMeetingEnd={fetchRecordings} />
+        </div>
       )}
 
       {/* Header */}
-      <div className="p-4 border-b border-gray-300 dark:border-gray-800">
+      <div className="p-4 pl-14 md:pl-4 border-b border-gray-300 dark:border-gray-800">
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs text-gray-500">

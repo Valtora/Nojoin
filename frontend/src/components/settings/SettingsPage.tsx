@@ -371,7 +371,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-8 py-6 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between px-4 pl-14 md:px-8 py-4 md:py-6 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Settings
@@ -383,9 +383,9 @@ export default function SettingsPage() {
         <VersionTag />
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-64 bg-gray-200 dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 flex flex-col">
+        <div className="w-full md:w-64 bg-gray-200 dark:bg-gray-800 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-col shrink-0">
           <div className="p-4 border-b border-gray-300 dark:border-gray-700">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -399,7 +399,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+          <nav className="p-2 md:p-4 flex md:flex-col overflow-x-auto md:overflow-y-auto space-x-2 md:space-x-0 md:space-y-1 hide-scrollbar">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -412,7 +412,7 @@ export default function SettingsPage() {
                   // @ts-expect-error - setActiveTab expects specific enum/string
                   onClick={() => setActiveTab(tab.id)}
                   className={`
-                    w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                    flex shrink-0 items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap
                     ${
                       isActive
                         ? "bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400"
@@ -452,7 +452,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 shrink-0 min-h-0">
           {loading ? (
             <div className="flex items-center justify-center h-full text-gray-500">
               <Loader2 className="w-6 h-6 animate-spin mr-2" />

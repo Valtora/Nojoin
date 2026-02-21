@@ -21,7 +21,6 @@ import {
   Download,
   Link2,
   RefreshCw,
-  Edit2,
   ChevronsDown,
   ChevronsUp,
 } from "lucide-react";
@@ -326,6 +325,8 @@ export default function MainNav() {
     expandedTagIds: expandedTagIdsArray,
     toggleExpandedTag,
     setExpandedTagIds,
+    isMobileNavOpen,
+    setMobileNavOpen,
   } = useNavigationStore();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [companionReleases, setCompanionReleases] =
@@ -428,6 +429,8 @@ export default function MainNav() {
     if (!isResizing) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      // Limit width on desktop, don't resize on mobile
+      if (window.innerWidth < 768) return;
       const newWidth = e.clientX;
       if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
         setNavWidth(newWidth);
@@ -446,6 +449,11 @@ export default function MainNav() {
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isResizing, setNavWidth]);
+
+  // Close mobile nav on route change
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname, setMobileNavOpen]);
 
   // Build tag tree
   interface TagWithChildren extends Tag {
@@ -749,12 +757,21 @@ export default function MainNav() {
 
   return (
     <>
+      {/* Mobile Overlay */}
+      {isMobileNavOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
       <aside
         id="main-nav"
-        className="shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen sticky top-0 flex flex-col"
-        style={{
+        className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
+          isMobileNavOpen ? "translate-x-0 fixed left-0 top-0 w-64 shadow-2xl" : "-translate-x-full fixed left-0 top-0 w-64 md:relative md:w-auto md:translate-x-0 md:shadow-none"
+        }`}
+        style={window.innerWidth < 768 ? {} : {
           width: collapsed ? `${COLLAPSED_WIDTH}px` : `${navWidth}px`,
-          transition: isResizing ? "none" : "width 300ms",
         }}
       >
         {/* Header with collapse toggle */}
@@ -766,24 +783,35 @@ export default function MainNav() {
                 alt="Nojoin Logo"
                 width={48}
                 height={48}
-                className="object-contain"
+                className="object-contain shrink-0"
               />
               <span className="font-semibold text-orange-600 text-2xl">
                 Nojoin
               </span>
             </div>
           )}
-          <button
-            onClick={toggleNavCollapse}
-            className="p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
-            )}
-          </button>
+          <div className="flex items-center">
+            {/* Close button for mobile */}
+            <button
+              onClick={() => setMobileNavOpen(false)}
+              className="md:hidden p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              title="Close Menu"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+            {/* Desktop collapse toggle */}
+            <button
+              onClick={toggleNavCollapse}
+              className="hidden md:block p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <ChevronLeft className="w-4 h-4" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Navigation Items */}
@@ -1124,12 +1152,11 @@ export default function MainNav() {
           />
         </div>
 
-        {/* Resize Handle */}
+        {/* Resize Handle - Hidden on Mobile */}
         {!collapsed && (
           <div
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden md:block"
             onMouseDown={() => setIsResizing(true)}
-            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 transition-colors group"
-            title="Drag to resize"
           >
             <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 group-hover:bg-orange-500 transition-colors" />
           </div>
