@@ -2,6 +2,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import iterate_in_threadpool
 from sqlmodel import select, desc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -1069,10 +1070,9 @@ async def chat_with_meeting(
                 recording_id=recording_id
             )
             
-            # Iterate over the generator response
-            # Note: This generator might be synchronous (blocking) or asynchronous depending on the LLM client.
-            # Ideally should be fully async, but current implementation assumes sync iterator that we wrap in StreamingResponse.
-            for chunk in generator:
+            # Iterate over the generator response asynchronously using threadpool
+            # to prevent blocking the asyncio event loop
+            async for chunk in iterate_in_threadpool(generator):
                 if isinstance(chunk, dict) and chunk.get("type") == "notes_update":
                     yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"
                 else:

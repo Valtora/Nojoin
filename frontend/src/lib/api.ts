@@ -1005,6 +1005,7 @@ export const streamChatMessage = (
   onComplete: () => void,
   onError: (error: string) => void,
   tagIds?: number[],
+  onNotesUpdate?: () => void,
 ): AbortController => {
   const controller = new AbortController();
   const token =
@@ -1049,14 +1050,18 @@ export const streamChatMessage = (
         const lines = chunk.split("\n");
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
+          if (line.startsWith("event: notes_update")) {
+            if (onNotesUpdate) {
+              onNotesUpdate();
+            }
+          } else if (line.startsWith("data: ")) {
             const data = line.slice(6);
             if (data === "[DONE]") {
               continue;
             }
             try {
               const parsed = JSON.parse(data);
-              if (parsed.token) {
+              if (parsed.token !== undefined) {
                 onToken(parsed.token);
               } else if (parsed.error) {
                 onError(parsed.error);

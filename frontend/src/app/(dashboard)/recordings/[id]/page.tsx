@@ -983,7 +983,7 @@ export default function RecordingPage({ params }: PageProps) {
                   </button>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
-                  <ChatPanel />
+                  <ChatPanel onNotesUpdate={fetchRecording} />
                 </div>
               </div>
             )}
@@ -1034,7 +1034,7 @@ export default function RecordingPage({ params }: PageProps) {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={chatPanelHeight} minSize={20}>
-                  <ChatPanel />
+                  <ChatPanel onNotesUpdate={fetchRecording} />
                 </Panel>
               </PanelGroup>
             </Panel>

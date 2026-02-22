@@ -104,6 +104,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
   - **Comprehensive Notes:** Includes Topics, Summary, Detailed Notes, Action Items.
 - **Chat Q&A:**
   - "Chat with your meeting" feature allows users to ask questions about specific recordings.
+  - Can also be used to request modifications or rewrites to the generated meeting notes in real-time.
   - Chat history is saved per recording.
 
 ### Search & Organization

@@ -28,7 +28,11 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "./ConfirmationModal";
 import MultiSelect, { Option } from "@/components/ui/MultiSelect";
 
-export default function ChatPanel() {
+export default function ChatPanel({
+  onNotesUpdate,
+}: {
+  onNotesUpdate?: () => void;
+}) {
   const params = useParams();
   const recordingId = params?.id ? parseInt(params.id as string) : null;
   const [provider, setProvider] = useState<string>("AI");
@@ -179,6 +183,7 @@ export default function ChatPanel() {
         );
       },
       selectedTagIds.length > 0 ? (selectedTagIds as number[]) : undefined,
+      onNotesUpdate,
     );
     setAbortController(controller);
   };
