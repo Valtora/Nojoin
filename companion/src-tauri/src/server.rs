@@ -12,6 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use log::{error, info};
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::Manager;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
@@ -26,7 +27,43 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         config.local_port
     };
 
-    let context = ServerContext { state, app_handle };
+    let context = ServerContext {
+        state: state.clone(),
+        app_handle,
+    };
+
+    let cors_state = state.clone();
+
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::AllowOrigin::predicate(
+            move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
+                if request_parts.uri.path() == "/auth"
+                    || request_parts.uri.path() == "/status"
+                    || request_parts.uri.path() == "/levels"
+                {
+                    return true;
+                }
+
+                if let Ok(origin_str) = origin.to_str() {
+                    if origin_str == "http://localhost:14141"
+                        || origin_str == "https://localhost:14141"
+                        || origin_str == "http://localhost:3000"
+                    {
+                        return true;
+                    }
+
+                    let config = cors_state.config.lock().unwrap();
+                    let expected_origin = config.get_web_url();
+
+                    if !expected_origin.is_empty() && origin_str == expected_origin {
+                        return true;
+                    }
+                }
+                false
+            },
+        ))
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
 
     let app = Router::new()
         .route("/status", get(get_status))
@@ -39,7 +76,7 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         .route("/pause", post(pause_recording))
         .route("/resume", post(resume_recording))
         .route("/update", post(trigger_update))
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .with_state(context);
 
     let bind_addr = format!("127.0.0.1:{}", local_port);
@@ -105,6 +142,50 @@ async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse
     })
 }
 
+async fn prompt_pairing(context: &ServerContext, origin: String) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    {
+        let mut pending = context.state.pending_pairing.lock().unwrap();
+        if pending.is_some() {
+            return false;
+        }
+        *pending = Some(tx);
+    }
+
+    let window_label = "pairing";
+    let app = &context.app_handle;
+
+    // Close any previous dangling window
+    if let Some(window) = app.get_webview_window(window_label) {
+        let _ = window.close();
+    }
+
+    let safe_origin = origin.replace("://", "%3A%2F%2F").replace(":", "%3A");
+    let window_url = format!("pairing.html?origin={}", safe_origin);
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        app,
+        window_label,
+        tauri::WebviewUrl::App(window_url.into()),
+    )
+    .title("Pairing Request")
+    .inner_size(400.0, 300.0)
+    .always_on_top(true)
+    .resizable(false);
+
+    if let Err(e) = builder.build() {
+        error!("Failed to build pairing window: {}", e);
+        return false;
+    }
+
+    if let Ok(allowed) = rx.await {
+        allowed
+    } else {
+        false
+    }
+}
+
 // Authorization endpoint for web-based device pairing
 #[derive(serde::Deserialize)]
 struct AuthRequest {
@@ -122,10 +203,40 @@ struct AuthResponse {
 #[debug_handler]
 async fn authorize(
     State(context): State<ServerContext>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<AuthRequest>,
 ) -> Json<AuthResponse> {
     let state = &context.state;
     info!("Received authorization request");
+
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let is_allowed = {
+        let config = state.config.lock().unwrap();
+        let expected = config.get_web_url();
+        origin == "http://localhost:14141"
+            || origin == "https://localhost:14141"
+            || origin == "http://localhost:3000"
+            || (!expected.is_empty() && origin == expected)
+    };
+
+    if !is_allowed && !origin.is_empty() {
+        info!(
+            "Unknown origin {} attempting to pair. Prompting user.",
+            origin
+        );
+        let allowed_by_user = prompt_pairing(&context, origin.clone()).await;
+        if !allowed_by_user {
+            error!("Pairing request from {} was denied by the user.", origin);
+            return Json(AuthResponse {
+                success: false,
+                message: "Pairing was denied by the user".to_string(),
+            });
+        }
+    }
 
     if payload.token.is_empty() {
         return Json(AuthResponse {
@@ -342,7 +453,11 @@ async fn stop_recording(
         });
     }
 
-    notifications::show_notification(&context.app_handle, "Recording Stopped", "Processing audio...");
+    notifications::show_notification(
+        &context.app_handle,
+        "Recording Stopped",
+        "Processing audio...",
+    );
     info!("Stop command processed successfully");
     Ok(Json("Stopped".to_string()))
 }
@@ -408,7 +523,11 @@ async fn resume_recording(
         });
     }
 
-    notifications::show_notification(&context.app_handle, "Recording Resumed", "Recording resumed.");
+    notifications::show_notification(
+        &context.app_handle,
+        "Recording Resumed",
+        "Recording resumed.",
+    );
     info!("Recording resumed");
     Ok(Json("Resumed".to_string()))
 }

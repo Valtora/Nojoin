@@ -1,7 +1,7 @@
 use crate::config::Config;
+use crate::notifications;
 use crate::state::{AppState, AppStatus, AudioCommand};
 use crate::uploader;
-use crate::notifications;
 use anyhow;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Device;
@@ -15,8 +15,6 @@ use std::sync::{
 use std::thread;
 use tauri::AppHandle;
 use tokio::sync::mpsc;
-
-
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(ref name) = config.input_device_name {
@@ -58,7 +56,11 @@ fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     host.default_output_device()
 }
 
-pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, app_handle: AppHandle) {
+pub fn run_audio_loop(
+    state: Arc<AppState>,
+    command_rx: Receiver<AudioCommand>,
+    app_handle: AppHandle,
+) {
     let host = cpal::default_host();
 
     // Log available devices on startup
@@ -76,7 +78,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
     if let Ok(devices) = host.input_devices() {
         info!("  Available Input Devices:");
         for d in devices {
-             info!("    - {}", d.name().unwrap_or_default());
+            info!("    - {}", d.name().unwrap_or_default());
         }
     }
 
@@ -150,7 +152,7 @@ pub fn run_audio_loop(state: Arc<AppState>, command_rx: Receiver<AudioCommand>, 
                             // Check minimum length
                             let min_minutes = config.min_meeting_length.unwrap_or(0);
                             let duration_secs = duration.as_secs();
-                            
+
                             if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
                                 info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
                                 match uploader::delete_recording(rec_id, &config).await {
@@ -244,19 +246,30 @@ fn start_segment(
             // Attempts to find real device; falls back to virtual generator.
             let (mic_stream, mic_sample_rate) = {
                 let device_opt = find_input_device(&host, &config);
-                
+
                 match device_opt {
                     Some(mic_device) => {
-                        info!("Selected Input Device: {}", mic_device.name().unwrap_or_else(|_| "Unknown".to_string()));
-                        
-                        let config_result: anyhow::Result<cpal::SupportedStreamConfig> = mic_device.default_input_config()
-                            .map_err(|e| anyhow::anyhow!("Failed to get default input config: {}", e))
+                        info!(
+                            "Selected Input Device: {}",
+                            mic_device.name().unwrap_or_else(|_| "Unknown".to_string())
+                        );
+
+                        let config_result: anyhow::Result<cpal::SupportedStreamConfig> = mic_device
+                            .default_input_config()
+                            .map_err(|e| {
+                                anyhow::anyhow!("Failed to get default input config: {}", e)
+                            })
                             .or_else(|e| {
                                 warn!("{}. Trying to find first supported config...", e);
-                                let config = mic_device.supported_input_configs()
-                                    .map_err(|e| anyhow::anyhow!("Failed to get supported configs: {}", e))?
+                                let config = mic_device
+                                    .supported_input_configs()
+                                    .map_err(|e| {
+                                        anyhow::anyhow!("Failed to get supported configs: {}", e)
+                                    })?
                                     .next()
-                                    .ok_or_else(|| anyhow::anyhow!("No supported input configs found"))?
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("No supported input configs found")
+                                    })?
                                     .with_max_sample_rate();
                                 Ok(config)
                             });
@@ -270,13 +283,14 @@ fn start_segment(
                                 let err_fn = |err| log::error!("Mic Stream error: {}", err);
                                 let tx = mic_tx.clone();
                                 let state_mic = state.clone();
-                                
+
                                 // Helper to convert interleaved to mono
                                 let to_mono_mic = move |data: &[f32], channels: u16| -> Vec<f32> {
                                     if channels == 1 {
                                         return data.to_vec();
                                     }
-                                    let mut mono = Vec::with_capacity(data.len() / channels as usize);
+                                    let mut mono =
+                                        Vec::with_capacity(data.len() / channels as usize);
                                     for chunk in data.chunks(channels as usize) {
                                         let sum: f32 = chunk.iter().sum();
                                         mono.push(sum / channels as f32);
@@ -284,29 +298,33 @@ fn start_segment(
                                     mono
                                 };
 
-                                let stream = mic_device.build_input_stream(
-                                    &mic_config.into(),
-                                    move |data: &[f32], _: &_| {
-                                        let mono = to_mono_mic(data, mic_channels);
-                                        
-                                        // Update input level
-                                        let rms = calculate_rms(&mono);
-                                        state_mic.record_input_level(rms);
+                                let stream = mic_device
+                                    .build_input_stream(
+                                        &mic_config.into(),
+                                        move |data: &[f32], _: &_| {
+                                            let mono = to_mono_mic(data, mic_channels);
 
-                                        let _ = tx.send(mono);
-                                    },
-                                    err_fn,
-                                    None,
-                                ).map_err(|e| anyhow::anyhow!("Failed to build mic stream: {}", e))?;
+                                            // Update input level
+                                            let rms = calculate_rms(&mono);
+                                            state_mic.record_input_level(rms);
+
+                                            let _ = tx.send(mono);
+                                        },
+                                        err_fn,
+                                        None,
+                                    )
+                                    .map_err(|e| {
+                                        anyhow::anyhow!("Failed to build mic stream: {}", e)
+                                    })?;
 
                                 (Some(stream), mic_sample_rate)
-                            },
+                            }
                             Err(e) => {
                                 warn!("Failed to configure microphone: {}. Falling back to Virtual Silence Microphone.", e);
                                 (None, 48000)
                             }
                         }
-                    },
+                    }
                     None => {
                         warn!("No input device found. Falling back to Virtual Silence Microphone.");
                         (None, 48000)
@@ -319,16 +337,17 @@ fn start_segment(
                 let tx = mic_tx.clone();
                 let is_rec = is_recording.clone();
                 let sample_rate = mic_sample_rate;
-                
+
                 thread::spawn(move || {
                     info!("Starting Virtual Silence Generator at {}Hz", sample_rate);
                     let chunk_duration_ms = 100;
-                    let samples_per_chunk = (sample_rate as f32 * (chunk_duration_ms as f32 / 1000.0)) as usize;
-                    
+                    let samples_per_chunk =
+                        (sample_rate as f32 * (chunk_duration_ms as f32 / 1000.0)) as usize;
+
                     while is_rec.load(Ordering::SeqCst) {
                         let start = std::time::Instant::now();
                         let _ = tx.send(vec![0.0; samples_per_chunk]);
-                        
+
                         let elapsed = start.elapsed();
                         let wait = std::time::Duration::from_millis(chunk_duration_ms as u64);
                         if wait > elapsed {
@@ -346,7 +365,7 @@ fn start_segment(
                 .default_output_config()
                 .map_err(|e| anyhow::anyhow!("Failed to get sys config: {}", e))?;
             let sys_channels = sys_config.channels();
-            
+
             info!(
                 "Sys: {} ({}ch, {}Hz)",
                 sys_device.name().unwrap_or_default(),
@@ -366,8 +385,8 @@ fn start_segment(
             let sys_rate = sys_config.sample_rate().0;
             if mic_sample_rate.abs_diff(sys_rate) > 1000 {
                 warn!(
-                   "Sample rate mismatch! Mic: {}Hz, System: {}Hz. Audio drift or artifacts may occur.", 
-                   mic_sample_rate, 
+                   "Sample rate mismatch! Mic: {}Hz, System: {}Hz. Audio drift or artifacts may occur.",
+                   mic_sample_rate,
                    sys_rate
                 );
             }
@@ -391,7 +410,7 @@ fn start_segment(
             let _sys_stream = {
                 let is_recording_sys = is_recording.clone();
                 let state_sys = state.clone();
-                
+
                 let sys_device = find_output_device(&host, &config)
                     .ok_or_else(|| anyhow::anyhow!("No output device available"))?;
                 let sys_config = sys_device
@@ -423,8 +442,10 @@ fn start_segment(
                         None,
                     )
                     .map_err(|e| anyhow::anyhow!("Failed to build sys stream: {}", e))?;
-                
-                sys_stream.play().map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
+
+                sys_stream
+                    .play()
+                    .map_err(|e| anyhow::anyhow!("Failed to play sys stream: {}", e))?;
                 sys_stream
             };
 
@@ -432,7 +453,7 @@ fn start_segment(
                 stream
                     .play()
                     .map_err(|e| anyhow::anyhow!("Failed to play mic stream: {}", e))?;
-                
+
                 // 5. Mixing Loop with automatic segmentation
                 run_mixing_loop(
                     recording_id,
@@ -510,8 +531,7 @@ fn run_mixing_loop(
             }
 
             // Block on Mic data (Master)
-            if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500))
-            {
+            if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
                 // Collect available System data
                 while let Ok(sys_chunk) = sys_rx.try_recv() {
                     sys_buffer.extend(sys_chunk);
@@ -543,7 +563,9 @@ fn run_mixing_loop(
             }
         }
 
-        writer.finalize().map_err(|e| anyhow::anyhow!("Failed to finalize wav writer: {}", e))?;
+        writer
+            .finalize()
+            .map_err(|e| anyhow::anyhow!("Failed to finalize wav writer: {}", e))?;
         info!("Segment {} recorded: {:?}", current_sequence, path);
 
         // Upload segment in background
@@ -558,7 +580,7 @@ fn run_mixing_loop(
                 Ok(_) => {
                     info!("Segment {} uploaded successfully", seq);
                     tx.send(seq).ok();
-                },
+                }
                 Err(e) => log::error!("Failed to upload segment {}: {}", seq, e),
             }
         });
@@ -585,7 +607,9 @@ fn run_mixing_loop(
     rt.block_on(async {
         // Set initial status
         if should_report_uploading {
-            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config).await.ok();
+            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config)
+                .await
+                .ok();
         }
 
         let mut completed_count = 0;
@@ -597,9 +621,11 @@ fn run_mixing_loop(
             } else {
                 20
             };
-            
+
             if should_report_uploading {
-                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config).await.ok();
+                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config)
+                    .await
+                    .ok();
             }
         }
 
@@ -613,4 +639,3 @@ fn run_mixing_loop(
 
     Ok(())
 }
-

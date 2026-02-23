@@ -9,8 +9,39 @@ from sqlmodel import select
 from backend.models.user import User
 from backend.utils.config_manager import config_manager
 import logging
+import urllib.parse
 
 logger = logging.getLogger(__name__)
+
+def validate_api_url_for_ssrf(url: Optional[str]):
+    if not url:
+        return
+        
+    # If the URL matches the default configured OLLAMA_API_URL, it's safe (admin configured it via env)
+    default_ollama_url = config_manager.get("ollama_api_url")
+    if url == default_ollama_url:
+        return
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return
+            
+        hostname = hostname.lower()
+        
+        # Block obvious internal hostnames and IPs if they differ from the default
+        forbidden_hosts = [
+            "localhost", "127.0.0.1", "0.0.0.0", "socket-proxy", "db", "redis", "worker", "api", "frontend", "host.docker.internal", "nginx"
+        ]
+        
+        if hostname in forbidden_hosts or hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("172."):
+            raise HTTPException(status_code=400, detail="Invalid API URL: Internal network hostnames are blocked for security reasons.")
+            
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=400, detail="Invalid API URL format")
 
 router = APIRouter()
 
@@ -124,6 +155,8 @@ async def validate_llm(
         if request.provider == "ollama" and (not api_url or "..." in api_url):
              api_url = config_manager.get("ollama_api_url")
 
+        validate_api_url_for_ssrf(api_url)
+
         llm = get_llm_backend(request.provider, api_key=api_key, model=request.model, api_url=api_url)
         llm.validate_api_key()
         
@@ -182,6 +215,8 @@ async def list_models(
         api_url = request.api_url
         if request.provider == "ollama" and (not api_url or "..." in api_url):
              api_url = config_manager.get("ollama_api_url")
+
+        validate_api_url_for_ssrf(api_url)
 
         llm = get_llm_backend(request.provider, api_key=api_key, api_url=api_url)
         models = llm.list_models()

@@ -35,12 +35,15 @@ pub struct AppState {
     pub update_available: AtomicBool,
     pub latest_version: Mutex<Option<String>>,
     pub latest_update_url: Mutex<Option<String>>,
-    
+
     // Tray Menu Items
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_run_on_startup_item: Mutex<Option<CheckMenuItem<Wry>>>,
     pub tray_open_web_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
+
+    // For pairing dialogs
+    pub pending_pairing: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
 }
 
 impl AppState {

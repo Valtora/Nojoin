@@ -41,12 +41,18 @@ fn get_config(state: tauri::State<SharedAppState>) -> Config {
 }
 
 #[tauri::command]
-fn save_config(
-    state: tauri::State<SharedAppState>,
-    server_url: String,
-) -> Result<(), String> {
+fn resolve_pairing(state: tauri::State<SharedAppState>, window: tauri::Window, allowed: bool) {
+    let mut pending = state.0.pending_pairing.lock().unwrap();
+    if let Some(tx) = pending.take() {
+        let _ = tx.send(allowed);
+    }
+    let _ = window.close();
+}
+
+#[tauri::command]
+fn save_config(state: tauri::State<SharedAppState>, server_url: String) -> Result<(), String> {
     let mut config = state.0.config.lock().unwrap();
-    
+
     // Parse URL
     // If it doesn't start with http:// or https://, assume https://
     let url_str = if !server_url.contains("://") {
@@ -59,7 +65,13 @@ fn save_config(
 
     config.api_protocol = url.scheme().to_string();
     config.api_host = url.host_str().unwrap_or("localhost").to_string();
-    config.api_port = url.port().unwrap_or_else(|| if config.api_protocol == "http" { 80 } else { 443 });
+    config.api_port = url.port().unwrap_or_else(|| {
+        if config.api_protocol == "http" {
+            80
+        } else {
+            443
+        }
+    });
 
     config.save().map_err(|e| e.to_string())?;
     Ok(())
@@ -92,15 +104,15 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
         let release: GitHubRelease = resp.json().await.map_err(|e| e.to_string())?;
         // tag_name is usually "v0.1.4"
         let version_str = release.tag_name.trim_start_matches('v');
-        
+
         let remote_version = Version::parse(version_str)
             .map_err(|e| format!("Failed to parse remote version: {}", e))?;
-            
+
         let current = Version::parse(current_version)
             .map_err(|e| format!("Failed to parse current version: {}", e))?;
 
         if remote_version > current {
-             return Ok(Some((version_str.to_string(), release.html_url)));
+            return Ok(Some((version_str.to_string(), release.html_url)));
         }
         Ok(None)
     } else {
@@ -110,7 +122,7 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
 
 async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
     let current_version = app.package_info().version.to_string();
-    
+
     match check_github_release(&current_version).await {
         Ok(Some((version, url))) => {
             let state_wrapper = app.state::<SharedAppState>();
@@ -127,7 +139,11 @@ async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
         }
         Ok(None) => {
             if !silent {
-                notifications::show_notification(app, "No Update", "You are on the latest version.");
+                notifications::show_notification(
+                    app,
+                    "No Update",
+                    "You are on the latest version.",
+                );
             }
         }
         Err(e) => {
@@ -170,17 +186,17 @@ fn setup_logging() -> Result<(), fern::InitError> {
 fn open_web_interface(app: &tauri::AppHandle) {
     let state_wrapper = app.state::<SharedAppState>();
     let state = &state_wrapper.0;
-    
+
     let url = {
-            let dynamic_url = state.web_url.lock().unwrap().clone();
-            if let Some(d_url) = dynamic_url {
-                Some(d_url)
-            } else {
-                let config = state.config.lock().unwrap();
-                Some(config.get_web_url())
-            }
+        let dynamic_url = state.web_url.lock().unwrap().clone();
+        if let Some(d_url) = dynamic_url {
+            Some(d_url)
+        } else {
+            let config = state.config.lock().unwrap();
+            Some(config.get_web_url())
+        }
     };
-    
+
     if let Some(target_url) = url {
         let _ = open::that(target_url);
     } else {
@@ -201,11 +217,11 @@ fn main() {
             notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
-        .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
+        .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt, resolve_pairing])
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
-            
+
             let autostart_manager = app.autolaunch();
             let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
             if let Some(should_run) = config.run_on_startup {
@@ -226,7 +242,7 @@ fn main() {
                 config.run_on_startup = Some(is_enabled);
                 let _ = config.save();
             }
-            
+
             let state = Arc::new(AppState {
                 status: Mutex::new(AppStatus::Idle),
                 current_recording_id: Mutex::new(None),
@@ -246,6 +262,7 @@ fn main() {
                 tray_run_on_startup_item: Mutex::new(None),
                 tray_open_web_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
+                pending_pairing: Mutex::new(None),
             });
 
             app.manage(SharedAppState(state.clone()));
@@ -256,10 +273,10 @@ fn main() {
             let help = MenuItem::with_id(app, "help", "Help", true, None::<&str>)?;
             let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
             let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
-            
+
             // Initialize run_on_startup checkmark using enforced is_enabled
             let run_on_startup = CheckMenuItem::with_id(app, "run_on_startup", "Run on Startup", true, is_enabled, None::<&str>)?;
-            
+
             let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Connection Settings", true, None::<&str>)?;
             // Enables status item without attaching action.
@@ -315,7 +332,7 @@ fn main() {
                         "about" => {
                              notifications::show_notification(
                                  app,
-                                 "About Nojoin Companion", 
+                                 "About Nojoin Companion",
                                  &format!("This is the Nojoin Companion App that let's Nojoin listen in on your meetings.\n\nVersion {}", app.package_info().version)
                              );
                         }
@@ -339,7 +356,7 @@ fn main() {
                             let state_wrapper = app.state::<SharedAppState>();
                             let state = &state_wrapper.0;
                             let item_guard = state.tray_run_on_startup_item.lock().unwrap();
-                            
+
                             if autostart_manager.is_enabled().unwrap_or(false) {
                                 if let Err(e) = autostart_manager.disable() {
                                     error!("Failed to disable autostart: {}", e);
@@ -374,20 +391,20 @@ fn main() {
                     }
                 })
                 .build(app)?;
-            
+
             *state.tray_icon.lock().unwrap() = Some(tray);
 
             // Post-update check
             {
                 let mut config = state.config.lock().unwrap();
                 let current_version = app.package_info().version.to_string();
-                
+
                 if let Some(last_ver) = &config.last_version {
                     if last_ver != &current_version {
                         notifications::show_notification(app.handle(), "Updated", &format!("Nojoin Companion App Updated v{}", current_version));
                     }
                 }
-                
+
                 if config.last_version.as_ref() != Some(&current_version) {
                     config.last_version = Some(current_version);
                     let _ = config.save();
@@ -400,7 +417,7 @@ fn main() {
                 // Initial delay
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 check_and_prompt_update(&app_handle_update, true).await;
-                
+
                 loop {
                     tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await; // 6 hours
                     check_and_prompt_update(&app_handle_update, true).await;
@@ -410,27 +427,27 @@ fn main() {
             let state_audio = state.clone();
             // audio_tx resides in state; audio_rx retained locally for loop.
             let app_handle_audio = app.handle().clone();
-            
+
             thread::spawn(move || {
                 audio::run_audio_loop(state_audio, audio_rx, app_handle_audio);
             });
 
             let state_server = state.clone();
             let app_handle = app.handle().clone();
-            
+
             thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
-                
+
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
-                
+
                 rt.spawn(async move {
                     let client = reqwest::Client::builder()
                         .danger_accept_invalid_certs(true)
                         .timeout(Duration::from_secs(5))
                         .build()
                         .unwrap_or_default();
-                    
+
                     loop {
                         // 1. Perform Health Check
                         let api_url = {
@@ -438,7 +455,7 @@ fn main() {
                             config.get_api_url()
                         };
                         let status_url = format!("{}/system/status", api_url);
-                        
+
                         match client.get(&status_url).send().await {
                             Ok(resp) => {
                                 if resp.status().is_success() {
@@ -478,15 +495,15 @@ fn main() {
                                      AppStatus::Error(_) => "Status: Error",
                                  }
                              };
-                             
+
                              if let Some(item) = state_fetch.tray_status_item.lock().unwrap().as_ref() {
                                  let _ = item.set_text(status_text);
                              }
-                             
+
                              if let Some(tray) = state_fetch.tray_icon.lock().unwrap().as_ref() {
                                  let _ = tray.set_tooltip(Some(status_text));
                              }
-                             
+
                              let is_connected = state_fetch.is_backend_connected.load(Ordering::SeqCst);
                              if let Some(item) = state_fetch.tray_open_web_item.lock().unwrap().as_ref() {
                                  let _ = item.set_enabled(is_connected);

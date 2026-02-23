@@ -190,7 +190,9 @@ async def get_system_status(
     }
 
 @router.get("/check-ffmpeg")
-async def check_ffmpeg() -> Any:
+async def check_ffmpeg(
+    current_user: User = Depends(get_current_admin_user)
+) -> Any:
     """
     Check if ffmpeg is available in the system PATH.
     """
@@ -331,7 +333,10 @@ async def get_current_download_progress() -> Any:
     }
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str) -> Any:
+async def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+) -> Any:
     """
     Get the status of a background task.
     """

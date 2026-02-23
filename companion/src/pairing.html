@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pairing Request</title>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        padding: 20px;
+        background-color: #f3f4f6;
+        color: #1f2937;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        box-sizing: border-box;
+      }
+      .container {
+        background: white;
+        padding: 25px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      h2 {
+        margin-top: 0;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 15px 0;
+        font-size: 0.95rem;
+        color: #4b5563;
+      }
+      .origin {
+        font-weight: bold;
+        color: #111827;
+        word-break: break-all;
+        background: #f9fafb;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #e5e7eb;
+        margin: 10px 0;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      button {
+        flex: 1;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 0.95rem;
+      }
+      .btn-allow {
+        background-color: #f97316;
+        color: white;
+      }
+      .btn-allow:hover {
+        background-color: #ea580c;
+      }
+      .btn-deny {
+        background-color: #e5e7eb;
+        color: #374151;
+      }
+      .btn-deny:hover {
+        background-color: #d1d5db;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Connection Request</h2>
+      <p>
+        A Nojoin server is trying to connect to this Companion App to record
+        audio.
+      </p>
+      <div class="origin" id="originDisplay">Loading...</div>
+      <p>Do you want to allow this connection?</p>
+      <div class="actions">
+        <button class="btn-deny" id="denyBtn">Deny</button>
+        <button class="btn-allow" id="allowBtn">Allow</button>
+      </div>
+    </div>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+
+      // Extract origin from query parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const origin = urlParams.get("origin") || "Unknown Origin";
+
+      document.getElementById("originDisplay").textContent = origin;
+
+      async function resolvePairing(allowed) {
+        try {
+          // Disable buttons to prevent double-click
+          document.getElementById("allowBtn").disabled = true;
+          document.getElementById("denyBtn").disabled = true;
+          await invoke("resolve_pairing", { allowed });
+        } catch (e) {
+          console.error("Failed to resolve pairing:", e);
+        }
+      }
+
+      document
+        .getElementById("allowBtn")
+        .addEventListener("click", () => resolvePairing(true));
+      document
+        .getElementById("denyBtn")
+        .addEventListener("click", () => resolvePairing(false));
+    </script>
+  </body>
+</html>

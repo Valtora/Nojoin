@@ -1,6 +1,6 @@
+use directories::{BaseDirs, ProjectDirs};
 use log::info;
 use serde::{Deserialize, Serialize};
-use directories::{BaseDirs, ProjectDirs};
 use std::fs;
 use std::path::PathBuf;
 
@@ -61,28 +61,34 @@ struct LegacyConfig {
 
 impl Config {
     pub fn get_api_url(&self) -> String {
-        format!("{}://{}:{}/api/v1", self.api_protocol, self.api_host, self.api_port)
+        format!(
+            "{}://{}:{}/api/v1",
+            self.api_protocol, self.api_host, self.api_port
+        )
     }
 
     pub fn get_web_url(&self) -> String {
-        format!("{}://{}:{}", self.api_protocol, self.api_host, self.api_port)
+        format!(
+            "{}://{}:{}",
+            self.api_protocol, self.api_host, self.api_port
+        )
     }
-    
+
     pub fn get_app_data_dir() -> PathBuf {
         if cfg!(target_os = "windows") {
-             // User requested: %APPDATA%\Nojoin Companion
-             // BaseDirs::config_dir() on Windows returns Roaming AppData
-             if let Some(base_dirs) = BaseDirs::new() {
-                 return base_dirs.config_dir().join("Nojoin Companion");
-             }
+            // User requested: %APPDATA%\Nojoin Companion
+            // BaseDirs::config_dir() on Windows returns Roaming AppData
+            if let Some(base_dirs) = BaseDirs::new() {
+                return base_dirs.config_dir().join("Nojoin Companion");
+            }
         } else {
-             // Linux: ~/.config/nojoin-companion
-             // macOS: ~/Library/Application Support/com.Valtora.Nojoin-Companion
-             if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin-Companion") {
-                 return proj_dirs.config_dir().to_path_buf();
-             }
+            // Linux: ~/.config/nojoin-companion
+            // macOS: ~/Library/Application Support/com.Valtora.Nojoin-Companion
+            if let Some(proj_dirs) = ProjectDirs::from("com", "Valtora", "Nojoin-Companion") {
+                return proj_dirs.config_dir().to_path_buf();
+            }
         }
-        
+
         // Fallback to local directory if we can't determine system paths
         PathBuf::from(".")
     }

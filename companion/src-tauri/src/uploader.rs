@@ -199,11 +199,7 @@ pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()?;
-    let url = format!(
-        "{}/recordings/{}",
-        config.get_api_url(),
-        recording_id
-    );
+    let url = format!("{}/recordings/{}", config.get_api_url(), recording_id);
 
     let res = client
         .delete(&url)
@@ -212,9 +208,15 @@ pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> 
         .await?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to delete recording: {}", res.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to delete recording: {}",
+            res.status()
+        ));
     }
 
-    info!("Recording {} deleted successfully (too short)", recording_id);
+    info!(
+        "Recording {} deleted successfully (too short)",
+        recording_id
+    );
     Ok(())
 }
