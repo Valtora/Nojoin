@@ -204,7 +204,28 @@ fn main() {
         .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt])
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
-            let config = Config::load();
+            let mut config = Config::load();
+            
+            let autostart_manager = app.autolaunch();
+            let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
+            if let Some(should_run) = config.run_on_startup {
+                if should_run && !is_enabled {
+                    if let Err(e) = autostart_manager.enable() {
+                        error!("Failed to enable autostart on load: {}", e);
+                    } else {
+                        is_enabled = true;
+                    }
+                } else if !should_run && is_enabled {
+                    if let Err(e) = autostart_manager.disable() {
+                        error!("Failed to disable autostart on load: {}", e);
+                    } else {
+                        is_enabled = false;
+                    }
+                }
+            } else {
+                config.run_on_startup = Some(is_enabled);
+                let _ = config.save();
+            }
             
             let state = Arc::new(AppState {
                 status: Mutex::new(AppStatus::Idle),
@@ -236,9 +257,7 @@ fn main() {
             let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
             let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
             
-            // Initialize run_on_startup checkmark
-            let autostart_manager = app.autolaunch();
-            let is_enabled = autostart_manager.is_enabled().unwrap_or(false);
+            // Initialize run_on_startup checkmark using enforced is_enabled
             let run_on_startup = CheckMenuItem::with_id(app, "run_on_startup", "Run on Startup", true, is_enabled, None::<&str>)?;
             
             let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
@@ -328,6 +347,9 @@ fn main() {
                                     if let Some(item) = item_guard.as_ref() {
                                         let _ = item.set_checked(false);
                                     }
+                                    let mut config = state.config.lock().unwrap();
+                                    config.run_on_startup = Some(false);
+                                    let _ = config.save();
                                 }
                             } else {
                                 if let Err(e) = autostart_manager.enable() {
@@ -337,6 +359,9 @@ fn main() {
                                     if let Some(item) = item_guard.as_ref() {
                                         let _ = item.set_checked(true);
                                     }
+                                    let mut config = state.config.lock().unwrap();
+                                    config.run_on_startup = Some(true);
+                                    let _ = config.save();
                                 }
                             }
                         }

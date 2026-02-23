@@ -27,6 +27,8 @@ pub struct Config {
     pub last_version: Option<String>,
     #[serde(default)]
     pub min_meeting_length: Option<u32>,
+    #[serde(default)]
+    pub run_on_startup: Option<bool>,
 }
 
 fn default_api_protocol() -> String {
@@ -143,6 +145,7 @@ impl Config {
             output_device_name: legacy.output_device_name,
             last_version: None,
             min_meeting_length: None,
+            run_on_startup: None,
         })
     }
 
@@ -220,6 +223,7 @@ impl Default for Config {
             output_device_name: None,
             last_version: None,
             min_meeting_length: None,
+            run_on_startup: None,
         }
     }
 }
