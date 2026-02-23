@@ -58,6 +58,7 @@ The Companion App is a lightweight system tray application that handles audio ca
 Existing audio files can be imported directly via the Web Client.
 
 - **Supported Formats:** WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+- **No File Size Limit:** There is no restriction on the size of audio files you can upload. The system automatically chunks files to bypass any proxy limitations.
 - **Metadata:** A custom meeting name and the original recording date/time can be specified during import.
 - **Processing:** Imported files enter the same processing pipeline (Transcription -> Diarization -> Alignment) as live recordings.
 
@@ -104,7 +105,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
   - **Comprehensive Notes:** Includes Topics, Summary, Detailed Notes, Action Items.
 - **Chat Q&A:**
   - "Chat with your meeting" feature allows users to ask questions about specific recordings.
-  - Can also be used to request modifications or rewrites to the generated meeting notes in real-time.
+  - Can also be used to request modifications or rewrites to the generated meeting notes in real-time. Changes are streamed and applied seamlessly to the notes panel without refreshing.
   - Chat history is saved per recording.
 
 ### Search & Organization

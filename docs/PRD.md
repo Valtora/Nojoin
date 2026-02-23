@@ -37,7 +37,7 @@ The core processing unit is hosted on a machine with NVIDIA GPU capabilities.
 The primary user interface for interacting with the system.
 
 - **Framework:** Next.js (React) with TypeScript.
-- **Styling:** Tailwind CSS for a responsive design.
+- **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, and system configuration.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
   - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and companion app setup.
@@ -118,7 +118,7 @@ The system provides the following core capabilities:
 
 - **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
 - **Import:** Support for importing existing audio files.
-  - **Chunked Uploads:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits (e.g., Cloudflare Tunnel 100MB limit) and ensure reliability.
+  - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
 - **Speaker Management:** Global speaker library with high-accuracy voiceprint identification (utilizing multi-segment averaging and margin-of-victory thresholds).
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
