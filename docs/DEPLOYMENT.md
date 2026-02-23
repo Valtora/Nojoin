@@ -66,7 +66,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 - **JWT Secret Key:** Automatically generated on first startup and persisted to `data/.secret_key`. Can be overridden by the `SECRET_KEY` environment variable.
 - **CORS, Security & Remote Access:**
   - **CORS & Host Whitelist:** Configurable via the `ALLOWED_ORIGINS` environment variable. This also acts as an allow-list to prevent Host Header Injection on generated invitation links.
-  - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
+  - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`. For deployments exposed over a publically accessible URL, it is strongly recommended to use a VPN or a secure reverse proxy to mitigate potential security risks.
 
 ### Environment Variables
 
