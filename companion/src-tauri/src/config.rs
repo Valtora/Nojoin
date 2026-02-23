@@ -68,10 +68,17 @@ impl Config {
     }
 
     pub fn get_web_url(&self) -> String {
-        format!(
-            "{}://{}:{}",
-            self.api_protocol, self.api_host, self.api_port
-        )
+        let is_standard_port = (self.api_protocol == "https" && self.api_port == 443)
+            || (self.api_protocol == "http" && self.api_port == 80);
+
+        if is_standard_port {
+            format!("{}://{}", self.api_protocol, self.api_host)
+        } else {
+            format!(
+                "{}://{}:{}",
+                self.api_protocol, self.api_host, self.api_port
+            )
+        }
     }
 
     pub fn get_app_data_dir() -> PathBuf {
