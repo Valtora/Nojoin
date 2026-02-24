@@ -1,6 +1,6 @@
 [package]
 name = "nojoin-companion"
-version = "0.6.2"
+version = "0.6.3"
 description = "A lightweight system tray companion app for Nojoin meeting intelligence"
 authors = ["Valtora"]
 edition = "2021"

@@ -64,6 +64,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 - **HTTPS Enforcement:** HTTP requests to port 14141 are redirected to HTTPS on port 14443.
 - **Authentication:** JWT-based authentication.
 - **JWT Secret Key:** Automatically generated on first startup and persisted to `data/.secret_key`. Can be overridden by the `SECRET_KEY` environment variable.
+- **Internal Services Security:** Redis is protected by a password (configured via `REDIS_PASSWORD`) and its port is restricted to the internal Docker network. Host connections (if enabled) are bound exclusively to localhost to prevent external unauthorized access.
 - **CORS, Security & Remote Access:**
   - **CORS & Host Whitelist:** Configurable via the `ALLOWED_ORIGINS` environment variable. This also acts as an allow-list to prevent Host Header Injection on generated invitation links.
   - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`. For deployments exposed over a publically accessible URL, it is strongly recommended to use a VPN or a secure reverse proxy to mitigate potential security risks.
@@ -72,11 +73,12 @@ Configuration is split between system-wide infrastructure settings and user-spec
 
 The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
 
-| Variable            | Description                                                      |
-| ------------------- | ---------------------------------------------------------------- |
-| `HF_TOKEN`          | Hugging Face User Access Token (Read)                            |
-| `LLM_PROVIDER`      | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`) |
-| `GEMINI_API_KEY`    | Google Gemini API Key                                            |
-| `OPENAI_API_KEY`    | OpenAI API Key                                                   |
-| `ANTHROPIC_API_KEY` | Anthropic API Key                                                |
-| `OLLAMA_API_URL`    | Ollama API URL (default: `http://host.docker.internal:11434`)    |
+| Variable            | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `REDIS_PASSWORD`    | Password used to secure the Redis instance and authenticate clients |
+| `HF_TOKEN`          | Hugging Face User Access Token (Read)                               |
+| `LLM_PROVIDER`      | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`)    |
+| `GEMINI_API_KEY`    | Google Gemini API Key                                               |
+| `OPENAI_API_KEY`    | OpenAI API Key                                                      |
+| `ANTHROPIC_API_KEY` | Anthropic API Key                                                   |
+| `OLLAMA_API_URL`    | Ollama API URL (default: `http://host.docker.internal:11434`)       |

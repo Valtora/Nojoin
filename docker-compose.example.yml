@@ -32,11 +32,18 @@ services:
   redis:
     container_name: nojoin-redis
     image: redis:alpine
+    # Hide password from host process list (ps) by writing it to a transient config file
+    command: /bin/sh -c 'echo "requirepass $$REDIS_PASSWORD" > /tmp/redis.conf && redis-server /tmp/redis.conf'
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_to_secure_string}
+      # redis-cli automatically uses this env var, keeping the healthcheck command clean
+      - REDISCLI_AUTH=${REDIS_PASSWORD:-change_to_secure_string}
     # ports:
-    #   - "6379:6379" # Uncomment to access Redis from host
+    #   - "127.0.0.1:6379:6379" # Uncomment to access Redis from host
     volumes:
       - redis_data:/data
     healthcheck:
+      # Use CMD instead of CMD-SHELL to avoid shell string expansion logging
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
@@ -78,9 +85,9 @@ services:
     environment:
       - DOCKER_HOST=tcp://socket-proxy:2375
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - XDG_CACHE_HOME=/shared_model_cache
       - HF_HOME=/shared_model_cache/huggingface
@@ -121,9 +128,9 @@ services:
       - backup_temp:/tmp
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nojoin}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0}
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - WHISPER_ENABLE_WORD_TIMESTAMPS=${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
