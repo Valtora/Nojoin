@@ -103,7 +103,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
         if user.role not in ["owner", "admin"] and not user.is_superuser:
             raise HTTPException(status_code=403, detail="Not authorized")
             
-        return True
+        return user
         
     except (JWTError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -125,13 +125,16 @@ async def get_initial_config(
             return None
         return f"{key[:3]}...{key[-4:]}"
 
+    from backend.utils.config_manager import async_get_system_api_keys
+    system_keys = await async_get_system_api_keys(db)
+
     return {
         "llm_provider": config_manager.get("llm_provider"),
-        "gemini_api_key": mask_key(config_manager.get("gemini_api_key")),
-        "openai_api_key": mask_key(config_manager.get("openai_api_key")),
-        "anthropic_api_key": mask_key(config_manager.get("anthropic_api_key")),
+        "gemini_api_key": mask_key(system_keys.get("gemini_api_key")),
+        "openai_api_key": mask_key(system_keys.get("openai_api_key")),
+        "anthropic_api_key": mask_key(system_keys.get("anthropic_api_key")),
         "ollama_api_url": config_manager.get("ollama_api_url"),
-        "hf_token": mask_key(config_manager.get("hf_token"))
+        "hf_token": mask_key(system_keys.get("hf_token"))
     }
 
 @router.post("/validate-llm")
@@ -143,17 +146,21 @@ async def validate_llm(
     """
     Validate LLM API Key.
     """
-    await check_setup_permission(db, req)
+    user = await check_setup_permission(db, req)
     
     try:
-        # Fallback to config manager if api_key/url is missing or looks masked
+        # Fallback to database user settings, then config manager if api_key/url is missing or looks masked
         api_key = request.api_key
-        if not api_key or "..." in api_key:
-             api_key = config_manager.get(f"{request.provider}_api_key")
+        if not api_key or "..." in api_key or "***" in api_key:
+             from backend.utils.config_manager import async_get_system_api_keys
+             system_keys = await async_get_system_api_keys(db)
+             db_key = user.settings.get(f"{request.provider}_api_key") if user and hasattr(user, "settings") and user.settings else None
+             api_key = db_key if db_key else system_keys.get(f"{request.provider}_api_key")
              
         api_url = request.api_url
-        if request.provider == "ollama" and (not api_url or "..." in api_url):
-             api_url = config_manager.get("ollama_api_url")
+        if request.provider == "ollama" and (not api_url or "..." in api_url or "***" in api_url):
+             db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
+             api_url = db_url if db_url else config_manager.get("ollama_api_url")
 
         validate_api_url_for_ssrf(api_url)
 
@@ -180,13 +187,20 @@ async def validate_hf(
     """
     Validate Hugging Face Token.
     """
-    await check_setup_permission(db, req)
+    user = await check_setup_permission(db, req)
 
     try:
+        token = request.token
+        if not token or "..." in token or "***" in token:
+            from backend.utils.config_manager import async_get_system_api_keys
+            system_keys = await async_get_system_api_keys(db)
+            db_token = user.settings.get("hf_token") if user and hasattr(user, "settings") and user.settings else None
+            token = db_token if db_token else system_keys.get("hf_token")
+            
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://huggingface.co/api/whoami-v2",
-                headers={"Authorization": f"Bearer {request.token if request.token and '...' not in request.token else config_manager.get('hf_token')}"}
+                headers={"Authorization": f"Bearer {token}"}
             )
             response.raise_for_status()
             user_info = response.json()
@@ -204,17 +218,21 @@ async def list_models(
     """
     List available models for a given provider and API key.
     """
-    await check_setup_permission(db, req)
+    user = await check_setup_permission(db, req)
 
     try:
         # Fallback logic
         api_key = request.api_key
-        if not api_key or "..." in api_key:
-             api_key = config_manager.get(f"{request.provider}_api_key")
+        if not api_key or "..." in api_key or "***" in api_key:
+             from backend.utils.config_manager import async_get_system_api_keys
+             system_keys = await async_get_system_api_keys(db)
+             db_key = user.settings.get(f"{request.provider}_api_key") if user and hasattr(user, "settings") and user.settings else None
+             api_key = db_key if db_key else system_keys.get(f"{request.provider}_api_key")
              
         api_url = request.api_url
-        if request.provider == "ollama" and (not api_url or "..." in api_url):
-             api_url = config_manager.get("ollama_api_url")
+        if request.provider == "ollama" and (not api_url or "..." in api_url or "***" in api_url):
+             db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
+             api_url = db_url if db_url else config_manager.get("ollama_api_url")
 
         validate_api_url_for_ssrf(api_url)
 

@@ -843,11 +843,22 @@ async def generate_notes(
     if not transcript or not transcript.segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
     
-    # 3. Get User Settings
+    from backend.utils.config_manager import async_get_system_api_keys
+    system_keys = await async_get_system_api_keys(db)
+    
+    # Get system defaults from Owner
+    res = await db.execute(select(User).where(User.role == "owner"))
+    owner = res.scalar_one_or_none()
+    owner_settings = getattr(owner, "settings", {}) if owner else {}
+    
     user_settings = current_user.settings or {}
-    provider = user_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
-    api_key = user_settings.get(f"{provider}_api_key")
-    model = user_settings.get(f"{provider}_model")
+    provider = user_settings.get("llm_provider") or owner_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
+    
+    api_key = system_keys.get(f"{provider}_api_key")
+    if not api_key:
+        api_key = user_settings.get(f"{provider}_api_key")
+        
+    model = user_settings.get(f"{provider}_model") or owner_settings.get(f"{provider}_model") or config_manager.get(f"{provider}_model")
     
     if not api_key and provider != "ollama":
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
@@ -1042,10 +1053,22 @@ async def chat_with_meeting(
         })
 
 
+    from backend.utils.config_manager import async_get_system_api_keys
+    system_keys = await async_get_system_api_keys(db)
+
+    # Get system defaults from Owner
+    res = await db.execute(select(User).where(User.role == "owner"))
+    owner = res.scalar_one_or_none()
+    owner_settings = getattr(owner, "settings", {}) if owner else {}
+
     user_settings = current_user.settings or {}
-    provider = user_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
-    api_key = user_settings.get(f"{provider}_api_key")
-    model = user_settings.get(f"{provider}_model")
+    provider = user_settings.get("llm_provider") or owner_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
+    
+    api_key = system_keys.get(f"{provider}_api_key")
+    if not api_key:
+        api_key = user_settings.get(f"{provider}_api_key")
+        
+    model = user_settings.get(f"{provider}_model") or owner_settings.get(f"{provider}_model") or config_manager.get(f"{provider}_model")
     
     if not api_key and provider != "ollama":
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
@@ -1082,7 +1105,19 @@ async def chat_with_meeting(
                  
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'error': 'An internal error occurred'})}\n\n"
+            error_msg = str(e).lower()
+            
+            # Map common upstream API failures to friendly messages
+            if "503" in error_msg or "unavailable" in error_msg or "overloaded" in error_msg:
+                user_msg = "The AI provider is currently experiencing high demand and is unavailable. Please try again later."
+            elif "429" in error_msg or "rate limit" in error_msg or "quota" in error_msg:
+                user_msg = "You have exceeded your AI provider's rate limit or quota. Please check your billing or try again later."
+            elif "timeout" in error_msg or "deadline" in error_msg:
+                user_msg = "The AI provider took too long to respond. Please try again."
+            else:
+                user_msg = "An internal error occurred while communicating with the AI service. Please try again."
+                
+            yield f"data: {json.dumps({'error': user_msg})}\n\n"
             return
 
         # 6. Save Assistant Response to DB

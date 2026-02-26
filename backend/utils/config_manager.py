@@ -12,6 +12,14 @@ CONFIG_FILENAME = 'config.json'
 # Use PathManager for configuration file location
 CONFIG_PATH = str(path_manager.config_path)
 
+# Keys that should NEVER be written to config.json
+SENSITIVE_KEYS = {
+    "gemini_api_key",
+    "openai_api_key",
+    "anthropic_api_key",
+    "hf_token"
+}
+
 def _get_default_device():
     """Determine default processing device safely."""
     # Always default to 'auto' so the worker can decide at runtime based on availability.
@@ -124,7 +132,7 @@ class ConfigManager:
                     
                     # Filter out keys that are not in DEFAULT_SYSTEM_CONFIG or DEFAULT_USER_SETTINGS
                     # This ensures config.json only contains valid settings
-                    valid_keys = set(DEFAULT_SYSTEM_CONFIG.keys()) | set(DEFAULT_USER_SETTINGS.keys())
+                    valid_keys = (set(DEFAULT_SYSTEM_CONFIG.keys()) | set(DEFAULT_USER_SETTINGS.keys())) - SENSITIVE_KEYS
                     filtered_config = {k: v for k, v in loaded_config.items() if k in valid_keys}
                     
                     # Update default config with loaded values
@@ -153,10 +161,11 @@ class ConfigManager:
         self._save_config(config_data)
 
     def _save_config(self, config_data):
-        """Saves the current configuration state to the file."""
+        """Saves the current configuration state to the file, excluding sensitive keys."""
         try:
+            safe_config = {k: v for k, v in config_data.items() if k not in SENSITIVE_KEYS}
             with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, indent=4)
+                json.dump(safe_config, f, indent=4)
             logger.info(f"Configuration saved to {self.config_path}")
         except IOError as e:
             logger.error(f"Error saving configuration to {self.config_path}: {e}", exc_info=True)
@@ -314,3 +323,53 @@ def is_llm_available():
     api_key = config_manager.get(f"{provider}_api_key")
     model = config_manager.get(f"{provider}_model")
     return bool(api_key and model)
+
+def get_system_api_keys(session):
+    """Retrieves system-wide API keys prioritizing the owner user's settings, then .env fallback."""
+    from backend.models.user import User
+    from sqlmodel import select
+    keys = {}
+    
+    # First, try to get from the owner's database settings
+    owner = session.exec(select(User).where(User.role == "owner")).first()
+    if owner and getattr(owner, "settings", None):
+        for sk in SENSITIVE_KEYS:
+            val = owner.settings.get(sk)
+            if val and not ("..." in val or "***" in val):
+                keys[sk] = val
+                
+    # Fallback to .env for any missing keys
+    import os
+    for sk in SENSITIVE_KEYS:
+        if sk not in keys or not keys[sk]:
+            env_val = os.environ.get(sk.upper())
+            if env_val:
+                keys[sk] = env_val
+                
+    return keys
+
+async def async_get_system_api_keys(db):
+    """Async version of get_system_api_keys for FastAPI endpoints."""
+    from backend.models.user import User
+    from sqlmodel import select
+    keys = {}
+    
+    # Try to get from the owner's database settings
+    result = await db.execute(select(User).where(User.role == "owner"))
+    owner = result.scalar_one_or_none()
+    
+    if owner and getattr(owner, "settings", None):
+        for sk in SENSITIVE_KEYS:
+            val = owner.settings.get(sk)
+            if val and not ("..." in val or "***" in val):
+                keys[sk] = val
+                
+    # Fallback to .env for any missing keys
+    import os
+    for sk in SENSITIVE_KEYS:
+        if sk not in keys or not keys[sk]:
+            env_val = os.environ.get(sk.upper())
+            if env_val:
+                keys[sk] = env_val
+                
+    return keys

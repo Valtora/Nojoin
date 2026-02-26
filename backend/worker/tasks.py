@@ -94,8 +94,27 @@ def process_recording_task(self, recording_id: int):
             logger.info(f"Loaded settings for user {user.username}: {list(user_settings.keys())}")
             
     system_config = config_manager.get_all()
+    from backend.utils.config_manager import get_system_api_keys
+    system_keys = get_system_api_keys(session)
+    system_config.update(system_keys)
+    
+    # Extract owner's global LLM config if we need it
+    from sqlmodel import select
+    res = session.execute(select(User).where(User.role == "owner"))
+    owner = res.scalar_one_or_none()
+    owner_settings = getattr(owner, "settings", {}) if owner else {}
+    system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
+    for sys_field in system_fields:
+        if owner_settings and owner_settings.get(sys_field):
+            system_config[sys_field] = owner_settings[sys_field]
+    
     merged_config = system_config.copy()
-    merged_config.update(user_settings)
+    merged_config.update({k: v for k, v in user_settings.items() if v is not None})
+    
+    # Enforce system keys globally for all users
+    for sk, val in system_keys.items():
+        if val:
+            merged_config[sk] = val
     
     # Platform/Device detection for UX
     import torch
@@ -986,8 +1005,25 @@ def generate_notes_task(self, recording_id: int):
                 user_settings = user.settings
         
         system_config = config_manager.get_all()
+        from backend.utils.config_manager import get_system_api_keys
+        system_keys = get_system_api_keys(session)
+        system_config.update(system_keys)
+        
+        # Extract owner's global LLM config if we need it
+        from sqlmodel import select
+        res = session.execute(select(User).where(User.role == "owner"))
+        owner = res.scalar_one_or_none()
+        owner_settings = getattr(owner, "settings", {}) if owner else {}
+        system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
+        for sys_field in system_fields:
+            if owner_settings and owner_settings.get(sys_field):
+                system_config[sys_field] = owner_settings[sys_field]
+        
         merged_config = system_config.copy()
-        merged_config.update(user_settings)
+        merged_config.update({k: v for k, v in user_settings.items() if v is not None})
+        for sk, val in system_keys.items():
+            if val:
+                merged_config[sk] = val
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")
@@ -1122,8 +1158,25 @@ def infer_speakers_task(self, recording_id: int):
                 user_settings = user.settings
         
         system_config = config_manager.get_all()
+        from backend.utils.config_manager import get_system_api_keys
+        system_keys = get_system_api_keys(session)
+        system_config.update(system_keys)
+        
+        # Extract owner's global LLM config if we need it
+        from sqlmodel import select
+        res = session.execute(select(User).where(User.role == "owner"))
+        owner = res.scalar_one_or_none()
+        owner_settings = getattr(owner, "settings", {}) if owner else {}
+        system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
+        for sys_field in system_fields:
+            if owner_settings and owner_settings.get(sys_field):
+                system_config[sys_field] = owner_settings[sys_field]
+        
         merged_config = system_config.copy()
-        merged_config.update(user_settings)
+        merged_config.update({k: v for k, v in user_settings.items() if v is not None})
+        for sk, val in system_keys.items():
+            if val:
+                merged_config[sk] = val
 
         provider = merged_config.get("llm_provider", "gemini")
         api_key = merged_config.get(f"{provider}_api_key")

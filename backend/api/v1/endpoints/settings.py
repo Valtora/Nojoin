@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
-from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES
+from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES, SENSITIVE_KEYS
 
 router = APIRouter()
 
@@ -60,11 +60,12 @@ class SettingsUpdate(BaseModel):
                 raise ValueError("Invalid URL format")
         return v
 
-def _merge_settings(user_settings: dict) -> dict:
+async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """
     Merges system config, default user settings, and user-specific settings.
     Priority: User Settings > Default User Settings > System Config
     """
+    import os
     # 1. Start with System Config (read-only for users)
     merged = config_manager.get_all()
     
@@ -72,31 +73,62 @@ def _merge_settings(user_settings: dict) -> dict:
     default_user_settings = get_default_user_settings()
     merged.update(default_user_settings)
     
+    # 2.5 Apply Owner's System-Wide LLM Configuration Defaults
+    from backend.models.user import User
+    from sqlmodel import select
+    result = await db.execute(select(User).where(User.role == "owner"))
+    owner = result.scalar_one_or_none()
+    owner_settings = getattr(owner, "settings", {}) if owner else {}
+    
+    system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
+    for sys_field in system_fields:
+        if owner_settings and owner_settings.get(sys_field):
+            merged[sys_field] = owner_settings[sys_field]
+    
     # 3. Apply User Specific Settings
     if user_settings:
-        merged.update(user_settings)
+        merged.update({k: v for k, v in user_settings.items() if v is not None})
         
+    # 4. Inject system API keys (from Admin DB or .env) globally
+    from backend.utils.config_manager import async_get_system_api_keys
+    system_keys = await async_get_system_api_keys(db)
+    for sk in SENSITIVE_KEYS:
+        val = system_keys.get(sk)
+        if val:
+            merged[sk] = val
+            
+    # 5. Mask sensitive keys
+    for key in SENSITIVE_KEYS:
+        if merged.get(key):
+            val = str(merged[key])
+            if len(val) > 8:
+                merged[key] = f"{val[:3]}...{val[-4:]}"
+            else:
+                merged[key] = "***"
+                
     return merged
 
 @router.get("", response_model=Any)
 async def get_settings_root(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Get current user settings (root path).
     Returns a merged view of system config, defaults, and user overrides.
     """
-    return _merge_settings(current_user.settings)
+    return await _merge_settings(current_user.settings, db)
 
 @router.get("/", response_model=Any)
 async def get_settings(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Get current user settings.
     Returns a merged view of system config, defaults, and user overrides.
     """
-    return _merge_settings(current_user.settings)
+    return await _merge_settings(current_user.settings, db)
 
 @router.post("", response_model=Any)
 async def update_settings_root(
@@ -112,6 +144,17 @@ async def update_settings_root(
     current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
+    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
+    
+    # Ignore any sensitive keys that are masked to avoid overwriting real keys
+    # Also drop them entirely if the user is not an admin
+    for key in SENSITIVE_KEYS:
+        if key in update_data:
+            if not is_admin:
+                del update_data[key]
+            elif update_data[key] and ("..." in update_data[key] or "***" in update_data[key]):
+                del update_data[key]
+    
     # Validate settings
     try:
         for key, value in update_data.items():
@@ -127,7 +170,7 @@ async def update_settings_root(
     await db.commit()
     await db.refresh(current_user)
     
-    return _merge_settings(current_user.settings)
+    return await _merge_settings(current_user.settings, db)
 
 @router.post("/", response_model=Any)
 async def update_settings(
@@ -143,6 +186,18 @@ async def update_settings(
     current_settings = dict(current_user.settings) if current_user.settings else {}
     update_data = settings.dict(exclude_unset=True)
     
+    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
+    
+    # Ignore any sensitive keys that are masked to avoid overwriting real keys
+    # Also drop them entirely if the user is not an admin
+    for key in SENSITIVE_KEYS:
+        if key in update_data:
+            if not is_admin:
+                del update_data[key]
+            elif update_data[key] and ("..." in update_data[key] or "***" in update_data[key]):
+                del update_data[key]
+            del update_data[key]
+    
     # Validate settings
     try:
         for key, value in update_data.items():
@@ -158,4 +213,4 @@ async def update_settings(
     await db.commit()
     await db.refresh(current_user)
     
-    return _merge_settings(current_user.settings)
+    return await _merge_settings(current_user.settings, db)

@@ -265,12 +265,6 @@ async def setup_system(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    # Persist key system-wide settings so workers and other processes can access them
-    try:
-        config_manager.update_config(settings)
-    except Exception as e:
-        # Log error but don't fail the request since DB is updated
-        logger.error(f"Failed to update config file: {e}")
 
     # Seed demo data for the new admin user
     try:
