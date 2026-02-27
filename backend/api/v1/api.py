@@ -26,8 +26,7 @@ api_router.include_router(
 api_router.include_router(
     recordings.router,
     prefix="/recordings",
-    tags=["recordings"],
-    dependencies=[Depends(get_current_user)]
+    tags=["recordings"]
 )
 api_router.include_router(
     transcripts.router,

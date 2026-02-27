@@ -10,7 +10,7 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_db, get_current_user
+from backend.api.deps import get_db, get_current_user, get_current_user_stream
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
 from backend.models.user import User
@@ -924,7 +924,7 @@ async def stream_recording(
     recording_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_stream)
 ):
     """
     Stream the audio file for a recording.

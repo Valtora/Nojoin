@@ -407,13 +407,23 @@ async def delete_user(
     result = await db.execute(stmt)
     recordings = result.scalars().all()
     
+    # Path traversal validation
+    RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "data/recordings")
+    abs_recordings_dir = os.path.abspath(RECORDINGS_DIR)
+
+    def is_safe_path(target_path: str) -> bool:
+        if not target_path:
+            return False
+        abs_target = os.path.abspath(target_path)
+        return os.path.commonpath([abs_recordings_dir, abs_target]) == abs_recordings_dir
+    
     for recording in recordings:
-        if recording.audio_path and os.path.exists(recording.audio_path):
+        if recording.audio_path and os.path.exists(recording.audio_path) and is_safe_path(recording.audio_path):
             try:
                 os.remove(recording.audio_path)
             except OSError:
                 pass
-        if recording.proxy_path and os.path.exists(recording.proxy_path):
+        if recording.proxy_path and os.path.exists(recording.proxy_path) and is_safe_path(recording.proxy_path):
             try:
                 os.remove(recording.proxy_path)
             except OSError:
