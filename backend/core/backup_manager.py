@@ -389,6 +389,13 @@ class BackupManager:
             BackupManager.restore_jobs[job_id]["progress"] = "Extracting files..."
             for file in zipf.namelist():
                 if file.startswith("recordings/"):
+                    # Zip Slip Mitigation
+                    target_path = os.path.abspath(os.path.join(user_data_dir, file))
+                    if not target_path.startswith(os.path.abspath(user_data_dir)):
+                        error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
+                        
                     # Optimization: Extract all files. If the DB record is skipped,
                     # the file will be orphaned but cleaned up later.
                     zipf.extract(file, user_data_dir)
@@ -397,6 +404,13 @@ class BackupManager:
                     if clear_existing:
                         # Only restore config if we are clearing data, otherwise keep current system config
                         try:
+                            # Zip Slip Mitigation for config
+                            target_path = os.path.abspath(os.path.join(user_data_dir, file))
+                            if not target_path.startswith(os.path.abspath(user_data_dir)):
+                                error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
+                                logger.error(error_msg)
+                                raise ValueError(error_msg)
+
                             new_config = json.loads(zipf.read("config.json"))
                             if config_path.exists():
                                 current_config = json.loads(config_path.read_text())
@@ -404,10 +418,15 @@ class BackupManager:
                                 for k, v in new_config.items():
                                     if v != "REDACTED":
                                         current_config[k] = v
-                                config_path.write_text(json.dumps(current_config, indent=2))
+                                        
+                                # Write to string first then file
+                                config_path_obj = PathManager().config_path
+                                config_path_obj.write_text(json.dumps(current_config, indent=2))
                             else:
                                 zipf.extract(file, user_data_dir)
                         except Exception as e:
+                            if isinstance(e, ValueError) and "Zip Slip detected" in str(e):
+                                raise
                             logger.error(f"Failed to restore config: {e}")
             logger.info("File extraction complete.")
 

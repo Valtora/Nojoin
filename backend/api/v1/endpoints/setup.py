@@ -13,6 +13,9 @@ import urllib.parse
 
 logger = logging.getLogger(__name__)
 
+import socket
+import ipaddress
+
 def validate_api_url_for_ssrf(url: Optional[str]):
     if not url:
         return
@@ -30,13 +33,40 @@ def validate_api_url_for_ssrf(url: Optional[str]):
             
         hostname = hostname.lower()
         
-        # Block obvious internal hostnames and IPs if they differ from the default
+        # Allow explicit external LLM API hostnames to avoid DNS lookup overhead
+        whitelist = [
+            "api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com", 
+            "api.groq.com", "api.deepseek.com", "api.together.xyz", "openrouter.ai"
+        ]
+        if hostname in whitelist:
+            return
+
+        # Block obvious internal hostnames 
         forbidden_hosts = [
-            "localhost", "127.0.0.1", "0.0.0.0", "socket-proxy", "db", "redis", "worker", "api", "frontend", "host.docker.internal", "nginx"
+            "localhost", "socket-proxy", "db", "redis", "worker", "api", "frontend", "host.docker.internal", "nginx"
         ]
         
-        if hostname in forbidden_hosts or hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("172."):
+        if hostname in forbidden_hosts:
             raise HTTPException(status_code=400, detail="Invalid API URL: Internal network hostnames are blocked for security reasons.")
+            
+        # Resolve hostname to IP and check if it's private/loopback/link-local
+        ip_obj = None
+        try:
+            # Check if hostname is already an IP
+            ip_obj = ipaddress.ip_address(hostname)
+        except ValueError:
+            # Not an IP, try to resolve it
+            try:
+                # getaddrinfo handles both IPv4 and IPv6
+                addr_info = socket.getaddrinfo(hostname, None)
+                ip = addr_info[0][4][0]
+                ip_obj = ipaddress.ip_address(ip)
+            except (socket.gaierror, IndexError):
+                # DNS resolution failed, let it pass (subsequent real connection will fail anyway)
+                pass
+
+        if ip_obj and (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified):
+            raise HTTPException(status_code=400, detail="Invalid API URL: Internal or reserved IPs are blocked for security reasons.")
             
     except Exception as e:
         if isinstance(e, HTTPException):
