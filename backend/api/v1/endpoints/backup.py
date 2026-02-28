@@ -9,6 +9,9 @@ import os
 import uuid
 from datetime import datetime
 from typing import Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -120,7 +123,15 @@ async def import_backup(
     path_manager.cleanup_temp_files(restore_temp_dir, max_age_hours=24)
 
     job_id = str(uuid.uuid4())
-    temp_path = restore_temp_dir / f"{job_id}_{file.filename}"
+    # Sanitize filename to prevent path traversal
+    if ".." in file.filename or "/" in file.filename or "\\" in file.filename:
+        logger.warning(f"Path traversal blocked for uploaded filename: {file.filename}")
+        raise HTTPException(status_code=400, detail="Filename contains illegal path traversal characters.")
+
+    safe_filename = "".join([c for c in file.filename if c.isalnum() or c in (' ', '.', '-', '_')]).strip()
+    if not safe_filename:
+        safe_filename = "backup.zip"
+    temp_path = restore_temp_dir / f"{job_id}_{safe_filename}"
     
     try:
         with open(temp_path, "wb") as f:

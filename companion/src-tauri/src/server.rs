@@ -223,14 +223,15 @@ async fn authorize(
             || (!expected.is_empty() && origin == expected)
     };
 
-    if !is_allowed && !origin.is_empty() {
+    if !is_allowed {
+        let display_origin = if origin.is_empty() { "Unknown App".to_string() } else { origin.clone() };
         info!(
             "Unknown origin {} attempting to pair. Prompting user.",
-            origin
+            display_origin
         );
-        let allowed_by_user = prompt_pairing(&context, origin.clone()).await;
+        let allowed_by_user = prompt_pairing(&context, display_origin.clone()).await;
         if !allowed_by_user {
-            error!("Pairing request from {} was denied by the user.", origin);
+            error!("Pairing request from {} was denied by the user.", display_origin);
             return Json(AuthResponse {
                 success: false,
                 message: "Pairing was denied by the user".to_string(),

@@ -353,7 +353,11 @@ class PathManager:
         """
         Get the temporary directory for a specific multipart upload.
         """
-        path = self._user_data_directory / "temp_uploads" / upload_id
+        # Sanitize upload_id to prevent path traversal
+        safe_id = "".join([c for c in upload_id if c.isalnum() or c in '-_'])
+        if not safe_id:
+            safe_id = "default_upload"
+        path = self._user_data_directory / "temp_uploads" / safe_id
         path.mkdir(parents=True, exist_ok=True)
         return path
 

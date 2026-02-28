@@ -62,8 +62,8 @@ def validate_api_url_for_ssrf(url: Optional[str]):
                 ip = addr_info[0][4][0]
                 ip_obj = ipaddress.ip_address(ip)
             except (socket.gaierror, IndexError):
-                # DNS resolution failed, let it pass (subsequent real connection will fail anyway)
-                pass
+                # DNS resolution failed, we must reject it to prevent SSRF bypass
+                raise HTTPException(status_code=400, detail="Invalid API URL: Could not resolve hostname.")
 
         if ip_obj and (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified):
             raise HTTPException(status_code=400, detail="Invalid API URL: Internal or reserved IPs are blocked for security reasons.")

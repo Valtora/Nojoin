@@ -391,7 +391,7 @@ class BackupManager:
                 if file.startswith("recordings/"):
                     # Zip Slip Mitigation
                     target_path = os.path.abspath(os.path.join(user_data_dir, file))
-                    if not target_path.startswith(os.path.abspath(user_data_dir)):
+                    if not target_path.startswith(os.path.abspath(user_data_dir) + os.sep):
                         error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
                         logger.error(error_msg)
                         raise ValueError(error_msg)
@@ -406,7 +406,7 @@ class BackupManager:
                         try:
                             # Zip Slip Mitigation for config
                             target_path = os.path.abspath(os.path.join(user_data_dir, file))
-                            if not target_path.startswith(os.path.abspath(user_data_dir)):
+                            if not target_path.startswith(os.path.abspath(user_data_dir) + os.sep):
                                 error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
                                 logger.error(error_msg)
                                 raise ValueError(error_msg)
