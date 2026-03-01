@@ -14,22 +14,37 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Clear any existing token when visiting login page
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-    }
-
-    const checkStatus = async () => {
+    const checkAuthAndStatus = async () => {
+      // 1. Check system status
       try {
         const status = await getSystemStatus();
         if (!status.initialized) {
           router.push("/setup");
+          return;
         }
       } catch (e) {
         console.error("Failed to check system status", e);
       }
+
+      // 2. Check if already logged in with a valid token
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.exp && payload.exp * 1000 > Date.now()) {
+            // Token seems valid, redirect to dashboard
+            router.push("/");
+            return;
+          } else {
+            localStorage.removeItem("token");
+          }
+        } catch (e) {
+          localStorage.removeItem("token");
+        }
+      }
     };
-    checkStatus();
+    
+    checkAuthAndStatus();
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {

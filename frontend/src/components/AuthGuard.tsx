@@ -34,8 +34,24 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       const token = localStorage.getItem('token');
       const publicPaths = ['/login', '/setup', '/register'];
       
-      if (!token && !publicPaths.includes(pathname || '')) {
+      let isValidToken = false;
+      if (token) {
+        try {
+          // Basic JWT decode to check expiration
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.exp && payload.exp * 1000 > Date.now()) {
+            isValidToken = true;
+          } else {
+            localStorage.removeItem('token');
+          }
+        } catch (e) {
+          localStorage.removeItem('token');
+        }
+      }
+      
+      if (!isValidToken && !publicPaths.includes(pathname || '')) {
         router.push('/login');
+        return;
       } 
       
       setChecked(true);
