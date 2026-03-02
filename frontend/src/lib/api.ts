@@ -26,18 +26,13 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
 api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
   return config;
 });
 
@@ -81,6 +76,25 @@ export const login = async (
       "Content-Type": "multipart/form-data",
     },
   });
+  return response.data;
+};
+
+export const logout = async (): Promise<void> => {
+  try {
+    await api.post("/login/logout");
+  } catch (error) {
+    console.error("Logout failed:", error);
+  } finally {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("force_password_change");
+      window.location.href = "/login";
+    }
+  }
+};
+
+export const getCurrentUser = async (): Promise<User> => {
+  const response = await api.get<User>("/users/me");
   return response.data;
 };
 
@@ -153,12 +167,6 @@ export const cancelProcessing = async (id: number): Promise<Recording> => {
 };
 
 export const getRecordingStreamUrl = (id: number): string => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("token");
-    if (token) {
-      return `${API_BASE_URL}/recordings/${id}/stream?token=${token}`;
-    }
-  }
   return `${API_BASE_URL}/recordings/${id}/stream`;
 };
 

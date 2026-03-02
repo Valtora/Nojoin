@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getSystemStatus } from '@/lib/api';
+import { getSystemStatus, getCurrentUser } from '@/lib/api';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -31,22 +31,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       // 2. Check if user is authenticated
-      const token = localStorage.getItem('token');
       const publicPaths = ['/login', '/setup', '/register'];
       
       let isValidToken = false;
-      if (token) {
-        try {
-          // Basic JWT decode to check expiration
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          if (payload.exp && payload.exp * 1000 > Date.now()) {
-            isValidToken = true;
-          } else {
-            localStorage.removeItem('token');
-          }
-        } catch (e) {
-          localStorage.removeItem('token');
-        }
+      try {
+        await getCurrentUser();
+        isValidToken = true;
+      } catch (e) {
+        isValidToken = false;
       }
       
       if (!isValidToken && !publicPaths.includes(pathname || '')) {

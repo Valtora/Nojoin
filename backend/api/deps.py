@@ -1,5 +1,5 @@
 from typing import AsyncGenerator, Optional
-from fastapi import Depends, HTTPException, status, Query
+from fastapi import Depends, HTTPException, status, Query, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -20,10 +20,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 async def get_current_user(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(reusable_oauth2)
 ) -> User:
-    actual_token = token
+    actual_token = token or request.cookies.get("access_token")
     
     if not actual_token:
         raise HTTPException(
@@ -63,11 +64,12 @@ async def get_current_user(
     return user
 
 async def get_current_user_stream(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(reusable_oauth2),
     token_query: Optional[str] = Query(None, alias="token")
 ) -> User:
-    actual_token = token or token_query
+    actual_token = token or token_query or request.cookies.get("access_token")
     
     if not actual_token:
         raise HTTPException(
@@ -129,6 +131,7 @@ async def get_current_admin_user(
     return current_user
 
 async def get_current_user_ws(
+    websocket: WebSocket,
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Query(None, alias="token")
 ) -> User:
@@ -136,7 +139,8 @@ async def get_current_user_ws(
     Dedicated dependency for WebSocket authentication.
     Bypasses OAuth2PasswordBearer which fails in WS context.
     """
-    if not token:
+    actual_token = token or websocket.cookies.get("access_token")
+    if not actual_token:
         # For WebSockets, we can't easily raise HTTPException with headers.
         # We'll just raise a standard 401/403 which FastAPI WS handles by closing connection usually,
         # or handle gracefully in the endpoint.

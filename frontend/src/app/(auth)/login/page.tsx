@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { login, getSystemStatus } from "@/lib/api";
+import { login, getSystemStatus, getCurrentUser } from "@/lib/api";
 import { Lock, User } from "lucide-react";
 
 export default function LoginPage() {
@@ -27,20 +27,12 @@ export default function LoginPage() {
       }
 
       // 2. Check if already logged in with a valid token
-      const token = localStorage.getItem("token");
-      if (token) {
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          if (payload.exp && payload.exp * 1000 > Date.now()) {
-            // Token seems valid, redirect to dashboard
-            router.push("/");
-            return;
-          } else {
-            localStorage.removeItem("token");
-          }
-        } catch (e) {
-          localStorage.removeItem("token");
-        }
+      try {
+        await getCurrentUser();
+        router.push("/");
+        return;
+      } catch (e) {
+        localStorage.removeItem("token");
       }
     };
     
@@ -54,7 +46,6 @@ export default function LoginPage() {
 
     try {
       const response = await login(username, password);
-      localStorage.setItem("token", response.access_token);
 
       if (response.force_password_change) {
         // Persists flag so the dashboard can prompt the user to change their password.

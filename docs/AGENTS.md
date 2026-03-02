@@ -26,7 +26,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 ### Frontend (Next.js + Zustand)
 
 - **State Management**: **Zustand** (`src/lib/store.ts`) is used for global UI state (navigation, selection, filters). Prop drilling should be avoided.
-- **API Layer**: All API calls MUST go through `src/lib/api.ts`. This module handles JWT authentication and interceptors.
+- **API Layer**: All API calls MUST go through `src/lib/api.ts`. This module relies on HttpOnly cookies for web authentication and supports Bearer tokens for external clients.
 - **Routing**: The App Router (`src/app/`) is utilized.
 - **Styling**: Tailwind CSS is the standard styling framework.
 - **Components**: Functional components in `src/components/` are preferred.

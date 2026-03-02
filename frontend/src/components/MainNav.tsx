@@ -45,6 +45,7 @@ import {
   createTag,
   getCompanionReleases,
   CompanionReleases,
+  logout
 } from "@/lib/api";
 import { Tag } from "@/types";
 import { getColorByKey, DEFAULT_TAG_COLORS } from "@/lib/constants";
@@ -398,9 +399,8 @@ export default function MainNav() {
     onConfirm: () => {},
   });
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    router.push("/login");
+  const handleLogout = async () => {
+    await logout();
   };
 
   const loadTags = useCallback(async () => {

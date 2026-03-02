@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -13,6 +13,7 @@ router = APIRouter()
 
 @router.post("/login/access-token")
 async def login_access_token(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
@@ -32,12 +33,34 @@ async def login_access_token(
         raise HTTPException(status_code=400, detail="Inactive user")
         
     access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = security.create_access_token(
+        user.username, expires_delta=access_token_expires
+    )
+    
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=security.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    
     return {
-        "access_token": security.create_access_token(
-            user.username, expires_delta=access_token_expires
-        ),
+        "access_token": token,
         "token_type": "bearer",
         "force_password_change": user.force_password_change,
         "is_superuser": user.is_superuser,
         "username": user.username,
     }
+
+@router.post("/login/logout")
+async def logout_user(response: Response) -> Any:
+    """
+    Endpoint to clear the HttpOnly access token on logout.
+    """
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        samesite="lax"
+    )
+    return {"message": "Logged out successfully"}
