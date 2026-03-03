@@ -150,7 +150,7 @@ async def get_current_user_ws(
         )
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(actual_token, SECRET_KEY, algorithms=[ALGORITHM])
         token_data = payload.get("sub")
         if token_data is None:
             raise HTTPException(

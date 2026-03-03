@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from backend.api.deps import get_db
+from backend.api.deps import get_db, get_current_user
 from backend.core import security
 from backend.models.user import User
 
@@ -64,3 +64,17 @@ async def logout_user(response: Response) -> Any:
         samesite="lax"
     )
     return {"message": "Logged out successfully"}
+
+@router.get("/login/companion-token")
+async def get_companion_token(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Issues a fresh JWT for companion app pairing.
+    Authenticated via HttpOnly cookie so the token never resides in localStorage.
+    """
+    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = security.create_access_token(
+        current_user.username, expires_delta=access_token_expires
+    )
+    return {"token": token}

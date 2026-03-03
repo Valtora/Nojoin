@@ -284,12 +284,19 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
 
     authorizeCompanion: async (): Promise<boolean> => {
       try {
-        // Get the current user's token from localStorage
-        const token = localStorage.getItem("token");
-        if (!token) {
-          console.error("No auth token available");
+        // Fetch a companion-specific JWT from the backend using cookie auth.
+        // Uses fetch directly to avoid the axios 401 interceptor redirecting to /login.
+        const apiBase = process.env.NEXT_PUBLIC_API_URL
+          ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
+          : "https://localhost:14443/api/v1";
+        const tokenRes = await fetch(`${apiBase}/login/companion-token`, {
+          credentials: "include",
+        });
+        if (!tokenRes.ok) {
+          console.error("Failed to fetch companion token:", tokenRes.status);
           return false;
         }
+        const { token } = await tokenRes.json();
 
         // Get current protocol, host and port to configure the companion app
         const api_protocol = window.location.protocol.replace(':', '');
