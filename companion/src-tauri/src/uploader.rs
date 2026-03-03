@@ -10,7 +10,7 @@ pub async fn upload_segment(
     recording_id: i64,
     sequence: i32,
     file_path: &Path,
-    config: &Config,
+    config_arc: Arc<Mutex<Config>>,
 ) -> Result<()> {
     // Allow invalid certs for self-signed SSL (development)
     let client = reqwest::Client::builder()
@@ -85,7 +85,7 @@ pub async fn upload_segment(
     }
 }
 
-pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()> {
+pub async fn finalize_recording(recording_id: i64, config_arc: Arc<Mutex<Config>>) -> Result<()> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()?;
@@ -141,7 +141,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
     }
 }
 
-pub async fn update_client_status(recording_id: i64, status: &str, config: &Config) -> Result<()> {
+pub async fn update_client_status(recording_id: i64, status: &str, config_arc: Arc<Mutex<Config>>) -> Result<()> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()?;
@@ -169,7 +169,7 @@ pub async fn update_status_with_progress(
     recording_id: i64,
     status: &str,
     progress: i32,
-    config: &Config,
+    config_arc: Arc<Mutex<Config>>,
 ) -> Result<()> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -195,7 +195,7 @@ pub async fn update_status_with_progress(
     Ok(())
 }
 
-pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> {
+pub async fn delete_recording(recording_id: i64, config_arc: Arc<Mutex<Config>>) -> Result<()> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()?;

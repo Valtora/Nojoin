@@ -291,7 +291,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           return false;
         }
 
-        // Get current host and port to configure the companion app
+        // Get current protocol, host and port to configure the companion app
+        const api_protocol = window.location.protocol.replace(':', '');
         const api_host = window.location.hostname;
         let api_port = parseInt(
           window.location.port ||
@@ -313,6 +314,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             token,
+            api_protocol,
             api_host,
             api_port,
           }),

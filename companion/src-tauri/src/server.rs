@@ -55,7 +55,7 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     let config = cors_state.config.lock().unwrap();
                     let expected_origin = config.get_web_url();
 
-                    if !expected_origin.is_empty() && origin_str == expected_origin {
+                    if !expected_origin.is_empty() && origin_str.eq_ignore_ascii_case(&expected_origin) {
                         return true;
                     }
                 }
@@ -192,6 +192,7 @@ struct AuthRequest {
     token: String,
     api_host: Option<String>,
     api_port: Option<u16>,
+    api_protocol: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -220,7 +221,7 @@ async fn authorize(
         origin == "http://localhost:14141"
             || origin == "https://localhost:14141"
             || origin == "http://localhost:3000"
-            || (!expected.is_empty() && origin == expected)
+            || (!expected.is_empty() && origin.eq_ignore_ascii_case(&expected))
     };
 
     if !is_allowed {
@@ -257,6 +258,10 @@ async fn authorize(
 
         if let Some(port) = payload.api_port {
             config.api_port = port;
+        }
+
+        if let Some(protocol) = payload.api_protocol {
+            config.api_protocol = protocol;
         }
 
         if let Err(e) = config.save() {
