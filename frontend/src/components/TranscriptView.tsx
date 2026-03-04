@@ -441,11 +441,7 @@ export default function TranscriptView({
       {/* Toolbar */}
       <div className="bg-gray-50 dark:bg-gray-900/95 border-b-2 border-gray-200 dark:border-gray-700 shadow-md z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
-        <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-1 md:gap-2 overflow-x-auto">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white shrink-0">
-            Transcript
-          </h2>
-
+        <div className="px-4 md:px-6 py-3 flex items-center justify-end gap-1 md:gap-2 overflow-x-auto">
           <div className="flex items-center gap-1">
             <button
               onClick={onUndo}

@@ -26,7 +26,7 @@ import DocumentsView from "@/components/DocumentsView";
 import ExportModal from "@/components/ExportModal";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import Link from "next/link";
-import { Loader2, Edit2, MessageSquare, X } from "lucide-react";
+import { Loader2, Edit2, MessageSquare, X, Pause } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -40,6 +40,7 @@ import { COLOR_PALETTE } from "@/lib/constants";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
+import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
 type ActivePanel = "transcript" | "notes" | "documents";
 
@@ -48,7 +49,7 @@ const getStatusMessage = (recording: Recording) => {
     if (recording.client_status === ClientStatus.RECORDING)
       return "Meeting is in progress...";
     if (recording.client_status === ClientStatus.PAUSED)
-      return "Meeting is paused...";
+      return "Meeting recording is paused...";
     if (recording.client_status === ClientStatus.UPLOADING) {
       return "Meeting is being uploaded...";
     }
@@ -63,6 +64,50 @@ const getStatusMessage = (recording: Recording) => {
   }
   return "";
 };
+
+const formatTime = (seconds: number) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+function RecordingTimer() {
+  const { companionStatus, recordingDuration } = useServiceStatusStore();
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (recordingDuration > 0) {
+      setElapsedTime(recordingDuration);
+    }
+  }, [recordingDuration]);
+
+  useEffect(() => {
+    if (companionStatus === 'recording') {
+      timerRef.current = setInterval(() => {
+        setElapsedTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [companionStatus]);
+
+  return (
+    <span className="text-red-500 font-mono text-xl mt-2 block w-full text-center">
+      {formatTime(elapsedTime)}
+    </span>
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -760,8 +805,8 @@ export default function RecordingPage({ params }: PageProps) {
       </header>
 
       {/* Panel Tabs */}
-      <div className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700 shrink-0 overflow-x-auto">
-        <div className="flex w-max min-w-full">
+      <div className="bg-gray-50 dark:bg-gray-900 shrink-0 overflow-x-auto">
+        <div className="flex w-max min-w-full border-b-2 border-gray-200 dark:border-gray-700">
           <button
             id="tab-transcript"
             onClick={() => setActivePanel("transcript")}
@@ -915,18 +960,26 @@ export default function RecordingPage({ params }: PageProps) {
         recording.status === RecordingStatus.QUEUED ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center justify-center space-y-4 px-4">
-              <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+              {recording.status === RecordingStatus.UPLOADING && recording.client_status === ClientStatus.PAUSED ? (
+                <Pause className="w-12 h-12 text-orange-500" />
+              ) : (
+                <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+              )}
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white text-center">
                 {recording.status === RecordingStatus.UPLOADING
                   ? recording.client_status === ClientStatus.UPLOADING
                     ? "Finalizing Upload"
                     : recording.client_status === ClientStatus.PAUSED
                       ? "Meeting recording is paused..."
-                      : "Meeting in Progress"
+                      : "Meeting is in progress..."
                   : recording.status === RecordingStatus.QUEUED
                     ? "Queued for Processing"
                     : "Processing Recording..."}
               </h2>
+
+              {recording.status === RecordingStatus.UPLOADING && recording.client_status !== ClientStatus.UPLOADING && (
+                <RecordingTimer />
+              )}
 
               {/* Show detailed status text only for QUEUED/PROCESSING; hide during active recording to avoid duplicate text */}
               {(recording.status === RecordingStatus.QUEUED ||

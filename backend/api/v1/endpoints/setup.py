@@ -109,14 +109,14 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     # (pre-initialisation) case.
     
     auth_header = request.headers.get('Authorization')
-    if not auth_header:
+    token = auth_header.replace("Bearer ", "") if auth_header else request.cookies.get("access_token")
+
+    if not token:
          raise HTTPException(status_code=401, detail="System is initialized. Authentication required.")
 
     from backend.api.deps import get_current_user, get_current_admin_user
     from backend.core.security import ALGORITHM, SECRET_KEY
     from jose import jwt, JWTError
-    
-    token = auth_header.replace("Bearer ", "")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         token_data = payload.get("sub")
