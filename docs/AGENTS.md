@@ -97,7 +97,8 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
 **Important**:
 
 - **Versioning**: Strict Semantic Versioning (`vX.Y.Z`).
-- **Source of Truth**: The Git Tag (and `docs/VERSION`) is the single source of truth. The companion app files are transiently updated during the build process.
+- **Source of Truth**: The Git Tag is the single source of truth. `docs/VERSION` is set from the tag during CI/CD. The companion app files are transiently updated during the build process.
+- **Version Detection**: The API resolves the running version from the Docker image's `org.opencontainers.image.version` label (set by CI/CD), falling back to `docs/VERSION`. The latest available version is resolved from GHCR registry tags, falling back to the GitHub raw `docs/VERSION`.
 - **Platform**: Only Windows builds are currently supported for the Companion App.
 
 ## Code Style & Conventions

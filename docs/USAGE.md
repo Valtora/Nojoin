@@ -150,7 +150,7 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
   - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
   - **Report a Bug:** Direct link to report issues on the GitHub repository.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
-- **System Version:** The current version is displayed in the Settings header. If an update is available on GitHub, a notification will appear.
+- **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. If a newer version is available on the container registry, a notification will appear.
 
 ### System Management (Admin Only)
 
