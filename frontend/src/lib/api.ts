@@ -730,6 +730,16 @@ export const checkFFmpeg = async (): Promise<{
   return response.data;
 };
 
+export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null }> => {
+  try {
+    const response = await api.get<{ fingerprint: string | null }>("/system/fingerprint");
+    return response.data;
+  } catch (error) {
+    console.error("Failed to fetch TLS fingerprint", error);
+    return { fingerprint: null };
+  }
+};
+
 export const getRecordingInfo = async (
   recordingId: number,
 ): Promise<{ original: any; proxy: any }> => {

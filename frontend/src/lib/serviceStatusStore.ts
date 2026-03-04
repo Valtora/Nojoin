@@ -293,10 +293,19 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           credentials: "include",
         });
         if (!tokenRes.ok) {
-          console.error("Failed to fetch companion token:", tokenRes.status);
-          return false;
+          throw new Error(`Failed to fetch companion token: ${tokenRes.status}`);
         }
         const { token } = await tokenRes.json();
+
+        // Fetch the TLS fingerprint
+        const fpRes = await fetch(`${apiBase}/system/fingerprint`, {
+          credentials: "include",
+        });
+        let tls_fingerprint = null;
+        if (fpRes.ok) {
+           const fpData = await fpRes.json();
+           tls_fingerprint = fpData.fingerprint;
+        }
 
         // Get current protocol, host and port to configure the companion app
         const api_protocol = window.location.protocol.replace(':', '');
@@ -324,6 +333,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             api_protocol,
             api_host,
             api_port,
+            tls_fingerprint,
           }),
         });
 
@@ -334,12 +344,14 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             // Trigger a status check to update state
             get().checkCompanion();
             return true;
+          } else {
+             throw new Error(data.message || "Pairing was denied or failed");
           }
         }
-        return false;
-      } catch (e) {
+        throw new Error(`Companion app returned ${res.status}`);
+      } catch (e: any) {
         console.error("Failed to authorize companion:", e);
-        return false;
+        throw e; // Rethrow so the UI can catch and display it
       }
     },
 

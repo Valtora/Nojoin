@@ -17,6 +17,8 @@ pub struct Config {
     pub api_host: String,
     #[serde(default)]
     pub api_token: String,
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
     #[serde(default = "default_local_port")]
     pub local_port: u16,
     #[serde(default)]
@@ -153,6 +155,7 @@ impl Config {
             api_port,
             api_host: default_api_host(),
             api_token: legacy.api_token.unwrap_or_default(),
+            tls_fingerprint: None,
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: legacy.input_device_name,
             output_device_name: legacy.output_device_name,
@@ -231,6 +234,7 @@ impl Default for Config {
             api_port: DEFAULT_API_PORT,
             api_host: default_api_host(),
             api_token: String::new(),
+            tls_fingerprint: None,
             local_port: DEFAULT_LOCAL_PORT,
             input_device_name: None,
             output_device_name: None,

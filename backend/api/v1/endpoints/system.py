@@ -485,3 +485,44 @@ async def get_companion_releases() -> Any:
             "linux_url": "https://github.com/Valtora/Nojoin/releases"
         }
 
+@router.get("/fingerprint")
+async def get_tls_fingerprint(
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Get the SHA-256 fingerprint of the self-signed TLS certificate.
+    """
+    import ssl
+    import hashlib
+    import os
+    
+    # In docker-compose, nginx/certs is mounted or available at root
+    cert_paths = [
+        "/etc/nginx/certs/cert.crt",
+        "/app/nginx/certs/cert.crt",
+        "/app/nginx/cert.crt",
+        "nginx/cert.crt"
+    ]
+    
+    cert_path = None
+    for path in cert_paths:
+        if os.path.exists(path):
+            cert_path = path
+            break
+            
+    if not cert_path:
+         return {"fingerprint": None}
+         
+    try:
+        with open(cert_path, "r") as f:
+            pem_data = f.read()
+            
+        der_data = ssl.PEM_cert_to_DER_cert(pem_data)
+        fingerprint = hashlib.sha256(der_data).hexdigest().upper()
+        # Format as XX:XX:XX...
+        formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
+        return {"fingerprint": formatted_fp}
+    except Exception as e:
+        logger.error(f"Failed to read certificate fingerprint: {e}")
+        return {"fingerprint": None}
+

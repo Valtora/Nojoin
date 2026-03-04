@@ -25,6 +25,7 @@ mod server;
 mod state;
 mod uploader;
 mod win_notifications;
+mod tls;
 
 use config::Config;
 use state::{AppState, AppStatus};
@@ -442,18 +443,36 @@ fn main() {
                 let state_fetch = state_server.clone();
 
                 rt.spawn(async move {
-                    let client = reqwest::Client::builder()
-                        .danger_accept_invalid_certs(true)
+                    let fingerprint = {
+                        let config = state_fetch.config.lock().unwrap();
+                        config.tls_fingerprint.clone()
+                    };
+                    
+                    let mut client = reqwest::Client::builder()
+                        .use_preconfigured_tls(crate::tls::create_tls_config(fingerprint.clone()))
                         .timeout(Duration::from_secs(5))
                         .build()
                         .unwrap_or_default();
+                    
+                    let mut current_fingerprint = fingerprint;
 
                     loop {
                         // 1. Perform Health Check
-                        let api_url = {
+                        let (api_url, fingerprint) = {
                             let config = state_fetch.config.lock().unwrap();
-                            config.get_api_url()
+                            (config.get_api_url(), config.tls_fingerprint.clone())
                         };
+                        
+                        // Recreate client if fingerprint changed
+                        if current_fingerprint != fingerprint {
+                            client = reqwest::Client::builder()
+                                .use_preconfigured_tls(crate::tls::create_tls_config(fingerprint.clone()))
+                                .timeout(Duration::from_secs(5))
+                                .build()
+                                .unwrap_or_default();
+                            current_fingerprint = fingerprint;
+                        }
+
                         let status_url = format!("{}/system/status", api_url);
 
                         match client.get(&status_url).send().await {

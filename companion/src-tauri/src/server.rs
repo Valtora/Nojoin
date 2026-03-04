@@ -37,10 +37,7 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::AllowOrigin::predicate(
             move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
-                if request_parts.uri.path() == "/auth"
-                    || request_parts.uri.path() == "/status"
-                    || request_parts.uri.path() == "/levels"
-                {
+                if request_parts.uri.path() == "/auth" {
                     return true;
                 }
 
@@ -98,8 +95,45 @@ struct StatusResponse {
     latest_version: Option<String>,
 }
 
-async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse> {
+fn is_allowed_origin(origin_header: Option<&axum::http::HeaderValue>, config: &crate::config::Config) -> bool {
+    let origin = match origin_header {
+        Some(o) => match o.to_str() {
+            Ok(s) => s,
+            Err(_) => return false,
+        },
+        None => return false, // Require origin header for these checks
+    };
+
+    if origin == "http://localhost:14141"
+        || origin == "https://localhost:14141"
+        || origin == "http://localhost:3000"
+    {
+        return true;
+    }
+
+    let expected_origin = config.get_web_url();
+    if !expected_origin.is_empty() && origin.eq_ignore_ascii_case(&expected_origin) {
+        return true;
+    }
+
+    false
+}
+
+async fn get_status(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<StatusResponse>, StatusCode> {
     let state = &context.state;
+    
+    let is_allowed = {
+        let config = state.config.lock().unwrap();
+        is_allowed_origin(headers.get("origin"), &config)
+    };
+
+    if !is_allowed {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let status = state.status.lock().unwrap().clone();
     let (authenticated, api_host) = {
         let config = state.config.lock().unwrap();
@@ -131,7 +165,7 @@ async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse
         .load(std::sync::atomic::Ordering::Relaxed);
     let latest_version = state.latest_version.lock().unwrap().clone();
 
-    Json(StatusResponse {
+    Ok(Json(StatusResponse {
         status,
         duration_seconds: duration.as_secs(),
         version: env!("CARGO_PKG_VERSION"),
@@ -139,7 +173,7 @@ async fn get_status(State(context): State<ServerContext>) -> Json<StatusResponse
         api_host,
         update_available,
         latest_version,
-    })
+    }))
 }
 
 async fn prompt_pairing(context: &ServerContext, origin: String) -> bool {
@@ -174,10 +208,25 @@ async fn prompt_pairing(context: &ServerContext, origin: String) -> bool {
     .always_on_top(true)
     .resizable(false);
 
-    if let Err(e) = builder.build() {
-        error!("Failed to build pairing window: {}", e);
-        return false;
-    }
+    let window = match builder.build() {
+        Ok(w) => w,
+        Err(e) => {
+            error!("Failed to build pairing window: {}", e);
+            let mut pending = context.state.pending_pairing.lock().unwrap();
+            *pending = None;
+            return false;
+        }
+    };
+
+    let context_clone = context.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { .. } = event {
+            let mut pending = context_clone.state.pending_pairing.lock().unwrap();
+            if let Some(tx) = pending.take() {
+                let _ = tx.send(false);
+            }
+        }
+    });
 
     if let Ok(allowed) = rx.await {
         allowed
@@ -193,6 +242,7 @@ struct AuthRequest {
     api_host: Option<String>,
     api_port: Option<u16>,
     api_protocol: Option<String>,
+    tls_fingerprint: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -264,6 +314,13 @@ async fn authorize(
             config.api_protocol = protocol;
         }
 
+        if let Some(fingerprint) = payload.tls_fingerprint {
+            config.tls_fingerprint = Some(fingerprint);
+        } else if config.tls_fingerprint.is_some() {
+            // Unset it if not provided to allow fallback or avoid breaking on host change
+            config.tls_fingerprint = None;
+        }
+
         if let Err(e) = config.save() {
             error!("Failed to save config: {}", e);
             return Json(AuthResponse {
@@ -293,16 +350,29 @@ struct AudioLevelsResponse {
     is_recording: bool,
 }
 
-async fn get_audio_levels(State(context): State<ServerContext>) -> Json<AudioLevelsResponse> {
+async fn get_audio_levels(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<AudioLevelsResponse>, StatusCode> {
     let state = &context.state;
+    
+    let is_allowed = {
+        let config = state.config.lock().unwrap();
+        is_allowed_origin(headers.get("origin"), &config)
+    };
+
+    if !is_allowed {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let status = state.status.lock().unwrap().clone();
     let is_recording = matches!(status, AppStatus::Recording);
 
-    Json(AudioLevelsResponse {
+    Ok(Json(AudioLevelsResponse {
         input_level: state.take_input_level(),
         output_level: state.take_output_level(),
         is_recording,
-    })
+    }))
 }
 
 #[derive(serde::Deserialize)]
@@ -349,10 +419,11 @@ async fn start_recording(
     }
 
     // Call backend to create recording
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap_or_default();
+    let fingerprint = {
+        let config = state.config.lock().unwrap();
+        config.tls_fingerprint.clone()
+    };
+    let client = crate::tls::create_client(fingerprint).unwrap_or_default();
 
     let (api_url, token) = {
         let config = state.config.lock().unwrap();

@@ -14,9 +14,7 @@ pub async fn upload_segment(
     config: &Config,
 ) -> Result<()> {
     // Allow invalid certs for self-signed SSL (development)
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
 
     // Read file manually to avoid issues with Form::file
     let mut file = File::open(file_path).await?;
@@ -87,9 +85,7 @@ pub async fn upload_segment(
 }
 
 pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
         "{}/recordings/{}/finalize",
         config.get_api_url(),
@@ -143,9 +139,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
 }
 
 pub async fn update_client_status(recording_id: i64, status: &str, config: &Config) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
         "{}/recordings/{}/client_status?status={}",
         config.get_api_url(),
@@ -172,9 +166,7 @@ pub async fn update_status_with_progress(
     progress: i32,
     config: &Config,
 ) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
         "{}/recordings/{}/client_status?status={}&upload_progress={}",
         config.get_api_url(),
@@ -197,9 +189,7 @@ pub async fn update_status_with_progress(
 }
 
 pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!("{}/recordings/{}", config.get_api_url(), recording_id);
 
     let res = client

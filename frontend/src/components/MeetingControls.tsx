@@ -62,7 +62,12 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
       });
       
       if (!res.ok) {
-        throw new Error(`Failed to ${command}`);
+        if (res.status === 500) {
+           setError('Failed to reach Backend API from Companion App.');
+        } else {
+           setError(`Companion App error: ${res.statusText}`);
+        }
+        return null;
       }
       
       // Trigger immediate check to update status
@@ -71,8 +76,12 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
 
       return await res.json();
       
-    } catch (err) {
-      setError('Failed to connect to Companion App');
+    } catch (err: any) {
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setError('Companion App is offline or unreachable.');
+      } else {
+        setError('Failed to connect to Companion App.');
+      }
       console.error(err);
       return null;
     }
