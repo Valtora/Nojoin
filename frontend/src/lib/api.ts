@@ -43,7 +43,8 @@ api.interceptors.response.use(
       if (
         typeof window !== "undefined" &&
         !window.location.pathname.includes("/login") &&
-        !window.location.pathname.includes("/setup")
+        !window.location.pathname.includes("/setup") &&
+        !window.location.pathname.includes("/register")
       ) {
         window.location.href = "/login";
       }
@@ -86,7 +87,6 @@ export const logout = async (): Promise<void> => {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
       localStorage.removeItem("force_password_change");
       window.location.href = "/login";
     }
@@ -1033,14 +1033,12 @@ export const streamChatMessage = (
   onNotesUpdate?: () => void,
 ): AbortController => {
   const controller = new AbortController();
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   fetch(`${API_BASE_URL}/transcripts/${recordingId}/chat`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: token ? `Bearer ${token}` : "",
     },
     body: JSON.stringify({ message, tag_ids: tagIds }),
     signal: controller.signal,

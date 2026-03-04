@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
+import { getCompanionToken } from '@/lib/api';
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
@@ -89,7 +90,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
 
   const handleStart = async () => {
     const name = "";
-    const token = localStorage.getItem('token');
+    const token = await getCompanionToken();
     const response = await sendCommand('start', { name, token });
     if (response && response.id) {
         router.push(`/recordings/${response.id}`);
@@ -98,7 +99,7 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   };
 
   const handleStop = async () => {
-    const token = localStorage.getItem('token');
+    const token = await getCompanionToken();
     await sendCommand('stop', { token });
     setElapsedTime(0);
     if (onMeetingEnd) {

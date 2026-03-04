@@ -32,7 +32,7 @@ export default function LoginPage() {
         router.push("/");
         return;
       } catch (e) {
-        localStorage.removeItem("token");
+        // no-op, user is not logged in
       }
     };
     

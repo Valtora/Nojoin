@@ -41,7 +41,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         isValidToken = false;
       }
       
-      if (!isValidToken && !publicPaths.includes(pathname || '')) {
+      if (!isValidToken && !publicPaths.some(p => pathname?.startsWith(p))) {
         router.push('/login');
         return;
       } 

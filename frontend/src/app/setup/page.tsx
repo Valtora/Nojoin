@@ -75,11 +75,6 @@ export default function SetupPage() {
   const [ffmpegMissing, setFfmpegMissing] = useState(false);
 
   useEffect(() => {
-    // Clear any existing token when visiting setup page
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-    }
-
     const checkStatus = async () => {
       try {
         const [status, ffmpegStatus] = await Promise.all([
@@ -346,9 +341,8 @@ export default function SetupPage() {
         selected_model: formData.selected_model,
       });
 
-      // 2. Login to get token for subsequent requests
-      const loginResponse = await login(formData.username, formData.password);
-      localStorage.setItem("token", loginResponse.access_token);
+      // 2. Login
+      await login(formData.username, formData.password);
 
       // 3. Start Download
       startModelDownload();

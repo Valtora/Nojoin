@@ -67,8 +67,7 @@ function RegisterForm() {
       );
       
       // Auto-login after registration
-      const loginRes = await login(formData.username, formData.password);
-      localStorage.setItem('token', loginRes.access_token);
+      await login(formData.username, formData.password);
       
       // Redirect to dashboard (or setup if needed, but usually dashboard)
       router.push('/');

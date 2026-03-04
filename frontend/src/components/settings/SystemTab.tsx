@@ -11,6 +11,7 @@ import {
   Check,
 } from "lucide-react";
 import api, { API_BASE_URL } from "@/lib/api";
+import { getCompanionToken } from "@/lib/api";
 import { useNavigationStore } from "@/lib/store";
 
 export default function SystemTab() {
@@ -95,53 +96,67 @@ export default function SystemTab() {
 
   // WebSocket for logs
   useEffect(() => {
+    let isMounted = true;
+    
     setLogs([]); // Clear logs on switch
     // Reset connection state
     setIsConnected(false);
 
-    const token = localStorage.getItem("token");
+    const connectWs = async () => {
+      try {
+        const token = await getCompanionToken();
+        if (!isMounted) return;
 
-    // Construct WS URL from API_BASE_URL to match Protocol and Host
-    let apiBase = API_BASE_URL;
+        // Construct WS URL from API_BASE_URL to match Protocol and Host
+        let apiBase = API_BASE_URL;
 
-    // Handle relative URLs (e.g. "/api/v1") by appending to window.location.origin
-    if (apiBase.startsWith("/")) {
-      apiBase = window.location.origin + apiBase;
-    }
+        // Handle relative URLs (e.g. "/api/v1") by appending to window.location.origin
+        if (apiBase.startsWith("/")) {
+          apiBase = window.location.origin + apiBase;
+        }
 
-    const apiProtocol = apiBase.startsWith("https") ? "wss:" : "ws:";
-    const urlObj = new URL(apiBase);
+        const apiProtocol = apiBase.startsWith("https") ? "wss:" : "ws:";
+        const urlObj = new URL(apiBase);
 
-    // Target URL format: wss://<host>:<port>/api/v1/system/logs/live
-    const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}&token=${token}`;
+        // Target URL format: wss://<host>:<port>/api/v1/system/logs/live
+        const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}&token=${token}`;
 
-    const ws = new WebSocket(wsUrl);
+        const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-      setIsConnected(true);
-      // setLogs((prev) => [...prev, "--- Connected to Log Stream ---"]);
+        ws.onopen = () => {
+          setIsConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          setLogs((prev) => [...prev, event.data]);
+        };
+
+        ws.onclose = () => {
+          setIsConnected(false);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          setLogs((prev) => [
+            ...prev,
+            "--- Connection Error (Check Console) - Ensure API is reachable ---",
+          ]);
+        };
+
+        wsRef.current = ws;
+      } catch (err) {
+        console.error("Failed to fetch WS token:", err);
+        setLogs((prev) => [
+          ...prev,
+          "--- Auth Error - Unable to get WebSocket token ---",
+        ]);
+      }
     };
 
-    ws.onmessage = (event) => {
-      setLogs((prev) => [...prev, event.data]);
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      // setLogs((prev) => [...prev, "--- Disconnected ---"]);
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setLogs((prev) => [
-        ...prev,
-        "--- Connection Error (Check Console) - Ensure API is reachable ---",
-      ]);
-    };
-
-    wsRef.current = ws;
+    connectWs();
 
     return () => {
+      isMounted = false;
       if (wsRef.current) {
         wsRef.current.close();
       }
