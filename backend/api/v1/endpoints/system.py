@@ -3,7 +3,7 @@ import httpx
 import docker
 import asyncio
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -487,16 +487,51 @@ async def get_companion_releases() -> Any:
 
 @router.get("/fingerprint")
 async def get_tls_fingerprint(
+    request: Request,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Get the SHA-256 fingerprint of the self-signed TLS certificate.
+    Get the SHA-256 fingerprint of the TLS certificate.
+    Attempts to fetch the certificate dynamically from the public-facing hostname.
+    Falls back to hashing the local self-signed certificate.
     """
     import ssl
     import hashlib
     import os
+    import socket
+
+    # Try to derive the public hostname from headers
+    # Nginx/Caddy will typically set X-Forwarded-Host or Host
+    hostname = request.headers.get("x-forwarded-host") or request.headers.get("host")
     
-    # In docker-compose, nginx/certs is mounted or available at root
+    # Strip port if present
+    if hostname and ":" in hostname:
+        hostname = hostname.split(":")[0]
+    
+    # Use request.url.hostname as a fallback if headers are completely missing
+    if not hostname:
+        hostname = request.url.hostname
+
+    # Only attempt network fetch if we have a valid hostname and it's not simply '127.0.0.1' inside the container
+    if hostname and hostname not in ["127.0.0.1", "localhost", "backend", "api"]:
+        try:
+            # We connect to port 443 where the proxy (e.g. Caddy) is serving the public cert
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            
+            with socket.create_connection((hostname, 443), timeout=3.0) as sock:
+                with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+                    cert_der = ssock.getpeercert(binary_form=True)
+                    if cert_der:
+                        fingerprint = hashlib.sha256(cert_der).hexdigest().upper()
+                        formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
+                        logger.info(f"Dynamically fetched TLS fingerprint for {hostname}: {formatted_fp}")
+                        return {"fingerprint": formatted_fp}
+        except Exception as e:
+            logger.warning(f"Failed to dynamically fetch TLS certificate for {hostname}: {e}. Falling back to local cert.")
+
+    # Fallback logic: read local cert
     cert_paths = [
         "/etc/nginx/certs/cert.crt",
         "/app/nginx/certs/cert.crt",
@@ -511,6 +546,7 @@ async def get_tls_fingerprint(
             break
             
     if not cert_path:
+         logger.error("No local certificate file found for fallback.")
          return {"fingerprint": None}
          
     try:
@@ -519,10 +555,10 @@ async def get_tls_fingerprint(
             
         der_data = ssl.PEM_cert_to_DER_cert(pem_data)
         fingerprint = hashlib.sha256(der_data).hexdigest().upper()
-        # Format as XX:XX:XX...
         formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
+        logger.info(f"Using local file TLS fingerprint: {formatted_fp}")
         return {"fingerprint": formatted_fp}
     except Exception as e:
-        logger.error(f"Failed to read certificate fingerprint: {e}")
+        logger.error(f"Failed to read local certificate fingerprint: {e}")
         return {"fingerprint": None}
 
