@@ -436,6 +436,179 @@ export default function TranscriptView({
     ? indexedSegments.filter(({ segment }) => segment.speaker !== "UNKNOWN")
     : indexedSegments;
 
+  // --- Grouping Logic ---
+  const trackGroups: {
+    start: number;
+    end: number;
+    involved: Set<string>;
+    items: typeof displaySegments;
+  }[] = [];
+  let currentGroup: typeof trackGroups[0] | null = null;
+
+  const areSetsEqual = (a: Set<string>, b: Set<string>) =>
+    a.size === b.size && [...a].every((value) => b.has(value));
+
+  for (const item of displaySegments) {
+    const involvedArray = [
+      item.segment.speaker,
+      ...(item.segment.overlapping_speakers || []),
+    ];
+    const involvedSet = new Set(involvedArray);
+
+    if (!currentGroup) {
+      currentGroup = {
+        start: item.segment.start,
+        end: item.segment.end,
+        involved: involvedSet,
+        items: [item],
+      };
+    } else {
+      const isTimeOverlap = item.segment.start < currentGroup.end;
+      const isSameOverlapEvent =
+        involvedSet.size > 1 &&
+        currentGroup.involved.size > 1 &&
+        areSetsEqual(involvedSet, currentGroup.involved);
+
+      if (isTimeOverlap || isSameOverlapEvent) {
+        currentGroup!.items.push(item);
+        currentGroup!.end = Math.max(currentGroup!.end, item.segment.end);
+        involvedSet.forEach((spk) => currentGroup!.involved.add(spk));
+      } else {
+        trackGroups.push(currentGroup!);
+        currentGroup = {
+          start: item.segment.start,
+          end: item.segment.end,
+          involved: involvedSet,
+          items: [item],
+        };
+      }
+    }
+  }
+  if (currentGroup) trackGroups.push(currentGroup);
+
+  const renderSegmentContent = (item: typeof displaySegments[0]) => {
+    const { segment, index: originalIndex } = item;
+    const isActive = currentTime >= segment.start && currentTime < segment.end;
+    const speakerName = speakerMap[segment.speaker] || segment.speaker;
+    const isEditingSpeaker = editingSpeaker === segment.speaker;
+    const isEditingSegmentSpeaker =
+      editingSegmentSpeakerIndex === originalIndex;
+    const isEditingText = editingTextIndex === originalIndex;
+
+    const bubbleColor = isActive
+      ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
+      : getSpeakerColor(segment.speaker);
+
+    return (
+      <div
+        key={originalIndex}
+        ref={isActive ? activeSegmentRef : null}
+        className="flex flex-col mb-3 last:mb-0"
+      >
+        {/* Speaker Label */}
+        <div className="flex items-baseline space-x-2 mb-1">
+          {isEditingSpeaker ? (
+            <input
+              autoFocus
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleSpeakerRenameSubmit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSpeakerRenameSubmit();
+                if (e.key === "Escape") setEditingSpeaker(null);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          ) : isEditingSegmentSpeaker ? (
+             <input
+              autoFocus
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={() => handleSegmentSpeakerSubmit(originalIndex)}
+              onKeyDown={(e) =>
+                handleKeyDown(e, "segmentSpeaker", originalIndex)
+              }
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          ) : (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activePopover?.index === originalIndex) {
+                    setActivePopover(null);
+                  } else {
+                    setActivePopover({
+                      index: originalIndex,
+                      target: e.currentTarget,
+                    });
+                  }
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingSpeaker(segment.speaker);
+                  setEditValue(speakerName);
+                  setActivePopover(null);
+                }}
+                className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-700 dark:hover:text-orange-400 transition-colors text-left"
+                title="Click to change speaker, Double-click to rename"
+              >
+                {speakerName}
+              </button>
+
+              {activePopover?.index === originalIndex && (
+                <SpeakerAssignmentPopover
+                  currentSpeakerName={speakerName}
+                  availableSpeakers={speakers}
+                  globalSpeakers={globalSpeakers}
+                  speakerColors={speakerColors}
+                  targetElement={activePopover.target}
+                  onSelect={(name) => {
+                    onUpdateSegmentSpeaker(originalIndex, name);
+                    setActivePopover(null);
+                  }}
+                  onClose={() => setActivePopover(null)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Transcript Text */}
+        <div
+          id={`segment-${originalIndex}`}
+          className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
+            isEditingText ? "ring-2 ring-blue-500" : ""
+          }`}
+        >
+          {isEditingText ? (
+            <textarea
+              autoFocus
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={() => handleTextSubmit(originalIndex)}
+              onKeyDown={(e) => handleKeyDown(e, "text", originalIndex)}
+              className="w-full bg-transparent resize-none outline-none text-gray-900 dark:text-white leading-relaxed"
+              rows={Math.max(2, Math.ceil(editValue.length / 80))}
+            />
+          ) : (
+            <p
+              className="leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 cursor-text hover:text-gray-900 dark:hover:text-white"
+              onClick={(e) => handleTextClick(originalIndex, segment.text, e)}
+              title="Click to edit text"
+            >
+              {renderHighlightedText(segment.text, originalIndex)}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
@@ -642,50 +815,43 @@ export default function TranscriptView({
       </div>
 
       <div className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0">
-        {displaySegments.map(({ segment, index: originalIndex }) => {
-          const isActive =
-            currentTime >= segment.start && currentTime < segment.end;
-          const speakerName = speakerMap[segment.speaker] || segment.speaker;
-          const isEditingSpeaker = editingSpeaker === segment.speaker;
-          const isEditingSegmentSpeaker =
-            editingSegmentSpeakerIndex === originalIndex;
-          const isEditingText = editingTextIndex === originalIndex;
-
-          // Determine bubble color
-          const bubbleColor = isActive
-            ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
-            : getSpeakerColor(segment.speaker);
+        {trackGroups.map((group, groupIndex) => {
+          const isGroupActive =
+            currentTime >= group.start && currentTime < group.end;
+          
+          const involvedSpeakers = Array.from(group.involved).sort((a,b) => 
+            (speakerMap[a] || a).localeCompare(speakerMap[b] || b)
+          );
 
           return (
             <div
-              key={originalIndex}
-              ref={isActive ? activeSegmentRef : null}
-              className={`flex gap-3 px-2 group ${isActive ? "opacity-100" : "opacity-90"} transition-opacity`}
+              key={groupIndex}
+              className={`flex gap-3 px-2 group ${isGroupActive ? "opacity-100" : "opacity-90"} transition-opacity`}
             >
               {/* Timestamp & Play Control */}
-              <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1">
+              <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1 mt-1">
                 <span className="text-sm text-gray-400 font-mono mb-1">
-                  {formatTime(segment.start)}
+                  {formatTime(group.start)}
                 </span>
                 <button
                   onClick={() => {
-                    if (isActive) {
+                    if (isGroupActive) {
                       if (isPlaying) onPause();
                       else onResume();
                     } else {
-                      onPlaySegment(segment.start, segment.end);
+                      onPlaySegment(group.start, group.end);
                     }
                   }}
                   className={`p-2 md:p-1.5 rounded-full transition-colors shadow-sm ${
-                    isActive
+                    isGroupActive
                       ? "bg-green-500 text-white hover:bg-green-600"
                       : "bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400"
                   }`}
                   title={
-                    isActive && isPlaying ? "Pause segment" : "Play segment"
+                    isGroupActive && isPlaying ? "Pause segment" : "Play segment"
                   }
                 >
-                  {isActive && isPlaying ? (
+                  {isGroupActive && isPlaying ? (
                     <Pause className="w-5 h-5 md:w-3 md:h-3 fill-current" />
                   ) : (
                     <Play className="w-5 h-5 md:w-3 md:h-3 fill-current" />
@@ -695,107 +861,31 @@ export default function TranscriptView({
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                {/* Speaker Label */}
-                <div className="flex items-baseline space-x-2 mb-1">
-                  {isEditingSpeaker ? (
-                    <input
-                      autoFocus
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={handleSpeakerRenameSubmit}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSpeakerRenameSubmit();
-                        if (e.key === "Escape") setEditingSpeaker(null);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  ) : isEditingSegmentSpeaker ? (
-                    <input
-                      autoFocus
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => handleSegmentSpeakerSubmit(originalIndex)}
-                      onKeyDown={(e) =>
-                        handleKeyDown(e, "segmentSpeaker", originalIndex)
-                      }
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  ) : (
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (activePopover?.index === originalIndex) {
-                            setActivePopover(null);
-                          } else {
-                            setActivePopover({
-                              index: originalIndex,
-                              target: e.currentTarget,
-                            });
-                          }
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          setEditingSpeaker(segment.speaker);
-                          setEditValue(speakerName);
-                          setActivePopover(null);
-                        }}
-                        className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-700 dark:hover:text-orange-400 transition-colors text-left"
-                        title="Click to change speaker, Double-click to rename"
-                      >
-                        {speakerName}
-                      </button>
-                      {activePopover?.index === originalIndex && (
-                        <SpeakerAssignmentPopover
-                          currentSpeakerName={speakerName}
-                          availableSpeakers={speakers}
-                          globalSpeakers={globalSpeakers}
-                          speakerColors={speakerColors}
-                          targetElement={activePopover.target}
-                          onSelect={(name) => {
-                            onUpdateSegmentSpeaker(originalIndex, name);
-                            setActivePopover(null);
-                          }}
-                          onClose={() => setActivePopover(null)}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Transcript Text */}
-                <div
-                  id={`segment-${originalIndex}`}
-                  className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
-                    isEditingText ? "ring-2 ring-blue-500" : ""
-                  }`}
-                >
-                  {isEditingText ? (
-                    <textarea
-                      autoFocus
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => handleTextSubmit(originalIndex)}
-                      onKeyDown={(e) => handleKeyDown(e, "text", originalIndex)}
-                      className="w-full bg-transparent resize-none outline-none text-gray-900 dark:text-white leading-relaxed"
-                      rows={Math.max(2, Math.ceil(editValue.length / 80))}
-                    />
-                  ) : (
-                    <p
-                      className="leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 cursor-text hover:text-gray-900 dark:hover:text-white"
-                      onClick={(e) =>
-                        handleTextClick(originalIndex, segment.text, e)
-                      }
-                      title="Click to edit text"
-                    >
-                      {renderHighlightedText(segment.text, originalIndex)}
-                    </p>
-                  )}
-                </div>
+                {involvedSpeakers.length > 1 ? (
+                  <div className="flex flex-col md:flex-row gap-3 md:gap-4 w-full border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20 p-3 md:p-4 rounded-xl shadow-[inset_0_1px_4px_rgba(0,0,0,0.02)] dark:shadow-[inset_0_1px_4px_rgba(0,0,0,0.2)]">
+                     {involvedSpeakers.map(speaker => {
+                         const speakerItems = group.items.filter(item => item.segment.speaker === speaker);
+                         return (
+                             <div key={speaker} className="flex-1 min-w-0 flex flex-col">
+                                 {speakerItems.length > 0 ? (
+                                     speakerItems.map(item => renderSegmentContent(item))
+                                 ) : (
+                                     <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-gray-300 dark:border-gray-700/50 rounded-xl bg-white/30 dark:bg-black/10">
+                                         <div className="flex flex-col items-center gap-0.5 opacity-60">
+                                             <div className="font-semibold text-gray-500 dark:text-gray-400 text-sm">{speakerMap[speaker] || speaker}</div>
+                                             <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
+                                         </div>
+                                     </div>
+                                 )}
+                             </div>
+                         )
+                     })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col w-full">
+                     {group.items.map(item => renderSegmentContent(item))}
+                  </div>
+                )}
               </div>
             </div>
           );

@@ -96,6 +96,7 @@ export interface TranscriptSegment {
   end: number;
   text: string;
   speaker: string;
+  overlapping_speakers?: string[];
 }
 
 export interface Transcript extends BaseDBModel {

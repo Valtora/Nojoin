@@ -331,7 +331,9 @@ def process_recording_task(self, recording_id: int):
                         s = ts % 60
                         return f"{h:02}.{m:02}.{s:05.2f}s"
                     diarization_label = entry['speaker']
-                    transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {entry['text']}\n"
+                    overlapping_labels = entry.get('overlapping_speakers', [])
+                    overlapping_str = f" (overlapping with {', '.join(overlapping_labels)})" if overlapping_labels else ""
+                    transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label}{overlapping_str} - {entry['text']}\n"
                 
                 # Get backend and run inference
                 backend = get_llm_backend(llm_provider, api_key=llm_api_key, model=llm_model)
@@ -370,7 +372,6 @@ def process_recording_task(self, recording_id: int):
         # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
         
         # Save Speakers & Embeddings
-        # Extract unique speakers from the final segments
         # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
         ordered_speakers = []
         seen_speakers = set()
@@ -379,6 +380,10 @@ def process_recording_task(self, recording_id: int):
             if spk not in seen_speakers:
                 ordered_speakers.append(spk)
                 seen_speakers.add(spk)
+            for overlapping_spk in seg.get('overlapping_speakers', []):
+                if overlapping_spk not in seen_speakers:
+                    ordered_speakers.append(overlapping_spk)
+                    seen_speakers.add(overlapping_spk)
         
         logger.info(f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}")
         
@@ -548,6 +553,11 @@ def process_recording_task(self, recording_id: int):
                     for seg in final_segments:
                         if seg['speaker'] == label:
                             seg['speaker'] = target_label
+                        
+                        if 'overlapping_speakers' in seg:
+                            for idx, ov_spk in enumerate(seg['overlapping_speakers']):
+                                if ov_spk == label:
+                                    seg['overlapping_speakers'][idx] = target_label
                             
                     # No addition to resolved_names_map needed; the canonical entry already exists.
                     label_map[label] = resolved_name
@@ -592,6 +602,8 @@ def process_recording_task(self, recording_id: int):
         for seg in updated_segments:
             spk = seg['speaker']
             final_speaker_counts[spk] = final_speaker_counts.get(spk, 0) + 1
+            for ov_spk in seg.get('overlapping_speakers', []):
+                final_speaker_counts[ov_spk] = final_speaker_counts.get(ov_spk, 0) + 1
         logger.info(f"Final transcript speaker distribution: {final_speaker_counts}")
             
         transcript.segments = updated_segments
@@ -604,7 +616,9 @@ def process_recording_task(self, recording_id: int):
             seg_end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
             speaker_label = seg['speaker']
             speaker_name = label_map.get(speaker_label, speaker_label)
-            transcript_text += f"[{seg_start_time} - {seg_end_time}] {speaker_name}: {seg['text']}\n"
+            overlapping_names = [label_map.get(ov_lbl, ov_lbl) for ov_lbl in seg.get('overlapping_speakers', [])]
+            overlapping_str = f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
+            transcript_text += f"[{seg_start_time} - {seg_end_time}] {speaker_name}{overlapping_str}: {seg['text']}\n"
 
         # Auto-generate Meeting Title
         auto_generate_title = merged_config.get("auto_generate_title", True)

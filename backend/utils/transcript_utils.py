@@ -105,21 +105,29 @@ def _combine_segment_level(segments, speaker_turns):
             continue
             
         whisper_segment = Segment(start, end)
-        max_overlap = 0.0
-        dominant_speaker = "UNKNOWN"
+        speaker_overlaps = {}
         
         for turn, _, label in speaker_turns.itertracks(yield_label=True):
             intersection = whisper_segment & turn
             if intersection:
-                overlap_duration = intersection.duration
-                if overlap_duration > max_overlap:
-                    max_overlap = overlap_duration
-                    dominant_speaker = label
+                overlap_dur = intersection.duration
+                if overlap_dur > 0:
+                    speaker_overlaps[label] = speaker_overlaps.get(label, 0.0) + overlap_dur
+        
+        sorted_speakers = sorted(speaker_overlaps.items(), key=lambda x: x[1], reverse=True)
+        
+        if sorted_speakers:
+            dominant_speaker = sorted_speakers[0][0]
+            overlapping_speakers = [spk for spk, _ in sorted_speakers[1:]]
+        else:
+            dominant_speaker = "UNKNOWN"
+            overlapping_speakers = []
         
         final_segments.append({
             "start": start,
             "end": end,
             "speaker": dominant_speaker,
+            "overlapping_speakers": overlapping_speakers,
             "text": text
         })
     return final_segments
@@ -141,33 +149,38 @@ def _combine_word_level(segments, speaker_turns):
         "start": 0.0,
         "end": 0.0,
         "speaker": "UNKNOWN",
+        "overlapping_speakers": [],
         "text": "",
         "words": []
     }
     
-    def get_speaker_for_range(start, end):
-        max_overlap = 0.0
-        active_speaker = "UNKNOWN"
+    def get_speakers_for_range(start, end):
+        speaker_overlaps = {}
         word_seg = Segment(start, end)
         for turn, _, label in speaker_turns.itertracks(yield_label=True):
             overlap_seg = word_seg & turn
             if overlap_seg:
                 overlap_dur = overlap_seg.duration
-                if overlap_dur > max_overlap:
-                    max_overlap = overlap_dur
-                    active_speaker = label
-        return active_speaker
+                if overlap_dur > 0:
+                    speaker_overlaps[label] = speaker_overlaps.get(label, 0.0) + overlap_dur
+        sorted_speakers = sorted(speaker_overlaps.items(), key=lambda x: x[1], reverse=True)
+        if not sorted_speakers:
+            return ["UNKNOWN"]
+        return [spk for spk, dur in sorted_speakers]
 
     for i, word_data in enumerate(all_words):
         w_start = word_data['start']
         w_end = word_data['end']
         w_text = word_data['word']
         
-        speaker = get_speaker_for_range(w_start, w_end)
+        speakers = get_speakers_for_range(w_start, w_end)
+        speaker = speakers[0]
+        overlapping_speakers = speakers[1:]
         
         if i == 0:
             current_segment["start"] = w_start
             current_segment["speaker"] = speaker
+            current_segment["overlapping_speakers"] = overlapping_speakers
             # Strip leading space from first word if present
             current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
@@ -177,12 +190,13 @@ def _combine_word_level(segments, speaker_turns):
         gap = w_start - current_segment["end"]
         
         # Split if speaker changes OR gap > 1.0s
-        if speaker != current_segment["speaker"] or gap > 1.0:
+        if speaker != current_segment["speaker"] or gap > 1.0 or set(overlapping_speakers) != set(current_segment.get("overlapping_speakers", [])):
             final_segments.append(current_segment)
             current_segment = {
                 "start": w_start,
                 "end": w_end,
                 "speaker": speaker,
+                "overlapping_speakers": overlapping_speakers,
                 # Strip leading space from first word of new segment
                 "text": w_text.lstrip(),
                 "words": [word_data]
@@ -208,7 +222,7 @@ def _combine_word_level(segments, speaker_turns):
     
     return final_segments 
 
-def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_duration_s: float = 10.0):
+def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_duration_s: float = 10.0):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
@@ -226,6 +240,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
         curr_start = curr['start']
         curr_end = curr['end']
         curr_speaker = curr['speaker']
+        curr_overlapping = set(curr.get('overlapping_speakers', []))
         curr_text = curr['text']
         curr_words = curr.get('words', [])
         
@@ -322,6 +337,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                     'start': curr_start,
                     'end': split_end_time,
                     'speaker': curr_speaker,
+                    'overlapping_speakers': list(curr_overlapping),
                     'text': chunk_text,
                     'words': first_chunk_words
                 })
@@ -330,10 +346,11 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                     'start': split_end_time,
                     'end': curr_end, 
                     'speaker': curr_speaker,
+                    'overlapping_speakers': list(curr_overlapping),
                     'text': remainder_text,
                     'words': remainder_words
                 }
-                logger.debug(f"Smart split at {split_end_time:.2f}s (Target: 10s). Sentence break: {best_sentence_idx != -1}")
+                logger.debug(f"Smart split at {split_end_time:.2f}s (Target: {max_duration_s}s). Sentence break: {best_sentence_idx != -1}")
                 continue
             
             # --- Fallback: Naive Character Split (No Words) ---
@@ -373,6 +390,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                     'start': curr_start,
                     'end': split_end,
                     'speaker': curr_speaker,
+                    'overlapping_speakers': list(curr_overlapping),
                     'text': chunk_text
                 })
                 
@@ -386,17 +404,19 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
                     'start': split_end,
                     'end': curr_end, # Original end
                     'speaker': curr_speaker,
+                    'overlapping_speakers': list(curr_overlapping),
                     'text': remainder_text
                 }
                 # Continue loop WITHOUT incrementing `i` to process the remainder
                 continue
 
-        overlap_speakers = set([curr_speaker])
         j = i + 1
         
         while j < n:
             next_seg = segments[j]
             next_words = next_seg.get('words', [])
+            next_speaker = next_seg['speaker']
+            next_overlapping = set(next_seg.get('overlapping_speakers', []))
             
             # Predictive check: Would merging this segment exceed the max duration?
             # Checks if merging exceeds max duration.
@@ -411,13 +431,15 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
             # Check for overlap
             if next_seg['start'] < curr_end:
                 # Overlapping segment
-                overlap_speakers.add(next_seg['speaker'])
+                if next_speaker != curr_speaker:
+                    curr_overlapping.add(next_speaker)
+                curr_overlapping.update(next_overlapping)
                 curr_end = potential_end
                 curr_text += ' ' + next_seg['text']
                 curr_words.extend(next_words)
                 j += 1
-            elif next_seg['speaker'] == curr_speaker and abs(next_seg['start'] - curr_end) < 0.01:
-                # Consecutive, same speaker, no gap
+            elif next_speaker == curr_speaker and abs(next_seg['start'] - curr_end) < 0.01 and next_overlapping == curr_overlapping:
+                # Consecutive, same speaker, same overlapping set, no gap
                 curr_end = next_seg['end'] # potential_end is next_seg['end'] here
                 curr_text += ' ' + next_seg['text']
                 curr_words.extend(next_words)
@@ -425,11 +447,8 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
             else:
                 break
                 
-        # Format speaker label
-        if len(overlap_speakers) > 1:
-            speaker_label = ' and '.join(sorted(overlap_speakers)) + ' (Overlap)'
-        else:
-            speaker_label = curr_speaker
+        # Sort overlapping speakers for deterministic output and remove 'UNKNOWN'
+        overlapping_list = sorted(list({spk for spk in curr_overlapping if spk != curr_speaker and spk != "UNKNOWN"}))
 
         # Add the consolidated segment only if its duration is long enough
         # OR if it's the only segment we have (to avoid dropping data for short recordings)
@@ -438,13 +457,15 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.5, max_d
             consolidated.append({
                 'start': curr_start,
                 'end': curr_end,
-                'speaker': speaker_label,
+                'speaker': curr_speaker,
+                'overlapping_speakers': overlapping_list,
                 'text': curr_text.strip(),
                 'words': curr_words
             })
         else:
+            ov_str = f" (Overlap: {', '.join(overlapping_list)})" if overlapping_list else ""
             logger.info(f"Filtering out short consolidated segment: "
-                        f"[{curr_start:.2f}s - {curr_end:.2f}s] Speaker {speaker_label} "
+                        f"[{curr_start:.2f}s - {curr_end:.2f}s] Speaker {curr_speaker}{ov_str} "
                         f"duration {(curr_end - curr_start):.2f}s < {min_duration_s}s")
             
         i = j
