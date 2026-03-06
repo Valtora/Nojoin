@@ -395,8 +395,36 @@ export const findAndReplace = async (
   });
 };
 
-export type ExportContentType = "transcript" | "notes" | "both";
+export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 export type ExportFormat = "txt" | "pdf" | "docx";
+
+export const exportAudio = async (
+  recordingId: number,
+  recordingName: string,
+): Promise<void> => {
+  try {
+    const response = await api.get(`/recordings/${recordingId}/stream`, {
+      responseType: "blob",
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: "audio/mpeg" }));
+    const link = document.createElement("a");
+    link.href = url;
+
+    // Sanitize filename similar to backend
+    const sanitizedName = recordingName.replace(/[^a-zA-Z0-9 \-_.]/g, "").trim();
+    const filename = `${sanitizedName || `recording_${recordingId}`}.mp3`;
+
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("[exportAudio] Error during audio export:", error);
+    throw error;
+  }
+};
 
 export const exportContent = async (
   recordingId: number,

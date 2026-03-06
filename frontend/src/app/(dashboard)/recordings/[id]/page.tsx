@@ -14,6 +14,7 @@ import {
   updateNotes,
   findAndReplaceNotes,
   exportContent,
+  exportAudio,
   ExportContentType,
   ExportFormat,
 } from "@/lib/api";
@@ -716,7 +717,11 @@ export default function RecordingPage({ params }: PageProps) {
   ) => {
     if (!recording) return;
     try {
-      await exportContent(recording.id, contentType, format);
+      if (contentType === "audio") {
+        await exportAudio(recording.id, recording.name);
+      } else {
+        await exportContent(recording.id, contentType, format);
+      }
     } catch (error: any) {
       console.error("Export failed:", error);
       alert("Export failed. Please check the logs.");

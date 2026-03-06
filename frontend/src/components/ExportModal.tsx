@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, FileText, StickyNote, Files, Download } from "lucide-react";
+import { X, FileText, StickyNote, Files, Download, Music } from "lucide-react";
 import { ExportContentType, ExportFormat } from "@/lib/api";
 
 interface ExportModalProps {
@@ -212,15 +212,63 @@ export default function ExportModal({
                 )}
               </div>
             </label>
+
+            {/* Audio Option */}
+            <label
+              className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                selected === "audio"
+                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
+                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+              }`}
+            >
+              <input
+                type="radio"
+                name="exportType"
+                value="audio"
+                checked={selected === "audio"}
+                onChange={() => setSelected("audio")}
+                className="sr-only"
+              />
+              <div
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  selected === "audio"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                }`}
+              >
+                <Music className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="font-medium text-gray-900 dark:text-white">
+                  Audio File (.mp3)
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  Export the proxy audio file of the recording
+                </div>
+              </div>
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  selected === "audio"
+                    ? "border-orange-500 bg-orange-500"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
+              >
+                {selected === "audio" && (
+                  <div className="w-2 h-2 rounded-full bg-white" />
+                )}
+              </div>
+            </label>
           </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
+          {selected !== "audio" && (
+            <>
+              <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
 
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-            Choose format:
-          </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Choose format:
+              </p>
 
-          <div className="space-y-3">
+              <div className="space-y-3">
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "txt"
@@ -356,6 +404,8 @@ export default function ExportModal({
               </div>
             </label>
           </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}

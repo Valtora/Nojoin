@@ -89,7 +89,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   merged_into_id?: number | null;
 }
 
-export type ExportContentType = "transcript" | "notes" | "both";
+export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 
 export interface TranscriptSegment {
   start: number;
