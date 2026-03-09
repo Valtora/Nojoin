@@ -394,24 +394,24 @@ export default function NotesView({
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={onGenerateNotes}
-              disabled={isGenerating}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Generate Notes with AI"
-            >
-              {isGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {isGenerating
-                ? "Generating..."
-                : notes
-                  ? "Re-Generate Notes"
-                  : "Generate Notes"}
-            </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+            {(!notes || isGenerating) && (
+              <>
+                <button
+                  onClick={onGenerateNotes}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Generate Notes with AI"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {isGenerating ? "Generating..." : "Generate Notes"}
+                </button>
+                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+              </>
+            )}
             <button
               onClick={onUndo}
               disabled={!canUndo}

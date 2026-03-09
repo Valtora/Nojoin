@@ -42,6 +42,7 @@ interface SpeakerPanelProps {
   onResume: () => void;
   onRefresh: () => void;
   globalSpeakers: import("@/types").GlobalSpeaker[];
+  onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
 }
 
 export default function SpeakerPanel({
@@ -57,6 +58,7 @@ export default function SpeakerPanel({
   onResume,
   onRefresh,
   globalSpeakers,
+  onSpeakerRenamed,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{
@@ -203,11 +205,19 @@ export default function SpeakerPanel({
 
     setIsSubmitting(true);
     try {
+      const oldName = getSpeakerName(renamingSpeaker);
+      const newName = renameValue.trim();
+      
       await updateSpeaker(
         recordingId,
         renamingSpeaker.diarization_label,
-        renameValue.trim(),
+        newName,
       );
+      
+      if (oldName !== newName && onSpeakerRenamed) {
+        await onSpeakerRenamed(oldName, newName);
+      }
+      
       setRenamingSpeaker(null);
       onRefresh();
     } catch (e) {

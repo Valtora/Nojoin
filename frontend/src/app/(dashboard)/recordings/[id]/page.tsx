@@ -12,7 +12,6 @@ import {
   updateSpeakerColor,
   generateNotes,
   updateNotes,
-  findAndReplaceNotes,
   exportContent,
   exportAudio,
   ExportContentType,
@@ -565,11 +564,7 @@ export default function RecordingPage({ params }: PageProps) {
     pushBothHistories(`Global Replace "${find}" with "${replace}"`);
 
     try {
-      // Run both operations in parallel
-      await Promise.all([
-        findAndReplace(recording.id, find, replace, options),
-        findAndReplaceNotes(recording.id, find, replace, options),
-      ]);
+      await findAndReplace(recording.id, find, replace, options);
 
       router.refresh();
       const updated = await getRecording(recording.id);
@@ -1084,6 +1079,11 @@ export default function RecordingPage({ params }: PageProps) {
                     onResume={handleResume}
                     onRefresh={fetchRecording}
                     globalSpeakers={globalSpeakers}
+                    onSpeakerRenamed={async (oldName, newName) => {
+                      if (recording?.transcript?.notes) {
+                        await handleGlobalFindAndReplace(oldName, newName, { caseSensitive: true });
+                      }
+                    }}
                   />
                 </Panel>
 

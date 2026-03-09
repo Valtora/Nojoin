@@ -289,7 +289,7 @@ export default function ChatPanel({
             <Info className="w-12 h-12 mb-4" />
             <p className="text-sm">
               Ask questions about the transcript, generate summaries, or draft
-              emails.
+              emails. To regenerate the notes, make a request via the meeting chat below with the requested changes.
             </p>
           </div>
         ) : (
