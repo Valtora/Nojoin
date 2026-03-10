@@ -864,10 +864,12 @@ async def split_speaker(
             # Uses the selected segments for embedding extraction.
             seg_tuples = [(s.start, s.end) for s in segments]
             
+            target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
+            
             # Run extraction task synchronously
             task = celery_app.send_task(
                 "backend.worker.tasks.extract_embedding_task",
-                args=[rec.audio_path, seg_tuples, device_str, hf_token]
+                args=[target_audio, seg_tuples, device_str, hf_token]
             )
             try:
                 emb = await run_in_threadpool(task.get, timeout=60)
@@ -932,9 +934,10 @@ async def split_speaker(
         
         if remaining_seg_tuples:
              # Extract
+            target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
             task = celery_app.send_task(
                 "backend.worker.tasks.extract_embedding_task",
-                args=[rec.audio_path, remaining_seg_tuples, device_str, hf_token]
+                args=[target_audio, remaining_seg_tuples, device_str, hf_token]
             )
             try:
                 emb = await run_in_threadpool(task.get, timeout=60)
@@ -1139,9 +1142,10 @@ async def extract_voiceprint(
     user_settings = current_user.settings or {}
     hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
     
+    target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
     task = celery_app.send_task(
         "backend.worker.tasks.extract_embedding_task",
-        args=[recording.audio_path, speaker_segments, device_str, hf_token]
+        args=[target_audio, speaker_segments, device_str, hf_token]
     )
     embedding = await run_in_threadpool(task.get)
     
@@ -1411,9 +1415,10 @@ async def extract_all_voiceprints(
         user_settings = current_user.settings or {}
         hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
         
+        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
         task = celery_app.send_task(
             "backend.worker.tasks.extract_embedding_task",
-            args=[recording.audio_path, speaker_segments, device_str, hf_token]
+            args=[target_audio, speaker_segments, device_str, hf_token]
         )
         embedding = await run_in_threadpool(task.get)
         

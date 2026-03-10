@@ -133,8 +133,26 @@ def process_recording_task(self, recording_id: int):
         session.refresh(recording)
         
         audio_path = recording.audio_path
-        if not os.path.exists(audio_path):
-            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        if not audio_path or not os.path.exists(audio_path):
+            if recording.proxy_path and os.path.exists(recording.proxy_path):
+                logger.info("Source audio missing, but proxy exists. Restoring from proxy...")
+                from backend.utils.audio import convert_to_wav
+                
+                if not audio_path:
+                    base_path, _ = os.path.splitext(recording.proxy_path)
+                    audio_path = f"{base_path}.wav"
+                    recording.audio_path = audio_path
+                
+                recording.processing_step = f"Restoring audio from proxy...{device_suffix}"
+                session.add(recording)
+                session.commit()
+                
+                if convert_to_wav(recording.proxy_path, audio_path):
+                    logger.info("Successfully restored source audio from proxy.")
+                else:
+                    raise FileNotFoundError(f"Source audio missing and failed to restore from proxy.")
+            else:
+                raise FileNotFoundError(f"Audio file not found: {audio_path} and no proxy available.")
 
         try:
             validate_audio_file(audio_path)
@@ -710,6 +728,16 @@ def process_recording_task(self, recording_id: int):
         session.commit()
         update_recording_status(session, recording.id)
         
+        # Delete source wav if proxy exists to save storage
+        session.refresh(recording)
+        if recording.proxy_path and os.path.exists(recording.proxy_path):
+            if recording.audio_path and os.path.exists(recording.audio_path):
+                try:
+                    logger.info(f"Storage optimization: Proxy audio exists, deleting source audio {recording.audio_path}")
+                    os.remove(recording.audio_path)
+                except Exception as e:
+                    logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
+        
         elapsed_time = time.time() - float(start_time)
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         
@@ -785,9 +813,14 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
     session = self.session
     try:
         recording = session.get(Recording, recording_id)
-        if not recording or not recording.audio_path or not os.path.exists(recording.audio_path):
-            logger.warning(f"Recording {recording_id} not found or audio missing.")
-            return
+        
+        target_audio = recording.audio_path
+        if not target_audio or not os.path.exists(target_audio):
+            if recording.proxy_path and os.path.exists(recording.proxy_path):
+                target_audio = recording.proxy_path
+            else:
+                logger.warning(f"Recording {recording_id} not found or audio missing.")
+                return
 
         target_recording_speaker = session.get(RecordingSpeaker, recording_speaker_id)
         if not target_recording_speaker:
@@ -799,7 +832,7 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
         # Extract embedding for this segment
         # Passes a list of segments [(start, end)] for embedding extraction.
         new_embedding = extract_embedding_for_segments(
-            recording.audio_path, 
+            target_audio, 
             [(start, end)], 
             device_str=device
         )
@@ -1342,6 +1375,15 @@ def generate_proxy_task(self, recording_id: int):
             session.add(recording)
             session.commit()
             logger.info(f"Proxy generated successfully for recording {recording_id}")
+            
+            # If processing is already finished, delete source audio
+            if recording.status in [RecordingStatus.PROCESSED, RecordingStatus.ERROR]:
+                if recording.audio_path and os.path.exists(recording.audio_path):
+                    try:
+                        logger.info(f"Storage optimization: Proxy generated after processing, deleting source audio {recording.audio_path}")
+                        os.remove(recording.audio_path)
+                    except Exception as e:
+                        logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
         else:
             logger.error(f"Failed to generate proxy for recording {recording_id}")
 

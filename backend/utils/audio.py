@@ -162,6 +162,31 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
         logger.error(f"Unexpected error converting to MP3: {str(e)}")
         return False
 
+def convert_to_wav(input_path: str, output_path: str) -> bool:
+    """
+    Convert audio to WAV (PCM 16-bit) using ffmpeg.
+    Useful for restoring proxy mp3 back to wav for processing.
+    """
+    ensure_ffmpeg_in_path()
+    
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-acodec", "pcm_s16le",
+        output_path
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to convert audio to WAV: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error converting to WAV: {str(e)}")
+        return False
+
 def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
     """
     Convert audio to 48kHz mono MP3 (128kbps) for proxy playback.

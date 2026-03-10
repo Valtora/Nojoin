@@ -934,9 +934,6 @@ async def stream_recording(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
         
-    if not recording.audio_path or not os.path.exists(recording.audio_path):
-        raise HTTPException(status_code=404, detail="Audio file not found on server")
-        
     # Only serve the proxy MP3. Raw audio formats (WAV, etc.) cannot be
     # chunked via 206 because subsequent chunks lack the header needed
     # for the browser to decode sample rate, bit depth, and channels.

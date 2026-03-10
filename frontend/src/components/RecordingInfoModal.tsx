@@ -132,75 +132,7 @@ export default function RecordingInfoModal({
                     </div>
                   ) : (
                     <>
-                      {/* Original File */}
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          <FileAudio className="w-4 h-4 text-purple-500" />
-                          Source Audio
-                        </h4>
-                        {info.original ? (
-                          <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Format
-                              </span>
-                              <span className="text-gray-900 dark:text-white uppercase">
-                                {info.original.format || "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Bitrate
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.original.bitrate
-                                  ? `${Math.round(info.original.bitrate / 1000)} kbps`
-                                  : "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Sample Rate
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.original.sample_rate
-                                  ? `${info.original.sample_rate} Hz`
-                                  : "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Channels
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.original.channels}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Codec
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.original.codec || "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Size
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.original.size
-                                  ? `${(info.original.size / 1024 / 1024).toFixed(2)} MB`
-                                  : "N/A"}
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 italic">
-                            No info available (File might be missing)
-                          </p>
-                        )}
-                      </div>
+
 
                       {/* Proxy File */}
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">

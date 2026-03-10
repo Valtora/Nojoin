@@ -598,7 +598,8 @@ async def update_segment_speaker(
     # 4. Update Embeddings (Active Learning)
     # Dispatch task to worker
     try:
-        if recording.audio_path and target_recording_speaker:
+        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
+        if target_audio and target_recording_speaker:
             start = segment['start']
             end = segment['end']
             duration = end - start
