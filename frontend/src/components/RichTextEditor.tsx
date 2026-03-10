@@ -8,6 +8,7 @@ import { Markdown } from 'tiptap-markdown';
 import { useEffect } from 'react';
 
 import { SearchExtension } from '@/lib/SearchExtension';
+import { SpellCheckExtension } from '@/lib/SpellCheckExtension';
 
 interface RichTextEditorProps {
   content: string;
@@ -34,6 +35,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
       }),
       Markdown,
       SearchExtension,
+      SpellCheckExtension,
     ],
     content: content,
     editable: editable,
@@ -47,6 +49,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     editorProps: {
       attributes: {
         class: 'prose prose-gray dark:prose-invert max-w-none focus:outline-none h-full p-6',
+        spellcheck: 'false',
       },
     },
   });

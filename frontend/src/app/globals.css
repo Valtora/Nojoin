@@ -81,3 +81,10 @@ body {
 .dark .react-datepicker__navigation-icon::before {
   border-color: #9ca3af; /* gray-400 */
 }
+
+/* Spell check error decoration */
+.spellcheck-error {
+  text-decoration: underline wavy red;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}

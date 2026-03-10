@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type ViewType = "recordings" | "archived" | "deleted";
+export type ActivePanel = "transcript" | "notes" | "documents";
 
 interface NavigationState {
   // View State
@@ -52,6 +53,10 @@ interface NavigationState {
   toggleLogShowTimestamps: () => void;
   logWordWrap: boolean;
   toggleLogWordWrap: () => void;
+
+  // Active Panel State (Transcript/Notes/Documents)
+  activePanel: ActivePanel;
+  setActivePanel: (panel: ActivePanel) => void;
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -141,6 +146,10 @@ export const useNavigationStore = create<NavigationState>()(
       logWordWrap: true,
       toggleLogWordWrap: () =>
         set((state) => ({ logWordWrap: !state.logWordWrap })),
+
+      // Active Panel State
+      activePanel: "transcript",
+      setActivePanel: (panel) => set({ activePanel: panel }),
     }),
     {
       name: "navigation-storage",
@@ -153,6 +162,7 @@ export const useNavigationStore = create<NavigationState>()(
         chatPanelHeight: state.chatPanelHeight,
         logShowTimestamps: state.logShowTimestamps,
         logWordWrap: state.logWordWrap,
+        activePanel: state.activePanel,
       }),
     },
   ),

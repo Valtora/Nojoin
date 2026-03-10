@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, validator
-from typing import Optional, Any
+from typing import Optional, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import urlparse
 
@@ -30,6 +30,7 @@ class SettingsUpdate(BaseModel):
     auto_infer_speakers: Optional[bool] = None
     enable_vad: Optional[bool] = None
     enable_diarization: Optional[bool] = None
+    spellcheck_language: Optional[str] = None
 
     @validator('whisper_model_size')
     def validate_whisper_model_size(cls, v):
@@ -214,3 +215,94 @@ async def update_settings(
     await db.refresh(current_user)
     
     return await _merge_settings(current_user.settings, db)
+
+
+# --- Personal Dictionary ---
+
+class WordPayload(BaseModel):
+    word: str
+
+@router.get("/personal-dictionary", response_model=List[str])
+async def get_personal_dictionary(
+    current_user: User = Depends(get_current_user),
+) -> List[str]:
+    settings = current_user.settings or {}
+    return settings.get("personal_dictionary", [])
+
+@router.post("/personal-dictionary", response_model=List[str])
+async def add_personal_dictionary_word(
+    payload: WordPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    current_settings = dict(current_user.settings) if current_user.settings else {}
+    words = current_settings.get("personal_dictionary", [])
+    normalised = payload.word.strip()
+    if not normalised:
+        raise HTTPException(status_code=400, detail="Word cannot be empty.")
+    if normalised not in words:
+        words.append(normalised)
+    current_settings["personal_dictionary"] = words
+    current_user.settings = current_settings
+    db.add(current_user)
+    await db.commit()
+    return words
+
+@router.delete("/personal-dictionary/{word}", response_model=List[str])
+async def remove_personal_dictionary_word(
+    word: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    current_settings = dict(current_user.settings) if current_user.settings else {}
+    words = current_settings.get("personal_dictionary", [])
+    words = [w for w in words if w != word]
+    current_settings["personal_dictionary"] = words
+    current_user.settings = current_settings
+    db.add(current_user)
+    await db.commit()
+    return words
+
+
+# --- Spellcheck Ignored Words ---
+
+@router.get("/spellcheck-ignored", response_model=List[str])
+async def get_spellcheck_ignored(
+    current_user: User = Depends(get_current_user),
+) -> List[str]:
+    settings = current_user.settings or {}
+    return settings.get("spellcheck_ignored_words", [])
+
+@router.post("/spellcheck-ignored", response_model=List[str])
+async def add_spellcheck_ignored_word(
+    payload: WordPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    current_settings = dict(current_user.settings) if current_user.settings else {}
+    words = current_settings.get("spellcheck_ignored_words", [])
+    normalised = payload.word.strip()
+    if not normalised:
+        raise HTTPException(status_code=400, detail="Word cannot be empty.")
+    if normalised not in words:
+        words.append(normalised)
+    current_settings["spellcheck_ignored_words"] = words
+    current_user.settings = current_settings
+    db.add(current_user)
+    await db.commit()
+    return words
+
+@router.delete("/spellcheck-ignored/{word}", response_model=List[str])
+async def remove_spellcheck_ignored_word(
+    word: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    current_settings = dict(current_user.settings) if current_user.settings else {}
+    words = current_settings.get("spellcheck_ignored_words", [])
+    words = [w for w in words if w != word]
+    current_settings["spellcheck_ignored_words"] = words
+    current_user.settings = current_settings
+    db.add(current_user)
+    await db.commit()
+    return words

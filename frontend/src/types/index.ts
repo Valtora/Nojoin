@@ -157,6 +157,7 @@ export interface Settings {
   auto_infer_speakers?: boolean;
   enable_vad?: boolean;
   enable_diarization?: boolean;
+  spellcheck_language?: string;
 
   [key: string]: any;
 }

@@ -1,9 +1,12 @@
 import { useTheme, Theme } from "@/lib/ThemeProvider";
+import { useState } from "react";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { GENERAL_KEYWORDS } from "./keywords";
 import { Settings } from "@/types";
-import { Brain, Mic, Activity, Users, FileText, Type } from "lucide-react";
+import { Brain, Mic, Activity, Users, FileText, Type, SpellCheck } from "lucide-react";
 import { Switch } from "../ui/Switch";
+import { SPELLCHECK_LANGUAGES, spellCheckService } from "@/lib/spellCheckService";
+import DictionaryModal from "../DictionaryModal";
 
 interface GeneralSettingsProps {
   settings: Settings;
@@ -17,6 +20,12 @@ export default function GeneralSettings({
   searchQuery = "",
 }: GeneralSettingsProps) {
   const { theme, setTheme } = useTheme();
+  const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
+
+  const handleLanguageChange = async (locale: string) => {
+    onUpdate({ ...settings, spellcheck_language: locale });
+    await spellCheckService.changeLanguage(locale);
+  };
 
   const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setTheme(e.target.value as Theme);
@@ -34,7 +43,14 @@ export default function GeneralSettings({
     "notes",
   ]);
 
-  if (!showAppearance && !showProcessing && searchQuery)
+  const showSpellCheck = fuzzyMatch(searchQuery, [
+    "spellcheck",
+    "spell",
+    "language",
+    "dictionary",
+  ]);
+
+  if (!showAppearance && !showProcessing && !showSpellCheck && searchQuery)
     return <div className="text-gray-500">No matching settings found.</div>;
 
   return (
@@ -65,6 +81,51 @@ export default function GeneralSettings({
           </div>
         </div>
       )}
+
+      {showSpellCheck && (
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <SpellCheck className="w-5 h-5 text-orange-500" /> Spell Check
+          </h3>
+          <div className="grid grid-cols-1 gap-4 max-w-xl">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Language
+              </label>
+              <select
+                value={settings.spellcheck_language || "en-GB"}
+                onChange={(e) => handleLanguageChange(e.target.value)}
+                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              >
+                <option value="disabled">Disabled</option>
+                {Object.entries(SPELLCHECK_LANGUAGES).map(([locale, meta]) => (
+                  <option key={locale} value={locale}>
+                    {meta.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Select the language for spell checking in meeting notes.
+              </p>
+            </div>
+
+            {/* Custom Dictionary Management */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsDictionaryModalOpen(true)}
+                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
+              >
+                Manage Dictionary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <DictionaryModal
+        isOpen={isDictionaryModalOpen}
+        onClose={() => setIsDictionaryModalOpen(false)}
+      />
 
       {showProcessing && (
         <div>

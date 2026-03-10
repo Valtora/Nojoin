@@ -83,6 +83,7 @@ DEFAULT_USER_SETTINGS = {
     "auto_infer_speakers": True, # Automatically infer real speaker names using LLM
     "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True, # Enable Speaker Diarization (who said what)
+    "spellcheck_language": "en-GB", # Default spell check language for meeting notes
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]

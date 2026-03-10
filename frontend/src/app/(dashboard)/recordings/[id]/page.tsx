@@ -42,7 +42,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
-type ActivePanel = "transcript" | "notes" | "documents";
+
 
 const getStatusMessage = (recording: Recording) => {
   if (recording.status === RecordingStatus.UPLOADING) {
@@ -129,7 +129,7 @@ export default function RecordingPage({ params }: PageProps) {
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
-  const { chatPanelHeight, setChatPanelHeight } = useNavigationStore();
+  const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
 
   // Undo/Redo State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -150,8 +150,6 @@ export default function RecordingPage({ params }: PageProps) {
     {},
   );
 
-  // Panel State (Transcript or Notes)
-  const [activePanel, setActivePanel] = useState<ActivePanel>("transcript");
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
   // Export Modal State

@@ -22,7 +22,11 @@ import {
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
+import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
+import { spellCheckService } from "@/lib/spellCheckService";
+import { getSpellCheckErrorAtPos, SpellCheckError } from "@/lib/SpellCheckExtension";
+import { getSettings } from "@/lib/api";
 
 interface NotesViewProps {
   recordingId: number;
@@ -81,6 +85,16 @@ export default function NotesView({
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkModalUrl, setLinkModalUrl] = useState("");
 
+  // Spell Check Context Menu State
+  const [spellCheckMenu, setSpellCheckMenu] = useState<{
+    x: number;
+    y: number;
+    word: string;
+    suggestions: string[];
+    from: number;
+    to: number;
+  } | null>(null);
+
   // Search Matches State
   const [matches, setMatches] = useState<
     { startIndex: number; length: number }[]
@@ -109,6 +123,47 @@ export default function NotesView({
       onNotesChange(newContent);
     }, 1000); // 1 second debounce
   };
+
+  // Initialise spell check service from user settings
+  useEffect(() => {
+    getSettings()
+      .then((settings) => {
+        const locale = settings.spellcheck_language || "en-GB";
+        spellCheckService.initialise(locale);
+      })
+      .catch((err) => console.error("[NotesView] Failed to load spell check settings:", err));
+  }, []);
+
+  // Handle right-click on misspelt words
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleContextMenu = (event: MouseEvent) => {
+      const view = editor.view;
+      const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+      if (!pos) return;
+
+      const error = getSpellCheckErrorAtPos(view, pos.pos);
+      if (!error) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const suggestions = spellCheckService.suggest(error.word);
+      setSpellCheckMenu({
+        x: event.clientX,
+        y: event.clientY,
+        word: error.word,
+        suggestions,
+        from: error.from,
+        to: error.to,
+      });
+    };
+
+    const editorDom = editor.view.dom;
+    editorDom.addEventListener("contextmenu", handleContextMenu);
+    return () => editorDom.removeEventListener("contextmenu", handleContextMenu);
+  }, [editor]);
 
   // Calculate matches when findText or editor content changes
   // Calculate matches when findText or editor content changes
@@ -669,6 +724,41 @@ export default function NotesView({
             .run();
         }}
       />
+
+      {/* Spell Check Context Menu */}
+      {spellCheckMenu && (
+        <SpellCheckContextMenu
+          x={spellCheckMenu.x}
+          y={spellCheckMenu.y}
+          word={spellCheckMenu.word}
+          suggestions={spellCheckMenu.suggestions}
+          onCorrect={(replacement) => {
+            if (!editor) return;
+            editor
+              .chain()
+              .focus()
+              .command(({ tr }) => {
+                tr.replaceWith(
+                  spellCheckMenu.from,
+                  spellCheckMenu.to,
+                  editor.state.schema.text(replacement),
+                );
+                return true;
+              })
+              .run();
+            setSpellCheckMenu(null);
+          }}
+          onAddToDictionary={() => {
+            spellCheckService.addToPersonalDictionary(spellCheckMenu.word);
+            setSpellCheckMenu(null);
+          }}
+          onIgnore={() => {
+            spellCheckService.addToIgnored(spellCheckMenu.word);
+            setSpellCheckMenu(null);
+          }}
+          onClose={() => setSpellCheckMenu(null)}
+        />
+      )}
     </div>
   );
 }

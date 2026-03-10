@@ -370,6 +370,34 @@ export const updateSettings = async (settings: Settings): Promise<Settings> => {
   return response.data;
 };
 
+// Personal Dictionary
+export const getPersonalDictionary = async (): Promise<string[]> => {
+  const response = await api.get<string[]>("/settings/personal-dictionary");
+  return response.data;
+};
+
+export const addPersonalDictionaryWord = async (word: string): Promise<void> => {
+  await api.post("/settings/personal-dictionary", { word });
+};
+
+export const removePersonalDictionaryWord = async (word: string): Promise<void> => {
+  await api.delete(`/settings/personal-dictionary/${encodeURIComponent(word)}`);
+};
+
+// Spellcheck Ignored Words
+export const getSpellcheckIgnoredWords = async (): Promise<string[]> => {
+  const response = await api.get<string[]>("/settings/spellcheck-ignored");
+  return response.data;
+};
+
+export const addSpellcheckIgnoredWord = async (word: string): Promise<void> => {
+  await api.post("/settings/spellcheck-ignored", { word });
+};
+
+export const removeSpellcheckIgnoredWord = async (word: string): Promise<void> => {
+  await api.delete(`/settings/spellcheck-ignored/${encodeURIComponent(word)}`);
+};
+
 // Transcript Text
 export const updateTranscriptSegmentText = async (
   recordingId: number,
