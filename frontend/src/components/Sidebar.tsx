@@ -117,6 +117,8 @@ export default function Sidebar() {
     toggleRecordingSelection,
     selectAllRecordings,
     clearSelection,
+    recordingsSidebarWidth,
+    setRecordingsSidebarWidth,
   } = useNavigationStore();
 
   const [mounted, setMounted] = useState(false);
@@ -134,6 +136,9 @@ export default function Sidebar() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoModalRecording, setInfoModalRecording] =
     useState<Recording | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const MIN_SIDEBAR_WIDTH = 256; // 16rem (w-64)
+  const MAX_SIDEBAR_WIDTH = 600;
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -324,6 +329,39 @@ export default function Sidebar() {
   useEffect(() => {
     clearSelection();
   }, [currentView, clearSelection]);
+
+  // Handle resizing
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Don't resize on mobile
+      if (window.innerWidth < 768) return;
+      
+      const sidebarElement = document.getElementById("sidebar-recordings-list");
+      if (!sidebarElement) return;
+
+      const sidebarRect = sidebarElement.getBoundingClientRect();
+      // Calculate width relative to the left edge of the sidebar
+      const newWidth = e.clientX - sidebarRect.left;
+      
+      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
+        setRecordingsSidebarWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, setRecordingsSidebarWidth, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]);
 
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
@@ -615,10 +653,12 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-y-auto h-screen sticky top-0 transition-opacity ${
-        isRecordingView ? "hidden md:block md:w-80" : "w-full md:w-80"
+      className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 flex flex-col h-100dvh relative transition-opacity ${
+        isRecordingView ? "hidden md:flex" : "w-full md:flex"
       }`}
+      style={window.innerWidth >= 768 ? { width: `${recordingsSidebarWidth}px` } : {}}
     >
+      <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden md:block">
           <MeetingControls onMeetingEnd={fetchRecordings} />
@@ -950,6 +990,16 @@ export default function Sidebar() {
         message={confirmModal.message}
         isDangerous={confirmModal.isDangerous}
       />
+        {/* Footer/Empty States could go here if needed */}
+      </div>
+
+      {/* Resize Handle - Hidden on Mobile */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden md:block z-10"
+        onMouseDown={() => setIsResizing(true)}
+      >
+        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 hover:bg-orange-500 transition-colors" />
+      </div>
     </aside>
   );
 }

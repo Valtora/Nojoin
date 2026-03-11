@@ -20,6 +20,8 @@ interface NavigationState {
   setNavCollapsed: (collapsed: boolean) => void;
   navWidth: number;
   setNavWidth: (width: number) => void;
+  recordingsSidebarWidth: number;
+  setRecordingsSidebarWidth: (width: number) => void;
   expandedTagIds: number[];
   toggleExpandedTag: (tagId: number) => void;
   setExpandedTagIds: (ids: number[]) => void;
@@ -83,6 +85,8 @@ export const useNavigationStore = create<NavigationState>()(
       setNavCollapsed: (collapsed) => set({ isNavCollapsed: collapsed }),
       navWidth: 224,
       setNavWidth: (width) => set({ navWidth: width }),
+      recordingsSidebarWidth: 320,
+      setRecordingsSidebarWidth: (width) => set({ recordingsSidebarWidth: width }),
       expandedTagIds: [],
       toggleExpandedTag: (tagId) =>
         set((state) => ({
@@ -156,6 +160,7 @@ export const useNavigationStore = create<NavigationState>()(
       partialize: (state) => ({
         isNavCollapsed: state.isNavCollapsed,
         navWidth: state.navWidth,
+        recordingsSidebarWidth: state.recordingsSidebarWidth,
         expandedTagIds: state.expandedTagIds,
         hasSeenTour: state.hasSeenTour,
         hasSeenTranscriptTour: state.hasSeenTranscriptTour,
