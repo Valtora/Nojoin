@@ -8,6 +8,7 @@ openai
 anthropic
 google-genai
 watchdog
+pymupdf
 
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks>=0.4.0

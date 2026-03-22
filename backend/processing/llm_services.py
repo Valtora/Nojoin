@@ -74,7 +74,7 @@ class LLMBackend:
 
     def _build_chat_prompt(self, user_question: str, meeting_notes: str, diarized_transcript: str) -> str:
         base_prompt = f"""
-You are a helpful AI assistant. You have access to the following meeting notes and full diarized transcript. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
+You are a helpful AI assistant. You have access to the following meeting notes, full diarized transcript, and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
 # CRITICAL INSTRUCTION
 When referencing transcript content, always include the timestamp in [MM:SS] format (e.g., "At [12:30], Speaker A mentioned...").

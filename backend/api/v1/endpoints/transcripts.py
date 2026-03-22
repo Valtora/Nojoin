@@ -1040,18 +1040,9 @@ async def chat_with_meeting(
             
     # Augment the final user message with retrieved RAG context.
     
+    augmented_message = request.message
     if context_text:
         augmented_message = f"Context from related meetings/documents:\n{context_text}\n\nUser Question: {request.message}"
-        
-        formatted_history.append({
-            "role": "user",
-            "parts": [{"text": augmented_message}]
-        })
-    else:
-        formatted_history.append({
-            "role": "user",
-            "parts": [{"text": request.message}]
-        })
 
 
     from backend.utils.config_manager import async_get_system_api_keys
@@ -1087,7 +1078,7 @@ async def chat_with_meeting(
         full_response = ""
         try:
             generator = llm_backend.ask_question_streaming(
-                user_question=request.message,
+                user_question=augmented_message,
                 meeting_notes=meeting_notes,
                 diarized_transcript=None, # Will be fetched inside using recording_id
                 conversation_history=formatted_history,

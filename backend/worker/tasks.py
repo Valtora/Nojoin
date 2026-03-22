@@ -1413,7 +1413,14 @@ def process_document_task(self, document_id: int):
             with open(document.file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         elif document.file_path.endswith(".pdf"):
-            pass
+            import fitz # PyMuPDF
+            try:
+                doc = fitz.open(document.file_path)
+                for page in doc:
+                    content += page.get_text() + "\n\n"
+            except Exception as e:
+                logger.error(f"Failed to extract text from PDF {document.file_path}: {e}")
+                raise Exception(f"PDF extraction failed: {str(e)}")
         
         if not content:
             logger.warning(f"File content empty or unsupported type: {document.file_path}")

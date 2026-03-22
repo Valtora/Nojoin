@@ -49,7 +49,7 @@ export default function ConfirmationModal({
           </button>
         </div>
 
-        <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
+        <p className="text-gray-600 dark:text-gray-300 mb-6 break-words">{message}</p>
 
         <div className="flex justify-end gap-3">
           <button
