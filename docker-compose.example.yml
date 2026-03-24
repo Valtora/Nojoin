@@ -56,13 +56,11 @@ services:
   socket-proxy:
     image: tecnativa/docker-socket-proxy
     container_name: nojoin-socket-proxy
-    privileged: true # Required for proper socket access
+    # If SELinux/AppArmor blocks socket access, add: security_opt: ["label:disable"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - CONTAINERS=1
-      - SERVICES=1 # Sometimes needed widely
-      - TASKS=1
       - POST=0 # Disallow state-changing POST requests
     restart: unless-stopped
     networks:
