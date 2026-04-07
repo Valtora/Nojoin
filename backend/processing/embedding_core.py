@@ -70,6 +70,48 @@ def load_embedding_model(device_str: str, hf_token: str = None):
         logger.error(f"Failed to load embedding model: {e}", exc_info=True)
         raise RuntimeError("Could not load embedding model.") from e
 
+def _filter_outlier_embeddings(embeddings: list) -> list:
+    """
+    Removes outlier embeddings that are dissimilar to the majority.
+    Computes each embedding's mean cosine similarity to all others and
+    excludes those falling more than 1 standard deviation below the group mean.
+    Always retains at least one embedding.
+    """
+    n = len(embeddings)
+    if n < 3:
+        return embeddings
+
+    # Pairwise cosine similarity matrix
+    arr = np.array(embeddings)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1, norms)
+    normalised = arr / norms
+    sim_matrix = normalised @ normalised.T
+
+    # Mean similarity of each embedding to all others (excluding self)
+    np.fill_diagonal(sim_matrix, 0)
+    mean_sims = sim_matrix.sum(axis=1) / (n - 1)
+
+    group_mean = np.mean(mean_sims)
+    group_std = np.std(mean_sims)
+
+    cutoff = group_mean - group_std
+    filtered = [emb for emb, ms in zip(embeddings, mean_sims) if ms >= cutoff]
+
+    if not filtered:
+        # Fallback: keep the single most central embedding
+        best_idx = int(np.argmax(mean_sims))
+        filtered = [embeddings[best_idx]]
+
+    if len(filtered) < n:
+        logger.info(
+            f"Outlier filter removed {n - len(filtered)}/{n} segment embeddings "
+            f"(cutoff={cutoff:.3f})"
+        )
+
+    return filtered
+
+
 def extract_embeddings(audio_path: str, diarization_result, device_str: str = "auto", config: dict = None) -> Dict[str, List[float]]:
     """
     Extracts embeddings for each speaker in the diarization result.
@@ -144,7 +186,11 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                     logger.warning(f"Failed to extract embedding for speaker {label} segment {seg}: {e}")
             
             if speaker_embeddings:
-                # Average the embeddings
+                # Filter outlier segments before averaging. A mis-diarised segment
+                # from a different speaker would corrupt the mean embedding.
+                if len(speaker_embeddings) >= 3:
+                    speaker_embeddings = _filter_outlier_embeddings(speaker_embeddings)
+
                 avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
                 embeddings[label] = avg_embedding.tolist()
                 

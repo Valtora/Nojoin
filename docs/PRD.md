@@ -123,7 +123,10 @@ The system provides the following core capabilities:
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
-- **Speaker Management:** Global speaker library with high-accuracy voiceprint identification (utilizing multi-segment averaging and margin-of-victory thresholds).
+- **Speaker Management:** Global speaker library with high-accuracy voiceprint identification (utilizing multi-segment averaging, margin-of-victory thresholds, and embedding drift guards).
+  - **Outlier Filtering:** Segment embeddings are statistically filtered before averaging to remove mis-diarised segments that would corrupt the voiceprint.
+  - **Confidence-Gated Updates:** Auto-updates to global voiceprints only occur when match confidence exceeds the auto-update threshold, preventing gradual embedding degradation from borderline matches.
+  - **Drift Guard:** Embedding merges are rejected when the incoming embedding is too dissimilar to the current voiceprint, protecting against false-positive pollution.
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items), Chat Q&A, and automatic meeting title inference.

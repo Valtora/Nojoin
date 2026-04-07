@@ -1,5 +1,25 @@
+import logging
 import numpy as np
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
+
+# --- Speaker Identification Thresholds ---
+# Minimum cosine similarity to consider an automatic speaker match during processing
+IDENTIFICATION_THRESHOLD = 0.75
+# Minimum cosine similarity required before auto-updating a global speaker's embedding
+AUTO_UPDATE_THRESHOLD = 0.85
+# Minimum margin between best and second-best match to avoid ambiguous assignments
+MARGIN_OF_VICTORY = 0.05
+# Minimum similarity between current and incoming embedding to permit a merge
+DRIFT_GUARD_THRESHOLD = 0.6
+# UI: minimum similarity to display a potential match to the user
+UI_SHOW_MATCH_THRESHOLD = 0.50
+# UI: minimum similarity (with margin check) to flag a match as "strong"
+UI_STRONG_MATCH_THRESHOLD = 0.75
+# Default threshold for the scan-matches endpoint
+SCAN_MATCH_THRESHOLD = 0.75
+
 
 def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> float:
     """Compute cosine similarity between two vectors."""
@@ -22,35 +42,52 @@ def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> f
         return 0.0
     return float(np.dot(a, b) / (norm_a * norm_b))
 
-def merge_embeddings(current_embedding: List[float], new_embedding: List[float], alpha: float = 0.1) -> List[float]:
+def merge_embeddings(
+    current_embedding: List[float],
+    new_embedding: List[float],
+    alpha: float = 0.1,
+    drift_guard: bool = True
+) -> List[float]:
     """
     Merges a new embedding into an existing one using a weighted moving average.
-    
+
     Args:
         current_embedding: The existing embedding vector.
         new_embedding: The new embedding vector to merge.
-        alpha: The weight of the new embedding (0.0 to 1.0). 
+        alpha: The weight of the new embedding (0.0 to 1.0).
                Higher alpha means the new embedding has more influence.
-               
+        drift_guard: If True, reject the merge when the new embedding is too
+                     dissimilar to the current one (below DRIFT_GUARD_THRESHOLD).
+
     Returns:
-        The merged embedding vector.
+        The merged embedding vector, or the original if drift guard rejects the merge.
     """
     if not current_embedding:
         return new_embedding
-    
+
+    # Reject merges that would corrupt the embedding with unrelated voice data
+    if drift_guard:
+        similarity = cosine_similarity(current_embedding, new_embedding)
+        if similarity < DRIFT_GUARD_THRESHOLD:
+            logger.warning(
+                f"Drift guard rejected embedding merge (similarity={similarity:.3f}, "
+                f"threshold={DRIFT_GUARD_THRESHOLD}). Returning original embedding."
+            )
+            return current_embedding
+
     curr_arr = np.array(current_embedding)
     new_arr = np.array(new_embedding)
-    
+
     # Weighted average
     merged = (1 - alpha) * curr_arr + alpha * new_arr
-    
+
     return merged.tolist()
 
 def find_matching_global_speaker(
     embedding: List[float],
     global_speakers: List,
-    threshold: float = 0.75,
-    margin: float = 0.05
+    threshold: float = IDENTIFICATION_THRESHOLD,
+    margin: float = MARGIN_OF_VICTORY
 ):
     """
     Find the best matching GlobalSpeaker for a given embedding.
