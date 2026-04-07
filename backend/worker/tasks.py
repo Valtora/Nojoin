@@ -266,16 +266,25 @@ def process_recording_task(self, recording_id: int):
             
             # Run Pyannote
             diarization_result = diarize_audio(processed_audio_path, config=merged_config)
-            
+
             if diarization_result is None:
                  msg = "Diarization failed (check HF token), falling back to single speaker."
                  logger.warning(msg)
                  recording.processing_step = msg
                  session.add(recording)
                  session.commit()
+            else:
+                # Post-diarization phantom speaker filter
+                from backend.processing.phantom_filter import filter_phantom_speakers
+                try:
+                    diarization_result = filter_phantom_speakers(
+                        diarization_result, processed_audio_path, config=merged_config
+                    )
+                except Exception as e:
+                    logger.warning(f"Phantom speaker filter failed, continuing with unfiltered result: {e}")
         else:
             logger.info("Diarization disabled, skipping speaker separation.")
-        
+
         # --- Merge & Save ---
         self.update_state(state='PROCESSING', meta={'progress': 85, 'stage': 'Saving'})
         recording.processing_step = f"Saving transcript...{device_suffix}"

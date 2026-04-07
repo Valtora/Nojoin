@@ -72,8 +72,9 @@ Audio processing occurs asynchronously on the server.
   3. **Proxy Creation:** Generates an aligned MP3 for web playback.
   4. **Transcription:** Uses OpenAI Whisper (Local) to generate text.
   5. **Diarization:** Uses Pyannote (Local) for speaker separation.
-  6. **Merge & Inference:** Combines transcript and diarization, then uses LLM to infer speaker names (e.g., "John Doe" instead of "Speaker 1").
-  7. **Intelligence:** Extracts voiceprints (sampling up to 10 high-quality segments for accuracy), infers a meeting title, and generates comprehensive notes.
+  6. **Phantom Filter:** Detects and reassigns segments caused by non-speech sounds (e.g., notification chimes, background noise) that would otherwise create phantom speakers.
+  7. **Merge & Inference:** Combines transcript and diarization, then uses LLM to infer speaker names (e.g., "John Doe" instead of "Speaker 1").
+  8. **Intelligence:** Extracts voiceprints (sampling up to 10 high-quality segments for accuracy), infers a meeting title, and generates comprehensive notes.
 - **Progress Tracking:** Real-time status updates are displayed in the Web Client (e.g., "Transcribing...", "Determining speakers...").
 - **Export:** Transcripts can be exported to `.txt` format via the Web Client (Transcript Only, Notes Only, or Both).
 

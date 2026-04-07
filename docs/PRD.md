@@ -123,6 +123,7 @@ The system provides the following core capabilities:
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
+  - **Phantom Speaker Filter:** Post-diarization stage that detects and reassigns segments caused by non-speech audio (notification sounds, background noise) to prevent phantom "UNKNOWN" speaker assignments. Uses heuristic detection validated by embedding similarity analysis.
 - **Speaker Management:** Global speaker library with high-accuracy voiceprint identification (utilizing multi-segment averaging, margin-of-victory thresholds, and embedding drift guards).
   - **Outlier Filtering:** Segment embeddings are statistically filtered before averaging to remove mis-diarised segments that would corrupt the voiceprint.
   - **Confidence-Gated Updates:** Auto-updates to global voiceprints only occur when match confidence exceeds the auto-update threshold, preventing gradual embedding degradation from borderline matches.
