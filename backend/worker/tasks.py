@@ -65,7 +65,7 @@ def process_recording_task(self, recording_id: int):
     from backend.processing.transcribe import transcribe_audio
     from backend.processing.diarize import diarize_audio
     from backend.processing.embedding_core import extract_embeddings
-    from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker
+    from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker, AUTO_UPDATE_THRESHOLD
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
     from backend.processing.llm_services import get_llm_backend
@@ -512,16 +512,22 @@ def process_recording_task(self, recording_id: int):
                     resolved_name = best_match.name
                     global_speaker_id = best_match.id
                     is_identified = True
-                    
-                    # Active Learning: Update Global Speaker embedding with new data
-                    # This keeps the profile up-to-date with latest voice samples
-                    if not best_match.is_voiceprint_locked:
+
+                    # Active Learning: only update the global embedding when the
+                    # match confidence is high enough to avoid polluting it with
+                    # borderline or false-positive identifications.
+                    if not best_match.is_voiceprint_locked and best_score >= AUTO_UPDATE_THRESHOLD:
                         try:
                             new_emb = merge_embeddings(best_match.embedding, embedding)
                             best_match.embedding = new_emb
                             session.add(best_match)
                         except Exception as e:
                             logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
+                    elif not best_match.is_voiceprint_locked:
+                        logger.info(
+                            f"Skipping auto-update for {best_match.name} "
+                            f"(score {best_score:.2f} < auto-update threshold {AUTO_UPDATE_THRESHOLD})"
+                        )
                 else:
                     logger.info(f"No match found for {label} (Best score: {best_score:.2f}).")
 

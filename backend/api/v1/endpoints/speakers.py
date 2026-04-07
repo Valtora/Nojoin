@@ -12,13 +12,19 @@ from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeak
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.processing.embedding import merge_embeddings, find_matching_global_speaker, cosine_similarity
+from backend.processing.embedding import (
+    merge_embeddings, find_matching_global_speaker, cosine_similarity,
+    SCAN_MATCH_THRESHOLD, MARGIN_OF_VICTORY,
+    UI_SHOW_MATCH_THRESHOLD, UI_STRONG_MATCH_THRESHOLD,
+)
 from backend.utils.config_manager import config_manager
 from backend.celery_app import celery_app
 
 router = APIRouter()
 
 import logging
+import numpy as np
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -713,11 +719,9 @@ async def recalibrate_voiceprint(
             
     if not all_embeddings:
         raise HTTPException(status_code=500, detail="Failed to extract embeddings from selected segments")
-        
-    # 4. Average embeddings
-    final_emb = all_embeddings[0]
-    for i in range(1, len(all_embeddings)):
-        final_emb = merge_embeddings(final_emb, all_embeddings[i])
+
+    # 4. Average embeddings (equal-weight arithmetic mean across all recordings)
+    final_emb = np.mean(np.array(all_embeddings), axis=0).tolist()
         
     # 5. Update and Lock
     speaker.embedding = final_emb
@@ -888,12 +892,10 @@ async def split_speaker(
             )
             db.add(rs)
 
-    # 4. Update New Speaker Voiceprint
+    # 4. Update New Speaker Voiceprint (equal-weight mean across recordings)
     if new_speaker_embeddings:
-        final_new_emb = new_speaker_embeddings[0]
-        for i in range(1, len(new_speaker_embeddings)):
-            final_new_emb = merge_embeddings(final_new_emb, new_speaker_embeddings[i])
-        
+        final_new_emb = np.mean(np.array(new_speaker_embeddings), axis=0).tolist()
+
         if new_speaker.embedding:
              new_speaker.embedding = merge_embeddings(new_speaker.embedding, final_new_emb)
         else:
@@ -947,13 +949,8 @@ async def split_speaker(
                 logger.error(f"Failed embedding extract for original (Rec {rec_id}): {e}")
 
     if original_speaker_embeddings:
-        # Calculate the new "gold standard" embedding from the remaining verified segments.
-        # This replaces the previous embedding entirely to ensure purity.
-        
-        final_orig_emb = original_speaker_embeddings[0]
-        for i in range(1, len(original_speaker_embeddings)):
-            final_orig_emb = merge_embeddings(final_orig_emb, original_speaker_embeddings[i])
-            
+        # Replace embedding entirely with equal-weight mean of remaining verified segments
+        final_orig_emb = np.mean(np.array(original_speaker_embeddings), axis=0).tolist()
         original_speaker.embedding = final_orig_emb
         original_speaker.is_voiceprint_locked = True
         db.add(original_speaker)
@@ -1158,30 +1155,33 @@ async def extract_voiceprint(
     await db.commit()
     await db.refresh(rec_speaker)
     
-    # 6. Find potential matches
+    # 6. Find potential matches (with margin-of-victory for strong match flag)
     all_global_stmt = select(GlobalSpeaker)
     all_global_result = await db.execute(all_global_stmt)
     all_global_speakers = all_global_result.scalars().all()
-    
-    # Find best match
+
     matched_speaker = None
     best_score = 0.0
-    
+    second_best_score = 0.0
+
     for gs in all_global_speakers:
         if gs.embedding:
             score = cosine_similarity(embedding, gs.embedding)
             if score > best_score:
+                second_best_score = best_score
                 best_score = score
                 matched_speaker = gs
-    
-    # Prepare response
+            elif score > second_best_score:
+                second_best_score = score
+
     match_info = None
-    if matched_speaker and best_score >= 0.5:  # Lower threshold for showing potential matches
+    if matched_speaker and best_score >= UI_SHOW_MATCH_THRESHOLD:
+        margin_ok = (best_score - second_best_score) >= MARGIN_OF_VICTORY
         match_info = {
             "id": matched_speaker.id,
             "name": matched_speaker.name,
             "similarity_score": round(best_score, 3),
-            "is_strong_match": best_score >= 0.65  # Strong match threshold
+            "is_strong_match": best_score >= UI_STRONG_MATCH_THRESHOLD and margin_ok
         }
     
     # Return all global speakers for force-link dropdown
@@ -1533,25 +1533,31 @@ async def update_speaker_color(
 @router.post("/{speaker_id}/scan-matches")
 async def scan_for_matches(
     speaker_id: int,
-    threshold: float = 0.65,
+    threshold: float = SCAN_MATCH_THRESHOLD,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Scan all 'unlinked' speakers in the library and link them to this Global Speaker
-    if their embedding similarity is above the threshold.
+    if their embedding similarity is above the threshold and the match is unambiguous.
     """
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
-        
+
     if not speaker.embedding:
          raise HTTPException(status_code=400, detail="Speaker has no voiceprint to match against")
-         
-    # Find all RecordingSpeakers that:
-    # 1. Are NOT linked to a Global Speaker
-    # 2. Have an embedding
-    # 3. Are in recordings owned by this user
+
+    # Fetch all global speakers with embeddings for margin-of-victory comparison
+    all_gs_stmt = select(GlobalSpeaker).where(
+        GlobalSpeaker.embedding != None,
+        GlobalSpeaker.user_id == current_user.id,
+        GlobalSpeaker.id != speaker_id
+    )
+    all_gs_result = await db.execute(all_gs_stmt)
+    other_global_speakers = all_gs_result.scalars().all()
+
+    # Find all unlinked RecordingSpeakers with embeddings owned by this user
     stmt = (
         select(RecordingSpeaker)
         .join(Recording)
@@ -1563,24 +1569,39 @@ async def scan_for_matches(
     )
     result = await db.execute(stmt)
     candidates = result.scalars().all()
-    
+
     matches_found = 0
     recordings_updated = set()
-    
+
     for cand in candidates:
-        if not cand.embedding: continue
-        
+        if not cand.embedding:
+            continue
+
         score = cosine_similarity(speaker.embedding, cand.embedding)
-        if score >= threshold:
-            cand.global_speaker_id = speaker.id
-            cand.name = speaker.name
-            db.add(cand)
-            matches_found += 1
-            recordings_updated.add(cand.recording_id)
-            
+        if score < threshold:
+            continue
+
+        # Margin-of-victory: ensure no other global speaker is comparably close
+        runner_up_score = 0.0
+        for other_gs in other_global_speakers:
+            if not other_gs.embedding:
+                continue
+            other_score = cosine_similarity(other_gs.embedding, cand.embedding)
+            if other_score > runner_up_score:
+                runner_up_score = other_score
+
+        if (score - runner_up_score) < MARGIN_OF_VICTORY:
+            continue
+
+        cand.global_speaker_id = speaker.id
+        cand.name = speaker.name
+        db.add(cand)
+        matches_found += 1
+        recordings_updated.add(cand.recording_id)
+
     if matches_found > 0:
         await db.commit()
-        
+
     return {
         "success": True,
         "matches_found": matches_found,
