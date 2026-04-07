@@ -706,9 +706,14 @@ async def recalibrate_voiceprint(
         user_settings = current_user.settings or {}
         hf_token = user_settings.get("hf_token") or config_manager.get("hf_token")
         
+        target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
+        if not target_audio:
+            logger.warning(f"Skipping recalibration segments for recording {rec_id}: no audio file available")
+            continue
+
         task = celery_app.send_task(
             "backend.worker.tasks.extract_embedding_task",
-            args=[rec.audio_path, segs, device_str, hf_token]
+            args=[target_audio, segs, device_str, hf_token]
         )
         try:
             emb = await run_in_threadpool(task.get, timeout=120) # 2 min timeout
