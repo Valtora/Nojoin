@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 interface ContextMenuItem {
@@ -24,6 +24,10 @@ export default function ContextMenu({
   onClose,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [adjustedPos, setAdjustedPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -38,18 +42,32 @@ export default function ContextMenu({
     };
   }, [onClose]);
 
-  // Adjust position logic
-  // If x is too close to right edge, shift left by width (approx 192px/12rem)
-  // Default left alignment.
-  const menuWidth = 192; // w-48 is 12rem = 192px
+  // After the menu is rendered into the DOM, measure its actual dimensions and
+  // clamp the position so it never overflows the viewport on any edge.
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
-  // Basic bounds check could be added here but user specifically asked for left alignment.
-  const finalX = x - menuWidth > 0 ? x - menuWidth : x;
+    // Horizontal: prefer x - menuWidth (left of trigger), clamp to viewport.
+    let left = x - rect.width;
+    if (left < 0) left = Math.min(x, vw - rect.width);
+    left = Math.max(0, Math.min(left, vw - rect.width));
 
-  const style = {
-    top: y,
-    left: finalX,
-  };
+    // Vertical: prefer below trigger, flip above if it would overflow.
+    let top = y;
+    if (top + rect.height > vh) {
+      top = y - rect.height;
+    }
+    top = Math.max(0, top);
+
+    setAdjustedPos({ top, left });
+  }, [x, y]);
+
+  const style = adjustedPos
+    ? { top: adjustedPos.top, left: adjustedPos.left, visibility: "visible" as const }
+    : { top: y, left: x, visibility: "hidden" as const };
 
   return createPortal(
     <div
