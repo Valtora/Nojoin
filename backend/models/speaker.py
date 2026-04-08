@@ -45,6 +45,7 @@ class GlobalSpeakerRead(BaseDBModel):
     name: str
     color: Optional[str] = None
     has_voiceprint: bool = False
+    is_voiceprint_locked: bool = False
     # CRM Fields
     title: Optional[str] = None
     company: Optional[str] = None

@@ -152,6 +152,30 @@ export default function PeoplePage() {
     }
   };
 
+  const handleVoiceprintDeleted = (id: number) => {
+    setPeople((prev) =>
+      prev.map((person) =>
+        person.id === id
+          ? {
+              ...person,
+              has_voiceprint: false,
+              is_voiceprint_locked: false,
+            }
+          : person,
+      ),
+    );
+    setEditingPerson((prev) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            has_voiceprint: false,
+            is_voiceprint_locked: false,
+          }
+        : prev,
+    );
+    fetchPeople();
+  };
+
   // Batch Actions
   const handleBatchDelete = () => {
     setIsBatchDeleteConfirmOpen(true);
@@ -327,6 +351,7 @@ export default function PeoplePage() {
         person={editingPerson}
         onSave={handleSave}
         onDelete={handleOptimisticDelete}
+        onVoiceprintDeleted={handleVoiceprintDeleted}
       />
 
       {personToRecalibrate && (

@@ -143,6 +143,7 @@ async def list_global_speakers(
             name=speaker.name,
             color=speaker.color,
             has_voiceprint=speaker.has_voiceprint,
+            is_voiceprint_locked=speaker.is_voiceprint_locked,
             recording_count=count,
             created_at=speaker.created_at.isoformat(),
             updated_at=speaker.updated_at.isoformat(),
@@ -683,6 +684,9 @@ async def recalibrate_voiceprint(
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
+
+    if not speaker.has_voiceprint:
+        raise HTTPException(status_code=400, detail="Speaker has no voiceprint to recalibrate")
         
     if not segments:
          raise HTTPException(status_code=400, detail="No segments provided")

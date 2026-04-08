@@ -273,10 +273,14 @@ export function PeopleTable({
               label: "Edit Details",
               onClick: () => onEdit(contextMenu.person),
             },
-            {
-              label: "Recalibrate Voiceprint",
-              onClick: () => onRecalibrate && onRecalibrate(contextMenu.person),
-            },
+            ...(contextMenu.person.has_voiceprint && onRecalibrate
+              ? [
+                  {
+                    label: "Recalibrate Voiceprint",
+                    onClick: () => onRecalibrate(contextMenu.person),
+                  },
+                ]
+              : []),
             {
               label: "Split / Unmerge Speaker",
               onClick: () => onSplit && onSplit(contextMenu.person),

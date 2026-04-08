@@ -1,18 +1,18 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { X, Plus, Users } from "lucide-react";
+import { X, Plus, Users, Fingerprint, ArrowRight } from "lucide-react";
 import { GlobalSpeaker, PeopleTag } from "@/types";
 import ColorPicker from "@/components/ColorPicker";
 import { getPeopleTags, createPeopleTag } from "@/lib/api";
 import { getColorByKey } from "@/lib/constants";
-import { Fingerprint, ArrowRight } from "lucide-react";
 import {
   getGlobalSpeakers,
   mergeSpeakers,
   deleteGlobalSpeakerEmbedding,
 } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface PersonModalProps {
   person: GlobalSpeaker | null; // If null, creating new
@@ -22,6 +22,7 @@ interface PersonModalProps {
     data: Partial<GlobalSpeaker> & { tag_ids: number[] },
   ) => Promise<void>;
   onDelete?: (id: number) => void;
+  onVoiceprintDeleted?: (id: number) => void;
 }
 
 export function PersonModal({
@@ -30,7 +31,9 @@ export function PersonModal({
   onClose,
   onSave,
   onDelete,
+  onVoiceprintDeleted,
 }: PersonModalProps) {
+  const { addNotification } = useNotificationStore();
   const [formData, setFormData] = useState<
     Partial<GlobalSpeaker> & { tag_ids: number[] }
   >({
@@ -210,7 +213,10 @@ export function PersonModal({
       }
     } catch (error) {
       console.error("Merge failed:", error);
-      alert("Failed to merge speakers.");
+      addNotification({
+        type: "error",
+        message: "Failed to merge speakers.",
+      });
     } finally {
       setIsSubmitting(false);
       setConfirmMerge(null);
@@ -228,13 +234,19 @@ export function PersonModal({
     setIsDeletingVoiceprint(true);
     try {
       await deleteGlobalSpeakerEmbedding(person.id);
-      setIsDeletingVoiceprint(false);
-      setConfirmVoiceprintDelete(false);
-      alert("Voiceprint deleted.");
+      onVoiceprintDeleted?.(person.id);
+      addNotification({
+        type: "success",
+        message: "Voiceprint deleted.",
+      });
       onClose();
     } catch (error) {
       console.error("Failed to delete voiceprint:", error);
-      alert("Failed to delete voiceprint.");
+      addNotification({
+        type: "error",
+        message: "Failed to delete voiceprint.",
+      });
+    } finally {
       setIsDeletingVoiceprint(false);
     }
   };
