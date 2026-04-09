@@ -430,7 +430,7 @@ def check_model_status(whisper_model_size=None):
 
     return status
 
-def delete_model(model_name: str, whisper_model_size: str = None):
+def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
     """
     Delete a specific model from the cache.
     model_name: 'whisper', 'pyannote', 'embedding'

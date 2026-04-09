@@ -13,7 +13,7 @@ from backend.utils.path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
-async def seed_demo_data(user_id: int = None, force: bool = False):
+async def seed_demo_data(user_id: int | None = None, force: bool = False) -> None:
     """
     Seeds the database with a demo recording if it doesn't exist.
     Creates a silent WAV file and populates DB with rich metadata.

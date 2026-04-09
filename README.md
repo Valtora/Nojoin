@@ -276,7 +276,7 @@ If you plan to develop or build Nojoin from source, you will need the following 
    docker compose up -d
    ```
 
-   _Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose up -d --build`._
+  _Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose build && docker compose up -d --wait`. Some Docker Compose releases can reconcile incompletely on the first detached `up --build` pass._
 
    **Option B: CPU**
    Works on all systems. Slower processing speeds.

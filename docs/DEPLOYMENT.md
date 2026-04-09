@@ -21,7 +21,7 @@
 - **Docker Compose:** The primary deployment method orchestrating API, Worker, DB, Redis, and Web Frontend containers.
 - **Container Registry:** Images are automatically built and pushed to GHCR (`ghcr.io/valtora/nojoin-*`).
   - **Pull-First:** `docker compose up -d` pulls the latest pre-built images by default.
-  - **Build-Local:** `docker compose up -d --build` forces a local build from source.
+  - **Build-Local:** `docker compose build && docker compose up -d --wait` provides a more reliable local-source startup path than a single detached `up --build` invocation.
 - **Hardware Support:**
   - **NVIDIA GPU (Default):** The `docker-compose.example.yml` (copied to `docker-compose.yml`) is configured for GPU inference by default.
   - **CPU-Only (Optional):** CPU support is enabled by commenting out the `deploy` section in `docker-compose.yml` (after copying from example).

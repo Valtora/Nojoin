@@ -3,6 +3,8 @@ import httpx
 import docker
 import asyncio
 import logging
+from docker.client import DockerClient
+from docker.errors import DockerException, NotFound
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
@@ -29,11 +31,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Initialize Docker client
-client = None
-client_init_error = None
+client: DockerClient | None = None
+client_init_error: str | None = None
 try:
     client = docker.from_env()
-except Exception as e:
+except DockerException as e:
     logger.error(f"Failed to initialize Docker client: {e}")
     client_init_error = str(e)
 
@@ -47,11 +49,12 @@ def download_logs(
     Download logs for a specific container.
     Requires Superuser privileges.
     """
-    if not client:
+    docker_client = client
+    if docker_client is None:
         raise HTTPException(status_code=503, detail="Docker client unavailable")
     
     try:
-        container_obj = client.containers.get(container)
+        container_obj = docker_client.containers.get(container)
         logs = container_obj.logs(timestamps=True).decode("utf-8")
         
         def iter_logs():
@@ -62,7 +65,7 @@ def download_logs(
             media_type="text/plain",
             headers={"Content-Disposition": f"attachment; filename={container}_logs.txt"}
         )
-    except docker.errors.NotFound:
+    except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
     except Exception as e:
         logger.error(f"Error fetching logs for {container}: {e}")
@@ -82,7 +85,8 @@ async def websocket_logs(
     """
     await websocket.accept()
     
-    if not client:
+    docker_client = client
+    if docker_client is None:
         error_msg = f"Error: Docker client unavailable. {client_init_error}" if client_init_error else "Error: Docker client unavailable"
         await websocket.send_text(error_msg)
         await websocket.close()
@@ -97,7 +101,7 @@ async def websocket_logs(
         Thread target: reads logs from a container and puts them into the queue.
         """
         try:
-            c = client.containers.get(container_name)
+            c = docker_client.containers.get(container_name)
             # logs(stream=True) blocks until new log arrives
             for line in c.logs(stream=True, tail=2000, follow=True, timestamps=True):
                 if not active: 
@@ -267,10 +271,13 @@ async def setup_system(
     await db.refresh(user)
 
     # Seed demo data for the new admin user
-    try:
-        await seed_demo_data(user.id)
-    except Exception as e:
-        logger.error(f"Failed to seed demo data during setup: {e}")
+    if user.id is None:
+        logger.error("Failed to seed demo data during setup: created user has no persisted ID.")
+    else:
+        try:
+            await seed_demo_data(user.id)
+        except Exception as e:
+            logger.error(f"Failed to seed demo data during setup: {e}")
 
     return user
 
@@ -285,7 +292,8 @@ async def trigger_model_download(
     """
     # Resolve token if masked (e.g. if coming from pre-filled frontend state)
     if hf_token and "..." in hf_token:
-         hf_token = config_manager.get("hf_token")
+            configured_hf_token = config_manager.get("hf_token")
+            hf_token = configured_hf_token if isinstance(configured_hf_token, str) else None
 
     task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
     return {"task_id": task.id}
@@ -500,6 +508,12 @@ async def get_tls_fingerprint(
     import socket
     from urllib.parse import urlparse
 
+    def format_fingerprint(certificate_bytes: bytes) -> str:
+        fingerprint = hashlib.sha256(certificate_bytes).hexdigest().upper()
+        return ":".join(
+            fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2)
+        )
+
     trusted_origin = get_trusted_web_origin()
     parsed_origin = urlparse(trusted_origin)
     hostname = parsed_origin.hostname
@@ -521,12 +535,11 @@ async def get_tls_fingerprint(
                 with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                     cert_der = ssock.getpeercert(binary_form=True)
                     if cert_der:
-                        fingerprint = hashlib.sha256(cert_der).hexdigest().upper()
-                        formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
-                        logger.info(f"Dynamically fetched TLS fingerprint for {hostname}:{port}: {formatted_fp}")
+                        formatted_fp = format_fingerprint(cert_der)
+                        logger.info("Retrieved TLS fingerprint from trusted HTTPS origin.")
                         return {"fingerprint": formatted_fp}
-        except Exception as e:
-            logger.warning(f"Failed to dynamically fetch TLS certificate for {hostname}:{port}: {e}. Falling back to local cert.")
+        except Exception:
+            logger.warning("Dynamic TLS certificate retrieval failed; falling back to local certificate.")
 
     # Fallback logic: read local cert
     cert_paths = [
@@ -547,15 +560,14 @@ async def get_tls_fingerprint(
          return {"fingerprint": None}
          
     try:
-        with open(cert_path, "r") as f:
+        with open(cert_path, "r", encoding="utf-8") as f:
             pem_data = f.read()
             
         der_data = ssl.PEM_cert_to_DER_cert(pem_data)
-        fingerprint = hashlib.sha256(der_data).hexdigest().upper()
-        formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
-        logger.info(f"Using local file TLS fingerprint: {formatted_fp}")
+        formatted_fp = format_fingerprint(der_data)
+        logger.info("Retrieved TLS fingerprint from local certificate fallback.")
         return {"fingerprint": formatted_fp}
-    except Exception as e:
-        logger.error(f"Failed to read local certificate fingerprint: {e}")
+    except Exception:
+        logger.error("Unable to resolve TLS fingerprint from local certificate fallback.")
         return {"fingerprint": None}
 
