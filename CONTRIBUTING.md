@@ -2,15 +2,11 @@
 
 Thank you for your interest in Nojoin!
 
-## Community Edition
+Nojoin is free and open-source software licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
 
-This repository hosts the **Community Edition** of Nojoin, which is free and open-source software.
+## Licensing of Contributions
 
-## Contributor License Agreement (CLA)
-
-To ensure Nojoin can remain sustainable and offer a commercial SaaS version, by submitting a Pull Request, you agree to the **Contributor License Agreement (CLA)**.
-
-This agreement grants Valtora the right to use your contributions in the commercial version of the platform while ensuring the Community Edition remains open source forever.
+No additional contributor agreement is required. By submitting a Pull Request, you agree that your contribution will be licensed under the **GNU Affero General Public License v3.0 (AGPLv3)** for inclusion in Nojoin.
 
 ## How to Contribute
 

@@ -409,7 +409,7 @@ location / {
 - [ ] **macOS & Linux Support** (Contributions Welcome)
   - Community-driven development for companion app.
     - Windows implementation can serve as a reference.
-- [ ] **Real-time Transcription** (Target: Q2 2026)
+- [ ] **Real-time Transcription**
   - Live transcript generation during recording.
   - Instant feedback loop.
   - Real-time suggestions and notes.
@@ -418,22 +418,14 @@ location / {
 
 Contributions from the community are welcome! Whether it's fixing bugs, improving documentation, or adding new features, help is appreciated.
 
-**Important:** To ensure Nojoin can remain sustainable and offer a commercial SaaS version, by submitting a Pull Request, you agree to the **Contributor License Agreement (CLA)**. This grants Valtora the right to use your contributions in the commercial version of the platform while ensuring the Community Edition remains open source forever.
+By submitting a Pull Request, you agree that your contribution will be licensed under the **GNU Affero General Public License v3.0 (AGPLv3)** for inclusion in Nojoin.
 
 Please see the [Contributing Guide](CONTRIBUTING.md) for details on how to get started.
 
-## 📦 Editions
-
-- **Community Edition:** The source code in this repository. Free, open-source (AGPLv3), and self-hosted. Ideal for individuals, developers, and privacy-focused users who want full control over their data.
-
-- **Nojoin Cloud:** A fully managed, hosted version of Nojoin allowing users to take advantage of powerful GPUs and pay a monthly subscription based on tiered usage. _(Coming Late 2026)_
-
 ## 📃 Licence
 
-The **Community Edition** of Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
-This ensures that the software remains free and open-source, and that any modifications made to the code (even if run as a service) must be shared back with the community.
-
-The **Nojoin Cloud (SaaS)** edition is a proprietary, closed-source service provided by Valtora.
+Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+This ensures that the software remains free and open-source, and that modifications made to the code, including versions run as a network service, must be shared under the same licence terms.
 
 ### Third-Party Components
 
