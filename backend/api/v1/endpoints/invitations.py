@@ -1,5 +1,5 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -9,9 +9,13 @@ from backend.api.deps import get_db, get_current_user
 from backend.models.user import User, UserRole
 from backend.models.invitation import Invitation
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
+from backend.utils.rate_limit import enforce_rate_limit
 from pydantic import BaseModel
 
 router = APIRouter()
+
+INVITATION_VALIDATE_RATE_LIMIT = 30
+INVITATION_VALIDATE_WINDOW_SECONDS = 10 * 60
 
 class InvitationCreate(BaseModel):
     role: str = "user"
@@ -164,12 +168,21 @@ async def delete_invitation(
 
 @router.get("/validate/{code}")
 async def validate_invitation(
+    request: Request,
     code: str,
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Check if an invitation code is valid. Public endpoint.
     """
+    await enforce_rate_limit(
+        request,
+        namespace="invitation-validate",
+        limit=INVITATION_VALIDATE_RATE_LIMIT,
+        window_seconds=INVITATION_VALIDATE_WINDOW_SECONDS,
+        detail="Too many invitation validation requests. Please try again later.",
+    )
+
     query = select(Invitation).where(Invitation.code == code).options(selectinload(Invitation.created_by))
     result = await db.execute(query)
     invitation = result.scalar_one_or_none()

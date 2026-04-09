@@ -63,6 +63,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 - **Automatic SSL Generation:** Self-signed certificates are generated on startup if missing.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are redirected to HTTPS on port 14443.
 - **Authentication:** Browser sessions use Secure HttpOnly cookies. Explicit Bearer tokens are reserved for API clients and scoped companion recording flows.
+- **Public Auth Throttling:** The API rate limits login, invitation validation, and public registration requests to reduce brute-force abuse.
 - **JWT Secret Key:** Automatically generated on first startup and persisted to `data/.secret_key`. Can be overridden by the `SECRET_KEY` environment variable.
 - **Internal Services Security:** Redis is protected by a password (configured via `REDIS_PASSWORD`) and its port is restricted to the internal Docker network. Host connections (if enabled) are bound exclusively to localhost to prevent external unauthorized access.
 - **CORS, Security & Remote Access:**

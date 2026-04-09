@@ -71,6 +71,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing uses a separate scoped token that is limited to recording-related operations.
 - **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
 - **Authorization:** Role-based access control (Owner/Admin/User) and strict ownership checks ensure users can only access their own data.
+- **Public Auth Throttling:** Login, invitation validation, and invitation-backed registration are rate limited to reduce brute-force and enumeration attacks.
 - **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.

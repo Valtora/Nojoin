@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -8,8 +8,12 @@ from sqlmodel import select
 from backend.api.deps import get_db, get_current_user
 from backend.core import security
 from backend.models.user import User
+from backend.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
+
+LOGIN_RATE_LIMIT = 10
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 
 
 def _build_login_metadata(user: User) -> dict[str, Any]:
@@ -40,12 +44,21 @@ async def _authenticate_user_credentials(
 
 @router.post("/login/access-token")
 async def login_access_token(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
     OAuth2-compatible bearer token login for explicit API clients.
     """
+    await enforce_rate_limit(
+        request,
+        namespace="login",
+        limit=LOGIN_RATE_LIMIT,
+        window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        detail="Too many login attempts. Please try again later.",
+    )
+
     user = await _authenticate_user_credentials(db, form_data)
 
     access_token_expires = timedelta(minutes=security.API_TOKEN_EXPIRE_MINUTES)
@@ -66,6 +79,7 @@ async def login_access_token(
 
 @router.post("/login/session")
 async def login_session(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
@@ -73,6 +87,14 @@ async def login_session(
     """
     Browser session login. Sets a secure HttpOnly cookie and returns UI metadata only.
     """
+    await enforce_rate_limit(
+        request,
+        namespace="login",
+        limit=LOGIN_RATE_LIMIT,
+        window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        detail="Too many login attempts. Please try again later.",
+    )
+
     user = await _authenticate_user_credentials(db, form_data)
 
     session_expires = timedelta(minutes=security.SESSION_TOKEN_EXPIRE_MINUTES)

@@ -1,5 +1,5 @@
 from typing import List, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlmodel import select
 from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,19 +13,32 @@ from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPass
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
+from backend.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+REGISTER_RATE_LIMIT = 10
+REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+
 @router.post("/register", response_model=UserRead)
 async def register_user(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_in: UserCreate,
 ) -> Any:
     """
     Register a new user with an invitation code.
     """
+    await enforce_rate_limit(
+        request,
+        namespace="register",
+        limit=REGISTER_RATE_LIMIT,
+        window_seconds=REGISTER_RATE_LIMIT_WINDOW_SECONDS,
+        detail="Too many registration attempts. Please try again later.",
+    )
+
     if not user_in.invite_code:
         raise HTTPException(status_code=400, detail="Invitation code required")
         
