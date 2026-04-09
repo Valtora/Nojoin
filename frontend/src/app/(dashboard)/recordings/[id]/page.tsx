@@ -93,6 +93,17 @@ const formatTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const getAutoSpeakerReplacementName = (speakerName: string) => {
+  const trimmedName = speakerName.trim();
+  const nameParts = trimmedName.split(/\s+/).filter(Boolean);
+
+  if (nameParts.length > 1) {
+    return nameParts[0];
+  }
+
+  return trimmedName;
+};
+
 function RecordingTimer() {
   const { companionStatus, recordingDuration } = useServiceStatusStore();
   const [elapsedTime, setElapsedTime] = useState<number>(0);
@@ -1100,7 +1111,11 @@ export default function RecordingPage({ params }: PageProps) {
                     globalSpeakers={globalSpeakers}
                     onSpeakerRenamed={async (oldName, newName) => {
                       if (recording?.transcript?.notes) {
-                        await handleGlobalFindAndReplace(oldName, newName, { caseSensitive: true });
+                          await handleGlobalFindAndReplace(
+                            oldName,
+                            getAutoSpeakerReplacementName(newName),
+                            { caseSensitive: true },
+                          );
                       }
                     }}
                   />
