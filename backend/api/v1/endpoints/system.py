@@ -26,6 +26,11 @@ from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.preload_models import check_model_status
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.seed_demo import seed_demo_data
+from backend.api.services.release_service import (
+    GITHUB_RELEASES_PAGE_URL,
+    get_release_catalog,
+    get_windows_installer_asset,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -450,47 +455,28 @@ async def get_companion_releases() -> Any:
     Fetch the latest companion app release from GitHub.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("https://api.github.com/repos/Valtora/Nojoin/releases")
-            response.raise_for_status()
-            releases = response.json()
-            
-            for release in releases:
-                # Look for assets
-                assets = release.get("assets", [])
-                windows_asset = None
-                
-                for asset in assets:
-                    name = asset.get("name", "").lower()
-                    if name.endswith(".exe") and "portable" not in name:
-                        windows_asset = asset
-                        break
-                
-                if windows_asset:
-                    return {
-                        "version": release.get("tag_name"),
-                        "windows_url": windows_asset.get("browser_download_url"),
-                        # Add placeholders for other OSs when supported
-                        "macos_url": None,
-                        "linux_url": None
-                    }
-            
-            # If no suitable release found
-            return {
-                "version": None,
-                "windows_url": None,
-                "macos_url": None,
-                "linux_url": None
-            }
-            
-    except Exception as e:
-        logger.error(f"Error fetching releases: {e}")
-        # Fallback to generic releases page
+        catalog = await get_release_catalog()
+        latest_release = catalog.releases[0] if catalog.releases else None
+        windows_asset = get_windows_installer_asset(latest_release)
+
+        return {
+            "version": catalog.latest_version,
+            "windows_url": (
+                windows_asset.browser_download_url
+                if windows_asset
+                else catalog.latest_release_url
+            ),
+            "macos_url": None,
+            "linux_url": None,
+        }
+
+    except Exception:
+        logger.exception("Error fetching companion releases metadata.")
         return {
             "version": None,
-            "windows_url": "https://github.com/Valtora/Nojoin/releases",
-            "macos_url": "https://github.com/Valtora/Nojoin/releases",
-            "linux_url": "https://github.com/Valtora/Nojoin/releases"
+            "windows_url": GITHUB_RELEASES_PAGE_URL,
+            "macos_url": GITHUB_RELEASES_PAGE_URL,
+            "linux_url": GITHUB_RELEASES_PAGE_URL,
         }
 
 @router.get("/fingerprint")

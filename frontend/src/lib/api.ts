@@ -1435,8 +1435,12 @@ export const seedDemoData = async (): Promise<void> => {
   await api.post("/system/seed-demo");
 };
 
-export const getVersion = async (): Promise<VersionInfo> => {
-  const response = await api.get<VersionInfo>("/version");
+export const getVersion = async (
+  options?: { refresh?: boolean },
+): Promise<VersionInfo> => {
+  const response = await api.get<VersionInfo>("/version", {
+    params: options?.refresh ? { refresh: true } : undefined,
+  });
   return response.data;
 };
 

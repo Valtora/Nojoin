@@ -252,11 +252,42 @@ export interface SystemModelStatus {
   [key: string]: ModelStatusInfo;
 }
 
+export interface ReleaseAsset {
+  name: string;
+  browser_download_url: string;
+  content_type: string | null;
+  size: number | null;
+}
+
+export interface ReleaseInfo {
+  version: string;
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  published_at: string | null;
+  body: string | null;
+  draft: boolean;
+  prerelease: boolean;
+  assets: ReleaseAsset[];
+}
+
+export type UpdateStatus =
+  | "current"
+  | "update-available"
+  | "ahead"
+  | "unknown";
+
 export interface VersionInfo {
   current_version: string;
   latest_version: string | null;
   is_update_available: boolean;
+  update_status: UpdateStatus;
   release_url: string | null;
+  current_release_url?: string | null;
+  latest_published_at?: string | null;
+  release_source?: string;
+  companion_download_url?: string | null;
+  releases: ReleaseInfo[];
 }
 
 export interface SpeakerSegment {

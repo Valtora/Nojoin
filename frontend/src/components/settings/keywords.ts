@@ -20,6 +20,12 @@ export const ACCOUNT_KEYWORDS = [
   'profile', 'username', 'password', 'change password', 'account', 'user'
 ];
 
+export const UPDATES_KEYWORDS = [
+  'update', 'updates', 'release', 'releases', 'version', 'versions',
+  'latest', 'upgrade', 'changelog', 'release notes', 'installer',
+  'download', 'github', 'companion'
+];
+
 export const ADMIN_KEYWORDS = [
   'admin', 'users', 'manage', 'create user', 'delete user', 'role', 'superuser'
 ];
@@ -32,6 +38,7 @@ export const TAB_KEYWORDS: Record<string, string[]> = {
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
   audio: AUDIO_KEYWORDS,
+  updates: UPDATES_KEYWORDS,
   system: SYSTEM_KEYWORDS,
   account: ACCOUNT_KEYWORDS,
   admin: ADMIN_KEYWORDS,

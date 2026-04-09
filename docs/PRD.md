@@ -143,6 +143,7 @@ The system provides the following core capabilities:
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
   - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
 - **Settings:** Comprehensive server and user configuration.
+- **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.
 
 ---

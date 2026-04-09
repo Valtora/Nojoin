@@ -145,6 +145,7 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
 ### Settings & Configuration
 
 - **Server Settings:** Manage API keys, model selection, and storage paths.
+- **Updates:** A dedicated **Settings > Updates** page shows the installed version, the latest published stable release, recent release history, release notes, and companion download links.
 - **AI Settings:**
   - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.
   - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
@@ -153,7 +154,7 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
   - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
   - **Report a Bug:** Direct link to report issues on the GitHub repository.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
-- **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. If a newer version is available on the container registry, a notification will appear.
+- **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. The Updates page uses GitHub Releases as the primary source for the latest stable release and falls back to registry metadata only if release metadata is unavailable.
 
 ### System Management (Admin Only)
 

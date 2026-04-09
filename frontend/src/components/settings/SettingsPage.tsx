@@ -15,6 +15,7 @@ import {
   Loader2,
   Settings as SettingsIcon,
   Mic,
+  ArrowUpCircle,
   Search,
   User,
   Shield,
@@ -28,9 +29,10 @@ import AudioSettings from "./AudioSettings";
 import AccountSettings from "./AccountSettings";
 import AdminSettings from "./AdminSettings";
 import HelpSettings from "./HelpSettings";
+import UpdatesSettings from "./UpdatesSettings";
 import { useNotificationStore } from "@/lib/notificationStore";
 
-type Tab = "general" | "audio" | "help" | "account" | "admin";
+type Tab = "general" | "audio" | "updates" | "help" | "account" | "admin";
 
 interface CompanionConfig {
   api_port: number;
@@ -92,6 +94,7 @@ export default function SettingsPage() {
     const matches: Record<Tab, number> = {
       general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
       audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
+      updates: getMatchScore(searchQuery, TAB_KEYWORDS.updates),
       help: getMatchScore(searchQuery, ["help", "tour", "demo", "tutorial"]),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
       admin: isAdmin
@@ -354,6 +357,7 @@ export default function SettingsPage() {
     const baseTabs = [
       { id: "general", label: "General", icon: SettingsIcon },
       { id: "audio", label: "Audio & Recording", icon: Mic },
+      { id: "updates", label: "Updates", icon: ArrowUpCircle },
       { id: "help", label: "Help", icon: PlayCircle },
       { id: "account", label: "Account", icon: User },
     ] as const;
@@ -485,6 +489,9 @@ export default function SettingsPage() {
                   onSelectOutputDevice={setSelectedOutputDevice}
                   searchQuery={searchQuery}
                 />
+              )}
+              {activeTab === "updates" && (
+                <UpdatesSettings searchQuery={searchQuery} />
               )}
               {activeTab === "help" && (
                 <HelpSettings userId={userId} searchQuery={searchQuery} />
