@@ -10,6 +10,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import RecordingInfoModal from "./RecordingInfoModal";
+import ConfirmationModal from "./ConfirmationModal";
 import { useState } from "react";
 import ContextMenu from "./ContextMenu";
 import {
@@ -124,11 +125,15 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     y: number;
   } | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showRetryConfirm, setShowRetryConfirm] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { addNotification } = useNotificationStore();
+
+  const retryResetMessage =
+    "Retry processing will clear the transcript, speakers, notes, and meeting chat, then rebuild them from the original audio. Tags, uploaded documents, and recording metadata are preserved. The meeting title may be re-inferred during processing.";
 
   const isDemo = recording.name === "Welcome to Nojoin";
 
@@ -169,6 +174,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
   const handleRetry = async () => {
     try {
       await retryProcessing(recording.id);
+      addNotification({
+        message: "Recording reset. Processing restarted.",
+        type: "success",
+      });
       window.dispatchEvent(
         new CustomEvent("recording-updated", { detail: { id: recording.id } }),
       );
@@ -237,6 +246,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     recording.status === RecordingStatus.PROCESSING ||
     recording.status === RecordingStatus.QUEUED ||
     recording.status === RecordingStatus.UPLOADING;
+  const showRetryOption = !showCancelOption;
 
   return (
     <>
@@ -342,11 +352,15 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                   },
                 ]
               : []),
-            {
-              label: "Retry Processing",
-              onClick: handleRetry,
-              className: "text-blue-600 dark:text-blue-400",
-            },
+            ...(showRetryOption
+              ? [
+                  {
+                    label: "Retry Processing",
+                    onClick: () => setShowRetryConfirm(true),
+                    className: "text-blue-600 dark:text-blue-400",
+                  },
+                ]
+              : []),
             {
               label: "Delete Recording",
               onClick: handleDelete,
@@ -360,6 +374,15 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         isOpen={showInfoModal}
         onClose={() => setShowInfoModal(false)}
         recording={recording}
+      />
+
+      <ConfirmationModal
+        isOpen={showRetryConfirm}
+        onClose={() => setShowRetryConfirm(false)}
+        onConfirm={handleRetry}
+        title="Reset and Retry Processing"
+        message={retryResetMessage}
+        confirmText="Reset and Retry"
       />
     </>
   );

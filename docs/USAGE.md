@@ -83,10 +83,10 @@ Audio processing occurs asynchronously on the server.
 
 If a recording fails or if you wish to re-run the pipeline (e.g., after updating models), you can trigger **Retry Processing** from the context menu.
 
-- **Preservation:** The system intelligently preserves:
-  - **Manual Speaker Names:** If you have renamed "Speaker 01" to "Alice", reprocessing will keep this assignment.
-  - **Speaker Merges:** If you have merged two speakers, they will remain merged after reprocessing.
-  - **Notes:** LLM-generated notes are regenerated based on the new transcript.
+- **Full Reset:** Retry Processing clears generated meeting state and rebuilds it from the original audio.
+- **Cleared:** Transcript, speaker assignments and merges, notes, and meeting chat history.
+- **Preserved:** Recording metadata, assigned tags, and uploaded documents.
+- **Title Inference:** The meeting title may be inferred again during the new processing run.
 
 ### Speaker Management
 

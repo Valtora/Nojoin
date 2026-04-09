@@ -5,6 +5,7 @@ from typing import List, Optional, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 import aiofiles
@@ -21,6 +22,8 @@ from backend.processing.llm_services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
+from backend.models.chat import ChatMessage
+from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 
 router = APIRouter()
@@ -34,6 +37,24 @@ TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 FAILED_DIR = os.path.join(RECORDINGS_DIR, "failed")
 os.makedirs(FAILED_DIR, exist_ok=True)
+
+
+async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) -> None:
+    """Delete generated meeting artefacts while preserving recording metadata and documents."""
+    await db.execute(
+        delete(ChatMessage).where(ChatMessage.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(ContextChunk)
+        .where(ContextChunk.recording_id == recording_id)
+        .where(ContextChunk.document_id.is_(None))
+    )
+    await db.execute(
+        delete(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(Transcript).where(Transcript.recording_id == recording_id)
+    )
 
 def get_ordinal_suffix(day: int) -> str:
     if 11 <= day <= 13:
@@ -1048,26 +1069,45 @@ async def retry_processing(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retry processing for a recording that is in ERROR or COMPLETED state.
-    Useful if the pipeline failed or if code has been updated.
+    Reset generated processing state and re-run the pipeline from the original audio.
+
+    Preserves recording metadata, tags, and uploaded documents, but clears the
+    transcript, speakers, notes, chat history, and derived transcript or note context.
     """
     recording = await db.get(Recording, recording_id)
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
+
+    if recording.is_deleted:
+        raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
+
+    if recording.status in {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Recording is already uploading or processing",
+        )
+
+    await _reset_generated_recording_state(db, recording.id)
         
-    # Reset status
-    recording.status = RecordingStatus.PROCESSING
-    recording.processing_step = "Queued for retry..."
+    # Reset processing state while preserving recording metadata and documents.
+    recording.status = RecordingStatus.QUEUED
+    recording.processing_progress = 0
+    recording.processing_step = "Queued for processing..."
+    recording.celery_task_id = None
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
     
     # Trigger Celery task
-    # Trigger Celery task
-    task = process_recording_task.delay(recording.id)
+    task = process_recording_task.delay(recording.id, True)
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
+    await db.refresh(recording)
     
     return recording
 

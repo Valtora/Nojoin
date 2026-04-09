@@ -259,6 +259,8 @@ export default function Sidebar() {
     title: string;
     message: string;
     onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
     isDangerous?: boolean;
   }>({
     isOpen: false,
@@ -266,6 +268,9 @@ export default function Sidebar() {
     message: "",
     onConfirm: () => {},
   });
+
+  const retryResetMessage =
+    "Retry processing will clear the transcript, speakers, notes, and meeting chat, then rebuild them from the original audio. Tags, uploaded documents, and recording metadata are preserved. The meeting title may be re-inferred during processing.";
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -456,13 +461,28 @@ export default function Sidebar() {
   const handleRetry = async (id: number) => {
     try {
       await retryProcessing(id);
+      addNotification({
+        message: "Recording reset. Processing restarted.",
+        type: "success",
+      });
       window.dispatchEvent(
         new CustomEvent("recording-updated", { detail: { id } }),
       );
       fetchRecordings();
     } catch (e) {
       console.error("Failed to retry", e);
+      addNotification({ message: "Failed to retry processing.", type: "error" });
     }
+  };
+
+  const confirmRetry = (recording: Recording) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Reset and Retry Processing",
+      message: retryResetMessage,
+      confirmText: "Reset and Retry",
+      onConfirm: () => handleRetry(recording.id),
+    });
   };
 
   const handleInferSpeakers = async (id: number) => {
@@ -564,10 +584,16 @@ export default function Sidebar() {
               },
             ]
           : []),
-        {
-          label: "Retry Processing",
-          onClick: () => handleRetry(recording.id),
-        },
+        ...(recording.status !== RecordingStatus.PROCESSING &&
+        recording.status !== RecordingStatus.QUEUED &&
+        recording.status !== RecordingStatus.UPLOADING
+          ? [
+              {
+                label: "Retry Processing",
+                onClick: () => confirmRetry(recording),
+              },
+            ]
+          : []),
         {
           label: "Show Recording Info",
           onClick: () => {
@@ -988,6 +1014,8 @@ export default function Sidebar() {
         onConfirm={confirmModal.onConfirm}
         title={confirmModal.title}
         message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
         isDangerous={confirmModal.isDangerous}
       />
         {/* Footer/Empty States could go here if needed */}

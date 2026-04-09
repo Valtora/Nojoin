@@ -56,7 +56,7 @@ class DatabaseTask(Task):
             self._session.close()
 
 @celery_app.task(base=DatabaseTask, bind=True, autoretry_for=(ConnectionError, urllib.error.URLError, requests.exceptions.RequestException), retry_backoff=True, max_retries=3)
-def process_recording_task(self, recording_id: int):
+def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
@@ -654,7 +654,7 @@ def process_recording_task(self, recording_id: int):
             transcript_text += f"[{seg_start_time} - {seg_end_time}] {speaker_name}{overlapping_str}: {seg['text']}\n"
 
         # Auto-generate Meeting Title
-        auto_generate_title = merged_config.get("auto_generate_title", True)
+        auto_generate_title = force_title_regeneration or merged_config.get("auto_generate_title", True)
         if auto_generate_title:
             try:
                 self.update_state(state='PROCESSING', meta={'progress': 94, 'stage': 'Inferring Title'})
