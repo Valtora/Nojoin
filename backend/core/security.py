@@ -11,6 +11,15 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 from backend.utils.path_manager import path_manager
 
+
+SESSION_TOKEN_TYPE = "session"
+API_TOKEN_TYPE = "api"
+COMPANION_TOKEN_TYPE = "companion"
+
+WEB_SESSION_SCOPE = "session:web"
+API_ACCESS_SCOPE = "api:full"
+COMPANION_RECORDING_SCOPE = "recordings:companion"
+
 def _get_secret_key() -> str:
     """Get or generate a persistent SECRET_KEY.
     
@@ -34,16 +43,38 @@ def _get_secret_key() -> str:
 
 SECRET_KEY = _get_secret_key()
 ALGORITHM = "HS256"
-# Set expiration to 30 days (43200 minutes) to prevent auth issues during long recordings
-ACCESS_TOKEN_EXPIRE_MINUTES = 43200
 
-def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+SESSION_TOKEN_EXPIRE_MINUTES = 12 * 60
+API_TOKEN_EXPIRE_MINUTES = 60
+COMPANION_TOKEN_EXPIRE_MINUTES = 24 * 60
+
+TOKEN_EXPIRY_MINUTES = {
+    SESSION_TOKEN_TYPE: SESSION_TOKEN_EXPIRE_MINUTES,
+    API_TOKEN_TYPE: API_TOKEN_EXPIRE_MINUTES,
+    COMPANION_TOKEN_TYPE: COMPANION_TOKEN_EXPIRE_MINUTES,
+}
+
+def create_access_token(
+    subject: Union[str, Any],
+    *,
+    token_type: str,
+    scopes: Optional[list[str]] = None,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        minutes = TOKEN_EXPIRY_MINUTES.get(token_type)
+        if minutes is None:
+            raise ValueError(f"Unsupported token type: {token_type}")
+        expire = datetime.utcnow() + timedelta(minutes=minutes)
     
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {
+        "exp": expire,
+        "sub": str(subject),
+        "token_type": token_type,
+        "scopes": sorted(set(scopes or [])),
+    }
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

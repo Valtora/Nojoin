@@ -50,6 +50,7 @@ The Companion App is a lightweight system tray application that handles audio ca
 - **Pause & Resume:** Supports pausing via Web Client commands.
 - **Smart Uploads:** Audio is sent to the server automatically. If pauses occur, the audio is sent as multiple segments and concatenated on the server.
 - **Visual Feedback:** The tray icon changes color/shape based on status. Native system notifications indicate status changes.
+- **Secure Pairing:** The Web Client authorises the Companion with a dedicated recording-scoped token. Your browser session remains in a Secure HttpOnly cookie and is not handed to the desktop app.
 
 **Platform Support:** The companion app currently supports Windows only. Contributors are welcome to help build macOS and Linux versions. Please see the [Contributing Guide](../CONTRIBUTING.md) for details.
 
@@ -161,6 +162,7 @@ Accessible via **Settings > System**, this panel provides tools for server maint
 - **System Restart:** safely restarts all Nojoin services (API, Worker, Database, etc.) directly from the UI.
   - Handles backend startup delays and automatically reconnects when the system is back online.
 - **Log Streaming:** Real-time diagnostics for the entire stack.
+  - **Authenticated Stream:** The live log stream uses your existing browser session and does not place bearer tokens into the WebSocket URL.
   - **Unified Log View:** Default view shows a merged stream of all container logs (`all`), with each line prefixed by the service name.
   - **Single Service View:** Drill down into specific containers (e.g. `nojoin-worker`).
   - **Filters:**

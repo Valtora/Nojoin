@@ -62,11 +62,11 @@ Configuration is split between system-wide infrastructure settings and user-spec
 - **SSL/TLS:** All communication is encrypted via HTTPS using Nginx.
 - **Automatic SSL Generation:** Self-signed certificates are generated on startup if missing.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are redirected to HTTPS on port 14443.
-- **Authentication:** JWT-based authentication.
+- **Authentication:** Browser sessions use Secure HttpOnly cookies. Explicit Bearer tokens are reserved for API clients and scoped companion recording flows.
 - **JWT Secret Key:** Automatically generated on first startup and persisted to `data/.secret_key`. Can be overridden by the `SECRET_KEY` environment variable.
 - **Internal Services Security:** Redis is protected by a password (configured via `REDIS_PASSWORD`) and its port is restricted to the internal Docker network. Host connections (if enabled) are bound exclusively to localhost to prevent external unauthorized access.
 - **CORS, Security & Remote Access:**
-  - **CORS & Host Whitelist:** Configurable via the `ALLOWED_ORIGINS` environment variable. This also acts as an allow-list to prevent Host Header Injection on generated invitation links.
+  - **CORS & Trusted Public Origin:** Configurable via the `ALLOWED_ORIGINS` environment variable. Together with `web_app_url`, this defines the trusted public origin used for generated invitation links and TLS fingerprint resolution instead of request Host headers.
   - **Remote Access:** Supports deployment behind reverse proxies by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`. For deployments exposed over a publically accessible URL, it is strongly recommended to use a VPN or a secure reverse proxy to mitigate potential security risks.
 
 ### Environment Variables

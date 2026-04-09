@@ -11,7 +11,6 @@ import {
   Check,
 } from "lucide-react";
 import api, { API_BASE_URL } from "@/lib/api";
-import { getCompanionToken } from "@/lib/api";
 import { useNavigationStore } from "@/lib/store";
 
 export default function SystemTab() {
@@ -96,17 +95,12 @@ export default function SystemTab() {
 
   // WebSocket for logs
   useEffect(() => {
-    let isMounted = true;
-    
     setLogs([]); // Clear logs on switch
     // Reset connection state
     setIsConnected(false);
 
-    const connectWs = async () => {
+    const connectWs = () => {
       try {
-        const token = await getCompanionToken();
-        if (!isMounted) return;
-
         // Construct WS URL from API_BASE_URL to match Protocol and Host
         let apiBase = API_BASE_URL;
 
@@ -119,7 +113,7 @@ export default function SystemTab() {
         const urlObj = new URL(apiBase);
 
         // Target URL format: wss://<host>:<port>/api/v1/system/logs/live
-        const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}&token=${token}`;
+        const wsUrl = `${apiProtocol}//${urlObj.host}${urlObj.pathname}/system/logs/live?container=${selectedContainer}`;
 
         const ws = new WebSocket(wsUrl);
 
@@ -145,10 +139,10 @@ export default function SystemTab() {
 
         wsRef.current = ws;
       } catch (err) {
-        console.error("Failed to fetch WS token:", err);
+        console.error("Failed to connect to log stream:", err);
         setLogs((prev) => [
           ...prev,
-          "--- Auth Error - Unable to get WebSocket token ---",
+          "--- Auth Error - Unable to connect to the live log stream ---",
         ]);
       }
     };
@@ -156,7 +150,6 @@ export default function SystemTab() {
     connectWs();
 
     return () => {
-      isMounted = false;
       if (wsRef.current) {
         wsRef.current.close();
       }

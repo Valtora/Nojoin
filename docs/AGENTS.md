@@ -28,7 +28,11 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 ### Frontend (Next.js + Zustand)
 
 - **State Management**: **Zustand** (`src/lib/store.ts`) is used for global UI state (navigation, selection, filters). Prop drilling should be avoided.
-- **API Layer**: All API calls MUST go through `src/lib/api.ts`. This module relies on HttpOnly cookies for web authentication and supports Bearer tokens for external clients.
+- **API Layer**: All API calls MUST go through `src/lib/api.ts`.
+  - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
+  - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
+  - Companion pairing uses `/api/v1/login/companion-token`, which returns a recording-scoped token for desktop upload flows only.
+  - Never put bearer tokens into URL query strings or other browser-visible locations.
 - **Routing**: The App Router (`src/app/`) is utilized.
 - **Styling**: Tailwind CSS is the standard styling framework.
 - **Components**: Functional components in `src/components/` are preferred.
@@ -53,7 +57,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
 - **Authorization**:
-  - The web app sends the token and current host/port to the `/auth` endpoint.
+  - The web app sends a recording-scoped token and current host/port to the `/auth` endpoint.
   - The app automatically updates the configuration and connects.
   - Manual configuration is available via System Tray > Settings.
 - **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.

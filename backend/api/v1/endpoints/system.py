@@ -20,7 +20,7 @@ from backend.api.deps import (
 from backend.core.security import get_password_hash
 from backend.models.user import User, UserCreate
 from backend.worker.tasks import download_models_task
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.preload_models import check_model_status
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.seed_demo import seed_demo_data
@@ -487,7 +487,6 @@ async def get_companion_releases() -> Any:
 
 @router.get("/fingerprint")
 async def get_tls_fingerprint(
-    request: Request,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
@@ -499,38 +498,35 @@ async def get_tls_fingerprint(
     import hashlib
     import os
     import socket
+    from urllib.parse import urlparse
 
-    # Try to derive the public hostname from headers
-    # Nginx/Caddy will typically set X-Forwarded-Host or Host
-    hostname = request.headers.get("x-forwarded-host") or request.headers.get("host")
-    
-    # Strip port if present
-    if hostname and ":" in hostname:
-        hostname = hostname.split(":")[0]
-    
-    # Use request.url.hostname as a fallback if headers are completely missing
-    if not hostname:
-        hostname = request.url.hostname
+    trusted_origin = get_trusted_web_origin()
+    parsed_origin = urlparse(trusted_origin)
+    hostname = parsed_origin.hostname
+    port = parsed_origin.port or 443
 
-    # Only attempt network fetch if we have a valid hostname and it's not simply '127.0.0.1' inside the container
-    if hostname and hostname not in ["127.0.0.1", "localhost", "backend", "api"]:
+    if parsed_origin.scheme != "https":
+        logger.info("Trusted web origin is not HTTPS; skipping TLS fingerprint lookup.")
+        return {"fingerprint": None}
+
+    # Only attempt network fetch if we have a trusted non-local hostname.
+    if hostname and hostname not in ["127.0.0.1", "localhost", "backend", "api", "::1"]:
         try:
-            # We connect to port 443 where the proxy (e.g. Caddy) is serving the public cert
             context = ssl.create_default_context()
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             
-            with socket.create_connection((hostname, 443), timeout=3.0) as sock:
+            with socket.create_connection((hostname, port), timeout=3.0) as sock:
                 with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                     cert_der = ssock.getpeercert(binary_form=True)
                     if cert_der:
                         fingerprint = hashlib.sha256(cert_der).hexdigest().upper()
                         formatted_fp = ":".join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
-                        logger.info(f"Dynamically fetched TLS fingerprint for {hostname}: {formatted_fp}")
+                        logger.info(f"Dynamically fetched TLS fingerprint for {hostname}:{port}: {formatted_fp}")
                         return {"fingerprint": formatted_fp}
         except Exception as e:
-            logger.warning(f"Failed to dynamically fetch TLS certificate for {hostname}: {e}. Falling back to local cert.")
+            logger.warning(f"Failed to dynamically fetch TLS certificate for {hostname}:{port}: {e}. Falling back to local cert.")
 
     # Fallback logic: read local cert
     cert_paths = [

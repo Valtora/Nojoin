@@ -11,47 +11,89 @@ from backend.models.user import User
 
 router = APIRouter()
 
-@router.post("/login/access-token")
-async def login_access_token(
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
-) -> Any:
-    """
-    OAuth2 compatible token login, get an access token for future requests
-    """
+
+def _build_login_metadata(user: User) -> dict[str, Any]:
+    return {
+        "force_password_change": user.force_password_change,
+        "is_superuser": user.is_superuser,
+        "username": user.username,
+    }
+
+
+async def _authenticate_user_credentials(
+    db: AsyncSession,
+    form_data: OAuth2PasswordRequestForm,
+) -> User:
     query = select(User).where(User.username == form_data.username)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-    
+
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect username or password"
         )
-    elif not user.is_active:
+    if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
-        
-    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    return user
+
+@router.post("/login/access-token")
+async def login_access_token(
+    db: AsyncSession = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
+) -> Any:
+    """
+    OAuth2-compatible bearer token login for explicit API clients.
+    """
+    user = await _authenticate_user_credentials(db, form_data)
+
+    access_token_expires = timedelta(minutes=security.API_TOKEN_EXPIRE_MINUTES)
     token = security.create_access_token(
-        user.username, expires_delta=access_token_expires
+        user.username,
+        token_type=security.API_TOKEN_TYPE,
+        scopes=[security.API_ACCESS_SCOPE],
+        expires_delta=access_token_expires,
     )
-    
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": security.API_TOKEN_EXPIRE_MINUTES * 60,
+        **_build_login_metadata(user),
+    }
+
+
+@router.post("/login/session")
+async def login_session(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
+) -> Any:
+    """
+    Browser session login. Sets a secure HttpOnly cookie and returns UI metadata only.
+    """
+    user = await _authenticate_user_credentials(db, form_data)
+
+    session_expires = timedelta(minutes=security.SESSION_TOKEN_EXPIRE_MINUTES)
+    token = security.create_access_token(
+        user.username,
+        token_type=security.SESSION_TOKEN_TYPE,
+        scopes=[security.WEB_SESSION_SCOPE],
+        expires_delta=session_expires,
+    )
+
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
+        secure=True,
         samesite="lax",
-        max_age=security.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=security.SESSION_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
     )
-    
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "force_password_change": user.force_password_change,
-        "is_superuser": user.is_superuser,
-        "username": user.username,
-    }
+
+    return _build_login_metadata(user)
 
 @router.post("/login/logout")
 async def logout_user(response: Response) -> Any:
@@ -61,7 +103,9 @@ async def logout_user(response: Response) -> Any:
     response.delete_cookie(
         key="access_token",
         httponly=True,
-        samesite="lax"
+        secure=True,
+        samesite="lax",
+        path="/",
     )
     return {"message": "Logged out successfully"}
 
@@ -70,11 +114,16 @@ async def get_companion_token(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Issues a fresh JWT for companion app pairing.
-    Authenticated via HttpOnly cookie so the token never resides in localStorage.
+    Issues a scoped JWT for companion recording operations.
     """
-    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=security.COMPANION_TOKEN_EXPIRE_MINUTES)
     token = security.create_access_token(
-        current_user.username, expires_delta=access_token_expires
+        current_user.username,
+        token_type=security.COMPANION_TOKEN_TYPE,
+        scopes=[security.COMPANION_RECORDING_SCOPE],
+        expires_delta=access_token_expires,
     )
-    return {"token": token}
+    return {
+        "token": token,
+        "expires_in": security.COMPANION_TOKEN_EXPIRE_MINUTES * 60,
+    }

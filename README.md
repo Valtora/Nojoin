@@ -130,6 +130,8 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
 - **User Management & Security:**
   - **Role-Based Access:** Owner, Admin, and User roles with granular permissions.
   - **Invitation System:** Secure registration via invite links with expiration and usage limits.
+  - **Secure Sessions:** Browser authentication uses Secure HttpOnly cookies. Explicit Bearer tokens are reserved for API clients and scoped companion recording flows.
+  - **Trusted Public Origin:** Invitation links and companion TLS fingerprint discovery are derived from configured public origins rather than request Host headers.
   - **User Data:** Complete data cleanup on user deletion (files, database records, and logs).
 
 ## 🏗️ System Architecture

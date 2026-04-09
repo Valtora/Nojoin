@@ -10,7 +10,7 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_db, get_current_user, get_current_user_stream
+from backend.api.deps import get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
 from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
 from backend.models.user import User
@@ -198,7 +198,7 @@ async def batch_permanently_delete_recordings(
 async def init_upload(
     name: Optional[str] = Query(None, description="Name of the recording"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Initialize a multipart upload.
@@ -234,7 +234,7 @@ async def upload_segment(
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Upload a segment for a recording.
@@ -266,7 +266,7 @@ async def upload_segment(
 async def finalize_upload(
     recording_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Finalize the upload, concatenate segments, and trigger processing.
@@ -898,7 +898,7 @@ async def update_recording(
 async def delete_recording(
     recording_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Delete a recording and its associated file.
@@ -1189,7 +1189,7 @@ async def update_client_status(
     status: ClientStatus = Query(..., description="Current status of the client"),
     upload_progress: Optional[int] = Query(None, description="Upload progress percentage (0-100)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Update the client status (e.g. RECORDING, PAUSED) for a recording.

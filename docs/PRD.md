@@ -55,6 +55,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Language:** Rust (Backend) + HTML/JS (Frontend).
 - **Platforms:** Windows (macOS and Linux support is not currently available).
 - **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
+- **Pairing Model:** The Web Client authorises the Companion using a dedicated scoped recording token. The browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
 - **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
 - **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
@@ -66,12 +67,15 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Automatic SSL Generation:** The system automatically generates self-signed SSL certificates on startup if they are missing, ensuring immediate secure access for local deployments.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 - **Authentication:** JWT-based authentication is used for API access.
+- **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
+- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing uses a separate scoped token that is limited to recording-related operations.
 - **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
 - **Authorization:** Role-based access control (Owner/Admin/User) and strict ownership checks ensure users can only access their own data.
 - **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.
 - **Companion IPC Security:** Strict Origin validation to prevent Cross-Site Request Forgery (CSRF) and unauthorized local scripts from interfacing with the local Companion server.
+- **Trusted Public Origin:** Invitation links and TLS fingerprint resolution use the configured public web origin and allowed-origin fallback, rather than trusting request Host headers.
 - **CORS & Remote Access:**
   - **CORS:** Restricted to allowed origins. Configurable via the `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
   - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.

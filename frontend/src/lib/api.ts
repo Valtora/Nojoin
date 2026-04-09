@@ -58,7 +58,6 @@ export const login = async (
   username: string,
   password: string,
 ): Promise<{
-  access_token: string;
   force_password_change: boolean;
   is_superuser: boolean;
   username: string;
@@ -68,11 +67,10 @@ export const login = async (
   formData.append("password", password);
 
   const response = await api.post<{
-    access_token: string;
     force_password_change: boolean;
     is_superuser: boolean;
     username: string;
-  }>("/login/access-token", formData, {
+  }>("/login/session", formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },

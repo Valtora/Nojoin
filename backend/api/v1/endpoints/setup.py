@@ -3,7 +3,12 @@ from pydantic import BaseModel
 from typing import Optional
 import httpx
 from backend.processing.llm_services import get_llm_backend
-from backend.api.deps import get_db, get_current_admin_user
+from backend.api.deps import (
+    STANDARD_USER_SCOPE_REQUIREMENTS,
+    STANDARD_USER_TOKEN_TYPES,
+    get_authenticated_user_from_token,
+    get_db,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from backend.models.user import User
@@ -108,35 +113,29 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     # cannot be used at the router level as it would block the unauthenticated
     # (pre-initialisation) case.
     
-    auth_header = request.headers.get('Authorization')
-    token = auth_header.replace("Bearer ", "") if auth_header else request.cookies.get("access_token")
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header:
+        scheme, _, auth_token = auth_header.partition(" ")
+        if scheme.lower() == "bearer" and auth_token:
+            token = auth_token.strip()
+    if not token:
+        token = request.cookies.get("access_token")
 
     if not token:
          raise HTTPException(status_code=401, detail="System is initialized. Authentication required.")
 
-    from backend.api.deps import get_current_user, get_current_admin_user
-    from backend.core.security import ALGORITHM, SECRET_KEY
-    from jose import jwt, JWTError
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        token_data = payload.get("sub")
-        if not token_data:
-             raise HTTPException(status_code=401, detail="Invalid token")
-             
-        query = select(User).where(User.username == token_data)
-        result = await db.execute(query)
-        user = result.scalar_one_or_none()
-        
-        if not user or not user.is_active:
-             raise HTTPException(status_code=401, detail="Invalid user")
-             
-        if user.role not in ["owner", "admin"] and not user.is_superuser:
-            raise HTTPException(status_code=403, detail="Not authorized")
-            
-        return user
-        
-    except (JWTError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await get_authenticated_user_from_token(
+        db,
+        token,
+        allowed_token_types=STANDARD_USER_TOKEN_TYPES,
+        required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
+    )
+
+    if user.role not in ["owner", "admin"] and not user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    return user
 
 @router.get("/initial-config")
 async def get_initial_config(

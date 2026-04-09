@@ -374,3 +374,50 @@ async def async_get_system_api_keys(db):
                 keys[sk] = env_val
                 
     return keys
+
+
+def _normalise_origin(origin: str | None) -> str | None:
+    if not origin:
+        return None
+
+    parsed = urlparse(origin.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+
+    default_port = 443 if parsed.scheme == "https" else 80
+    if parsed.port and parsed.port != default_port:
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    return f"{parsed.scheme}://{parsed.hostname}"
+
+
+def _is_local_hostname(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    return hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+
+
+def get_allowed_origin_list() -> list[str]:
+    origins = []
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(","):
+        normalised = _normalise_origin(origin)
+        if normalised and normalised not in origins:
+            origins.append(normalised)
+    return origins
+
+
+def get_trusted_web_origin() -> str:
+    configured_origin = _normalise_origin(config_manager.get("web_app_url", DEFAULT_SYSTEM_CONFIG["web_app_url"]))
+    if configured_origin:
+        configured_host = urlparse(configured_origin).hostname
+        if configured_host and not _is_local_hostname(configured_host):
+            return configured_origin
+
+    for origin in get_allowed_origin_list():
+        candidate_host = urlparse(origin).hostname
+        if candidate_host and not _is_local_hostname(candidate_host):
+            return origin
+
+    if configured_origin:
+        return configured_origin
+
+    return DEFAULT_SYSTEM_CONFIG["web_app_url"]

@@ -1,5 +1,5 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from backend.api.deps import get_db, get_current_user
 from backend.models.user import User, UserRole
 from backend.models.invitation import Invitation
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -30,51 +30,12 @@ class InvitationRead(BaseModel):
     link: str
     users: List[str] = []
 
-import os
-from urllib.parse import urlparse
-
-def get_invite_base_url(request: Request) -> str:
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
-    
-    # If the configured URL is the default localhost, try to detect the actual domain
-    if "localhost" in web_app_url:
-        # Check for X-Forwarded headers (common in reverse proxies)
-        forwarded_host = request.headers.get("x-forwarded-host")
-        forwarded_proto = request.headers.get("x-forwarded-proto", "https")
-        
-        allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
-        allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
-        
-        def is_host_allowed(host: str) -> bool:
-            if not host:
-                return False
-            host_without_port = host.split(":")[0]
-            if host_without_port in ["localhost", "127.0.0.1"]:
-                return True
-            for origin in allowed_origins:
-                try:
-                    parsed = urlparse(origin)
-                    if parsed.hostname == host_without_port or parsed.netloc == host:
-                        return True
-                except:
-                    pass
-            return False
-        
-        if forwarded_host and is_host_allowed(forwarded_host):
-            return f"{forwarded_proto}://{forwarded_host}"
-            
-        # Fallback to the request's base URL if not behind a proxy or headers missing
-        if is_host_allowed(request.base_url.hostname):
-            # request.base_url returns a URL object, convert to string
-            return str(request.base_url).rstrip("/")
-        
-    return web_app_url
+def get_invite_base_url() -> str:
+    return get_trusted_web_origin().rstrip("/")
 
 @router.post("/", response_model=InvitationRead)
 async def create_invitation(
     *,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     invitation_in: InvitationCreate,
     current_user: User = Depends(get_current_user),
@@ -100,7 +61,7 @@ async def create_invitation(
     await db.refresh(invitation)
     
     # Construct link
-    web_app_url = get_invite_base_url(request)
+    web_app_url = get_invite_base_url()
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
@@ -111,7 +72,6 @@ async def create_invitation(
 
 @router.get("/", response_model=List[InvitationRead])
 async def read_invitations(
-    request: Request,
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
@@ -127,7 +87,7 @@ async def read_invitations(
     result = await db.execute(query)
     invitations = result.scalars().all()
     
-    web_app_url = get_invite_base_url(request)
+    web_app_url = get_invite_base_url()
     
     res = []
     for inv in invitations:
