@@ -65,6 +65,24 @@ const getStatusMessage = (recording: Recording) => {
   return "";
 };
 
+const isDemoRecording = (recording: Recording) =>
+  recording.name === "Welcome to Nojoin";
+
+const shouldPollRecordingUpdates = (recording: Recording) => {
+  const waitingForProxy =
+    recording.status === RecordingStatus.PROCESSED &&
+    recording.has_proxy === false &&
+    !isDemoRecording(recording);
+
+  return (
+    recording.status === RecordingStatus.PROCESSING ||
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.QUEUED ||
+    recording.transcript?.notes_status === "generating" ||
+    waitingForProxy
+  );
+};
+
 const formatTime = (seconds: number) => {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -199,44 +217,47 @@ export default function RecordingPage({ params }: PageProps) {
   useEffect(() => {
     if (!recording) return;
 
-    // Poll for updates if processing or generating notes
-    const interval = setInterval(async () => {
-      if (
-        recording.status === RecordingStatus.PROCESSING ||
-        recording.status === RecordingStatus.UPLOADING ||
-        recording.status === RecordingStatus.QUEUED ||
-        recording.transcript?.notes_status === "generating"
-      ) {
-        try {
-          const { id } = await params;
-          const data = await getRecording(parseInt(id));
+    if (!shouldPollRecordingUpdates(recording)) {
+      return;
+    }
 
-          if (
-            data.status !== recording.status ||
-            data.client_status !== recording.client_status ||
-            data.processing_step !== recording.processing_step ||
-            data.upload_progress !== recording.upload_progress ||
-            data.processing_progress !== recording.processing_progress ||
-            data.transcript?.notes_status !==
-              recording.transcript?.notes_status ||
-            data.transcript?.notes !== recording.transcript?.notes ||
-            JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
-          ) {
-            setRecording(data);
-            if (!isEditingTitle) setTitleValue(data.name);
-          }
-        } catch (e: any) {
-          console.error("Polling failed", e);
-          if (e.response && e.response.status === 404) {
-            addNotification({
-              type: "info",
-              message: "Recording was discarded or deleted.",
-            });
-            router.push("/");
-          }
+    const pollIntervalMs =
+      recording.status === RecordingStatus.PROCESSED &&
+      recording.has_proxy === false &&
+      !isDemoRecording(recording)
+        ? 1000
+        : 3000;
+
+    const interval = setInterval(async () => {
+      try {
+        const { id } = await params;
+        const data = await getRecording(parseInt(id));
+
+        if (
+          data.status !== recording.status ||
+          data.client_status !== recording.client_status ||
+          data.processing_step !== recording.processing_step ||
+          data.upload_progress !== recording.upload_progress ||
+          data.processing_progress !== recording.processing_progress ||
+          data.has_proxy !== recording.has_proxy ||
+          data.transcript?.notes_status !== recording.transcript?.notes_status ||
+          data.transcript?.notes !== recording.transcript?.notes ||
+          JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
+        ) {
+          setRecording(data);
+          if (!isEditingTitle) setTitleValue(data.name);
+        }
+      } catch (e: any) {
+        console.error("Polling failed", e);
+        if (e.response && e.response.status === 404) {
+          addNotification({
+            type: "info",
+            message: "Recording was discarded or deleted.",
+          });
+          router.push("/");
         }
       }
-    }, 3000);
+    }, pollIntervalMs);
 
     return () => clearInterval(interval);
   }, [params, recording, isEditingTitle, addNotification, router]);
