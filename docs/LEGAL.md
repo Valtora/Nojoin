@@ -5,6 +5,7 @@ You acknowledge that many legal jurisdictions require the consent of all parties
 
 **2. DATA PRIVACY & LOCAL PROCESSING**
 Nojoin is designed with a privacy-first architecture.
+
 - Nojoin does not store or transmit audio data to third parties without your explicit consent.
 - All audio processing (transcription, diarization, etc.) is performed locally on your machine or your self-hosted server, unless you explicitly configure an external provider.
 
