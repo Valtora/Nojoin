@@ -89,6 +89,12 @@ export interface RecordingSpeaker extends BaseDBModel {
   merged_into_id?: number | null;
 }
 
+export interface TranscriptSpeakerAssignment {
+  name: string;
+  globalSpeakerId?: number;
+  diarizationLabel?: string;
+}
+
 export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 
 export interface TranscriptSegment {

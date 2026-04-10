@@ -5,6 +5,7 @@ import {
   TranscriptSegment,
   VoiceprintExtractResult,
   BatchVoiceprintResponse,
+  GlobalSpeaker,
 } from "@/types";
 import {
   Play,
@@ -14,7 +15,7 @@ import {
   UserCheck,
   Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -28,6 +29,22 @@ import {
   promoteToGlobalSpeaker,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import {
+  buildGlobalSpeakerById,
+  buildUniqueGlobalSpeakerIdByName,
+  getRecordingSpeakerDisplayName,
+  getRecordingSpeakerGroupKey,
+  getResolvedGlobalSpeakerId,
+} from "@/lib/recordingSpeakerUtils";
+
+interface SpeakerPanelEntry {
+  key: string;
+  speaker: RecordingSpeaker;
+  members: RecordingSpeaker[];
+  labels: string[];
+  displayName: string;
+  hasVoiceprint: boolean;
+}
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -41,7 +58,7 @@ interface SpeakerPanelProps {
   onPause: () => void;
   onResume: () => void;
   onRefresh: () => void;
-  globalSpeakers: import("@/types").GlobalSpeaker[];
+  globalSpeakers: GlobalSpeaker[];
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
 }
 
@@ -64,23 +81,23 @@ export default function SpeakerPanel({
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    speaker: RecordingSpeaker;
+    speaker: SpeakerPanelEntry;
   } | null>(null);
 
   // Rename State
   const [renamingSpeaker, setRenamingSpeaker] =
-    useState<RecordingSpeaker | null>(null);
+    useState<SpeakerPanelEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   // Merge State
-  const [mergingSpeaker, setMergingSpeaker] = useState<RecordingSpeaker | null>(
+  const [mergingSpeaker, setMergingSpeaker] = useState<SpeakerPanelEntry | null>(
     null,
   );
   const [mergeTargetLabel, setMergeTargetLabel] = useState("");
 
   // Delete State
   const [deletingSpeaker, setDeletingSpeaker] =
-    useState<RecordingSpeaker | null>(null);
+    useState<SpeakerPanelEntry | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -96,39 +113,102 @@ export default function SpeakerPanel({
 
   // Split Speaker State
   const [splitModalOpen, setSplitModalOpen] = useState(false);
-  const [speakerToSplit, setSpeakerToSplit] = useState<RecordingSpeaker | null>(
+  const [speakerToSplit, setSpeakerToSplit] = useState<SpeakerPanelEntry | null>(
     null,
+  );
+
+  const globalSpeakerById = useMemo(
+    () => buildGlobalSpeakerById(globalSpeakers),
+    [globalSpeakers],
+  );
+
+  const uniqueGlobalSpeakerIdByName = useMemo(
+    () => buildUniqueGlobalSpeakerIdByName(speakers, globalSpeakerById),
+    [globalSpeakerById, speakers],
   );
 
   // Helper to get the display name for a speaker
   const getSpeakerName = (speaker: RecordingSpeaker): string => {
-    return (
-      speaker.local_name ||
-      speaker.global_speaker?.name ||
-      speaker.name ||
-      speaker.diarization_label
-    );
+    return getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
   };
 
-  // Filter out soft-merged speakers, then deduplicate by diarization_label
-  const uniqueSpeakers = speakers
-    .filter((s) => !s.merged_into_id)
-    .reduce((acc, current) => {
-      const x = acc.find(
-        (item) => item.diarization_label === current.diarization_label,
-      );
-      if (!x) {
-        return acc.concat([current]);
-      } else {
-        return acc;
-      }
-    }, [] as RecordingSpeaker[])
-    .sort((a, b) => {
-      return getSpeakerName(a).localeCompare(getSpeakerName(b));
+  const segmentCountByLabel = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    segments.forEach((segment) => {
+      counts.set(segment.speaker, (counts.get(segment.speaker) || 0) + 1);
     });
 
-  const handlePlaySnippet = (label: string, isSpeakerActive: boolean) => {
-    if (isSpeakerActive) {
+    return counts;
+  }, [segments]);
+
+  const speakerEntries = useMemo(() => {
+    const groupedSpeakers = new Map<string, RecordingSpeaker[]>();
+
+    speakers
+      .filter((speaker) => !speaker.merged_into_id)
+      .forEach((speaker) => {
+        const key = getRecordingSpeakerGroupKey(
+          speaker,
+          globalSpeakerById,
+          uniqueGlobalSpeakerIdByName,
+        );
+        const existing = groupedSpeakers.get(key);
+
+        if (existing) {
+          existing.push(speaker);
+          return;
+        }
+
+        groupedSpeakers.set(key, [speaker]);
+      });
+
+    return Array.from(groupedSpeakers.entries())
+      .map(([key, members]) => {
+        const sortedMembers = [...members].sort((left, right) => {
+          const segmentCountDiff =
+            (segmentCountByLabel.get(right.diarization_label) || 0) -
+            (segmentCountByLabel.get(left.diarization_label) || 0);
+
+          if (segmentCountDiff !== 0) {
+            return segmentCountDiff;
+          }
+
+          return getSpeakerName(left).localeCompare(getSpeakerName(right));
+        });
+
+        const representative =
+          sortedMembers.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
+          sortedMembers[0];
+        const globalSpeakerId = getResolvedGlobalSpeakerId(representative);
+        const hasVoiceprint =
+          sortedMembers.some((speaker) => speaker.has_voiceprint) ||
+          !!(globalSpeakerId && globalSpeakerById.get(globalSpeakerId)?.has_voiceprint);
+
+        return {
+          key,
+          speaker: representative,
+          members: sortedMembers,
+          labels: sortedMembers.map((speaker) => speaker.diarization_label),
+          displayName: getSpeakerName(representative),
+          hasVoiceprint,
+        } satisfies SpeakerPanelEntry;
+      })
+      .sort((left, right) => {
+        return left.displayName.localeCompare(right.displayName);
+      });
+  }, [
+    globalSpeakerById,
+    segmentCountByLabel,
+    speakers,
+    uniqueGlobalSpeakerIdByName,
+  ]);
+
+  const handlePlaySnippet = (
+    labels: string[],
+    isEntryActive: boolean,
+  ) => {
+    if (isEntryActive) {
       if (isPlaying) {
         onPause();
       } else {
@@ -137,7 +217,10 @@ export default function SpeakerPanel({
       return;
     }
 
-    const speakerSegments = segments.filter((s) => s.speaker === label);
+    const labelSet = new Set(labels);
+    const speakerSegments = segments.filter((segment) =>
+      labelSet.has(segment.speaker),
+    );
     if (speakerSegments.length === 0) {
       addNotification({
         type: "warning",
@@ -150,8 +233,11 @@ export default function SpeakerPanel({
     onPlaySegment(randomSegment.start, randomSegment.end);
   };
 
-  const handleNextSnippet = (label: string) => {
-    const speakerSegments = segments.filter((s) => s.speaker === label);
+  const handleNextSnippet = (labels: string[]) => {
+    const labelSet = new Set(labels);
+    const speakerSegments = segments.filter((segment) =>
+      labelSet.has(segment.speaker),
+    );
     if (speakerSegments.length === 0) {
       addNotification({
         type: "warning",
@@ -176,25 +262,25 @@ export default function SpeakerPanel({
 
   const handleContextMenu = (
     e: React.MouseEvent,
-    speaker: RecordingSpeaker,
+    speaker: SpeakerPanelEntry,
   ) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, speaker });
   };
 
-  const handleRenameStart = (speaker: RecordingSpeaker) => {
+  const handleRenameStart = (speaker: SpeakerPanelEntry) => {
     setRenamingSpeaker(speaker);
-    setRenameValue(getSpeakerName(speaker));
+    setRenameValue(speaker.displayName);
     setContextMenu(null);
   };
 
-  const handleMergeStart = (speaker: RecordingSpeaker) => {
+  const handleMergeStart = (speaker: SpeakerPanelEntry) => {
     setMergingSpeaker(speaker);
     setMergeTargetLabel("");
     setContextMenu(null);
   };
 
-  const handleSplitStart = (speaker: RecordingSpeaker) => {
+  const handleSplitStart = (speaker: SpeakerPanelEntry) => {
     setSpeakerToSplit(speaker);
     setSplitModalOpen(true);
     setContextMenu(null);
@@ -205,14 +291,12 @@ export default function SpeakerPanel({
 
     setIsSubmitting(true);
     try {
-      const oldName = getSpeakerName(renamingSpeaker);
+      const oldName = renamingSpeaker.displayName;
       const newName = renameValue.trim();
-      
-      await updateSpeaker(
-        recordingId,
-        renamingSpeaker.diarization_label,
-        newName,
-      );
+
+      for (const speaker of renamingSpeaker.members) {
+        await updateSpeaker(recordingId, speaker.diarization_label, newName);
+      }
       
       if (oldName !== newName && onSpeakerRenamed) {
         await onSpeakerRenamed(oldName, newName);
@@ -233,11 +317,13 @@ export default function SpeakerPanel({
 
     setIsSubmitting(true);
     try {
-      await mergeRecordingSpeakers(
-        recordingId,
-        mergeTargetLabel,
-        mergingSpeaker.diarization_label,
-      );
+      for (const label of mergingSpeaker.labels) {
+        if (label === mergeTargetLabel) {
+          continue;
+        }
+
+        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, label);
+      }
       setMergingSpeaker(null);
 
       // Dispatch custom event to notify parent components of the merge
@@ -254,7 +340,7 @@ export default function SpeakerPanel({
     }
   };
 
-  const handleDeleteClick = (speaker: RecordingSpeaker) => {
+  const handleDeleteClick = (speaker: SpeakerPanelEntry) => {
     setContextMenu(null);
     setDeletingSpeaker(speaker);
   };
@@ -264,10 +350,9 @@ export default function SpeakerPanel({
 
     setIsSubmitting(true);
     try {
-      await deleteRecordingSpeaker(
-        recordingId,
-        deletingSpeaker.diarization_label,
-      );
+      for (const label of deletingSpeaker.labels) {
+        await deleteRecordingSpeaker(recordingId, label);
+      }
       setDeletingSpeaker(null);
       onRefresh();
     } catch (e) {
@@ -278,14 +363,14 @@ export default function SpeakerPanel({
     }
   };
 
-  const handleCreateVoiceprint = async (speaker: RecordingSpeaker) => {
+  const handleCreateVoiceprint = async (speakerEntry: SpeakerPanelEntry) => {
     setContextMenu(null);
-    setExtractingVoiceprint(speaker.diarization_label);
+    setExtractingVoiceprint(speakerEntry.speaker.diarization_label);
 
     try {
       const result = await extractVoiceprint(
         recordingId,
-        speaker.diarization_label,
+        speakerEntry.speaker.diarization_label,
       );
       setVoiceprintExtractResult(result);
       setBatchVoiceprintResults(null);
@@ -301,12 +386,15 @@ export default function SpeakerPanel({
     }
   };
 
-  const handlePromoteToGlobal = async (speaker: RecordingSpeaker) => {
+  const handlePromoteToGlobal = async (speakerEntry: SpeakerPanelEntry) => {
     setContextMenu(null);
     setIsSubmitting(true);
 
     try {
-      await promoteToGlobalSpeaker(recordingId, speaker.diarization_label);
+      await promoteToGlobalSpeaker(
+        recordingId,
+        speakerEntry.speaker.diarization_label,
+      );
       onRefresh();
       addNotification({
         type: "success",
@@ -337,28 +425,29 @@ export default function SpeakerPanel({
       {/* Header with batch voiceprint action */}
 
       <div className="p-2 space-y-2 mt-2">
-        {uniqueSpeakers.length === 0 ? (
+        {speakerEntries.length === 0 ? (
           <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
             No speakers detected.
           </div>
         ) : (
-          uniqueSpeakers.map((speaker) => {
+          speakerEntries.map((entry) => {
+            const { speaker } = entry;
             const isRenaming =
-              renamingSpeaker?.diarization_label === speaker.diarization_label;
+              renamingSpeaker?.key === entry.key;
             const isMerging =
-              mergingSpeaker?.diarization_label === speaker.diarization_label;
+              mergingSpeaker?.key === entry.key;
 
             if (isMerging) {
-              const otherSpeakers = uniqueSpeakers.filter(
-                (s) => s.diarization_label !== speaker.diarization_label,
+              const otherSpeakers = speakerEntries.filter(
+                (candidate) => candidate.key !== entry.key,
               );
               return (
                 <div
-                  key={speaker.id}
+                  key={entry.key}
                   className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800"
                 >
                   <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
-                    Merge {getSpeakerName(speaker)} into:
+                    Merge {entry.displayName} into:
                   </p>
                   <select
                     className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
@@ -366,12 +455,12 @@ export default function SpeakerPanel({
                     onChange={(e) => setMergeTargetLabel(e.target.value)}
                   >
                     <option value="">Select Speaker...</option>
-                    {otherSpeakers.map((s) => (
+                    {otherSpeakers.map((candidate) => (
                       <option
-                        key={s.diarization_label}
-                        value={s.diarization_label}
+                        key={candidate.key}
+                        value={candidate.speaker.diarization_label}
                       >
-                        {getSpeakerName(s)}
+                        {candidate.displayName}
                       </option>
                     ))}
                   </select>
@@ -394,24 +483,29 @@ export default function SpeakerPanel({
               );
             }
 
+            const entryLabelSet = new Set(entry.labels);
             const isSpeakerActive = segments.some(
-              (s) =>
-                s.speaker === speaker.diarization_label &&
-                currentTime >= s.start &&
-                currentTime < s.end,
+              (segment) =>
+                entryLabelSet.has(segment.speaker) &&
+                currentTime >= segment.start &&
+                currentTime < segment.end,
             );
+            const selectedColor =
+              entry.labels
+                .map((label) => speakerColors[label])
+                .find(Boolean) || speakerColors[speaker.diarization_label];
 
             return (
               <div
-                key={speaker.id}
+                key={entry.key}
                 className="relative group flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
-                onContextMenu={(e) => handleContextMenu(e, speaker)}
+                onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="relative shrink-0">
                     <div className="relative">
                       <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
-                        {speaker.has_voiceprint ? (
+                        {entry.hasVoiceprint ? (
                           <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
                         ) : (
                           <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
@@ -419,11 +513,11 @@ export default function SpeakerPanel({
                       </div>
                       <div className="absolute -bottom-1 -right-1">
                         <InlineColorPicker
-                          selectedColor={
-                            speakerColors[speaker.diarization_label]
-                          }
+                          selectedColor={selectedColor}
                           onColorSelect={(colorKey) => {
-                            onColorChange(speaker.diarization_label, colorKey);
+                            entry.labels.forEach((label) => {
+                              onColorChange(label, colorKey);
+                            });
                           }}
                         />
                       </div>
@@ -454,13 +548,15 @@ export default function SpeakerPanel({
                         <p
                           className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
                           title="Double-click to rename"
-                          onDoubleClick={() => handleRenameStart(speaker)}
+                          onDoubleClick={() => handleRenameStart(entry)}
                         >
-                          {getSpeakerName(speaker)}
+                          {entry.displayName}
                         </p>
-                        {/* {speaker.global_speaker && (
-                                    <p className="text-xs text-gray-500 truncate">{speaker.diarization_label}</p>
-                                )} */}
+                        {entry.members.length > 1 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {entry.members.length} linked labels
+                          </p>
+                        )}
                       </>
                     )}
                   </div>
@@ -476,10 +572,7 @@ export default function SpeakerPanel({
                       isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"
                     }
                     onClick={() =>
-                      handlePlaySnippet(
-                        speaker.diarization_label,
-                        isSpeakerActive,
-                      )
+                      handlePlaySnippet(entry.labels, isSpeakerActive)
                     }
                   >
                     {isSpeakerActive && isPlaying ? (
@@ -492,9 +585,7 @@ export default function SpeakerPanel({
                     <button
                       className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
                       title="Next Snippet"
-                      onClick={() =>
-                        handleNextSnippet(speaker.diarization_label)
-                      }
+                      onClick={() => handleNextSnippet(entry.labels)}
                     >
                       <ArrowRightToLine className="w-3 h-3 fill-current" />
                     </button>
@@ -524,7 +615,7 @@ export default function SpeakerPanel({
               onClick: () => handleSplitStart(contextMenu.speaker),
             },
             // Voiceprint option - only show if speaker doesn't have one
-            ...(!contextMenu.speaker.has_voiceprint
+            ...(!contextMenu.speaker.hasVoiceprint
               ? [
                   {
                     label: "Create Voiceprint",
@@ -533,9 +624,9 @@ export default function SpeakerPanel({
                 ]
               : []),
             // Add to Speaker Library option - only show if not already global (and no name match)
-            ...(!contextMenu.speaker.global_speaker_id &&
+            ...(!getResolvedGlobalSpeakerId(contextMenu.speaker.speaker) &&
             !globalSpeakers.some(
-              (gs) => gs.name === getSpeakerName(contextMenu.speaker),
+              (gs) => gs.name === contextMenu.speaker.displayName,
             )
               ? [
                   {
@@ -564,28 +655,31 @@ export default function SpeakerPanel({
           }}
           speaker={
             globalSpeakers.find(
-              (gs) => gs.id === speakerToSplit.global_speaker_id,
+              (gs) => gs.id === getResolvedGlobalSpeakerId(speakerToSplit.speaker),
             ) ||
-            (speakerToSplit.global_speaker_id
+            (getResolvedGlobalSpeakerId(speakerToSplit.speaker)
               ? ({
-                  id: speakerToSplit.global_speaker_id,
-                  name: getSpeakerName(speakerToSplit),
+                  id: getResolvedGlobalSpeakerId(speakerToSplit.speaker),
+                  name: speakerToSplit.displayName,
                 } as any)
               : null)
           }
           localSpeaker={
-            !speakerToSplit.global_speaker_id
+            !getResolvedGlobalSpeakerId(speakerToSplit.speaker)
               ? {
                   recordingId: recordingId,
-                  label: speakerToSplit.diarization_label,
-                  name: getSpeakerName(speakerToSplit),
+                  label: speakerToSplit.speaker.diarization_label,
+                  name: speakerToSplit.displayName,
                 }
               : null
           }
           initialSegments={
-            !speakerToSplit.global_speaker_id
+            !getResolvedGlobalSpeakerId(speakerToSplit.speaker)
               ? segments
-                  .filter((s) => s.speaker === speakerToSplit.diarization_label)
+                  .filter(
+                    (segment) =>
+                      segment.speaker === speakerToSplit.speaker.diarization_label,
+                  )
                   .map((s) => ({
                     recording_id: recordingId,
                     recording_name: "", // Not needed for local play
@@ -634,9 +728,9 @@ export default function SpeakerPanel({
         title="Delete Speaker"
         message={
           deletingSpeaker
-            ? !!deletingSpeaker.global_speaker_id
-              ? `Remove ${getSpeakerName(deletingSpeaker)} from this recording? Their segments will be marked as UNKNOWN. They will remain in your Speaker Library.`
-              : `Delete ${getSpeakerName(deletingSpeaker)} from this recording? Their segments will be marked as UNKNOWN.`
+            ? !!getResolvedGlobalSpeakerId(deletingSpeaker.speaker)
+              ? `Remove ${deletingSpeaker.displayName} from this recording? Their segments will be marked as UNKNOWN. They will remain in your Speaker Library.`
+              : `Delete ${deletingSpeaker.displayName} from this recording? Their segments will be marked as UNKNOWN.`
             : ""
         }
         confirmText="Delete"

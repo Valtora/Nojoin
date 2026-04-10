@@ -34,6 +34,8 @@ import {
   ClientStatus,
   TranscriptSegment,
   GlobalSpeaker,
+  RecordingSpeaker,
+  TranscriptSpeakerAssignment,
 } from "@/types";
 import { useRouter } from "next/navigation";
 import { COLOR_PALETTE } from "@/lib/constants";
@@ -41,8 +43,11 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-
-
+import {
+  buildGlobalSpeakerById,
+  getRecordingSpeakerDisplayName,
+  getResolvedGlobalSpeakerId,
+} from "@/lib/recordingSpeakerUtils";
 
 const getStatusMessage = (recording: Recording) => {
   if (recording.status === RecordingStatus.UPLOADING) {
@@ -191,6 +196,19 @@ export default function RecordingPage({ params }: PageProps) {
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
+
+  const globalSpeakerById = useMemo(
+    () => buildGlobalSpeakerById(globalSpeakers),
+    [globalSpeakers],
+  );
+
+  const getSpeakerDisplayName = (speaker: RecordingSpeaker | undefined) => {
+    if (!speaker) {
+      return "";
+    }
+
+    return getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
+  };
 
   const fetchRecording = useCallback(async () => {
     try {
@@ -554,12 +572,47 @@ export default function RecordingPage({ params }: PageProps) {
 
   const handleUpdateSegmentSpeaker = async (
     index: number,
-    newSpeakerName: string,
+    assignment: TranscriptSpeakerAssignment,
   ) => {
     if (!recording) return;
+
+    const segment = recording.transcript?.segments?.[index];
+    if (!segment) return;
+
+    const nextAssignment = {
+      ...assignment,
+      name: assignment.name.trim(),
+    };
+
+    if (!nextAssignment.name) {
+      return;
+    }
+
+    const currentSpeaker = recording.speakers?.find(
+      (speaker) => speaker.diarization_label === segment.speaker,
+    );
+    const currentGlobalSpeakerId = currentSpeaker
+      ? getResolvedGlobalSpeakerId(currentSpeaker)
+      : undefined;
+    const currentSpeakerName = currentSpeaker
+      ? getSpeakerDisplayName(currentSpeaker)
+      : segment.speaker;
+
+    const isSameSelection =
+      nextAssignment.diarizationLabel === segment.speaker ||
+      (nextAssignment.globalSpeakerId !== undefined &&
+        nextAssignment.globalSpeakerId === currentGlobalSpeakerId) ||
+      (nextAssignment.diarizationLabel === undefined &&
+        nextAssignment.globalSpeakerId === undefined &&
+        nextAssignment.name === currentSpeakerName);
+
+    if (isSameSelection) {
+      return;
+    }
+
     pushToHistory(`Change speaker segment ${index}`);
     try {
-      await updateTranscriptSegmentSpeaker(recording.id, index, newSpeakerName);
+      await updateTranscriptSegmentSpeaker(recording.id, index, nextAssignment);
       router.refresh();
       const updated = await getRecording(recording.id);
       setRecording(updated);
@@ -755,20 +808,30 @@ export default function RecordingPage({ params }: PageProps) {
 
   const speakerMap = useMemo(() => {
     const map: Record<string, string> = {};
+
     if (recording?.speakers) {
       recording.speakers.forEach((s) => {
         // Priority: local_name > global_speaker.name > deprecated name field
         if (s.local_name) {
           map[s.diarization_label] = s.local_name;
-        } else if (s.global_speaker) {
+        } else if (s.global_speaker?.name) {
           map[s.diarization_label] = s.global_speaker.name;
+        } else if (
+          s.global_speaker_id &&
+          globalSpeakerById.has(s.global_speaker_id)
+        ) {
+          map[s.diarization_label] =
+            globalSpeakerById.get(s.global_speaker_id)?.name ||
+            s.diarization_label;
         } else if (s.name) {
           map[s.diarization_label] = s.name;
+        } else {
+          map[s.diarization_label] = s.diarization_label;
         }
       });
     }
     return map;
-  }, [recording?.speakers]);
+  }, [globalSpeakerById, recording?.speakers]);
 
   // View Components
   const renderMainContent = () => (

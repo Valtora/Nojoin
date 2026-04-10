@@ -18,6 +18,7 @@ import {
   PeopleTag,
   SpeakerSegment,
   SegmentSelection,
+  TranscriptSpeakerAssignment,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -258,10 +259,12 @@ export const updateSpeakerColor = async (
 export const updateTranscriptSegmentSpeaker = async (
   recordingId: number,
   segmentIndex: number,
-  newSpeakerName: string,
+  assignment: TranscriptSpeakerAssignment,
 ): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}`, {
-    new_speaker_name: newSpeakerName,
+    new_speaker_name: assignment.name,
+    global_speaker_id: assignment.globalSpeakerId,
+    diarization_label: assignment.diarizationLabel,
   });
 };
 

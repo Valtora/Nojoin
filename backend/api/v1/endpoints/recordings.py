@@ -835,7 +835,9 @@ async def get_recording(
         .where(Recording.user_id == current_user.id)
         .options(
             selectinload(Recording.transcript),
-            selectinload(Recording.speakers.and_(RecordingSpeaker.merged_into_id == None)).selectinload(RecordingSpeaker.global_speaker),
+            selectinload(Recording.speakers).options(
+                selectinload(RecordingSpeaker.global_speaker)
+            ),
             selectinload(Recording.tags).selectinload(RecordingTag.tag)
         )
     )
@@ -854,7 +856,11 @@ async def get_recording(
         recording_dict['transcript'] = recording.transcript
         
     if recording.speakers:
-        recording_dict['speakers'] = recording.speakers
+        recording_dict['speakers'] = [
+            speaker for speaker in recording.speakers if not speaker.merged_into_id
+        ]
+    else:
+        recording_dict['speakers'] = []
         
     if recording.tags:
         # Extract the actual Tag object from RecordingTag association

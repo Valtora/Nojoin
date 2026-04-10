@@ -43,6 +43,11 @@ from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
 from backend.processing.text_embedding import get_text_embedding_service
+from backend.utils.speaker_assignment import (
+    matches_speaker_name,
+    reconcile_segment_assignment,
+    segment_references_label,
+)
 from sqlalchemy import func
 
 
@@ -54,6 +59,12 @@ logger = logging.getLogger(__name__)
 
 class TranscriptSegmentTextUpdate(BaseModel):
     text: str
+
+
+class TranscriptSegmentSpeakerUpdate(BaseModel):
+    new_speaker_name: str
+    global_speaker_id: Optional[int] = None
+    diarization_label: Optional[str] = None
 
 class FindReplaceRequest(BaseModel):
     find_text: str
@@ -100,6 +111,15 @@ def _format_transcript_text(segments, speaker_map: dict) -> str:
 def _sanitize_filename(filename: str) -> str:
     """Sanitize filename for safe file output."""
     return "".join([c for c in filename if c.isalpha() or c.isdigit() or c in (' ', '-', '_', '.')]).strip()
+
+
+def _get_recording_speaker_display_name(recording_speaker: RecordingSpeaker) -> str:
+    return (
+        recording_speaker.local_name
+        or (recording_speaker.global_speaker.name if recording_speaker.global_speaker else None)
+        or recording_speaker.name
+        or recording_speaker.diarization_label
+    )
 
 
 import re2
@@ -502,7 +522,7 @@ async def export_content(
 async def update_segment_speaker(
     recording_id: int,
     segment_index: int,
-    new_speaker_name: str = Body(..., embed=True),
+    update: TranscriptSegmentSpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -529,8 +549,12 @@ async def update_segment_speaker(
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
         
-    segment = transcript.segments[segment_index]
+    segment = dict(transcript.segments[segment_index])
     old_label = segment.get('speaker')
+    new_speaker_name = update.new_speaker_name.strip()
+
+    if not new_speaker_name:
+        raise HTTPException(status_code=400, detail="Speaker name cannot be empty")
     
     # 2. Resolve Target Speaker
     # Determine the diarization_label to assign to the segment.
@@ -540,92 +564,172 @@ async def update_segment_speaker(
     
     # Check if speaker exists in this recording (by name or global name)
     # Fetch all recording speakers for name comparison
-    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    stmt = (
+        select(RecordingSpeaker)
+        .where(RecordingSpeaker.recording_id == recording_id)
+        .options(selectinload(RecordingSpeaker.global_speaker))
+    )
     result = await db.execute(stmt)
     recording_speakers = result.scalars().all()
-    
-    # Try to find match
-    for rs in recording_speakers:
-        # Check explicit name on RecordingSpeaker
-        if rs.local_name and rs.local_name.lower() == new_speaker_name.lower():
-            target_label = rs.diarization_label
-            target_recording_speaker = rs
-            break
-        if rs.name and rs.name.lower() == new_speaker_name.lower():
-            target_label = rs.diarization_label
-            target_recording_speaker = rs
-            break
-        # Check linked GlobalSpeaker name
-        if rs.global_speaker_id:
-            gs = await db.get(GlobalSpeaker, rs.global_speaker_id)
-            if gs and gs.name.lower() == new_speaker_name.lower():
-                target_label = rs.diarization_label
-                target_recording_speaker = rs
-                break
-                
-    if not target_label:
-        # Speaker not found in recording. Check Global Speakers.
-        stmt = select(GlobalSpeaker).where(GlobalSpeaker.name == new_speaker_name, GlobalSpeaker.user_id == current_user.id)
+    target_speaker_id: Optional[int] = None
+    current_recording_speaker = next(
+        (
+            recording_speaker
+            for recording_speaker in recording_speakers
+            if recording_speaker.diarization_label == old_label
+        ),
+        None,
+    )
+
+    current_global_speaker_id = (
+        current_recording_speaker.global_speaker_id
+        if current_recording_speaker
+        else None
+    )
+    current_speaker_name = (
+        _get_recording_speaker_display_name(current_recording_speaker)
+        if current_recording_speaker
+        else old_label
+    )
+
+    if update.diarization_label == old_label:
+        return {"status": "unchanged", "speaker": old_label}
+
+    if (
+        update.global_speaker_id is not None
+        and current_global_speaker_id == update.global_speaker_id
+    ):
+        return {"status": "unchanged", "speaker": old_label}
+
+    if (
+        update.diarization_label is None
+        and update.global_speaker_id is None
+        and matches_speaker_name(current_speaker_name, new_speaker_name)
+    ):
+        return {"status": "unchanged", "speaker": old_label}
+
+    if update.diarization_label is not None:
+        target_recording_speaker = next(
+            (
+                recording_speaker
+                for recording_speaker in recording_speakers
+                if recording_speaker.diarization_label == update.diarization_label
+            ),
+            None,
+        )
+
+        if not target_recording_speaker:
+            raise HTTPException(status_code=404, detail="Speaker not found in recording")
+
+        target_label = target_recording_speaker.diarization_label
+        target_speaker_id = target_recording_speaker.id
+
+    if target_label is None and update.global_speaker_id is not None:
+        stmt = select(GlobalSpeaker).where(
+            GlobalSpeaker.id == update.global_speaker_id,
+            GlobalSpeaker.user_id == current_user.id,
+        )
         result = await db.execute(stmt)
         global_speaker = result.scalar_one_or_none()
-        
+
         if not global_speaker:
-            # Create new Global Speaker
-            global_speaker = GlobalSpeaker(name=new_speaker_name, user_id=current_user.id)
-            db.add(global_speaker)
-            await db.commit()
-            await db.refresh(global_speaker)
-            
-        # Create new RecordingSpeaker
-        # Use a unique manual label
+            raise HTTPException(status_code=404, detail="Global speaker not found")
+
+        target_recording_speaker = next(
+            (
+                rs
+                for rs in recording_speakers
+                if rs.global_speaker_id == global_speaker.id
+            ),
+            None,
+        )
+
+        if target_recording_speaker:
+            target_label = target_recording_speaker.diarization_label
+            target_speaker_id = target_recording_speaker.id
+        else:
+            target_recording_speaker = next(
+                (
+                    recording_speaker
+                    for recording_speaker in recording_speakers
+                    if recording_speaker.global_speaker_id is None
+                    and (
+                        matches_speaker_name(recording_speaker.local_name, new_speaker_name)
+                        or matches_speaker_name(recording_speaker.name, new_speaker_name)
+                    )
+                ),
+                None,
+            )
+
+            if target_recording_speaker:
+                target_recording_speaker.global_speaker_id = global_speaker.id
+                target_recording_speaker.local_name = None
+                target_recording_speaker.name = None
+                db.add(target_recording_speaker)
+                await db.flush()
+                target_label = target_recording_speaker.diarization_label
+                target_speaker_id = target_recording_speaker.id
+            else:
+                target_label = f"MANUAL_{uuid.uuid4().hex[:8]}"
+                target_recording_speaker = RecordingSpeaker(
+                    recording_id=recording_id,
+                    diarization_label=target_label,
+                    global_speaker_id=global_speaker.id,
+                    name=None,
+                )
+                db.add(target_recording_speaker)
+                await db.flush()
+                target_speaker_id = target_recording_speaker.id
+    
+    # Try to find a local match when no global speaker was explicitly selected.
+    if target_label is None:
+        for rs in recording_speakers:
+            if matches_speaker_name(rs.local_name, new_speaker_name):
+                target_label = rs.diarization_label
+                target_recording_speaker = rs
+                target_speaker_id = rs.id
+                break
+
+            if matches_speaker_name(rs.name, new_speaker_name):
+                target_label = rs.diarization_label
+                target_recording_speaker = rs
+                target_speaker_id = rs.id
+                break
+
+            if matches_speaker_name(
+                rs.global_speaker.name if rs.global_speaker else None,
+                new_speaker_name,
+            ):
+                target_label = rs.diarization_label
+                target_recording_speaker = rs
+                target_speaker_id = rs.id
+                break
+
+    if target_label is None:
         target_label = f"MANUAL_{uuid.uuid4().hex[:8]}"
         target_recording_speaker = RecordingSpeaker(
             recording_id=recording_id,
             diarization_label=target_label,
-            global_speaker_id=global_speaker.id,
-            name=None # Deprecated, use global link
+            local_name=new_speaker_name,
+            name=None,
         )
         db.add(target_recording_speaker)
-        await db.commit()
-        await db.refresh(target_recording_speaker)
+        await db.flush()
+        target_speaker_id = target_recording_speaker.id
 
     # 3. Update Transcript Segment
-    # CRITICAL: Store the LABEL, not the name
-    transcript.segments[segment_index]['speaker'] = target_label
+    updated_segments = [dict(entry) for entry in transcript.segments]
+    reconcile_segment_assignment(updated_segments, segment_index, old_label, target_label)
+    transcript.segments = updated_segments
     flag_modified(transcript, "segments")
     db.add(transcript)
-    
-    # 4. Update Embeddings (Active Learning)
-    # Dispatch task to worker
-    try:
-        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
-        if target_audio and target_recording_speaker:
-            start = segment['start']
-            end = segment['end']
-            duration = end - start
-            
-            if duration > 0.5:
-                celery_app.send_task(
-                    "backend.worker.tasks.update_speaker_embedding_task",
-                    args=[
-                        recording_id,
-                        start,
-                        end,
-                        target_recording_speaker.id
-                    ]
-                )
-    except Exception as e:
-        # Log error but don't fail the request
-        logger.error(f"Failed to dispatch embedding update task: {e}")
-        
+
     # 5. Cleanup Old Speaker (if unused)
     if old_label and old_label != target_label:
-        # Check if old_label is still used in any segment
-        is_used = False
-        for s in transcript.segments:
-            if s.get('speaker') == old_label:
-                is_used = True
-                break
+        is_used = any(
+            segment_references_label(entry, old_label)
+            for entry in transcript.segments
+        )
         
         if not is_used:
             # Delete the RecordingSpeaker entry
@@ -641,6 +745,27 @@ async def update_segment_speaker(
                 # Note: We don't delete the GlobalSpeaker, just the local association
     
     await db.commit()
+
+    # 6. Update Embeddings (Active Learning)
+    try:
+        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
+        if target_audio and target_speaker_id is not None:
+            start = segment['start']
+            end = segment['end']
+            duration = end - start
+
+            if duration > 0.5:
+                celery_app.send_task(
+                    "backend.worker.tasks.update_speaker_embedding_task",
+                    args=[
+                        recording_id,
+                        start,
+                        end,
+                        target_speaker_id,
+                    ],
+                )
+    except Exception as e:
+        logger.error(f"Failed to dispatch embedding update task: {e}")
     
     return {"status": "success", "speaker": target_label}
 

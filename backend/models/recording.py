@@ -63,6 +63,7 @@ from .speaker import GlobalSpeakerRead
 class RecordingSpeakerRead(BaseDBModel):
     recording_id: int
     diarization_label: str
+    global_speaker_id: Optional[int] = None
     local_name: Optional[str] = None
     name: Optional[str] = None
     color: Optional[str] = None

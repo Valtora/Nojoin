@@ -1,6 +1,11 @@
 "use client";
 
-import { TranscriptSegment, RecordingSpeaker, GlobalSpeaker } from "@/types";
+import {
+  TranscriptSegment,
+  RecordingSpeaker,
+  GlobalSpeaker,
+  TranscriptSpeakerAssignment,
+} from "@/types";
 import { useRef, useEffect, useState } from "react";
 import {
   Play,
@@ -33,7 +38,7 @@ interface TranscriptViewProps {
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (
     index: number,
-    newSpeakerName: string,
+    assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
   onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
   onFindAndReplace: (
@@ -323,7 +328,7 @@ export default function TranscriptView({
     if (editValue.trim() && !isSubmitting) {
       setIsSubmitting(true);
       try {
-        await onUpdateSegmentSpeaker(index, editValue.trim());
+        await onUpdateSegmentSpeaker(index, { name: editValue.trim() });
       } finally {
         setIsSubmitting(false);
         setEditingSegmentSpeakerIndex(null);
@@ -562,13 +567,13 @@ export default function TranscriptView({
 
               {activePopover?.index === originalIndex && (
                 <SpeakerAssignmentPopover
-                  currentSpeakerName={speakerName}
                   availableSpeakers={speakers}
                   globalSpeakers={globalSpeakers}
+                  currentSpeakerLabel={segment.speaker}
                   speakerColors={speakerColors}
                   targetElement={activePopover.target}
-                  onSelect={(name) => {
-                    onUpdateSegmentSpeaker(originalIndex, name);
+                  onSelect={(assignment) => {
+                    onUpdateSegmentSpeaker(originalIndex, assignment);
                     setActivePopover(null);
                   }}
                   onClose={() => setActivePopover(null)}
