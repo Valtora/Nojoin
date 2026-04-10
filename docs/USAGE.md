@@ -8,11 +8,12 @@ This guide outlines the steps to initialize and utilize the Nojoin platform.
 
 1. **Install/Run Companion App:** Ensure the Nojoin Companion App is running in the system tray. This is required for audio capture.
 2. **Verify Connection:** Open the Web Client. The status indicator in the bottom left should display "Connected".
-3. **Make a Test Recording:**
+3. **Dashboard Landing:** The root route now opens the first dashboard iteration, which surfaces quick capture controls, recent meetings, and platform-health status.
+4. **Make a Test Recording:**
    - Click the **Record** button (microphone icon) in the sidebar.
    - Speak a few words.
    - Click **Stop**.
-4. **View Results:** The recording will appear in the list. Wait for processing to complete (transcription, diarization) to view the transcript and notes.
+5. **View Results:** Open the **Recordings** workspace from the main navigation. The recording will appear in the list. Wait for processing to complete (transcription, diarization) to view the transcript and notes.
 
 ### 2. Interactive Tour
 
@@ -136,10 +137,14 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 ### Web Playback & Transcript Interface
 
 - **Dashboard:**
-  - **Left Sidebar:** List of recordings.
-  - **Center Panel:** Transcript and Meeting Notes.
-  - **Speaker Panel:** List of identified speakers.
-  - **Chat Sidebar:** "Chat with Meeting" functionality.
+  - **Iteration One:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
+  - **Quick Capture:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
+  - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
+  - **Future Direction:** This is intentionally the first iteration. Future dashboard work is expected to add more useful operational elements such as calendar integrations, agenda views, and to-do lists derived from meeting outputs.
+- **Recordings Workspace:**
+  - **Dedicated Route:** `/recordings` now acts as the entry point for the recordings library and filtering workspace.
+  - **Route Split:** The main navigation now separates `Dashboard` from `Recordings`, while selected meetings continue to open under `/recordings/{id}`.
+  - **Mobile Behaviour:** On mobile, the dashboard no longer competes with the recordings sidebar; the recordings workspace remains the focused list-and-detail surface.
 - **Processing View:** Uploading, queued, and processing meetings render a dedicated status experience with progress, ETA messaging, recording length, live waveform monitoring, and inline manual notes.
 - **Player:** HTML5 audio player with waveform visualization.
 - **Synced Transcript:** Clicking text seeks audio. Text highlights during playback.

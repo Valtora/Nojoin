@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
+import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 
@@ -122,11 +123,8 @@ export default function RecordingStatusDisplay({
         : Math.max(20, recording.processing_progress || 20);
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="relative min-h-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_32%),linear-gradient(180deg,_#fff7ed_0%,_#ffffff_40%,_#fffdf8_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.16),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.12),_transparent_32%),linear-gradient(180deg,_#111827_0%,_#0f172a_48%,_#111827_100%)]">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.55)_0%,rgba(255,255,255,0)_55%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0)_55%)]" />
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-8 md:py-10">
-          <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+    <AmbientWorkspace>
+      <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
@@ -204,18 +202,16 @@ export default function RecordingStatusDisplay({
                 </>
               )}
             </div>
-          </section>
+      </section>
 
-          <div className="mx-auto w-full max-w-5xl">
-            <ProcessingNotesPanel
-              value={recording.transcript?.user_notes}
-              onSave={onSaveProcessingNotes}
-              disabled={notesAreLocked}
-              disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
-            />
-          </div>
-        </div>
+      <div className="mx-auto w-full max-w-5xl">
+        <ProcessingNotesPanel
+          value={recording.transcript?.user_notes}
+          onSave={onSaveProcessingNotes}
+          disabled={notesAreLocked}
+          disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
+        />
       </div>
-    </div>
+    </AmbientWorkspace>
   );
 }

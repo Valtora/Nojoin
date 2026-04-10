@@ -39,10 +39,13 @@ The primary user interface for interacting with the system.
 - **Framework:** Next.js (React) with TypeScript.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
+- **Dashboard Iteration One:** The root route now serves as a first-pass operational dashboard with quick capture controls, recent-meeting access, service-health status, and clear routing into the recordings workspace.
+- **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
   - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
   - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
+  - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
   - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and companion app setup.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
@@ -157,6 +160,8 @@ The system provides the following core capabilities:
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
   - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
+- **Dashboard Foundation:** The first dashboard iteration intentionally focuses on navigation, capture, status, and recent-work visibility rather than full planning workflows.
+  - **Planned Expansion:** Future iterations are expected to add calendar integrations, agenda-centric views, and to-do management derived from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
 - **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.

@@ -125,6 +125,10 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
   - **Chat Q&A:** "Chat with your meeting" to ask specific questions about the content or make edits to notes.
   - **Documents:** Upload documents to be processed by the LLM.
   - **Cross-Meeting Context:** Select tags to include meetings, notes, and documents from across all meetings with the same tag(s).
+- **Dashboard Workspace:**
+  - **Iteration One:** The root route now opens a dedicated dashboard with quick capture controls, recent meetings, system-health panels, and direct routes into the recordings workspace.
+  - **Shared Visual Language:** The dashboard and in-flight recording workspace now use the same ambient layout treatment so live work feels like part of one coherent operating surface.
+  - **Future Expansion:** This first dashboard iteration is the base for richer workday tooling such as calendar integrations, agenda views, and to-do lists derived from meeting outcomes.
 - **Organization & Search:**
   - **Global Speaker Library:** Centralized management of speaker identities across all recordings.
   - **Voiceprint Recalibration:** Manually improve speaker identification by selecting high-quality samples.
@@ -148,7 +152,8 @@ Nojoin is composed of three distinct subsystems:
 
 2. **The Web Client (Next.js):**
    - The primary interface for users.
-   - Provides a dashboard for playback, transcript editing, and system configuration.
+  - Provides a dashboard for capture, recent-work visibility, playback, transcript editing, and system configuration.
+  - Uses a split workspace model where `/` is the dashboard and `/recordings` is the dedicated recordings library and editor entry point.
 
 3. **The Companion App (Rust):**
    - Runs on Windows client machines.
@@ -411,6 +416,13 @@ location / {
 ## 🗺️ Roadmap
 
 - [x] **Windows Support** (Stable)
+- [x] **Dashboard Iteration One**
+  - Dedicated home dashboard with quick capture, recent meetings, and system-health visibility.
+  - Recordings workspace split out to its own route for cleaner navigation and future expansion.
+- [ ] **Dashboard Iteration Two**
+  - Calendar integrations and agenda-centric daily views.
+  - Meeting-derived to-do lists and follow-up planning surfaces.
+  - Additional workday modules that make the dashboard a genuine operating hub rather than a landing page.
 - [ ] **macOS & Linux Support** (Contributions Welcome)
   - Community-driven development for companion app.
     - Windows implementation can serve as a reference.

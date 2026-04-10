@@ -222,7 +222,7 @@ export default function RecordingPage({ params }: PageProps) {
             type: "info",
             message: "Recording was discarded or deleted.",
           });
-          router.push("/");
+          router.push("/recordings");
         }
       }
     }, pollIntervalMs);
@@ -982,8 +982,8 @@ export default function RecordingPage({ params }: PageProps) {
           <p className="text-gray-600 dark:text-gray-400 mb-6">
             {error || "Recording not found"}
           </p>
-          <Link href="/" className="text-orange-600 hover:underline">
-            Back to Dashboard
+          <Link href="/recordings" className="text-orange-600 hover:underline">
+            Back to Recordings
           </Link>
         </div>
       </div>

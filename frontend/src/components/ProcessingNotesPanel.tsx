@@ -28,6 +28,9 @@ function ProcessingNotesPanel({
   const lastPropValueRef = useRef(normalisedValue);
   const saveStateRef = useRef<SaveState>("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushSaveRef = useRef<(valueToSave: string) => Promise<void>>(
+    async () => {},
+  );
 
   const setVisibleSaveState = useCallback((nextState: SaveState) => {
     if (saveStateRef.current === nextState) {
@@ -68,13 +71,17 @@ function ProcessingNotesPanel({
       ) {
         saveTimeoutRef.current = setTimeout(() => {
           saveTimeoutRef.current = null;
-          void flushSave(draftRef.current);
+          void flushSaveRef.current(draftRef.current);
         }, SAVE_DEBOUNCE_MS);
       }
     } catch {
       setVisibleSaveState("error");
     }
   }, [clearPendingSave, onSave, setVisibleSaveState]);
+
+  useEffect(() => {
+    flushSaveRef.current = flushSave;
+  }, [flushSave]);
 
   useEffect(() => {
     disabledRef.current = disabled;

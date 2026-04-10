@@ -15,7 +15,7 @@ export default function TopBar() {
     <div className="fixed top-4 left-4 z-60 flex gap-2 md:hidden">
       {isRecordingView ? (
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/recordings")}
           className="p-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg shadow-sm hover:bg-white dark:hover:bg-gray-800 transition-colors"
           title="Back to Recordings"
         >

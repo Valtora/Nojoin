@@ -399,7 +399,7 @@ export default function Sidebar() {
     try {
       await softDeleteRecording(id);
       if (pathname === `/recordings/${id}`) {
-        router.push("/");
+        router.push("/recordings");
       }
     } catch (e) {
       console.error("Failed to delete", e);
@@ -419,7 +419,7 @@ export default function Sidebar() {
         try {
           await permanentlyDeleteRecording(id);
           if (pathname === `/recordings/${id}`) {
-            router.push("/");
+            router.push("/recordings");
           }
         } catch (e) {
           console.error("Failed to permanently delete", e);

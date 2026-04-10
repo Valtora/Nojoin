@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
   Mic,
+  LayoutDashboard,
   Archive,
   Trash2,
   Tag as TagIcon,
@@ -654,6 +655,9 @@ export default function MainNav() {
   const showAuthorizeButton = mounted && !companionAuthenticated;
   const showUpdateCompanionButton =
     mounted && companion && companionUpdateAvailable;
+  const isDashboardRoute = pathname === "/";
+  const isRecordingsRoute =
+    pathname === "/recordings" || pathname.startsWith("/recordings/");
 
   const navItems: {
     view: ViewType;
@@ -828,20 +832,30 @@ export default function MainNav() {
 
         {/* Navigation Items */}
         <nav className="p-2 space-y-1">
+          <NavItem
+            id="nav-dashboard"
+            icon={<LayoutDashboard className="w-5 h-5" />}
+            label="Dashboard"
+            isActive={isDashboardRoute}
+            onClick={() => {
+              if (!isDashboardRoute) {
+                router.push("/");
+              }
+            }}
+            collapsed={collapsed}
+          />
+
           {navItems.map(({ view, icon, label, id }) => (
             <NavItem
               key={view}
               id={id}
               icon={icon}
               label={label}
-              isActive={
-                currentView === view &&
-                (pathname === "/" || pathname.startsWith("/recordings/"))
-              }
+              isActive={currentView === view && isRecordingsRoute}
               onClick={() => {
                 setCurrentView(view);
-                if (pathname !== "/") {
-                  router.push("/");
+                if (pathname !== "/recordings") {
+                  router.push("/recordings");
                 }
               }}
               collapsed={collapsed}

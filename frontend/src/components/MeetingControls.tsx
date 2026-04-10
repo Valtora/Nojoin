@@ -8,10 +8,20 @@ import { getCompanionToken } from '@/lib/api';
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
+  variant?: "sidebar" | "dashboard";
 }
 
-export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) {
-  const { companionStatus, recordingDuration, checkCompanion } = useServiceStatusStore();
+export default function MeetingControls({
+  onMeetingEnd,
+  variant = "sidebar",
+}: MeetingControlsProps) {
+  const {
+    companion,
+    companionAuthenticated,
+    companionStatus,
+    recordingDuration,
+    checkCompanion,
+  } = useServiceStatusStore();
   
   // Local state for smooth timer, synced with store
   const [elapsedTime, setElapsedTime] = useState<number>(0);
@@ -109,6 +119,109 @@ export default function MeetingControls({ onMeetingEnd }: MeetingControlsProps) 
   };
   const handlePause = () => sendCommand('pause');
   const handleResume = () => sendCommand('resume');
+
+  if (variant === "dashboard") {
+    const startDisabled = !companion || !companionAuthenticated;
+    const heading =
+      companionStatus === "recording"
+        ? "Recording in progress"
+        : companionStatus === "paused"
+          ? "Recording paused"
+          : "Start a meeting";
+    const helperText = !companion
+      ? "The companion app is offline. Start it locally to enable live capture."
+      : !companionAuthenticated
+        ? "Authorise the companion from the main navigation before starting capture."
+        : companionStatus === "recording"
+          ? "Capture is live. You can pause or stop directly from here."
+          : companionStatus === "paused"
+            ? "The current meeting is paused and ready to resume."
+            : "Launch a new capture session and jump straight into the live meeting workspace.";
+
+    return (
+      <div className="rounded-[1.75rem] border border-white/60 bg-white/72 p-5 shadow-lg shadow-orange-950/5 dark:border-white/10 dark:bg-gray-900/60">
+        <div className="flex flex-col gap-5">
+          <div className="space-y-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+              <Mic className="h-3.5 w-3.5" />
+              Quick Capture
+            </span>
+
+            <div className="space-y-2">
+              <h3 className="text-2xl font-semibold text-gray-950 dark:text-white">
+                {heading}
+              </h3>
+              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {helperText}
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+              {error}
+            </div>
+          )}
+
+          {companionStatus === 'idle' ? (
+            <button
+              onClick={handleStart}
+              disabled={startDisabled}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+            >
+              <Mic className="w-4 h-4" />
+              Start Meeting
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-red-100 bg-red-50 px-4 py-4 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+                <div className="flex items-center gap-3">
+                  <div className={`h-2.5 w-2.5 rounded-full bg-red-500 ${companionStatus === 'recording' ? 'animate-pulse' : ''}`} />
+                  <span className="text-sm font-semibold uppercase tracking-[0.16em]">
+                    {companionStatus === 'recording' ? 'Recording' : 'Paused'}
+                  </span>
+                </div>
+                <span className="font-mono text-3xl font-semibold text-gray-950 dark:text-white">
+                  {formatTime(elapsedTime)}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {companionStatus === 'recording' ? (
+                  <button
+                    onClick={handlePause}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                    title="Pause Recording"
+                  >
+                    <Pause className="w-4 h-4" />
+                    Pause
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleResume}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                    title="Resume Recording"
+                  >
+                    <Circle className="w-4 h-4 fill-red-500" />
+                    Resume
+                  </button>
+                )}
+
+                <button
+                  onClick={handleStop}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                  title="Stop Recording"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                  Stop
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 border-b border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
