@@ -28,8 +28,12 @@ export default function LoginPage() {
 
       // 2. Check if already logged in with a valid token
       try {
-        await getCurrentUser();
-        router.push("/");
+        const user = await getCurrentUser();
+        router.push(
+          user.force_password_change
+            ? "/settings?tab=account&forcePasswordChange=1"
+            : "/",
+        );
         return;
       } catch (e) {
         // no-op, user is not logged in
@@ -48,8 +52,8 @@ export default function LoginPage() {
       const response = await login(username, password);
 
       if (response.force_password_change) {
-        // Persists flag so the dashboard can prompt the user to change their password.
-        localStorage.setItem("force_password_change", "true");
+        router.push("/settings?tab=account&forcePasswordChange=1");
+        return;
       }
 
       router.push("/");

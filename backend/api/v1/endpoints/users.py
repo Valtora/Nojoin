@@ -21,6 +21,24 @@ logger = logging.getLogger(__name__)
 REGISTER_RATE_LIMIT = 10
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
+
+def resolve_created_user_privileges(
+    current_user: User,
+    user_in: UserCreate,
+) -> tuple[str, bool]:
+    requested_role = user_in.role or UserRole.USER
+    valid_roles = {UserRole.ADMIN, UserRole.OWNER, UserRole.USER}
+    if requested_role not in valid_roles:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    if requested_role == UserRole.OWNER and current_user.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Cannot create owner accounts")
+
+    if user_in.is_superuser and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Cannot create superuser accounts")
+
+    return requested_role, bool(user_in.is_superuser and current_user.is_superuser)
+
 @router.post("/register", response_model=UserRead)
 async def register_user(
     *,
@@ -157,12 +175,14 @@ async def create_user(
             status_code=400,
             detail="The user with this username already exists in the system.",
         )
+
+    role, is_superuser = resolve_created_user_privileges(current_user, user_in)
     
     user = User(
         username=user_in.username,
         hashed_password=get_password_hash(user_in.password),
-        is_superuser=user_in.is_superuser,
-        role=user_in.role,
+        is_superuser=is_superuser,
+        role=role,
         force_password_change=True, # Force password change for new users created by admin
     )
     db.add(user)

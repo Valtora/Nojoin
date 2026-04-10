@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 from fastapi import Depends, HTTPException, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -11,6 +11,7 @@ from backend.core.security import (
     ALGORITHM,
     API_ACCESS_SCOPE,
     API_TOKEN_TYPE,
+    COMPANION_BOOTSTRAP_SCOPE,
     COMPANION_RECORDING_SCOPE,
     COMPANION_TOKEN_TYPE,
     SECRET_KEY,
@@ -30,9 +31,18 @@ STANDARD_USER_SCOPE_REQUIREMENTS = {
     API_TOKEN_TYPE: {API_ACCESS_SCOPE},
 }
 RECORDING_CLIENT_TOKEN_TYPES = STANDARD_USER_TOKEN_TYPES | {COMPANION_TOKEN_TYPE}
-RECORDING_CLIENT_SCOPE_REQUIREMENTS = {
+RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS = {
+    **STANDARD_USER_SCOPE_REQUIREMENTS,
+    COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
+}
+RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS = {
     **STANDARD_USER_SCOPE_REQUIREMENTS,
     COMPANION_TOKEN_TYPE: {COMPANION_RECORDING_SCOPE},
+}
+PASSWORD_CHANGE_EXEMPT_ROUTES = {
+    ("/api/v1/users/me", "GET"),
+    ("/api/v1/users/me/password", "PUT"),
+    ("/api/v1/login/logout", "POST"),
 }
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -59,13 +69,43 @@ def _extract_token_scopes(raw_scopes: object) -> set[str]:
     return set()
 
 
-async def get_authenticated_user_from_token(
+def enforce_password_change_policy(user: User, *, path: str, method: str) -> None:
+    if not user.force_password_change:
+        return
+
+    if (path, method.upper()) in PASSWORD_CHANGE_EXEMPT_ROUTES:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Password change required",
+    )
+
+
+def _validate_companion_recording_claim(payload: dict[str, Any], recording_id: int) -> None:
+    if payload.get("token_type") != COMPANION_TOKEN_TYPE:
+        return
+
+    raw_recording_id = payload.get("recording_id")
+    try:
+        token_recording_id = int(raw_recording_id)
+    except (TypeError, ValueError):
+        token_recording_id = None
+
+    if token_recording_id != recording_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token does not grant access to this recording",
+        )
+
+
+async def get_authenticated_token_details(
     db: AsyncSession,
     actual_token: str,
     *,
     allowed_token_types: set[str],
     required_scopes_by_type: Optional[dict[str, set[str]]] = None,
-) -> User:
+) -> tuple[User, dict[str, Any]]:
     try:
         payload = jwt.decode(actual_token, SECRET_KEY, algorithms=[ALGORITHM])
         token_data = payload.get("sub")
@@ -104,6 +144,23 @@ async def get_authenticated_user_from_token(
         )
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+
+    return user, payload
+
+
+async def get_authenticated_user_from_token(
+    db: AsyncSession,
+    actual_token: str,
+    *,
+    allowed_token_types: set[str],
+    required_scopes_by_type: Optional[dict[str, set[str]]] = None,
+) -> User:
+    user, _ = await get_authenticated_token_details(
+        db,
+        actual_token,
+        allowed_token_types=allowed_token_types,
+        required_scopes_by_type=required_scopes_by_type,
+    )
     return user
 
 async def get_current_user(
@@ -120,12 +177,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await get_authenticated_user_from_token(
+    user = await get_authenticated_user_from_token(
         db,
         actual_token,
         allowed_token_types=STANDARD_USER_TOKEN_TYPES,
         required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
     )
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
+    return user
 
 async def get_current_user_stream(
     request: Request,
@@ -141,18 +200,21 @@ async def get_current_user_stream(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await get_authenticated_user_from_token(
+    user = await get_authenticated_user_from_token(
         db,
         actual_token,
         allowed_token_types=STANDARD_USER_TOKEN_TYPES,
         required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
     )
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
+    return user
 
 
 async def get_current_recording_client_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
+    recording_id: Optional[int] = None,
 ) -> User:
     actual_token = token or request.cookies.get("access_token")
 
@@ -163,12 +225,22 @@ async def get_current_recording_client_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await get_authenticated_user_from_token(
+    required_scopes = (
+        RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS
+        if recording_id is not None
+        else RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS
+    )
+    user, payload = await get_authenticated_token_details(
         db,
         actual_token,
         allowed_token_types=RECORDING_CLIENT_TOKEN_TYPES,
-        required_scopes_by_type=RECORDING_CLIENT_SCOPE_REQUIREMENTS,
+        required_scopes_by_type=required_scopes,
     )
+    if recording_id is not None:
+        _validate_companion_recording_claim(payload, recording_id)
+
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
+    return user
 
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
@@ -210,12 +282,18 @@ async def get_current_user_ws(
             detail="Not authenticated"
         )
 
-    return await get_authenticated_user_from_token(
+    user = await get_authenticated_user_from_token(
         db,
         actual_token,
         allowed_token_types=STANDARD_USER_TOKEN_TYPES,
         required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
     )
+    if user.force_password_change:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required"
+        )
+    return user
 
 async def get_current_active_superuser_ws(
     current_user: User = Depends(get_current_user_ws),

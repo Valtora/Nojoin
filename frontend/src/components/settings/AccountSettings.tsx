@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { updateUserMe, updatePasswordMe, getUserMe } from '@/lib/api';
 import { Loader2, User, Lock, Save } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 
-export default function AccountSettings() {
+export default function AccountSettings({
+  forcePasswordChange = false,
+}: {
+  forcePasswordChange?: boolean;
+}) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState('');
   const { addNotification } = useNotificationStore();
@@ -63,6 +69,9 @@ export default function AccountSettings() {
       });
       addNotification({ message: 'Password updated successfully', type: 'success' });
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
+      if (forcePasswordChange) {
+        router.push('/');
+      }
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to update password', type: 'error' });
     } finally {
@@ -106,6 +115,11 @@ export default function AccountSettings() {
           <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           Change Password
         </h3>
+        {forcePasswordChange && (
+          <p className="mb-4 text-sm text-orange-700 dark:text-orange-300">
+            You must choose a new password before continuing to the rest of the application.
+          </p>
+        )}
         <form onSubmit={handlePasswordUpdate} className="space-y-4 max-w-md">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Current Password</label>

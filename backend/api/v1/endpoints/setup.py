@@ -6,6 +6,7 @@ from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import (
     STANDARD_USER_SCOPE_REQUIREMENTS,
     STANDARD_USER_TOKEN_TYPES,
+    enforce_password_change_policy,
     get_authenticated_user_from_token,
     get_db,
 )
@@ -131,6 +132,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
         allowed_token_types=STANDARD_USER_TOKEN_TYPES,
         required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
     )
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
 
     if user.role not in ["owner", "admin"] and not user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")

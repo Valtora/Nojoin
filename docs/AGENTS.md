@@ -31,7 +31,9 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **API Layer**: All API calls MUST go through `src/lib/api.ts`.
   - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
   - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Companion pairing uses `/api/v1/login/companion-token`, which returns a recording-scoped token for desktop upload flows only.
+  - Companion pairing uses `/api/v1/login/companion-token`, which returns a bootstrap token for pairing and recording initialisation.
+  - `/api/v1/recordings/init` returns a short-lived upload token bound to the newly created recording. The Companion must use that token for segment uploads, client-status updates, finalisation, and discard flows.
+  - `force_password_change` is enforced server-side. Flagged users may only fetch `/api/v1/users/me`, update `/api/v1/users/me/password`, or log out until they rotate their password.
   - Never put bearer tokens into URL query strings or other browser-visible locations.
 - **Routing**: The App Router (`src/app/`) is utilized.
 - **Styling**: Tailwind CSS is the standard styling framework.
@@ -57,7 +59,8 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
 - **Authorization**:
-  - The web app sends a recording-scoped token and current host/port to the `/auth` endpoint.
+  - The web app sends the bootstrap Companion token and current host/port to the `/auth` endpoint.
+  - Each `/recordings/init` response then provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
   - The app automatically updates the configuration and connects.
   - Manual configuration is available via System Tray > Settings.
 - **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.

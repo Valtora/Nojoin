@@ -24,6 +24,7 @@ import {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
+const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings?tab=account&forcePasswordChange=1";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -50,6 +51,20 @@ api.interceptors.response.use(
         window.location.href = "/login";
       }
     }
+
+    if (
+      error.response &&
+      error.response.status === 403 &&
+      error.response.data?.detail === "Password change required"
+    ) {
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/settings")
+      ) {
+        window.location.href = FORCE_PASSWORD_CHANGE_REDIRECT;
+      }
+    }
+
     return Promise.reject(error);
   },
 );
@@ -86,7 +101,6 @@ export const logout = async (): Promise<void> => {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("force_password_change");
       window.location.href = "/login";
     }
   }
@@ -947,7 +961,7 @@ export const updatePasswordMe = async (data: {
   current_password: string;
   new_password: string;
 }): Promise<void> => {
-  await api.post("/users/me/password", data);
+  await api.put("/users/me/password", data);
 };
 
 export const createUser = async (data: {

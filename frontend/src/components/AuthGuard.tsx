@@ -33,18 +33,25 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       // 2. Check if user is authenticated
       const publicPaths = ['/login', '/setup', '/register'];
       
-      let isValidToken = false;
+      let currentUser = null;
       try {
-        await getCurrentUser();
-        isValidToken = true;
+        currentUser = await getCurrentUser();
       } catch (e) {
-        isValidToken = false;
+        currentUser = null;
       }
       
-      if (!isValidToken && !publicPaths.some(p => pathname?.startsWith(p))) {
+      if (!currentUser && !publicPaths.some(p => pathname?.startsWith(p))) {
         router.push('/login');
         return;
-      } 
+      }
+
+      if (
+        currentUser?.force_password_change &&
+        !pathname?.startsWith('/settings')
+      ) {
+        router.push('/settings?tab=account&forcePasswordChange=1');
+        return;
+      }
       
       setChecked(true);
     };

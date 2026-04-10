@@ -60,7 +60,8 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Platforms:** Windows (macOS and Linux support is not currently available).
 - **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 - **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
-- **Pairing Model:** The Web Client authorises the Companion using a dedicated scoped recording token. The browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
+- **Pairing Model:** The Web Client authorises the Companion using a dedicated bootstrap token for pairing and recording initialisation. The browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
+- **Per-Recording Upload Tokens:** Each recording initialisation returns a short-lived upload token bound to that recording ID. Segment upload, client-status updates, finalisation, and discard all use that narrower token.
 - **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
 - **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
@@ -73,9 +74,10 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 - **Authentication:** JWT-based authentication is used for API access.
 - **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
-- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing uses a separate scoped token that is limited to recording-related operations.
+- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing receives a bootstrap token, and each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
+- **Password Rotation Enforcement:** Users created manually by an Admin or Owner, and users whose password is reset by a superuser, must change their password before they can access other authenticated features. While the flag is set, only the self-profile, self-password update, and logout routes remain available.
 - **JWT Secret Key:** A secure SECRET_KEY for signing JWT tokens is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts. Advanced deployments can override this by setting the `SECRET_KEY` environment variable.
-- **Authorization:** Role-based access control (Owner/Admin/User) and strict ownership checks ensure users can only access their own data.
+- **Authorization:** Role-based access control (Owner/Admin/User), privilege guardrails around Owner and superuser creation, and strict ownership checks ensure users can only access their own data.
 - **Public Auth Throttling:** Login, invitation validation, and invitation-backed registration are rate limited to reduce brute-force and enumeration attacks.
 - **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
@@ -96,6 +98,8 @@ A lightweight system tray application responsible for audio capture on Windows.
   - **Invite Links:** Admins can generate unique, time-limited invite links.
   - **Management:** Dedicated UI for tracking and revoking active invitations.
   - **Registration:** Public registration page gated by valid invite codes.
+- **Manual User Provisioning:** Users created directly by an Admin or Owner receive a temporary password and are required to choose a new one on first sign-in.
+- **Privilege Guardrails:** Only Owners can create Owner-role accounts, and only existing superusers can grant superuser privileges or force a password reset on an existing user.
 
 ### 2.6 Accessibility & Design System
 

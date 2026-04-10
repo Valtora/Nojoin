@@ -2,7 +2,7 @@ import os
 import logging
 import shutil
 from typing import List, Optional, Any
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete
@@ -12,7 +12,8 @@ import aiofiles
 from uuid import uuid4
 
 from backend.api.deps import get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
-from backend.models.recording import Recording, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
+from backend.core import security
+from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
 from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
@@ -228,7 +229,7 @@ async def batch_permanently_delete_recordings(
     await db.commit()
     return {"ok": True, "count": len(recordings)}
 
-@router.post("/init", response_model=Recording)
+@router.post("/init", response_model=RecordingInitResponse)
 async def init_upload(
     name: Optional[str] = Query(None, description="Name of the recording"),
     db: AsyncSession = Depends(get_db),
@@ -259,8 +260,20 @@ async def init_upload(
 
     recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
     os.makedirs(recording_temp_dir, exist_ok=True)
-    
-    return recording
+
+    upload_token = security.create_access_token(
+        current_user.username,
+        token_type=security.COMPANION_TOKEN_TYPE,
+        scopes=[security.COMPANION_RECORDING_SCOPE],
+        expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
+        extra_claims={"recording_id": recording.id},
+    )
+
+    return RecordingInitResponse(
+        id=recording.id,
+        name=recording.name,
+        upload_token=upload_token,
+    )
 
 @router.post("/{recording_id}/segment")
 async def upload_segment(
@@ -975,7 +988,7 @@ async def update_recording(
 async def delete_recording(
     recording_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete a recording and its associated file.
@@ -990,10 +1003,49 @@ async def delete_recording(
             os.remove(recording.audio_path)
         except OSError:
             pass # Log error but continue to delete DB entry
+
+    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
+    if os.path.exists(recording_temp_dir):
+        shutil.rmtree(recording_temp_dir, ignore_errors=True)
             
     await db.delete(recording)
     await db.commit()
     
+    return {"ok": True}
+
+
+@router.post("/{recording_id}/discard")
+async def discard_companion_upload(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_recording_client_user)
+):
+    """
+    Discard an in-flight companion recording before it is finalised.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=400,
+            detail="Only in-flight companion uploads can be discarded",
+        )
+
+    if recording.audio_path and os.path.exists(recording.audio_path):
+        try:
+            os.remove(recording.audio_path)
+        except OSError:
+            pass
+
+    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
+    if os.path.exists(recording_temp_dir):
+        shutil.rmtree(recording_temp_dir, ignore_errors=True)
+
+    await db.delete(recording)
+    await db.commit()
+
     return {"ok": True}
 
 @router.get("/{recording_id}/stream")

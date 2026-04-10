@@ -471,9 +471,25 @@ async fn start_recording(
                         .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or(&payload.name);
+                    let upload_token = json
+                        .get("upload_token")
+                        .and_then(|v| v.as_str())
+                        .map(|value| value.to_string());
+
+                    if upload_token.is_none() {
+                        error!("Backend did not return a recording upload token.");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(StartResponse {
+                                id: 0,
+                                message: "Recording upload token missing".to_string(),
+                            }),
+                        );
+                    }
 
                     // Start Audio Thread
                     *state.current_recording_id.lock().unwrap() = Some(id);
+                    *state.current_recording_token.lock().unwrap() = upload_token;
                     *state.current_sequence.lock().unwrap() = 1;
                     *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
                     *state.accumulated_duration.lock().unwrap() = Duration::new(0, 0);
@@ -549,9 +565,14 @@ async fn stop_recording(
 
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
+        let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
-            if let Err(e) = uploader::update_client_status(id, "UPLOADING", &config_clone).await {
-                error!("Failed to update client status: {}", e);
+            if let Some(token) = token {
+                if let Err(e) = uploader::update_client_status(id, "UPLOADING", &config_clone, &token).await {
+                    error!("Failed to update client status: {}", e);
+                }
+            } else {
+                error!("Missing recording upload token while stopping recording {}", id);
             }
         });
     }
@@ -587,9 +608,14 @@ async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<St
 
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
+        let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
-            if let Err(e) = uploader::update_client_status(id, "PAUSED", &config_clone).await {
-                error!("Failed to update client status: {}", e);
+            if let Some(token) = token {
+                if let Err(e) = uploader::update_client_status(id, "PAUSED", &config_clone, &token).await {
+                    error!("Failed to update client status: {}", e);
+                }
+            } else {
+                error!("Missing recording upload token while pausing recording {}", id);
             }
         });
     }
@@ -619,9 +645,14 @@ async fn resume_recording(
 
     if let Some(id) = recording_id {
         let config_clone = state.config.lock().unwrap().clone();
+        let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
-            if let Err(e) = uploader::update_client_status(id, "RECORDING", &config_clone).await {
-                error!("Failed to update client status: {}", e);
+            if let Some(token) = token {
+                if let Err(e) = uploader::update_client_status(id, "RECORDING", &config_clone, &token).await {
+                    error!("Failed to update client status: {}", e);
+                }
+            } else {
+                error!("Missing recording upload token while resuming recording {}", id);
             }
         });
     }

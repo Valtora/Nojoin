@@ -108,3 +108,9 @@ class RecordingRead(BaseDBModel):
 
 class RecordingUpdate(SQLModel):
     name: Optional[str] = None
+
+
+class RecordingInitResponse(SQLModel):
+    id: int
+    name: str
+    upload_token: str

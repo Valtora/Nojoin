@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, Union, Optional
+from typing import Any, Optional, Union
 from jose import jwt
 from passlib.context import CryptContext
 import os
@@ -18,6 +18,7 @@ COMPANION_TOKEN_TYPE = "companion"
 
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
+COMPANION_BOOTSTRAP_SCOPE = "companion:init"
 COMPANION_RECORDING_SCOPE = "recordings:companion"
 
 def _get_secret_key() -> str:
@@ -46,12 +47,13 @@ ALGORITHM = "HS256"
 
 SESSION_TOKEN_EXPIRE_MINUTES = 12 * 60
 API_TOKEN_EXPIRE_MINUTES = 60
-COMPANION_TOKEN_EXPIRE_MINUTES = 24 * 60
+COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES = 12 * 60
+COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES = 12 * 60
 
 TOKEN_EXPIRY_MINUTES = {
     SESSION_TOKEN_TYPE: SESSION_TOKEN_EXPIRE_MINUTES,
     API_TOKEN_TYPE: API_TOKEN_EXPIRE_MINUTES,
-    COMPANION_TOKEN_TYPE: COMPANION_TOKEN_EXPIRE_MINUTES,
+    COMPANION_TOKEN_TYPE: COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES,
 }
 
 def create_access_token(
@@ -60,6 +62,7 @@ def create_access_token(
     token_type: str,
     scopes: Optional[list[str]] = None,
     expires_delta: Optional[timedelta] = None,
+    extra_claims: Optional[dict[str, Any]] = None,
 ) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -75,6 +78,9 @@ def create_access_token(
         "token_type": token_type,
         "scopes": sorted(set(scopes or [])),
     }
+    if extra_claims:
+        to_encode.update(extra_claims)
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

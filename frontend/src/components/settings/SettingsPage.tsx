@@ -7,6 +7,7 @@ import React, {
   useRef,
   useCallback,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import { getSettings, updateSettings, getUserMe } from "@/lib/api";
 import { Settings, CompanionDevices } from "@/types";
 import { isValidUrl } from "@/lib/validation";
@@ -43,6 +44,7 @@ interface CompanionConfig {
 const COMPANION_URL = "http://127.0.0.1:12345";
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings>({});
   const [companionConfig, setCompanionConfig] =
@@ -61,6 +63,7 @@ export default function SettingsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const [forcePasswordChange, setForcePasswordChange] = useState(false);
   const { addNotification } = useNotificationStore();
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -144,6 +147,20 @@ export default function SettingsPage() {
   }, [tabMatches, activeTab]);
 
   useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (
+      requestedTab === "general" ||
+      requestedTab === "audio" ||
+      requestedTab === "updates" ||
+      requestedTab === "help" ||
+      requestedTab === "account" ||
+      requestedTab === "admin"
+    ) {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
   }, []);
@@ -156,17 +173,31 @@ export default function SettingsPage() {
       let currentOutputDevice: string | null = null;
 
       try {
-        const [settingsData, userData] = await Promise.all([
-          getSettings(),
-          getUserMe(),
-        ]);
+        const userData = await getUserMe();
+        setIsAdmin(userData.is_superuser);
+        setUserId(userData.id);
+
+        if (userData.force_password_change) {
+          setForcePasswordChange(true);
+          setActiveTab("account");
+          lastSavedState.current = JSON.stringify({
+            settings: {},
+            companionApiPort: undefined,
+            companionMinLength: undefined,
+            selectedInputDevice: null,
+            selectedOutputDevice: null,
+          });
+          setLoading(false);
+          return;
+        }
+
+        const settingsData = await getSettings();
 
         // Ensure settingsData is an object (API might return null)
         const safeSettings = settingsData || {};
         setSettings(safeSettings);
         currentSettings = safeSettings;
-        setIsAdmin(userData.is_superuser);
-        setUserId(userData.id);
+        setForcePasswordChange(false);
 
         // Try to load companion config (always at localhost:12345)
         try {
@@ -249,6 +280,10 @@ export default function SettingsPage() {
   };
 
   const saveSettings = useCallback(async () => {
+    if (forcePasswordChange) {
+      return;
+    }
+
     const error = validateSettings(settings, companionConfig);
     if (error) {
       addNotification({ type: "error", message: error });
@@ -309,10 +344,11 @@ export default function SettingsPage() {
     selectedInputDevice,
     selectedOutputDevice,
     addNotification,
+    forcePasswordChange,
   ]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || forcePasswordChange) return;
 
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
@@ -350,10 +386,15 @@ export default function SettingsPage() {
     selectedInputDevice,
     selectedOutputDevice,
     loading,
+    forcePasswordChange,
     saveSettings,
   ]);
 
   const tabs = useMemo(() => {
+    if (forcePasswordChange) {
+      return [{ id: "account", label: "Account", icon: User }] as const;
+    }
+
     const baseTabs = [
       { id: "general", label: "General", icon: SettingsIcon },
       { id: "audio", label: "Audio & Recording", icon: Mic },
@@ -368,7 +409,7 @@ export default function SettingsPage() {
       return [...baseTabs, adminTab];
     }
     return baseTabs;
-  }, [isAdmin]);
+  }, [forcePasswordChange, isAdmin]);
 
   if (!mounted) return null;
 
@@ -381,7 +422,9 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Manage your application preferences and configurations.
+            {forcePasswordChange
+              ? "Password change required before other settings become available."
+              : "Manage your application preferences and configurations."}
           </p>
         </div>
         <VersionTag />
@@ -390,18 +433,20 @@ export default function SettingsPage() {
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Sidebar */}
         <div className="w-full md:w-64 bg-gray-200 dark:bg-gray-800 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-col shrink-0">
-          <div className="p-4 border-b border-gray-300 dark:border-gray-700">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input
-                type="text"
-                placeholder="Search settings..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              />
+          {!forcePasswordChange && (
+            <div className="p-4 border-b border-gray-300 dark:border-gray-700">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search settings..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <nav className="p-2 md:p-4 flex md:flex-col overflow-x-auto md:overflow-y-auto space-x-2 md:space-x-0 md:space-y-1 hide-scrollbar">
             {tabs.map((tab) => {
@@ -440,7 +485,12 @@ export default function SettingsPage() {
 
           <div className="p-4 border-t border-gray-300 dark:border-gray-700">
             <div className="flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-              {saving ? (
+              {forcePasswordChange ? (
+                <>
+                  <Shield className="w-4 h-4 mr-2" />
+                  Password change required
+                </>
+              ) : saving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   Saving changes...
@@ -464,6 +514,11 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
+              {forcePasswordChange && (
+                <div className="mb-6 rounded-lg border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-500/40 dark:bg-orange-900/20 dark:text-orange-100">
+                  Your account must change its password before Nojoin will allow access to other authenticated features.
+                </div>
+              )}
               {activeTab === "general" && (
                 <GeneralSettings
                   settings={settings}
@@ -496,7 +551,9 @@ export default function SettingsPage() {
               {activeTab === "help" && (
                 <HelpSettings userId={userId} searchQuery={searchQuery} />
               )}
-              {activeTab === "account" && <AccountSettings />}
+              {activeTab === "account" && (
+                <AccountSettings forcePasswordChange={forcePasswordChange} />
+              )}
               {activeTab === "admin" && isAdmin && (
                 <AdminSettings
                   settings={settings}

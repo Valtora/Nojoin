@@ -20,6 +20,7 @@ pub enum AppStatus {
 pub struct AppState {
     pub status: Mutex<AppStatus>,
     pub current_recording_id: Mutex<Option<i64>>,
+    pub current_recording_token: Mutex<Option<String>>,
     pub current_sequence: Mutex<i32>,
     pub audio_command_tx: Sender<AudioCommand>,
     pub config: Mutex<Config>,

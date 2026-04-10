@@ -136,16 +136,16 @@ async def get_companion_token(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Issues a scoped JWT for companion recording operations.
+    Issues a bootstrap JWT for companion pairing and recording initialisation.
     """
-    access_token_expires = timedelta(minutes=security.COMPANION_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES)
     token = security.create_access_token(
         current_user.username,
         token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_RECORDING_SCOPE],
+        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
         expires_delta=access_token_expires,
     )
     return {
         "token": token,
-        "expires_in": security.COMPANION_TOKEN_EXPIRE_MINUTES * 60,
+        "expires_in": security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES * 60,
     }

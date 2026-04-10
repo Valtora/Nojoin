@@ -12,6 +12,7 @@ pub async fn upload_segment(
     sequence: i32,
     file_path: &Path,
     config: &Config,
+    api_token: &str,
 ) -> Result<()> {
     // Allow invalid certs for self-signed SSL (development)
     let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
@@ -41,7 +42,7 @@ pub async fn upload_segment(
 
         let res = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_token))
+            .header("Authorization", format!("Bearer {}", api_token))
             .multipart(form)
             .send()
             .await;
@@ -84,7 +85,7 @@ pub async fn upload_segment(
     }
 }
 
-pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()> {
+pub async fn finalize_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
     let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
         "{}/recordings/{}/finalize",
@@ -99,7 +100,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
         attempts += 1;
         let res = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_token))
+            .header("Authorization", format!("Bearer {}", api_token))
             .send()
             .await;
 
@@ -138,7 +139,12 @@ pub async fn finalize_recording(recording_id: i64, config: &Config) -> Result<()
     }
 }
 
-pub async fn update_client_status(recording_id: i64, status: &str, config: &Config) -> Result<()> {
+pub async fn update_client_status(
+    recording_id: i64,
+    status: &str,
+    config: &Config,
+    api_token: &str,
+) -> Result<()> {
     let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
         "{}/recordings/{}/client_status?status={}",
@@ -149,7 +155,7 @@ pub async fn update_client_status(recording_id: i64, status: &str, config: &Conf
 
     let res = client
         .put(&url)
-        .header("Authorization", format!("Bearer {}", config.api_token))
+        .header("Authorization", format!("Bearer {}", api_token))
         .send()
         .await?;
 
@@ -165,6 +171,7 @@ pub async fn update_status_with_progress(
     status: &str,
     progress: i32,
     config: &Config,
+    api_token: &str,
 ) -> Result<()> {
     let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
     let url = format!(
@@ -177,7 +184,7 @@ pub async fn update_status_with_progress(
 
     let res = client
         .put(&url)
-        .header("Authorization", format!("Bearer {}", config.api_token))
+        .header("Authorization", format!("Bearer {}", api_token))
         .send()
         .await?;
 
@@ -188,13 +195,13 @@ pub async fn update_status_with_progress(
     Ok(())
 }
 
-pub async fn delete_recording(recording_id: i64, config: &Config) -> Result<()> {
+pub async fn discard_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
     let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
-    let url = format!("{}/recordings/{}", config.get_api_url(), recording_id);
+    let url = format!("{}/recordings/{}/discard", config.get_api_url(), recording_id);
 
     let res = client
-        .delete(&url)
-        .header("Authorization", format!("Bearer {}", config.api_token))
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_token))
         .send()
         .await?;
 

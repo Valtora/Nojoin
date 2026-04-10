@@ -50,7 +50,7 @@ The Companion App is a lightweight system tray application that handles audio ca
 - **Pause & Resume:** Supports pausing via Web Client commands.
 - **Smart Uploads:** Audio is sent to the server automatically. If pauses occur, the audio is sent as multiple segments and concatenated on the server.
 - **Visual Feedback:** The tray icon changes color/shape based on status. Native system notifications indicate status changes.
-- **Secure Pairing:** The Web Client authorises the Companion with a dedicated recording-scoped token. Your browser session remains in a Secure HttpOnly cookie and is not handed to the desktop app.
+- **Secure Pairing:** The Web Client first authorises the Companion with a bootstrap token for pairing and recording initialisation. Each new recording then receives its own short-lived upload token, so segment upload, status updates, finalisation, and discard are bound to that single recording. Your browser session remains in a Secure HttpOnly cookie and is not handed to the desktop app.
 
 #### Live Capture Workspace
 
@@ -172,6 +172,14 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
   - **Report a Bug:** Direct link to report issues on the GitHub repository.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
 - **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. The Updates page uses GitHub Releases as the primary source for the latest stable release and falls back to registry metadata only if release metadata is unavailable.
+
+### User & Password Administration
+
+- **Invitation Registration:** Users who register through an invite choose their own password during sign-up and are not forced through an immediate password-rotation flow.
+- **Manual User Creation:** Users created directly by an Admin or Owner are given a temporary password and are redirected to Account settings on first sign-in to choose a new one before they can use the rest of the application.
+- **Forced Rotation Scope:** While `force_password_change` is active, Nojoin allows access to the current-user profile, password update, and logout only. Other authenticated pages and APIs are blocked until the password is changed.
+- **Admin Reset Behaviour:** There is currently no separate UI toggle for “require password change”. The existing flow is to create the user manually with a temporary password, or for a superuser to reset that user’s password through the user-management API, which sets the same flag.
+- **Privilege Guardrails:** Only Owners can create Owner accounts. Only existing superusers can grant superuser status or reset another user’s password through the elevated user-management API.
 
 ### System Management (Admin Only)
 

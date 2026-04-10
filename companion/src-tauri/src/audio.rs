@@ -152,10 +152,16 @@ pub fn run_audio_loop(
                             // Check minimum length
                             let min_minutes = config.min_meeting_length.unwrap_or(0);
                             let duration_secs = duration.as_secs();
+                            let recording_token = state_finalize.current_recording_token.lock().unwrap().clone();
+
+                            let Some(recording_token) = recording_token else {
+                                eprintln!("Missing recording upload token for recording {}", rec_id);
+                                return;
+                            };
 
                             if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
                                 info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
-                                match uploader::delete_recording(rec_id, &config).await {
+                                match uploader::discard_recording(rec_id, &config, &recording_token).await {
                                     Ok(_) => {
                                         info!("Deleted short recording.");
                                         notifications::show_notification(
@@ -167,7 +173,7 @@ pub fn run_audio_loop(
                                     Err(e) => {
                                         eprintln!("Failed to delete short recording: {}", e);
                                         // Attempts finalization if delete fails.
-                                        match uploader::finalize_recording(rec_id, &config).await {
+                                        match uploader::finalize_recording(rec_id, &config, &recording_token).await {
                                             Ok(_) => println!("Recording finalized (after delete failed)"),
                                             Err(e) => eprintln!("Failed to finalize: {}", e),
                                         }
@@ -175,7 +181,7 @@ pub fn run_audio_loop(
                                 }
                             } else {
                                 // Sleep unnecessary; upload verified complete.
-                                match uploader::finalize_recording(rec_id, &config).await {
+                                match uploader::finalize_recording(rec_id, &config, &recording_token).await {
                                     Ok(_) => println!("Recording finalized"),
                                     Err(e) => eprintln!("Failed to finalize: {}", e),
                                 }
@@ -188,6 +194,9 @@ pub fn run_audio_loop(
 
                                 let mut id = state_finalize.current_recording_id.lock().unwrap();
                                 *id = None;
+
+                                let mut token = state_finalize.current_recording_token.lock().unwrap();
+                                *token = None;
 
                                 let mut seq = state_finalize.current_sequence.lock().unwrap();
                                 *seq = 1;
@@ -573,10 +582,16 @@ fn run_mixing_loop(
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();
+        let recording_token = state.current_recording_token.lock().unwrap().clone();
         let tx = progress_tx.clone();
 
         let handle = rt.spawn(async move {
-            match uploader::upload_segment(recording_id, seq, &path_clone, &config).await {
+            let Some(recording_token) = recording_token else {
+                log::error!("Missing recording upload token for segment {}", seq);
+                return;
+            };
+
+            match uploader::upload_segment(recording_id, seq, &path_clone, &config, &recording_token).await {
                 Ok(_) => {
                     info!("Segment {} uploaded successfully", seq);
                     tx.send(seq).ok();
@@ -596,6 +611,7 @@ fn run_mixing_loop(
 
     let total_segments = current_sequence;
     let config = state.config.lock().unwrap().clone();
+    let recording_token = state.current_recording_token.lock().unwrap().clone();
 
     // Check if we should report "UPLOADING" status
     // We only want to do this if we are STOPPING/UPLOADING, not if we are PAUSED.
@@ -605,9 +621,14 @@ fn run_mixing_loop(
     };
 
     rt.block_on(async {
+        let Some(recording_token) = recording_token.as_deref() else {
+            log::error!("Missing recording upload token while reporting upload progress for {}", recording_id);
+            return;
+        };
+
         // Set initial status
         if should_report_uploading {
-            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config)
+            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config, recording_token)
                 .await
                 .ok();
         }
@@ -623,7 +644,7 @@ fn run_mixing_loop(
             };
 
             if should_report_uploading {
-                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config)
+                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config, recording_token)
                     .await
                     .ok();
             }

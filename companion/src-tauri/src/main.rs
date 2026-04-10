@@ -247,6 +247,7 @@ fn main() {
             let state = Arc::new(AppState {
                 status: Mutex::new(AppStatus::Idle),
                 current_recording_id: Mutex::new(None),
+                current_recording_token: Mutex::new(None),
                 current_sequence: Mutex::new(1),
                 audio_command_tx: audio_tx.clone(),
                 config: Mutex::new(config),
