@@ -38,7 +38,11 @@ The primary user interface for interacting with the system.
 
 - **Framework:** Next.js (React) with TypeScript.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
-- **Functionality:** Dashboard, playback, transcript editing, speaker management, and system configuration.
+- **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
+- **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
+  - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
+  - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
+  - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
   - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and companion app setup.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
@@ -55,6 +59,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Language:** Rust (Backend) + HTML/JS (Frontend).
 - **Platforms:** Windows (macOS and Linux support is not currently available).
 - **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
+- **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
 - **Pairing Model:** The Web Client authorises the Companion using a dedicated scoped recording token. The browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
 - **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
@@ -125,10 +130,14 @@ A lightweight system tray application responsible for audio capture on Windows.
 The system provides the following core capabilities:
 
 - **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
+  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows calibrated live level bars for both channels.
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
   - **Phantom Speaker Filter:** Post-diarization stage that detects and reassigns segments caused by non-speech audio (notification sounds, background noise) to prevent phantom "UNKNOWN" speaker assignments. Uses heuristic detection validated by embedding similarity analysis.
+- **Processing Telemetry & ETA:** New processing runs persist `processing_started_at` and `processing_completed_at` on the recording and use those samples to estimate remaining processing time for future meetings.
+  - **Learning Threshold:** ETA is only shown once at least three prior processed meetings with timing data exist.
+  - **Scope of History:** ETA calculations use only recordings that explicitly captured processing timings. Older recordings are excluded unless they are reprocessed.
 - **Speaker Management:** Global speaker library with high-accuracy voiceprint identification (utilizing multi-segment averaging, margin-of-victory thresholds, and embedding drift guards).
   - **Outlier Filtering:** Segment embeddings are statistically filtered before averaging to remove mis-diarised segments that would corrupt the voiceprint.
   - **Confidence-Gated Updates:** Auto-updates to global voiceprints only occur when match confidence exceeds the auto-update threshold, preventing gradual embedding degradation from borderline matches.
@@ -136,6 +145,8 @@ The system provides the following core capabilities:
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items), Chat Q&A, and automatic meeting title inference.
+  - **User-Authored Notes:** Users can write manual notes during recording or processing. These notes are injected into speaker-name inference and meeting-note generation as supporting context.
+  - **Final Note Attribution:** Final notes append a deterministic `User Notes` section in which each manual note is labelled as user-authored.
 - **Search Capabilities:**
   - **Global Search:** Backend-driven SQL pattern matching for finding recordings by title or content.
   - **Transcript Search:** Client-side fuzzy search for locating specific text within a transcript.
@@ -145,6 +156,12 @@ The system provides the following core capabilities:
 - **Settings:** Comprehensive server and user configuration.
 - **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.
+
+### 3.1 Processing Lifecycle Details
+
+- **Status Persistence:** When a recording enters the worker pipeline, Nojoin stores a processing start timestamp. On successful completion, including "no speech detected" outcomes, it stores a processing completion timestamp.
+- **Retry / Cancel Semantics:** Retrying processing clears prior generated artefacts, resets timing fields, and records a fresh timing sample for the new run. Cancelling or erroring a run clears the completion timestamp so incomplete runs do not pollute ETA history.
+- **User Note Preservation:** Retry Processing preserves user-authored notes so operators do not lose manually captured context while rebuilding transcript-derived artefacts.
 
 ---
 

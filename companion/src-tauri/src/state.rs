@@ -28,6 +28,8 @@ pub struct AppState {
     // Audio levels (0-100 scaled, stored as u32 for atomic access)
     pub input_level: AtomicU32,
     pub output_level: AtomicU32,
+    pub live_input_level: AtomicU32,
+    pub live_output_level: AtomicU32,
     // Dynamic Web URL fetched from backend
     pub web_url: Mutex<Option<String>>,
     pub is_backend_connected: AtomicBool,
@@ -51,11 +53,13 @@ impl AppState {
         // Convert 0.0-1.0 to 0-100
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
         self.input_level.fetch_max(scaled, Ordering::Relaxed);
+        self.live_input_level.store(scaled, Ordering::Relaxed);
     }
 
     pub fn record_output_level(&self, level: f32) {
         let scaled = (level.clamp(0.0, 1.0) * 100.0) as u32;
         self.output_level.fetch_max(scaled, Ordering::Relaxed);
+        self.live_output_level.store(scaled, Ordering::Relaxed);
     }
 
     pub fn take_input_level(&self) -> u32 {
@@ -64,6 +68,14 @@ impl AppState {
 
     pub fn take_output_level(&self) -> u32 {
         self.output_level.swap(0, Ordering::Relaxed)
+    }
+
+    pub fn peek_live_input_level(&self) -> u32 {
+        self.live_input_level.load(Ordering::Relaxed)
+    }
+
+    pub fn peek_live_output_level(&self) -> u32 {
+        self.live_output_level.load(Ordering::Relaxed)
     }
 
     /// Check if the companion has a valid API token configured

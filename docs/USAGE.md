@@ -52,6 +52,14 @@ The Companion App is a lightweight system tray application that handles audio ca
 - **Visual Feedback:** The tray icon changes color/shape based on status. Native system notifications indicate status changes.
 - **Secure Pairing:** The Web Client authorises the Companion with a dedicated recording-scoped token. Your browser session remains in a Secure HttpOnly cookie and is not handed to the desktop app.
 
+#### Live Capture Workspace
+
+When a meeting is actively recording, the recording page switches to a dedicated live capture view.
+
+- **Live Audio Levels:** The page shows separate calibrated level bars for system audio and microphone input.
+- **Persistent Notes Panel:** A `Notes` panel remains available while the meeting is recording and through most of processing.
+- **Low-Latency Editing:** Manual notes are captured locally in the browser and autosaved in the background so typing remains responsive.
+
 **Platform Support:** The companion app currently supports Windows only. Contributors are welcome to help build macOS and Linux versions. Please see the [Contributing Guide](../CONTRIBUTING.md) for details.
 
 ### Import Recordings
@@ -77,6 +85,10 @@ Audio processing occurs asynchronously on the server.
   7. **Merge & Inference:** Combines transcript and diarization, then uses LLM to infer speaker names (e.g., "John Doe" instead of "Speaker 1").
   8. **Intelligence:** Extracts voiceprints (sampling up to 10 high-quality segments for accuracy), infers a meeting title, and generates comprehensive notes.
 - **Progress Tracking:** Real-time status updates are displayed in the Web Client (e.g., "Transcribing...", "Determining speakers...").
+- **ETA Tracking:** Once Nojoin has timing data from at least three previously completed processing runs on that installation, the status view shows an estimated time remaining.
+  - The estimate is based on persisted processing start and completion timestamps from prior recordings.
+  - Older recordings without timing data are ignored unless you re-run them with **Retry Processing**.
+  - If there is not enough history yet, the UI explicitly says Nojoin is still learning rather than showing a low-confidence estimate.
 - **Export:** Transcripts can be exported to `.txt` format via the Web Client (Transcript Only, Notes Only, or Both).
 
 #### Reprocessing
@@ -84,8 +96,9 @@ Audio processing occurs asynchronously on the server.
 If a recording fails or if you wish to re-run the pipeline (e.g., after updating models), you can trigger **Retry Processing** from the context menu.
 
 - **Full Reset:** Retry Processing clears generated meeting state and rebuilds it from the original audio.
-- **Cleared:** Transcript, speaker assignments and merges, notes, and meeting chat history.
-- **Preserved:** Recording metadata, assigned tags, and uploaded documents.
+- **Cleared:** Transcript, speaker assignments and merges, generated notes, and meeting chat history.
+- **Preserved:** Recording metadata, assigned tags, uploaded documents, and user-authored processing notes.
+- **Fresh Timing Sample:** Retry Processing resets the processing timers and records a new timing sample that can contribute to future ETA calculations.
 - **Title Inference:** The meeting title may be inferred again during the new processing run.
 
 ### Speaker Management
@@ -105,6 +118,9 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 - **LLM-Powered Notes:**
   - Generates summaries, action items, and key takeaways.
   - **Comprehensive Notes:** Includes Topics, Summary, Detailed Notes, Action Items.
+  - **User Note Context:** Manual notes captured during recording/processing are passed into note generation as supporting context.
+  - **User Note Attribution:** Final notes append a `User Notes` section and label each carried-forward point as user-authored.
+- **Speaker Inference Support:** Manual notes are also used as supporting context when the LLM infers speaker names or roles.
 - **Chat Q&A:**
   - "Chat with your meeting" feature allows users to ask questions about specific recordings.
   - The AI is context-aware of uploaded documents and can answer questions based on their content.
@@ -124,6 +140,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
   - **Center Panel:** Transcript and Meeting Notes.
   - **Speaker Panel:** List of identified speakers.
   - **Chat Sidebar:** "Chat with Meeting" functionality.
+- **Processing View:** Uploading, queued, and processing meetings render a dedicated status experience with progress, ETA messaging, recording length, live waveform monitoring, and inline manual notes.
 - **Player:** HTML5 audio player with waveform visualization.
 - **Synced Transcript:** Clicking text seeks audio. Text highlights during playback.
 - **Edit Mode:** Correct transcript text and speaker assignments in the browser.

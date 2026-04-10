@@ -110,6 +110,7 @@ export interface Transcript extends BaseDBModel {
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
+  user_notes?: string | null;
   notes_status?: string; // pending, generating, completed, error
   transcript_status?: string; // pending, processing, completed, error
   error_message?: string;
@@ -133,6 +134,9 @@ export interface Recording extends BaseDBModel {
   upload_progress?: number;
   processing_progress?: number;
   processing_step?: string;
+  processing_eta_seconds?: number | null;
+  processing_eta_learning?: boolean;
+  processing_eta_sample_size?: number;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

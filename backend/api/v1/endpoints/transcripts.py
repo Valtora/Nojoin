@@ -78,6 +78,10 @@ class TranscriptSegmentsUpdate(BaseModel):
 class NotesUpdate(BaseModel):
     notes: str
 
+
+class UserNotesUpdate(BaseModel):
+    user_notes: str
+
 class ChatRequest(BaseModel):
     message: str
     tag_ids: Optional[List[int]] = None
@@ -913,6 +917,55 @@ async def get_notes(
         raise HTTPException(status_code=404, detail="Transcript not found")
     
     return {"notes": transcript.notes}
+
+
+@router.get("/{recording_id}/user-notes")
+async def get_user_notes(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the user-authored processing notes for a recording.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+
+    return {"user_notes": transcript.user_notes if transcript else None}
+
+
+@router.put("/{recording_id}/user-notes")
+async def update_user_notes(
+    recording_id: int,
+    update: UserNotesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update the user-authored processing notes for a recording.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+
+    if not transcript:
+        transcript = Transcript(recording_id=recording_id)
+
+    transcript.user_notes = update.user_notes.strip() or None
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
+
+    return {"user_notes": transcript.user_notes, "status": "success"}
 
 @router.put("/{recording_id}/notes")
 async def update_notes(

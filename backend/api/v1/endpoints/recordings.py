@@ -25,6 +25,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
+from backend.utils.processing_eta import estimate_processing_eta
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,6 +42,15 @@ os.makedirs(FAILED_DIR, exist_ok=True)
 
 async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) -> None:
     """Delete generated meeting artefacts while preserving recording metadata and documents."""
+    preserved_user_notes: Optional[str] = None
+
+    transcript_result = await db.execute(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    )
+    existing_transcript = transcript_result.scalar_one_or_none()
+    if existing_transcript:
+        preserved_user_notes = existing_transcript.user_notes
+
     await db.execute(
         delete(ChatMessage).where(ChatMessage.recording_id == recording_id)
     )
@@ -52,9 +62,12 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     await db.execute(
         delete(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
     )
-    await db.execute(
-        delete(Transcript).where(Transcript.recording_id == recording_id)
-    )
+    if existing_transcript:
+        await db.delete(existing_transcript)
+        await db.flush()
+
+    if preserved_user_notes:
+        db.add(Transcript(recording_id=recording_id, user_notes=preserved_user_notes))
 
 def get_ordinal_suffix(day: int) -> str:
     if 11 <= day <= 13:
@@ -356,6 +369,8 @@ async def finalize_upload(
     file_stats = os.stat(recording.audio_path)
     recording.file_size_bytes = file_stats.st_size
     recording.status = RecordingStatus.QUEUED
+    recording.processing_started_at = None
+    recording.processing_completed_at = None
     
     db.add(recording)
     await db.commit()
@@ -850,6 +865,41 @@ async def get_recording(
     # Transform tags for response model
     recording_dict = recording.model_dump()
     recording_dict['has_proxy'] = bool(recording.proxy_path and os.path.exists(recording.proxy_path))
+    recording_dict['processing_eta_seconds'] = None
+    recording_dict['processing_eta_learning'] = False
+    recording_dict['processing_eta_sample_size'] = 0
+
+    if (
+        recording.status == RecordingStatus.PROCESSING
+        and recording.processing_started_at is not None
+        and recording.processing_completed_at is None
+    ):
+        eta_statement = (
+            select(
+                Recording.processing_started_at,
+                Recording.processing_completed_at,
+                Recording.duration_seconds,
+            )
+            .where(Recording.id != recording.id)
+            .where(Recording.status == RecordingStatus.PROCESSED)
+            .where(Recording.processing_started_at.is_not(None))
+            .where(Recording.processing_completed_at.is_not(None))
+            .where(Recording.duration_seconds.is_not(None))
+        )
+        eta_result = await db.execute(eta_statement)
+        history_samples = [
+            (started_at, completed_at, duration_seconds)
+            for started_at, completed_at, duration_seconds in eta_result.all()
+        ]
+        eta_estimate = estimate_processing_eta(
+            history_samples,
+            recording.duration_seconds,
+            recording.processing_started_at,
+            now=datetime.utcnow(),
+        )
+        recording_dict['processing_eta_seconds'] = eta_estimate.eta_seconds
+        recording_dict['processing_eta_learning'] = eta_estimate.learning
+        recording_dict['processing_eta_sample_size'] = eta_estimate.sample_size
     
     # Manually populate relationships
     if recording.transcript:
@@ -1103,6 +1153,8 @@ async def retry_processing(
     recording.status = RecordingStatus.QUEUED
     recording.processing_progress = 0
     recording.processing_step = "Queued for processing..."
+    recording.processing_started_at = None
+    recording.processing_completed_at = None
     recording.celery_task_id = None
     db.add(recording)
     await db.commit()
@@ -1307,6 +1359,8 @@ async def cancel_processing(
     recording.status = RecordingStatus.CANCELLED
     recording.processing_step = "Cancelled by user"
     recording.processing_progress = 0
+    recording.processing_started_at = None
+    recording.processing_completed_at = None
     
     db.add(recording)
     await db.commit()

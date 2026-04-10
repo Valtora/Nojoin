@@ -117,8 +117,11 @@ Nojoin relies on GPU acceleration for efficient audio transcription and speaker 
   - **Local-First Transcription:** Uses OpenAI's Whisper (default Turbo) for accurate, private transcription.
   - **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote.
   - **System Audio Capture:** Captures both system audio out and microphone input.
+  - **Live Recording Telemetry:** The in-progress recording page shows calibrated live system and microphone levels via the Companion's local metering endpoint.
 - **Meeting Intelligence:**
   - **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, Google Gemini, or Ollama.
+  - **Manual Processing Notes:** Capture notes while a meeting records or processes; Nojoin feeds them into speaker inference and note generation, then surfaces them as user-authored items in the final notes.
+  - **Processing ETA:** New processing runs persist timing data and use it to estimate time remaining once enough history exists on that installation.
   - **Chat Q&A:** "Chat with your meeting" to ask specific questions about the content or make edits to notes.
   - **Documents:** Upload documents to be processed by the LLM.
   - **Cross-Meeting Context:** Select tags to include meetings, notes, and documents from across all meetings with the same tag(s).

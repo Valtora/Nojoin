@@ -27,6 +27,7 @@ from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADN
 from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
+from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
 from backend.utils.status_manager import update_recording_status
 from backend.processing.text_embedding import get_text_embedding_service
 
@@ -128,6 +129,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     try:
         recording.status = RecordingStatus.PROCESSING
         recording.processing_progress = 20
+        if recording.processing_started_at is None or recording.processing_completed_at is not None:
+            recording.processing_started_at = datetime.utcnow()
+        recording.processing_completed_at = None
         session.add(recording)
         session.commit()
         session.refresh(recording)
@@ -212,6 +216,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
                 recording.status = RecordingStatus.PROCESSED
                 recording.processing_step = "Completed (No speech detected)"
+                recording.processing_completed_at = datetime.utcnow()
                 
                 # Create empty transcript
                 transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
@@ -337,6 +342,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         llm_api_key = merged_config.get(f"{llm_provider}_api_key")
         llm_model = merged_config.get(f"{llm_provider}_model")
         auto_infer_speakers = merged_config.get("auto_infer_speakers", True)
+        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
         
         if llm_api_key and llm_model and auto_infer_speakers:
             try:
@@ -364,7 +370,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 
                 # Get backend and run inference
                 backend = get_llm_backend(llm_provider, api_key=llm_api_key, model=llm_model)
-                inferred_mapping = backend.infer_speakers(transcript_for_llm, timeout=300)
+                inferred_mapping = backend.infer_speakers(
+                    transcript_for_llm,
+                    timeout=300,
+                    user_notes=transcript.user_notes if transcript else None,
+                )
                 logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
                 
             except Exception as e:
@@ -376,8 +386,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.info("LLM not available (missing key or model in merged config), skipping speaker inference.")
 
         # Create or Update Transcript Record
-        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
-        
         # Handle case where transcription_result is None (e.g. due to error)
         full_text = transcription_result.get('text', '') if transcription_result else ''
         
@@ -710,6 +718,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 model = merged_config.get(f"{provider}_model")
                 
                 if api_key:
+                    session.refresh(transcript)
                     transcript.notes_status = "generating"
                     session.add(transcript)
                     session.commit()
@@ -718,7 +727,12 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     llm = get_llm_backend(provider, api_key=api_key, model=model)
                     # Passes an empty mapping because names are already resolved in transcript_text.
                     # Use a generous timeout (300s) for meeting notes generation as it can be slow
-                    notes = llm.generate_meeting_notes(transcript_text, {}, timeout=300)
+                    notes = llm.generate_meeting_notes(
+                        transcript_text,
+                        {},
+                        timeout=300,
+                        user_notes=transcript.user_notes,
+                    )
                     transcript.notes = notes
                     transcript.notes_status = "completed"
                     session.add(transcript)
@@ -739,6 +753,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         # Update Recording Status
         recording.processing_step = "Completed"
         recording.processing_progress = 100
+        recording.processing_completed_at = datetime.utcnow()
         session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)
@@ -769,6 +784,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         if recording:
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Error: {str(e)}"
+            recording.processing_completed_at = None
             session.add(recording)
             session.commit()
             update_recording_status(session, recording.id)
@@ -779,6 +795,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         if recording:
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"System Error: {str(e)}"
+            recording.processing_completed_at = None
             session.add(recording)
             session.commit()
             update_recording_status(session, recording.id)
@@ -1054,6 +1071,7 @@ def generate_notes_task(self, recording_id: int):
         # Update status
         transcript.notes_status = "generating"
         recording.processing_step = "Generating meeting notes..."
+        recording.processing_progress = 97
         session.add(transcript)
         session.add(recording)
         session.commit()
@@ -1110,20 +1128,16 @@ def generate_notes_task(self, recording_id: int):
 
         # Build Speaker Map and Transcript Text
         speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
-        speaker_map = {s.diarization_label: s.name for s in speakers}
-
-        # Render transcript text for LLM
-        lines = []
-        for seg in transcript.segments:
-            speaker_label = seg.get('speaker', 'Unknown')
-            speaker_name = speaker_map.get(speaker_label, speaker_label)
-            text = seg.get('text', '')
-            lines.append(f"{speaker_name}: {text}")
-        transcript_text = "\n".join(lines)
+        speaker_map = build_recording_speaker_map(speakers)
+        transcript_text = format_segments_for_llm(transcript.segments, speaker_map)
 
         # Call LLM Service
         llm = get_llm_backend(provider, api_key=api_key, model=model)
-        notes = llm.generate_meeting_notes(transcript_text, speaker_map)
+        notes = llm.generate_meeting_notes(
+            transcript_text,
+            speaker_map,
+            user_notes=transcript.user_notes,
+        )
 
         # Save Notes
         transcript.notes = notes
@@ -1275,7 +1289,10 @@ def infer_speakers_task(self, recording_id: int):
 
         # Run inference
         backend = get_llm_backend(provider, api_key=api_key, model=model)
-        inferred_mapping = backend.infer_speakers(transcript_for_llm)
+        inferred_mapping = backend.infer_speakers(
+            transcript_for_llm,
+            user_notes=transcript.user_notes,
+        )
         logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
 
         # Update speakers in DB

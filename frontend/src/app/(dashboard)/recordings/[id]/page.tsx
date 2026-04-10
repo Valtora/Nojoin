@@ -12,6 +12,7 @@ import {
   updateSpeakerColor,
   generateNotes,
   updateNotes,
+  updateUserNotes,
   exportContent,
   exportAudio,
   ExportContentType,
@@ -23,15 +24,15 @@ import SpeakerPanel from "@/components/SpeakerPanel";
 import TranscriptView from "@/components/TranscriptView";
 import NotesView from "@/components/NotesView";
 import DocumentsView from "@/components/DocumentsView";
+import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import Link from "next/link";
-import { Loader2, Edit2, MessageSquare, X, Pause } from "lucide-react";
+import { Edit2, MessageSquare, X } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
   RecordingStatus,
-  ClientStatus,
   TranscriptSegment,
   GlobalSpeaker,
   RecordingSpeaker,
@@ -42,33 +43,11 @@ import { COLOR_PALETTE } from "@/lib/constants";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import {
   buildGlobalSpeakerById,
   getRecordingSpeakerDisplayName,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
-
-const getStatusMessage = (recording: Recording) => {
-  if (recording.status === RecordingStatus.UPLOADING) {
-    if (recording.client_status === ClientStatus.RECORDING)
-      return "Meeting is in progress...";
-    if (recording.client_status === ClientStatus.PAUSED)
-      return "Meeting recording is paused...";
-    if (recording.client_status === ClientStatus.UPLOADING) {
-      return "Meeting is being uploaded...";
-    }
-    // Fallback for when client_status is not yet set or is IDLE but status is UPLOADING
-    return "Meeting is in progress...";
-  }
-  if (recording.status === RecordingStatus.QUEUED) {
-    return "Meeting is in queue to be processed...";
-  }
-  if (recording.status === RecordingStatus.PROCESSING) {
-    return recording.processing_step || "Processing...";
-  }
-  return "";
-};
 
 const isDemoRecording = (recording: Recording) =>
   recording.name === "Welcome to Nojoin";
@@ -88,16 +67,6 @@ const shouldPollRecordingUpdates = (recording: Recording) => {
   );
 };
 
-const formatTime = (seconds: number) => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
 const getAutoSpeakerReplacementName = (speakerName: string) => {
   const trimmedName = speakerName.trim();
   const nameParts = trimmedName.split(/\s+/).filter(Boolean);
@@ -108,40 +77,6 @@ const getAutoSpeakerReplacementName = (speakerName: string) => {
 
   return trimmedName;
 };
-
-function RecordingTimer() {
-  const { companionStatus, recordingDuration } = useServiceStatusStore();
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (recordingDuration > 0) {
-      setElapsedTime(recordingDuration);
-    }
-  }, [recordingDuration]);
-
-  useEffect(() => {
-    if (companionStatus === 'recording') {
-      timerRef.current = setInterval(() => {
-        setElapsedTime(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [companionStatus]);
-
-  return (
-    <span className="text-red-500 font-mono text-xl mt-2 block w-full text-center">
-      {formatTime(elapsedTime)}
-    </span>
-  );
-}
 
 export const dynamic = "force-dynamic";
 
@@ -268,9 +203,13 @@ export default function RecordingPage({ params }: PageProps) {
           data.processing_step !== recording.processing_step ||
           data.upload_progress !== recording.upload_progress ||
           data.processing_progress !== recording.processing_progress ||
+          data.processing_eta_seconds !== recording.processing_eta_seconds ||
+          data.processing_eta_learning !== recording.processing_eta_learning ||
+          data.processing_eta_sample_size !== recording.processing_eta_sample_size ||
           data.has_proxy !== recording.has_proxy ||
           data.transcript?.notes_status !== recording.transcript?.notes_status ||
           data.transcript?.notes !== recording.transcript?.notes ||
+          data.transcript?.user_notes !== recording.transcript?.user_notes ||
           JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
         ) {
           setRecording(data);
@@ -789,6 +728,12 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
+  const handleProcessingNotesChange = useCallback(async (notes: string) => {
+    if (!recording?.id) return;
+
+    await updateUserNotes(recording.id, notes);
+  }, [recording?.id]);
+
   const handleExport = async (
     contentType: ExportContentType,
     format: ExportFormat,
@@ -1051,55 +996,10 @@ export default function RecordingPage({ params }: PageProps) {
         {recording.status === RecordingStatus.UPLOADING ||
         recording.status === RecordingStatus.PROCESSING ||
         recording.status === RecordingStatus.QUEUED ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center justify-center space-y-4 px-4">
-              {recording.status === RecordingStatus.UPLOADING && recording.client_status === ClientStatus.PAUSED ? (
-                <Pause className="w-12 h-12 text-orange-500" />
-              ) : (
-                <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
-              )}
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white text-center">
-                {recording.status === RecordingStatus.UPLOADING
-                  ? recording.client_status === ClientStatus.UPLOADING
-                    ? "Finalizing Upload"
-                    : recording.client_status === ClientStatus.PAUSED
-                      ? "Meeting recording is paused..."
-                      : "Meeting is in progress..."
-                  : recording.status === RecordingStatus.QUEUED
-                    ? "Queued for Processing"
-                    : "Processing Recording..."}
-              </h2>
-
-              {recording.status === RecordingStatus.UPLOADING && recording.client_status !== ClientStatus.UPLOADING && (
-                <RecordingTimer />
-              )}
-
-              {/* Show detailed status text only for QUEUED/PROCESSING; hide during active recording to avoid duplicate text */}
-              {(recording.status === RecordingStatus.QUEUED ||
-                recording.status === RecordingStatus.PROCESSING) && (
-                <p className="text-gray-500 dark:text-gray-400 text-center">
-                  {getStatusMessage(recording)}
-                </p>
-              )}
-
-              {/* Combined Progress Bar: hidden while meeting is in-progress (recording), shown for finalizing upload, queued, or processing */}
-              {((recording.status === RecordingStatus.UPLOADING &&
-                recording.client_status === ClientStatus.UPLOADING) ||
-                recording.status === RecordingStatus.QUEUED ||
-                recording.status === RecordingStatus.PROCESSING) && (
-                <div className="w-full max-w-md mt-4">
-                  <div className="relative w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ease-out ${recording.status === RecordingStatus.QUEUED ? "bg-orange-400 animate-pulse" : "bg-orange-500"}`}
-                      style={{
-                        width: `${recording.status === RecordingStatus.UPLOADING ? recording.upload_progress || 0 : Math.max(20, recording.processing_progress || 20)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <RecordingStatusDisplay
+            recording={recording}
+            onSaveProcessingNotes={handleProcessingNotesChange}
+          />
         ) : isMobile ? (
           <div className="h-full flex-1 flex flex-col min-w-0 relative">
             {renderMainContent()}

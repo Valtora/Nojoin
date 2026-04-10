@@ -530,6 +530,26 @@ export const updateNotes = async (
   return response.data;
 };
 
+export const getUserNotes = async (
+  recordingId: number,
+): Promise<{ user_notes: string | null }> => {
+  const response = await api.get<{ user_notes: string | null }>(
+    `/transcripts/${recordingId}/user-notes`,
+  );
+  return response.data;
+};
+
+export const updateUserNotes = async (
+  recordingId: number,
+  userNotes: string,
+): Promise<{ user_notes: string | null; status: string }> => {
+  const response = await api.put<{ user_notes: string | null; status: string }>(
+    `/transcripts/${recordingId}/user-notes`,
+    { user_notes: userNotes },
+  );
+  return response.data;
+};
+
 export const generateNotes = async (
   recordingId: number,
 ): Promise<{ notes: string; status: string }> => {

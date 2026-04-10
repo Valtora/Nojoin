@@ -68,6 +68,7 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         .route("/config", get(get_config).post(update_config))
         .route("/devices", get(get_devices))
         .route("/levels", get(get_audio_levels))
+        .route("/levels/live", get(get_live_audio_levels))
         .route("/start", post(start_recording))
         .route("/stop", post(stop_recording))
         .route("/pause", post(pause_recording))
@@ -371,6 +372,31 @@ async fn get_audio_levels(
     Ok(Json(AudioLevelsResponse {
         input_level: state.take_input_level(),
         output_level: state.take_output_level(),
+        is_recording,
+    }))
+}
+
+async fn get_live_audio_levels(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<AudioLevelsResponse>, StatusCode> {
+    let state = &context.state;
+
+    let is_allowed = {
+        let config = state.config.lock().unwrap();
+        is_allowed_origin(headers.get("origin"), &config)
+    };
+
+    if !is_allowed {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let status = state.status.lock().unwrap().clone();
+    let is_recording = matches!(status, AppStatus::Recording | AppStatus::Paused);
+
+    Ok(Json(AudioLevelsResponse {
+        input_level: state.peek_live_input_level(),
+        output_level: state.peek_live_output_level(),
         is_recording,
     }))
 }

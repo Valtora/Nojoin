@@ -254,6 +254,8 @@ fn main() {
                 accumulated_duration: Mutex::new(Duration::new(0, 0)),
                 input_level: AtomicU32::new(0),
                 output_level: AtomicU32::new(0),
+                live_input_level: AtomicU32::new(0),
+                live_output_level: AtomicU32::new(0),
                 web_url: Mutex::new(None),
                 is_backend_connected: AtomicBool::new(false),
                 update_available: AtomicBool::new(false),

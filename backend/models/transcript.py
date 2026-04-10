@@ -15,6 +15,7 @@ class Transcript(BaseDBModel, table=True):
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSONB))
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    user_notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     notes_status: str = Field(default="pending") # pending, generating, completed, error
     transcript_status: str = Field(default="pending") # pending, processing, completed, error
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))

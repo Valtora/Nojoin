@@ -30,7 +30,7 @@ class ClientStatus(str, Enum):
     IDLE = "IDLE"
 
 class Recording(BaseDBModel, table=True):
-    __tablename__ = "recordings"
+    __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
     audio_path: str = Field(unique=True, index=True)
@@ -43,6 +43,8 @@ class Recording(BaseDBModel, table=True):
     upload_progress: int = Field(default=0)
     processing_progress: int = Field(default=0)
     processing_step: Optional[str] = Field(default=None)
+    processing_started_at: Optional[datetime] = None
+    processing_completed_at: Optional[datetime] = None
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     
@@ -74,6 +76,7 @@ class TranscriptRead(BaseDBModel):
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = []
     notes: Optional[str] = None
+    user_notes: Optional[str] = None
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -93,6 +96,9 @@ class RecordingRead(BaseDBModel):
     upload_progress: int = 0
     processing_progress: int = 0
     processing_step: Optional[str] = None
+    processing_eta_seconds: Optional[int] = None
+    processing_eta_learning: bool = False
+    processing_eta_sample_size: int = 0
     is_archived: bool = False
     is_deleted: bool = False
     
