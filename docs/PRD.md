@@ -39,7 +39,9 @@ The primary user interface for interacting with the system.
 - **Framework:** Next.js (React) with TypeScript.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
-- **Dashboard Iteration One:** The root route now serves as a first-pass operational dashboard with quick capture controls, recent-meeting access, service-health status, and clear routing into the recordings workspace.
+- **Dashboard Iteration Two:** The root route now serves as an operational dashboard with `Meet Now` capture controls, recent-meeting access, an interactive calendar shell, an inline personal to-do list, and clear routing into the recordings workspace.
+  - **Calendar Shell:** Users can browse prior and future months and switch between Month and Agenda modes. Until a real calendar integration is connected, the dashboard shows honest empty states rather than mock events.
+  - **Task Capture:** The to-do list is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, and post-creation date-only deadlines.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
   - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
@@ -160,8 +162,10 @@ The system provides the following core capabilities:
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
   - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
-- **Dashboard Foundation:** The first dashboard iteration intentionally focuses on navigation, capture, status, and recent-work visibility rather than full planning workflows.
-  - **Planned Expansion:** Future iterations are expected to add calendar integrations, agenda-centric views, and to-do management derived from meeting outcomes and action items.
+- **Dashboard Workspace:** The dashboard now combines `Meet Now`, recent meetings, an interactive calendar shell, and personal task capture into a single operational home surface.
+  - **Calendar Modes:** Month navigation and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
+  - **Task Flow:** Tasks are created inline from the dashboard. Optional deadlines are added afterwards and are currently date-only.
+  - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
 - **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.

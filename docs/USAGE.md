@@ -8,7 +8,7 @@ This guide outlines the steps to initialize and utilize the Nojoin platform.
 
 1. **Install/Run Companion App:** Ensure the Nojoin Companion App is running in the system tray. This is required for audio capture.
 2. **Verify Connection:** Open the Web Client. The status indicator in the bottom left should display "Connected".
-3. **Dashboard Landing:** The root route now opens the first dashboard iteration, which surfaces quick capture controls, recent meetings, and platform-health status.
+3. **Dashboard Landing:** The root route now opens the dashboard home surface, which includes `Meet Now`, recent meetings, an interactive calendar shell, and a personal to-do list.
 4. **Make a Test Recording:**
    - Click the **Record** button (microphone icon) in the sidebar.
    - Speak a few words.
@@ -137,10 +137,12 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 ### Web Playback & Transcript Interface
 
 - **Dashboard:**
-  - **Iteration One:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
-  - **Quick Capture:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
+  - **Current Dashboard:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
+  - **Meet Now:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
+  - **Calendar:** Includes interactive month browsing plus an Agenda toggle. If no calendar is connected, both views show an empty-state notice instead of fabricated events.
+  - **To-Do List:** Personal tasks can be captured inline from the dashboard. Press `Enter` to save a new task, `Escape` to cancel input, and add an optional deadline afterwards. Current deadlines are date-only.
   - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
-  - **Future Direction:** This is intentionally the first iteration. Future dashboard work is expected to add more useful operational elements such as calendar integrations, agenda views, and to-do lists derived from meeting outputs.
+  - **Future Direction:** Future dashboard work is expected to connect real calendar data and derive richer agenda/task automation from meeting outputs.
 - **Recordings Workspace:**
   - **Dedicated Route:** `/recordings` now acts as the entry point for the recordings library and filtering workspace.
   - **Route Split:** The main navigation now separates `Dashboard` from `Recordings`, while selected meetings continue to open under `/recordings/{id}`.
