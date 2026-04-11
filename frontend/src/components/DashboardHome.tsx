@@ -182,9 +182,14 @@ export default function DashboardHome() {
 
         <div className="xl:col-start-1 xl:row-start-2 rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
-              Recent Meetings
-            </h2>
+            <div className="mt-2 flex items-start gap-3">
+              <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+                <Clock className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+                Recent Meetings
+              </h2>
+            </div>
             <Link
               href="/recordings"
               className="inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"

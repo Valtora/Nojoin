@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -11,13 +11,13 @@ def make_task(
     task_id: int,
     title: str,
     created_at: datetime,
-    due_on: date | None = None,
+    due_at: datetime | None = None,
     completed_at: datetime | None = None,
 ):
     return SimpleNamespace(
         id=task_id,
         title=title,
-        due_on=due_on,
+        due_at=due_at,
         completed_at=completed_at,
         created_at=created_at,
     )
@@ -46,13 +46,13 @@ def test_sort_user_tasks_orders_open_then_completed():
             task_id=2,
             title="Due later",
             created_at=now - timedelta(hours=2),
-            due_on=date(2026, 4, 13),
+            due_at=datetime(2026, 4, 12, 15, 0, 0),
         ),
         make_task(
             task_id=3,
             title="Due first",
             created_at=now - timedelta(hours=3),
-            due_on=date(2026, 4, 12),
+            due_at=datetime(2026, 4, 12, 9, 0, 0),
         ),
         make_task(
             task_id=4,

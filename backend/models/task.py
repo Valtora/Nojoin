@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey
@@ -11,7 +11,7 @@ class UserTask(BaseDBModel, table=True):
     __tablename__ = "user_tasks"
 
     title: str = Field(max_length=255)
-    due_on: Optional[date] = None
+    due_at: Optional[datetime] = None
     completed_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime, nullable=True, index=True),
@@ -28,16 +28,16 @@ class UserTask(BaseDBModel, table=True):
 
 class UserTaskCreate(SQLModel):
     title: str = Field(min_length=1, max_length=255)
-    due_on: Optional[date] = None
+    due_at: Optional[datetime] = None
 
 
 class UserTaskUpdate(SQLModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    due_on: Optional[date] = None
+    due_at: Optional[datetime] = None
     completed: Optional[bool] = None
 
 
 class UserTaskRead(BaseDBModel):
     title: str
-    due_on: Optional[date] = None
+    due_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

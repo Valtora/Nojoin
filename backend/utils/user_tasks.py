@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Sequence, TypeVar
 
 TaskItem = TypeVar("TaskItem")
@@ -16,8 +16,8 @@ def sort_tasks_for_dashboard(tasks: Sequence[TaskItem]) -> list[TaskItem]:
     completed_tasks = [task for task in tasks if getattr(task, "completed_at", None) is not None]
 
     active_tasks.sort(key=lambda task: getattr(task, "created_at"), reverse=True)
-    active_tasks.sort(key=lambda task: getattr(task, "due_on") or date.max)
-    active_tasks.sort(key=lambda task: getattr(task, "due_on") is None)
+    active_tasks.sort(key=lambda task: getattr(task, "due_at") or datetime.max)
+    active_tasks.sort(key=lambda task: getattr(task, "due_at") is None)
 
     completed_tasks.sort(
         key=lambda task: getattr(task, "completed_at") or datetime.min,

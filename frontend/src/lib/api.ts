@@ -170,7 +170,7 @@ export const getUserTasks = async (): Promise<UserTask[]> => {
 
 export const createUserTask = async (data: {
   title: string;
-  due_on?: string | null;
+  due_at?: string | null;
 }): Promise<UserTask> => {
   const response = await api.post<UserTask>("/tasks/", data);
   return response.data;
@@ -180,7 +180,7 @@ export const updateUserTask = async (
   taskId: number,
   data: {
     title?: string;
-    due_on?: string | null;
+    due_at?: string | null;
     completed?: boolean;
   },
 ): Promise<UserTask> => {

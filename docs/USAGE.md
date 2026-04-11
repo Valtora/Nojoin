@@ -8,7 +8,7 @@ This guide outlines the steps to initialize and utilize the Nojoin platform.
 
 1. **Install/Run Companion App:** Ensure the Nojoin Companion App is running in the system tray. This is required for audio capture.
 2. **Verify Connection:** Open the Web Client. The status indicator in the bottom left should display "Connected".
-3. **Dashboard Landing:** The root route now opens the dashboard home surface, which includes `Meet Now`, recent meetings, an interactive calendar shell, and a personal to-do list.
+3. **Dashboard Landing:** The root route now opens the dashboard home surface, which includes `Meet Now`, recent meetings, an interactive calendar shell, and a personal to-do list. Each individual to-do item is referred to as a `Task Card`.
 4. **Make a Test Recording:**
    - Click the **Record** button (microphone icon) in the sidebar.
    - Speak a few words.
@@ -140,7 +140,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
   - **Current Dashboard:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
   - **Meet Now:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
   - **Calendar:** Includes interactive month browsing plus an Agenda toggle. If no calendar is connected, both views show an empty-state notice instead of fabricated events.
-  - **To-Do List:** Personal tasks can be captured inline from the dashboard. Press `Enter` to save a new task, `Escape` to cancel input, and add an optional deadline afterwards. Current deadlines are date-only.
+  - **To-Do List:** Personal tasks appear as Task Cards. Press `Enter` to save a new Task Card, `Escape` to cancel input, double-click a Task Card title to edit it, and confirm edits with `Enter` or by clicking outside. Optional deadlines support both date and time, and active Task Cards show a live time-remaining badge beside the deadline picker. The badge prefers days for deadlines at least 24 hours away and otherwise shows whole hours remaining.
   - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
   - **Future Direction:** Future dashboard work is expected to connect real calendar data and derive richer agenda/task automation from meeting outputs.
 - **Recordings Workspace:**

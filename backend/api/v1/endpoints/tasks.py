@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,7 +59,7 @@ async def create_task(
 ):
     task = UserTask(
         title=_normalise_task_title(task_in.title),
-        due_on=task_in.due_on,
+        due_at=task_in.due_at,
         user_id=current_user.id,
     )
     db.add(task)
@@ -82,8 +82,8 @@ async def update_task(
             raise HTTPException(status_code=400, detail="Task title cannot be empty")
         task.title = _normalise_task_title(task_update.title)
 
-    if "due_on" in task_update.model_fields_set:
-        task.due_on = task_update.due_on
+    if "due_at" in task_update.model_fields_set:
+        task.due_at = task_update.due_at
 
     if "completed" in task_update.model_fields_set:
         if task_update.completed:

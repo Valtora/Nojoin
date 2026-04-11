@@ -125,7 +125,7 @@ export interface Tag extends BaseDBModel {
 
 export interface UserTask extends BaseDBModel {
   title: string;
-  due_on?: string | null;
+  due_at?: string | null;
   completed_at?: string | null;
 }
 
