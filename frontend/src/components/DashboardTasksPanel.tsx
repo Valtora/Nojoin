@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isBefore, isToday, startOfToday } from "date-fns";
-import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Check, Loader2, Trash2 } from "lucide-react";
 
 import {
   createUserTask,
@@ -98,7 +98,6 @@ export default function DashboardTasksPanel() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
-  const [dueOn, setDueOn] = useState<Date | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { addNotification } = useNotificationStore();
 
@@ -148,7 +147,6 @@ export default function DashboardTasksPanel() {
   const handleCloseComposer = () => {
     setIsComposerOpen(false);
     setTitle("");
-    setDueOn(null);
     setError(null);
   };
 
@@ -167,18 +165,25 @@ export default function DashboardTasksPanel() {
     try {
       const createdTask = await createUserTask({
         title: trimmedTitle,
-        due_on: dueOn ? toDateOnlyString(dueOn) : null,
       });
 
       setTasks((currentTasks) => sortTasks([...currentTasks, createdTask]));
       setTitle("");
-      setDueOn(null);
       setIsComposerOpen(false);
       addNotification({ message: "Task added.", type: "success" });
     } catch (createError: any) {
       setError(createError.response?.data?.detail || "Failed to add task.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleComposerKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      handleCloseComposer();
     }
   };
 
@@ -230,104 +235,87 @@ export default function DashboardTasksPanel() {
     }
   };
 
+  const handleAssignDeadline = async (taskId: number, dueDate: Date | null) => {
+    if (!dueDate) {
+      return;
+    }
+
+    setBusyTaskId(taskId);
+    setError(null);
+
+    try {
+      const updatedTask = await updateUserTask(taskId, {
+        due_on: toDateOnlyString(dueDate),
+      });
+
+      setTasks((currentTasks) =>
+        sortTasks(
+          currentTasks.map((currentTask) =>
+            currentTask.id === updatedTask.id ? updatedTask : currentTask,
+          ),
+        ),
+      );
+      addNotification({ message: "Deadline added.", type: "success" });
+    } catch (deadlineError: any) {
+      addNotification({
+        message:
+          deadlineError.response?.data?.detail || "Failed to save deadline.",
+        type: "error",
+      });
+    } finally {
+      setBusyTaskId(null);
+    }
+  };
+
   return (
     <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
-            To-Do List
-          </h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-              {openTasks.length} open
+      <div className="space-y-2">
+        <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+          To-Do List
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+            {openTasks.length} open
+          </span>
+          {completedTasks.length > 0 && (
+            <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+              {completedTasks.length} completed
             </span>
-            {completedTasks.length > 0 && (
-              <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-                {completedTasks.length} completed
-              </span>
-            )}
-          </div>
+          )}
         </div>
-
-        {!isComposerOpen && (
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setIsComposerOpen(true);
-            }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add a task
-          </button>
-        )}
       </div>
 
-      {isComposerOpen && (
+      {isComposerOpen ? (
         <form
           onSubmit={handleCreateTask}
-          className="mt-6 rounded-[1.75rem] border border-orange-200/70 bg-gradient-to-br from-white via-orange-50/70 to-orange-100/50 p-4 shadow-lg shadow-orange-950/5 dark:border-orange-500/20 dark:from-gray-900/90 dark:via-gray-900/80 dark:to-orange-500/10"
+          className="relative mt-6"
         >
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
-            <div className="min-w-0 flex-1">
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Task title"
-                disabled={submitting}
-                className="h-11 w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-white/10 dark:bg-gray-950/70 dark:text-gray-100"
-              />
-            </div>
+          <input
+            ref={titleInputRef}
+            type="text"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Type a task and press Enter"
+            disabled={submitting}
+            className="h-12 w-full border-0 border-b border-orange-200 bg-transparent px-1 pr-10 text-base text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 dark:border-orange-500/20 dark:text-gray-100 dark:placeholder:text-gray-500"
+          />
 
-            <div className="w-full xl:max-w-[220px]">
-              <ModernDatePicker
-                selected={dueOn}
-                onChange={setDueOn}
-                dateFormat="dd MMM yyyy"
-                placeholderText="Deadline"
-              />
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2 xl:pt-0.5">
-              <button
-                type="button"
-                onClick={handleCloseComposer}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white/90 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-300 hover:text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:border-white/20"
-              >
-                <X className="h-4 w-4" />
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
-              >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                Save task
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-            <span>Deadline optional</span>
-            {dueOn && (
-              <button
-                type="button"
-                onClick={() => setDueOn(null)}
-                className="font-medium text-gray-500 transition-colors hover:text-orange-700 dark:text-gray-400 dark:hover:text-orange-300"
-              >
-                Clear deadline
-              </button>
-            )}
-          </div>
+          {submitting && (
+            <Loader2 className="pointer-events-none absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-orange-600 dark:text-orange-300" />
+          )}
         </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setIsComposerOpen(true);
+          }}
+          className="mt-6 w-full border-0 border-b border-white/10 px-1 py-3 text-left text-sm text-gray-400 transition-colors hover:border-orange-300 hover:text-gray-500 dark:text-gray-500 dark:hover:border-orange-500/30 dark:hover:text-gray-300"
+        >
+          Write a task...
+        </button>
       )}
 
       {error && (
@@ -380,6 +368,19 @@ export default function DashboardTasksPanel() {
                             >
                               {dueState.label}
                             </span>
+                          )}
+                          {!dueState && (
+                            <ModernDatePicker
+                              selected={null}
+                              onChange={(date) =>
+                                void handleAssignDeadline(task.id, date)
+                              }
+                              dateFormat="dd MMM yyyy"
+                              placeholderText="Add deadline"
+                              disabled={isBusy}
+                              className="w-auto"
+                              inputClassName="h-8 rounded-full border-dashed border-gray-200 bg-white/80 px-3 py-1 text-xs font-medium text-gray-500 shadow-none dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                            />
                           )}
                           <span className="inline-flex rounded-full bg-gray-950/[0.04] px-2.5 py-1 text-xs font-medium text-gray-500 dark:bg-white/5 dark:text-gray-400">
                             Added {format(new Date(task.created_at), "d MMM")}

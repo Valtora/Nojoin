@@ -13,6 +13,7 @@ interface ModernDatePickerProps extends Omit<DatePickerProps, 'onChange' | 'sele
   onChange: (date: Date | null) => void;
   label?: string;
   className?: string;
+  inputClassName?: string;
   placeholder?: string;
   error?: string;
 }
@@ -44,6 +45,7 @@ CustomInput.displayName = "CustomInput";
 export default function ModernDatePicker({
   label,
   className,
+  inputClassName,
   error,
   onChange,
   selected,
@@ -62,7 +64,7 @@ export default function ModernDatePicker({
         <DatePicker
           selected={selected}
           onChange={(date: any) => onChange(date)}
-          customInput={<CustomInput placeholder={placeholderText} />}
+          customInput={<CustomInput placeholder={placeholderText} className={inputClassName} />}
           wrapperClassName="w-full"
           calendarClassName="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-700 !font-sans !text-gray-900 dark:!text-gray-100 !rounded-lg !shadow-lg"
           dayClassName={(date) =>

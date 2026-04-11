@@ -164,17 +164,23 @@ export default function DashboardHome() {
 
   return (
     <AmbientWorkspace contentClassName="max-w-7xl gap-6">
-      <section className="grid gap-6 xl:grid-cols-2 xl:items-start">
-        <DashboardUpcomingMeetingsCard />
+      <section className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] xl:items-start">
+        <div className="xl:col-start-1 xl:row-start-1">
+          <DashboardUpcomingMeetingsCard />
+        </div>
 
-        <MeetingControls
-          variant="dashboard"
-          onMeetingEnd={() => {
-            window.dispatchEvent(new Event("recording-updated"));
-          }}
-        />
+        <div className="flex flex-col gap-6 xl:col-start-2 xl:row-start-1">
+          <MeetingControls
+            variant="dashboard"
+            onMeetingEnd={() => {
+              window.dispatchEvent(new Event("recording-updated"));
+            }}
+          />
 
-        <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+          <DashboardTasksPanel />
+        </div>
+
+        <div className="xl:col-start-1 xl:row-start-2 rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
               Recent Meetings
@@ -260,8 +266,6 @@ export default function DashboardHome() {
             )}
           </div>
         </div>
-
-        <DashboardTasksPanel />
       </section>
     </AmbientWorkspace>
   );
