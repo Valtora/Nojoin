@@ -178,6 +178,105 @@ export interface Settings {
   [key: string]: any;
 }
 
+export type CalendarProvider = "google" | "microsoft";
+
+export type CalendarSyncStatus =
+  | "idle"
+  | "syncing"
+  | "success"
+  | "error"
+  | "reauthorisation_required";
+
+export type CalendarDashboardState =
+  | "ready"
+  | "provider_not_configured"
+  | "no_accounts"
+  | "no_selected_calendars"
+  | "sync_in_progress"
+  | "no_events";
+
+export interface CalendarProviderStatus {
+  provider: CalendarProvider;
+  display_name: string;
+  configured: boolean;
+  source: string;
+  enabled: boolean;
+  client_id?: string | null;
+  tenant_id?: string | null;
+  has_client_secret: boolean;
+}
+
+export interface CalendarSource {
+  id: number;
+  provider_calendar_id: string;
+  name: string;
+  description?: string | null;
+  time_zone?: string | null;
+  colour?: string | null;
+  is_primary: boolean;
+  is_read_only: boolean;
+  is_selected: boolean;
+  last_synced_at?: string | null;
+}
+
+export interface CalendarConnection {
+  id: number;
+  provider: CalendarProvider;
+  email?: string | null;
+  display_name?: string | null;
+  sync_status: CalendarSyncStatus;
+  sync_error?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
+  last_synced_at?: string | null;
+  selected_calendar_count: number;
+  calendars: CalendarSource[];
+}
+
+export interface CalendarOverview {
+  providers: CalendarProviderStatus[];
+  connections: CalendarConnection[];
+}
+
+export interface CalendarProviderConfigUpdate {
+  client_id?: string | null;
+  client_secret?: string | null;
+  tenant_id?: string | null;
+  enabled?: boolean;
+  clear_client_secret?: boolean;
+}
+
+export interface CalendarDashboardDayCount {
+  date: string;
+  count: number;
+}
+
+export interface CalendarDashboardEvent {
+  id: number;
+  title: string;
+  provider: CalendarProvider;
+  calendar_name: string;
+  account_label?: string | null;
+  is_all_day: boolean;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
+export interface CalendarDashboardSummary {
+  month: string;
+  state: CalendarDashboardState;
+  provider_configured: boolean;
+  is_syncing: boolean;
+  connection_count: number;
+  selected_calendar_count: number;
+  last_synced_at?: string | null;
+  day_counts: CalendarDashboardDayCount[];
+  agenda_items: CalendarDashboardEvent[];
+  next_event?: CalendarDashboardEvent | null;
+}
+
 export interface ChatMessage extends BaseDBModel {
   recording_id: number;
   user_id: number;

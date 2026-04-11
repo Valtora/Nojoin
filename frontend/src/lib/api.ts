@@ -1,5 +1,11 @@
 import axios from "axios";
 import {
+  CalendarConnection,
+  CalendarDashboardSummary,
+  CalendarOverview,
+  CalendarProvider,
+  CalendarProviderConfigUpdate,
+  CalendarProviderStatus,
   Recording,
   GlobalSpeaker,
   Settings,
@@ -412,6 +418,85 @@ export const getSettings = async (): Promise<Settings> => {
 
 export const updateSettings = async (settings: Settings): Promise<Settings> => {
   const response = await api.post<Settings>("/settings", settings);
+  return response.data;
+};
+
+export const getCalendarOverview = async (): Promise<CalendarOverview> => {
+  const response = await api.get<CalendarOverview>("/calendar");
+  return response.data;
+};
+
+export const getCalendarDashboardSummary = async (
+  month: string,
+): Promise<CalendarDashboardSummary> => {
+  const response = await api.get<CalendarDashboardSummary>(
+    `/calendar/dashboard?month=${encodeURIComponent(month)}`,
+  );
+  return response.data;
+};
+
+export const startCalendarAuthorisation = async (
+  provider: CalendarProvider,
+): Promise<{ authorisation_url: string }> => {
+  const response = await api.post<{ authorisation_url: string }>(
+    `/calendar/oauth/${provider}/start`,
+  );
+  return response.data;
+};
+
+export const getCalendarAuthorisationStartUrl = (
+  provider: CalendarProvider,
+): string => {
+  const path = `${API_BASE_URL}/calendar/oauth/${provider}/start`;
+  if (typeof window === "undefined") {
+    return path;
+  }
+  return new URL(path, window.location.origin).toString();
+};
+
+export const updateCalendarSelection = async (
+  connectionId: number,
+  selectedCalendarIds: number[],
+): Promise<CalendarConnection> => {
+  const response = await api.put<CalendarConnection>(
+    `/calendar/connections/${connectionId}/calendars`,
+    { selected_calendar_ids: selectedCalendarIds },
+  );
+  return response.data;
+};
+
+export const syncCalendarConnection = async (
+  connectionId: number,
+): Promise<CalendarConnection> => {
+  const response = await api.post<CalendarConnection>(
+    `/calendar/connections/${connectionId}/sync`,
+  );
+  return response.data;
+};
+
+export const disconnectCalendarConnection = async (
+  connectionId: number,
+): Promise<void> => {
+  await api.delete(`/calendar/connections/${connectionId}`);
+};
+
+export const getCalendarProviderStatuses = async (): Promise<
+  CalendarProviderStatus[]
+> => {
+  const response = await api.get<CalendarProviderStatus[]>(
+    "/calendar/admin/providers",
+  );
+  return response.data;
+};
+
+export const updateCalendarProviderConfiguration = async (
+  provider: CalendarProvider,
+  payload: CalendarProviderConfigUpdate,
+): Promise<CalendarProviderStatus> => {
+  const response = await api.put<CalendarProviderStatus>(
+    `/calendar/admin/providers/${provider}`,
+    payload,
+  );
   return response.data;
 };
 

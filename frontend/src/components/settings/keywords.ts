@@ -17,7 +17,8 @@ export const SYSTEM_KEYWORDS = [
 ];
 
 export const ACCOUNT_KEYWORDS = [
-  'profile', 'username', 'password', 'change password', 'account', 'user'
+  'profile', 'username', 'password', 'change password', 'account', 'user',
+  'calendar', 'calendars', 'agenda', 'events', 'gmail', 'google', 'outlook', 'microsoft'
 ];
 
 export const UPDATES_KEYWORDS = [
@@ -27,7 +28,8 @@ export const UPDATES_KEYWORDS = [
 ];
 
 export const ADMIN_KEYWORDS = [
-  'admin', 'users', 'manage', 'create user', 'delete user', 'role', 'superuser'
+  'admin', 'users', 'manage', 'create user', 'delete user', 'role', 'superuser',
+  'calendar provider', 'oauth', 'gmail', 'google', 'outlook', 'microsoft'
 ];
 
 export const INVITES_KEYWORDS = [

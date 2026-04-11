@@ -169,6 +169,13 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
 ### Settings & Configuration
 
 - **Server Settings:** Manage API keys, model selection, and storage paths.
+- **Calendar Connections:** Users can connect Gmail and Outlook calendars from **Settings > Account**.
+  - Clicking `Connect Gmail Calendar` or `Connect Outlook Calendar` sends the browser directly to the provider's own sign-in and consent screen.
+  - After approval, the user is returned to Nojoin automatically and can choose which calendars to sync.
+  - Users do **not** enter OAuth client IDs or secrets in the account page.
+- **Calendar Provider Setup:** Owners and Admins can register the installation OAuth app credentials in **Settings > Admin > Calendar**.
+  - This is a one-time deployment task for the self-hosted installation.
+  - Exact provider-registration steps and redirect URI requirements are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
 - **Updates:** A dedicated **Settings > Updates** page shows the installed version, the latest published stable release, recent release history, release notes, and companion download links.
 - **AI Settings:**
   - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.

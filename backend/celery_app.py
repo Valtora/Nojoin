@@ -38,6 +38,10 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.cleanup_temp_recordings",
             "schedule": 86400.0,  # 24 hours in seconds
         },
+        "sync-calendar-connections-every-15m": {
+            "task": "backend.worker.tasks.sync_calendar_connections_task",
+            "schedule": 900.0,
+        },
     },
 )
 

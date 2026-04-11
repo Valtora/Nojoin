@@ -4,6 +4,7 @@ import { updateUserMe, updatePasswordMe, getUserMe } from '@/lib/api';
 import { Loader2, User, Lock, Save } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
+import CalendarConnectionsSettings from './CalendarConnectionsSettings';
 
 export default function AccountSettings({
   forcePasswordChange = false,
@@ -163,6 +164,8 @@ export default function AccountSettings({
           </button>
         </form>
       </div>
+
+      {!forcePasswordChange && <CalendarConnectionsSettings />}
     </div>
   );
 }

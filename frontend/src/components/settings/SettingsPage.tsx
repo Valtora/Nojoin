@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { getSettings, updateSettings, getUserMe } from "@/lib/api";
-import { Settings, CompanionDevices } from "@/types";
+import { Settings, CompanionDevices, UserRole } from "@/types";
 import { isValidUrl } from "@/lib/validation";
 import {
   Save,
@@ -174,7 +174,11 @@ export default function SettingsPage() {
 
       try {
         const userData = await getUserMe();
-        setIsAdmin(userData.is_superuser);
+        setIsAdmin(
+          userData.is_superuser ||
+            userData.role === UserRole.OWNER ||
+            userData.role === UserRole.ADMIN,
+        );
         setUserId(userData.id);
 
         if (userData.force_password_change) {

@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { Shield, Mail, Cpu, Server, Database } from "lucide-react";
+import { Shield, Mail, Cpu, Server, Database, CalendarRange } from "lucide-react";
 import { Settings } from "@/types";
 import UsersTab from "./UsersTab";
 import InvitesTab from "./InvitesTab";
 import AISettings from "./AISettings";
 import BackupRestore from "./BackupRestore";
 import SystemTab from "./SystemTab";
+import CalendarProviderSettings from "./CalendarProviderSettings";
 import { fuzzyMatch } from "@/lib/searchUtils";
 
 interface AdminSettingsProps {
@@ -22,7 +23,7 @@ export default function AdminSettings({
   searchQuery = "",
 }: AdminSettingsProps) {
   const [activeTab, setActiveTab] = useState<
-    "users" | "invites" | "ai" | "system" | "backup"
+    "users" | "invites" | "ai" | "system" | "calendar" | "backup"
   >("users");
 
   useEffect(() => {
@@ -56,6 +57,18 @@ export default function AdminSettings({
     )
       setActiveTab("system");
     if (
+      fuzzyMatch(searchQuery, [
+        "calendar",
+        "gmail",
+        "google",
+        "outlook",
+        "microsoft",
+        "oauth",
+        "agenda",
+      ])
+    )
+      setActiveTab("calendar");
+    if (
       fuzzyMatch(searchQuery, ["backup", "restore", "export", "import", "data"])
     )
       setActiveTab("backup");
@@ -66,6 +79,7 @@ export default function AdminSettings({
     { id: "invites", label: "Invites", icon: Mail },
     { id: "ai", label: "AI Configuration", icon: Cpu },
     { id: "system", label: "System", icon: Server },
+    { id: "calendar", label: "Calendar", icon: CalendarRange },
     { id: "backup", label: "Backup & Restore", icon: Database },
   ] as const;
 
@@ -103,6 +117,7 @@ export default function AdminSettings({
           />
         )}
         {activeTab === "system" && <SystemTab />}
+        {activeTab === "calendar" && <CalendarProviderSettings />}
         {activeTab === "backup" && <BackupRestore />}
       </div>
     </div>
