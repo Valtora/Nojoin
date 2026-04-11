@@ -36,7 +36,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       let currentUser = null;
       try {
         currentUser = await getCurrentUser();
-      } catch (e) {
+      } catch {
         currentUser = null;
       }
       

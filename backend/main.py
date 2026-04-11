@@ -25,6 +25,7 @@ from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.models.chat import ChatMessage
+from backend.models.task import UserTask
 from backend.core.db import async_session_maker
 from backend.seed_demo import seed_demo_data
 

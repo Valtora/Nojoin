@@ -19,6 +19,7 @@ import {
   SpeakerSegment,
   SegmentSelection,
   TranscriptSpeakerAssignment,
+  UserTask,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -160,6 +161,35 @@ export const getRecordings = async (
 export const getRecording = async (id: number): Promise<Recording> => {
   const response = await api.get<Recording>(`/recordings/${id}`);
   return response.data;
+};
+
+export const getUserTasks = async (): Promise<UserTask[]> => {
+  const response = await api.get<UserTask[]>("/tasks/");
+  return response.data;
+};
+
+export const createUserTask = async (data: {
+  title: string;
+  due_on?: string | null;
+}): Promise<UserTask> => {
+  const response = await api.post<UserTask>("/tasks/", data);
+  return response.data;
+};
+
+export const updateUserTask = async (
+  taskId: number,
+  data: {
+    title?: string;
+    due_on?: string | null;
+    completed?: boolean;
+  },
+): Promise<UserTask> => {
+  const response = await api.patch<UserTask>(`/tasks/${taskId}`, data);
+  return response.data;
+};
+
+export const deleteUserTask = async (taskId: number): Promise<void> => {
+  await api.delete(`/tasks/${taskId}`);
 };
 
 export const deleteRecording = async (id: number): Promise<void> => {

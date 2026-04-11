@@ -35,7 +35,7 @@ export default function LoginPage() {
             : "/",
         );
         return;
-      } catch (e) {
+      } catch {
         // no-op, user is not logged in
       }
     };

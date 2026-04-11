@@ -176,7 +176,7 @@ export default function RecordingPage({ params }: PageProps) {
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  }, [setActivePanel]);
 
   useEffect(() => {
     if (!recording) return;
@@ -267,7 +267,7 @@ export default function RecordingPage({ params }: PageProps) {
     window.addEventListener("tour:switch-panel", handleTourSwitch);
     return () =>
       window.removeEventListener("tour:switch-panel", handleTourSwitch);
-  }, []);
+  }, [setActivePanel]);
 
   // Initialize speaker colors
   useEffect(() => {

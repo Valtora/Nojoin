@@ -6,7 +6,6 @@ import { createPortal } from "react-dom";
 interface SpellCheckContextMenuProps {
   x: number;
   y: number;
-  word: string;
   suggestions: string[];
   onCorrect: (replacement: string) => void;
   onAddToDictionary: () => void;
@@ -17,7 +16,6 @@ interface SpellCheckContextMenuProps {
 export default function SpellCheckContextMenu({
   x,
   y,
-  word,
   suggestions,
   onCorrect,
   onAddToDictionary,

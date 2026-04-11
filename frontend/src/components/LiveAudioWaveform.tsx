@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const COMPANION_URL = "http://127.0.0.1:12345";
 const HISTORY_LENGTH = 48;
@@ -112,8 +112,8 @@ export default function LiveAudioWaveform({
   const [outputHistory, setOutputHistory] = useState<number[]>(zeroHistory);
   const [inputLevel, setInputLevel] = useState(0);
   const [outputLevel, setOutputLevel] = useState(0);
-  const [inputCalibrationHistory, setInputCalibrationHistory] = useState<number[]>([]);
-  const [outputCalibrationHistory, setOutputCalibrationHistory] = useState<number[]>([]);
+  const inputCalibrationHistoryRef = useRef<number[]>([]);
+  const outputCalibrationHistoryRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (!enabled) {
@@ -121,8 +121,8 @@ export default function LiveAudioWaveform({
       setOutputHistory(zeroHistory());
       setInputLevel(0);
       setOutputLevel(0);
-      setInputCalibrationHistory([]);
-      setOutputCalibrationHistory([]);
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
       return;
     }
 
@@ -152,32 +152,44 @@ export default function LiveAudioWaveform({
           return;
         }
 
-        setInputCalibrationHistory((history) => {
-          const nextHistory = [...history, rawInputLevel].slice(-CALIBRATION_WINDOW);
-          const calibratedLevel = calibrateLevel(rawInputLevel, nextHistory);
-          setInputLevel((previousLevel) => smoothLevel(previousLevel, calibratedLevel));
-          setInputHistory((displayHistory) => {
-            const smoothedLevel = smoothLevel(
-              displayHistory[displayHistory.length - 1] || 0,
-              calibratedLevel,
-            );
-            return appendSample(displayHistory, smoothedLevel);
-          });
-          return nextHistory;
+        const nextInputCalibrationHistory = [
+          ...inputCalibrationHistoryRef.current,
+          rawInputLevel,
+        ].slice(-CALIBRATION_WINDOW);
+        inputCalibrationHistoryRef.current = nextInputCalibrationHistory;
+        const calibratedInputLevel = calibrateLevel(
+          rawInputLevel,
+          nextInputCalibrationHistory,
+        );
+        setInputLevel((previousLevel) =>
+          smoothLevel(previousLevel, calibratedInputLevel),
+        );
+        setInputHistory((displayHistory) => {
+          const smoothedLevel = smoothLevel(
+            displayHistory[displayHistory.length - 1] || 0,
+            calibratedInputLevel,
+          );
+          return appendSample(displayHistory, smoothedLevel);
         });
 
-        setOutputCalibrationHistory((history) => {
-          const nextHistory = [...history, rawOutputLevel].slice(-CALIBRATION_WINDOW);
-          const calibratedLevel = calibrateLevel(rawOutputLevel, nextHistory);
-          setOutputLevel((previousLevel) => smoothLevel(previousLevel, calibratedLevel));
-          setOutputHistory((displayHistory) => {
-            const smoothedLevel = smoothLevel(
-              displayHistory[displayHistory.length - 1] || 0,
-              calibratedLevel,
-            );
-            return appendSample(displayHistory, smoothedLevel);
-          });
-          return nextHistory;
+        const nextOutputCalibrationHistory = [
+          ...outputCalibrationHistoryRef.current,
+          rawOutputLevel,
+        ].slice(-CALIBRATION_WINDOW);
+        outputCalibrationHistoryRef.current = nextOutputCalibrationHistory;
+        const calibratedOutputLevel = calibrateLevel(
+          rawOutputLevel,
+          nextOutputCalibrationHistory,
+        );
+        setOutputLevel((previousLevel) =>
+          smoothLevel(previousLevel, calibratedOutputLevel),
+        );
+        setOutputHistory((displayHistory) => {
+          const smoothedLevel = smoothLevel(
+            displayHistory[displayHistory.length - 1] || 0,
+            calibratedOutputLevel,
+          );
+          return appendSample(displayHistory, smoothedLevel);
         });
       } catch {
         if (cancelled) {

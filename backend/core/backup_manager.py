@@ -17,6 +17,7 @@ from backend.models.recording import Recording
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.chat import ChatMessage
+from backend.models.task import UserTask
 from backend.utils.path_manager import PathManager
 from backend.utils.audio import ensure_ffmpeg_in_path
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Order matters for restoration
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("users", User),
+    ("user_tasks", UserTask),
     ("p_tags", PeopleTag),
     ("global_speakers", GlobalSpeaker),
     ("people_tag_links", PeopleTagLink),
@@ -690,6 +692,12 @@ class BackupManager:
                                 continue
 
                         elif table_name == "recordings":
+                            if item_data.get("user_id") in id_map["users"]:
+                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                            else:
+                                continue
+
+                        elif table_name == "user_tasks":
                             if item_data.get("user_id") in id_map["users"]:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                             else:

@@ -124,19 +124,18 @@ export const SpellCheckExtension = Extension.create({
 
   addProseMirrorPlugins() {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const extensionThis = this;
 
     const plugin = new Plugin<SpellCheckPluginState>({
       key: spellCheckPluginKey,
 
       state: {
-        init(_, state) {
+        init() {
           return {
             decorations: DecorationSet.empty,
             errors: [],
           };
         },
-        apply(tr, pluginState, _oldState, newState) {
+        apply(tr, pluginState) {
           const meta = tr.getMeta(spellCheckPluginKey);
           if (meta) {
             return meta as SpellCheckPluginState;

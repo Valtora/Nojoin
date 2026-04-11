@@ -123,6 +123,12 @@ export interface Tag extends BaseDBModel {
   children?: Tag[];
 }
 
+export interface UserTask extends BaseDBModel {
+  title: string;
+  due_on?: string | null;
+  completed_at?: string | null;
+}
+
 export interface Recording extends BaseDBModel {
   name: string;
   audio_path: string;

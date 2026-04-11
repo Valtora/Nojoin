@@ -15,7 +15,7 @@ import {
   UserCheck,
   Loader2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -127,10 +127,11 @@ export default function SpeakerPanel({
     [globalSpeakerById, speakers],
   );
 
-  // Helper to get the display name for a speaker
-  const getSpeakerName = (speaker: RecordingSpeaker): string => {
-    return getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
-  };
+  const getSpeakerName = useCallback(
+    (speaker: RecordingSpeaker): string =>
+      getRecordingSpeakerDisplayName(speaker, globalSpeakerById),
+    [globalSpeakerById],
+  );
 
   const segmentCountByLabel = useMemo(() => {
     const counts = new Map<string, number>();
@@ -198,6 +199,7 @@ export default function SpeakerPanel({
         return left.displayName.localeCompare(right.displayName);
       });
   }, [
+    getSpeakerName,
     globalSpeakerById,
     segmentCountByLabel,
     speakers,

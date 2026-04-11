@@ -1,0 +1,109 @@
+from datetime import date, datetime
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
+from backend.api.deps import get_db, get_current_user
+from backend.models.task import UserTask, UserTaskCreate, UserTaskRead, UserTaskUpdate
+from backend.models.user import User
+from backend.utils.user_tasks import normalise_task_title, sort_tasks_for_dashboard
+
+router = APIRouter()
+
+
+def _normalise_task_title(title: str) -> str:
+    try:
+        return normalise_task_title(title)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+async def _get_owned_task(
+    task_id: int,
+    *,
+    db: AsyncSession,
+    current_user: User,
+) -> UserTask:
+    task = await db.get(UserTask, task_id)
+    if not task or task.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.get("", response_model=List[UserTaskRead])
+async def read_tasks_root(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await read_tasks(db=db, current_user=current_user)
+
+
+@router.get("/", response_model=List[UserTaskRead])
+async def read_tasks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    statement = select(UserTask).where(UserTask.user_id == current_user.id)
+    result = await db.execute(statement)
+    tasks = result.scalars().all()
+    return sort_tasks_for_dashboard(list(tasks))
+
+
+@router.post("/", response_model=UserTaskRead)
+async def create_task(
+    task_in: UserTaskCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = UserTask(
+        title=_normalise_task_title(task_in.title),
+        due_on=task_in.due_on,
+        user_id=current_user.id,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.patch("/{task_id}", response_model=UserTaskRead)
+async def update_task(
+    task_id: int,
+    task_update: UserTaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _get_owned_task(task_id, db=db, current_user=current_user)
+
+    if "title" in task_update.model_fields_set:
+        if task_update.title is None:
+            raise HTTPException(status_code=400, detail="Task title cannot be empty")
+        task.title = _normalise_task_title(task_update.title)
+
+    if "due_on" in task_update.model_fields_set:
+        task.due_on = task_update.due_on
+
+    if "completed" in task_update.model_fields_set:
+        if task_update.completed:
+            if task.completed_at is None:
+                task.completed_at = datetime.utcnow()
+        else:
+            task.completed_at = None
+
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.delete("/{task_id}")
+async def delete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _get_owned_task(task_id, db=db, current_user=current_user)
+    await db.delete(task)
+    await db.commit()
+    return {"ok": True}

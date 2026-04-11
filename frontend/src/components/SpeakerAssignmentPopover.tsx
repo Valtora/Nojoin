@@ -49,13 +49,6 @@ export default function SpeakerAssignmentPopover({
     if (targetElement) {
       const updatePosition = () => {
         const rect = targetElement.getBoundingClientRect();
-        // Checks proximity to viewport bottom.
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        const popoverHeight = 300; // Approximate max height
-
-        // Reserved for above-viewport positioning if space below is insufficient.
-
         setPosition({
           top: rect.bottom + window.scrollY,
           left: rect.left + window.scrollX,

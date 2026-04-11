@@ -122,37 +122,29 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     const startDisabled = !companion || !companionAuthenticated;
-    const heading =
-      companionStatus === "recording"
-        ? "Recording in progress"
-        : companionStatus === "paused"
-          ? "Recording paused"
-          : "Start a meeting";
-    const helperText = !companion
-      ? "The companion app is offline. Start it locally to enable live capture."
+    const statusText = !companion
+      ? 'Companion app offline.'
       : !companionAuthenticated
-        ? "Authorise the companion from the main navigation before starting capture."
-        : companionStatus === "recording"
-          ? "Capture is live. You can pause or stop directly from here."
-          : companionStatus === "paused"
-            ? "The current meeting is paused and ready to resume."
-            : "Launch a new capture session and jump straight into the live meeting workspace.";
+        ? 'Connect companion app before starting.'
+        : companionStatus === 'recording'
+          ? 'Meeting is recording.'
+          : companionStatus === 'paused'
+            ? 'Meeting is paused.'
+            : 'Ready to start a meeting.';
 
     return (
-      <div className="rounded-[1.75rem] border border-white/60 bg-white/72 p-5 shadow-lg shadow-orange-950/5 dark:border-white/10 dark:bg-gray-900/60">
+      <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
         <div className="flex flex-col gap-5">
-          <div className="space-y-3">
-            <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-              <Mic className="h-3.5 w-3.5" />
-              Quick Capture
-            </span>
-
-            <div className="space-y-2">
-              <h3 className="text-2xl font-semibold text-gray-950 dark:text-white">
-                {heading}
-              </h3>
-              <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {helperText}
+          <div className="mt-2 flex items-start gap-3">
+            <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+              <Mic className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+                Quick Capture
+              </h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                {statusText}
               </p>
             </div>
           </div>

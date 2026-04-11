@@ -25,7 +25,7 @@ import LinkModal from "./LinkModal";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
 import { spellCheckService } from "@/lib/spellCheckService";
-import { getSpellCheckErrorAtPos, SpellCheckError } from "@/lib/SpellCheckExtension";
+import { getSpellCheckErrorAtPos } from "@/lib/SpellCheckExtension";
 import { getSettings } from "@/lib/api";
 
 interface NotesViewProps {
@@ -730,7 +730,6 @@ export default function NotesView({
         <SpellCheckContextMenu
           x={spellCheckMenu.x}
           y={spellCheckMenu.y}
-          word={spellCheckMenu.word}
           suggestions={spellCheckMenu.suggestions}
           onCorrect={(replacement) => {
             if (!editor) return;

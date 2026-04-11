@@ -17,6 +17,7 @@ from backend.models.chat import ChatMessage
 from backend.models.document import Document
 from backend.models.context_chunk import ContextChunk
 from backend.models.people_tag import PeopleTag, PeopleTagLink
+from backend.models.task import UserTask
 
 # Import the database URL
 from backend.core.db import SYNC_DATABASE_URL
