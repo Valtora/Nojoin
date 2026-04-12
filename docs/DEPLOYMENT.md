@@ -107,17 +107,18 @@ If you are not using the default local setup, ensure `ALLOWED_ORIGINS` includes 
 
 ### Step 2: Register the Google OAuth App
 
-1. Open Google Cloud Console.
-1. Create or select a project for Nojoin.
-1. Enable the Google Calendar API for that project.
+1. Open Google Cloud Console and create or select the project you want to use for Nojoin.
+1. Open `APIs & Services > Enabled APIs & services`, choose `+ Enable APIs and services`, search for `Google Calendar API`, and enable it.
 1. Open `APIs & Services > OAuth consent screen`.
-1. Choose the appropriate user type and configure the app name, support email, and developer contact email.
-1. Add the scopes needed for Nojoin's read-only calendar flow: `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.readonly`.
-1. If the app is still in testing mode, add the Gmail accounts you want to use as test users.
-1. Open `APIs & Services > Credentials` and create an `OAuth client ID`.
-1. Choose `Web application`.
-1. Add this authorised redirect URI: `<public-origin>/api/v1/calendar/oauth/google/callback`.
-1. Save the generated client ID and client secret into Nojoin Admin Calendar settings or into `.env`.
+1. Choose the correct audience for your install.
+1. Enter the app name, support email, and developer contact email.
+1. Add the scopes used by Nojoin's read-only calendar integration: `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.readonly`.
+1. If the app remains in testing mode, add every Google account that should be allowed to connect as a test user.
+1. Open `APIs & Services > Credentials` and choose `Create credentials > OAuth client ID`.
+1. Select `Web application`.
+1. Add this authorised redirect URI exactly: `<public-origin>/api/v1/calendar/oauth/google/callback`.
+1. Save the client.
+1. Copy the generated `Client ID` and `Client secret` into Nojoin `Settings > Admin > Calendar`, or store them in `.env` as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
 
 ### Step 3: Register the Microsoft OAuth App
 
@@ -128,20 +129,34 @@ Important licensing note:
 - You still need a tenant to hold the app registration. If the Entra admin centre tells you tenant creation is restricted for your current account, Microsoft’s guidance is to sign up for a free Azure account and use the default tenant created there.
 
 1. Open Microsoft Entra admin centre.
-1. Go to `Identity > Applications > App registrations` and create a new registration for Nojoin.
-1. Choose the supported account type based on the sign-in scope you want: `Accounts in any organisational directory and personal Microsoft accounts` if Nojoin should support both Outlook.com and Microsoft 365 accounts, or `Accounts in this organisational directory only` if access should stay limited to your own tenant.
-1. In the registration form, add the redirect URI as a `Web` platform redirect URI: `<public-origin>/api/v1/calendar/oauth/microsoft/callback`.
-1. Finish creating the app, then open its `Overview` page. Copy the `Application (client) ID` into Nojoin's `Application (client) ID` field. If you chose a single-tenant app, also note the tenant ID shown in Entra and use that exact tenant ID in Nojoin instead of `common`.
-1. Open `Certificates & secrets` and create a new client secret. Copy the secret `Value` immediately because Microsoft only shows it once, paste that value into Nojoin's `Client Secret Value` field, and ignore the separate `Secret ID` field in Entra because it is metadata rather than the secret to store in Nojoin.
-1. Open `API permissions` and add delegated Microsoft Graph permissions for `openid`, `profile`, `email`, `offline_access`, `User.Read`, and `Calendars.Read`.
-1. Review consent policy for your tenant. If your organisation blocks end-user consent, users will see an admin approval message during the Outlook connect flow. In that case, a tenant administrator must grant consent in Entra before standard users can connect their calendars.
-1. Save the Microsoft values into Nojoin Admin Calendar settings or `.env`: `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`.
+1. Go to `Identity > Applications > App registrations` and choose `New registration`.
+1. Enter a name such as `Nojoin` or `Nojoin - Localhost`.
+1. Choose the supported account type that matches your intended users.
+1. Use `Accounts in any organisational directory and personal Microsoft accounts` if you want both Microsoft 365 work/school accounts and personal Outlook.com or Hotmail accounts to be able to connect.
+1. Use `Accounts in this organisational directory only` only if you deliberately want a single-tenant work/school-only app.
+1. Under `Redirect URI`, choose platform type `Web` and enter `<public-origin>/api/v1/calendar/oauth/microsoft/callback`.
+1. Finish creating the app.
+1. On the new app's `Overview` page, copy `Application (client) ID` into Nojoin's `Application (client) ID` field.
+1. If the app is single-tenant, also copy `Directory (tenant) ID` and use that exact value in Nojoin's `Tenant ID or common` field.
+1. If the app is multi-tenant and should support personal Microsoft accounts as well, enter `common` in Nojoin's `Tenant ID or common` field instead of the directory GUID.
+1. Open `Authentication`.
+1. Confirm the redirect URI is present under the `Web` platform.
+1. Confirm the supported account type still matches the sign-in scope you want.
+1. Open `API permissions`.
+1. Add delegated Microsoft Graph permissions for `openid`, `profile`, `email`, `offline_access`, `User.Read`, and `Calendars.Read`.
+1. Do not add application permissions such as application `Calendars.Read` for Nojoin's current user-consent flow. They are not required for this feature and only add confusion.
+1. If your tenant restricts user consent, a tenant administrator must grant consent in Entra before normal users can complete the Outlook connect flow.
+1. Open `Certificates & secrets` and create a new client secret.
+1. Copy the secret `Value` immediately and store that in Nojoin as `Client Secret Value`.
+1. Do not copy `Secret ID` into Nojoin. `Secret ID` is only metadata and will not work as the client secret.
+1. Save the Microsoft values into Nojoin Admin Calendar settings or `.env`: `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`, and `MICROSOFT_OAUTH_TENANT_ID`.
 
 Tenant selection rules in Nojoin:
 
 - Use `common` only when the app registration allows both organisational directories and personal Microsoft accounts.
 - If the app remains single-tenant, `common` will fail with `AADSTS50194`.
 - Use your explicit tenant ID when the app is intentionally single-tenant or when you only want users from one directory to connect.
+- If you allow personal Microsoft accounts and leave Nojoin pointed at a specific tenant GUID, Microsoft sign-in may succeed but the first calendar read can still fail. In that case, switch Nojoin back to `common`, save, disconnect the failed Outlook calendar connection, and reconnect it.
 
 If you only have a personal Outlook/Hotmail account today and no tenant you can administer, the practical route is:
 
@@ -160,6 +175,8 @@ Use one of these paths:
 1. Admin UI: sign in as an Owner or Admin, open `Settings > Admin > Calendar`, enter the Google client ID and secret, enter the Microsoft `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`, verify the Microsoft field labels match the labels shown in Entra, and save.
 1. Environment variables: add the OAuth variables to `.env`, then restart the stack, for example with `docker compose up -d --build api worker frontend`.
 
+If you change the Microsoft tenant mode later, for example from a tenant GUID to `common`, disconnect any previously failed Outlook calendar connections and reconnect them so Nojoin requests a fresh token under the corrected tenant path.
+
 ### Step 5: Verify the End-User Flow
 
 1. Sign in as a normal user.
@@ -169,7 +186,15 @@ Use one of these paths:
 5. Sign in, click through the consent screen, and allow read-only calendar access.
 6. Confirm you are returned to Nojoin and the account appears under Calendar Connections.
 7. Select one or more calendars for sync.
-8. Confirm the dashboard calendar shows orange day dots, agenda entries, and the `Next event in ...` helper text.
+8. Confirm the dashboard calendar shows orange day dots, agenda entries, the `Next event in ...` helper text, and where present a clickable meeting link or location on agenda cards.
+
+### Microsoft Troubleshooting
+
+- `AADSTS50194` after using `common`: the app registration is still single-tenant. Either switch the app to a multi-tenant account type or enter the exact tenant ID in Nojoin instead of `common`.
+- Sign-in succeeds but the Outlook calendar still does not connect and the API logs show `GET /me/calendars` failing: if the app is meant to support personal Microsoft accounts or mixed account types, make sure Nojoin's tenant field is set to `common`, then disconnect and reconnect the Outlook calendar connection.
+- Microsoft sign-in page appears but users see an admin approval message: the delegated permissions exist, but tenant policy blocks user consent. Have an Entra administrator grant consent for the app.
+- Token exchange fails with `invalid_client`: verify that Nojoin stores the client secret `Value`, not the `Secret ID`.
+- Only work or school accounts should connect: keep the app single-tenant and enter that tenant's `Directory (tenant) ID` in Nojoin instead of `common`.
 
 ### Notes
 

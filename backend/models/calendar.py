@@ -112,6 +112,7 @@ class CalendarSource(BaseDBModel, table=True):
     is_primary: bool = Field(default=False, nullable=False)
     is_read_only: bool = Field(default=False, nullable=False)
     is_selected: bool = Field(default=False, nullable=False, index=True)
+    sync_cursor: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     last_synced_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
     sync_window_start: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
     sync_window_end: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
@@ -149,6 +150,8 @@ class CalendarEvent(BaseDBModel, table=True):
     ends_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True, index=True))
     start_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
     end_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
+    location_text: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    meeting_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
     source_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
     external_updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
 
@@ -230,6 +233,8 @@ class CalendarDashboardEventRead(SQLModel):
     provider: str
     calendar_name: str
     account_label: Optional[str] = None
+    location: Optional[str] = None
+    meeting_url: Optional[str] = None
     is_all_day: bool
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None

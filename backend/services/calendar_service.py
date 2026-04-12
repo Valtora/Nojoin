@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import base64
 import calendar as month_calendar
+import html
 import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 import redis.asyncio as redis
@@ -79,6 +81,41 @@ PROVIDER_ENV_KEYS = {
 
 _oauth_state_fallback: dict[str, tuple[datetime, dict[str, Any]]] = {}
 
+TRAILING_URL_PUNCTUATION = ".,);]>"
+HREF_URL_PATTERN = re.compile(r'href=["\'](https?://[^"\']+)["\']', re.IGNORECASE)
+PLAIN_URL_PATTERN = re.compile(r'https?://[^\s<>"\']+')
+MEETING_URL_HOST_PRIORITY = (
+    "teams.microsoft.com",
+    "meet.google.com",
+    ".zoom.us",
+    ".webex.com",
+    ".gotomeeting.com",
+    ".bluejeans.com",
+    ".whereby.com",
+    ".ringcentral.com",
+    "meet.jit.si",
+)
+MICROSOFT_EVENT_SELECT = ",".join(
+    [
+        "id",
+        "subject",
+        "type",
+        "seriesMasterId",
+        "isAllDay",
+        "isCancelled",
+        "start",
+        "end",
+        "lastModifiedDateTime",
+        "webLink",
+        "location",
+        "locations",
+        "body",
+        "bodyPreview",
+        "onlineMeeting",
+        "onlineMeetingUrl",
+    ]
+)
+
 
 @dataclass
 class ProviderRuntimeConfig:
@@ -130,8 +167,21 @@ class ProviderEventRecord:
     ends_at: datetime | None
     start_date: date | None
     end_date: date | None
-    source_url: str | None
-    external_updated_at: datetime | None
+    source_url: str | None = None
+    location_text: str | None = None
+    meeting_url: str | None = None
+    external_updated_at: datetime | None = None
+
+
+@dataclass
+class ProviderEventSyncResult:
+    events: list[ProviderEventRecord]
+    deleted_remote_ids: list[str]
+    cursor: str | None
+
+
+class IncrementalSyncResetRequired(Exception):
+    pass
 
 
 def _utc_now() -> datetime:
@@ -155,6 +205,111 @@ def _clean_error_text(value: str | None) -> str | None:
         return None
     cleaned = " ".join(str(value).split())
     return cleaned[:500] if cleaned else None
+
+
+def _normalise_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = " ".join(html.unescape(str(value)).replace("\xa0", " ").split())
+    return cleaned or None
+
+
+def _clean_url(value: str | None) -> str | None:
+    cleaned = _normalise_text(value)
+    if not cleaned:
+        return None
+    while cleaned and cleaned[-1] in TRAILING_URL_PUNCTUATION:
+        cleaned = cleaned[:-1]
+    if not cleaned:
+        return None
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        return cleaned
+    return None
+
+
+def _extract_urls_from_text(value: str | None) -> list[str]:
+    if not value:
+        return []
+
+    text = html.unescape(str(value))
+    seen: set[str] = set()
+    urls: list[str] = []
+    for candidate in [*HREF_URL_PATTERN.findall(text), *PLAIN_URL_PATTERN.findall(text)]:
+        cleaned = _clean_url(candidate)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            urls.append(cleaned)
+    return urls
+
+
+def _meeting_url_rank(url: str) -> int:
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return len(MEETING_URL_HOST_PRIORITY) + 1
+
+    for index, candidate in enumerate(MEETING_URL_HOST_PRIORITY):
+        suffix = candidate.lstrip(".")
+        if hostname == suffix or hostname.endswith(candidate):
+            return index
+    return len(MEETING_URL_HOST_PRIORITY)
+
+
+def _pick_preferred_meeting_url(*values: str | None) -> str | None:
+    seen: set[str] = set()
+    urls: list[str] = []
+
+    for value in values:
+        direct_url = _clean_url(value)
+        if direct_url and direct_url not in seen:
+            seen.add(direct_url)
+            urls.append(direct_url)
+
+        for extracted_url in _extract_urls_from_text(value):
+            if extracted_url not in seen:
+                seen.add(extracted_url)
+                urls.append(extracted_url)
+
+    if not urls:
+        return None
+
+    return min(
+        enumerate(urls),
+        key=lambda item: (_meeting_url_rank(item[1]), item[0]),
+    )[1]
+
+
+def _get_microsoft_location_text(item: dict[str, Any]) -> str | None:
+    location = item.get("location")
+    if isinstance(location, dict):
+        cleaned_location = _normalise_text(location.get("displayName"))
+        if cleaned_location:
+            return cleaned_location
+
+    for location_item in item.get("locations") or []:
+        if not isinstance(location_item, dict):
+            continue
+        cleaned_location = _normalise_text(location_item.get("displayName"))
+        if cleaned_location:
+            return cleaned_location
+
+    return None
+
+
+def _is_partial_microsoft_occurrence(item: dict[str, Any]) -> bool:
+    if item.get("type") != "occurrence" or not item.get("seriesMasterId"):
+        return False
+
+    return not any(
+        [
+            item.get("subject"),
+            item.get("webLink"),
+            item.get("bodyPreview"),
+            item.get("onlineMeetingUrl"),
+            item.get("onlineMeeting"),
+            item.get("location"),
+            item.get("locations"),
+        ]
+    )
 
 
 def _extract_error_text_from_payload(payload: Any) -> str | None:
@@ -670,6 +825,19 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         return None
     start_payload = item.get("start", {})
     end_payload = item.get("end", {})
+    location_text = _normalise_text(item.get("location"))
+    conference_entry_points = item.get("conferenceData", {}).get("entryPoints", [])
+    conference_urls = [
+        entry.get("uri")
+        for entry in conference_entry_points
+        if isinstance(entry, dict)
+    ]
+    meeting_url = _pick_preferred_meeting_url(
+        item.get("hangoutLink"),
+        *conference_urls,
+        location_text,
+        item.get("description"),
+    )
     if "date" in start_payload:
         start_date = date.fromisoformat(start_payload["date"])
         end_date = date.fromisoformat(end_payload.get("date", start_payload["date"]))
@@ -685,6 +853,8 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
             start_date=start_date,
             end_date=end_date,
             source_url=item.get("htmlLink"),
+            location_text=location_text,
+            meeting_url=meeting_url,
             external_updated_at=_parse_iso_datetime(item.get("updated")),
         )
 
@@ -702,42 +872,97 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         start_date=None,
         end_date=None,
         source_url=item.get("htmlLink"),
+        location_text=location_text,
+        meeting_url=meeting_url,
         external_updated_at=_parse_iso_datetime(item.get("updated")),
     )
 
 
-async def _list_google_events(access_token: str, calendar_id: str, window_start: datetime, window_end: datetime) -> list[ProviderEventRecord]:
+def _build_google_events_query_params(
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    sync_cursor: str | None,
+    page_token: str | None,
+) -> dict[str, str]:
+    params: dict[str, str] = {
+        "singleEvents": "true",
+        "showDeleted": "true",
+        "maxResults": "2500",
+    }
+    if sync_cursor:
+        params["syncToken"] = sync_cursor
+    else:
+        params["timeMin"] = window_start.isoformat() + "Z"
+        params["timeMax"] = window_end.isoformat() + "Z"
+    if page_token:
+        params["pageToken"] = page_token
+    return params
+
+
+async def _sync_google_events(
+    access_token: str,
+    calendar_id: str,
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    sync_cursor: str | None,
+) -> ProviderEventSyncResult:
     next_page_token: str | None = None
     events: list[ProviderEventRecord] = []
-    while True:
-        params: dict[str, Any] = {
-            "singleEvents": "true",
-            "orderBy": "startTime",
-            "timeMin": window_start.isoformat() + "Z",
-            "timeMax": window_end.isoformat() + "Z",
-            "showDeleted": "true",
-            "maxResults": "2500",
-        }
-        if next_page_token:
-            params["pageToken"] = next_page_token
-        payload = await _request_json(
-            "GET",
-            GOOGLE_EVENTS_URL_TEMPLATE.format(calendar_id=quote(calendar_id, safe="")),
-            headers={"Authorization": f"Bearer {access_token}"},
-            params=params,
-        )
-        for item in payload.get("items", []):
-            event = _normalise_google_event(item)
-            if event is not None:
-                events.append(event)
-        next_page_token = payload.get("nextPageToken")
-        if not next_page_token:
-            return events
+    deleted_remote_ids: list[str] = []
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = GOOGLE_EVENTS_URL_TEMPLATE.format(calendar_id=quote(calendar_id, safe=""))
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            response = await client.get(
+                url,
+                headers=headers,
+                params=_build_google_events_query_params(
+                    window_start,
+                    window_end,
+                    sync_cursor=sync_cursor,
+                    page_token=next_page_token,
+                ),
+            )
+            if sync_cursor and response.status_code == status.HTTP_410_GONE:
+                raise IncrementalSyncResetRequired("Google sync token expired")
+            response.raise_for_status()
+            payload = response.json()
+            for item in payload.get("items", []):
+                if item.get("status") == "cancelled" or item.get("deleted"):
+                    remote_id = item.get("id")
+                    if remote_id:
+                        deleted_remote_ids.append(str(remote_id))
+                    continue
+                event = _normalise_google_event(item)
+                if event is not None:
+                    events.append(event)
+            next_page_token = payload.get("nextPageToken")
+            if not next_page_token:
+                return ProviderEventSyncResult(
+                    events=events,
+                    deleted_remote_ids=deleted_remote_ids,
+                    cursor=payload.get("nextSyncToken"),
+                )
 
 
 def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | None:
     if item.get("isCancelled"):
         return None
+    location_text = _get_microsoft_location_text(item)
+    body = item.get("body")
+    body_content = body.get("content") if isinstance(body, dict) else None
+    online_meeting = item.get("onlineMeeting")
+    join_url = online_meeting.get("joinUrl") if isinstance(online_meeting, dict) else None
+    meeting_url = _pick_preferred_meeting_url(
+        join_url,
+        item.get("onlineMeetingUrl"),
+        location_text,
+        item.get("bodyPreview"),
+        body_content,
+    )
     if item.get("isAllDay"):
         start_date = date.fromisoformat(item["start"]["dateTime"][:10])
         end_date = date.fromisoformat(item["end"]["dateTime"][:10])
@@ -753,6 +978,8 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
             start_date=start_date,
             end_date=end_date,
             source_url=item.get("webLink"),
+            location_text=location_text,
+            meeting_url=meeting_url,
             external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
         )
 
@@ -770,15 +997,53 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         start_date=None,
         end_date=None,
         source_url=item.get("webLink"),
+        location_text=location_text,
+        meeting_url=meeting_url,
         external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
     )
 
 
-async def _list_microsoft_events(access_token: str, calendar_id: str, window_start: datetime, window_end: datetime) -> list[ProviderEventRecord]:
-    next_url: str | None = (
-        f"{MICROSOFT_GRAPH_URL}/me/calendars/{calendar_id}/calendarView"
-        f"?$select=id,subject,start,end,isAllDay,webLink,lastModifiedDateTime,isCancelled"
-        f"&$top=1000&startDateTime={window_start.isoformat()}Z&endDateTime={window_end.isoformat()}Z"
+def _build_microsoft_calendar_view_url(
+    calendar_id: str,
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    delta: bool,
+) -> str:
+    params = urlencode(
+        {
+            "startDateTime": window_start.isoformat() + "Z",
+            "endDateTime": window_end.isoformat() + "Z",
+            "$select": MICROSOFT_EVENT_SELECT,
+        }
+    )
+    return (
+        f"{MICROSOFT_GRAPH_URL}/me/calendars/{quote(calendar_id, safe='')}/calendarView"
+        f"{'/delta' if delta else ''}"
+        f"?{params}"
+    )
+
+
+def _build_microsoft_delta_url(calendar_id: str, window_start: datetime, window_end: datetime) -> str:
+    return _build_microsoft_calendar_view_url(
+        calendar_id,
+        window_start,
+        window_end,
+        delta=True,
+    )
+
+
+async def _list_microsoft_events(
+    access_token: str,
+    calendar_id: str,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[ProviderEventRecord]:
+    next_url: str | None = _build_microsoft_calendar_view_url(
+        calendar_id,
+        window_start,
+        window_end,
+        delta=False,
     )
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -792,11 +1057,80 @@ async def _list_microsoft_events(access_token: str, calendar_id: str, window_sta
             response.raise_for_status()
             payload = response.json()
             for item in payload.get("value", []):
+                if item.get("type") == "seriesMaster":
+                    continue
                 event = _normalise_microsoft_event(item)
                 if event is not None:
                     events.append(event)
             next_url = payload.get("@odata.nextLink")
     return events
+
+
+async def _get_microsoft_delta_cursor(
+    access_token: str,
+    calendar_id: str,
+    window_start: datetime,
+    window_end: datetime,
+) -> str | None:
+    next_url: str | None = _build_microsoft_delta_url(calendar_id, window_start, window_end)
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Prefer": 'outlook.timezone="UTC"',
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while next_url:
+            response = await client.get(next_url, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+            next_url = payload.get("@odata.nextLink")
+            if not next_url:
+                return payload.get("@odata.deltaLink")
+    return None
+
+
+async def _sync_microsoft_events(
+    access_token: str,
+    calendar_id: str,
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    sync_cursor: str | None,
+) -> ProviderEventSyncResult:
+    next_url: str | None = sync_cursor or _build_microsoft_delta_url(calendar_id, window_start, window_end)
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Prefer": 'outlook.timezone="UTC"',
+    }
+    events: list[ProviderEventRecord] = []
+    deleted_remote_ids: list[str] = []
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while next_url:
+            response = await client.get(next_url, headers=headers)
+            if sync_cursor and response.status_code in {status.HTTP_404_NOT_FOUND, status.HTTP_410_GONE}:
+                raise IncrementalSyncResetRequired("Microsoft delta cursor expired")
+            response.raise_for_status()
+            payload = response.json()
+            for item in payload.get("value", []):
+                if item.get("@removed"):
+                    remote_id = item.get("id")
+                    if remote_id:
+                        deleted_remote_ids.append(str(remote_id))
+                    continue
+                if item.get("type") == "seriesMaster" or _is_partial_microsoft_occurrence(item):
+                    raise IncrementalSyncResetRequired("Microsoft recurring event delta requires full resync")
+                event = _normalise_microsoft_event(item)
+                if event is not None:
+                    events.append(event)
+            next_url = payload.get("@odata.nextLink")
+            if not next_url:
+                return ProviderEventSyncResult(
+                    events=events,
+                    deleted_remote_ids=deleted_remote_ids,
+                    cursor=payload.get("@odata.deltaLink"),
+                )
+    return ProviderEventSyncResult(events=events, deleted_remote_ids=deleted_remote_ids, cursor=sync_cursor)
 
 
 async def _get_access_token_for_connection(
@@ -906,6 +1240,115 @@ async def _refresh_connection_calendars(
         .order_by(CalendarSource.is_primary.desc(), CalendarSource.name.asc())
     )
     return list((await db.execute(statement)).scalars().all())
+
+
+def _apply_provider_event_to_model(
+    calendar_event: CalendarEvent,
+    provider_event: ProviderEventRecord,
+) -> CalendarEvent:
+    calendar_event.provider_event_id = provider_event.remote_id
+    calendar_event.title = provider_event.title
+    calendar_event.status = provider_event.status
+    calendar_event.is_all_day = provider_event.is_all_day
+    calendar_event.starts_at = provider_event.starts_at
+    calendar_event.ends_at = provider_event.ends_at
+    calendar_event.start_date = provider_event.start_date
+    calendar_event.end_date = provider_event.end_date
+    calendar_event.location_text = provider_event.location_text
+    calendar_event.meeting_url = provider_event.meeting_url
+    calendar_event.source_url = provider_event.source_url
+    calendar_event.external_updated_at = provider_event.external_updated_at
+    return calendar_event
+
+
+def _build_calendar_event_model(
+    calendar_id: int,
+    provider_event: ProviderEventRecord,
+) -> CalendarEvent:
+    return _apply_provider_event_to_model(
+        CalendarEvent(calendar_id=calendar_id, provider_event_id=provider_event.remote_id, title=provider_event.title),
+        provider_event,
+    )
+
+
+async def _replace_calendar_events(
+    db: AsyncSession,
+    calendar_id: int,
+    provider_events: list[ProviderEventRecord],
+) -> None:
+    await db.execute(delete(CalendarEvent).where(CalendarEvent.calendar_id == calendar_id))
+    for provider_event in provider_events:
+        db.add(_build_calendar_event_model(calendar_id, provider_event))
+
+
+async def _apply_incremental_calendar_events(
+    db: AsyncSession,
+    calendar_id: int,
+    provider_events: list[ProviderEventRecord],
+    deleted_remote_ids: list[str],
+) -> None:
+    unique_deleted_ids = sorted(set(deleted_remote_ids))
+    if unique_deleted_ids:
+        await db.execute(
+            delete(CalendarEvent).where(
+                CalendarEvent.calendar_id == calendar_id,
+                CalendarEvent.provider_event_id.in_(unique_deleted_ids),
+            )
+        )
+
+    if not provider_events:
+        return
+
+    changed_remote_ids = sorted({provider_event.remote_id for provider_event in provider_events})
+    existing_events = list(
+        (
+            await db.execute(
+                select(CalendarEvent).where(
+                    CalendarEvent.calendar_id == calendar_id,
+                    CalendarEvent.provider_event_id.in_(changed_remote_ids),
+                )
+            )
+        ).scalars().all()
+    )
+    existing_by_remote_id = {
+        existing_event.provider_event_id: existing_event
+        for existing_event in existing_events
+    }
+
+    for provider_event in provider_events:
+        existing_event = existing_by_remote_id.get(provider_event.remote_id)
+        if existing_event is None:
+            db.add(_build_calendar_event_model(calendar_id, provider_event))
+            continue
+        db.add(_apply_provider_event_to_model(existing_event, provider_event))
+
+
+def _can_use_incremental_sync(
+    calendar: CalendarSource,
+    window_start: datetime,
+    window_end: datetime,
+) -> bool:
+    return bool(
+        calendar.sync_cursor
+        and calendar.sync_window_start == window_start
+        and calendar.sync_window_end == window_end
+    )
+
+
+async def _microsoft_calendar_has_partial_occurrence_artifacts(
+    db: AsyncSession,
+    calendar_id: int,
+) -> bool:
+    statement = (
+        select(CalendarEvent.id)
+        .where(CalendarEvent.calendar_id == calendar_id)
+        .where(CalendarEvent.title == "Untitled event")
+        .where(CalendarEvent.source_url.is_(None))
+        .where(CalendarEvent.meeting_url.is_(None))
+        .where(CalendarEvent.location_text.is_(None))
+        .limit(1)
+    )
+    return (await db.execute(statement)).scalar_one_or_none() is not None
 
 
 def _serialise_source(calendar: CalendarSource) -> CalendarSourceRead:
@@ -1115,40 +1558,102 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         window_start, window_end = _build_sync_window()
 
         for calendar in selected_calendars:
-            await db.execute(delete(CalendarEvent).where(CalendarEvent.calendar_id == calendar.id))
+            use_incremental_sync = _can_use_incremental_sync(
+                calendar,
+                window_start,
+                window_end,
+            )
+
+            if (
+                connection.provider == CalendarProvider.MICROSOFT.value
+                and use_incremental_sync
+                and await _microsoft_calendar_has_partial_occurrence_artifacts(db, calendar.id)
+            ):
+                use_incremental_sync = False
 
             if connection.provider == CalendarProvider.GOOGLE.value:
-                provider_events = await _list_google_events(
-                    access_token,
-                    calendar.provider_calendar_id,
-                    window_start,
-                    window_end,
-                )
-            else:
-                provider_events = await _list_microsoft_events(
-                    access_token,
-                    calendar.provider_calendar_id,
-                    window_start,
-                    window_end,
-                )
-
-            for provider_event in provider_events:
-                db.add(
-                    CalendarEvent(
-                        calendar_id=calendar.id,
-                        provider_event_id=provider_event.remote_id,
-                        title=provider_event.title,
-                        status=provider_event.status,
-                        is_all_day=provider_event.is_all_day,
-                        starts_at=provider_event.starts_at,
-                        ends_at=provider_event.ends_at,
-                        start_date=provider_event.start_date,
-                        end_date=provider_event.end_date,
-                        source_url=provider_event.source_url,
-                        external_updated_at=provider_event.external_updated_at,
+                try:
+                    sync_result = await _sync_google_events(
+                        access_token,
+                        calendar.provider_calendar_id,
+                        window_start,
+                        window_end,
+                        sync_cursor=calendar.sync_cursor if use_incremental_sync else None,
                     )
-                )
+                    if use_incremental_sync:
+                        await _apply_incremental_calendar_events(
+                            db,
+                            calendar.id,
+                            sync_result.events,
+                            sync_result.deleted_remote_ids,
+                        )
+                    else:
+                        await _replace_calendar_events(db, calendar.id, sync_result.events)
+                except IncrementalSyncResetRequired:
+                    sync_result = await _sync_google_events(
+                        access_token,
+                        calendar.provider_calendar_id,
+                        window_start,
+                        window_end,
+                        sync_cursor=None,
+                    )
+                    await _replace_calendar_events(db, calendar.id, sync_result.events)
+            else:
+                if use_incremental_sync:
+                    try:
+                        sync_result = await _sync_microsoft_events(
+                            access_token,
+                            calendar.provider_calendar_id,
+                            window_start,
+                            window_end,
+                            sync_cursor=calendar.sync_cursor,
+                        )
+                        await _apply_incremental_calendar_events(
+                            db,
+                            calendar.id,
+                            sync_result.events,
+                            sync_result.deleted_remote_ids,
+                        )
+                    except IncrementalSyncResetRequired:
+                        provider_events = await _list_microsoft_events(
+                            access_token,
+                            calendar.provider_calendar_id,
+                            window_start,
+                            window_end,
+                        )
+                        delta_cursor = await _get_microsoft_delta_cursor(
+                            access_token,
+                            calendar.provider_calendar_id,
+                            window_start,
+                            window_end,
+                        )
+                        sync_result = ProviderEventSyncResult(
+                            events=provider_events,
+                            deleted_remote_ids=[],
+                            cursor=delta_cursor,
+                        )
+                        await _replace_calendar_events(db, calendar.id, sync_result.events)
+                else:
+                    provider_events = await _list_microsoft_events(
+                        access_token,
+                        calendar.provider_calendar_id,
+                        window_start,
+                        window_end,
+                    )
+                    delta_cursor = await _get_microsoft_delta_cursor(
+                        access_token,
+                        calendar.provider_calendar_id,
+                        window_start,
+                        window_end,
+                    )
+                    sync_result = ProviderEventSyncResult(
+                        events=provider_events,
+                        deleted_remote_ids=[],
+                        cursor=delta_cursor,
+                    )
+                    await _replace_calendar_events(db, calendar.id, sync_result.events)
 
+            calendar.sync_cursor = sync_result.cursor
             calendar.last_synced_at = _utc_now()
             calendar.sync_window_start = window_start
             calendar.sync_window_end = window_end
@@ -1239,6 +1744,8 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
         provider=connection.provider,
         calendar_name=calendar.name,
         account_label=account_label,
+        location=event.location_text,
+        meeting_url=event.meeting_url,
         is_all_day=event.is_all_day,
         starts_at=event.starts_at,
         ends_at=event.ends_at,

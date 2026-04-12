@@ -257,6 +257,8 @@ export interface CalendarDashboardEvent {
   provider: CalendarProvider;
   calendar_name: string;
   account_label?: string | null;
+  location?: string | null;
+  meeting_url?: string | null;
   is_all_day: boolean;
   starts_at?: string | null;
   ends_at?: string | null;

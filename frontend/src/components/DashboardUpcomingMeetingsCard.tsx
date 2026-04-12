@@ -6,12 +6,15 @@ import {
   addDays,
   differenceInMinutes,
   eachDayOfInterval,
+  endOfDay,
   endOfMonth,
   endOfWeek,
   format,
+  isSameDay,
   isSameMonth,
   isToday,
   parseISO,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -19,9 +22,11 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   LayoutGrid,
   Loader2,
   List,
+  MapPin,
 } from "lucide-react";
 import { getCalendarDashboardSummary } from "@/lib/api";
 import { CalendarDashboardEvent, CalendarDashboardSummary } from "@/types";
@@ -50,6 +55,37 @@ function getEventEnd(event: CalendarDashboardEvent): Date | null {
     return parseISO(event.ends_at);
   }
   return getEventStart(event);
+}
+
+
+function eventOccursOnDay(event: CalendarDashboardEvent, day: Date): boolean {
+  const eventStart = getEventStart(event);
+  const eventEnd = getEventEnd(event);
+  if (!eventStart || !eventEnd) {
+    return false;
+  }
+
+  if (event.is_all_day) {
+    return startOfDay(day) >= startOfDay(eventStart) && startOfDay(day) <= startOfDay(eventEnd);
+  }
+
+  return eventStart <= endOfDay(day) && eventEnd >= startOfDay(day);
+}
+
+
+function isFutureOrLiveEvent(event: CalendarDashboardEvent, now: Date): boolean {
+  const eventStart = getEventStart(event);
+  const eventEnd = getEventEnd(event);
+  if (!eventStart || !eventEnd) {
+    return false;
+  }
+
+  if (event.is_all_day) {
+    const eventEndExclusive = event.end_date ? parseISO(event.end_date) : addDays(startOfDay(eventStart), 1);
+    return eventEndExclusive > startOfDay(now);
+  }
+
+  return eventEnd >= now;
 }
 
 
@@ -115,7 +151,7 @@ function buildFooterText(
     case "no_events":
       return `No events in ${viewedMonthLabel}.`;
     case "ready":
-      return `${summary.selected_calendar_count} selected calendar${summary.selected_calendar_count === 1 ? "" : "s"}${summary.last_synced_at ? ` • Last synced ${format(parseISO(summary.last_synced_at), "d MMM, HH:mm")}` : ""}`;
+      return `No upcoming events in ${viewedMonthLabel}.`;
     default:
       return "Browse past and future months.";
   }
@@ -153,12 +189,55 @@ function formatAgendaTime(event: CalendarDashboardEvent): string {
   return `${format(startsAt, "HH:mm")} - ${format(endsAt, "HH:mm")}`;
 }
 
+
+function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
+  const hasDistinctLocation = Boolean(
+    event.location && event.location.trim() && !event.meeting_url,
+  );
+
+  return (
+    <div className="rounded-xl border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
+        <span>{formatAgendaDate(event)}</span>
+        <span>•</span>
+        <span>{formatAgendaTime(event)}</span>
+      </div>
+      <div className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
+        {event.title}
+      </div>
+      <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+        {event.calendar_name}
+      </div>
+      {hasDistinctLocation && (
+        <div className="mt-3 inline-flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+          <span>{event.location}</span>
+        </div>
+      )}
+      {event.meeting_url && (
+        <a
+          href={event.meeting_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"
+        >
+          <ExternalLink className="h-4 w-4" />
+          <span>Join Meeting</span>
+        </a>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardUpcomingMeetingsCard() {
   const [now, setNow] = useState<Date>(() => new Date());
   const [viewedMonth, setViewedMonth] = useState<Date>(() =>
     startOfMonth(new Date()),
   );
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
+  const [selectedDay, setSelectedDay] = useState<Date | null>(() =>
+    startOfDay(new Date()),
+  );
   const [summary, setSummary] = useState<CalendarDashboardSummary | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -177,6 +256,18 @@ export default function DashboardUpcomingMeetingsCard() {
   }, []);
 
   const viewedMonthKey = format(viewedMonth, "yyyy-MM");
+
+  useEffect(() => {
+    setSelectedDay((currentSelectedDay) => {
+      if (currentSelectedDay && isSameMonth(currentSelectedDay, viewedMonth)) {
+        return currentSelectedDay;
+      }
+      if (isSameMonth(viewedMonth, now)) {
+        return startOfDay(now);
+      }
+      return startOfMonth(viewedMonth);
+    });
+  }, [now, viewedMonth]);
 
   useEffect(() => {
     let active = true;
@@ -226,6 +317,7 @@ export default function DashboardUpcomingMeetingsCard() {
   );
   const isViewingCurrentMonth = isSameMonth(viewedMonth, now);
   const viewedMonthLabel = format(viewedMonth, "MMMM yyyy");
+  const monthEvents = useMemo(() => summary?.agenda_items ?? [], [summary]);
   const dayCounts = useMemo(() => {
     const countMap = new Map<string, number>();
     summary?.day_counts.forEach((entry) => {
@@ -241,6 +333,17 @@ export default function DashboardUpcomingMeetingsCard() {
     () => buildFooterText(summary, viewedMonthLabel, calendarError),
     [summary, viewedMonthLabel, calendarError],
   );
+  const futureAgendaItems = useMemo(
+    () => monthEvents.filter((event) => isFutureOrLiveEvent(event, now)),
+    [monthEvents, now],
+  );
+  const selectedDayEvents = useMemo(() => {
+    if (!selectedDay) {
+      return [];
+    }
+    return monthEvents.filter((event) => eventOccursOnDay(event, selectedDay));
+  }, [monthEvents, selectedDay]);
+  const selectedDayLabel = selectedDay ? format(selectedDay, "EEEE d MMMM") : null;
 
   return (
     <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
@@ -281,13 +384,13 @@ export default function DashboardUpcomingMeetingsCard() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              This month
+              {isViewingCurrentMonth ? "This month" : "Viewing"}
             </div>
             <div
               className="mt-1 text-lg font-semibold text-gray-950 dark:text-white"
               suppressHydrationWarning
             >
-              {format(now, "MMMM yyyy")}
+              {viewedMonthLabel}
             </div>
           </div>
 
@@ -370,47 +473,62 @@ export default function DashboardUpcomingMeetingsCard() {
               {monthDays.map((day) => {
                 const inCurrentMonth = isSameMonth(day, viewedMonth);
                 const isCurrentDay = isToday(day);
+                const isSelectedDay = Boolean(selectedDay && isSameDay(day, selectedDay));
                 const count = dayCounts.get(format(day, "yyyy-MM-dd")) || 0;
                 const visibleDots = Math.min(count, MAX_VISIBLE_DOTS);
                 const extraDots = count - visibleDots;
                 const dotClassName = isCurrentDay && inCurrentMonth
                   ? "bg-white/90"
                   : "bg-orange-500 dark:bg-orange-400";
+                const dayClasses = `flex min-h-[3.5rem] flex-col items-center justify-center rounded-2xl px-1 py-2 text-sm font-medium transition-colors ${
+                  isCurrentDay
+                    ? inCurrentMonth
+                      ? "bg-orange-600 text-white shadow-lg shadow-orange-600/25"
+                      : "border border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
+                    : isSelectedDay && inCurrentMonth
+                      ? "border border-orange-300 bg-orange-50 text-orange-700 shadow-sm shadow-orange-600/10 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200"
+                      : inCurrentMonth
+                        ? "bg-gray-950/[0.04] text-gray-700 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:bg-white/5 dark:text-gray-200 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-200"
+                        : "text-gray-300 dark:text-gray-600"
+                }`;
 
                 return (
-                  <div
-                    key={day.toISOString()}
-                    className={`flex min-h-[3.5rem] flex-col items-center justify-center rounded-2xl px-1 py-2 text-sm font-medium transition-colors ${
-                      isCurrentDay
-                        ? inCurrentMonth
-                          ? "bg-orange-600 text-white shadow-lg shadow-orange-600/25"
-                          : "border border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
-                        : inCurrentMonth
-                          ? "bg-gray-950/[0.04] text-gray-700 dark:bg-white/5 dark:text-gray-200"
-                          : "text-gray-300 dark:text-gray-600"
-                    }`}
-                  >
-                    <span>{format(day, "d")}</span>
-                    {count > 0 && inCurrentMonth && (
-                      <div className="mt-1 flex items-center gap-1">
-                        {Array.from({ length: visibleDots }).map((_, index) => (
-                          <span
-                            key={`${day.toISOString()}-dot-${index}`}
-                            className={`h-1.5 w-1.5 rounded-full ${dotClassName}`}
-                          />
-                        ))}
-                        {extraDots > 0 && (
-                          <span className={`text-[10px] font-semibold ${
-                            isCurrentDay && inCurrentMonth
-                              ? "text-white/90"
-                              : "text-orange-600 dark:text-orange-300"
-                          }`}>
-                            +{extraDots}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  inCurrentMonth ? (
+                    <button
+                      key={day.toISOString()}
+                      type="button"
+                      onClick={() => setSelectedDay(startOfDay(day))}
+                      className={dayClasses}
+                    >
+                      <span>{format(day, "d")}</span>
+                      {count > 0 && (
+                        <div className="mt-1 flex items-center gap-1">
+                          {Array.from({ length: visibleDots }).map((_, index) => (
+                            <span
+                              key={`${day.toISOString()}-dot-${index}`}
+                              className={`h-1.5 w-1.5 rounded-full ${dotClassName}`}
+                            />
+                          ))}
+                          {extraDots > 0 && (
+                            <span className={`text-[10px] font-semibold ${
+                              isCurrentDay
+                                ? "text-white/90"
+                                : "text-orange-600 dark:text-orange-300"
+                            }`}>
+                              +{extraDots}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  ) : (
+                    <div
+                      key={day.toISOString()}
+                      className={dayClasses}
+                    >
+                      <span>{format(day, "d")}</span>
+                    </div>
+                  )
                 );
               })}
             </div>
@@ -425,26 +543,10 @@ export default function DashboardUpcomingMeetingsCard() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading agenda...
               </div>
-            ) : summary?.agenda_items.length ? (
+            ) : futureAgendaItems.length ? (
               <div className="mt-4 space-y-3">
-                {summary.agenda_items.map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-xl border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
-                      <span>{formatAgendaDate(event)}</span>
-                      <span>•</span>
-                      <span>{formatAgendaTime(event)}</span>
-                    </div>
-                    <div className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
-                      {event.title}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                      {event.calendar_name}
-                      {event.account_label ? ` • ${event.account_label}` : ""}
-                    </div>
-                  </div>
+                {futureAgendaItems.map((event) => (
+                  <AgendaEventCard key={event.id} event={event} />
                 ))}
               </div>
             ) : (
@@ -458,7 +560,31 @@ export default function DashboardUpcomingMeetingsCard() {
 
       {viewMode === "month" && (
         <div className="mt-4 rounded-[1.5rem] border border-dashed border-orange-200 bg-orange-50/70 p-4 text-sm text-gray-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-gray-300">
-          {footerText}
+          {calendarLoading ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading day agenda...
+            </span>
+          ) : summary?.state === "ready" && selectedDay && selectedDayLabel ? (
+            <div>
+              <div className="text-sm font-semibold text-gray-950 dark:text-white">
+                {selectedDayLabel}
+              </div>
+              {selectedDayEvents.length ? (
+                <div className="mt-4 space-y-3">
+                  {selectedDayEvents.map((event) => (
+                    <AgendaEventCard key={event.id} event={event} />
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  No events on {format(selectedDay, "EEE d MMM")}.
+                </p>
+              )}
+            </div>
+          ) : (
+            footerText
+          )}
         </div>
       )}
     </div>

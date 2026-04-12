@@ -243,7 +243,7 @@ export default function CalendarConnectionsSettings() {
             Calendar Connections
           </h3>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-            Connect Gmail or Outlook calendars, approve access in the provider's
+            Connect Gmail or Outlook calendars, approve access in the provider&apos;s
             own consent screen, then choose which calendars Nojoin should sync.
             No personal client IDs or secrets are entered here.
           </p>

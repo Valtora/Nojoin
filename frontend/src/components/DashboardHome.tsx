@@ -178,97 +178,96 @@ export default function DashboardHome() {
           />
 
           <DashboardTasksPanel />
-        </div>
-
-        <div className="xl:col-start-1 xl:row-start-2 rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
-          <div className="flex items-center justify-between gap-4">
-            <div className="mt-2 flex items-start gap-3">
-              <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
-                <Clock className="h-5 w-5" />
+          <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+            <div className="flex items-center justify-between gap-4">
+              <div className="mt-2 flex items-start gap-3">
+                <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+                  Recent Meetings
+                </h2>
               </div>
-              <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
-                Recent Meetings
-              </h2>
+              <Link
+                href="/recordings"
+                className="inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"
+              >
+                View all
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-            <Link
-              href="/recordings"
-              className="inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"
-            >
-              View all
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
 
-          <div className="mt-6 space-y-3">
-            {loading ? (
-              <div className="rounded-[1.5rem] border border-dashed border-orange-200 bg-orange-50/70 p-6 text-sm text-gray-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-gray-300">
-                Loading meetings...
-              </div>
-            ) : recentRecordings.length === 0 ? (
-              <div className="rounded-[1.5rem] border border-dashed border-orange-200 bg-orange-50/70 p-6 text-sm text-gray-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-gray-300">
-                No recordings yet.
-              </div>
-            ) : (
-              recentRecordings.map((recording) => (
-                <Link
-                  key={recording.id}
-                  href={`/recordings/${recording.id}`}
-                  className="flex items-start justify-between gap-4 rounded-[1.5rem] border border-white/60 bg-white/70 px-4 py-4 transition-colors hover:border-orange-200 hover:bg-orange-50/70 dark:border-white/10 dark:bg-gray-900/60 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-base font-semibold text-gray-950 dark:text-white">
-                          {recording.name}
+            <div className="mt-6 space-y-3">
+              {loading ? (
+                <div className="rounded-[1.5rem] border border-dashed border-orange-200 bg-orange-50/70 p-6 text-sm text-gray-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-gray-300">
+                  Loading meetings...
+                </div>
+              ) : recentRecordings.length === 0 ? (
+                <div className="rounded-[1.5rem] border border-dashed border-orange-200 bg-orange-50/70 p-6 text-sm text-gray-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-gray-300">
+                  No recordings yet.
+                </div>
+              ) : (
+                recentRecordings.map((recording) => (
+                  <Link
+                    key={recording.id}
+                    href={`/recordings/${recording.id}`}
+                    className="flex items-start justify-between gap-4 rounded-[1.5rem] border border-white/60 bg-white/70 px-4 py-4 transition-colors hover:border-orange-200 hover:bg-orange-50/70 dark:border-white/10 dark:bg-gray-900/60 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-base font-semibold text-gray-950 dark:text-white">
+                            {recording.name}
+                          </div>
                         </div>
+
+                        {recording.status !== RecordingStatus.PROCESSED && (
+                          <span
+                            className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(
+                              recording,
+                            )}`}
+                          >
+                            {getStatusLabel(recording)}
+                          </span>
+                        )}
                       </div>
 
-                      {recording.status !== RecordingStatus.PROCESSED && (
-                        <span
-                          className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(
-                            recording,
-                          )}`}
-                        >
-                          {getStatusLabel(recording)}
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Calendar className="h-4 w-4" />
+                          {formatMeetingDate(recording.created_at)}
                         </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Clock className="h-4 w-4" />
+                          {formatMeetingDuration(recording)}
+                        </span>
+                      </div>
+
+                      {recording.tags && recording.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {recording.tags.map((tag) => {
+                            const color = getColorByKey(tag.color || "gray");
+
+                            return (
+                              <span
+                                key={tag.id}
+                                className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100/85 px-2.5 py-1 text-xs font-semibold text-orange-900 shadow-sm shadow-orange-950/5 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
+                              >
+                                <span
+                                  className={`mr-1.5 h-1.5 w-1.5 rounded-full ${color.dot}`}
+                                />
+                                {tag.name}
+                              </span>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calendar className="h-4 w-4" />
-                        {formatMeetingDate(recording.created_at)}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Clock className="h-4 w-4" />
-                        {formatMeetingDuration(recording)}
-                      </span>
-                    </div>
-
-                    {recording.tags && recording.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {recording.tags.map((tag) => {
-                          const color = getColorByKey(tag.color || "gray");
-
-                          return (
-                            <span
-                              key={tag.id}
-                              className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100/85 px-2.5 py-1 text-xs font-semibold text-orange-900 shadow-sm shadow-orange-950/5 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
-                            >
-                              <span
-                                className={`mr-1.5 h-1.5 w-1.5 rounded-full ${color.dot}`}
-                              />
-                              {tag.name}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-gray-400" />
-                </Link>
-              ))
-            )}
+                    <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-gray-400" />
+                  </Link>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </section>

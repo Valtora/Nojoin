@@ -176,7 +176,7 @@ export default function CalendarProviderSettings() {
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
               Store the one-time installation OAuth app credentials for Google and Microsoft.
               End users do not paste these values. They only click Connect Gmail Calendar
-              or Connect Outlook Calendar and then approve access in the provider's own
+              or Connect Outlook Calendar and then approve access in the provider&apos;s own
               sign-in and consent screen.
             </p>
           </div>
