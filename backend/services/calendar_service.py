@@ -33,6 +33,7 @@ from backend.models.calendar import (
     CalendarDashboardSummaryRead,
     CalendarOverviewRead,
     CalendarProvider,
+    CalendarProviderAvailabilityRead,
     CalendarProviderConfig,
     CalendarProviderStatusRead,
     CalendarSelectionUpdate,
@@ -94,6 +95,15 @@ MEETING_URL_HOST_PRIORITY = (
     ".whereby.com",
     ".ringcentral.com",
     "meet.jit.si",
+)
+TRUSTED_MEETING_HOSTS = {
+    "meet.google.com",
+    "teams.microsoft.com",
+    "teams.live.com",
+    "zoom.us",
+}
+TRUSTED_MEETING_HOST_SUFFIXES = (
+    ".zoom.us",
 )
 MICROSOFT_EVENT_SELECT = ",".join(
     [
@@ -252,6 +262,28 @@ def _meeting_url_rank(url: str) -> int:
         if hostname == suffix or hostname.endswith(candidate):
             return index
     return len(MEETING_URL_HOST_PRIORITY)
+
+
+def _get_meeting_url_host(url: str | None) -> str | None:
+    if not url:
+        return None
+
+    hostname = urlparse(url).hostname
+    if not hostname:
+        return None
+
+    return hostname.lower()
+
+
+def _is_trusted_meeting_url(url: str | None) -> bool:
+    hostname = _get_meeting_url_host(url)
+    if not hostname:
+        return False
+
+    return hostname in TRUSTED_MEETING_HOSTS or any(
+        hostname.endswith(suffix)
+        for suffix in TRUSTED_MEETING_HOST_SUFFIXES
+    )
 
 
 def _pick_preferred_meeting_url(*values: str | None) -> str | None:
@@ -551,6 +583,16 @@ async def list_provider_statuses(db: AsyncSession) -> list[CalendarProviderStatu
             )
         )
     return statuses
+
+
+def _serialise_provider_availability(
+    provider_status: CalendarProviderStatusRead,
+) -> CalendarProviderAvailabilityRead:
+    return CalendarProviderAvailabilityRead(
+        provider=provider_status.provider,
+        display_name=provider_status.display_name,
+        configured=provider_status.configured,
+    )
 
 
 async def update_provider_configuration(
@@ -1396,7 +1438,10 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
     )
     connections = list((await db.execute(statement)).scalars().unique().all())
     return CalendarOverviewRead(
-        providers=providers,
+        providers=[
+            _serialise_provider_availability(provider_status)
+            for provider_status in providers
+        ],
         connections=[_serialise_connection(connection) for connection in connections],
     )
 
@@ -1738,6 +1783,7 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
     calendar = calendars_by_id[event.calendar_id]
     connection = accounts_by_connection_id[calendar.connection_id]
     account_label = connection.email or connection.display_name
+    meeting_url_host = _get_meeting_url_host(event.meeting_url)
     return CalendarDashboardEventRead(
         id=event.id,
         title=event.title,
@@ -1746,6 +1792,8 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
         account_label=account_label,
         location=event.location_text,
         meeting_url=event.meeting_url,
+        meeting_url_trusted=_is_trusted_meeting_url(event.meeting_url),
+        meeting_url_host=meeting_url_host,
         is_all_day=event.is_all_day,
         starts_at=event.starts_at,
         ends_at=event.ends_at,

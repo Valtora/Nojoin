@@ -190,9 +190,53 @@ function formatAgendaTime(event: CalendarDashboardEvent): string {
 }
 
 
+function isHttpUrl(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+
+function normaliseComparableUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const normalisedPath = parsed.pathname.replace(/\/$/, "") || "/";
+    return `${parsed.protocol}//${parsed.host}${normalisedPath}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+
 function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
-  const hasDistinctLocation = Boolean(
-    event.location && event.location.trim() && !event.meeting_url,
+  const locationText = event.location?.trim() || null;
+  const meetingUrl = event.meeting_url?.trim() || null;
+  const hasTrustedMeetingUrl = Boolean(
+    meetingUrl && event.meeting_url_trusted,
+  );
+  const hasUntrustedMeetingUrl = Boolean(
+    meetingUrl && !event.meeting_url_trusted,
+  );
+  const locationIsUrl = isHttpUrl(locationText);
+  const locationMatchesTrustedMeetingUrl = Boolean(
+    hasTrustedMeetingUrl &&
+      normaliseComparableUrl(locationText) &&
+      normaliseComparableUrl(locationText) === normaliseComparableUrl(meetingUrl),
+  );
+  const showLocation = Boolean(locationText && !locationMatchesTrustedMeetingUrl);
+  const showSeparateUntrustedUrl = Boolean(
+    hasUntrustedMeetingUrl && meetingUrl && meetingUrl !== locationText,
   );
 
   return (
@@ -208,17 +252,45 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
       <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
         {event.calendar_name}
       </div>
-      {hasDistinctLocation && (
-        <div className="mt-3 inline-flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
-          <span>{event.location}</span>
+      {(showLocation || showSeparateUntrustedUrl) && (
+        <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+          {showLocation && locationText && (
+            locationIsUrl ? (
+              <a
+                href={locationText}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
+              >
+                <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+                <span className="min-w-0 break-all">{locationText}</span>
+              </a>
+            ) : (
+              <div className="inline-flex items-start gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+                <span>{locationText}</span>
+              </div>
+            )
+          )}
+
+          {showSeparateUntrustedUrl && meetingUrl && (
+            <a
+              href={meetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
+            >
+              <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+              <span className="min-w-0 break-all">{meetingUrl}</span>
+            </a>
+          )}
         </div>
       )}
-      {event.meeting_url && (
+      {hasTrustedMeetingUrl && meetingUrl && (
         <a
-          href={event.meeting_url}
+          href={meetingUrl}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"
         >
           <ExternalLink className="h-4 w-4" />

@@ -1,5 +1,6 @@
 -r backend.txt
 -r worker.txt
+aiosqlite
 pyannote.audio==4.0.2
 torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126

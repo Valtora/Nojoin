@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 interface TooltipProps {
-  content: string;
+  content: React.ReactNode;
   children: React.ReactNode;
   position?: 'top' | 'bottom' | 'left' | 'right';
 }
@@ -21,10 +21,15 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
       className="relative inline-block"
       onMouseEnter={() => setIsVisible(true)}
       onMouseLeave={() => setIsVisible(false)}
+      onFocus={() => setIsVisible(true)}
+      onBlur={() => setIsVisible(false)}
     >
       {children}
       {isVisible && (
-        <div className={`absolute z-50 px-2 py-1 text-xs text-white bg-gray-800 rounded shadow-lg whitespace-nowrap ${positionClasses[position]}`}>
+        <div
+          role="tooltip"
+          className={`pointer-events-none absolute z-50 max-w-sm rounded bg-gray-800 px-3 py-2 text-xs text-white shadow-lg whitespace-normal break-all ${positionClasses[position]}`}
+        >
           {content}
           <div className={`absolute w-2 h-2 bg-gray-800 transform rotate-45 
             ${position === 'top' ? 'bottom-[-4px] left-1/2 -translate-x-1/2' : ''}

@@ -169,6 +169,12 @@ class CalendarProviderStatusRead(SQLModel):
     has_client_secret: bool
 
 
+class CalendarProviderAvailabilityRead(SQLModel):
+    provider: str
+    display_name: str
+    configured: bool
+
+
 class CalendarProviderConfigUpdate(SQLModel):
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
@@ -205,7 +211,7 @@ class CalendarConnectionRead(SQLModel):
 
 
 class CalendarOverviewRead(SQLModel):
-    providers: List[CalendarProviderStatusRead]
+    providers: List[CalendarProviderAvailabilityRead]
     connections: List[CalendarConnectionRead]
 
 
@@ -235,6 +241,8 @@ class CalendarDashboardEventRead(SQLModel):
     account_label: Optional[str] = None
     location: Optional[str] = None
     meeting_url: Optional[str] = None
+    meeting_url_trusted: bool = False
+    meeting_url_host: Optional[str] = None
     is_all_day: bool
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None

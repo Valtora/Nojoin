@@ -206,6 +206,12 @@ export interface CalendarProviderStatus {
   has_client_secret: boolean;
 }
 
+export interface CalendarProviderAvailability {
+  provider: CalendarProvider;
+  display_name: string;
+  configured: boolean;
+}
+
 export interface CalendarSource {
   id: number;
   provider_calendar_id: string;
@@ -234,7 +240,7 @@ export interface CalendarConnection {
 }
 
 export interface CalendarOverview {
-  providers: CalendarProviderStatus[];
+  providers: CalendarProviderAvailability[];
   connections: CalendarConnection[];
 }
 
@@ -259,6 +265,8 @@ export interface CalendarDashboardEvent {
   account_label?: string | null;
   location?: string | null;
   meeting_url?: string | null;
+  meeting_url_trusted: boolean;
+  meeting_url_host?: string | null;
   is_all_day: boolean;
   starts_at?: string | null;
   ends_at?: string | null;

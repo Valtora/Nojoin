@@ -11,10 +11,13 @@ from backend.services.calendar_service import (
     _build_sync_window,
     _can_use_incremental_sync,
     _classify_sync_failure,
+    _get_meeting_url_host,
     _is_partial_microsoft_occurrence,
+    _is_trusted_meeting_url,
     _iter_event_dates,
     _normalise_google_event,
     _normalise_microsoft_event,
+    _to_dashboard_event,
 )
 
 
@@ -71,6 +74,43 @@ def test_normalise_google_event_extracts_location_and_meeting_url() -> None:
     assert event is not None
     assert event.location_text == "Boardroom 4"
     assert event.meeting_url == "https://meet.google.com/abc-defg-hij"
+
+
+def test_get_meeting_url_host_normalises_hostname() -> None:
+    assert _get_meeting_url_host("https://Teams.Microsoft.com/l/meetup-join/abc") == "teams.microsoft.com"
+
+
+def test_is_trusted_meeting_url_allows_google_microsoft_and_zoom() -> None:
+    assert _is_trusted_meeting_url("https://meet.google.com/abc-defg-hij") is True
+    assert _is_trusted_meeting_url("https://teams.microsoft.com/l/meetup-join/abc") is True
+    assert _is_trusted_meeting_url("https://company.zoom.us/j/123456789") is True
+
+
+def test_is_trusted_meeting_url_rejects_other_hosts() -> None:
+    assert _is_trusted_meeting_url("https://example.com/meeting") is False
+    assert _is_trusted_meeting_url("https://app.zoom.evil.example/j/123") is False
+
+
+def test_to_dashboard_event_marks_untrusted_links() -> None:
+    event = SimpleNamespace(
+        id=41,
+        title="Supplier review",
+        calendar_id=7,
+        location_text="Boardroom 2",
+        meeting_url="https://vendor.example.com/call/123",
+        is_all_day=False,
+        starts_at=datetime(2026, 4, 11, 9, 0, 0),
+        ends_at=datetime(2026, 4, 11, 10, 0, 0),
+        start_date=None,
+        end_date=None,
+    )
+    calendar = SimpleNamespace(id=7, connection_id=9, name="Work")
+    connection = SimpleNamespace(id=9, provider="google", email="owner@example.com", display_name=None)
+
+    payload = _to_dashboard_event(event, {7: calendar}, {9: connection})
+
+    assert payload.meeting_url_trusted is False
+    assert payload.meeting_url_host == "vendor.example.com"
 
 
 def test_build_google_events_query_params_uses_sync_token_without_window_filters() -> None:

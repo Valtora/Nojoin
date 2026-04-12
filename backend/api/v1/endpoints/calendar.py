@@ -83,6 +83,7 @@ async def start_calendar_authorisation(
         namespace=f"calendar-oauth-start:{provider}",
         limit=10,
         window_seconds=10 * 60,
+        discriminator=str(current_user.id),
         detail="Too many calendar connection attempts. Please try again later.",
     )
     authorisation_url = await start_authorisation(db, provider, current_user)
@@ -102,6 +103,7 @@ async def start_calendar_authorisation_redirect(
         namespace=f"calendar-oauth-start:{provider}",
         limit=10,
         window_seconds=10 * 60,
+        discriminator=str(current_user.id),
         detail="Too many calendar connection attempts. Please try again later.",
     )
 
@@ -133,6 +135,7 @@ async def calendar_authorisation_callback(
         namespace=f"calendar-oauth-callback:{provider}",
         limit=20,
         window_seconds=10 * 60,
+        discriminator=str(current_user.id),
         detail="Too many calendar callback attempts. Please try again later.",
     )
 
@@ -170,6 +173,7 @@ async def sync_calendar_connection(
         namespace=f"calendar-sync:{connection_id}",
         limit=12,
         window_seconds=10 * 60,
+        discriminator=f"{current_user.id}:{connection_id}",
         detail="Too many manual calendar sync requests. Please wait and try again.",
     )
     return await refresh_connection_now(db, current_user, connection_id)
