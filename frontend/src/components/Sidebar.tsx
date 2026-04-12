@@ -335,6 +335,21 @@ export default function Sidebar() {
     clearSelection();
   }, [currentView, clearSelection]);
 
+  useEffect(() => {
+    if (!mounted || pathname !== "/recordings" || filteredRecordings.length === 0) {
+      return;
+    }
+
+    const latestRecording = filteredRecordings.reduce((latest, candidate) =>
+      new Date(candidate.created_at).getTime() >
+      new Date(latest.created_at).getTime()
+        ? candidate
+        : latest,
+    );
+
+    router.replace(`/recordings/${latestRecording.id}`);
+  }, [filteredRecordings, mounted, pathname, router]);
+
   // Handle resizing
   useEffect(() => {
     if (!isResizing) return;
