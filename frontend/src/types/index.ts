@@ -219,6 +219,8 @@ export interface CalendarSource {
   description?: string | null;
   time_zone?: string | null;
   colour?: string | null;
+  provider_colour?: string | null;
+  custom_colour?: string | null;
   is_primary: boolean;
   is_read_only: boolean;
   is_selected: boolean;
@@ -261,7 +263,9 @@ export interface CalendarDashboardEvent {
   id: number;
   title: string;
   provider: CalendarProvider;
+  calendar_id: number;
   calendar_name: string;
+  calendar_colour?: string | null;
   account_label?: string | null;
   location?: string | null;
   meeting_url?: string | null;

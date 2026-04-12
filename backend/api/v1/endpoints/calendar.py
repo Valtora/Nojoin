@@ -11,6 +11,7 @@ from backend.models.calendar import (
     CalendarProvider,
     CalendarProviderConfigUpdate,
     CalendarProviderStatusRead,
+    CalendarSourceColourUpdate,
     CalendarSelectionUpdate,
     CalendarConnectionRead,
 )
@@ -25,6 +26,7 @@ from backend.services.calendar_service import (
     refresh_connection_now,
     start_authorisation,
     update_connection_selection,
+    update_calendar_source_colour,
     update_provider_configuration,
 )
 from backend.utils.rate_limit import enforce_rate_limit
@@ -159,6 +161,24 @@ async def update_selected_calendars(
     db: AsyncSession = Depends(get_db),
 ) -> CalendarConnectionRead:
     return await update_connection_selection(db, current_user, connection_id, payload)
+
+
+@router.put("/connections/{connection_id}/calendars/{calendar_id}/colour", response_model=CalendarConnectionRead)
+@router.put("/connections/{connection_id}/calendars/{calendar_id}/color", response_model=CalendarConnectionRead)
+async def update_calendar_colour(
+    connection_id: int,
+    calendar_id: int,
+    payload: CalendarSourceColourUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CalendarConnectionRead:
+    return await update_calendar_source_colour(
+        db,
+        current_user,
+        connection_id,
+        calendar_id,
+        payload,
+    )
 
 
 @router.post("/connections/{connection_id}/sync", response_model=CalendarConnectionRead)

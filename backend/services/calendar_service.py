@@ -38,6 +38,7 @@ from backend.models.calendar import (
     CalendarProviderStatusRead,
     CalendarSelectionUpdate,
     CalendarSource,
+    CalendarSourceColourUpdate,
     CalendarSourceRead,
     CalendarSyncStatus,
     CalendarEvent,
@@ -222,6 +223,13 @@ def _normalise_text(value: str | None) -> str | None:
         return None
     cleaned = " ".join(html.unescape(str(value)).replace("\xa0", " ").split())
     return cleaned or None
+
+
+def _normalise_colour_value(value: str | None) -> str | None:
+    cleaned = _normalise_text(value)
+    if not cleaned:
+        return None
+    return cleaned.lower()
 
 
 def _clean_url(value: str | None) -> str | None:
@@ -1394,13 +1402,16 @@ async def _microsoft_calendar_has_partial_occurrence_artifacts(
 
 
 def _serialise_source(calendar: CalendarSource) -> CalendarSourceRead:
+    effective_colour = calendar.user_colour or calendar.colour
     return CalendarSourceRead(
         id=calendar.id,
         provider_calendar_id=calendar.provider_calendar_id,
         name=calendar.name,
         description=calendar.description,
         time_zone=calendar.time_zone,
-        colour=calendar.colour,
+        colour=effective_colour,
+        provider_colour=calendar.colour,
+        custom_colour=calendar.user_colour,
         is_primary=calendar.is_primary,
         is_read_only=calendar.is_read_only,
         is_selected=calendar.is_selected,
@@ -1513,6 +1524,43 @@ async def update_connection_selection(
 
     if selected_ids:
         await sync_connection_in_session(db, connection.id)
+
+    refreshed = (
+        await db.execute(
+            select(CalendarConnection)
+            .options(selectinload(CalendarConnection.calendars))
+            .where(CalendarConnection.id == connection.id)
+        )
+    ).scalars().unique().one()
+    return _serialise_connection(refreshed)
+
+
+async def update_calendar_source_colour(
+    db: AsyncSession,
+    user: User,
+    connection_id: int,
+    calendar_id: int,
+    payload: CalendarSourceColourUpdate,
+) -> CalendarConnectionRead:
+    statement = (
+        select(CalendarConnection)
+        .options(selectinload(CalendarConnection.calendars))
+        .where(CalendarConnection.id == connection_id, CalendarConnection.user_id == user.id)
+    )
+    connection = (await db.execute(statement)).scalars().unique().one_or_none()
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Calendar connection not found")
+
+    calendar = next(
+        (item for item in connection.calendars if item.id == calendar_id),
+        None,
+    )
+    if calendar is None:
+        raise HTTPException(status_code=404, detail="Calendar source not found")
+
+    calendar.user_colour = _normalise_colour_value(payload.colour)
+    db.add(calendar)
+    await db.commit()
 
     refreshed = (
         await db.execute(
@@ -1788,7 +1836,9 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
         id=event.id,
         title=event.title,
         provider=connection.provider,
+        calendar_id=calendar.id,
         calendar_name=calendar.name,
+        calendar_colour=calendar.user_colour or calendar.colour,
         account_label=account_label,
         location=event.location_text,
         meeting_url=event.meeting_url,

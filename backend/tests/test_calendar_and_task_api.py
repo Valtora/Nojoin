@@ -62,6 +62,7 @@ SCHEMA_STATEMENTS = [
         description TEXT,
         time_zone VARCHAR(128),
         colour VARCHAR(32),
+        user_colour VARCHAR(32),
         is_primary BOOLEAN NOT NULL,
         is_read_only BOOLEAN NOT NULL,
         is_selected BOOLEAN NOT NULL,
@@ -253,6 +254,80 @@ async def seed_task(
     )
 
 
+async def seed_calendar_source(
+    session_maker: sessionmaker,
+    *,
+    calendar_id: int,
+    connection_id: int,
+    provider_calendar_id: str,
+    name: str,
+    colour: str | None,
+    user_colour: str | None = None,
+    is_selected: bool = True,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO calendar_sources (
+            id,
+            created_at,
+            updated_at,
+            connection_id,
+            provider_calendar_id,
+            name,
+            description,
+            time_zone,
+            colour,
+            user_colour,
+            is_primary,
+            is_read_only,
+            is_selected,
+            sync_cursor,
+            last_synced_at,
+            sync_window_start,
+            sync_window_end
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :connection_id,
+            :provider_calendar_id,
+            :name,
+            :description,
+            :time_zone,
+            :colour,
+            :user_colour,
+            :is_primary,
+            :is_read_only,
+            :is_selected,
+            :sync_cursor,
+            :last_synced_at,
+            :sync_window_start,
+            :sync_window_end
+        )
+        """,
+        {
+            "id": calendar_id,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
+            "connection_id": connection_id,
+            "provider_calendar_id": provider_calendar_id,
+            "name": name,
+            "description": None,
+            "time_zone": "Europe/London",
+            "colour": colour,
+            "user_colour": user_colour,
+            "is_primary": False,
+            "is_read_only": False,
+            "is_selected": is_selected,
+            "sync_cursor": None,
+            "last_synced_at": None,
+            "sync_window_start": None,
+            "sync_window_end": None,
+        },
+    )
+
+
 @pytest.fixture
 async def api_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     for env_key in (
@@ -393,6 +468,7 @@ async def test_delete_other_users_task_returns_404(
     ("method", "path", "payload"),
     [
         ("put", "/api/v1/calendar/connections/301/calendars", {"selected_calendar_ids": []}),
+        ("put", "/api/v1/calendar/connections/301/calendars/401/colour", {"colour": "emerald"}),
         ("post", "/api/v1/calendar/connections/301/sync", None),
         ("delete", "/api/v1/calendar/connections/301", None),
     ],
@@ -413,3 +489,43 @@ async def test_calendar_connection_mutations_require_ownership(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Calendar connection not found"}
+
+
+@pytest.mark.anyio
+async def test_update_calendar_colour_returns_effective_and_provider_values(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_calendar_connection(test_session_maker, connection_id=301, user_id=1)
+    await seed_calendar_source(
+        test_session_maker,
+        calendar_id=401,
+        connection_id=301,
+        provider_calendar_id="primary",
+        name="Primary calendar",
+        colour="#4285f4",
+    )
+    override_current_user(1)
+
+    update_response = await client.put(
+        "/api/v1/calendar/connections/301/calendars/401/colour",
+        json={"colour": "emerald"},
+    )
+
+    assert update_response.status_code == 200
+    updated_calendar = update_response.json()["calendars"][0]
+    assert updated_calendar["colour"] == "emerald"
+    assert updated_calendar["custom_colour"] == "emerald"
+    assert updated_calendar["provider_colour"] == "#4285f4"
+
+    clear_response = await client.put(
+        "/api/v1/calendar/connections/301/calendars/401/colour",
+        json={"colour": None},
+    )
+
+    assert clear_response.status_code == 200
+    cleared_calendar = clear_response.json()["calendars"][0]
+    assert cleared_calendar["colour"] == "#4285f4"
+    assert cleared_calendar["custom_colour"] is None
+    assert cleared_calendar["provider_colour"] == "#4285f4"

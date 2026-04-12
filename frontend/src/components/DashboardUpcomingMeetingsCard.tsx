@@ -28,12 +28,47 @@ import {
   List,
   MapPin,
 } from "lucide-react";
+import { COLOR_PALETTE } from "@/lib/constants";
 import { getCalendarDashboardSummary } from "@/lib/api";
 import { CalendarDashboardEvent, CalendarDashboardSummary } from "@/types";
 
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 type CalendarViewMode = "month" | "agenda";
 const MAX_VISIBLE_DOTS = 4;
+
+
+function getCalendarColourPresentation(colour: string | null | undefined) {
+  const paletteColour = colour
+    ? COLOR_PALETTE.find((option) => option.key === colour.toLowerCase())
+    : null;
+
+  if (paletteColour) {
+    return { className: paletteColour.dot, style: undefined };
+  }
+
+  if (colour) {
+    return { className: "", style: { backgroundColor: colour } };
+  }
+
+  return { className: "bg-orange-500", style: undefined };
+}
+
+
+function getDayCalendarColours(events: CalendarDashboardEvent[], day: Date): string[] {
+  const coloursByCalendarId = new Map<number, string>();
+
+  events.forEach((event) => {
+    if (!eventOccursOnDay(event, day)) {
+      return;
+    }
+
+    if (!coloursByCalendarId.has(event.calendar_id)) {
+      coloursByCalendarId.set(event.calendar_id, event.calendar_colour || "orange");
+    }
+  });
+
+  return Array.from(coloursByCalendarId.values());
+}
 
 
 function getEventStart(event: CalendarDashboardEvent): Date | null {
@@ -220,13 +255,11 @@ function normaliseComparableUrl(value: string | null | undefined): string | null
 
 
 function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
+  const calendarColour = getCalendarColourPresentation(event.calendar_colour);
   const locationText = event.location?.trim() || null;
   const meetingUrl = event.meeting_url?.trim() || null;
   const hasTrustedMeetingUrl = Boolean(
     meetingUrl && event.meeting_url_trusted,
-  );
-  const hasUntrustedMeetingUrl = Boolean(
-    meetingUrl && !event.meeting_url_trusted,
   );
   const locationIsUrl = isHttpUrl(locationText);
   const locationMatchesTrustedMeetingUrl = Boolean(
@@ -235,8 +268,8 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
       normaliseComparableUrl(locationText) === normaliseComparableUrl(meetingUrl),
   );
   const showLocation = Boolean(locationText && !locationMatchesTrustedMeetingUrl);
-  const showSeparateUntrustedUrl = Boolean(
-    hasUntrustedMeetingUrl && meetingUrl && meetingUrl !== locationText,
+  const showMeetingUrl = Boolean(
+    meetingUrl && (hasTrustedMeetingUrl || meetingUrl !== locationText),
   );
 
   return (
@@ -249,10 +282,14 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
       <div className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
         {event.title}
       </div>
-      <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+      <div className="mt-1 inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${calendarColour.className}`}
+          style={calendarColour.style}
+        />
         {event.calendar_name}
       </div>
-      {(showLocation || showSeparateUntrustedUrl) && (
+      {(showLocation || showMeetingUrl) && (
         <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
           {showLocation && locationText && (
             locationIsUrl ? (
@@ -273,7 +310,7 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
             )
           )}
 
-          {showSeparateUntrustedUrl && meetingUrl && (
+          {showMeetingUrl && meetingUrl && (
             <a
               href={meetingUrl}
               target="_blank"
@@ -285,17 +322,6 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
             </a>
           )}
         </div>
-      )}
-      {hasTrustedMeetingUrl && meetingUrl && (
-        <a
-          href={meetingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200"
-        >
-          <ExternalLink className="h-4 w-4" />
-          <span>Join Meeting</span>
-        </a>
       )}
     </div>
   );
@@ -390,13 +416,20 @@ export default function DashboardUpcomingMeetingsCard() {
   const isViewingCurrentMonth = isSameMonth(viewedMonth, now);
   const viewedMonthLabel = format(viewedMonth, "MMMM yyyy");
   const monthEvents = useMemo(() => summary?.agenda_items ?? [], [summary]);
-  const dayCounts = useMemo(() => {
-    const countMap = new Map<string, number>();
-    summary?.day_counts.forEach((entry) => {
-      countMap.set(entry.date, entry.count);
+  const dayEventColours = useMemo(() => {
+    const coloursByDay = new Map<string, string[]>();
+
+    monthDays.forEach((day) => {
+      const dayKey = format(day, "yyyy-MM-dd");
+      const dayColours = getDayCalendarColours(monthEvents, day);
+
+      if (dayColours.length) {
+        coloursByDay.set(dayKey, dayColours);
+      }
     });
-    return countMap;
-  }, [summary]);
+
+    return coloursByDay;
+  }, [monthDays, monthEvents]);
   const nextEventHelper = useMemo(
     () => buildNextEventHelper(summary, now),
     [summary, now],
@@ -416,6 +449,16 @@ export default function DashboardUpcomingMeetingsCard() {
     return monthEvents.filter((event) => eventOccursOnDay(event, selectedDay));
   }, [monthEvents, selectedDay]);
   const selectedDayLabel = selectedDay ? format(selectedDay, "EEEE d MMMM") : null;
+  const isViewingToday = Boolean(
+    selectedDay && isViewingCurrentMonth && isSameDay(selectedDay, now),
+  );
+
+  const handleJumpToToday = () => {
+    const currentDate = new Date();
+    setNow(currentDate);
+    setViewedMonth(startOfMonth(currentDate));
+    setSelectedDay(startOfDay(currentDate));
+  };
 
   return (
     <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
@@ -513,6 +556,14 @@ export default function DashboardUpcomingMeetingsCard() {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleJumpToToday}
+              disabled={isViewingToday}
+              className="inline-flex h-10 items-center justify-center rounded-full border border-gray-200 bg-white/85 px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-default disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+            >
+              Today
+            </button>
+            <button
+              type="button"
               onClick={() => setViewedMonth((currentMonth) => addMonths(currentMonth, -1))}
               aria-label={`View ${format(addMonths(viewedMonth, -1), "MMMM yyyy")}`}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/85 text-gray-600 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
@@ -546,12 +597,9 @@ export default function DashboardUpcomingMeetingsCard() {
                 const inCurrentMonth = isSameMonth(day, viewedMonth);
                 const isCurrentDay = isToday(day);
                 const isSelectedDay = Boolean(selectedDay && isSameDay(day, selectedDay));
-                const count = dayCounts.get(format(day, "yyyy-MM-dd")) || 0;
-                const visibleDots = Math.min(count, MAX_VISIBLE_DOTS);
-                const extraDots = count - visibleDots;
-                const dotClassName = isCurrentDay && inCurrentMonth
-                  ? "bg-white/90"
-                  : "bg-orange-500 dark:bg-orange-400";
+                const dayColours = dayEventColours.get(format(day, "yyyy-MM-dd")) || [];
+                const visibleDotColours = dayColours.slice(0, MAX_VISIBLE_DOTS);
+                const extraDots = dayColours.length - visibleDotColours.length;
                 const dayClasses = `flex min-h-[3.5rem] flex-col items-center justify-center rounded-2xl px-1 py-2 text-sm font-medium transition-colors ${
                   isCurrentDay
                     ? inCurrentMonth
@@ -573,14 +621,18 @@ export default function DashboardUpcomingMeetingsCard() {
                       className={dayClasses}
                     >
                       <span>{format(day, "d")}</span>
-                      {count > 0 && (
+                      {dayColours.length > 0 && (
                         <div className="mt-1 flex items-center gap-1">
-                          {Array.from({ length: visibleDots }).map((_, index) => (
-                            <span
-                              key={`${day.toISOString()}-dot-${index}`}
-                              className={`h-1.5 w-1.5 rounded-full ${dotClassName}`}
-                            />
-                          ))}
+                          {visibleDotColours.map((colour, index) => {
+                            const dot = getCalendarColourPresentation(colour);
+                            return (
+                              <span
+                                key={`${day.toISOString()}-dot-${index}`}
+                                className={`h-1.5 w-1.5 rounded-full border border-white/60 dark:border-gray-950/40 ${dot.className}`}
+                                style={dot.style}
+                              />
+                            );
+                          })}
                           {extraDots > 0 && (
                             <span className={`text-[10px] font-semibold ${
                               isCurrentDay

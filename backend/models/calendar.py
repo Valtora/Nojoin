@@ -109,6 +109,7 @@ class CalendarSource(BaseDBModel, table=True):
     description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     time_zone: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     colour: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))
+    user_colour: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))
     is_primary: bool = Field(default=False, nullable=False)
     is_read_only: bool = Field(default=False, nullable=False)
     is_selected: bool = Field(default=False, nullable=False, index=True)
@@ -190,6 +191,8 @@ class CalendarSourceRead(SQLModel):
     description: Optional[str] = None
     time_zone: Optional[str] = None
     colour: Optional[str] = None
+    provider_colour: Optional[str] = None
+    custom_colour: Optional[str] = None
     is_primary: bool
     is_read_only: bool
     is_selected: bool
@@ -219,6 +222,10 @@ class CalendarSelectionUpdate(SQLModel):
     selected_calendar_ids: List[int]
 
 
+class CalendarSourceColourUpdate(SQLModel):
+    colour: Optional[str] = Field(default=None, max_length=32)
+
+
 class CalendarActionResponse(SQLModel):
     success: bool
     detail: str
@@ -237,7 +244,9 @@ class CalendarDashboardEventRead(SQLModel):
     id: int
     title: str
     provider: str
+    calendar_id: int
     calendar_name: str
+    calendar_colour: Optional[str] = None
     account_label: Optional[str] = None
     location: Optional[str] = None
     meeting_url: Optional[str] = None

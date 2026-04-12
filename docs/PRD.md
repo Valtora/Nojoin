@@ -40,7 +40,7 @@ The primary user interface for interacting with the system.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
 - **Dashboard Iteration Two:** The root route now serves as an operational dashboard with `Meet Now` capture controls, recent-meeting access, an interactive calendar shell, an inline personal to-do list, and clear routing into the recordings workspace.
-  - **Calendar Shell:** Users can browse prior and future months and switch between Month and Agenda modes. Until a real calendar integration is connected, the dashboard shows honest empty states rather than mock events.
+  - **Calendar Shell:** Users can browse prior and future months, jump back to today with a dedicated `Today` action, and switch between Month and Agenda modes. When calendar integrations are connected, month dots and agenda markers use per-calendar colours so different sources remain visually distinct. Until a real calendar integration is connected, the dashboard shows honest empty states rather than mock events.
   - **Task Cards:** Each individual to-do list item is referred to as a Task Card.
   - **Task Capture:** The to-do list is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on Task Cards, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
@@ -164,7 +164,8 @@ The system provides the following core capabilities:
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
   - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
 - **Dashboard Workspace:** The dashboard now combines `Meet Now`, recent meetings, an interactive calendar shell, and personal task capture into a single operational home surface.
-  - **Calendar Modes:** Month navigation and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
+  - **Calendar Modes:** Month navigation, a `Today` reset action, and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
+  - **Calendar Colour Mapping:** Connected calendar sources can be given distinct colours in Account settings. The dashboard month dots and agenda cards reuse those per-calendar colours instead of collapsing every event into a single accent colour.
   - **Task Flow:** Tasks are created inline from the dashboard as Task Cards. Users can rename an existing Task Card by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active Task Cards show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.
   - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.

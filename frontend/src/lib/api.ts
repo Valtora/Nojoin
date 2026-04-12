@@ -465,6 +465,18 @@ export const updateCalendarSelection = async (
   return response.data;
 };
 
+export const updateCalendarColor = async (
+  connectionId: number,
+  calendarId: number,
+  color: string | null,
+): Promise<CalendarConnection> => {
+  const response = await api.put<CalendarConnection>(
+    `/calendar/connections/${connectionId}/calendars/${calendarId}/color`,
+    { colour: color },
+  );
+  return response.data;
+};
+
 export const syncCalendarConnection = async (
   connectionId: number,
 ): Promise<CalendarConnection> => {

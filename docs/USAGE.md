@@ -139,7 +139,7 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 - **Dashboard:**
   - **Current Dashboard:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
   - **Meet Now:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
-  - **Calendar:** Includes interactive month browsing plus an Agenda toggle. If no calendar is connected, both views show an empty-state notice instead of fabricated events.
+  - **Calendar:** Includes interactive month browsing, a `Today` button that returns the view to the current date, and an Agenda toggle. If calendars are connected, month dots and agenda markers use per-calendar colours so you can distinguish event sources at a glance. If no calendar is connected, both views show an empty-state notice instead of fabricated events.
   - **To-Do List:** Personal tasks appear as Task Cards. Press `Enter` to save a new Task Card, `Escape` to cancel input, double-click a Task Card title to edit it, and confirm edits with `Enter` or by clicking outside. Optional deadlines support both date and time, and active Task Cards show a live time-remaining badge beside the deadline picker. The badge prefers days for deadlines at least 24 hours away and otherwise shows whole hours remaining.
   - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
   - **Future Direction:** Future dashboard work is expected to connect real calendar data and derive richer agenda/task automation from meeting outputs.
@@ -170,8 +170,9 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
 
 - **Server Settings:** Manage API keys, model selection, and storage paths.
 - **Calendar Connections:** Users can connect Gmail and Outlook calendars from **Settings > Account**.
-  - Clicking `Connect Gmail Calendar` or `Connect Outlook Calendar` sends the browser directly to the provider's own sign-in and consent screen.
-  - After approval, the user is returned to Nojoin automatically and can choose which calendars to sync.
+  - Clicking `Connect` beside Google or Microsoft sends the browser directly to the provider's own sign-in and consent screen.
+  - After approval, the user is returned to Nojoin automatically and can choose which individual calendars to sync.
+  - Each selected or available calendar can be given its own colour override, and clearing the override returns it to the provider-supplied default colour.
   - Users do **not** enter OAuth client IDs or secrets in the account page.
 - **Calendar Provider Setup:** Owners and Admins can register the installation OAuth app credentials in **Settings > Admin > Calendar**.
   - This is a one-time deployment task for the self-hosted installation.
