@@ -74,20 +74,18 @@ Configuration is split between system-wide infrastructure settings and user-spec
 
 The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
 
-| Variable            | Description                                                         |
-| ------------------- | ------------------------------------------------------------------- |
-| `REDIS_PASSWORD`    | Password used to secure the Redis instance and authenticate clients |
-| `HF_TOKEN`          | Hugging Face User Access Token (Read)                               |
-| `LLM_PROVIDER`      | Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`)    |
-| `GEMINI_API_KEY`    | Google Gemini API Key                                               |
-| `OPENAI_API_KEY`    | OpenAI API Key                                                      |
-| `ANTHROPIC_API_KEY` | Anthropic API Key                                                   |
-| `OLLAMA_API_URL`    | Ollama API URL (default: `http://host.docker.internal:11434`)       |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth client ID for Calendar sign-in                    |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret for Calendar sign-in          |
-| `MICROSOFT_OAUTH_CLIENT_ID` | Microsoft OAuth client ID for Calendar sign-in             |
-| `MICROSOFT_OAUTH_CLIENT_SECRET` | Microsoft OAuth client secret for Calendar sign-in   |
-| `MICROSOFT_OAUTH_TENANT_ID` | Microsoft tenant ID. Use `common` for personal + work/school accounts only when the app registration is multi-tenant |
+- `REDIS_PASSWORD`: Password used to secure the Redis instance and authenticate clients.
+- `HF_TOKEN`: Hugging Face User Access Token (Read).
+- `LLM_PROVIDER`: Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`).
+- `GEMINI_API_KEY`: Google Gemini API Key.
+- `OPENAI_API_KEY`: OpenAI API Key.
+- `ANTHROPIC_API_KEY`: Anthropic API Key.
+- `OLLAMA_API_URL`: Ollama API URL (default: `http://host.docker.internal:11434`).
+- `GOOGLE_OAUTH_CLIENT_ID`: Google OAuth client ID for Calendar sign-in.
+- `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth client secret for Calendar sign-in.
+- `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft OAuth client ID for Calendar sign-in.
+- `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft OAuth client secret for Calendar sign-in.
+- `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration is multi-tenant.
 
 ## Calendar OAuth Setup
 
@@ -110,21 +108,16 @@ If you are not using the default local setup, ensure `ALLOWED_ORIGINS` includes 
 ### Step 2: Register the Google OAuth App
 
 1. Open Google Cloud Console.
-2. Create or select a project for Nojoin.
-3. Enable the Google Calendar API for that project.
-4. Open `APIs & Services > OAuth consent screen`.
-5. Choose the appropriate user type and configure the app name, support email, and developer contact email.
-6. Add the scopes needed for Nojoin's read-only calendar flow:
-  - `openid`
-  - `email`
-  - `profile`
-  - `https://www.googleapis.com/auth/calendar.readonly`
-7. If the app is still in testing mode, add the Gmail accounts you want to use as test users.
-8. Open `APIs & Services > Credentials` and create an `OAuth client ID`.
-9. Choose `Web application`.
-10. Add this authorised redirect URI:
-  - `<public-origin>/api/v1/calendar/oauth/google/callback`
-11. Save the generated client ID and client secret into Nojoin Admin Calendar settings or into `.env`.
+1. Create or select a project for Nojoin.
+1. Enable the Google Calendar API for that project.
+1. Open `APIs & Services > OAuth consent screen`.
+1. Choose the appropriate user type and configure the app name, support email, and developer contact email.
+1. Add the scopes needed for Nojoin's read-only calendar flow: `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.readonly`.
+1. If the app is still in testing mode, add the Gmail accounts you want to use as test users.
+1. Open `APIs & Services > Credentials` and create an `OAuth client ID`.
+1. Choose `Web application`.
+1. Add this authorised redirect URI: `<public-origin>/api/v1/calendar/oauth/google/callback`.
+1. Save the generated client ID and client secret into Nojoin Admin Calendar settings or into `.env`.
 
 ### Step 3: Register the Microsoft OAuth App
 
@@ -135,33 +128,14 @@ Important licensing note:
 - You still need a tenant to hold the app registration. If the Entra admin centre tells you tenant creation is restricted for your current account, Microsoft’s guidance is to sign up for a free Azure account and use the default tenant created there.
 
 1. Open Microsoft Entra admin centre.
-2. Go to `Identity > Applications > App registrations` and create a new registration for Nojoin.
-3. Choose the supported account type based on the sign-in scope you want:
-  - `Accounts in any organisational directory and personal Microsoft accounts` if Nojoin should support both Outlook.com and Microsoft 365 accounts.
-  - `Accounts in this organisational directory only` if access should stay limited to your own tenant.
-4. In the registration form, add the redirect URI as a `Web` platform redirect URI:
-  - `<public-origin>/api/v1/calendar/oauth/microsoft/callback`
-5. Finish creating the app, then open its `Overview` page.
-  - Copy the `Application (client) ID` into Nojoin's `Application (client) ID` field.
-  - If you chose a single-tenant app, also note the tenant ID shown in Entra and use that exact tenant ID in Nojoin instead of `common`.
-6. Open `Certificates & secrets` and create a new client secret.
-  - Copy the secret `Value` immediately. Microsoft only shows it once.
-  - Paste that value into Nojoin's `Client Secret Value` field.
-  - Ignore the separate `Secret ID` field in Entra. It is metadata, not the secret to store in Nojoin.
-7. Open `API permissions` and add delegated Microsoft Graph permissions for:
-  - `openid`
-  - `profile`
-  - `email`
-  - `offline_access`
-  - `User.Read`
-  - `Calendars.Read`
-8. Review consent policy for your tenant:
-  - If your organisation blocks end-user consent, users will see an admin approval message during the Outlook connect flow.
-  - In that case, a tenant administrator must grant consent in Entra before standard users can connect their calendars.
-9. Save the Microsoft values into Nojoin Admin Calendar settings or `.env`:
-  - `Application (client) ID`
-  - `Client Secret Value`
-  - `Tenant ID or common`
+1. Go to `Identity > Applications > App registrations` and create a new registration for Nojoin.
+1. Choose the supported account type based on the sign-in scope you want: `Accounts in any organisational directory and personal Microsoft accounts` if Nojoin should support both Outlook.com and Microsoft 365 accounts, or `Accounts in this organisational directory only` if access should stay limited to your own tenant.
+1. In the registration form, add the redirect URI as a `Web` platform redirect URI: `<public-origin>/api/v1/calendar/oauth/microsoft/callback`.
+1. Finish creating the app, then open its `Overview` page. Copy the `Application (client) ID` into Nojoin's `Application (client) ID` field. If you chose a single-tenant app, also note the tenant ID shown in Entra and use that exact tenant ID in Nojoin instead of `common`.
+1. Open `Certificates & secrets` and create a new client secret. Copy the secret `Value` immediately because Microsoft only shows it once, paste that value into Nojoin's `Client Secret Value` field, and ignore the separate `Secret ID` field in Entra because it is metadata rather than the secret to store in Nojoin.
+1. Open `API permissions` and add delegated Microsoft Graph permissions for `openid`, `profile`, `email`, `offline_access`, `User.Read`, and `Calendars.Read`.
+1. Review consent policy for your tenant. If your organisation blocks end-user consent, users will see an admin approval message during the Outlook connect flow. In that case, a tenant administrator must grant consent in Entra before standard users can connect their calendars.
+1. Save the Microsoft values into Nojoin Admin Calendar settings or `.env`: `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`.
 
 Tenant selection rules in Nojoin:
 
@@ -183,17 +157,8 @@ If you prefer to keep the app single-tenant, enter your directory tenant ID in N
 
 Use one of these paths:
 
-1. Admin UI:
-  - Sign in as an Owner or Admin.
-  - Open `Settings > Admin > Calendar`.
-  - Enter the Google client ID and secret.
-  - Enter the Microsoft `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`.
-  - The Microsoft field labels in Nojoin are intentionally the same as the labels you see in Entra.
-  - Save.
-
-2. Environment variables:
-  - Add the OAuth variables to `.env`.
-  - Restart the stack, for example with `docker compose up -d --build api worker frontend`.
+1. Admin UI: sign in as an Owner or Admin, open `Settings > Admin > Calendar`, enter the Google client ID and secret, enter the Microsoft `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`, verify the Microsoft field labels match the labels shown in Entra, and save.
+1. Environment variables: add the OAuth variables to `.env`, then restart the stack, for example with `docker compose up -d --build api worker frontend`.
 
 ### Step 5: Verify the End-User Flow
 
