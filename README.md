@@ -13,6 +13,8 @@
 
 <img width="2548" height="1231" alt="Nojoin screenshot" src="https://github.com/user-attachments/assets/7a0039de-321b-46a3-8d8f-95ebf6b3f1c4" />
 
+<img width="2545" height="1235" alt="sc-dark" src="https://github.com/user-attachments/assets/c5c3e33a-ac36-405e-bf36-64d104a0346e" />
+
 ---
 
 ## What Is Nojoin?
