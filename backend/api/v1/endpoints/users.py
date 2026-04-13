@@ -8,6 +8,7 @@ import os
 import logging
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
+from backend.api.error_handling import sanitized_http_exception
 from backend.core.security import get_password_hash, verify_password
 from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole, UserList
 from backend.models.invitation import Invitation
@@ -222,6 +223,37 @@ async def delete_user(
     # Prevent deleting owner (unless you are owner?)
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
+
+    if user.is_superuser:
+        query = select(func.count(User.id)).where(User.is_superuser == True)
+        result = await db.execute(query)
+        admin_count = result.scalar_one()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin account")
+
+    recordings_result = await db.execute(select(Recording).where(Recording.user_id == user_id))
+    recordings = recordings_result.scalars().all()
+
+    recordings_dir = os.getenv("RECORDINGS_DIR", "data/recordings")
+    abs_recordings_dir = os.path.abspath(recordings_dir)
+
+    def is_safe_path(target_path: str | None) -> bool:
+        if not target_path:
+            return False
+        abs_target = os.path.abspath(target_path)
+        return os.path.commonpath([abs_recordings_dir, abs_target]) == abs_recordings_dir
+
+    for recording in recordings:
+        if is_safe_path(recording.audio_path) and os.path.exists(recording.audio_path):
+            try:
+                os.remove(recording.audio_path)
+            except OSError:
+                pass
+        if is_safe_path(recording.proxy_path) and os.path.exists(recording.proxy_path):
+            try:
+                os.remove(recording.proxy_path)
+            except OSError:
+                pass
         
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
@@ -230,9 +262,14 @@ async def delete_user(
         logger.info(f"Successfully deleted user {user_id}")
         return user
     except Exception as e:
-        logger.error(f"Failed to delete user {user_id}: {e}")
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to delete user.",
+            log_message=f"Failed to delete user {user_id}.",
+            exc=e,
+        )
 
 @router.patch("/{user_id}/role", response_model=UserRead)
 async def update_user_role(
@@ -251,6 +288,9 @@ async def update_user_role(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if role not in [UserRole.ADMIN, UserRole.USER, UserRole.OWNER]:
+        raise HTTPException(status_code=400, detail="Invalid role")
         
     # Prevent modifying owner
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
@@ -373,96 +413,3 @@ async def update_user(
     await db.refresh(user)
     return user
 
-@router.patch("/{user_id}/role", response_model=UserRead)
-async def update_user_role(
-    *,
-    db: AsyncSession = Depends(get_db),
-    user_id: int,
-    role: str = Body(..., embed=True),
-    current_user: User = Depends(get_current_active_superuser),
-) -> Any:
-    """
-    Update a user's role. Only for superusers.
-    """
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="The user with this id does not exist in the system",
-        )
-    
-    if role not in [UserRole.ADMIN, UserRole.USER, UserRole.OWNER]:
-         raise HTTPException(
-            status_code=400,
-            detail="Invalid role",
-        )
-        
-    user.role = role
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
-
-@router.delete("/{user_id}", response_model=UserRead)
-async def delete_user(
-    *,
-    db: AsyncSession = Depends(get_db),
-    user_id: int,
-    current_user: User = Depends(get_current_active_superuser),
-) -> Any:
-    """
-    Delete a user. Only for superusers.
-    """
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="The user with this id does not exist in the system",
-        )
-    if user.id == current_user.id:
-        raise HTTPException(
-            status_code=400,
-            detail="Users cannot delete themselves",
-        )
-        
-    if user.is_superuser:
-        # Check if this is the last superuser
-        query = select(func.count(User.id)).where(User.is_superuser == True)
-        result = await db.execute(query)
-        admin_count = result.scalar_one()
-        if admin_count <= 1:
-             raise HTTPException(
-                status_code=400,
-                detail="Cannot delete the last admin account",
-            )
-
-    # Cleanup user files (recordings)
-    stmt = select(Recording).where(Recording.user_id == user_id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
-    
-    # Path traversal validation
-    RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "data/recordings")
-    abs_recordings_dir = os.path.abspath(RECORDINGS_DIR)
-
-    def is_safe_path(target_path: str) -> bool:
-        if not target_path:
-            return False
-        abs_target = os.path.abspath(target_path)
-        return os.path.commonpath([abs_recordings_dir, abs_target]) == abs_recordings_dir
-    
-    for recording in recordings:
-        if recording.audio_path and os.path.exists(recording.audio_path) and is_safe_path(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
-        if recording.proxy_path and os.path.exists(recording.proxy_path) and is_safe_path(recording.proxy_path):
-            try:
-                os.remove(recording.proxy_path)
-            except OSError:
-                pass
-
-    await db.delete(user)
-    await db.commit()
-    return user

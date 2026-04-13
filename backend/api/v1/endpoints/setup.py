@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 import httpx
 from backend.processing.llm_services import get_llm_backend
+from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import (
     STANDARD_USER_SCOPE_REQUIREMENTS,
     STANDARD_USER_TOKEN_TYPES,
@@ -152,9 +153,9 @@ async def get_initial_config(
     
     # helper to mask key
     def mask_key(key):
-        if not key or len(key) < 8:
+        if not key:
             return None
-        return f"{key[:3]}...{key[-4:]}"
+        return "***"
 
     from backend.utils.config_manager import async_get_system_api_keys
     system_keys = await async_get_system_api_keys(db)
@@ -205,9 +206,16 @@ async def validate_llm(
             
         provider_name = request.provider.capitalize() if request.provider else "LLM"
         return {"valid": True, "message": f"{provider_name} API key is valid."}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Validation failed for {request.provider}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Unable to validate the AI provider configuration.",
+            log_message=f"LLM validation failed for provider '{request.provider}'.",
+            exc=e,
+        )
 
 @router.post("/validate-hf")
 async def validate_hf(
@@ -234,11 +242,17 @@ async def validate_hf(
                 headers={"Authorization": f"Bearer {token}"}
             )
             response.raise_for_status()
-            user_info = response.json()
-            return {"valid": True, "message": f"Token valid for user: {user_info.get('name', 'Unknown')}"}
+            return {"valid": True, "message": "Hugging Face token is valid."}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"HF Validation failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid Hugging Face token: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Unable to validate the Hugging Face token.",
+            log_message="Hugging Face token validation failed.",
+            exc=e,
+        )
 
 @router.post("/list-models")
 async def list_models(
@@ -270,6 +284,13 @@ async def list_models(
         llm = get_llm_backend(request.provider, api_key=api_key, api_url=api_url)
         models = llm.list_models()
         return {"models": models}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to list models for {request.provider}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Unable to load models for the configured AI provider.",
+            log_message=f"Listing models failed for provider '{request.provider}'.",
+            exc=e,
+        )

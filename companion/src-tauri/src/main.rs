@@ -461,9 +461,9 @@ fn main() {
 
                     loop {
                         // 1. Perform Health Check
-                        let (api_url, fingerprint) = {
+                        let (status_origin, fingerprint) = {
                             let config = state_fetch.config.lock().unwrap();
-                            (config.get_api_url(), config.tls_fingerprint.clone())
+                            (config.get_web_url(), config.tls_fingerprint.clone())
                         };
                         
                         // Recreate client if fingerprint changed
@@ -476,7 +476,7 @@ fn main() {
                             current_fingerprint = fingerprint;
                         }
 
-                        let status_url = format!("{}/system/status", api_url);
+                        let status_url = format!("{}/api/health", status_origin);
 
                         match client.get(&status_url).send().await {
                             Ok(resp) => {

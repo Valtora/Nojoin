@@ -31,6 +31,8 @@ from backend.api.services.release_service import (
     get_release_catalog,
     get_windows_installer_asset,
 )
+from backend.api.error_handling import sanitized_http_exception
+from backend.api.services.health_service import get_system_health_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -73,8 +75,13 @@ def download_logs(
     except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
     except Exception as e:
-        logger.error(f"Error fetching logs for {container}: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Unable to fetch container logs.",
+            log_message=f"Error fetching Docker logs for container '{container}'.",
+            exc=e,
+        )
 
 @router.websocket("/logs/live")
 async def websocket_logs(
@@ -189,14 +196,19 @@ async def get_system_status(
     result = await db.execute(query)
     user = result.scalar_one_or_none()
     
-    # Get web_app_url from system config
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
-    
     return {
         "initialized": user is not None,
-        "web_app_url": web_app_url
     }
+
+
+@router.get("/health")
+async def get_detailed_system_health(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Authenticated detailed system health for the signed-in application shell.
+    """
+    return await get_system_health_status()
 
 @router.get("/check-ffmpeg")
 async def check_ffmpeg(
@@ -304,7 +316,9 @@ async def trigger_model_download(
     return {"task_id": task.id}
 
 @router.get("/download-progress")
-async def get_current_download_progress() -> Any:
+async def get_current_download_progress(
+    current_user: User = Depends(get_current_user),
+) -> Any:
     """
     Get the current model download progress from shared state.
     This allows the frontend to see progress from preload_models.py or any active download task.
@@ -352,14 +366,14 @@ async def get_task_status(
     # Handle potential serialization errors if result contains exceptions
     result_data = None
     if task_result.status == 'FAILURE':
-        result_data = str(task_result.result)
+        result_data = "Task failed. Check server logs for details."
     elif task_result.status == 'SUCCESS':
         result_data = task_result.result
     else:
         # For PENDING, STARTED, RETRY etc.
         # If it's an exception object, convert to string
         if isinstance(task_result.result, Exception):
-             result_data = str(task_result.result)
+             result_data = "Task failed. Check server logs for details."
         else:
              result_data = task_result.result
 
@@ -385,7 +399,10 @@ async def get_task_status(
     return response
 
 @router.get("/models/status")
-async def get_models_status(whisper_model_size: Optional[str] = None) -> Any:
+async def get_models_status(
+    whisper_model_size: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+) -> Any:
     """
     Get the status of all models.
     """
@@ -413,7 +430,13 @@ async def delete_model_endpoint(
         else:
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to delete the requested model.",
+            log_message=f"Failed to delete model '{model_name}'.",
+            exc=e,
+        )
 
 @router.post("/seed-demo")
 async def seed_demo(
@@ -450,7 +473,9 @@ async def get_demo_recording(
     return {"id": None}
 
 @router.get("/companion-releases")
-async def get_companion_releases() -> Any:
+async def get_companion_releases(
+    current_user: User = Depends(get_current_user),
+) -> Any:
     """
     Fetch the latest companion app release from GitHub.
     """

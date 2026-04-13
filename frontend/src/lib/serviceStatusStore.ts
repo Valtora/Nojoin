@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-interface HealthStatus {
+interface DetailedHealthStatus {
   status: string;
   version: string;
   components: {
@@ -136,14 +136,39 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     companionFailCount: 0,
 
     checkBackend: async () => {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+      const cleanBaseUrl = API_BASE_URL.replace(/\/$/, "");
+
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        // Use configured API URL or default to /api
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
-        // Remove trailing slash if present to avoid double slashes
-        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, "");
+        const res = await fetch(`${cleanBaseUrl}/v1/system/health`, {
+          signal: controller.signal,
+          method: "GET",
+          credentials: "include",
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data: DetailedHealthStatus = await res.json();
+          set({
+            backend: true,
+            db: data.components.db === "connected",
+            worker: data.components.worker === "active",
+            backendFailCount: 0,
+          });
+          scheduleNextBackend();
+          return;
+        }
+      } catch {
+        // Fall back to the minimal public health probe to distinguish
+        // a backend outage from an authenticated telemetry failure.
+      }
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         const res = await fetch(`${cleanBaseUrl}/health`, {
           signal: controller.signal,
@@ -152,11 +177,10 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         clearTimeout(timeoutId);
 
         if (res.ok) {
-          const data: HealthStatus = await res.json();
           set({
             backend: true,
-            db: data.components.db === "connected",
-            worker: data.components.worker === "active",
+            db: true,
+            worker: true,
             backendFailCount: 0,
           });
         } else {

@@ -3,13 +3,16 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import urlparse
+import logging
 
+from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
 from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES, SENSITIVE_KEYS
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class SettingsUpdate(BaseModel):
     openai_api_key: Optional[str] = None
@@ -173,7 +176,13 @@ async def update_settings_root(
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Invalid settings value.",
+            log_message="Rejected settings update due to invalid value.",
+            exc=e,
+        )
 
     # Merge new settings
     current_settings.update(update_data)
@@ -216,7 +225,13 @@ async def update_settings(
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Invalid settings value.",
+            log_message="Rejected settings update due to invalid value.",
+            exc=e,
+        )
 
     # Merge new settings
     current_settings.update(update_data)

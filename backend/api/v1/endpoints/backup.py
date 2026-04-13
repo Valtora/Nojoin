@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
+from backend.api.error_handling import sanitized_http_exception
 from backend.core.backup_manager import BackupManager
 from backend.utils.path_manager import PathManager
 from backend.api.deps import get_current_active_superuser
@@ -32,7 +33,13 @@ async def export_backup(
         )
         return {"task_id": task.id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to start backup export.",
+            log_message="Failed to enqueue backup export task.",
+            exc=e,
+        )
 
 @router.get("/export/{task_id}", dependencies=[Depends(get_current_active_superuser)])
 async def get_export_status(task_id: str):
@@ -51,19 +58,25 @@ async def get_export_status(task_id: str):
         elif task_result.state != 'FAILURE':
             response = {
                 'state': task_result.state,
-                'status': task_result.info.get('status', '') if isinstance(task_result.info, dict) else str(task_result.info),
+                'status': task_result.info.get('status', '') if isinstance(task_result.info, dict) else '',
                 'result': task_result.result if task_result.state == 'SUCCESS' else None
             }
         else:
             # failure
             response = {
                 'state': task_result.state,
-                'status': str(task_result.info),  # Exception string
+                'status': 'Backup export failed. Check server logs for details.',
             }
             
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to load backup export status.",
+            log_message=f"Failed to load backup export status for task '{task_id}'.",
+            exc=e,
+        )
 
 @router.get("/export/{task_id}/download", dependencies=[Depends(get_current_active_superuser)])
 async def download_export(
@@ -100,7 +113,13 @@ async def download_export(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to retrieve the backup export.",
+            log_message=f"Failed to download backup export for task '{task_id}'.",
+            exc=e,
+        )
 
 
 @router.post("/import", dependencies=[Depends(get_current_active_superuser)])
@@ -163,7 +182,13 @@ async def import_backup(
         # Cleanup on immediate failure
         if temp_path.exists():
             os.remove(temp_path)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to start backup restore.",
+            log_message="Failed to start backup restore upload.",
+            exc=e,
+        )
 
 @router.get("/import/{job_id}", dependencies=[Depends(get_current_active_superuser)])
 async def get_import_status(job_id: str):
@@ -216,7 +241,13 @@ async def upload_chunk(
             f.write(content)
         return {"status": "ok", "chunk_index": chunk_index}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save chunk: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded chunk.",
+            log_message=f"Failed to save restore upload chunk {chunk_index} for upload '{upload_id}'.",
+            exc=e,
+        )
 
 @router.post("/upload/{upload_id}/complete", dependencies=[Depends(get_current_active_superuser)])
 async def complete_upload(
@@ -266,5 +297,11 @@ async def complete_upload(
     except Exception as e:
         if final_path.exists():
             os.remove(final_path)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to finalize the uploaded backup.",
+            log_message=f"Failed to finalize restore upload '{upload_id}'.",
+            exc=e,
+        )
 

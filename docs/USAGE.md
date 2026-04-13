@@ -12,6 +12,14 @@ For deployment, administration, calendar provider setup, and backup operations, 
 4. Open the finished recording in the `/recordings` workspace.
 5. Wait for processing to complete so the transcript and notes appear.
 
+## Companion Connectivity
+
+The Companion only performs a shallow backend reachability check.
+
+- A connected Companion means the Nojoin web origin answered the minimal health check.
+- Detailed service health, release information, and administrative diagnostics remain inside the authenticated web app.
+- If the Companion cannot connect, verify the public HTTPS origin, reverse proxy routing, and certificate trust before troubleshooting user sessions.
+
 ## Tours and Onboarding
 
 Nojoin includes guided tours for first-time users.

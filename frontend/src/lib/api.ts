@@ -1164,12 +1164,8 @@ export const deleteInvitation = async (id: number): Promise<Invitation> => {
 
 export const validateInvitation = async (
   code: string,
-): Promise<{ valid: boolean; role: string; inviter?: string }> => {
-  const response = await api.get<{
-    valid: boolean;
-    role: string;
-    inviter?: string;
-  }>(`/invitations/validate/${code}`);
+): Promise<{ valid: boolean }> => {
+  const response = await api.get<{ valid: boolean }>(`/invitations/validate/${code}`);
   return response.data;
 };
 

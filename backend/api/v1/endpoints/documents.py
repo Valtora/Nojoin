@@ -2,10 +2,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+import logging
 import os
 import aiofiles
 from uuid import uuid4
 
+from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording
 from backend.models.document import Document, DocumentStatus
@@ -13,6 +15,7 @@ from backend.models.user import User
 from backend.worker.tasks import process_document_task
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Configuration for documents storage
 DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "data/documents")
@@ -66,7 +69,13 @@ async def upload_document(
             content = await file.read()
             await out_file.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded document.",
+            log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording_id}.",
+            exc=e,
+        )
 
     # Create Document entry
     document = Document(

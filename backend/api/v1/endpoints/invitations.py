@@ -36,6 +36,10 @@ class InvitationRead(BaseModel):
     link: str
     users: List[str] = []
 
+
+class InvitationValidationRead(BaseModel):
+    valid: bool
+
 def get_invite_base_url() -> str:
     return get_trusted_web_origin().rstrip("/")
 
@@ -172,7 +176,7 @@ async def delete_invitation(
         users=[] 
     )
 
-@router.get("/validate/{code}")
+@router.get("/validate/{code}", response_model=InvitationValidationRead)
 async def validate_invitation(
     request: Request,
     code: str,
@@ -189,11 +193,7 @@ async def validate_invitation(
         detail="Too many invitation validation requests. Please try again later.",
     )
 
-    query = (
-        select(Invitation)
-        .where(Invitation.code == code)
-        .options(selectinload(cast(Any, Invitation.created_by)))
-    )
+    query = select(Invitation).where(Invitation.code == code)
     result = await db.execute(query)
     invitation = result.scalar_one_or_none()
     
@@ -209,6 +209,4 @@ async def validate_invitation(
     if invitation.max_uses and invitation.used_count >= invitation.max_uses:
         raise HTTPException(status_code=400, detail="Invitation usage limit reached")
         
-    inviter_username = invitation.created_by.username if invitation.created_by else "System"
-        
-    return {"valid": True, "role": invitation.role, "inviter": inviter_username}
+    return {"valid": True}

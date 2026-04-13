@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import redis.asyncio as redis
 import os
 import time
 import logging
@@ -10,9 +9,9 @@ from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import SQLModel, Session, text, select
 from backend.core.db import sync_engine
 from backend.api.v1.api import api_router
-from backend.celery_app import celery_app
 from alembic.config import Config
 from alembic import command
+from backend.api.services.health_service import APP_HEALTH_VERSION
 
 setup_audio_environment()
 
@@ -109,95 +108,49 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to seed demo data on startup: {e}")
     yield
 
-app = FastAPI(
-    title="Nojoin API",
-    description="Backend API for Nojoin - Containerized Meeting Intelligence",
-    version="2.0.0",
-    openapi_url="/api/v1/openapi.json",
-    docs_url="/api/v1/docs",
-    redoc_url="/api/v1/redoc",
-    lifespan=lifespan
-)
+def create_app(*, app_lifespan=lifespan) -> FastAPI:
+    app = FastAPI(
+        title="Nojoin API",
+        description="Backend API for Nojoin - Containerized Meeting Intelligence",
+        version=APP_HEALTH_VERSION,
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
+        lifespan=app_lifespan,
+    )
 
-origins = [
-    "http://localhost:14141",
-    "http://localhost:3000",
-    "http://127.0.0.1:14141",
-    "https://localhost",
-    "https://localhost:14141",
-    "https://localhost:14443",
-]
+    origins = [
+        "http://localhost:14141",
+        "http://localhost:3000",
+        "http://127.0.0.1:14141",
+        "https://localhost",
+        "https://localhost:14141",
+        "https://localhost:14443",
+    ]
 
-env_origins = os.getenv("ALLOWED_ORIGINS", "")
-if env_origins:
-    origins.extend([origin.strip() for origin in env_origins.split(",")])
+    env_origins = os.getenv("ALLOWED_ORIGINS", "")
+    if env_origins:
+        origins.extend([origin.strip() for origin in env_origins.split(",")])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
-)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Range"],
+        expose_headers=["Accept-Ranges", "Content-Disposition", "Content-Length", "Content-Range"],
+    )
 
-app.include_router(api_router, prefix="/api/v1")
+    app.include_router(api_router, prefix="/api/v1")
 
-@app.get("/health")
-@app.get("/api/health")
-async def health_check():
-    health_status = {
-        "status": "ok",
-        "version": "2.0.0",
-        "components": {
-            "db": "unknown",
-            "worker": "unknown"
-        }
-    }
+    @app.get("/health")
+    @app.get("/api/health")
+    async def health_check() -> dict[str, str]:
+        return {"status": "ok"}
 
+    return app
 
-    try:
-        with Session(sync_engine) as session:
-            session.execute(text("SELECT 1"))
-        health_status["components"]["db"] = "connected"
-    except Exception:
-        health_status["components"]["db"] = "disconnected"
-        health_status["status"] = "error"
-
-
-    worker_status = "unknown"
-    
-    # 1. Check Heartbeat (Fast, non-blocking)
-    try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        r = redis.from_url(redis_url)
-        if await r.get("nojoin:worker:heartbeat"):
-            worker_status = "active"
-        await r.close()
-    except Exception:
-        pass
-
-    # 2. Fallback to Ping if Heartbeat missing (e.g. startup or thread died)
-    if worker_status != "active":
-        try:
-            # inspect().ping() returns a dict of nodes { 'celery@hostname': {'ok': 'pong'} } or None
-            inspector = celery_app.control.inspect()
-            # Set a short timeout so we don't block the health check too long
-            active_workers = inspector.ping()
-            
-            if active_workers:
-                worker_status = "active"
-            else:
-                worker_status = "inactive"
-        except Exception:
-            worker_status = "error"
-            
-    health_status["components"]["worker"] = worker_status
-    
-    if worker_status in ["inactive", "error"] and health_status["status"] == "ok":
-        health_status["status"] = "warning"
-
-    return health_status
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn

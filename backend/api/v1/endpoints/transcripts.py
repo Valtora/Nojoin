@@ -31,6 +31,7 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml.ns import qn
 
 from backend.api.deps import get_db, get_current_user
+from backend.api.error_handling import sanitized_http_exception
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
@@ -1246,7 +1247,13 @@ async def chat_with_meeting(
     try:
         llm_backend = get_llm_backend(provider, api_key, model)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Invalid AI configuration.",
+            log_message=f"Rejected chat request for recording {recording_id} due to invalid AI configuration.",
+            exc=e,
+        )
     except Exception as e:
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")

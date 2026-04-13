@@ -21,7 +21,6 @@ function RegisterForm() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [inviterName, setInviterName] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(true);
 
   useEffect(() => {
@@ -32,10 +31,7 @@ function RegisterForm() {
       }
       
       try {
-        const res = await validateInvitation(inviteCode);
-        if (res.valid && res.inviter) {
-          setInviterName(res.inviter);
-        }
+        await validateInvitation(inviteCode);
         setFormData(prev => ({ ...prev, invite_code: inviteCode }));
       } catch (e) {
         console.error("Invalid invite code", e);
@@ -105,11 +101,6 @@ function RegisterForm() {
           <h2 className="mt-4 text-center text-2xl font-bold text-gray-900 dark:text-white">
             Create your account
           </h2>
-          {inviterName && (
-            <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
-              Welcome, <span className="font-medium text-orange-600">{inviterName}</span> has invited you to join their Nojoin instance.
-            </p>
-          )}
           <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
             Or{' '}
             <Link href="/login" className="font-medium text-orange-600 hover:text-orange-500">

@@ -23,7 +23,7 @@ def _normalise_task_title(title: str) -> str:
     try:
         return normalise_task_title(title)
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise HTTPException(status_code=400, detail="Invalid task title.") from error
 
 
 def _serialise_task(task: UserTask) -> UserTaskRead:

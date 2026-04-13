@@ -12,6 +12,7 @@ import aiofiles
 from uuid import uuid4
 
 from backend.api.deps import get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
+from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
 from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
 from backend.models.user import User
@@ -313,7 +314,13 @@ async def upload_segment(
             content = await file.read()
             await out_file.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save segment: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded segment.",
+            log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
+            exc=e,
+        )
         
     return {"status": "received", "segment": sequence}
 
@@ -364,10 +371,6 @@ async def finalize_upload(
         recording.duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        
-
         failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
             if os.path.exists(recording_temp_dir):
@@ -384,7 +387,13 @@ async def finalize_upload(
             except Exception as cleanup_error:
                 logger.error(f"Failed to remove partial recording file: {cleanup_error}")
             
-        raise HTTPException(status_code=500, detail=f"Failed to concatenate segments: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to finalize the uploaded recording.",
+            log_message=f"Failed to finalize segmented upload for recording {recording_id}.",
+            exc=e,
+        )
         
     # Update recording status
     file_stats = os.stat(recording.audio_path)
@@ -446,7 +455,13 @@ async def import_audio(
     except Exception as e:
         if os.path.exists(file_path):
             os.remove(file_path)
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded recording.",
+            log_message=f"Failed to persist imported audio '{file.filename}'.",
+            exc=e,
+        )
     
     # Get file stats
     file_stats = os.stat(file_path)
@@ -588,7 +603,13 @@ async def upload_chunked_segment(
             content = await file.read()
             await out_file.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save segment: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded segment.",
+            log_message=f"Failed to save chunked import segment {sequence} for recording {recording_id}.",
+            exc=e,
+        )
         
     return {"status": "received", "segment": sequence}
 
@@ -647,9 +668,6 @@ async def finalize_chunked_import(
             logger.warning(f"Failed to get duration: {e}")
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        
         # Move failed segments to failed directory
         failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
@@ -664,7 +682,13 @@ async def finalize_chunked_import(
             except Exception:
                 pass
             
-        raise HTTPException(status_code=500, detail=f"Failed to reassemble file: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to finalize the uploaded recording.",
+            log_message=f"Failed to finalize chunked import for recording {recording_id}.",
+            exc=e,
+        )
         
     # Update recording status
     recording.status = RecordingStatus.QUEUED
@@ -716,7 +740,13 @@ async def upload_recording(
             content = await file.read()
             await out_file.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded recording.",
+            log_message=f"Failed to persist uploaded recording '{file.filename}'.",
+            exc=e,
+        )
     
 
     file_stats = os.stat(file_path)
