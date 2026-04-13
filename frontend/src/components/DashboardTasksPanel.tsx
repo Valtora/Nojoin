@@ -548,7 +548,7 @@ export default function DashboardTasksPanel() {
             <Check className="h-5 w-5" />
           </div>
           <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
-            To-Do List
+            Task List
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">

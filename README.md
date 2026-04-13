@@ -31,7 +31,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - No meeting bot joins your calls.
 - Local Whisper transcription and Pyannote diarisation on your own infrastructure.
 - Optional cloud LLMs, or fully local AI with Ollama.
-- Web dashboard with recordings, calendar context, and Task Cards.
+- Web dashboard with recordings, calendar context, and a Task List.
 - Windows Companion app for system and microphone capture.
 
 ## Quick Start

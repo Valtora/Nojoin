@@ -39,10 +39,10 @@ The primary user interface for interacting with the system.
 - **Framework:** Next.js (React) with TypeScript.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
-- **Dashboard Iteration Two:** The root route now serves as an operational dashboard with `Meet Now` capture controls, recent-meeting access, an interactive calendar shell, an inline personal to-do list, and clear routing into the recordings workspace.
+- **Dashboard Iteration Two:** The root route now serves as an operational dashboard with `Meet Now` capture controls, recent-meeting access, an interactive calendar shell, an inline personal Task List, and clear routing into the recordings workspace.
   - **Calendar Shell:** Users can browse prior and future months, jump back to today with a dedicated `Today` action, and switch between Month and Agenda modes. When calendar integrations are connected, month dots and agenda markers use per-calendar colours so different sources remain visually distinct. Until a real calendar integration is connected, the dashboard shows honest empty states rather than mock events.
-  - **Task Cards:** Each individual to-do list item is referred to as a Task Card.
-  - **Task Capture:** The to-do list is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on Task Cards, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
+  - **Task List:** Personal tasks are grouped into a Task List on the dashboard.
+  - **Task Capture:** The Task List is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on tasks, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
   - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
@@ -121,7 +121,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 
 - **Strategy:** Zip-based export containing:
   - **Database:** JSON dumps of all tables.
-  - **Dashboard State:** Task Cards (`user_tasks`), people records, voiceprint embeddings, and the persisted calendar sync tables used by the dashboard calendar and agenda views.
+  - **Dashboard State:** Task List items (`user_tasks`), people records, voiceprint embeddings, and the persisted calendar sync tables used by the dashboard calendar and agenda views.
   - **Calendar Integration:** Installation calendar provider configuration plus connected-account tokens, selected calendars, colour overrides, sync cursors, and cached events.
   - **Audio:** Original audio files compressed to Opus format to save space.
   - **Config:** System configuration with sensitive application keys still redacted.
@@ -169,11 +169,11 @@ The system provides the following core capabilities:
 - **Dashboard Workspace:** The dashboard now combines `Meet Now`, recent meetings, an interactive calendar shell, and personal task capture into a single operational home surface.
   - **Calendar Modes:** Month navigation, a `Today` reset action, and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
   - **Calendar Colour Mapping:** Connected calendar sources can be given distinct colours in Account settings. The dashboard month dots and agenda cards reuse those per-calendar colours instead of collapsing every event into a single accent colour.
-  - **Task Flow:** Tasks are created inline from the dashboard as Task Cards. Users can rename an existing Task Card by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active Task Cards show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.
+  - **Task Flow:** Tasks are created inline in the dashboard Task List. Users can rename an existing task by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active tasks show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.
   - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
 - **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
-- **Backup & Restore:** Full system backup capabilities including database records, Task Cards, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
+- **Backup & Restore:** Full system backup capabilities including database records, Task List items, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 
 ### 3.1 Processing Lifecycle Details
 

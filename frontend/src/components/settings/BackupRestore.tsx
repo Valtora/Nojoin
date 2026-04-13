@@ -172,7 +172,8 @@ export default function BackupRestore() {
             </h4>
             <p className="text-sm contrast-helper mb-4">
               Download a zip file containing your database, recordings, and
-              settings, task cards, people voiceprints, and calendar data.
+              settings, tasks from the Task List, people voiceprints, and
+              calendar data.
               <br />
               <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
                 AI and Hugging Face keys stay redacted. Calendar provider

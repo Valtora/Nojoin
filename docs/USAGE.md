@@ -29,7 +29,7 @@ It brings together:
 - **Meet Now** for live capture.
 - **Recent meetings** for quick re-entry into recent work.
 - **Calendar context** through month and agenda views.
-- **Task Cards** for personal follow-up work.
+- **Task List** for personal follow-up work.
 
 ### Calendar Surface
 
@@ -41,9 +41,9 @@ It brings together:
 
 Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
 
-### Task Cards
+### Task List
 
-Task Cards are personal tasks that live on the dashboard.
+The Task List is a personal dashboard list for follow-up work.
 
 You can:
 
