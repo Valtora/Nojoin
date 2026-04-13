@@ -89,6 +89,21 @@ PROVIDER_ENV_KEYS = {
     },
 }
 
+ACCOUNT_REDIRECT_STATUSES = (
+    "success",
+    "error",
+    "config-error",
+    "cancelled",
+    "tenant-config-error",
+)
+ACCOUNT_REDIRECT_PATHS = {
+    provider: {
+        status_value: f"/settings?{urlencode({'tab': 'account', 'calendar': status_value, 'provider': provider})}"
+        for status_value in ACCOUNT_REDIRECT_STATUSES
+    }
+    for provider in PROVIDER_DISPLAY_NAMES
+}
+
 _oauth_state_fallback: dict[str, tuple[datetime, dict[str, Any]]] = {}
 
 TRAILING_URL_PUNCTUATION = ".,);]>"
@@ -473,8 +488,10 @@ def _build_redirect_uri(provider: str) -> str:
 
 
 def _build_account_redirect(status_value: str, provider: str) -> str:
-    params = urlencode({"tab": "account", "calendar": status_value, "provider": provider})
-    return f"{get_trusted_web_origin()}/settings?{params}"
+    provider_redirects = ACCOUNT_REDIRECT_PATHS.get(provider)
+    if provider_redirects is None:
+        provider_redirects = ACCOUNT_REDIRECT_PATHS[CalendarProvider.GOOGLE.value]
+    return provider_redirects.get(status_value, provider_redirects["error"])
 
 
 def _build_code_challenge(code_verifier: str) -> str:

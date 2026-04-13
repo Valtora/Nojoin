@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -490,6 +491,127 @@ async def test_admin_provider_status_falls_back_to_allowed_origins_for_redirect_
         microsoft_provider["redirect_uri"]
         == "https://nojoin.example.com/api/v1/calendar/oauth/microsoft/callback"
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("raised_exception", "expected_location"),
+    [
+        (
+            HTTPException(status_code=400, detail="Provider is not configured"),
+            "/settings?tab=account&calendar=config-error&provider=google",
+        ),
+        (
+            RuntimeError("boom"),
+            "/settings?tab=account&calendar=error&provider=google",
+        ),
+    ],
+)
+async def test_oauth_start_failures_redirect_to_relative_account_settings(
+    client: AsyncClient,
+    override_current_user,
+    monkeypatch: pytest.MonkeyPatch,
+    raised_exception: Exception,
+    expected_location: str,
+) -> None:
+    override_current_user(1)
+
+    async def failing_start_authorisation(*args, **kwargs):
+        raise raised_exception
+
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.calendar.start_authorisation",
+        failing_start_authorisation,
+    )
+
+    response = await client.get("/api/v1/calendar/oauth/google/start")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == expected_location
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("provider", "params", "expected_location"),
+    [
+        (
+            "google",
+            {"error": "access_denied"},
+            "/settings?tab=account&calendar=cancelled&provider=google",
+        ),
+        (
+            "microsoft",
+            {
+                "error": "server_error",
+                "error_description": "AADSTS50194: application is not configured as multi-tenant",
+            },
+            "/settings?tab=account&calendar=tenant-config-error&provider=microsoft",
+        ),
+    ],
+)
+async def test_oauth_callback_input_errors_redirect_to_relative_account_settings(
+    client: AsyncClient,
+    override_current_user,
+    provider: str,
+    params: dict[str, str],
+    expected_location: str,
+) -> None:
+    override_current_user(1)
+
+    response = await client.get(f"/api/v1/calendar/oauth/{provider}/callback", params=params)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == expected_location
+
+
+@pytest.mark.anyio
+async def test_oauth_callback_exception_redirects_to_relative_account_settings(
+    client: AsyncClient,
+    override_current_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override_current_user(1)
+
+    async def failing_handle_callback(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.calendar.handle_callback",
+        failing_handle_callback,
+    )
+
+    response = await client.get(
+        "/api/v1/calendar/oauth/google/callback",
+        params={"code": "code", "state": "state"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?tab=account&calendar=error&provider=google"
+
+
+@pytest.mark.anyio
+async def test_oauth_callback_success_redirects_to_relative_account_settings(
+    client: AsyncClient,
+    override_current_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override_current_user(1)
+
+    async def fake_handle_callback(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.calendar.handle_callback",
+        fake_handle_callback,
+    )
+
+    response = await client.get(
+        "/api/v1/calendar/oauth/google/callback",
+        params={"code": "code", "state": "state"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?tab=account&calendar=success&provider=google"
 
 
 @pytest.mark.anyio
