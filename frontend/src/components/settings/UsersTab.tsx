@@ -15,6 +15,18 @@ import ConfirmationModal from "../ConfirmationModal";
 import { User } from "@/types";
 import { trimString } from "@/lib/validation";
 
+type NewUserFormState = {
+  username: string;
+  password: string;
+  role: string;
+};
+
+const EMPTY_NEW_USER: NewUserFormState = {
+  username: "",
+  password: "",
+  role: "user",
+};
+
 export default function UsersTab() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,11 +41,7 @@ export default function UsersTab() {
 
   // Create User State
   const [isCreating, setIsCreating] = useState(false);
-  const [newUser, setNewUser] = useState({
-    username: "",
-    password: "",
-    role: "user",
-  });
+  const [newUser, setNewUser] = useState({ ...EMPTY_NEW_USER });
 
   // Edit User State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -71,6 +79,16 @@ export default function UsersTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedSearch]);
 
+  const toggleCreateForm = () => {
+    setIsCreating((prev) => {
+      const next = !prev;
+      if (next) {
+        setNewUser({ ...EMPTY_NEW_USER });
+      }
+      return next;
+    });
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -84,8 +102,8 @@ export default function UsersTab() {
         type: "success",
       });
       setIsCreating(false);
-      setNewUser({ username: "", password: "", role: "user" });
-      fetchUsers();
+      setNewUser({ ...EMPTY_NEW_USER });
+      await fetchUsers();
     } catch (err: any) {
       addNotification({
         message: err.response?.data?.detail || "Failed to create user",
@@ -107,7 +125,14 @@ export default function UsersTab() {
         message: "User deleted successfully",
         type: "success",
       });
-      setUsers(users.filter((u) => u.id !== userToDelete));
+      const nextTotal = Math.max(0, total - 1);
+      const nextPage = Math.min(page, Math.max(1, Math.ceil(nextTotal / limit)));
+
+      if (nextPage !== page) {
+        setPage(nextPage);
+      } else {
+        await fetchUsers();
+      }
     } catch (err: any) {
       addNotification({
         message: err.response?.data?.detail || "Failed to delete user",
@@ -148,7 +173,7 @@ export default function UsersTab() {
       });
       setEditModalOpen(false);
       setEditingUser(null);
-      fetchUsers();
+      await fetchUsers();
     } catch {
       addNotification({ message: "Failed to update user", type: "error" });
     }
@@ -175,7 +200,7 @@ export default function UsersTab() {
             />
           </div>
           <button
-            onClick={() => setIsCreating(!isCreating)}
+            onClick={toggleCreateForm}
             className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm flex items-center gap-2"
           >
             <UserPlus className="w-4 h-4" />
@@ -191,30 +216,37 @@ export default function UsersTab() {
           </h4>
           <form
             onSubmit={handleCreateUser}
+            autoComplete="off"
             className="grid grid-cols-1 md:grid-cols-2 gap-4"
           >
             <input
+              name="new-user-username"
               placeholder="Username"
               value={newUser.username}
               onChange={(e) =>
-                setNewUser({ ...newUser, username: e.target.value })
+                setNewUser((prev) => ({ ...prev, username: e.target.value }))
               }
+              autoComplete="off"
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
             <input
+              name="new-user-password"
               placeholder="Password"
               type="password"
               value={newUser.password}
               onChange={(e) =>
-                setNewUser({ ...newUser, password: e.target.value })
+                setNewUser((prev) => ({ ...prev, password: e.target.value }))
               }
+              autoComplete="new-password"
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
             <select
               value={newUser.role}
-              onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+              onChange={(e) =>
+                setNewUser((prev) => ({ ...prev, role: e.target.value }))
+              }
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
             >
               <option value="user">User</option>
@@ -224,7 +256,10 @@ export default function UsersTab() {
             <div className="md:col-span-2 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setIsCreating(false)}
+                onClick={() => {
+                  setIsCreating(false);
+                  setNewUser({ ...EMPTY_NEW_USER });
+                }}
                 className="px-3 py-1 text-sm contrast-helper hover:text-gray-900 dark:hover:text-white"
               >
                 Cancel
@@ -370,12 +405,14 @@ export default function UsersTab() {
                   </span>
                 </label>
                 <input
+                  name="edit-user-password"
                   type="password"
                   value={editForm.password || ""}
                   onChange={(e) =>
-                    setEditForm({ ...editForm, password: e.target.value })
+                    setEditForm((prev) => ({ ...prev, password: e.target.value }))
                   }
                   placeholder="Enter new password"
+                  autoComplete="new-password"
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
