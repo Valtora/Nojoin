@@ -170,7 +170,7 @@ export default function BackupRestore() {
             <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
               Export Backup
             </h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-sm contrast-helper mb-4">
               Download a zip file containing your database, recordings, and
               settings, task cards, people voiceprints, and calendar data.
               <br />
@@ -195,7 +195,7 @@ export default function BackupRestore() {
             <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
               Import Backup
             </h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-sm contrast-helper mb-4">
               Restore data from a previously exported backup file.
             </p>
 
@@ -254,14 +254,14 @@ export default function BackupRestore() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <Upload className="w-12 h-12 mx-auto text-gray-400" />
-                    <p className="text-gray-600 dark:text-gray-400">
+                    <Upload className="w-12 h-12 mx-auto text-gray-500 dark:text-gray-400" />
+                    <p className="text-gray-700 dark:text-gray-300">
                       <span className="font-medium text-orange-500">
                         Click to browse
                       </span>{" "}
                       or drag and drop
                     </p>
-                    <p className="text-xs text-gray-500">ZIP files only</p>
+                    <p className="text-xs contrast-helper">ZIP files only</p>
                   </div>
                 )}
               </div>
@@ -270,7 +270,7 @@ export default function BackupRestore() {
               {importing && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">
+                    <span className="text-gray-700 dark:text-gray-300">
                       {uploadProgress < 100
                         ? "Uploading..."
                         : "Processing on server (Do not close)..."}
@@ -286,7 +286,7 @@ export default function BackupRestore() {
                     />
                   </div>
                   {processingStatus && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center italic mt-1">
+                    <p className="mt-1 text-center text-xs italic contrast-helper">
                       {processingStatus}
                     </p>
                   )}

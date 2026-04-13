@@ -17,7 +17,7 @@ import ModernDatePicker from "./ui/ModernDatePicker";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const HOUR_IN_MS = 60 * 60 * 1000;
 const DEADLINE_INPUT_CLASS =
-  "h-8 rounded-full border-dashed border-gray-200 bg-white/80 px-3 py-1 text-xs font-medium text-gray-500 shadow-none dark:border-white/10 dark:bg-white/5 dark:text-gray-300";
+  "h-8 rounded-full border-dashed border-gray-300 bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-none dark:border-gray-600 dark:bg-gray-900/80 dark:text-gray-200";
 
 function parseTaskDeadline(value: string): Date | null {
   const parsed = new Date(value);
@@ -107,7 +107,7 @@ function getTimeRemainingState(
     return {
       label: `Due in ${daysRemaining}d`,
       className:
-        "border-gray-200 bg-gray-50 text-gray-700 dark:border-white/10 dark:bg-gray-900/70 dark:text-gray-300",
+        "border-gray-300 bg-gray-100 text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200",
     };
   }
 
@@ -476,7 +476,7 @@ export default function DashboardTasksPanel() {
   };
 
   return (
-    <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+    <div className="rounded-[2rem] border border-gray-200 bg-white/90 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-gray-700/80 dark:bg-gray-950/62 dark:shadow-black/20">
       <div className="space-y-2">
         <div className="mt-2 flex items-start gap-3">
           <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
@@ -491,7 +491,7 @@ export default function DashboardTasksPanel() {
             {openTasks.length} open
           </span>
           {completedTasks.length > 0 && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+            <span className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-white/5 dark:text-gray-200">
               {completedTasks.length} completed
             </span>
           )}
@@ -519,7 +519,7 @@ export default function DashboardTasksPanel() {
         <button
           type="button"
           onClick={() => void handleOpenComposer()}
-          className="mt-6 w-full border-0 border-b border-white/10 px-1 py-3 text-left text-sm text-gray-400 transition-colors hover:border-orange-300 hover:text-gray-500 dark:text-gray-500 dark:hover:border-orange-500/30 dark:hover:text-gray-300"
+          className="mt-6 w-full border-0 border-b border-gray-300 px-1 py-3 text-left text-sm text-gray-700 transition-colors hover:border-orange-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-200 dark:hover:border-orange-500/40 dark:hover:text-white"
         >
           Add a task...
         </button>
@@ -533,7 +533,7 @@ export default function DashboardTasksPanel() {
 
       <div className="mt-6 space-y-6">
         {loading ? (
-          <div className="flex items-center gap-3 rounded-[1.5rem] border border-white/60 bg-white/70 px-4 py-4 text-sm text-gray-600 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-300">
+          <div className="flex items-center gap-3 rounded-[1.5rem] border border-gray-200 bg-white/90 px-4 py-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>
@@ -551,13 +551,13 @@ export default function DashboardTasksPanel() {
                   return (
                     <div
                       key={task.id}
-                      className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-white/70 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10"
+                      className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10"
                     >
                       <button
                         type="button"
                         onClick={() => void handleToggleTask(task)}
                         disabled={isBusy}
-                        className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-gray-200 bg-white text-transparent transition-colors hover:border-orange-400 hover:bg-orange-50 hover:text-orange-600 dark:border-white/10 dark:bg-gray-950/60 dark:hover:border-orange-500/30 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+                        className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-gray-300 bg-white text-gray-400 transition-colors hover:border-orange-400 hover:bg-orange-50 hover:text-orange-600 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-500 dark:hover:border-orange-500/30 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
                         aria-label={`Mark ${task.title} complete`}
                       >
                         {isBusy ? (
@@ -628,7 +628,7 @@ export default function DashboardTasksPanel() {
                         type="button"
                         onClick={() => void handleDeleteTask(task.id)}
                         disabled={isBusy}
-                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/70 text-gray-400 transition-colors hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/80 text-gray-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                         aria-label={`Delete ${task.title}`}
                       >
                         <Trash2 className="h-5 w-5" />
@@ -643,11 +643,11 @@ export default function DashboardTasksPanel() {
               <div
                 className={`space-y-3 ${
                   openTasks.length > 0
-                    ? "border-t border-gray-200 pt-6 dark:border-white/10"
+                    ? "border-t border-gray-200 pt-6 dark:border-gray-700"
                     : ""
                 }`}
               >
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-600 dark:text-gray-300">
                   Completed
                 </div>
 
@@ -660,7 +660,7 @@ export default function DashboardTasksPanel() {
                   return (
                     <div
                       key={task.id}
-                      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-white/60 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-gray-900/50"
+                      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-gray-200 bg-white/80 px-4 py-4 dark:border-gray-700 dark:bg-gray-900/60"
                     >
                       <button
                         type="button"
@@ -703,7 +703,7 @@ export default function DashboardTasksPanel() {
                         ) : (
                           <p
                             onDoubleClick={() => void handleBeginEditingTask(task)}
-                            className="cursor-text text-sm font-medium text-gray-500 line-through dark:text-gray-400"
+                            className="cursor-text text-sm font-medium text-gray-600 line-through dark:text-gray-300"
                             title="Double-click to edit"
                           >
                             {task.title}
@@ -731,7 +731,7 @@ export default function DashboardTasksPanel() {
                         type="button"
                         onClick={() => void handleDeleteTask(task.id)}
                         disabled={isBusy}
-                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/70 text-gray-400 transition-colors hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/80 text-gray-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                         aria-label={`Delete ${task.title}`}
                       >
                         <Trash2 className="h-5 w-5" />

@@ -51,7 +51,7 @@ export default function GeneralSettings({
   ]);
 
   if (!showAppearance && !showProcessing && !showSpellCheck && searchQuery)
-    return <div className="text-gray-500">No matching settings found.</div>;
+    return <div className="contrast-helper">No matching settings found.</div>;
 
   return (
     <div className="space-y-8">
@@ -74,7 +74,7 @@ export default function GeneralSettings({
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="mt-1 text-xs contrast-helper">
                 Choose your preferred visual theme.
               </p>
             </div>
@@ -104,7 +104,7 @@ export default function GeneralSettings({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="mt-1 text-xs contrast-helper">
                 Select the language for spell checking in meeting notes.
               </p>
             </div>
@@ -113,7 +113,7 @@ export default function GeneralSettings({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsDictionaryModalOpen(true)}
-                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
+                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
               >
                 Manage Dictionary
               </button>
@@ -151,7 +151,7 @@ export default function GeneralSettings({
                     }
                   />
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="mt-1 text-xs contrast-helper">
                   Filters out silence and background noise before transcription.
                   Disabling this may increase processing time but can help if
                   quiet speech is being cut off.
@@ -176,7 +176,7 @@ export default function GeneralSettings({
                     }
                   />
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="mt-1 text-xs contrast-helper">
                   Distinguishes between different speakers (e.g., &quot;Speaker
                   1&quot;, &quot;Speaker 2&quot;). Disable this for
                   single-speaker recordings to speed up processing.
@@ -202,7 +202,7 @@ export default function GeneralSettings({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  <p className="mt-1 text-xs contrast-helper">
                     Automatically generates a descriptive title for the meeting
                     based on the transcript content using the configured LLM.
                   </p>
@@ -213,7 +213,7 @@ export default function GeneralSettings({
               {settings.auto_generate_title !== false && (
                 <div className="ml-9 pl-3 border-l-2 border-gray-300 dark:border-gray-600">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                       Prefer Short Titles
                     </label>
                     <Switch
@@ -223,7 +223,7 @@ export default function GeneralSettings({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  <p className="mt-1 text-xs contrast-helper">
                     Generates concise 3-5 word titles instead of longer
                     descriptive ones.
                   </p>
@@ -248,7 +248,7 @@ export default function GeneralSettings({
                     }
                   />
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="mt-1 text-xs contrast-helper">
                   Uses the LLM to infer real names (e.g., &quot;John&quot;,
                   &quot;Interviewer&quot;) from context and replaces generic
                   labels like &quot;Speaker 1&quot;.
@@ -273,7 +273,7 @@ export default function GeneralSettings({
                     }
                   />
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="mt-1 text-xs contrast-helper">
                   Automatically generates summaries, action items, and key
                   takeaways after processing.
                 </p>

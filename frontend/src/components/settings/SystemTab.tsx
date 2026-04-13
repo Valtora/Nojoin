@@ -290,7 +290,7 @@ export default function SystemTab() {
       {/* Logs Section */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <span className="text-gray-400 dark:text-gray-500 font-mono text-lg">
+          <span className="text-gray-500 dark:text-gray-400 font-mono text-lg">
             {">_"}
           </span>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">
@@ -351,7 +351,7 @@ export default function SystemTab() {
             <button
               onClick={() => setAutoScroll(!autoScroll)}
               title={autoScroll ? "Pause Auto-scroll" : "Resume Auto-scroll"}
-              className={`p-1.5 rounded transition-colors ${autoScroll ? "text-green-500 hover:bg-gray-700" : "text-gray-400 hover:text-white hover:bg-gray-700"}`}
+              className={`p-1.5 rounded transition-colors ${autoScroll ? "text-green-500 hover:bg-gray-700" : "text-gray-300 hover:text-white hover:bg-gray-700"}`}
             >
               {autoScroll ? (
                 <Pause className="w-4 h-4" />
@@ -362,13 +362,13 @@ export default function SystemTab() {
             <button
               onClick={() => setLogs([])}
               title="Clear Logs"
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <Popover className="relative">
               <Popover.Button
-                className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors outline-none"
+                className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors outline-none"
                 title="Log Settings"
               >
                 <Settings className="w-4 h-4" />

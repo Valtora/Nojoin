@@ -203,13 +203,13 @@ export default function CalendarProviderSettings() {
                     <div className="text-base font-semibold text-gray-900 dark:text-white">
                       {provider.display_name}
                     </div>
-                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-1 text-xs contrast-helper">
                       {provider.configured
                         ? `Configured via ${provider.source}`
                         : "Missing OAuth credentials"}
                     </div>
                     {currentOrigin && (
-                      <div className="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="mt-2 space-y-1 text-xs contrast-helper">
                         <div>
                           Register redirect URI:
                         </div>
@@ -240,7 +240,7 @@ export default function CalendarProviderSettings() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">
+                  <label className="block text-sm font-medium contrast-muted mb-1">
                     {provider.provider === "microsoft"
                       ? "Application (client) ID"
                       : "OAuth Client ID"}
@@ -262,7 +262,7 @@ export default function CalendarProviderSettings() {
 
                 {provider.provider === "microsoft" && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">
+                    <label className="block text-sm font-medium contrast-muted mb-1">
                       Tenant ID or common
                     </label>
                     <input
@@ -276,14 +276,14 @@ export default function CalendarProviderSettings() {
                       className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
                       placeholder="common"
                     />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-xs contrast-helper">
                       Use common for both Outlook.com and Microsoft 365 accounts. Use a specific tenant ID only for a single-tenant app or to restrict sign-in to one directory.
                     </p>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">
+                  <label className="block text-sm font-medium contrast-muted mb-1">
                     {provider.provider === "microsoft"
                       ? "Client Secret Value"
                       : "OAuth Client Secret"}
@@ -308,7 +308,7 @@ export default function CalendarProviderSettings() {
                   />
                 </div>
 
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <label className="flex items-center gap-2 text-sm contrast-helper">
                   <input
                     type="checkbox"
                     checked={form.clear_client_secret}

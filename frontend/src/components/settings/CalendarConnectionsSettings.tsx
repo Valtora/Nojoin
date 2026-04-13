@@ -318,7 +318,7 @@ export default function CalendarConnectionsSettings() {
                       <div className="text-sm font-semibold text-gray-900 dark:text-white">
                         {CONNECT_LABELS[provider.provider]}
                       </div>
-                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="mt-1 text-xs contrast-helper">
                         {provider.configured
                           ? `Ready. You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
                           : "Not configured by an administrator"}
@@ -366,7 +366,7 @@ export default function CalendarConnectionsSettings() {
                           <span className="inline-flex rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
                             {PROVIDER_LABELS[connection.provider]}
                           </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-xs contrast-helper">
                             {STATUS_LABELS[connection.sync_status]}
                           </span>
                         </div>
@@ -438,7 +438,7 @@ export default function CalendarConnectionsSettings() {
                                 )}
                               </div>
                               {calendar.description && (
-                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                                <p className="mt-1 text-xs contrast-helper line-clamp-2">
                                   {calendar.description}
                                 </p>
                               )}

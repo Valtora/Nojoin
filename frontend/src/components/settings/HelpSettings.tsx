@@ -58,7 +58,7 @@ export default function HelpSettings({
   ]);
 
   if (!showTours && searchQuery)
-    return <div className="text-gray-500">No matching settings found.</div>;
+    return <div className="contrast-helper">No matching settings found.</div>;
 
   return (
     <div className="space-y-6">
@@ -72,7 +72,7 @@ export default function HelpSettings({
               <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                 Restart Welcome Tour
               </h4>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="mt-1 text-xs contrast-helper">
                 Reset the &quot;Welcome to Nojoin&quot; tour and the transcript
                 walkthrough.
               </p>
@@ -91,7 +91,7 @@ export default function HelpSettings({
               <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                 Re-create Demo Meeting
               </h4>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="mt-1 text-xs contrast-helper">
                 If you deleted the &quot;Welcome to Nojoin&quot; meeting, this
                 will create it again.
               </p>
@@ -118,7 +118,7 @@ export default function HelpSettings({
               <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                 Report an Issue
               </h4>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="mt-1 text-xs contrast-helper">
                 Found a bug? Report it on our GitHub Issues page.
               </p>
             </div>

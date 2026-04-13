@@ -163,7 +163,7 @@ export default function UsersTab() {
         </h3>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
             <input
               value={search}
               onChange={(e) => {
@@ -225,7 +225,7 @@ export default function UsersTab() {
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white text-sm px-3 py-1"
+                className="px-3 py-1 text-sm contrast-helper hover:text-gray-900 dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -240,9 +240,9 @@ export default function UsersTab() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg border border-gray-400 dark:border-gray-600 overflow-x-auto">
-        <table className="w-full text-left text-sm text-gray-700 dark:text-gray-400 whitespace-nowrap">
-          <thead className="bg-gray-100 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200 uppercase font-medium">
+      <div className="bg-white dark:bg-gray-800/70 rounded-lg border border-gray-300 dark:border-gray-600 overflow-x-auto">
+        <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
             <tr>
               <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">Username</th>
@@ -251,7 +251,7 @@ export default function UsersTab() {
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-400 dark:divide-gray-600">
+          <tbody className="divide-y divide-gray-300 dark:divide-gray-600">
             {loading ? (
               <tr>
                 <td colSpan={5} className="p-4 text-center">
@@ -262,7 +262,7 @@ export default function UsersTab() {
               users.map((user) => (
                 <tr
                   key={user.id}
-                  className="hover:bg-gray-100 dark:hover:bg-gray-700/30"
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700/40"
                 >
                   <td className="px-4 py-3">{user.id}</td>
 
@@ -317,7 +317,7 @@ export default function UsersTab() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-        <div className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="text-sm contrast-helper">
           Showing {users.length > 0 ? (page - 1) * limit + 1 : 0} to{" "}
           {Math.min(page * limit, total)} of {total} users
         </div>
@@ -325,7 +325,7 @@ export default function UsersTab() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -334,7 +334,7 @@ export default function UsersTab() {
               setPage((p) => Math.min(Math.ceil(total / limit), p + 1))
             }
             disabled={page >= Math.ceil(total / limit)}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -365,7 +365,7 @@ export default function UsersTab() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   New Password{" "}
-                  <span className="text-gray-400 font-normal">
+                  <span className="contrast-helper font-normal">
                     (Leave blank to keep current)
                   </span>
                 </label>
@@ -419,7 +419,7 @@ export default function UsersTab() {
                 <button
                   type="button"
                   onClick={() => setEditModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
                 >
                   Cancel
                 </button>

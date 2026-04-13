@@ -97,7 +97,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 function ReleaseNotes({ body, releaseVersion }: { body: string | null; releaseVersion: string }) {
   if (!body?.trim()) {
     return (
-      <p className="text-sm text-gray-500 dark:text-gray-400">
+      <p className="text-sm contrast-helper">
         No release notes were published for this release.
       </p>
     );
@@ -252,12 +252,12 @@ export default function UpdatesSettings({
   const latestInstaller = getInstallerAsset(latestRelease);
 
   if (!showUpdates && searchQuery) {
-    return <div className="text-gray-500">No matching settings found.</div>;
+    return <div className="contrast-helper">No matching settings found.</div>;
   }
 
   if (loading) {
     return (
-      <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-3 contrast-helper">
         <RefreshCw className="h-4 w-4 animate-spin" />
         Loading release information...
       </div>
@@ -291,7 +291,7 @@ export default function UpdatesSettings({
                 <ArrowUpCircle className="h-5 w-5 text-orange-500" />
                 Updates & Releases
               </h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-1 max-w-2xl text-sm contrast-helper">
                 Track the installed version, the latest stable release, and the published release notes.
               </p>
             </div>
@@ -306,7 +306,7 @@ export default function UpdatesSettings({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                 Installed Version
               </p>
               <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
@@ -318,7 +318,7 @@ export default function UpdatesSettings({
             </div>
 
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                 Latest Stable Release
               </p>
               <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
@@ -395,7 +395,7 @@ export default function UpdatesSettings({
               <h4 className="text-base font-semibold text-gray-900 dark:text-white">
                 Latest Release Snapshot
               </h4>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-1 text-sm contrast-helper">
                 The latest stable release metadata is sourced from GitHub Releases.
               </p>
             </div>
@@ -457,7 +457,7 @@ export default function UpdatesSettings({
               />
             </div>
           ) : (
-            <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
+            <p className="mt-6 text-sm contrast-helper">
               Release history is not available right now. Version checks are using the fallback metadata source.
             </p>
           )}
@@ -467,7 +467,7 @@ export default function UpdatesSettings({
         <h4 className="text-base font-semibold text-gray-900 dark:text-white">
           Release History
         </h4>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm contrast-helper">
           Recent Nojoin releases published on GitHub.
         </p>
 
@@ -500,7 +500,7 @@ export default function UpdatesSettings({
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      <p className="mt-1 text-sm contrast-helper">
                         Published {formatPublishedAt(release.published_at)} • {formatPublishedRelative(release.published_at)}
                       </p>
                     </div>
@@ -539,7 +539,7 @@ export default function UpdatesSettings({
               );
             })
           ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm contrast-helper">
               Release history is unavailable right now.
             </p>
           )}

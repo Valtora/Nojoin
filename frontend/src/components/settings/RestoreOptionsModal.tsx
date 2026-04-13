@@ -47,10 +47,10 @@ export default function RestoreOptionsModal({
                         </div>
                         <div>
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Restore Backup</h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{fileName}</p>
+                            <p className="text-sm contrast-helper">{fileName}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -80,7 +80,7 @@ export default function RestoreOptionsModal({
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
                                 Conflict Resolution
                             </h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                            <p className="mb-4 text-xs contrast-helper">
                                 How should we handle meetings in the backup that already exist on this system?
                             </p>
 
@@ -101,7 +101,7 @@ export default function RestoreOptionsModal({
                                         <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
                                             Skip (Safe Merge)
                                         </span>
-                                        <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        <span className="block mt-1 text-xs contrast-helper">
                                             If a meeting already exists, keep the current version. Only add new meetings.
                                         </span>
                                     </div>
@@ -123,7 +123,7 @@ export default function RestoreOptionsModal({
                                         <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
                                             Overwrite
                                         </span>
-                                        <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        <span className="block mt-1 text-xs contrast-helper">
                                             If a meeting already exists, <strong>delete</strong> the current version and replace it with the backup.
                                         </span>
                                     </div>

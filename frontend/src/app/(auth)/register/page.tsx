@@ -88,7 +88,7 @@ function RegisterForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 p-10 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800">
+      <div className="max-w-md w-full space-y-8 p-10 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image 
@@ -106,11 +106,11 @@ function RegisterForm() {
             Create your account
           </h2>
           {inviterName && (
-            <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
+            <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
               Welcome, <span className="font-medium text-orange-600">{inviterName}</span> has invited you to join their Nojoin instance.
             </p>
           )}
-          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
+          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
             Or{' '}
             <Link href="/login" className="font-medium text-orange-600 hover:text-orange-500">
               sign in to your existing account
@@ -122,7 +122,7 @@ function RegisterForm() {
           <div className="space-y-4">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <User className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
                 id="username"
@@ -138,7 +138,7 @@ function RegisterForm() {
             
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
+                <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
                 id="password"
@@ -155,7 +155,7 @@ function RegisterForm() {
 
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
+                <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
                 id="confirm-password"
@@ -195,7 +195,7 @@ function RegisterForm() {
           )}
 
           {error && (
-            <div className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">
+            <div className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40">
               {error}
             </div>
           )}
@@ -204,7 +204,7 @@ function RegisterForm() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-orange-600/20"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-orange-600/20"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

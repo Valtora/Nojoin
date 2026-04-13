@@ -117,11 +117,11 @@ export default function InvitesTab() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-gray-500">
+        <div className="py-8 text-center contrast-helper">
           Loading invitations...
         </div>
       ) : invitations.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="text-center py-8 contrast-helper bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
           No invitations found. Create one to get started.
         </div>
       ) : (
@@ -151,7 +151,7 @@ export default function InvitesTab() {
                 {!inv.is_revoked ? (
                   <button
                     onClick={() => handleRevokeClick(inv.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
                     title="Revoke"
                   >
                     <XCircle className="w-4 h-4" />
@@ -159,7 +159,7 @@ export default function InvitesTab() {
                 ) : (
                   <button
                     onClick={() => handleDeleteClick(inv.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -181,7 +181,7 @@ export default function InvitesTab() {
                 </button>
               </div>
 
-              <div className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
+              <div className="space-y-2 text-sm contrast-helper">
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4" />
                   <span>
@@ -200,8 +200,8 @@ export default function InvitesTab() {
               </div>
 
               {inv.users.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                  <p className="text-xs font-medium text-gray-500 mb-1">
+                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-xs font-medium contrast-helper mb-1">
                     Joined Users:
                   </p>
                   <div className="flex flex-wrap gap-1">
@@ -278,7 +278,7 @@ export default function InvitesTab() {
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
                 >
                   Cancel
                 </button>

@@ -29,7 +29,7 @@ export default function VersionTag() {
 
   if (isUpdate && versionInfo.latest_version) {
     return (
-      <div className="flex items-center gap-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-3 text-sm font-medium contrast-helper">
         <span>{versionInfo.current_version} ({currentLabel})</span>
         <span className="w-px h-4 bg-gray-300 dark:bg-gray-600"></span>
         <span
@@ -47,7 +47,7 @@ export default function VersionTag() {
 
   return (
     <div
-      className="text-sm font-medium text-gray-500 dark:text-gray-400"
+      className="text-sm font-medium contrast-helper"
       title={
         versionInfo.update_status === "ahead" && versionInfo.latest_version
           ? `Latest stable release: ${versionInfo.latest_version}`

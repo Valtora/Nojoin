@@ -344,7 +344,7 @@ export default function AISettings({
                     position="right"
                   >
                     <span className="flex items-center gap-1 cursor-help">
-                      Provider <HelpCircle className="w-3 h-3 text-gray-400" />
+                      Provider <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                     </span>
                   </Tooltip>
                 </label>
@@ -392,7 +392,7 @@ export default function AISettings({
                       disabled={!isAdmin}
                       className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     />
-                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
                   </div>
                   <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                     <Info className="w-3 h-3" />
@@ -410,7 +410,7 @@ export default function AISettings({
                     position="right"
                   >
                     <span className="flex items-center gap-1 cursor-help">
-                      Model <HelpCircle className="w-3 h-3 text-gray-400" />
+                      Model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                     </span>
                   </Tooltip>
                   <button
@@ -478,7 +478,7 @@ export default function AISettings({
 
                 {/* Model Recommendations */}
                 {settings.llm_provider === "gemini" && (
-                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="mt-2 text-xs contrast-helper">
                     <span className="font-medium text-blue-600 dark:text-blue-400">
                       Recommended:
                     </span>
@@ -489,7 +489,7 @@ export default function AISettings({
                   </div>
                 )}
                 {settings.llm_provider === "openai" && (
-                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="mt-2 text-xs contrast-helper">
                     <span className="font-medium text-blue-600 dark:text-blue-400">
                       Recommended:
                     </span>
@@ -500,7 +500,7 @@ export default function AISettings({
                   </div>
                 )}
                 {settings.llm_provider === "anthropic" && (
-                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="mt-2 text-xs contrast-helper">
                     <span className="font-medium text-blue-600 dark:text-blue-400">
                       Recommended:
                     </span>
@@ -523,7 +523,7 @@ export default function AISettings({
                     position="right"
                   >
                     <span className="flex items-center gap-1 cursor-help">
-                      API Key <HelpCircle className="w-3 h-3 text-gray-400" />
+                      API Key <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                     </span>
                   </Tooltip>
                 </label>
@@ -566,7 +566,7 @@ export default function AISettings({
                           setShowOpenAIKey(!showOpenAIKey);
                         else setShowAnthropicKey(!showAnthropicKey);
                       }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     >
                       {(
                         settings.llm_provider === "gemini"
@@ -667,7 +667,7 @@ export default function AISettings({
                   <button
                     type="button"
                     onClick={() => setShowHfToken(!showHfToken)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                   >
                     {showHfToken ? (
                       <EyeOff className="w-4 h-4" />
@@ -702,7 +702,7 @@ export default function AISettings({
                   {validationMsg.msg}
                 </p>
               )}
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="mt-2 text-xs contrast-helper">
                 Required for Pyannote speaker diarization. Ensure you have
                 accepted the user agreement for{" "}
                 <code>pyannote/speaker-diarization-community-1</code> on Hugging
@@ -725,7 +725,7 @@ export default function AISettings({
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                 Whisper Model Size
                 <div className="group relative">
-                  <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+                  <HelpCircle className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none">
                     <div className="font-bold mb-2 text-sm">
                       Available Models
@@ -750,7 +750,7 @@ export default function AISettings({
                         </div>
                       </div>
                     ))}
-                    <div className="mt-2 text-gray-400 italic">
+                    <div className="mt-2 text-gray-300 italic">
                       Turbo is the recommended default for best balance of speed
                       and accuracy.
                     </div>
@@ -778,7 +778,7 @@ export default function AISettings({
                       VRAM)
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="mt-1 text-xs contrast-helper">
                     Current active model for transcription.
                   </p>
                 </div>
@@ -790,7 +790,7 @@ export default function AISettings({
                   Change Model
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="mt-2 text-xs contrast-helper">
                 Click &apos;Change Model&apos; to select a different Whisper
                 model variant. You may need to download the new model.
               </p>
@@ -841,13 +841,13 @@ export default function AISettings({
                 ].map((model) => (
                   <div
                     key={model.id}
-                    className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm"
+                    className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm"
                   >
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-white">
                         {model.label}
                       </div>
-                      <div className="text-xs text-gray-500">{model.desc}</div>
+                      <div className="text-xs contrast-helper">{model.desc}</div>
                     </div>
                     <div className="flex items-center gap-3">
                       {modelStatus?.[model.id]?.downloaded ? (
@@ -860,7 +860,7 @@ export default function AISettings({
                             disabled={
                               deleting === model.id || downloading || !isAdmin
                             }
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
+                            className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
                             title="Delete Model"
                           >
                             {deleting === model.id ? (
@@ -877,7 +877,7 @@ export default function AISettings({
                           </span>
                           {modelStatus?.[model.id]?.checked_paths && (
                             <span
-                              className="text-[10px] text-gray-400 mt-1 max-w-[200px] truncate cursor-help"
+                              className="mt-1 max-w-[200px] truncate cursor-help text-[10px] text-gray-500 dark:text-gray-400"
                               title={`Checked paths:\n${modelStatus[model.id].checked_paths.join("\n")}`}
                             >
                               Hover for debug info
@@ -906,7 +906,7 @@ export default function AISettings({
                       style={{ width: `${downloadProgress.percent}%` }}
                     ></div>
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex justify-between text-xs contrast-helper">
                     <span>
                       {downloadProgress.speed || "Calculating speed..."}
                     </span>
@@ -930,7 +930,7 @@ export default function AISettings({
                     ? "Downloading Models..."
                     : "Download / Update All Models"}
                 </button>
-                <p className="text-xs text-gray-500 mt-3 text-center">
+                <p className="mt-3 text-center text-xs contrast-helper">
                   This will download any missing models to the server. Large
                   files (2GB+) may take a while.
                 </p>

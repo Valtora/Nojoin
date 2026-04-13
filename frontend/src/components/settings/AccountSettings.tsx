@@ -90,7 +90,7 @@ export default function AccountSettings({
         </h3>
         <form onSubmit={handleProfileUpdate} className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Username</label>
+            <label className="block text-sm font-medium contrast-muted mb-1">Username</label>
             <input
               type="text"
               value={username}
@@ -123,7 +123,7 @@ export default function AccountSettings({
         )}
         <form onSubmit={handlePasswordUpdate} className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Current Password</label>
+            <label className="block text-sm font-medium contrast-muted mb-1">Current Password</label>
             <input
               type="password"
               value={passwordData.current_password}
@@ -133,7 +133,7 @@ export default function AccountSettings({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">New Password</label>
+            <label className="block text-sm font-medium contrast-muted mb-1">New Password</label>
             <input
               type="password"
               value={passwordData.new_password}
@@ -144,7 +144,7 @@ export default function AccountSettings({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Confirm New Password</label>
+            <label className="block text-sm font-medium contrast-muted mb-1">Confirm New Password</label>
             <input
               type="password"
               value={passwordData.confirm_password}

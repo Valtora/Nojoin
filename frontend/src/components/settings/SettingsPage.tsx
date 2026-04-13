@@ -425,7 +425,7 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Settings
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="mt-1 text-sm contrast-helper">
             {forcePasswordChange
               ? "Password change required before other settings become available."
               : "Manage your application preferences and configurations."}
@@ -436,17 +436,17 @@ export default function SettingsPage() {
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-full md:w-64 bg-gray-200 dark:bg-gray-800 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-col shrink-0">
+        <div className="w-full md:w-64 bg-gray-100 dark:bg-gray-900/80 border-b md:border-b-0 md:border-r contrast-border flex flex-col shrink-0">
           {!forcePasswordChange && (
-            <div className="p-4 border-b border-gray-300 dark:border-gray-700">
+            <div className="p-4 border-b contrast-border">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 contrast-icon-muted" />
                 <input
                   type="text"
                   placeholder="Search settings..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -465,17 +465,17 @@ export default function SettingsPage() {
                   // @ts-expect-error - setActiveTab expects specific enum/string
                   onClick={() => setActiveTab(tab.id)}
                   className={`
-                    flex shrink-0 items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap
+                    flex shrink-0 items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap
                     ${
                       isActive
-                        ? "bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-400"
-                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700/50"
+                        ? "settings-tab-active shadow-sm"
+                        : "border-transparent settings-tab-inactive"
                     }
                   `}
                 >
                   <div className="flex items-center gap-3">
                     <Icon
-                      className={`w-4 h-4 ${isActive ? "text-orange-700 dark:text-orange-400" : "text-gray-500 dark:text-gray-500"}`}
+                      className={`w-4 h-4 ${isActive ? "text-orange-800 dark:text-orange-200" : "contrast-icon-muted"}`}
                     />
                     {tab.label}
                   </div>
@@ -487,8 +487,8 @@ export default function SettingsPage() {
             })}
           </nav>
 
-          <div className="p-4 border-t border-gray-300 dark:border-gray-700">
-            <div className="flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+          <div className="p-4 border-t contrast-border">
+            <div className="flex items-center justify-center text-sm contrast-helper">
               {forcePasswordChange ? (
                 <>
                   <Shield className="w-4 h-4 mr-2" />
@@ -512,7 +512,7 @@ export default function SettingsPage() {
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 shrink-0 min-h-0">
           {loading ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="flex items-center justify-center h-full text-gray-600 dark:text-gray-300">
               <Loader2 className="w-6 h-6 animate-spin mr-2" />
               Loading settings...
             </div>

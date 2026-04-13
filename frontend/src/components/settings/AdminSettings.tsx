@@ -91,11 +91,11 @@ export default function AdminSettings({
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-                            flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors
+                            flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2
                             ${
                               activeTab === tab.id
-                                ? "border-b-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50/50 dark:bg-orange-900/10"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                                ? "border-orange-500 text-orange-700 dark:text-orange-300 bg-orange-50/50 dark:bg-orange-900/10"
+                                : "border-transparent text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800/50"
                             }
                         `}
           >
