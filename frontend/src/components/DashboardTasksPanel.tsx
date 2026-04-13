@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { Calendar, Check, Loader2, Trash2 } from "lucide-react";
 
 import {
   createUserTask,
@@ -10,15 +10,19 @@ import {
   updateUserTask,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { DEFAULT_TIME_ZONE, getUserTimeZone } from "@/lib/timezone";
+import {
+  DEFAULT_TIME_ZONE,
+  formatTimeZoneDate,
+  getUserTimeZone,
+} from "@/lib/timezone";
 import { UserTask } from "@/types";
 
-import TaskDeadlinePicker from "./ui/TaskDeadlinePicker";
+import TaskDeadlineModal from "./ui/TaskDeadlineModal";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const HOUR_IN_MS = 60 * 60 * 1000;
-const DEADLINE_INPUT_CLASS =
-  "h-8 rounded-full border-dashed border-gray-300 bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-none dark:border-gray-600 dark:bg-gray-900/80 dark:text-gray-200";
+const DEADLINE_TRIGGER_CLASS =
+  "inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-none transition-colors hover:border-orange-300 hover:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-200 dark:focus:ring-offset-gray-950";
 
 function parseTaskDeadline(value: string): Date | null {
   const parsed = new Date(value);
@@ -113,6 +117,14 @@ function getTimeRemainingState(
   };
 }
 
+function getDeadlineTriggerLabel(deadline: Date | null, timeZone: string): string {
+  if (!deadline) {
+    return "Add deadline";
+  }
+
+  return formatTimeZoneDate(deadline, timeZone, "EEE d MMM, h:mm aa");
+}
+
 export default function DashboardTasksPanel() {
   const [tasks, setTasks] = useState<UserTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,10 +138,16 @@ export default function DashboardTasksPanel() {
   const [title, setTitle] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
+  const [deadlineModalTaskId, setDeadlineModalTaskId] = useState<number | null>(null);
+  const [deadlineModalError, setDeadlineModalError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editingFormRef = useRef<HTMLFormElement>(null);
   const editingInputRef = useRef<HTMLInputElement>(null);
   const pendingTitleSaveRef = useRef<Promise<boolean> | null>(null);
+  const deadlineTriggerRefs = useRef<Map<number, HTMLButtonElement | null>>(
+    new Map(),
+  );
+  const lastDeadlineTriggerTaskIdRef = useRef<number | null>(null);
   const { addNotification } = useNotificationStore();
 
   useEffect(() => {
@@ -192,6 +210,12 @@ export default function DashboardTasksPanel() {
     () => sortedTasks.filter((task) => Boolean(task.completed_at)),
     [sortedTasks],
   );
+  const deadlineModalTask = useMemo(
+    () => tasks.find((task) => task.id === deadlineModalTaskId) ?? null,
+    [tasks, deadlineModalTaskId],
+  );
+  const isDeadlineModalSaving =
+    deadlineModalTaskId !== null && busyTaskId === deadlineModalTaskId;
 
   useEffect(() => {
     if (isComposerOpen) {
@@ -205,6 +229,13 @@ export default function DashboardTasksPanel() {
       editingInputRef.current?.select();
     }
   }, [editingTaskId]);
+
+  useEffect(() => {
+    if (deadlineModalTaskId !== null && !deadlineModalTask && !isDeadlineModalSaving) {
+      setDeadlineModalTaskId(null);
+      setDeadlineModalError(null);
+    }
+  }, [deadlineModalTaskId, deadlineModalTask, isDeadlineModalSaving]);
 
   useEffect(() => {
     if (editingTaskId === null) {
@@ -235,6 +266,18 @@ export default function DashboardTasksPanel() {
     setIsComposerOpen(false);
     setTitle("");
     setError(null);
+  };
+
+  const handleCloseDeadlineModal = () => {
+    setDeadlineModalTaskId(null);
+    setDeadlineModalError(null);
+
+    window.requestAnimationFrame(() => {
+      const taskId = lastDeadlineTriggerTaskIdRef.current;
+      if (taskId !== null) {
+        deadlineTriggerRefs.current.get(taskId)?.focus();
+      }
+    });
   };
 
   const resetEditingTask = () => {
@@ -349,6 +392,23 @@ export default function DashboardTasksPanel() {
     setIsComposerOpen(true);
   };
 
+  const handleOpenDeadlineModal = async (
+    task: UserTask,
+    trigger: HTMLButtonElement | null,
+  ) => {
+    const saved = await commitEditingTask();
+    if (!saved) {
+      return;
+    }
+
+    handleCloseComposer();
+    setError(null);
+    setDeadlineModalError(null);
+    lastDeadlineTriggerTaskIdRef.current = task.id;
+    deadlineTriggerRefs.current.set(task.id, trigger);
+    setDeadlineModalTaskId(task.id);
+  };
+
   const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -444,20 +504,17 @@ export default function DashboardTasksPanel() {
     }
   };
 
-  const handleAssignDeadline = async (
-    taskId: number,
-    dueDate: Date | null,
-  ): Promise<boolean> => {
-    const saved = await commitEditingTask();
-    if (!saved) {
+  const handleSaveDeadline = async (dueDate: Date | null): Promise<boolean> => {
+    if (deadlineModalTaskId === null) {
       return false;
     }
 
-    setBusyTaskId(taskId);
+    setBusyTaskId(deadlineModalTaskId);
     setError(null);
+    setDeadlineModalError(null);
 
     try {
-      const updatedTask = await updateUserTask(taskId, {
+      const updatedTask = await updateUserTask(deadlineModalTaskId, {
         due_at: dueDate ? dueDate.toISOString() : null,
       });
 
@@ -474,11 +531,9 @@ export default function DashboardTasksPanel() {
       });
       return true;
     } catch (deadlineError: any) {
-      addNotification({
-        message:
-          deadlineError.response?.data?.detail || "Failed to save deadline.",
-        type: "error",
-      });
+      setDeadlineModalError(
+        deadlineError.response?.data?.detail || "Failed to save deadline.",
+      );
       return false;
     } finally {
       setBusyTaskId(null);
@@ -620,15 +675,28 @@ export default function DashboardTasksPanel() {
                             </span>
                           )}
 
-                          <TaskDeadlinePicker
-                            value={deadline}
-                            onChange={(date) => handleAssignDeadline(task.id, date)}
-                            timeZone={timeZone}
-                            placeholderText="Add deadline"
+                          <button
+                            type="button"
+                            ref={(node) => {
+                              deadlineTriggerRefs.current.set(task.id, node);
+                            }}
+                            onClick={(event) =>
+                              void handleOpenDeadlineModal(task, event.currentTarget)
+                            }
                             disabled={isBusy}
-                            className="w-auto"
-                            inputClassName={DEADLINE_INPUT_CLASS}
-                          />
+                            className={
+                              `${DEADLINE_TRIGGER_CLASS} ` +
+                              (deadline
+                                ? "border-solid border-orange-200 bg-orange-50/90 text-orange-900 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-100"
+                                : "")
+                            }
+                            aria-label={`${deadline ? "Edit" : "Add"} deadline for ${task.title}`}
+                          >
+                            <span className="truncate">
+                              {getDeadlineTriggerLabel(deadline, timeZone)}
+                            </span>
+                            <Calendar className="h-4 w-4 shrink-0 opacity-60" />
+                          </button>
                         </div>
                       </div>
 
@@ -720,15 +788,23 @@ export default function DashboardTasksPanel() {
 
                         {deadline && (
                           <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <TaskDeadlinePicker
-                              value={deadline}
-                              onChange={(date) => handleAssignDeadline(task.id, date)}
-                              timeZone={timeZone}
-                              placeholderText="Add deadline"
+                            <button
+                              type="button"
+                              ref={(node) => {
+                                deadlineTriggerRefs.current.set(task.id, node);
+                              }}
+                              onClick={(event) =>
+                                void handleOpenDeadlineModal(task, event.currentTarget)
+                              }
                               disabled={isBusy}
-                              className="w-auto"
-                              inputClassName={DEADLINE_INPUT_CLASS}
-                            />
+                              className={`${DEADLINE_TRIGGER_CLASS} border-solid border-orange-200 bg-orange-50/90 text-orange-900 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-100`}
+                              aria-label={`Edit deadline for ${task.title}`}
+                            >
+                              <span className="truncate">
+                                {getDeadlineTriggerLabel(deadline, timeZone)}
+                              </span>
+                              <Calendar className="h-4 w-4 shrink-0 opacity-60" />
+                            </button>
                           </div>
                         )}
                       </div>
@@ -750,6 +826,21 @@ export default function DashboardTasksPanel() {
           </>
         )}
       </div>
+
+      <TaskDeadlineModal
+        isOpen={deadlineModalTask !== null}
+        taskTitle={deadlineModalTask?.title ?? ""}
+        value={
+          deadlineModalTask?.due_at
+            ? parseTaskDeadline(deadlineModalTask.due_at)
+            : null
+        }
+        timeZone={timeZone}
+        isSaving={isDeadlineModalSaving}
+        error={deadlineModalError}
+        onClose={handleCloseDeadlineModal}
+        onSave={handleSaveDeadline}
+      />
     </div>
   );
 }
