@@ -30,7 +30,7 @@ We **actively welcome** code contributions, bug fixes, and feature enhancements 
 
 ## Development Setup
 
-Please refer to the `README.md` for instructions on setting up the development environment (Docker Compose for backend, Node.js for frontend/companion).
+Please refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local development setup and core source-build commands.
 
 ## Code of Conduct
 

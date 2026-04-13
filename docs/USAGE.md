@@ -1,215 +1,210 @@
 # Nojoin User Guide
 
-## Getting Started
+This guide covers normal day-to-day use after Nojoin has already been installed.
 
-This guide outlines the steps to initialize and utilize the Nojoin platform.
+For deployment, administration, calendar provider setup, and backup operations, use the dedicated guides in the `docs` folder.
 
-### 1. First Run
+## First Run
 
-1. **Install/Run Companion App:** Ensure the Nojoin Companion App is running in the system tray. This is required for audio capture.
-2. **Verify Connection:** Open the Web Client. The status indicator in the bottom left should display "Connected".
-3. **Dashboard Landing:** The root route now opens the dashboard home surface, which includes `Meet Now`, recent meetings, an interactive calendar shell, and a personal to-do list. Each individual to-do item is referred to as a `Task Card`.
-4. **Make a Test Recording:**
-   - Click the **Record** button (microphone icon) in the sidebar.
-   - Speak a few words.
-   - Click **Stop**.
-5. **View Results:** Open the **Recordings** workspace from the main navigation. The recording will appear in the list. Wait for processing to complete (transcription, diarization) to view the transcript and notes.
+1. Install and run the Windows Companion app.
+2. Open the web app and confirm the Companion shows as connected.
+3. Use **Meet Now** from the dashboard to create a short test recording.
+4. Open the finished recording in the `/recordings` workspace.
+5. Wait for processing to complete so the transcript and notes appear.
 
-### 2. Interactive Tour
+## Tours and Onboarding
 
-On the first visit to the dashboard, an interactive tour guides the user through the main features:
+Nojoin includes guided tours for first-time users.
 
-1. **Navigation:** Overview of the main sidebar.
-2. **Recordings:** Location of processed meetings.
-3. **Import:** Procedure for uploading existing audio files.
-4. **Companion App:** Guidance on downloading and connecting the system tray app.
-5. **Settings:** Configuration of models and preferences.
-   - _Note: If environment variables are detected, the setup wizard will be pre-filled with your provided keys._
+- The dashboard tour introduces navigation, recording, importing, companion setup, and settings.
+- The transcript tour introduces the recording detail view when a recording is opened for the first time.
+- These tours can be restarted later from the Help settings area.
 
-**Transcript Tour:**
-When a recording is viewed for the first time (such as the included "Demo Recording"), a second tour guides the user through the detailed view:
+## Dashboard
 
-1. **Transcript View:** Reading and navigating the transcript.
-2. **Audio Controls:** Playback and speed controls.
-3. **Speakers:** Managing and identifying speakers.
-4. **AI Notes:** Generating summaries and action items.
-5. **Meeting Chat:** Asking questions about the meeting.
+The root route is the operational home surface for Nojoin.
 
-These tours can be restarted at any time by resetting preferences in the browser.
+It brings together:
 
-## Core Features
+- **Meet Now** for live capture.
+- **Recent meetings** for quick re-entry into recent work.
+- **Calendar context** through month and agenda views.
+- **Task Cards** for personal follow-up work.
 
-### Audio Recording (Companion App)
+### Calendar Surface
 
-The Companion App is a lightweight system tray application that handles audio capture on Windows.
+- Switch between month and agenda views.
+- Use `Today` to jump back to the current date context.
+- When calendars are connected, per-calendar colours help distinguish event sources.
+- Event times render in your configured Nojoin timezone.
+- If no calendar is connected, the dashboard shows an empty state instead of fake data.
 
-- **Headless Operation:** Runs silently in the background.
-- **System Tray:**
-  - **Status:** Visual indication of state (Idle, Recording, Paused, Error).
-  - **Menu:** "Open Nojoin", "Check for Updates", "Help", "About", "Restart", "Exit".
-- **Dual-Channel Capture:** Simultaneously records system output (audio heard) and microphone input (audio spoken).
-- **Pause & Resume:** Supports pausing via Web Client commands.
-- **Smart Uploads:** Audio is sent to the server automatically. If pauses occur, the audio is sent as multiple segments and concatenated on the server.
-- **Visual Feedback:** The tray icon changes color/shape based on status. Native system notifications indicate status changes.
-- **Secure Pairing:** The Web Client first authorises the Companion with a bootstrap token for pairing and recording initialisation. Each new recording then receives its own short-lived upload token, so segment upload, status updates, finalisation, and discard are bound to that single recording. Your browser session remains in a Secure HttpOnly cookie and is not handed to the desktop app.
+Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
 
-#### Live Capture Workspace
+### Task Cards
 
-When a meeting is actively recording, the recording page switches to a dedicated live capture view.
+Task Cards are personal tasks that live on the dashboard.
 
-- **Live Audio Levels:** The page shows separate calibrated level bars for system audio and microphone input.
-- **Persistent Notes Panel:** A `Notes` panel remains available while the meeting is recording and through most of processing.
-- **Low-Latency Editing:** Manual notes are captured locally in the browser and autosaved in the background so typing remains responsive.
+You can:
 
-**Platform Support:** The companion app currently supports Windows only. Contributors are welcome to help build macOS and Linux versions. Please see the [Contributing Guide](../CONTRIBUTING.md) for details.
+- Create a task inline.
+- Rename a task by editing the title.
+- Mark a task complete or reopen it.
+- Delete a task.
+- Set an optional date-and-time deadline.
+- See a live time-remaining badge for active deadlines.
 
-### Import Recordings
+## Live Recording and Capture Workspace
 
-Existing audio files can be imported directly via the Web Client.
+When a meeting is actively recording, the recording page becomes a live capture workspace.
 
-- **Supported Formats:** WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
-- **No File Size Limit:** There is no restriction on the size of audio files you can upload. The system automatically chunks files to bypass any proxy limitations.
-- **Metadata:** A custom meeting name and the original recording date/time can be specified during import.
-- **Processing:** Imported files enter the same processing pipeline (Transcription -> Diarization -> Alignment) as live recordings.
+You can monitor:
 
-### Transcription & Diarization
+- Live system-audio and microphone levels.
+- Recording state and duration.
+- A persistent notes panel for user-authored context.
 
-Audio processing occurs asynchronously on the server.
+Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 
-- **Process:**
-  1. **Validation:** Checks audio file integrity.
-  2. **Preprocessing:** Converts audio to mono 16kHz WAV and filters silence (VAD).
-  3. **Proxy Creation:** Generates an aligned MP3 for web playback.
-  4. **Transcription:** Uses OpenAI Whisper (Local) to generate text.
-  5. **Diarization:** Uses Pyannote (Local) for speaker separation.
-  6. **Phantom Filter:** Detects and reassigns segments caused by non-speech sounds (e.g., notification chimes, background noise) that would otherwise create phantom speakers.
-  7. **Merge & Inference:** Combines transcript and diarization, then uses LLM to infer speaker names (e.g., "John Doe" instead of "Speaker 1").
-  8. **Intelligence:** Extracts voiceprints (sampling up to 10 high-quality segments for accuracy), infers a meeting title, and generates comprehensive notes.
-- **Progress Tracking:** Real-time status updates are displayed in the Web Client (e.g., "Transcribing...", "Determining speakers...").
-- **ETA Tracking:** Once Nojoin has timing data from at least three previously completed processing runs on that installation, the status view shows an estimated time remaining.
-  - The estimate is based on persisted processing start and completion timestamps from prior recordings.
-  - Older recordings without timing data are ignored unless you re-run them with **Retry Processing**.
-  - If there is not enough history yet, the UI explicitly says Nojoin is still learning rather than showing a low-confidence estimate.
-- **Export:** Transcripts can be exported to `.txt` format via the Web Client (Transcript Only, Notes Only, or Both).
+## Importing Recordings
 
-#### Reprocessing
+You can import existing audio files directly through the web client.
 
-If a recording fails or if you wish to re-run the pipeline (e.g., after updating models), you can trigger **Retry Processing** from the context menu.
+Supported formats include:
 
-- **Full Reset:** Retry Processing clears generated meeting state and rebuilds it from the original audio.
-- **Cleared:** Transcript, speaker assignments and merges, generated notes, and meeting chat history.
-- **Preserved:** Recording metadata, assigned tags, uploaded documents, and user-authored processing notes.
-- **Fresh Timing Sample:** Retry Processing resets the processing timers and records a new timing sample that can contribute to future ETA calculations.
-- **Title Inference:** The meeting title may be inferred again during the new processing run.
+- WAV
+- MP3
+- M4A
+- AAC
+- WebM
+- OGG
+- FLAC
+- MP4
+- WMA
+- Opus
 
-### Speaker Management
+Imported files enter the same processing pipeline as live recordings.
 
-- **Global Speaker Library:** Centralized database of known speakers.
-- **Intelligent Linking:**
-  - Link "Unknown Speakers" to existing Global Speakers.
-  - **Add to People:** Right-click a speaker to add them to the Global Library. This option is hidden if the speaker is already in the library (matched by name or ID).
-  - Renaming a speaker offers to update the Global Speaker or create a new one.
-- **Voiceprint Management:**
-  - **Auto-Extraction:** Can be enabled in Settings.
-  - **On-Demand Creation:** Create voiceprints via the "Create Voiceprint" context menu.
-  - **Visual Indicator:** Speakers with voiceprints display a fingerprint icon.
+## Processing, Transcripts, and Retry Processing
 
-### Meeting Intelligence
+Once uploaded, recordings are processed asynchronously.
 
-- **LLM-Powered Notes:**
-  - Generates summaries, action items, and key takeaways.
-  - **Comprehensive Notes:** Includes Topics, Summary, Detailed Notes, Action Items.
-  - **User Note Context:** Manual notes captured during recording/processing are passed into note generation as supporting context.
-  - **User Note Attribution:** Final notes append a `User Notes` section and label each carried-forward point as user-authored.
-- **Speaker Inference Support:** Manual notes are also used as supporting context when the LLM infers speaker names or roles.
-- **Chat Q&A:**
-  - "Chat with your meeting" feature allows users to ask questions about specific recordings.
-  - The AI is context-aware of uploaded documents and can answer questions based on their content.
-  - Can also be used to request modifications or rewrites to the generated meeting notes in real-time. Changes are streamed and applied seamlessly to the notes panel without refreshing.
-  - Chat history is saved per recording.
+Typical stages include:
 
-### Search & Organization
+1. Validation.
+2. Preprocessing and silence filtering.
+3. Proxy creation for playback.
+4. Transcription.
+5. Diarisation.
+6. Merge, inference, and note generation.
 
-- **Tagging:** Apply tags to recordings (e.g., "Daily Standup").
-- **Advanced Search:** Full-text search across titles, notes, and transcripts. Filter by Date, Tags, and Speakers.
-- **Fuzzy Search:** Tolerates typos in search queries.
+### Processing ETA
 
-### Web Playback & Transcript Interface
+When Nojoin has enough historical timing data from prior completed processing runs, the UI shows an estimated time remaining.
 
-- **Dashboard:**
-  - **Current Dashboard:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
-  - **Meet Now:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
-  - **Calendar:** Includes interactive month browsing, a `Today` button that returns the view to the current date, and an Agenda toggle. If calendars are connected, month dots and agenda markers use per-calendar colours so you can distinguish event sources at a glance. If no calendar is connected, both views show an empty-state notice instead of fabricated events. Timed events are rendered in your configured Nojoin timezone rather than implicitly following the browser or server clock.
-  - **To-Do List:** Personal tasks appear as Task Cards. Press `Enter` to save a new Task Card, `Escape` to cancel input, double-click a Task Card title to edit it, and confirm edits with `Enter` or by clicking outside. Optional deadlines support both date and time, and active Task Cards show a live time-remaining badge beside the deadline picker. The badge prefers days for deadlines at least 24 hours away and otherwise shows whole hours remaining. Saved deadlines are normalised to UTC so they stay stable if you travel or later change timezone.
-  - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
-  - **Future Direction:** Future dashboard work is expected to connect real calendar data and derive richer agenda/task automation from meeting outputs.
-- **Recordings Workspace:**
-  - **Dedicated Route:** `/recordings` now acts as the entry point for the recordings library and filtering workspace.
-  - **Route Split:** The main navigation now separates `Dashboard` from `Recordings`, while selected meetings continue to open under `/recordings/{id}`.
-  - **Mobile Behaviour:** On mobile, the dashboard no longer competes with the recordings sidebar; the recordings workspace remains the focused list-and-detail surface.
-- **Processing View:** Uploading, queued, and processing meetings render a dedicated status experience with progress, ETA messaging, recording length, live waveform monitoring, and inline manual notes.
-- **Player:** HTML5 audio player with waveform visualization.
-- **Synced Transcript:** Clicking text seeks audio. Text highlights during playback.
-- **Edit Mode:** Correct transcript text and speaker assignments in the browser.
+If not enough history exists yet, the interface says Nojoin is still learning instead of fabricating a number.
 
-### Backup & Restore
+### Retry Processing
 
-Nojoin includes a comprehensive backup system located in **Settings > Backup & Restore**.
+If a recording fails or you want to rebuild the generated meeting artefacts, use **Retry Processing**.
 
-- **Create Backup:**
-  - Generates a ZIP archive containing the database, configuration, audio files, dashboard Task Cards, people records, voiceprint embeddings, and calendar integration data.
-  - **Options:**
-    - **Include Audio:** Toggle to include or exclude audio files. Audio is automatically compressed to Opus format to reduce backup size.
-- **Restore Backup:**
-  - Upload a previously created backup file.
-  - **Conflict Resolution:** Choose how to handle data that already exists (Skip, Overwrite).
-  - **Selective Restore:** The system intelligently merges data, ensuring no data loss for existing users unless overwrite is explicitly selected.
-- **Calendar Preservation:** Restores installation calendar provider configuration, connected-account tokens, selected calendars, colour overrides, sync cursors, and cached events so the dashboard calendar comes back intact.
-- **Redaction:** LLM and Hugging Face style application keys remain redacted and must be re-entered after restoration if needed.
-- **Sensitivity Warning:** Calendar provider credentials and connected-calendar tokens are intentionally preserved so calendar integrations can be restored on another installation. Treat backup archives as sensitive secrets.
+Retry Processing:
 
-### Settings & Configuration
+- Clears transcript-derived generated state.
+- Rebuilds the meeting from the original audio.
+- Preserves recording metadata, tags, uploaded documents, and user-authored notes.
+- Records a fresh processing timing sample for future ETA calculations.
 
-- **Server Settings:** Manage API keys, model selection, and storage paths.
-- **Calendar Connections:** Users can connect Gmail and Outlook calendars from **Settings > Account**.
-  - Clicking `Connect` beside Google or Microsoft sends the browser directly to the provider's own sign-in and consent screen.
-  - After approval, the user is returned to Nojoin automatically and can choose which individual calendars to sync.
-  - Each selected or available calendar can be given its own colour override, and clearing the override returns it to the provider-supplied default colour.
-  - Users do **not** enter OAuth client IDs or secrets in the account page.
-- **Calendar Provider Setup:** Owners and Admins can register the installation OAuth app credentials in **Settings > Admin > Calendar**.
-  - This is a one-time deployment task for the self-hosted installation.
-  - Exact provider-registration steps and redirect URI requirements are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
-- **Updates:** A dedicated **Settings > Updates** page shows the installed version, the latest published stable release, recent release history, release notes, and companion download links.
-- **AI Settings:**
-  - **Whisper Model Management:** View installed Whisper models. Download new models (e.g. `turbo`, `large-v3`) or delete unused ones to free up disk space.
-  - **LLM Provider:** Configure OpenAI, Anthropic, Gemini, or Ollama connections.
-    - **Privacy Note:** Using a remote LLM provider (OpenAI, Anthropic, Gemini) will send your meeting transcripts to external services. For a pure private mode where data never leaves your server, you must configure a local Ollama instance.
-- **Help:**
-  - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
-  - **Report a Bug:** Direct link to report issues on the GitHub repository.
-- **User Preferences:** Theme selection (Dark/Light), default playback speed.
-- **Timezone:** The General settings page lets each user choose the IANA timezone used for dashboard calendar rendering and task deadline entry. The button can also fill this from the browser when supported.
-- **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. The Updates page uses GitHub Releases as the primary source for the latest stable release and falls back to registry metadata only if release metadata is unavailable.
+## Transcript and Playback Workflow
 
-### User & Password Administration
+Within a processed recording you can:
 
-- **Invitation Registration:** Users who register through an invite choose their own password during sign-up and are not forced through an immediate password-rotation flow.
-- **Manual User Creation:** Users created directly by an Admin or Owner are given a temporary password and are redirected to Account settings on first sign-in to choose a new one before they can use the rest of the application.
-- **Forced Rotation Scope:** While `force_password_change` is active, Nojoin allows access to the current-user profile, password update, and logout only. Other authenticated pages and APIs are blocked until the password is changed.
-- **Admin Reset Behaviour:** There is currently no separate UI toggle for “require password change”. The existing flow is to create the user manually with a temporary password, or for a superuser to reset that user’s password through the user-management API, which sets the same flag.
-- **Privilege Guardrails:** Only Owners can create Owner accounts. Only existing superusers can grant superuser status or reset another user’s password through the elevated user-management API.
+- Play the aligned web proxy.
+- Follow synced transcript highlighting.
+- Click transcript text to seek playback.
+- Edit transcript text and speaker assignments.
+- Export transcript-only, notes-only, or combined text output.
 
-### System Management (Admin Only)
+## Speaker Management
 
-Accessible via **Settings > System**, this panel provides tools for server maintenance.
+Nojoin maintains a global speaker library across recordings.
 
-- **System Restart:** safely restarts all Nojoin services (API, Worker, Database, etc.) directly from the UI.
-  - Handles backend startup delays and automatically reconnects when the system is back online.
-- **Log Streaming:** Real-time diagnostics for the entire stack.
-  - **Authenticated Stream:** The live log stream uses your existing browser session and does not place bearer tokens into the WebSocket URL.
-  - **Unified Log View:** Default view shows a merged stream of all container logs (`all`), with each line prefixed by the service name.
-  - **Single Service View:** Drill down into specific containers (e.g. `nojoin-worker`).
-  - **Filters:**
-    - **Text/Regex:** Filter logs by keyword or regex pattern.
-    - **Log Level:** Filter by severity (`DEBUG`, `INFO`, `WARN`, `ERROR`).
-  - **Download:** Export the current log stream to a text file for sharing or analysis.
+Common workflows include:
+
+- Linking an unknown in-recording speaker to an existing global speaker.
+- Promoting a recording speaker into the People library.
+- Creating or updating voiceprints.
+- Recalibrating voiceprints from better samples.
+
+Speakers with voiceprints display a fingerprint indicator in the UI.
+
+## Meeting Intelligence
+
+Nojoin can generate:
+
+- Meeting summaries.
+- Action items.
+- Rich structured notes.
+- Suggested speaker naming context.
+
+Manual user notes are also used as supporting context for inference and final note generation, and the final notes explicitly label user-authored items.
+
+### Meeting Chat
+
+The chat feature lets you ask questions about a single recording and its associated uploaded documents.
+
+It can also be used to rewrite or refine generated meeting notes.
+
+## Search and Organisation
+
+Nojoin supports:
+
+- Recording tags.
+- Full-text search across titles, notes, and transcripts.
+- Fuzzy matching for tolerant search.
+- Speaker-based filtering and navigation.
+
+## Settings Most Users Will Use
+
+### Account Settings
+
+Normal users mainly interact with:
+
+- Profile details.
+- Password change.
+- Calendar connections.
+
+### AI Settings
+
+Depending on permissions, users may also see or adjust:
+
+- LLM provider selection.
+- Whisper model settings.
+- Local Ollama configuration.
+
+### Timezone
+
+The General settings page lets each user choose the IANA timezone used for dashboard calendar rendering and task deadlines.
+
+### Updates
+
+The Updates page shows:
+
+- The running version.
+- The latest stable published release.
+- Release history and release notes.
+- Companion installer links.
+
+### Help
+
+The Help area includes:
+
+- Tour reset actions.
+- Demo meeting recreation.
+- Issue reporting links.
+
+## Related Docs
+
+- [CALENDAR.md](CALENDAR.md)
+- [ADMIN.md](ADMIN.md)
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)

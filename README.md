@@ -2,7 +2,7 @@
 <div align="center">
     <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
-           <strong>A Self-Hosted Meeting Assistant</strong>
+           <strong>A self-hosted meeting intelligence platform</strong>
             </p>
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
@@ -11,450 +11,98 @@
     </p>
 </div>
 
-<!-- Screenshots -->
-
-<img width="2548" height="1231" alt="sc-light" src="https://github.com/user-attachments/assets/7a0039de-321b-46a3-8d8f-95ebf6b3f1c4" />
-
-<img width="2545" height="1235" alt="sc-dark" src="https://github.com/user-attachments/assets/a4ca6734-0902-4ca9-84f8-21c2ba3a3368" />
+<img width="2548" height="1231" alt="Nojoin screenshot" src="https://github.com/user-attachments/assets/7a0039de-321b-46a3-8d8f-95ebf6b3f1c4" />
 
 ---
 
-## 📚 Table of Contents
+## What Is Nojoin?
 
-- [Why Nojoin?](#why-nojoin)
-- [Pre-Requisites](#pre-requisites)
-- [Quick Start](#-quick-start)
-- [Hardware Requirements](#%EF%B8%8F-hardware-requirements)
-- [Features](#-features)
-- [System Architecture](#-system-architecture)
-- [API Keys & Configuration](#-api-keys--configuration)
-- [User Management](#-user-management)
-- [Installation & Setup](#%EF%B8%8F-installation--setup)
-- [Updating Nojoin](#-updating-nojoin)
-- [Troubleshooting](#-troubleshooting)
-- [Reverse Proxy](#-reverse-proxy)
-- [Roadmap](#%EF%B8%8F-roadmap)
-- [Contributing](#-contributing)
-- [Editions](#-editions)
-- [Legal](#%EF%B8%8F-legal)
+Nojoin is a self-hosted meeting intelligence platform.
 
-## ❔ Why Nojoin?
+It captures audio through a local Windows Companion app, processes recordings on your own server, and gives you transcripts, speaker separation, meeting notes, search, meeting chat, and a web-based dashboard for day-to-day work.
 
-Most meeting assistants require users to invite bots to join meetings or upload sensitive business conversations to the cloud. Nojoin offers a different approach.
+Nojoin is built for people who want the usefulness of meeting assistants without inviting bots into meetings or defaulting to a SaaS platform for storage and processing.
 
-- **Configurable Privacy:** Audio and transcripts remain on your server. Using remote LLM features will send transcripts to external providers. For 100% privacy, configure a local Ollama instance.
-- **Unlimited:** No monthly limits on recording minutes.
-- **Smart:** Utilizes OpenAI Whisper (Turbo) for transcription and Pyannote for speaker identification.
-- **Interactive:** Enables chat with meetings using ChatGPT, Claude, Gemini, or Ollama.
-- **Non-Intrusive:** Nojoin does not require joining meetings as a participant.
+## Why Nojoin?
 
-## 📋 Pre-Requisites
+- Self-hosted and privacy-first.
+- No meeting bot joins your calls.
+- Local Whisper transcription and Pyannote diarisation on your own infrastructure.
+- Optional cloud LLMs, or fully local AI with Ollama.
+- Web dashboard with recordings, calendar context, and Task Cards.
+- Windows Companion app for system and microphone capture.
 
-Before installing Nojoin, ensure your system meets the following requirements:
+## Quick Start
 
-### General
-
-- **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux).
-- **Git** (Optional, only if cloning the repository).
-
-### For NVIDIA GPU Support (Highly Recommended)
-
-Nojoin relies on GPU acceleration for efficient audio transcription and speaker diarization.
-
-**Linux Requirements:**
-
-1. **NVIDIA Drivers:** Ensure the proprietary NVIDIA drivers are installed on your host system.
-   - Ubuntu: `sudo apt install nvidia-driver-580` (or latest available version).
-   - Verify with: `nvidia-smi`
-2. **NVIDIA Container Toolkit:** Required for Docker to access the GPU.
-   - [Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-   - Configuration command: `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`
-
-**Windows Requirements:**
-
-- **WSL 2:** Ensure you are using the WSL 2 backend for Docker Desktop.
-- **NVIDIA Drivers:** Install the latest [NVIDIA drivers for Windows](https://www.nvidia.com/Download/index.aspx). The drivers are automatically propagated to WSL 2.
-
-## ⚡ Quick Start
-
-> [⚠️WARNING⚠️]
->
-> Nojoin is still in development so updates may break instances. I will do my best to fix these issues ASAP but users should create regular backups just in case.
->
-> Please bear in mind that this is my first open source project so you may see things which you find to be suboptimal. I would be grateful if you could provide feedback and suggestions for improvement or even submit a pull request if you have the skills to do so.
-
-1. **Clone:**
-   ```bash
-   git clone https://github.com/Valtora/Nojoin
-   cd Nojoin
-   ```
-2. **Setup:** `cp docker-compose.example.yml docker-compose.yml`
-3. **Launch:** `docker compose up -d` (Pulls pre-built images from GHCR)
-4. **Use:** Open `https://localhost:14443` (Accept self-signed cert warning)
-5. **Configure:** Follow the first-run wizard to set up API keys and preferences.
-   - _Note: If you configured environment variables in `.env`, these fields will be pre-filled._
-6. **Companion App:** Navigate to the [Releases](https://github.com/Valtora/Nojoin/releases) page to download, install, and connect the companion app on client machines to start recording audio.
-   - See [Installation & Setup](#%EF%B8%8F-installation--setup) for CPU-only mode and configuration details.
-
-## 🖥️ Hardware Requirements
-
-- **Backend Server:**
-  - **Recommended:** Windows 11 (with WSL2) or Linux system with a compatible NVIDIA GPU (CUDA 12.x support).
-  - **Minimum:** 8GB VRAM for optimal performance (Whisper Turbo + Pyannote).
-  - **macOS Hosting:** Hosting the **backend** on macOS via Docker is **not recommended**.
-    - Docker on macOS cannot pass through the Apple Silicon GPU (Metal) to containers. This forces the system to run in CPU-only mode, which is significantly slower for transcription and diarization.
-- **Companion App:**
-  - Currently supported on **Windows only**.
-  - macOS and Linux companion apps are not yet available. Contributors are welcome to help build support for these platforms!
-
-## ✨ Features
-
-- **Distributed Architecture:**
-  - **Server:** Dockerized backend handling heavy AI processing (Whisper, Pyannote).
-  - **Web Client:** Modern Next.js interface for managing meetings from anywhere.
-  - **Companion App:** Lightweight Rust system tray app for capturing audio on client machines.
-- **Advanced Audio Processing:**
-  - **Local-First Transcription:** Uses OpenAI's Whisper (default Turbo) for accurate, private transcription.
-  - **Speaker Diarization:** Automatically identifies distinct speakers using Pyannote.
-  - **System Audio Capture:** Captures both system audio out and microphone input.
-  - **Live Recording Telemetry:** The in-progress recording page shows calibrated live system and microphone levels via the Companion's local metering endpoint.
-- **Meeting Intelligence:**
-  - **LLM-Powered Notes:** Generate summaries, action items, and key takeaways using OpenAI, Anthropic, Google Gemini, or Ollama.
-  - **Manual Processing Notes:** Capture notes while a meeting records or processes; Nojoin feeds them into speaker inference and note generation, then surfaces them as user-authored items in the final notes.
-  - **Processing ETA:** New processing runs persist timing data and use it to estimate time remaining once enough history exists on that installation.
-  - **Chat Q&A:** "Chat with your meeting" to ask specific questions about the content or make edits to notes.
-  - **Documents:** Upload documents to be processed by the LLM.
-  - **Cross-Meeting Context:** Select tags to include meetings, notes, and documents from across all meetings with the same tag(s).
-- **Dashboard Workspace:**
-  - **Iteration One:** The root route now opens a dedicated dashboard with quick capture controls, recent meetings, system-health panels, and direct routes into the recordings workspace.
-  - **Shared Visual Language:** The dashboard and in-flight recording workspace now use the same ambient layout treatment so live work feels like part of one coherent operating surface.
-  - **Future Expansion:** This first dashboard iteration is the base for richer workday tooling such as calendar integrations, agenda views, and to-do lists derived from meeting outcomes.
-- **Organization & Search:**
-  - **Global Speaker Library:** Centralized management of speaker identities across all recordings.
-  - **Voiceprint Recalibration:** Manually improve speaker identification by selecting high-quality samples.
-  - **Full-Text Search:** Instantly find content across transcripts, titles, and notes.
-  - **Tagging:** Organize meetings with custom tags.
-- **User Management & Security:**
-  - **Role-Based Access:** Owner, Admin, and User roles with granular permissions.
-  - **Invitation System:** Secure registration via invite links with expiration and usage limits.
-  - **Secure Sessions:** Browser authentication uses Secure HttpOnly cookies. Explicit Bearer tokens are reserved for API clients and scoped companion recording flows.
-  - **Trusted Public Origin:** Invitation links and companion TLS fingerprint discovery are derived from configured public origins rather than request Host headers.
-  - **User Data:** Complete data cleanup on user deletion (files, database records, and logs).
-
-## 🏗️ System Architecture
-
-Nojoin is composed of three distinct subsystems:
-
-1. **The Server (Dockerized):**
-   - Hosted on a machine with NVIDIA GPU capabilities.
-   - Runs the API (FastAPI), Worker (Celery), Database (PostgreSQL), and Broker (Redis).
-   - Handles all heavy lifting: VAD, Transcription, and Diarization.
-
-2. **The Web Client (Next.js):**
-   - The primary interface for users.
-  - Provides a dashboard for capture, recent-work visibility, playback, transcript editing, and system configuration.
-  - Uses a split workspace model where `/` is the dashboard and `/recordings` is the dedicated recordings library and editor entry point.
-
-3. **The Companion App (Rust):**
-   - Runs on Windows client machines.
-   - Sits in the system tray and handles audio capture.
-   - Uploads audio to the server for processing.
-   - **Platform Support:** Currently Windows-only. Community contributions are welcome for macOS and Linux support!
-
-## 🔑 API Keys & Configuration
-
-Nojoin requires certain API keys to function fully. The first-run wizard will request these keys, but they can also be entered in the **Settings** -> **AI Services** page of the web interface after installation.
-
-> **Tip:** You can pre-fill these values by setting them in your `.env` file before starting the application. See [Deployment > Environment Variables](docs/DEPLOYMENT.md#environment-variables) for a full list of available options.
-
-### Hugging Face Token (Required for Diarization)
-
-To enable speaker diarization (identifying who is speaking), a Hugging Face token is required.
-
-**Privacy Note:** This token is **only** used to download the model weights from Hugging Face. All audio processing and diarization happens locally on the server. No audio data is sent to Hugging Face.
-
-1. Create an account on [Hugging Face](https://huggingface.co/).
-2. Generate an Access Token. A token with fine-grained permissions can be used:
-   - Select "Read access to contents of selected repos".
-   - Select the following repositories:
-     - `pyannote/speaker-diarization-community-1`
-     - `pyannote/wespeaker-voxceleb-resnet34-LM`
-3. Accept the user conditions for the following models:
-   - [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)
-   - [`pyannote/wespeaker-voxceleb-resnet34-LM`](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM)
-4. Enter this token in the Nojoin **Settings > AI Settings**.
-
-## LLM Providers (optional but recommended)
-
-**To use the meeting note generation, speaker/title inference, and meeting chat features, an API key from one of the supported providers is required.**
-
-**Privacy Note:** Configuring a cloud-based LLM provider (OpenAI, Anthropic, Google Gemini) trades absolute privacy for these features, as meeting transcripts and notes will be sent to their APIs for processing. A pure private mode where data never leaves your environment is achievable **only** by using a local **Ollama** instance.
-
-- **OpenAI**
-- **Anthropic**
-- **Google Gemini**
-- **Ollama** (Local LLMs - no API key required, but requires setup)
-
-## 👥 User Management
-
-Nojoin includes a robust user management system designed for self-hosted environments.
-
-### Roles
-
-- **Owner:** The first user created is automatically assigned the Owner role. Has full system access and cannot be deleted.
-- **Admin:** Can manage users, create/revoke invites, and view system settings.
-- **User:** Standard access to record and manage their own meetings.
-
-### Invitation System
-
-Registration is restricted to invited users only.
-
-1. **Create Invite:** Admins generate invite links with specific roles (Admin/User), expiration dates, and usage limits.
-2. **Revoke:** Invites can be revoked at any time to prevent further signups while keeping a record of the code.
-3. **Delete:** Revoked invites can be permanently deleted from the system.
-
-### Data Cleanup
-
-When a user is deleted, Nojoin performs a **hard delete** of all associated data to ensure privacy:
-
-- **Files:** Audio recordings and proxy files are physically removed from the disk.
-- **Database:** User account, recordings, transcripts, chat history, and speaker profiles are cascaded and removed.
-- **Anonymization:** Invitations created by the deleted user are preserved but anonymized (orphaned) to maintain invite code validity for other users.
-
-## 🛠️ Installation & Setup
-
-### Prerequisites
-
-#### For Hosting (Docker)
-
-- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
-- **NVIDIA GPU** (Optional, but highly recommended for faster processing).
-  - Requires **NVIDIA Container Toolkit** to be installed on Linux.
-  - Compute Capability 6.1+ (Pascal) recommended.
-
-#### For Local Development
-
-If you plan to develop or build Nojoin from source, you will need the following tools installed:
-
-**General:**
-
-- **Git**
-- **Docker** (Required for running Database and Redis services)
-
-**Backend (Python):**
-
-- **Python 3.11**
-- **FFmpeg** (Required for audio processing)
-  - Linux: `sudo apt install ffmpeg`
-  - Windows: Download and add to PATH.
-- **PostgreSQL Development Headers**
-  - Linux: `sudo apt install libpq-dev`
-- **Compiler Tools**
-  - Linux: `sudo apt install build-essential`
-  - Windows: Microsoft Visual C++ Build Tools
-
-**Frontend (Node.js):**
-
-- **Node.js v20+** (LTS recommended)
-- **npm** (comes with Node.js) or **pnpm**
-
-**Companion App (Rust):**
-
-- **Rust** (Latest Stable)
-- **CMake** (Used by some Rust build scripts)
-- **Platform-specific dependencies:**
-  - **Linux:** `sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`
-  - **Windows:** Microsoft Visual C++ Build Tools
-
-### Quick Start (Docker Compose)
-
-1. **Clone the repository:**
+1. Clone the repository.
 
    ```bash
    git clone https://github.com/Valtora/Nojoin
    cd Nojoin
    ```
 
-2. **Start the Stack:**
+2. Copy the example compose file.
 
-   **Option A: NVIDIA GPU (Default)**
-   Requires an NVIDIA GPU. Much faster processing.
+   ```bash
+   cp docker-compose.example.yml docker-compose.yml
+   ```
+
+3. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-  _Note: This pulls pre-built images from GitHub Container Registry. To build from source, use `docker compose build && docker compose up -d --wait`. Some Docker Compose releases can reconcile incompletely on the first detached `up --build` pass._
+4. Open the web app.
 
-   **Option B: CPU**
-   Works on all systems. Slower processing speeds.
-
-   Open `docker-compose.yml` and comment out the `deploy` section under the `worker` service.
-
-   Then run:
-
-   ```bash
-   docker compose up -d
+   ```text
+   https://localhost:14443
    ```
 
-   _Note: The first run may take several minutes as it needs to download large Docker images._
+5. Complete the first-run wizard.
 
-3. **Access the Application:**
-   - **Web Interface:** Open `https://localhost:14443`
-     - _Note: A "Not Secure" warning will appear because of the self-signed certificate._
-   - **Remote Access:** The Docker images are pre-configured to work on any domain. Simply access the server via its IP or domain name (e.g., `https://192.168.1.50:14443`).
-     - _Note: The domain may need to be added to `ALLOWED_ORIGINS` in `.env` if CORS issues are encountered._
+6. Download and connect the latest Windows Companion build from GitHub Releases.
 
-### Using Local LLMs (Ollama)
+Notes:
 
-If running Ollama on the same machine as the Nojoin Docker containers, the special Docker host address must be used:
+- An NVIDIA GPU is strongly recommended for faster processing.
+- CPU-only mode is supported.
+- The Companion app currently supports Windows only.
+- For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
 
-- **API URL:** `http://host.docker.internal:11434`
-- Do **not** use `localhost` or `127.0.0.1` as the container cannot see the host's localhost.
+## Documentation
 
-### Running the Companion App
+- [Documentation Index](docs/README.md)
+- [Getting Started](docs/GETTING_STARTED.md)
+- [Deployment & Configuration](docs/DEPLOYMENT.md)
+- [User Guide](docs/USAGE.md)
+- [Calendar Guide](docs/CALENDAR.md)
+- [Administration Guide](docs/ADMIN.md)
+- [Backup & Restore](docs/BACKUP_RESTORE.md)
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Security Policy](docs/SECURITY.md)
+- [Legal Disclaimer](docs/LEGAL.md)
 
-1. Go to the [Releases](https://github.com/Valtora/Nojoin/releases) page.
-2. Download the Windows installer (`Nojoin_X.Y.Z_windows.exe`). There is also a portable binary available if preferred.
-3. Run the installer. The application will appear in the system tray.
-4. The web app also has a 'Download Companion App' button that will direct to the releases page.
+## Project Status
 
-_Note: For developers, the app can be built from source by navigating to the `companion` directory and running `cargo build --release` on Windows._
+Nojoin is under active development. Back up your instance regularly before upgrading.
 
-> **🤝 Contributions Welcomed:** Contributions are welcomed to help build macOS and Linux versions of the companion app. The Windows version uses standard Rust audio libraries (cpal) that have cross-platform support for Linux so I will focus on this first.
-> MacOS is trickier due to the need to use ScreenCaptureKit for system audio capture. If interested in contributing, please check the [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss.
+## Contributing
 
-## 🔄 Updating Nojoin
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and contribution expectations.
 
-To update Nojoin to the latest version, in the Nojoin directory:
+## Security
 
-1. **Stop the containers:**
+If you discover a vulnerability, follow the [security policy](docs/SECURITY.md).
 
-   ```bash
-   docker compose down
-   ```
-
-2. **Pull the latest images:**
-
-   ```bash
-   docker compose pull
-   ```
-
-3. **Start the containers:**
-
-   ```bash
-   docker compose up -d
-   ```
-
-> **Note:** You can check your current version and view if a new version is available directly on the **Settings** page.
->
-> **Release Strategy:** Docker images (`ghcr.io/valtora/nojoin-*`) are automatically built and updated with every push to the `main` branch. GitHub Releases are generally reserved for updates to the Companion App binaries or major codebase milestones. If you want the absolute latest features, simply pull the latest Docker images.
-
-## ❓ Troubleshooting
-
-<details>
-<summary><strong>Transcription is slow / GPU not being used</strong></summary>
-
-Ensure the GPU has been passed to the container correctly.
-
-1. Check if `nvidia-smi` works on the host.
-2. Verify the `docker-compose.yml` has the `deploy: resources: reservations: devices` section uncommented.
-3. If on Windows, ensure the latest WSL2 drivers are installed.
-
-</details>
-
-<details>
-<summary><strong>Cannot access Nojoin from another computer</strong></summary>
-
-1. Check firewall settings on the host machine (port 14443).
-2. Ensure `ALLOWED_ORIGINS` in the `.env` file includes the server's IP or domain (e.g., `https://example.yourdomain.com:14443`).
-
-</details>
-
-<details>
-<summary><strong>Ollama connection failed</strong></summary>
-
-If running Ollama on the host, use `http://host.docker.internal:11434` instead of `localhost`. Docker containers cannot see `localhost` of the host directly.
-
-</details>
-
-## 🌐 Reverse Proxy Setup
-
-If you are running Nojoin behind a reverse proxy (Nginx, Caddy, Traefik, etc.), please observe the following requirements:
-
-1.  **Upstream Protocol:** You **must** proxy to the HTTPS port.
-    - **Nojoin Internal Nginx:** Listens on port `443` (inside the container).
-    - **Host Mapping:** By default, this is mapped to port `14443` on your host.
-2.  **SSL/TLS Verification:** Nojoin uses a self-signed certificate internally. You must configure your reverse proxy to **skip backend certificate verification** (in Caddy: `tls_insecure_skip_verify`).
-3.  **Environment:** Ensure your domain is listed in `ALLOWED_ORIGINS` in your `.env` file to prevent CORS errors.
-
-#### Examples
-
-**Caddy:**
-
-```caddy
-nojoin.yourdomain.com {
-    reverse_proxy localhost:14443 {
-        transport http {
-            tls_insecure_skip_verify
-        }
-    }
-}
-```
-
-**Nginx:**
-
-```nginx
-location / {
-    proxy_pass https://localhost:14443;
-    proxy_ssl_verify off;
-    proxy_set_header Host $host;
-    # ... other standard headers
-}
-```
-
-## 🗺️ Roadmap
-
-- [x] **Windows Support** (Stable)
-- [x] **Dashboard Iteration One**
-  - Dedicated home dashboard with quick capture, recent meetings, and system-health visibility.
-  - Recordings workspace split out to its own route for cleaner navigation and future expansion.
-- [ ] **Dashboard Iteration Two**
-  - Calendar integrations and agenda-centric daily views.
-  - Meeting-derived to-do lists and follow-up planning surfaces.
-  - Additional workday modules that make the dashboard a genuine operating hub rather than a landing page.
-- [ ] **macOS & Linux Support** (Contributions Welcome)
-  - Community-driven development for companion app.
-    - Windows implementation can serve as a reference.
-- [ ] **Real-time Transcription**
-  - Live transcript generation during recording.
-  - Instant feedback loop.
-  - Real-time suggestions and notes.
-
-## 🤝 Contributing
-
-Contributions from the community are welcome! Whether it's fixing bugs, improving documentation, or adding new features, help is appreciated.
-
-By submitting a Pull Request, you agree that your contribution will be licensed under the **GNU Affero General Public License v3.0 (AGPLv3)** for inclusion in Nojoin.
-
-Please see the [Contributing Guide](CONTRIBUTING.md) for details on how to get started.
-
-## 📃 Licence
+## Licence
 
 Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
-This ensures that the software remains free and open-source, and that modifications made to the code, including versions run as a network service, must be shared under the same licence terms.
 
-### Third-Party Components
+## Legal
 
-This project utilizes the following third-party models and libraries:
+Recording laws vary by jurisdiction. Review the [legal disclaimer](LEGAL.md) before using Nojoin.
 
-- **Pyannote Audio** models (`pyannote/speaker-diarization-community-1` and `pyannote/wespeaker-voxceleb-resnet34-LM`) by [Pyannote](https://www.pyannote.ai/). Licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
-- **OpenAI Whisper** by OpenAI. Licensed under the [MIT License](https://github.com/openai/whisper/blob/main/LICENSE).
+## Support
 
-## ⚖️ Legal
-
-Please review the [Legal Disclaimer](LEGAL.md) regarding the recording of conversations and compliance with local laws.
-
-## ☕ Buy Me a Coffee
-
-If Nojoin is useful, please consider [buying me a coffee](https://ko-fi.com/valtorra) as a way to support Nojoin.
+If Nojoin is useful, please consider [buying me a coffee](https://ko-fi.com/valtorra).
