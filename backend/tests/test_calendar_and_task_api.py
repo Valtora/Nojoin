@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.core.encryption import encrypt_secret
 from backend.models.user import User
@@ -331,6 +331,8 @@ async def seed_calendar_source(
 @pytest.fixture
 async def api_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     for env_key in (
+        "WEB_APP_URL",
+        "ALLOWED_ORIGINS",
         "GOOGLE_OAUTH_CLIENT_ID",
         "GOOGLE_OAUTH_CLIENT_SECRET",
         "MICROSOFT_OAUTH_CLIENT_ID",
@@ -389,6 +391,22 @@ def override_current_user(api_app: FastAPI):
     return _override
 
 
+@pytest.fixture
+def override_current_admin_user(api_app: FastAPI):
+    def _override(user_id: int, username: str = "admin") -> None:
+        api_app.dependency_overrides[get_current_admin_user] = lambda: User(
+            id=user_id,
+            username=username,
+            hashed_password="hashed-password",
+            role="admin",
+            is_active=True,
+            is_superuser=False,
+            force_password_change=False,
+        )
+
+    return _override
+
+
 @pytest.mark.anyio
 async def test_calendar_overview_hides_admin_provider_metadata(
     client: AsyncClient,
@@ -415,6 +433,51 @@ async def test_calendar_overview_hides_admin_provider_metadata(
     assert "has_client_secret" not in google_provider
     assert "source" not in google_provider
     assert "enabled" not in google_provider
+
+
+@pytest.mark.anyio
+async def test_admin_provider_status_uses_explicit_web_app_url_for_redirect_uri(
+    client: AsyncClient,
+    override_current_admin_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    override_current_admin_user(1)
+
+    response = await client.get("/api/v1/calendar/admin/providers")
+
+    assert response.status_code == 200
+    google_provider = next(
+        provider for provider in response.json() if provider["provider"] == "google"
+    )
+    assert (
+        google_provider["redirect_uri"]
+        == "https://nojoin.example.com/api/v1/calendar/oauth/google/callback"
+    )
+
+
+@pytest.mark.anyio
+async def test_admin_provider_status_falls_back_to_allowed_origins_for_redirect_uri(
+    client: AsyncClient,
+    override_current_admin_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        "https://nojoin.example.com,https://localhost:14443",
+    )
+    override_current_admin_user(1)
+
+    response = await client.get("/api/v1/calendar/admin/providers")
+
+    assert response.status_code == 200
+    microsoft_provider = next(
+        provider for provider in response.json() if provider["provider"] == "microsoft"
+    )
+    assert (
+        microsoft_provider["redirect_uri"]
+        == "https://nojoin.example.com/api/v1/calendar/oauth/microsoft/callback"
+    )
 
 
 @pytest.mark.anyio

@@ -165,6 +165,7 @@ class CalendarProviderStatusRead(SQLModel):
     configured: bool
     source: str
     enabled: bool
+    redirect_uri: str
     client_id: Optional[str] = None
     tenant_id: Optional[str] = None
     has_client_secret: bool

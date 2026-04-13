@@ -202,6 +202,7 @@ export interface CalendarProviderStatus {
   configured: boolean;
   source: string;
   enabled: boolean;
+  redirect_uri: string;
   client_id?: string | null;
   tenant_id?: string | null;
   has_client_secret: boolean;

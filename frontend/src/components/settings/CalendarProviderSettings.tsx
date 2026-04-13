@@ -58,7 +58,6 @@ function buildInitialForms(
 
 
 export default function CalendarProviderSettings() {
-  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
   const [providers, setProviders] = useState<CalendarProviderStatus[]>([]);
   const [forms, setForms] = useState<Record<CalendarProvider, ProviderFormState>>({
     google: { ...EMPTY_FORM, tenant_id: "" },
@@ -208,13 +207,13 @@ export default function CalendarProviderSettings() {
                         ? `Configured via ${provider.source}`
                         : "Missing OAuth credentials"}
                     </div>
-                    {currentOrigin && (
+                    {provider.redirect_uri && (
                       <div className="mt-2 space-y-1 text-xs contrast-helper">
                         <div>
                           Register redirect URI:
                         </div>
                         <div className="break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                          {`${currentOrigin}/api/v1/calendar/oauth/${provider.provider}/callback`}
+                          {provider.redirect_uri}
                         </div>
                         <div>
                           {provider.provider === "google"

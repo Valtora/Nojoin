@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 CONFIG_FILENAME = 'config.json'
 # Use PathManager for configuration file location
 CONFIG_PATH = str(path_manager.config_path)
+WEB_APP_URL_ENV_KEY = "WEB_APP_URL"
 
 # Keys that should NEVER be written to config.json
 SENSITIVE_KEYS = {
@@ -405,10 +406,22 @@ def get_allowed_origin_list() -> list[str]:
     return origins
 
 
+def get_configured_web_origin() -> str | None:
+    env_origin = _normalise_origin(os.environ.get(WEB_APP_URL_ENV_KEY))
+    if env_origin:
+        return env_origin
+
+    return _normalise_origin(
+        config_manager.get("web_app_url", DEFAULT_SYSTEM_CONFIG["web_app_url"])
+    )
+
+
 def get_trusted_web_origin() -> str:
-    configured_origin = _normalise_origin(config_manager.get("web_app_url", DEFAULT_SYSTEM_CONFIG["web_app_url"]))
+    configured_origin = get_configured_web_origin()
     if configured_origin:
         configured_host = urlparse(configured_origin).hostname
+        if os.environ.get(WEB_APP_URL_ENV_KEY):
+            return configured_origin
         if configured_host and not _is_local_hostname(configured_host):
             return configured_origin
 

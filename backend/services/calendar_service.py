@@ -45,6 +45,7 @@ from backend.models.calendar import (
 )
 from backend.models.user import User
 from backend.utils.config_manager import get_trusted_web_origin
+from backend.utils.time import utc_now
 
 
 logger = logging.getLogger(__name__)
@@ -196,7 +197,7 @@ class IncrementalSyncResetRequired(Exception):
 
 
 def _utc_now() -> datetime:
-    return datetime.utcnow()
+    return utc_now()
 
 
 def _parse_iso_datetime(value: str | None, *, default_tz: timezone | None = timezone.utc) -> datetime | None:
@@ -585,6 +586,7 @@ async def list_provider_statuses(db: AsyncSession) -> list[CalendarProviderStatu
                 configured=runtime_config.configured,
                 source=runtime_config.source,
                 enabled=runtime_config.enabled,
+                redirect_uri=_build_redirect_uri(provider),
                 client_id=runtime_config.client_id,
                 tenant_id=runtime_config.tenant_id if provider == CalendarProvider.MICROSOFT.value else None,
                 has_client_secret=bool(runtime_config.client_secret),
@@ -1832,13 +1834,14 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
     connection = accounts_by_connection_id[calendar.connection_id]
     account_label = connection.email or connection.display_name
     meeting_url_host = _get_meeting_url_host(event.meeting_url)
+    calendar_colour = getattr(calendar, "user_colour", None) or getattr(calendar, "colour", None)
     return CalendarDashboardEventRead(
         id=event.id,
         title=event.title,
         provider=connection.provider,
         calendar_id=calendar.id,
         calendar_name=calendar.name,
-        calendar_colour=calendar.user_colour or calendar.colour,
+        calendar_colour=calendar_colour,
         account_label=account_label,
         location=event.location_text,
         meeting_url=event.meeting_url,

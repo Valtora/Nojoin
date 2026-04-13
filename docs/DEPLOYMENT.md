@@ -75,6 +75,7 @@ Configuration is split between system-wide infrastructure settings and user-spec
 The following environment variables can be used to pre-configure the system (e.g. in `.env` or `docker-compose.yml`), useful for automated deployments.
 
 - `REDIS_PASSWORD`: Password used to secure the Redis instance and authenticate clients.
+- `WEB_APP_URL`: Exact public browser origin used for generated OAuth callbacks, invite links, and other public URLs.
 - `HF_TOKEN`: Hugging Face User Access Token (Read).
 - `LLM_PROVIDER`: Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`).
 - `GEMINI_API_KEY`: Google Gemini API Key.
@@ -103,7 +104,7 @@ Pick the exact browser origin your users will use to access Nojoin. This must ma
 - Local example: `https://localhost:14443`
 - Public example behind a reverse proxy: `https://nojoin.example.com`
 
-If you are not using the default local setup, ensure `ALLOWED_ORIGINS` includes that exact origin. If you have also set `web_app_url` in Nojoin system configuration, keep it identical to the public origin you register with the provider.
+If you are not using the default local setup, set `WEB_APP_URL` to that exact origin and ensure `ALLOWED_ORIGINS` also includes it. If you have also set `web_app_url` in Nojoin system configuration, keep it identical to the public origin you register with the provider.
 
 ### Step 2: Register the Google OAuth App
 
@@ -173,7 +174,7 @@ If you prefer to keep the app single-tenant, enter your directory tenant ID in N
 Use one of these paths:
 
 1. Admin UI: sign in as an Owner or Admin, open `Settings > Admin > Calendar`, enter the Google client ID and secret, enter the Microsoft `Application (client) ID`, `Client Secret Value`, and `Tenant ID or common`, verify the Microsoft field labels match the labels shown in Entra, and save.
-1. Environment variables: add the OAuth variables to `.env`, then restart the stack, for example with `docker compose up -d --build api worker frontend`.
+1. Environment variables: add `WEB_APP_URL` plus the OAuth variables to `.env`, then restart the stack, for example with `docker compose up -d --build api worker frontend`.
 
 If you change the Microsoft tenant mode later, for example from a tenant GUID to `common`, disconnect any previously failed Outlook calendar connections and reconnect them so Nojoin requests a fresh token under the corrected tenant path.
 

@@ -1,6 +1,7 @@
-from typing import Any, List
+from typing import Any, List, cast
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import select
+from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from sqlalchemy.orm import selectinload
@@ -8,8 +9,9 @@ from sqlalchemy.orm import selectinload
 from backend.api.deps import get_db, get_current_user
 from backend.models.user import User, UserRole
 from backend.models.invitation import Invitation
-from backend.utils.config_manager import config_manager, get_trusted_web_origin
+from backend.utils.config_manager import get_trusted_web_origin
 from backend.utils.rate_limit import enforce_rate_limit
+from backend.utils.time import utc_now
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -52,7 +54,7 @@ async def create_invitation(
 
     expires_at = None
     if invitation_in.expires_in_days:
-        expires_at = datetime.utcnow() + timedelta(days=invitation_in.expires_in_days)
+        expires_at = utc_now() + timedelta(days=invitation_in.expires_in_days)
 
     invitation = Invitation(
         role=invitation_in.role,
@@ -87,7 +89,13 @@ async def read_invitations(
     if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    query = select(Invitation).options(selectinload(Invitation.users)).offset(skip).limit(limit).order_by(Invitation.id.desc())
+    query = (
+        select(Invitation)
+        .options(selectinload(cast(Any, Invitation.users)))
+        .offset(skip)
+        .limit(limit)
+        .order_by(desc(cast(Any, Invitation.id)))
+    )
     result = await db.execute(query)
     invitations = result.scalars().all()
     
@@ -125,9 +133,8 @@ async def revoke_invitation(
     db.add(invitation)
     await db.commit()
     await db.refresh(invitation)
-    
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+
+    web_app_url = get_invite_base_url()
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
@@ -155,9 +162,8 @@ async def delete_invitation(
         
     await db.delete(invitation)
     await db.commit()
-    
-    system_config = config_manager.config
-    web_app_url = system_config.get("web_app_url", "https://localhost:14443")
+
+    web_app_url = get_invite_base_url()
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
@@ -183,7 +189,11 @@ async def validate_invitation(
         detail="Too many invitation validation requests. Please try again later.",
     )
 
-    query = select(Invitation).where(Invitation.code == code).options(selectinload(Invitation.created_by))
+    query = (
+        select(Invitation)
+        .where(Invitation.code == code)
+        .options(selectinload(cast(Any, Invitation.created_by)))
+    )
     result = await db.execute(query)
     invitation = result.scalar_one_or_none()
     
@@ -193,7 +203,7 @@ async def validate_invitation(
     if invitation.is_revoked:
         raise HTTPException(status_code=400, detail="Invitation has been revoked")
         
-    if invitation.expires_at and invitation.expires_at < datetime.utcnow():
+    if invitation.expires_at and invitation.expires_at < utc_now():
         raise HTTPException(status_code=400, detail="Invitation has expired")
         
     if invitation.max_uses and invitation.used_count >= invitation.max_uses:
