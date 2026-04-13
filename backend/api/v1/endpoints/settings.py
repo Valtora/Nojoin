@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
 from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES, SENSITIVE_KEYS
+from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
 
@@ -31,6 +32,7 @@ class SettingsUpdate(BaseModel):
     enable_vad: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
+    timezone: Optional[str] = None
 
     @field_validator('whisper_model_size')
     @classmethod
@@ -65,12 +67,18 @@ class SettingsUpdate(BaseModel):
                 raise ValueError("Invalid URL format")
         return value
 
+    @field_validator('timezone')
+    @classmethod
+    def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
+        if value:
+            return validate_timezone_name(value)
+        return value
+
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """
     Merges system config, default user settings, and user-specific settings.
     Priority: User Settings > Default User Settings > System Config
     """
-    import os
     # 1. Start with System Config (read-only for users)
     merged = config_manager.get_all()
     

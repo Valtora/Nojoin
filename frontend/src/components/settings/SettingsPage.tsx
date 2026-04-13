@@ -32,6 +32,7 @@ import AdminSettings from "./AdminSettings";
 import HelpSettings from "./HelpSettings";
 import UpdatesSettings from "./UpdatesSettings";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { isValidTimeZone, setCachedUserTimeZone } from "@/lib/timezone";
 
 type Tab = "general" | "audio" | "updates" | "help" | "account" | "admin";
 
@@ -200,6 +201,7 @@ export default function SettingsPage() {
         // Ensure settingsData is an object (API might return null)
         const safeSettings = settingsData || {};
         setSettings(safeSettings);
+        setCachedUserTimeZone(safeSettings.timezone);
         currentSettings = safeSettings;
         setForcePasswordChange(false);
 
@@ -270,6 +272,9 @@ export default function SettingsPage() {
     if (settings.ollama_api_url && !isValidUrl(settings.ollama_api_url)) {
       return "Invalid Ollama API URL.";
     }
+    if (settings.timezone && !isValidTimeZone(settings.timezone)) {
+      return "Invalid timezone. Use a valid IANA timezone such as Europe/London.";
+    }
     if (companionConfig) {
       if (companionConfig.min_meeting_length !== undefined) {
         if (
@@ -296,6 +301,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await updateSettings(settings);
+      setCachedUserTimeZone(settings.timezone);
 
       // Save companion config (api_port) if available
       if (companionConfig) {

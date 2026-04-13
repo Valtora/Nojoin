@@ -428,9 +428,16 @@ export const getCalendarOverview = async (): Promise<CalendarOverview> => {
 
 export const getCalendarDashboardSummary = async (
   month: string,
+  timeZone?: string,
 ): Promise<CalendarDashboardSummary> => {
+  const params = new URLSearchParams();
+  params.set("month", month);
+  if (timeZone) {
+    params.set("timezone", timeZone);
+  }
+
   const response = await api.get<CalendarDashboardSummary>(
-    `/calendar/dashboard?month=${encodeURIComponent(month)}`,
+    `/calendar/dashboard?${params.toString()}`,
   );
   return response.data;
 };

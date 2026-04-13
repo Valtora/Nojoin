@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -86,7 +86,11 @@ SCHEMA_STATEMENTS = [
 ]
 
 
-def build_test_user(user_id: int, username: str) -> User:
+def build_test_user(
+    user_id: int,
+    username: str,
+    settings: dict[str, object] | None = None,
+) -> User:
     return User(
         id=user_id,
         username=username,
@@ -95,6 +99,7 @@ def build_test_user(user_id: int, username: str) -> User:
         is_active=True,
         is_superuser=False,
         force_password_change=False,
+        settings=settings or {},
     )
 
 
@@ -220,6 +225,8 @@ async def seed_task(
     task_id: int,
     user_id: int,
     title: str,
+    due_at: datetime | None = None,
+    completed_at: datetime | None = None,
 ) -> None:
     await execute_sql(
         session_maker,
@@ -247,8 +254,8 @@ async def seed_task(
             "created_at": TEST_TIMESTAMP,
             "updated_at": TEST_TIMESTAMP,
             "title": title,
-            "due_at": None,
-            "completed_at": None,
+            "due_at": due_at,
+            "completed_at": completed_at,
             "user_id": user_id,
         },
     )
@@ -382,10 +389,15 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
 
 @pytest.fixture
 def override_current_user(api_app: FastAPI):
-    def _override(user_id: int, username: str = "alice") -> None:
+    def _override(
+        user_id: int,
+        username: str = "alice",
+        settings: dict[str, object] | None = None,
+    ) -> None:
         api_app.dependency_overrides[get_current_user] = lambda: build_test_user(
             user_id,
             username,
+            settings,
         )
 
     return _override
@@ -494,6 +506,74 @@ async def test_read_tasks_returns_only_current_users_tasks(
 
     assert response.status_code == 200
     assert [task["id"] for task in response.json()] == [101]
+
+
+@pytest.mark.anyio
+async def test_read_tasks_returns_utc_instants_for_due_dates(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(
+        test_session_maker,
+        task_id=101,
+        user_id=1,
+        title="Own task",
+        due_at=datetime(2026, 4, 13, 12, 30, 0),
+    )
+    override_current_user(1)
+
+    response = await client.get("/api/v1/tasks/")
+
+    assert response.status_code == 200
+    payload = response.json()[0]
+    assert datetime.fromisoformat(payload["due_at"].replace("Z", "+00:00")) == datetime(
+        2026,
+        4,
+        13,
+        12,
+        30,
+        0,
+        tzinfo=UTC,
+    )
+    assert datetime.fromisoformat(payload["created_at"].replace("Z", "+00:00")).tzinfo == UTC
+    assert datetime.fromisoformat(payload["updated_at"].replace("Z", "+00:00")).tzinfo == UTC
+
+
+@pytest.mark.anyio
+async def test_create_task_normalises_due_at_using_user_timezone(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    override_current_user(1, settings={"timezone": "Europe/London"})
+
+    response = await client.post(
+        "/api/v1/tasks/",
+        json={"title": "Join planning call", "due_at": "2026-04-13T13:30:00"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert datetime.fromisoformat(payload["due_at"].replace("Z", "+00:00")) == datetime(
+        2026,
+        4,
+        13,
+        12,
+        30,
+        0,
+        tzinfo=UTC,
+    )
+
+    async with test_session_maker() as session:
+        stored_due_at = (
+            await session.execute(
+                text("SELECT due_at FROM user_tasks WHERE id = :task_id"),
+                {"task_id": payload["id"]},
+            )
+        ).scalar_one()
+
+    assert datetime.fromisoformat(str(stored_due_at)) == datetime(2026, 4, 13, 12, 30, 0)
 
 
 @pytest.mark.anyio

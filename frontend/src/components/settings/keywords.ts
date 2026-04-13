@@ -1,4 +1,4 @@
-export const GENERAL_KEYWORDS = ['appearance', 'theme', 'light', 'dark', 'mode', 'color', 'spellcheck', 'spell', 'language', 'dictionary'];
+export const GENERAL_KEYWORDS = ['appearance', 'theme', 'light', 'dark', 'mode', 'color', 'spellcheck', 'spell', 'language', 'dictionary', 'timezone', 'time zone', 'date', 'time', 'clock', 'utc', 'gmt', 'bst'];
 
 export const AI_KEYWORDS = [
   'provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai', 

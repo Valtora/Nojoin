@@ -139,8 +139,8 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 - **Dashboard:**
   - **Current Dashboard:** The root route is now a dedicated dashboard rather than an empty-state placeholder.
   - **Meet Now:** Includes a prominent dashboard recording control surface that reflects companion state and links directly into the live meeting view.
-  - **Calendar:** Includes interactive month browsing, a `Today` button that returns the view to the current date, and an Agenda toggle. If calendars are connected, month dots and agenda markers use per-calendar colours so you can distinguish event sources at a glance. If no calendar is connected, both views show an empty-state notice instead of fabricated events.
-  - **To-Do List:** Personal tasks appear as Task Cards. Press `Enter` to save a new Task Card, `Escape` to cancel input, double-click a Task Card title to edit it, and confirm edits with `Enter` or by clicking outside. Optional deadlines support both date and time, and active Task Cards show a live time-remaining badge beside the deadline picker. The badge prefers days for deadlines at least 24 hours away and otherwise shows whole hours remaining.
+  - **Calendar:** Includes interactive month browsing, a `Today` button that returns the view to the current date, and an Agenda toggle. If calendars are connected, month dots and agenda markers use per-calendar colours so you can distinguish event sources at a glance. If no calendar is connected, both views show an empty-state notice instead of fabricated events. Timed events are rendered in your configured Nojoin timezone rather than implicitly following the browser or server clock.
+  - **To-Do List:** Personal tasks appear as Task Cards. Press `Enter` to save a new Task Card, `Escape` to cancel input, double-click a Task Card title to edit it, and confirm edits with `Enter` or by clicking outside. Optional deadlines support both date and time, and active Task Cards show a live time-remaining badge beside the deadline picker. The badge prefers days for deadlines at least 24 hours away and otherwise shows whole hours remaining. Saved deadlines are normalised to UTC so they stay stable if you travel or later change timezone.
   - **Operational Snapshot:** Shows recent meetings, pipeline load, and core service health so users can orient themselves before entering the recordings workspace.
   - **Future Direction:** Future dashboard work is expected to connect real calendar data and derive richer agenda/task automation from meeting outputs.
 - **Recordings Workspace:**
@@ -188,6 +188,7 @@ Nojoin includes a comprehensive backup system located in **Settings > Backup & R
   - **Tours & Demos:** Restart the Welcome/Transcript tours or re-create the demo meeting.
   - **Report a Bug:** Direct link to report issues on the GitHub repository.
 - **User Preferences:** Theme selection (Dark/Light), default playback speed.
+- **Timezone:** The General settings page lets each user choose the IANA timezone used for dashboard calendar rendering and task deadline entry. The button can also fill this from the browser when supported.
 - **System Version:** The current running version (derived from the Docker image) is displayed in the Settings header. The Updates page uses GitHub Releases as the primary source for the latest stable release and falls back to registry metadata only if release metadata is unavailable.
 
 ### User & Password Administration

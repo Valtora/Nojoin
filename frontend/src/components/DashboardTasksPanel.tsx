@@ -10,6 +10,7 @@ import {
   updateUserTask,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { DEFAULT_TIME_ZONE, getUserTimeZone } from "@/lib/timezone";
 import { UserTask } from "@/types";
 
 import TaskDeadlinePicker from "./ui/TaskDeadlinePicker";
@@ -22,17 +23,6 @@ const DEADLINE_INPUT_CLASS =
 function parseTaskDeadline(value: string): Date | null {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function toLocalDateTimeString(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  const hours = String(value.getHours()).padStart(2, "0");
-  const minutes = String(value.getMinutes()).padStart(2, "0");
-  const seconds = String(value.getSeconds()).padStart(2, "0");
-
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
 function sortTasks(tasks: UserTask[]): UserTask[] {
@@ -135,6 +125,7 @@ export default function DashboardTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editingFormRef = useRef<HTMLFormElement>(null);
   const editingInputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +153,20 @@ export default function DashboardTasksPanel() {
     };
 
     void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getUserTimeZone().then((resolvedTimeZone) => {
+      if (!cancelled) {
+        setTimeZone(resolvedTimeZone);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -453,7 +458,7 @@ export default function DashboardTasksPanel() {
 
     try {
       const updatedTask = await updateUserTask(taskId, {
-        due_at: dueDate ? toLocalDateTimeString(dueDate) : null,
+        due_at: dueDate ? dueDate.toISOString() : null,
       });
 
       setTasks((currentTasks) =>
@@ -618,6 +623,7 @@ export default function DashboardTasksPanel() {
                           <TaskDeadlinePicker
                             value={deadline}
                             onChange={(date) => handleAssignDeadline(task.id, date)}
+                            timeZone={timeZone}
                             placeholderText="Add deadline"
                             disabled={isBusy}
                             className="w-auto"
@@ -717,6 +723,7 @@ export default function DashboardTasksPanel() {
                             <TaskDeadlinePicker
                               value={deadline}
                               onChange={(date) => handleAssignDeadline(task.id, date)}
+                              timeZone={timeZone}
                               placeholderText="Add deadline"
                               disabled={isBusy}
                               className="w-auto"

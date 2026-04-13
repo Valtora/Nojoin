@@ -66,10 +66,11 @@ async def get_calendar_overview(
 @router.get("/dashboard", response_model=CalendarDashboardSummaryRead)
 async def get_calendar_dashboard(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    timezone: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarDashboardSummaryRead:
-    return await get_dashboard_summary(db, current_user, month)
+    return await get_dashboard_summary(db, current_user, month, timezone)
 
 
 @router.post("/oauth/{provider}/start", response_model=CalendarAuthorisationStart)

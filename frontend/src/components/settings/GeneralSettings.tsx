@@ -1,12 +1,17 @@
 import { useTheme, Theme } from "@/lib/ThemeProvider";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fuzzyMatch } from "@/lib/searchUtils";
-import { GENERAL_KEYWORDS } from "./keywords";
 import { Settings } from "@/types";
-import { Brain, Mic, Activity, Users, FileText, Type, SpellCheck } from "lucide-react";
+import { Brain, Mic, Activity, Users, FileText, Type, SpellCheck, Clock3 } from "lucide-react";
 import { Switch } from "../ui/Switch";
 import { SPELLCHECK_LANGUAGES, spellCheckService } from "@/lib/spellCheckService";
 import DictionaryModal from "../DictionaryModal";
+import {
+  getBrowserTimeZone,
+  getSupportedTimeZones,
+  normaliseTimeZone,
+  setCachedUserTimeZone,
+} from "@/lib/timezone";
 
 interface GeneralSettingsProps {
   settings: Settings;
@@ -21,6 +26,15 @@ export default function GeneralSettings({
 }: GeneralSettingsProps) {
   const { theme, setTheme } = useTheme();
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
+  const [timezoneDraft, setTimezoneDraft] = useState(settings.timezone || "UTC");
+  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+  const browserTimeZone = useMemo(() => getBrowserTimeZone(), []);
+  const supportedTimeZones = useMemo(() => getSupportedTimeZones(), []);
+
+  useEffect(() => {
+    setTimezoneDraft(settings.timezone || "UTC");
+    setTimezoneError(null);
+  }, [settings.timezone]);
 
   const handleLanguageChange = async (locale: string) => {
     onUpdate({ ...settings, spellcheck_language: locale });
@@ -31,7 +45,39 @@ export default function GeneralSettings({
     setTheme(e.target.value as Theme);
   };
 
-  const showAppearance = fuzzyMatch(searchQuery, GENERAL_KEYWORDS);
+  const applyTimezone = (candidate: string) => {
+    const resolvedTimeZone = normaliseTimeZone(candidate);
+    if (!resolvedTimeZone) {
+      setTimezoneError("Enter a valid IANA timezone such as Europe/London.");
+      return;
+    }
+
+    setTimezoneError(null);
+    setTimezoneDraft(resolvedTimeZone);
+    setCachedUserTimeZone(resolvedTimeZone);
+    onUpdate({ ...settings, timezone: resolvedTimeZone });
+  };
+
+  const showAppearance = fuzzyMatch(searchQuery, [
+    "appearance",
+    "theme",
+    "light",
+    "dark",
+    "mode",
+    "color",
+  ]);
+  const showDateTime = fuzzyMatch(searchQuery, [
+    "timezone",
+    "time zone",
+    "date",
+    "time",
+    "clock",
+    "utc",
+    "gmt",
+    "bst",
+    "calendar",
+    "deadline",
+  ]);
   const showProcessing = fuzzyMatch(searchQuery, [
     "processing",
     "vad",
@@ -50,7 +96,7 @@ export default function GeneralSettings({
     "dictionary",
   ]);
 
-  if (!showAppearance && !showProcessing && !showSpellCheck && searchQuery)
+  if (!showAppearance && !showDateTime && !showProcessing && !showSpellCheck && searchQuery)
     return <div className="contrast-helper">No matching settings found.</div>;
 
   return (
@@ -78,6 +124,85 @@ export default function GeneralSettings({
                 Choose your preferred visual theme.
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDateTime && (
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Clock3 className="w-5 h-5 text-orange-500" /> Date & Time
+          </h3>
+          <div className="grid grid-cols-1 gap-4 max-w-xl">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyTimezone(timezoneDraft);
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Timezone
+                </label>
+                <input
+                  type="text"
+                  list="general-settings-timezone-options"
+                  value={timezoneDraft}
+                  onChange={(event) => {
+                    setTimezoneDraft(event.target.value);
+                    if (timezoneError) {
+                      setTimezoneError(null);
+                    }
+                  }}
+                  placeholder="UTC"
+                  className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+                <datalist id="general-settings-timezone-options">
+                  {supportedTimeZones.map((timeZone) => (
+                    <option key={timeZone} value={timeZone} />
+                  ))}
+                </datalist>
+                <p className="mt-1 text-xs contrast-helper">
+                  Calendar events and task deadlines are shown in this timezone.
+                  Task deadlines are converted to UTC when saved so they remain
+                  stable if you travel or later change timezone.
+                </p>
+              </div>
+
+              {timezoneError && (
+                <p className="text-sm text-rose-600 dark:text-rose-300">
+                  {timezoneError}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  className="px-3 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                >
+                  Apply timezone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTimezone(browserTimeZone)}
+                  className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
+                >
+                  Use browser timezone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTimezone("UTC")}
+                  className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
+                >
+                  Use UTC
+                </button>
+              </div>
+
+              <p className="text-xs contrast-helper">
+                Browser detected: {browserTimeZone}
+              </p>
+            </form>
           </div>
         </div>
       )}

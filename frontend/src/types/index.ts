@@ -155,6 +155,7 @@ export interface Settings {
   whisper_model_size?: string;
   processing_device?: string;
   theme?: string;
+  timezone?: string;
   llm_provider?: string;
   gemini_api_key?: string;
   openai_api_key?: string;
@@ -282,6 +283,7 @@ export interface CalendarDashboardEvent {
 
 export interface CalendarDashboardSummary {
   month: string;
+  timezone: string;
   state: CalendarDashboardState;
   provider_configured: boolean;
   is_syncing: boolean;

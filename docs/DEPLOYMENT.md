@@ -77,6 +77,7 @@ The following environment variables can be used to pre-configure the system (e.g
 - `REDIS_PASSWORD`: Password used to secure the Redis instance and authenticate clients.
 - `WEB_APP_URL`: Exact public browser origin used for generated OAuth callbacks, invite links, and other public URLs.
 - `HF_TOKEN`: Hugging Face User Access Token (Read).
+- `DEFAULT_TIMEZONE`: Default IANA timezone used for calendar rendering and task deadlines until a user saves a personal timezone. Leave blank to fall back to `UTC`.
 - `LLM_PROVIDER`: Default LLM Provider (`gemini`, `openai`, `anthropic`, `ollama`).
 - `GEMINI_API_KEY`: Google Gemini API Key.
 - `OPENAI_API_KEY`: OpenAI API Key.

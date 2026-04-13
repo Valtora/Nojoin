@@ -12,7 +12,6 @@ import {
   format,
   isSameDay,
   isSameMonth,
-  isToday,
   parseISO,
   startOfDay,
   startOfMonth,
@@ -30,6 +29,12 @@ import {
 } from "lucide-react";
 import { COLOR_PALETTE } from "@/lib/constants";
 import { getCalendarDashboardSummary } from "@/lib/api";
+import {
+  DEFAULT_TIME_ZONE,
+  formatTimeZoneDate,
+  getUserTimeZone,
+  toTimeZoneDate,
+} from "@/lib/timezone";
 import { CalendarDashboardEvent, CalendarDashboardSummary } from "@/types";
 
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -54,11 +59,15 @@ function getCalendarColourPresentation(colour: string | null | undefined) {
 }
 
 
-function getDayCalendarColours(events: CalendarDashboardEvent[], day: Date): string[] {
+function getDayCalendarColours(
+  events: CalendarDashboardEvent[],
+  day: Date,
+  timeZone: string,
+): string[] {
   const coloursByCalendarId = new Map<number, string>();
 
   events.forEach((event) => {
-    if (!eventOccursOnDay(event, day)) {
+    if (!eventOccursOnDay(event, day, timeZone)) {
       return;
     }
 
@@ -93,7 +102,11 @@ function getEventEnd(event: CalendarDashboardEvent): Date | null {
 }
 
 
-function eventOccursOnDay(event: CalendarDashboardEvent, day: Date): boolean {
+function eventOccursOnDay(
+  event: CalendarDashboardEvent,
+  day: Date,
+  timeZone: string,
+): boolean {
   const eventStart = getEventStart(event);
   const eventEnd = getEventEnd(event);
   if (!eventStart || !eventEnd) {
@@ -104,11 +117,17 @@ function eventOccursOnDay(event: CalendarDashboardEvent, day: Date): boolean {
     return startOfDay(day) >= startOfDay(eventStart) && startOfDay(day) <= startOfDay(eventEnd);
   }
 
-  return eventStart <= endOfDay(day) && eventEnd >= startOfDay(day);
+  const zonedStart = toTimeZoneDate(eventStart, timeZone);
+  const zonedEnd = toTimeZoneDate(eventEnd, timeZone);
+  return zonedStart <= endOfDay(day) && zonedEnd >= startOfDay(day);
 }
 
 
-function isFutureOrLiveEvent(event: CalendarDashboardEvent, now: Date): boolean {
+function isFutureOrLiveEvent(
+  event: CalendarDashboardEvent,
+  now: Date,
+  timeZone: string,
+): boolean {
   const eventStart = getEventStart(event);
   const eventEnd = getEventEnd(event);
   if (!eventStart || !eventEnd) {
@@ -116,8 +135,9 @@ function isFutureOrLiveEvent(event: CalendarDashboardEvent, now: Date): boolean 
   }
 
   if (event.is_all_day) {
+    const localToday = startOfDay(toTimeZoneDate(now, timeZone));
     const eventEndExclusive = event.end_date ? parseISO(event.end_date) : addDays(startOfDay(eventStart), 1);
-    return eventEndExclusive > startOfDay(now);
+    return eventEndExclusive > localToday;
   }
 
   return eventEnd >= now;
@@ -127,6 +147,7 @@ function isFutureOrLiveEvent(event: CalendarDashboardEvent, now: Date): boolean 
 function buildNextEventHelper(
   summary: CalendarDashboardSummary | null,
   now: Date,
+  timeZone: string,
 ): string | null {
   if (!summary?.next_event) {
     switch (summary?.state) {
@@ -146,6 +167,25 @@ function buildNextEventHelper(
   const eventStart = getEventStart(summary.next_event);
   if (!eventStart) {
     return "No upcoming events";
+  }
+
+  if (summary.next_event.is_all_day) {
+    const localToday = startOfDay(toTimeZoneDate(now, timeZone));
+    const eventEndExclusive = summary.next_event.end_date
+      ? parseISO(summary.next_event.end_date)
+      : addDays(startOfDay(eventStart), 1);
+
+    if (eventStart <= localToday && eventEndExclusive > localToday) {
+      return "Event live now";
+    }
+
+    const diffMinutes = Math.max(0, differenceInMinutes(eventStart, localToday));
+    if (diffMinutes >= 24 * 60) {
+      const diffDays = Math.max(1, Math.floor(diffMinutes / (24 * 60)));
+      return `Next event in ${diffDays} ${diffDays === 1 ? "day" : "days"}`;
+    }
+
+    return "Next event today";
   }
 
   const eventEnd = getEventEnd(summary.next_event);
@@ -197,7 +237,7 @@ function buildFooterText(
 }
 
 
-function formatAgendaDate(event: CalendarDashboardEvent): string {
+function formatAgendaDate(event: CalendarDashboardEvent, timeZone: string): string {
   if (event.is_all_day && event.start_date) {
     const startDate = parseISO(event.start_date);
     const endDate = event.end_date ? addDays(parseISO(event.end_date), -1) : startDate;
@@ -208,11 +248,13 @@ function formatAgendaDate(event: CalendarDashboardEvent): string {
   }
 
   const startsAt = getEventStart(event);
-  return startsAt ? format(startsAt, "EEE d MMM") : "Unknown date";
+  return startsAt
+    ? formatTimeZoneDate(startsAt, timeZone, "EEE d MMM")
+    : "Unknown date";
 }
 
 
-function formatAgendaTime(event: CalendarDashboardEvent): string {
+function formatAgendaTime(event: CalendarDashboardEvent, timeZone: string): string {
   if (event.is_all_day) {
     return "All day";
   }
@@ -223,9 +265,9 @@ function formatAgendaTime(event: CalendarDashboardEvent): string {
     return "Time unavailable";
   }
   if (!endsAt) {
-    return format(startsAt, "HH:mm");
+    return formatTimeZoneDate(startsAt, timeZone, "HH:mm");
   }
-  return `${format(startsAt, "HH:mm")} - ${format(endsAt, "HH:mm")}`;
+  return `${formatTimeZoneDate(startsAt, timeZone, "HH:mm")} - ${formatTimeZoneDate(endsAt, timeZone, "HH:mm")}`;
 }
 
 
@@ -258,7 +300,13 @@ function normaliseComparableUrl(value: string | null | undefined): string | null
 }
 
 
-function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
+function AgendaEventCard({
+  event,
+  timeZone,
+}: {
+  event: CalendarDashboardEvent;
+  timeZone: string;
+}) {
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
   const locationText = event.location?.trim() || null;
   const meetingUrl = event.meeting_url?.trim() || null;
@@ -279,9 +327,9 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
   return (
     <div className="rounded-xl border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
-        <span>{formatAgendaDate(event)}</span>
+        <span>{formatAgendaDate(event, timeZone)}</span>
         <span>•</span>
-        <span>{formatAgendaTime(event)}</span>
+        <span>{formatAgendaTime(event, timeZone)}</span>
       </div>
       <div className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
         {event.title}
@@ -333,16 +381,38 @@ function AgendaEventCard({ event }: { event: CalendarDashboardEvent }) {
 
 export default function DashboardUpcomingMeetingsCard() {
   const [now, setNow] = useState<Date>(() => new Date());
+  const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
+  const [timeZoneReady, setTimeZoneReady] = useState(false);
   const [viewedMonth, setViewedMonth] = useState<Date>(() =>
-    startOfMonth(new Date()),
+    startOfMonth(toTimeZoneDate(new Date(), DEFAULT_TIME_ZONE)),
   );
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
   const [selectedDay, setSelectedDay] = useState<Date | null>(() =>
-    startOfDay(new Date()),
+    startOfDay(toTimeZoneDate(new Date(), DEFAULT_TIME_ZONE)),
   );
   const [summary, setSummary] = useState<CalendarDashboardSummary | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [initialisedView, setInitialisedView] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getUserTimeZone().then((resolvedTimeZone) => {
+      if (!cancelled) {
+        setTimeZone(resolvedTimeZone);
+        setTimeZoneReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeTimeZone = summary?.timezone || timeZone;
+  const zonedNow = useMemo(() => toTimeZoneDate(now, activeTimeZone), [now, activeTimeZone]);
+  const currentDay = useMemo(() => startOfDay(zonedNow), [zonedNow]);
 
   useEffect(() => {
     const updateNow = () => {
@@ -357,21 +427,39 @@ export default function DashboardUpcomingMeetingsCard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!timeZoneReady || initialisedView) {
+      return;
+    }
+
+    setViewedMonth(startOfMonth(currentDay));
+    setSelectedDay(currentDay);
+    setInitialisedView(true);
+  }, [currentDay, initialisedView, timeZoneReady]);
+
   const viewedMonthKey = format(viewedMonth, "yyyy-MM");
 
   useEffect(() => {
+    if (!timeZoneReady) {
+      return;
+    }
+
     setSelectedDay((currentSelectedDay) => {
       if (currentSelectedDay && isSameMonth(currentSelectedDay, viewedMonth)) {
         return currentSelectedDay;
       }
-      if (isSameMonth(viewedMonth, now)) {
-        return startOfDay(now);
+      if (isSameMonth(viewedMonth, zonedNow)) {
+        return currentDay;
       }
       return startOfMonth(viewedMonth);
     });
-  }, [now, viewedMonth]);
+  }, [currentDay, timeZoneReady, viewedMonth, zonedNow]);
 
   useEffect(() => {
+    if (!timeZoneReady) {
+      return;
+    }
+
     let active = true;
 
     const loadSummary = async () => {
@@ -381,7 +469,7 @@ export default function DashboardUpcomingMeetingsCard() {
       }
 
       try {
-        const response = await getCalendarDashboardSummary(viewedMonthKey);
+        const response = await getCalendarDashboardSummary(viewedMonthKey, activeTimeZone);
         if (!active) {
           return;
         }
@@ -407,7 +495,7 @@ export default function DashboardUpcomingMeetingsCard() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [viewedMonthKey]);
+  }, [activeTimeZone, timeZoneReady, viewedMonthKey]);
 
   const monthDays = useMemo(
     () =>
@@ -417,7 +505,7 @@ export default function DashboardUpcomingMeetingsCard() {
       }),
     [viewedMonth],
   );
-  const isViewingCurrentMonth = isSameMonth(viewedMonth, now);
+  const isViewingCurrentMonth = isSameMonth(viewedMonth, zonedNow);
   const viewedMonthLabel = format(viewedMonth, "MMMM yyyy");
   const monthEvents = useMemo(() => summary?.agenda_items ?? [], [summary]);
   const dayEventColours = useMemo(() => {
@@ -425,7 +513,7 @@ export default function DashboardUpcomingMeetingsCard() {
 
     monthDays.forEach((day) => {
       const dayKey = format(day, "yyyy-MM-dd");
-      const dayColours = getDayCalendarColours(monthEvents, day);
+      const dayColours = getDayCalendarColours(monthEvents, day, activeTimeZone);
 
       if (dayColours.length) {
         coloursByDay.set(dayKey, dayColours);
@@ -433,35 +521,36 @@ export default function DashboardUpcomingMeetingsCard() {
     });
 
     return coloursByDay;
-  }, [monthDays, monthEvents]);
+  }, [activeTimeZone, monthDays, monthEvents]);
   const nextEventHelper = useMemo(
-    () => buildNextEventHelper(summary, now),
-    [summary, now],
+    () => buildNextEventHelper(summary, now, activeTimeZone),
+    [activeTimeZone, now, summary],
   );
   const footerText = useMemo(
     () => buildFooterText(summary, viewedMonthLabel, calendarError),
     [summary, viewedMonthLabel, calendarError],
   );
   const futureAgendaItems = useMemo(
-    () => monthEvents.filter((event) => isFutureOrLiveEvent(event, now)),
-    [monthEvents, now],
+    () => monthEvents.filter((event) => isFutureOrLiveEvent(event, now, activeTimeZone)),
+    [activeTimeZone, monthEvents, now],
   );
   const selectedDayEvents = useMemo(() => {
     if (!selectedDay) {
       return [];
     }
-    return monthEvents.filter((event) => eventOccursOnDay(event, selectedDay));
-  }, [monthEvents, selectedDay]);
+    return monthEvents.filter((event) => eventOccursOnDay(event, selectedDay, activeTimeZone));
+  }, [activeTimeZone, monthEvents, selectedDay]);
   const selectedDayLabel = selectedDay ? format(selectedDay, "EEEE d MMMM") : null;
   const isViewingToday = Boolean(
-    selectedDay && isViewingCurrentMonth && isSameDay(selectedDay, now),
+    selectedDay && isViewingCurrentMonth && isSameDay(selectedDay, currentDay),
   );
 
   const handleJumpToToday = () => {
     const currentDate = new Date();
+    const currentZonedDate = startOfDay(toTimeZoneDate(currentDate, activeTimeZone));
     setNow(currentDate);
-    setViewedMonth(startOfMonth(currentDate));
-    setSelectedDay(startOfDay(currentDate));
+    setViewedMonth(startOfMonth(currentZonedDate));
+    setSelectedDay(currentZonedDate);
   };
 
   return (
@@ -479,7 +568,7 @@ export default function DashboardUpcomingMeetingsCard() {
               className="mt-1 text-sm text-gray-600 dark:text-gray-300"
               suppressHydrationWarning
             >
-              {format(now, "EEEE, d MMMM yyyy")}
+              {formatTimeZoneDate(now, activeTimeZone, "EEEE, d MMMM yyyy")}
             </p>
             {nextEventHelper && (
               <p className="mt-1 text-xs font-medium text-orange-700 dark:text-orange-300">
@@ -494,7 +583,10 @@ export default function DashboardUpcomingMeetingsCard() {
             className="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white"
             suppressHydrationWarning
           >
-            {format(now, "HH:mm")}
+            {formatTimeZoneDate(now, activeTimeZone, "HH:mm")}
+          </div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {activeTimeZone}
           </div>
         </div>
       </div>
@@ -599,7 +691,7 @@ export default function DashboardUpcomingMeetingsCard() {
 
               {monthDays.map((day) => {
                 const inCurrentMonth = isSameMonth(day, viewedMonth);
-                const isCurrentDay = isToday(day);
+                const isCurrentDay = isSameDay(day, currentDay);
                 const isSelectedDay = Boolean(selectedDay && isSameDay(day, selectedDay));
                 const dayColours = dayEventColours.get(format(day, "yyyy-MM-dd")) || [];
                 const visibleDotColours = dayColours.slice(0, MAX_VISIBLE_DOTS);
@@ -674,7 +766,7 @@ export default function DashboardUpcomingMeetingsCard() {
             ) : futureAgendaItems.length ? (
               <div className="mt-4 space-y-3">
                 {futureAgendaItems.map((event) => (
-                  <AgendaEventCard key={event.id} event={event} />
+                  <AgendaEventCard key={event.id} event={event} timeZone={activeTimeZone} />
                 ))}
               </div>
             ) : (
@@ -701,7 +793,7 @@ export default function DashboardUpcomingMeetingsCard() {
               {selectedDayEvents.length ? (
                 <div className="mt-4 space-y-3">
                   {selectedDayEvents.map((event) => (
-                    <AgendaEventCard key={event.id} event={event} />
+                    <AgendaEventCard key={event.id} event={event} timeZone={activeTimeZone} />
                   ))}
                 </div>
               ) : (

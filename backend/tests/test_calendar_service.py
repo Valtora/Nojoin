@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -111,6 +111,8 @@ def test_to_dashboard_event_marks_untrusted_links() -> None:
 
     assert payload.meeting_url_trusted is False
     assert payload.meeting_url_host == "vendor.example.com"
+    assert payload.starts_at == datetime(2026, 4, 11, 9, 0, 0, tzinfo=UTC)
+    assert payload.ends_at == datetime(2026, 4, 11, 10, 0, 0, tzinfo=UTC)
 
 
 def test_build_google_events_query_params_uses_sync_token_without_window_filters() -> None:
@@ -177,10 +179,20 @@ def test_iter_event_dates_expands_all_day_event_span() -> None:
         end_date=date(2026, 4, 13),
     )
 
-    assert list(_iter_event_dates(event)) == [
+    assert list(_iter_event_dates(event, "UTC")) == [
         date(2026, 4, 11),
         date(2026, 4, 12),
     ]
+
+
+def test_iter_event_dates_uses_selected_timezone_for_timed_events() -> None:
+    event = SimpleNamespace(
+        is_all_day=False,
+        starts_at=datetime(2026, 3, 31, 23, 30, 0),
+        ends_at=datetime(2026, 4, 1, 0, 30, 0),
+    )
+
+    assert list(_iter_event_dates(event, "Europe/London")) == [date(2026, 4, 1)]
 
 
 def test_normalise_microsoft_timed_event_uses_utc_naive_datetimes() -> None:

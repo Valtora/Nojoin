@@ -262,6 +262,7 @@ class CalendarDashboardEventRead(SQLModel):
 
 class CalendarDashboardSummaryRead(SQLModel):
     month: str
+    timezone: str
     state: str
     provider_configured: bool
     is_syncing: bool

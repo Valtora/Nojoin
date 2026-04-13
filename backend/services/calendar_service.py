@@ -46,6 +46,13 @@ from backend.models.calendar import (
 from backend.models.user import User
 from backend.utils.config_manager import get_trusted_web_origin
 from backend.utils.time import utc_now
+from backend.utils.timezones import (
+    get_timezone,
+    get_user_timezone_name,
+    today_in_timezone,
+    utc_naive_to_aware,
+    utc_naive_to_timezone,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -1417,7 +1424,7 @@ def _serialise_source(calendar: CalendarSource) -> CalendarSourceRead:
         is_primary=calendar.is_primary,
         is_read_only=calendar.is_read_only,
         is_selected=calendar.is_selected,
-        last_synced_at=calendar.last_synced_at,
+        last_synced_at=utc_naive_to_aware(calendar.last_synced_at),
     )
 
 
@@ -1433,9 +1440,9 @@ def _serialise_connection(connection: CalendarConnection) -> CalendarConnectionR
         display_name=connection.display_name,
         sync_status=connection.sync_status,
         sync_error=connection.sync_error,
-        last_sync_started_at=connection.last_sync_started_at,
-        last_sync_completed_at=connection.last_sync_completed_at,
-        last_synced_at=connection.last_synced_at,
+        last_sync_started_at=utc_naive_to_aware(connection.last_sync_started_at),
+        last_sync_completed_at=utc_naive_to_aware(connection.last_sync_completed_at),
+        last_synced_at=utc_naive_to_aware(connection.last_synced_at),
         selected_calendar_count=sum(1 for calendar in calendars if calendar.is_selected),
         calendars=[_serialise_source(calendar) for calendar in calendars],
     )
@@ -1807,7 +1814,7 @@ def _event_sort_key(event: CalendarEvent) -> tuple[datetime, str]:
     return datetime.max, event.title.lower()
 
 
-def _iter_event_dates(event: CalendarEvent) -> Iterable[date]:
+def _iter_event_dates(event: CalendarEvent, timezone_name: str) -> Iterable[date]:
     if event.is_all_day and event.start_date is not None and event.end_date is not None:
         current = event.start_date
         last_date = event.end_date - timedelta(days=1)
@@ -1819,9 +1826,14 @@ def _iter_event_dates(event: CalendarEvent) -> Iterable[date]:
     if event.starts_at is None or event.ends_at is None:
         return
 
-    current = event.starts_at.date()
-    end_moment = event.ends_at
-    if end_moment > event.starts_at:
+    local_start = utc_naive_to_timezone(event.starts_at, timezone_name)
+    local_end = utc_naive_to_timezone(event.ends_at, timezone_name)
+    if local_start is None or local_end is None:
+        return
+
+    current = local_start.date()
+    end_moment = local_end
+    if end_moment > local_start:
         end_moment = end_moment - timedelta(microseconds=1)
     last_date = end_moment.date()
     while current <= last_date:
@@ -1829,7 +1841,11 @@ def _iter_event_dates(event: CalendarEvent) -> Iterable[date]:
         current += timedelta(days=1)
 
 
-def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, CalendarSource], accounts_by_connection_id: dict[int, CalendarConnection]) -> CalendarDashboardEventRead:
+def _to_dashboard_event(
+    event: CalendarEvent,
+    calendars_by_id: dict[int, CalendarSource],
+    accounts_by_connection_id: dict[int, CalendarConnection],
+) -> CalendarDashboardEventRead:
     calendar = calendars_by_id[event.calendar_id]
     connection = accounts_by_connection_id[calendar.connection_id]
     account_label = connection.email or connection.display_name
@@ -1848,18 +1864,29 @@ def _to_dashboard_event(event: CalendarEvent, calendars_by_id: dict[int, Calenda
         meeting_url_trusted=_is_trusted_meeting_url(event.meeting_url),
         meeting_url_host=meeting_url_host,
         is_all_day=event.is_all_day,
-        starts_at=event.starts_at,
-        ends_at=event.ends_at,
+        starts_at=utc_naive_to_aware(event.starts_at),
+        ends_at=utc_naive_to_aware(event.ends_at),
         start_date=event.start_date,
         end_date=event.end_date,
     )
 
 
-async def get_dashboard_summary(db: AsyncSession, user: User, month: str) -> CalendarDashboardSummaryRead:
+async def get_dashboard_summary(
+    db: AsyncSession,
+    user: User,
+    month: str,
+    timezone_name: str | None = None,
+) -> CalendarDashboardSummaryRead:
     try:
         viewed_month = datetime.strptime(month, "%Y-%m")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Month must use YYYY-MM format") from exc
+
+    effective_timezone = get_user_timezone_name(
+        user.settings or {},
+        fallback=timezone_name,
+    )
+    tz = get_timezone(effective_timezone)
 
     providers = await list_provider_statuses(db)
     provider_configured = any(provider.configured for provider in providers)
@@ -1871,10 +1898,16 @@ async def get_dashboard_summary(db: AsyncSession, user: User, month: str) -> Cal
     connections = list((await db.execute(statement)).scalars().unique().all())
     selected_calendars = [calendar for connection in connections for calendar in connection.calendars if calendar.is_selected]
 
-    month_start = _start_of_month(viewed_month)
-    month_end = _add_months(month_start, 1)
-    month_start_date = month_start.date()
-    month_end_date = month_end.date()
+    month_start_local = datetime(viewed_month.year, viewed_month.month, 1, tzinfo=tz)
+    if viewed_month.month == 12:
+        month_end_local = datetime(viewed_month.year + 1, 1, 1, tzinfo=tz)
+    else:
+        month_end_local = datetime(viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz)
+
+    month_start = month_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    month_end = month_end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    month_start_date = month_start_local.date()
+    month_end_date = month_end_local.date()
 
     state = CalendarDashboardState.READY.value
     if not provider_configured and not connections:
@@ -1914,7 +1947,7 @@ async def get_dashboard_summary(db: AsyncSession, user: User, month: str) -> Cal
 
     day_counts: dict[date, int] = {}
     for event in events:
-        for event_date in _iter_event_dates(event):
+        for event_date in _iter_event_dates(event, effective_timezone):
             if month_start_date <= event_date < month_end_date:
                 day_counts[event_date] = day_counts.get(event_date, 0) + 1
 
@@ -1922,7 +1955,7 @@ async def get_dashboard_summary(db: AsyncSession, user: User, month: str) -> Cal
 
     next_event_obj: CalendarDashboardEventRead | None = None
     if selected_calendars:
-        today = date.today()
+        today = today_in_timezone(effective_timezone)
         now = _utc_now()
         future_statement = select(CalendarEvent).where(
             CalendarEvent.calendar_id.in_(list(calendars_by_id.keys())),
@@ -1943,12 +1976,13 @@ async def get_dashboard_summary(db: AsyncSession, user: User, month: str) -> Cal
     is_syncing = any(connection.sync_status == CalendarSyncStatus.SYNCING.value for connection in connections)
     return CalendarDashboardSummaryRead(
         month=month,
+        timezone=effective_timezone,
         state=state,
         provider_configured=provider_configured,
         is_syncing=is_syncing,
         connection_count=len(connections),
         selected_calendar_count=len(selected_calendars),
-        last_synced_at=last_synced_at,
+        last_synced_at=utc_naive_to_aware(last_synced_at),
         day_counts=[
             CalendarDashboardDayCountRead(date=event_date, count=count)
             for event_date, count in sorted(day_counts.items())

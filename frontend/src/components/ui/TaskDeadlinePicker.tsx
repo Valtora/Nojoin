@@ -8,6 +8,13 @@ import { Calendar, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+import {
+  formatTimeZoneDate,
+  fromTimeZoneDate,
+  resolveTimeZone,
+  toTimeZoneDate,
+} from "@/lib/timezone";
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -34,11 +41,13 @@ type PickerPosition =
 interface TaskDeadlineTimeInputProps {
   value?: string;
   onChange?: (time: string) => void;
+  timeZoneLabel: string;
 }
 
 interface TaskDeadlinePickerProps {
   value: Date | null;
   onChange: (date: Date | null) => Promise<boolean | void> | boolean | void;
+  timeZone?: string;
   disabled?: boolean;
   className?: string;
   inputClassName?: string;
@@ -63,17 +72,10 @@ function preserveTime(baseDate: Date, reference: Date | null): Date {
   return applyTime(baseDate, reference.getHours(), reference.getMinutes());
 }
 
-function formatTriggerLabel(value: Date | null, placeholderText: string): string {
-  if (!value) {
-    return placeholderText;
-  }
-
-  return format(value, "EEE d MMM, h:mm aa");
-}
-
 function TaskDeadlineTimeInput({
   value = "",
   onChange,
+  timeZoneLabel,
 }: TaskDeadlineTimeInputProps) {
   return (
     <div className="space-y-3 rounded-[1.1rem] border border-gray-200 bg-gray-50/90 px-3 py-3 dark:border-gray-700 dark:bg-gray-900/80">
@@ -90,7 +92,7 @@ function TaskDeadlineTimeInput({
           onChange={(event) => onChange?.(event.target.value)}
           className="h-10 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 outline-none transition-colors focus:border-orange-500 dark:border-gray-600 dark:bg-gray-950 dark:text-gray-100"
         />
-        <span className="text-xs text-gray-500 dark:text-gray-400">Local</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{timeZoneLabel}</span>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -121,6 +123,7 @@ function TaskDeadlineTimeInput({
 export default function TaskDeadlinePicker({
   value,
   onChange,
+  timeZone,
   disabled = false,
   className,
   inputClassName,
@@ -133,7 +136,10 @@ export default function TaskDeadlinePicker({
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [position, setPosition] = useState<PickerPosition | null>(null);
-  const [draftValue, setDraftValue] = useState<Date | null>(value);
+  const resolvedTimeZone = resolveTimeZone(timeZone);
+  const zonedValue = value ? toTimeZoneDate(value, resolvedTimeZone) : null;
+  const zonedNow = toTimeZoneDate(new Date(), resolvedTimeZone);
+  const [draftValue, setDraftValue] = useState<Date | null>(zonedValue);
 
   useEffect(() => {
     setMounted(true);
@@ -141,9 +147,9 @@ export default function TaskDeadlinePicker({
 
   useEffect(() => {
     if (!isOpen) {
-      setDraftValue(value ? new Date(value) : null);
+      setDraftValue(zonedValue ? new Date(zonedValue) : null);
     }
-  }, [value, isOpen]);
+  }, [zonedValue, isOpen]);
 
   useEffect(() => {
     if (disabled) {
@@ -223,25 +229,30 @@ export default function TaskDeadlinePicker({
     };
   }, [mounted, isOpen, draftValue]);
 
-  const resolvedDraft = draftValue ?? buildSuggestedDeadline();
-  const triggerLabel = formatTriggerLabel(value, placeholderText);
+  const resolvedDraft = draftValue ?? buildSuggestedDeadline(zonedNow);
+  const draftInstant = draftValue
+    ? fromTimeZoneDate(draftValue, resolvedTimeZone)
+    : null;
+  const triggerLabel = value
+    ? formatTimeZoneDate(value, resolvedTimeZone, "EEE d MMM, h:mm aa")
+    : placeholderText;
   const hasSavedDeadline = Boolean(value);
   const quickDates = [
-    { label: "Today", date: preserveTime(new Date(), resolvedDraft) },
-    { label: "Tomorrow", date: preserveTime(addDays(new Date(), 1), resolvedDraft) },
-    { label: "Next week", date: preserveTime(addDays(new Date(), 7), resolvedDraft) },
+    { label: "Today", date: preserveTime(zonedNow, resolvedDraft) },
+    { label: "Tomorrow", date: preserveTime(addDays(zonedNow, 1), resolvedDraft) },
+    { label: "Next week", date: preserveTime(addDays(zonedNow, 7), resolvedDraft) },
   ];
   const saveDisabled =
     isSaving ||
     disabled ||
-    (Boolean(value) && resolvedDraft.getTime() === value?.getTime());
+    (Boolean(value) && draftInstant?.getTime() === value?.getTime());
 
   const handleOpen = () => {
     if (disabled) {
       return;
     }
 
-    setDraftValue(value ? new Date(value) : buildSuggestedDeadline());
+    setDraftValue(zonedValue ? new Date(zonedValue) : buildSuggestedDeadline(zonedNow));
     setIsOpen(true);
   };
 
@@ -249,7 +260,10 @@ export default function TaskDeadlinePicker({
     setIsSaving(true);
 
     try {
-      const result = await onChange(nextValue);
+      const nextInstant = nextValue
+        ? fromTimeZoneDate(nextValue, resolvedTimeZone)
+        : null;
+      const result = await onChange(nextInstant);
       if (result !== false) {
         closePicker();
       }
@@ -340,7 +354,7 @@ export default function TaskDeadlinePicker({
                   }}
                   shouldCloseOnSelect={false}
                   showTimeInput
-                  customTimeInput={<TaskDeadlineTimeInput />}
+                  customTimeInput={<TaskDeadlineTimeInput timeZoneLabel={resolvedTimeZone} />}
                   calendarStartDay={1}
                   renderCustomHeader={({
                     monthDate,

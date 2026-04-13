@@ -4,6 +4,8 @@ import json
 import logging
 import os
 from urllib.parse import urlparse
+
+from backend.utils.timezones import get_default_timezone_name
 from .path_manager import path_manager
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,7 @@ DEFAULT_USER_SETTINGS = {
     "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True, # Enable Speaker Diarization (who said what)
     "spellcheck_language": "en-GB", # Default spell check language for meeting notes
+    "timezone": "UTC", # Default user timezone for calendar and task rendering
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
@@ -107,7 +110,9 @@ def get_available_processing_devices():
 
 def get_default_user_settings():
     """Returns the default user settings."""
-    return DEFAULT_USER_SETTINGS.copy()
+    defaults = DEFAULT_USER_SETTINGS.copy()
+    defaults["timezone"] = get_default_timezone_name()
+    return defaults
 
 
 class ConfigManager:
@@ -195,6 +200,10 @@ class ConfigManager:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:
              raise ValueError(f"Invalid llm_provider: {value}. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+        if key == "timezone" and value:
+            from backend.utils.timezones import validate_timezone_name
+
+            validate_timezone_name(str(value))
         if key == "ollama_api_url" and value:
             try:
                 result = urlparse(value)
