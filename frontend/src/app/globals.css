@@ -138,6 +138,89 @@ body {
   border-color: #9ca3af; /* gray-400 */
 }
 
+.task-deadline-calendar.react-datepicker {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+}
+
+.task-deadline-calendar .react-datepicker__triangle,
+.task-deadline-calendar .react-datepicker__current-month,
+.task-deadline-calendar .react-datepicker__navigation {
+  display: none;
+}
+
+.task-deadline-calendar .react-datepicker__header,
+.task-deadline-calendar .react-datepicker__header--custom {
+  background: transparent;
+  border-bottom: 0;
+  padding: 0;
+}
+
+.task-deadline-calendar .react-datepicker__month-container {
+  float: none;
+  width: 100%;
+}
+
+.task-deadline-calendar .react-datepicker__month {
+  margin: 0;
+}
+
+.task-deadline-calendar .react-datepicker__day-names,
+.task-deadline-calendar .react-datepicker__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.task-deadline-calendar .react-datepicker__day-names {
+  margin-bottom: 0.25rem;
+}
+
+.task-deadline-calendar .react-datepicker__day-name,
+.task-deadline-calendar .react-datepicker__day {
+  display: flex;
+  width: 100%;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-deadline-calendar .task-deadline-weekday {
+  height: 2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.task-deadline-calendar .react-datepicker__day--today {
+  font-weight: 700;
+}
+
+.task-deadline-calendar .react-datepicker__input-time-container {
+  float: none;
+  width: 100%;
+  margin: 0;
+  padding-top: 0.75rem;
+  text-align: left;
+}
+
+.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__caption {
+  display: none;
+}
+
+.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__input-container,
+.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__input-container .react-datepicker-time__input {
+  display: block;
+  width: 100%;
+  margin: 0;
+}
+
+.dark .task-deadline-calendar .task-deadline-weekday {
+  color: #9ca3af;
+}
+
 /* Spell check error decoration */
 .spellcheck-error {
   text-decoration: underline wavy red;

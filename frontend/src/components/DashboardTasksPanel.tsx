@@ -12,7 +12,7 @@ import {
 import { useNotificationStore } from "@/lib/notificationStore";
 import { UserTask } from "@/types";
 
-import ModernDatePicker from "./ui/ModernDatePicker";
+import TaskDeadlinePicker from "./ui/TaskDeadlinePicker";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const HOUR_IN_MS = 60 * 60 * 1000;
@@ -439,10 +439,13 @@ export default function DashboardTasksPanel() {
     }
   };
 
-  const handleAssignDeadline = async (taskId: number, dueDate: Date | null) => {
+  const handleAssignDeadline = async (
+    taskId: number,
+    dueDate: Date | null,
+  ): Promise<boolean> => {
     const saved = await commitEditingTask();
     if (!saved) {
-      return;
+      return false;
     }
 
     setBusyTaskId(taskId);
@@ -464,12 +467,14 @@ export default function DashboardTasksPanel() {
         message: dueDate ? "Deadline updated." : "Deadline cleared.",
         type: "success",
       });
+      return true;
     } catch (deadlineError: any) {
       addNotification({
         message:
           deadlineError.response?.data?.detail || "Failed to save deadline.",
         type: "error",
       });
+      return false;
     } finally {
       setBusyTaskId(null);
     }
@@ -610,12 +615,9 @@ export default function DashboardTasksPanel() {
                             </span>
                           )}
 
-                          <ModernDatePicker
-                            selected={deadline}
-                            onChange={(date) => void handleAssignDeadline(task.id, date)}
-                            showTimeSelect
-                            timeIntervals={15}
-                            dateFormat="dd MMM yyyy h:mm aa"
+                          <TaskDeadlinePicker
+                            value={deadline}
+                            onChange={(date) => handleAssignDeadline(task.id, date)}
                             placeholderText="Add deadline"
                             disabled={isBusy}
                             className="w-auto"
@@ -712,12 +714,9 @@ export default function DashboardTasksPanel() {
 
                         {deadline && (
                           <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <ModernDatePicker
-                              selected={deadline}
-                              onChange={(date) => void handleAssignDeadline(task.id, date)}
-                              showTimeSelect
-                              timeIntervals={15}
-                              dateFormat="dd MMM yyyy h:mm aa"
+                            <TaskDeadlinePicker
+                              value={deadline}
+                              onChange={(date) => handleAssignDeadline(task.id, date)}
                               placeholderText="Add deadline"
                               disabled={isBusy}
                               className="w-auto"
