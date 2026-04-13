@@ -163,7 +163,10 @@ export default function DashboardHome() {
   );
 
   return (
-    <AmbientWorkspace contentClassName="max-w-7xl gap-6">
+    <AmbientWorkspace
+      contentClassName="max-w-7xl gap-6"
+      paddingClassName="py-3 md:py-5"
+    >
       <section className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] xl:items-start">
         <div className="xl:col-start-1 xl:row-start-1">
           <DashboardUpcomingMeetingsCard />
