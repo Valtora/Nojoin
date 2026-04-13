@@ -156,12 +156,16 @@ function buildNextEventHelper(
   const diffMinutes = Math.max(0, differenceInMinutes(eventStart, now));
   if (diffMinutes >= 24 * 60) {
     const diffDays = Math.max(1, Math.floor(diffMinutes / (24 * 60)));
-    return `Next event in ${diffDays}d`;
+    return `Next event in ${diffDays} ${diffDays === 1 ? "day" : "days"}`;
+  }
+
+  if (diffMinutes < 60) {
+    return `Next event in ${Math.max(1, diffMinutes)}min`;
   }
 
   const hours = Math.floor(diffMinutes / 60);
   const minutes = diffMinutes % 60;
-  return `Next event in ${hours}hrs${minutes}m`;
+  return `Next event in ${hours}${hours === 1 ? "hr" : "hrs"} ${minutes}min`;
 }
 
 
