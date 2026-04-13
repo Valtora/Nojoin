@@ -8,6 +8,7 @@ from sqlmodel import select
 from backend.api.deps import get_db, get_current_user
 from backend.models.task import UserTask, UserTaskCreate, UserTaskRead, UserTaskUpdate
 from backend.models.user import User
+from backend.utils.time import utc_now
 from backend.utils.user_tasks import normalise_task_title, sort_tasks_for_dashboard
 
 router = APIRouter()
@@ -88,7 +89,7 @@ async def update_task(
     if "completed" in task_update.model_fields_set:
         if task_update.completed:
             if task.completed_at is None:
-                task.completed_at = datetime.utcnow()
+                task.completed_at = utc_now()
         else:
             task.completed_at = None
 

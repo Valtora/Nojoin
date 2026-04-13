@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from typing import Optional, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import urlparse
@@ -32,34 +32,38 @@ class SettingsUpdate(BaseModel):
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
 
-    @validator('whisper_model_size')
-    def validate_whisper_model_size(cls, v):
-        if v and v not in WHISPER_MODEL_SIZES:
+    @field_validator('whisper_model_size')
+    @classmethod
+    def validate_whisper_model_size(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in WHISPER_MODEL_SIZES:
             raise ValueError(f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}")
-        return v
+        return value
 
-    @validator('theme')
-    def validate_theme(cls, v):
-        if v and v not in APP_THEMES:
+    @field_validator('theme')
+    @classmethod
+    def validate_theme(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in APP_THEMES:
             raise ValueError(f"Invalid theme. Must be one of {APP_THEMES}")
-        return v
+        return value
 
-    @validator('llm_provider')
-    def validate_llm_provider(cls, v):
-        if v and v not in ["gemini", "openai", "anthropic", "ollama"]:
+    @field_validator('llm_provider')
+    @classmethod
+    def validate_llm_provider(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in ["gemini", "openai", "anthropic", "ollama"]:
             raise ValueError("Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
-        return v
+        return value
 
-    @validator('ollama_api_url')
-    def validate_ollama_api_url(cls, v):
-        if v:
+    @field_validator('ollama_api_url')
+    @classmethod
+    def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
+        if value:
             try:
-                result = urlparse(v)
+                result = urlparse(value)
                 if not all([result.scheme, result.netloc]):
                     raise ValueError("Invalid URL format")
-            except:
+            except ValueError:
                 raise ValueError("Invalid URL format")
-        return v
+        return value
 
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """

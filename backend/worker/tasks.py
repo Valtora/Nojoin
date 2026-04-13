@@ -29,6 +29,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
 from backend.utils.status_manager import update_recording_status
+from backend.utils.time import utc_now
 from backend.processing.text_embedding import get_text_embedding_service
 
 if TYPE_CHECKING:
@@ -152,7 +153,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         recording.status = RecordingStatus.PROCESSING
         recording.processing_progress = 20
         if recording.processing_started_at is None or recording.processing_completed_at is not None:
-            recording.processing_started_at = datetime.utcnow()
+            recording.processing_started_at = utc_now()
         recording.processing_completed_at = None
         session.add(recording)
         session.commit()
@@ -238,7 +239,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
                 recording.status = RecordingStatus.PROCESSED
                 recording.processing_step = "Completed (No speech detected)"
-                recording.processing_completed_at = datetime.utcnow()
+                recording.processing_completed_at = utc_now()
                 
                 # Create empty transcript
                 transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
@@ -775,7 +776,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         # Update Recording Status
         recording.processing_step = "Completed"
         recording.processing_progress = 100
-        recording.processing_completed_at = datetime.utcnow()
+        recording.processing_completed_at = utc_now()
         session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)

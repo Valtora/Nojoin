@@ -14,6 +14,7 @@ from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
 from backend.utils.rate_limit import enforce_rate_limit
+from backend.utils.time import utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ async def register_user(
         raise HTTPException(status_code=404, detail="Invalid invitation code")
     if invitation.is_revoked:
         raise HTTPException(status_code=400, detail="Invitation has been revoked")
-    if invitation.expires_at and invitation.expires_at < datetime.utcnow():
+    if invitation.expires_at and invitation.expires_at < utc_now():
         raise HTTPException(status_code=400, detail="Invitation has expired")
     if invitation.max_uses and invitation.used_count >= invitation.max_uses:
         raise HTTPException(status_code=400, detail="Invitation usage limit reached")

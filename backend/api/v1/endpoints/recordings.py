@@ -21,6 +21,7 @@ from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.speaker_label_manager import SpeakerLabelManager
+from backend.utils.time import utc_now
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
 from backend.models.chat import ChatMessage
@@ -921,7 +922,7 @@ async def get_recording(
             history_samples,
             recording.duration_seconds,
             recording.processing_started_at,
-            now=datetime.utcnow(),
+            now=utc_now(),
         )
         recording_dict['processing_eta_seconds'] = eta_estimate.eta_seconds
         recording_dict['processing_eta_learning'] = eta_estimate.learning

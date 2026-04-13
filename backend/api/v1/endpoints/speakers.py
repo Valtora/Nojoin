@@ -4,7 +4,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from backend.api.deps import get_db, get_current_user
 from backend.models.people_tag_schemas import PeopleTagRead
@@ -31,9 +31,7 @@ logger = logging.getLogger(__name__)
 class SpeakerUpdate(BaseModel):
     diarization_label: str
     global_speaker_name: str
-
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class MergeRequest(BaseModel):
     source_speaker_id: int

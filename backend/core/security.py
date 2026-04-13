@@ -6,6 +6,8 @@ import os
 import secrets
 from pathlib import Path
 
+from backend.utils.time import utc_now
+
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
@@ -65,12 +67,12 @@ def create_access_token(
     extra_claims: Optional[dict[str, Any]] = None,
 ) -> str:
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utc_now() + expires_delta
     else:
         minutes = TOKEN_EXPIRY_MINUTES.get(token_type)
         if minutes is None:
             raise ValueError(f"Unsupported token type: {token_type}")
-        expire = datetime.utcnow() + timedelta(minutes=minutes)
+        expire = utc_now() + timedelta(minutes=minutes)
     
     to_encode = {
         "exp": expire,

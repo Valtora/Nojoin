@@ -24,14 +24,15 @@ from backend.models.tag import RecordingTag  # noqa: F401
 from backend.models.transcript import Transcript  # noqa: F401
 from backend.core.backup_manager import BackupManager
 from backend.core.encryption import decrypt_secret, encrypt_secret
+from backend.utils.time import utc_now
 
 
 class TestBase(SQLModel):
     __test__ = False
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_type=DateTime, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_type=DateTime, nullable=False)
+    created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime, nullable=False)
+    updated_at: datetime = Field(default_factory=utc_now, sa_type=DateTime, nullable=False)
 
 
 class TestUser(TestBase, table=True):
@@ -885,8 +886,8 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
                 [
                     {
                         "id": 1,
-                        "created_at": datetime.utcnow().isoformat(),
-                        "updated_at": datetime.utcnow().isoformat(),
+                        "created_at": utc_now().isoformat(),
+                        "updated_at": utc_now().isoformat(),
                         "username": "alice",
                         "hashed_password": "hashed-password",
                         "is_active": True,
@@ -904,8 +905,8 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
                 [
                     {
                         "id": 40,
-                        "created_at": datetime.utcnow().isoformat(),
-                        "updated_at": datetime.utcnow().isoformat(),
+                        "created_at": utc_now().isoformat(),
+                        "updated_at": utc_now().isoformat(),
                         "name": "Imported meeting",
                         "meeting_uid": "restored-import-meeting-uid",
                         "audio_path": "recordings/imported-meeting.opus",
