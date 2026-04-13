@@ -121,10 +121,13 @@ A lightweight system tray application responsible for audio capture on Windows.
 
 - **Strategy:** Zip-based export containing:
   - **Database:** JSON dumps of all tables.
+  - **Dashboard State:** Task Cards (`user_tasks`), people records, voiceprint embeddings, and the persisted calendar sync tables used by the dashboard calendar and agenda views.
+  - **Calendar Integration:** Installation calendar provider configuration plus connected-account tokens, selected calendars, colour overrides, sync cursors, and cached events.
   - **Audio:** Original audio files compressed to Opus format to save space.
-  - **Config:** System configuration (redacted).
+  - **Config:** System configuration with sensitive application keys still redacted.
 - **Security:**
-  - **Redaction:** Sensitive data (API keys, passwords, authentication tokens) is automatically redacted from the backup.
+  - **Redaction:** LLM, Hugging Face, and similar application API keys remain redacted from the backup, and password material is never restorable.
+  - **Sensitive Archive:** Calendar provider credentials and connected-calendar OAuth tokens are intentionally preserved so calendar integrations can be restored on a new installation. Backup archives must therefore be handled as secret material.
   - **Ownership:** Backups include user mapping to ensure correct ownership upon restoration.
 - **Flexibility:**
   - **Smart Deduplication:** Audio files are identified by hash to prevent duplication.
@@ -170,7 +173,7 @@ The system provides the following core capabilities:
   - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
 - **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
-- **Backup & Restore:** Full system backup capabilities including database records and audio files (compressed), with selective restoration and data redaction for security.
+- **Backup & Restore:** Full system backup capabilities including database records, Task Cards, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 
 ### 3.1 Processing Lifecycle Details
 

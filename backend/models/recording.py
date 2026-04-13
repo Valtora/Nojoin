@@ -1,9 +1,10 @@
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import BigInteger, ForeignKey, Column
+from sqlalchemy import BigInteger, ForeignKey, Column, String
 from enum import Enum
 from .base import BaseDBModel
 from datetime import datetime
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from .speaker import RecordingSpeaker
@@ -29,10 +30,24 @@ class ClientStatus(str, Enum):
     UPLOADING = "UPLOADING"
     IDLE = "IDLE"
 
+
+def generate_meeting_uid() -> str:
+    return str(uuid4())
+
 class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
+    meeting_uid: str = Field(
+        default_factory=generate_meeting_uid,
+        sa_column=Column(
+            String(36),
+            unique=True,
+            index=True,
+            nullable=False,
+            default=generate_meeting_uid,
+        ),
+    )
     audio_path: str = Field(unique=True, index=True)
     proxy_path: Optional[str] = Field(default=None)
     celery_task_id: Optional[str] = Field(default=None)
@@ -87,6 +102,7 @@ class TagRead(BaseDBModel):
 
 class RecordingRead(BaseDBModel):
     name: str
+    meeting_uid: str
     audio_path: str
     has_proxy: bool = False
     duration_seconds: Optional[float] = None

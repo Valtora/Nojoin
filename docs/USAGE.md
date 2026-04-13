@@ -157,14 +157,16 @@ If a recording fails or if you wish to re-run the pipeline (e.g., after updating
 Nojoin includes a comprehensive backup system located in **Settings > Backup & Restore**.
 
 - **Create Backup:**
-  - Generates a ZIP archive containing the database, configuration, and audio files.
+  - Generates a ZIP archive containing the database, configuration, audio files, dashboard Task Cards, people records, voiceprint embeddings, and calendar integration data.
   - **Options:**
     - **Include Audio:** Toggle to include or exclude audio files. Audio is automatically compressed to Opus format to reduce backup size.
 - **Restore Backup:**
   - Upload a previously created backup file.
   - **Conflict Resolution:** Choose how to handle data that already exists (Skip, Overwrite).
   - **Selective Restore:** The system intelligently merges data, ensuring no data loss for existing users unless overwrite is explicitly selected.
-- **Redaction:** Sensitive keys (API keys, etc.) are redacted from backups for security. You may need to re-enter them after restoration if migrating to a new server.
+- **Calendar Preservation:** Restores installation calendar provider configuration, connected-account tokens, selected calendars, colour overrides, sync cursors, and cached events so the dashboard calendar comes back intact.
+- **Redaction:** LLM and Hugging Face style application keys remain redacted and must be re-entered after restoration if needed.
+- **Sensitivity Warning:** Calendar provider credentials and connected-calendar tokens are intentionally preserved so calendar integrations can be restored on another installation. Treat backup archives as sensitive secrets.
 
 ### Settings & Configuration
 

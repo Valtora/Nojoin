@@ -43,6 +43,28 @@ logger = logging.getLogger(__name__)
 # Suppress specific warnings in the worker process
 warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
 
+
+def _paths_point_to_same_media(path_a: str | None, path_b: str | None) -> bool:
+    if not path_a or not path_b:
+        return False
+
+    try:
+        if os.path.exists(path_a) and os.path.exists(path_b):
+            return os.path.samefile(path_a, path_b)
+    except OSError:
+        pass
+
+    return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(os.path.abspath(path_b))
+
+
+def _can_delete_source_audio(recording: Recording) -> bool:
+    if not recording.audio_path or not recording.proxy_path:
+        return False
+    if not os.path.exists(recording.audio_path) or not os.path.exists(recording.proxy_path):
+        return False
+
+    return not _paths_point_to_same_media(recording.audio_path, recording.proxy_path)
+
 class DatabaseTask(Task):
     _session = None
 
@@ -760,13 +782,12 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         
         # Delete source wav if proxy exists to save storage
         session.refresh(recording)
-        if recording.proxy_path and os.path.exists(recording.proxy_path):
-            if recording.audio_path and os.path.exists(recording.audio_path):
-                try:
-                    logger.info(f"Storage optimization: Proxy audio exists, deleting source audio {recording.audio_path}")
-                    os.remove(recording.audio_path)
-                except Exception as e:
-                    logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
+        if _can_delete_source_audio(recording):
+            try:
+                logger.info(f"Storage optimization: Proxy audio exists, deleting source audio {recording.audio_path}")
+                os.remove(recording.audio_path)
+            except Exception as e:
+                logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
         
         elapsed_time = time.time() - float(start_time)
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
@@ -1400,6 +1421,16 @@ def generate_proxy_task(self, recording_id: int):
         base_path, _ = os.path.splitext(recording.audio_path)
         proxy_path = f"{base_path}.mp3"
 
+        if _paths_point_to_same_media(recording.audio_path, proxy_path):
+            logger.info(
+                "Recording %s already uses an MP3 source; reusing it as proxy audio.",
+                recording_id,
+            )
+            recording.proxy_path = recording.audio_path
+            session.add(recording)
+            session.commit()
+            return
+
         logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
         
         if convert_to_proxy_mp3(recording.audio_path, proxy_path):
@@ -1409,13 +1440,12 @@ def generate_proxy_task(self, recording_id: int):
             logger.info(f"Proxy generated successfully for recording {recording_id}")
             
             # If processing is already finished, delete source audio
-            if recording.status in [RecordingStatus.PROCESSED, RecordingStatus.ERROR]:
-                if recording.audio_path and os.path.exists(recording.audio_path):
-                    try:
-                        logger.info(f"Storage optimization: Proxy generated after processing, deleting source audio {recording.audio_path}")
-                        os.remove(recording.audio_path)
-                    except Exception as e:
-                        logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
+            if recording.status in [RecordingStatus.PROCESSED, RecordingStatus.ERROR] and _can_delete_source_audio(recording):
+                try:
+                    logger.info(f"Storage optimization: Proxy generated after processing, deleting source audio {recording.audio_path}")
+                    os.remove(recording.audio_path)
+                except Exception as e:
+                    logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
         else:
             logger.error(f"Failed to generate proxy for recording {recording_id}")
 
@@ -1642,22 +1672,16 @@ def create_backup_task(self, include_audio: bool = True):
     Returns the path to the backup file.
     """
     from backend.core.backup_manager import BackupManager
-    import asyncio
     
     try:
         logger.info(f"Starting backup task (include_audio={include_audio})")
         self.update_state(state='PROCESSING', meta={'status': 'Creating backup...'})
         
-        # BackupManager.create_backup is async; run it in a new event loop
-        # within this synchronous Celery worker process.
-        
-        zip_path = asyncio.run(BackupManager.create_backup(include_audio=include_audio))
+        zip_path = BackupManager.create_backup_blocking(include_audio=include_audio)
         
         logger.info(f"Backup created successfully at {zip_path}")
         return {"status": "success", "zip_path": zip_path}
         
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)
-        self.update_state(state='FAILURE', meta={'error': str(e)})
-        # Re-raises so Celery marks the task as failed.
         raise e

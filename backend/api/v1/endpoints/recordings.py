@@ -41,6 +41,13 @@ FAILED_DIR = os.path.join(RECORDINGS_DIR, "failed")
 os.makedirs(FAILED_DIR, exist_ok=True)
 
 
+def get_initial_proxy_path(file_path: str) -> Optional[str]:
+    _, file_ext = os.path.splitext(file_path)
+    if file_ext.lower() == ".mp3":
+        return file_path
+    return None
+
+
 async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) -> None:
     """Delete generated meeting artefacts while preserving recording metadata and documents."""
     preserved_user_notes: Optional[str] = None
@@ -461,6 +468,7 @@ async def import_audio(
     recording = Recording(
         id=generate_timestamp_id(),
         name=recording_name,
+        proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
@@ -486,7 +494,8 @@ async def import_audio(
     await db.commit()
     
     # Trigger proxy generation task
-    generate_proxy_task.delay(recording.id)
+    if not recording.proxy_path:
+        generate_proxy_task.delay(recording.id)
     
     return recording
 
@@ -525,6 +534,7 @@ async def init_chunked_import(
     recording = Recording(
         id=generate_timestamp_id(),
         name=recording_name,
+        proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
         user_id=current_user.id
@@ -669,7 +679,8 @@ async def finalize_chunked_import(
     await db.commit()
     
 
-    generate_proxy_task.delay(recording.id)
+    if not recording.proxy_path:
+        generate_proxy_task.delay(recording.id)
     
     return recording
 
@@ -722,6 +733,7 @@ async def upload_recording(
     recording = Recording(
         id=generate_timestamp_id(),
         name=name,
+        proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
@@ -740,7 +752,8 @@ async def upload_recording(
     await db.commit()
     
 
-    generate_proxy_task.delay(recording.id)
+    if not recording.proxy_path:
+        generate_proxy_task.delay(recording.id)
     
     return recording
 

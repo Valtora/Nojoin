@@ -29,6 +29,7 @@ from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
 from backend.core.db import async_session_maker
 from backend.seed_demo import seed_demo_data
+from backend.services.recording_identity_service import ensure_recording_meeting_uids
 
 async def ensure_owner_exists():
     """
@@ -56,6 +57,17 @@ async def ensure_owner_exists():
                 await session.commit()
             else:
                 logger.warning("No users found to promote.")
+
+
+async def ensure_recording_meeting_uids_on_startup() -> None:
+    async with async_session_maker() as session:
+        repaired_count = await ensure_recording_meeting_uids(session)
+
+    if repaired_count:
+        logger.warning(
+            "Backfilled meeting_uid for %s existing recording(s) during startup.",
+            repaired_count,
+        )
 
 
 def run_migrations():
@@ -89,6 +101,7 @@ def run_migrations():
 async def lifespan(app: FastAPI):
     run_migrations()
     await ensure_owner_exists()
+    await ensure_recording_meeting_uids_on_startup()
     # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()

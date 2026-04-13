@@ -172,11 +172,13 @@ export default function BackupRestore() {
             </h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Download a zip file containing your database, recordings, and
-              settings.
+              settings, task cards, people voiceprints, and calendar data.
               <br />
               <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-                Note: API keys are redacted for security and must be re-entered
-                after restoration.
+                AI and Hugging Face keys stay redacted. Calendar provider
+                credentials and connected calendar tokens are included so
+                calendar integrations restore correctly. Treat backup files as
+                sensitive.
               </span>
             </p>
             <button

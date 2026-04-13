@@ -131,6 +131,7 @@ export interface UserTask extends BaseDBModel {
 
 export interface Recording extends BaseDBModel {
   name: string;
+  meeting_uid: string;
   audio_path: string;
   has_proxy?: boolean;
   duration_seconds?: number;

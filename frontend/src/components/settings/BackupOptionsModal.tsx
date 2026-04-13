@@ -122,6 +122,16 @@ export default function BackupOptionsModal({
             </div>
           )}
 
+          <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded-lg text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <p>
+              Backup archives include restorable calendar OAuth credentials and
+              connection tokens so dashboard calendar data can be recovered.
+              AI and Hugging Face keys remain redacted. Store the archive like a
+              secrets file.
+            </p>
+          </div>
+
           <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
             <button
               onClick={onClose}
