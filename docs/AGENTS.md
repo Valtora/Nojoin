@@ -1,5 +1,14 @@
 # Nojoin AI Agent Instructions
 
+## Start Here
+
+- Read [../README.md](../README.md) for product scope and major entry points.
+- Read [DEVELOPMENT.md](DEVELOPMENT.md) before running local commands or changing build tooling.
+- Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing component boundaries or request flows.
+- Read [DEPLOYMENT.md](DEPLOYMENT.md) for Docker, GPU or CPU mode, `.env` setup, and remote access configuration.
+- Read [CALENDAR.md](CALENDAR.md) before touching calendar OAuth or sync behavior.
+- Read [SECURITY.md](SECURITY.md) before changing auth, tokens, encryption, or exposure of sensitive data.
+
 ## Project Context
 
 Nojoin is a distributed meeting intelligence platform. The system records system audio via a local Rust companion app, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
@@ -23,7 +32,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **PyTorch 2.6+ & Safe Globals**: The project uses PyTorch 2.6+, which defaults `weights_only=True` in `torch.load` for security.
     - **Issue**: This blocks loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints.
     - **Solution**: These classes must be explicitly added to the safe globals list using `torch.serialization.add_safe_globals([...])` **before** loading the model. This is handled at the module level in `embedding_core.py` and `diarize.py`.
-- **Configuration**: `backend.utils.config_manager` is used to handle system and user-specific settings.
+  - **Configuration**: `backend.utils.config_manager` is used to handle system and user-specific settings persisted in `data/config.json`. Do not add parallel ad hoc config storage.
 
 ### Frontend (Next.js + Zustand)
 
@@ -70,13 +79,19 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 ### Commands
 
 - **Start Infrastructure**:
-  - **NVIDIA GPU (Default)**: `docker-compose up -d`
-  - **CPU**: `docker compose up -d` (Ensure the `deploy` section in `docker-compose.yml` is commented out)
+  - **NVIDIA GPU (Default)**: `docker compose up -d`
+  - **CPU**: `docker compose up -d` (Ensure the `deploy` section in `docker-compose.yaml` is commented out)
   - **Build from source**: `docker compose build && docker compose up -d --wait`
   - **Remote Access**: Ensure `.env` is configured with `NEXT_PUBLIC_API_URL` (including `/api` suffix) and `ALLOWED_ORIGINS`.
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
+- **Backend Tests**:
+  - Run: `pytest backend`
+- **Frontend**:
+  - Development: `cd frontend && npm install && npm run dev`
+  - Verification: `cd frontend && npm run build`
+  - Lint: `cd frontend && npm run lint`
 - **Companion (Windows)**:
   - Development: `cd companion && npm run tauri dev`
   - Release Build: `cd companion && npm run tauri build`
@@ -142,6 +157,20 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
   - **Rule:** When refactoring or moving code, verify that all imports in dependent files are updated. Use `grep_search` to find usages of moved symbols.
 - **Client-Side Safety:**
   - **Rule:** Never assume `API_BASE_URL` is absolute. Always use safe URL construction (e.g., `new URL(path, window.location.origin)`) or manually check and prepend origin to handle both relative (production) and absolute (dev) paths.
+
+## Related Docs
+
+- [USAGE.md](USAGE.md): End-user workflows and UI behavior.
+- [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, and admin operations.
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behavior, and sensitivity model.
+- [PRD.md](PRD.md): Product intent and longer-term scope.
+- [README.md](README.md): Documentation index by task.
+
+## Working Style
+
+- Prefer small, targeted changes that match existing patterns in the touched area.
+- Link to the relevant docs instead of copying large procedural sections into new files.
+- If a task touches auth, calendar, processing, or release behavior, read the relevant doc before editing.
 
 ## Agent Interaction Rules
 
