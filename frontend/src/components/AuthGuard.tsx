@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getSystemStatus, getCurrentUser } from '@/lib/api';
+import { getCurrentUser } from '@/lib/api';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,36 +12,36 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      // 1. Check if system is initialized
-      try {
-        const status = await getSystemStatus();
-        if (!status.initialized && pathname !== '/setup') {
-          router.push('/setup');
-          return;
-        }
-        
-        if (status.initialized && pathname === '/setup') {
-            router.push('/login');
-            return;
-        }
-      } catch (e: any) {
-        console.error("Failed to check system status", e);
-        setError(e.message || "Failed to connect to server");
-        // Don't return here, let it try to check token, but the error will be shown
-      }
-
-      // 2. Check if user is authenticated
       const publicPaths = ['/login', '/setup', '/register'];
       
       let currentUser = null;
       try {
         currentUser = await getCurrentUser();
-      } catch {
+      } catch (e: any) {
         currentUser = null;
+        if (
+          !publicPaths.some(p => pathname?.startsWith(p)) &&
+          e?.response?.status !== 401
+        ) {
+          console.error("Failed to validate current user", e);
+          setError(e.message || "Failed to connect to server");
+        }
       }
       
       if (!currentUser && !publicPaths.some(p => pathname?.startsWith(p))) {
         router.push('/login');
+        return;
+      }
+
+      if (
+        currentUser &&
+        publicPaths.some(p => pathname?.startsWith(p))
+      ) {
+        router.push(
+          currentUser.force_password_change
+            ? '/settings?tab=account&forcePasswordChange=1'
+            : '/',
+        );
         return;
       }
 

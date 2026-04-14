@@ -6,6 +6,17 @@ The Nojoin team and community take all security vulnerabilities seriously. Thank
 
 Nojoin is still in active development and all releases should be considered pre-release. There may be security vulnerabilities in the application. Nojoin's maintainers are not responsible for any data loss or security breaches that may occur as a result of using the application. We also advise users to take additional security measures in general but especially when deploying Nojoin over a publically accessible URL. For example, we recommend using a VPN or a reverse proxy to secure your Nojoin instance.
 
+## First-Run Bootstrap Protection
+
+Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first successful system initialisation can occur.
+
+- The bootstrap password is only used while the system is uninitialised.
+- If `FIRST_RUN_PASSWORD` is missing, first-run setup fails closed until the operator sets it and restarts or redeploys.
+- After initialisation, normal authenticated admin operations do not use the bootstrap password path.
+- The bootstrap password is never returned by the API or persisted into Nojoin configuration.
+
+Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record sensitive setup request headers.
+
 ## Supported Versions
 
 As Nojoin is in active development, only the latest version is supported. We encourage all users to use the most up-to-date version of the application.

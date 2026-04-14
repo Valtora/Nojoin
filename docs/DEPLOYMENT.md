@@ -30,6 +30,9 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 
 5. Open `https://localhost:14443`.
 
+Before the first successful setup, set `FIRST_RUN_PASSWORD` in `.env` and keep it secret.
+Nojoin refuses first initialisation if this variable is missing. If you add or change it, restart or redeploy the stack before using the setup wizard.
+
 The default `docker-compose.example.yml` is already configured for GPU inference.
 
 If you want to build from local source instead of pulling the published images:
@@ -78,6 +81,7 @@ These variables are the main deployment knobs to know about.
 - `NEXT_PUBLIC_API_URL`: Public API base URL used by the frontend. Include the `/api` suffix.
 - `ALLOWED_ORIGINS`: Comma-separated list of trusted browser origins.
 - `WEB_APP_URL`: Exact public browser origin used for invitation links, OAuth callbacks, and other public URLs.
+- `FIRST_RUN_PASSWORD`: Required one-time bootstrap password for the first successful Nojoin initialisation.
 - `REDIS_PASSWORD`: Password for the internal Redis service.
 - `HF_TOKEN`: Hugging Face token used to download diarisation models.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
@@ -102,6 +106,7 @@ Nojoin splits configuration between:
 - **User settings**: per-user preferences stored in the database.
 
 The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
+On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
 
 ## Remote Access and Trusted Public Origin
 
@@ -112,6 +117,7 @@ If you expose Nojoin beyond localhost:
 - Keep the browser origin, reverse proxy origin, and OAuth callback origin aligned.
 
 For publicly reachable deployments, use a VPN or a secure reverse proxy rather than exposing the service casually.
+For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment secret and avoid logging request headers that could capture it during the setup flow.
 
 ## Reverse Proxy Requirements
 

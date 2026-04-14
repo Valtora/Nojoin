@@ -2,76 +2,79 @@ import { DriveStep } from "driver.js";
 
 export const dashboardSteps: DriveStep[] = [
   {
-    element: '#main-nav',
+    element: '#nav-dashboard',
     popover: {
       title: 'Welcome to Nojoin',
-      description: 'This is your main navigation bar. From here you can access your recordings, settings, and more.',
+      description: 'This is your home base. Dashboard is where Nojoin gives you the quickest overview of what matters right now.',
       side: 'right',
       align: 'start',
     }
   },
   {
+    element: '#dashboard-upcoming-meetings',
+    popover: {
+      title: 'Upcoming Meetings',
+      description: 'Keep track of what is coming up next and what needs your attention before the meeting starts.',
+      side: 'bottom',
+    }
+  },
+  {
+    element: '#dashboard-meeting-controls',
+    popover: {
+      title: 'Meeting Controls',
+      description: 'Start, pause, and manage live capture from here once your Companion App is connected.',
+      side: 'left',
+    }
+  },
+  {
+    element: '#dashboard-task-cards',
+    popover: {
+      title: 'Task Cards',
+      description: 'Capture follow-ups and deadlines here so action items stay visible between meetings.',
+      side: 'left',
+    }
+  },
+  {
+    element: '#dashboard-recent-meetings',
+    popover: {
+      title: 'Recent Meetings',
+      description: 'Your latest processed meetings appear here. When you are ready to explore transcripts, head into Recordings next.',
+      side: 'left',
+    }
+  },
+  {
     element: '#nav-recordings',
     popover: {
-      title: 'Recordings',
-      description: 'View all your processed meetings and audio files here.',
+      title: 'Recordings Are Next',
+      description: 'Open Recordings when you want to inspect meetings, open the demo session, and start the next walkthrough.',
+      side: 'right',
+    }
+  },
+];
+
+export const recordingsSteps: DriveStep[] = [
+  {
+    element: '#nav-recordings',
+    popover: {
+      title: 'Recordings Workspace',
+      description: 'This area is for reviewing processed meetings, opening transcripts, and working through stored audio sessions.',
       side: 'right',
     }
   },
   {
-    element: '#sidebar-recordings-list',
+    element: '#recordings-landing-panel',
     popover: {
-      title: 'Recordings List',
-      description: 'Your recordings will appear here. You can search, filter, and select them to view details.',
-      side: 'right',
+      title: 'Browse Or Jump Straight In',
+      description: 'Use the recordings list in the sidebar at any time, or open the guided demo meeting from this landing page.',
+      side: 'left',
     }
   },
   {
-    element: '#nav-people',
+    element: '#recordings-demo-cta',
     popover: {
-      title: 'People & Speakers',
-      description: 'Manage your Global Speaker Library here. Identify speakers, merge duplicates, and manage voiceprints across all your meetings.',
-      side: 'right',
-    }
-  },
-  {
-    element: '#demo-recording-card',
-    popover: {
-      title: 'Demo Recording',
-      description: 'We have created a sample recording for you. Click on it to explore the transcript view features.',
-      side: 'right',
-    }
-  },
-  {
-    element: '#nav-settings',
-    popover: {
-      title: 'Settings',
-      description: 'Configure your AI models, storage paths, and other preferences here.',
-      side: 'right',
-    }
-  },
-  {
-    element: '#nav-import',
-    popover: {
-      title: 'Import Audio',
-      description: 'Have existing recordings? Import them here to process them with Nojoin.',
-      side: 'right',
-    }
-  },
-  {
-    element: '#nav-download-companion',
-    popover: {
-      title: 'Download Companion App',
-      description: 'To start recording meetings, please download the Companion App. It runs in the background and captures audio securely.',
-      side: 'top',
-    }
-  },
-  {
-    element: '#nav-connect-companion',
-    popover: {
-      title: 'Connect Companion App',
-      description: 'Your Companion App is running! Click here to connect it to Nojoin and start recording.',
-      side: 'top',
+      title: 'Open The Demo Meeting',
+      description: 'This opens the seeded Welcome to Nojoin meeting so the transcript walkthrough can start from a real example.',
+      side: 'bottom',
     }
   }
 ];

@@ -20,7 +20,7 @@ from backend.api.deps import (
     get_current_active_superuser_ws
 )
 from backend.core.security import get_password_hash
-from backend.models.user import User, UserCreate
+from backend.models.user import User
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.preload_models import check_model_status
@@ -31,8 +31,12 @@ from backend.api.services.release_service import (
     get_release_catalog,
     get_windows_installer_asset,
 )
-from backend.api.error_handling import sanitized_http_exception
 from backend.api.services.health_service import get_system_health_status
+from backend.api.v1.endpoints.setup import (
+    FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
+    require_first_run_password,
+    is_system_initialized,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -75,13 +79,8 @@ def download_logs(
     except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
     except Exception as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Unable to fetch container logs.",
-            log_message=f"Error fetching Docker logs for container '{container}'.",
-            exc=e,
-        )
+        logger.error(f"Error fetching logs for {container}: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
 
 @router.websocket("/logs/live")
 async def websocket_logs(
@@ -175,7 +174,9 @@ async def websocket_logs(
             pass
 
 
-class SetupRequest(UserCreate):
+class SetupRequest(BaseModel):
+    username: str
+    password: str
     llm_provider: str = "gemini"
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -185,30 +186,25 @@ class SetupRequest(UserCreate):
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
 
+
+@router.get("/health")
+async def get_system_health(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Return authenticated system health detail.
+    """
+    return await get_system_health_status()
+
 @router.get("/status")
 async def get_system_status(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Check if the system is initialized (has at least one user).
     """
-    query = select(User).limit(1)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
-    
-    return {
-        "initialized": user is not None,
-    }
-
-
-@router.get("/health")
-async def get_detailed_system_health(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """
-    Authenticated detailed system health for the signed-in application shell.
-    """
-    return await get_system_health_status()
+    return {"initialized": await is_system_initialized(db)}
 
 @router.get("/check-ffmpeg")
 async def check_ffmpeg(
@@ -236,6 +232,7 @@ async def check_ffmpeg(
 @router.post("/setup")
 async def setup_system(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     setup_in: SetupRequest,
 ) -> Any:
@@ -243,13 +240,13 @@ async def setup_system(
     Initialize the system with the first admin user and initial configuration.
     Only works if no users exist.
     """
-    query = select(User).limit(1)
-    result = await db.execute(query)
-    if result.scalar_one_or_none():
+    if await is_system_initialized(db):
         raise HTTPException(
-            status_code=400,
-            detail="System is already initialized.",
+            status_code=403,
+            detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
         )
+
+    require_first_run_password(request)
     
     # Helper to resolve value (use input if valid, else fallback to config)
     def resolve(val, config_key):
@@ -281,7 +278,8 @@ async def setup_system(
         hashed_password=get_password_hash(setup_in.password),
         is_superuser=True,
         force_password_change=False, # First user sets their own password, so no need to force change
-        settings=settings
+        role="owner",
+        settings=settings,
     )
     db.add(user)
     await db.commit()
@@ -296,7 +294,7 @@ async def setup_system(
         except Exception as e:
             logger.error(f"Failed to seed demo data during setup: {e}")
 
-    return user
+    return {"initialized": True}
 
 @router.post("/download-models")
 async def trigger_model_download(
@@ -373,7 +371,7 @@ async def get_task_status(
         # For PENDING, STARTED, RETRY etc.
         # If it's an exception object, convert to string
         if isinstance(task_result.result, Exception):
-             result_data = "Task failed. Check server logs for details."
+             result_data = str(task_result.result)
         else:
              result_data = task_result.result
 
@@ -430,13 +428,7 @@ async def delete_model_endpoint(
         else:
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
     except Exception as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to delete the requested model.",
-            log_message=f"Failed to delete model '{model_name}'.",
-            exc=e,
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/seed-demo")
 async def seed_demo(

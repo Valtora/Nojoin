@@ -14,17 +14,23 @@ export default function HelpSettings({
   userId,
   searchQuery = "",
 }: HelpSettingsProps) {
-  const { setHasSeenTour, setHasSeenTranscriptTour } = useNavigationStore();
+  const {
+    setHasSeenTour,
+    setHasSeenRecordingsTour,
+    setHasSeenTranscriptTour,
+  } = useNavigationStore();
   const { addNotification } = useNotificationStore();
   const [isSeeding, setIsSeeding] = useState(false);
 
   const handleRestartTour = () => {
     if (userId) {
       setHasSeenTour(userId, false);
+      setHasSeenRecordingsTour(userId, false);
       setHasSeenTranscriptTour(userId, false);
       addNotification({
         type: "success",
-        message: "Tours reset. Go to the dashboard to start the Welcome Tour.",
+        message:
+          "Tours reset. Go to the dashboard to start the Welcome Tour again.",
       });
     }
   };
@@ -73,8 +79,8 @@ export default function HelpSettings({
                 Restart Welcome Tour
               </h4>
               <p className="mt-1 text-xs contrast-helper">
-                Reset the &quot;Welcome to Nojoin&quot; tour and the transcript
-                walkthrough.
+                Reset the Dashboard welcome tour, the Recordings walkthrough,
+                and the transcript walkthrough.
               </p>
             </div>
             <button

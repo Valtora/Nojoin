@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
-  getSystemStatus,
   setupSystem,
   downloadModels,
   login,
@@ -12,9 +11,9 @@ import {
   validateHF,
   getDownloadProgress,
   listModels,
-  getDemoRecording,
   checkFFmpeg,
   getInitialConfig,
+  getCurrentUser,
 } from "@/lib/api";
 import {
   Loader2,
@@ -28,8 +27,10 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 
 export default function SetupPage() {
   const router = useRouter();
+  const bootstrapPasswordRef = useRef("");
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Download
+  const [initialConfigLoaded, setInitialConfigLoaded] = useState(false);
 
   // Form Data
   const [formData, setFormData] = useState({
@@ -75,62 +76,47 @@ export default function SetupPage() {
   const [ffmpegMissing, setFfmpegMissing] = useState(false);
 
   useEffect(() => {
-    const checkStatus = async () => {
+    const prepareSetup = async () => {
       try {
-        const [status, ffmpegStatus] = await Promise.all([
-          getSystemStatus(),
-          checkFFmpeg().catch(() => ({
-            ffmpeg: true,
-            ffprobe: true,
-            ffmpeg_path: null,
-            ffprobe_path: null,
-          })),
-        ]);
+        try {
+          const user = await getCurrentUser();
+          router.push(
+            user.force_password_change
+              ? "/settings?tab=account&forcePasswordChange=1"
+              : "/",
+          );
+          return;
+        } catch (err: any) {
+          if (err?.response?.status !== 401) {
+            throw err;
+          }
+        }
+
+        const ffmpegStatus = await checkFFmpeg().catch((err: any) => {
+          if (err?.response?.status === 401 || err?.response?.status === 403) {
+            return {
+              ffmpeg: true,
+              ffprobe: true,
+              ffmpeg_path: null,
+              ffprobe_path: null,
+            };
+          }
+
+          throw err;
+        });
 
         if (!ffmpegStatus.ffmpeg || !ffmpegStatus.ffprobe) {
           setFfmpegMissing(true);
         }
 
-        if (status.initialized) {
-          router.push("/login");
-        } else {
-          // Fetch initial config from env
-          try {
-            const initialConfig = await getInitialConfig();
-            if (Object.keys(initialConfig).length > 0) {
-              setFormData((prev) => ({
-                ...prev,
-                llm_provider: initialConfig.llm_provider || prev.llm_provider,
-                gemini_api_key:
-                  initialConfig.gemini_api_key || prev.gemini_api_key,
-                openai_api_key:
-                  initialConfig.openai_api_key || prev.openai_api_key,
-                anthropic_api_key:
-                  initialConfig.anthropic_api_key || prev.anthropic_api_key,
-                ollama_api_url:
-                  initialConfig.ollama_api_url || prev.ollama_api_url,
-                hf_token: initialConfig.hf_token || prev.hf_token,
-                selected_model:
-                  initialConfig.selected_model || prev.selected_model,
-              }));
-
-              // Pre-populates the available models list when a default model is set via environment variable.
-              if (initialConfig.selected_model) {
-                setAvailableModels([initialConfig.selected_model]);
-              }
-            }
-          } catch (e) {
-            console.error("Error loading initial config", e);
-          }
-          setLoading(false);
-        }
+        setLoading(false);
       } catch (err) {
         console.error(err);
         setError("Failed to connect to server");
         setLoading(false);
       }
     };
-    checkStatus();
+    prepareSetup();
   }, [router]);
 
   const handleInputChange = (
@@ -160,8 +146,58 @@ export default function SetupPage() {
     setStep(1);
   };
 
+  const getBootstrapPassword = () => bootstrapPasswordRef.current;
+
+  const loadInitialConfig = async (): Promise<boolean> => {
+    if (initialConfigLoaded) {
+      return true;
+    }
+
+    const bootstrapPassword = getBootstrapPassword();
+    if (!bootstrapPassword) {
+      setError("Bootstrap password required.");
+      return false;
+    }
+
+    try {
+      const initialConfig = await getInitialConfig(bootstrapPassword);
+      if (Object.keys(initialConfig).length > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          llm_provider: initialConfig.llm_provider || prev.llm_provider,
+          gemini_api_key: initialConfig.gemini_api_key || prev.gemini_api_key,
+          openai_api_key: initialConfig.openai_api_key || prev.openai_api_key,
+          anthropic_api_key:
+            initialConfig.anthropic_api_key || prev.anthropic_api_key,
+          ollama_api_url: initialConfig.ollama_api_url || prev.ollama_api_url,
+          hf_token: initialConfig.hf_token || prev.hf_token,
+          selected_model: initialConfig.selected_model || prev.selected_model,
+        }));
+
+        if (initialConfig.selected_model) {
+          setAvailableModels([initialConfig.selected_model]);
+        }
+      }
+
+      setInitialConfigLoaded(true);
+      return true;
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setError(
+          "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
+        );
+        return false;
+      }
+      setError(
+        err.response?.data?.detail ||
+          "Failed to unlock first-run setup. Check FIRST_RUN_PASSWORD.",
+      );
+      return false;
+    }
+  };
+
   // --- Step 1: Account ---
-  const handleAccountSubmit = (e: React.FormEvent) => {
+  const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match");
@@ -171,6 +207,12 @@ export default function SetupPage() {
       setError("Password must be at least 8 characters");
       return;
     }
+
+    const initialConfigReady = await loadInitialConfig();
+    if (!initialConfigReady) {
+      return;
+    }
+
     setError("");
     setStep(2);
   };
@@ -206,8 +248,9 @@ export default function SetupPage() {
       const res = await validateLLM(
         formData.llm_provider,
         creds.key || "",
-        undefined,
         creds.url,
+        undefined,
+        getBootstrapPassword(),
       );
       setLlmValidationMsg({
         valid: true,
@@ -219,6 +262,7 @@ export default function SetupPage() {
         formData.llm_provider,
         creds.key || "",
         creds.url,
+        getBootstrapPassword(),
       );
       setAvailableModels(modelsRes.models);
 
@@ -297,7 +341,7 @@ export default function SetupPage() {
     setHfValidationMsg(null);
 
     try {
-      const res = await validateHF(formData.hf_token);
+      const res = await validateHF(formData.hf_token, getBootstrapPassword());
       setHfValidationMsg({
         valid: true,
         msg: res.message || "Validation successful",
@@ -339,7 +383,7 @@ export default function SetupPage() {
         hf_token: formData.hf_token,
         // Save selected model
         selected_model: formData.selected_model,
-      });
+      }, getBootstrapPassword());
 
       // 2. Login
       await login(formData.username, formData.password);
@@ -348,7 +392,13 @@ export default function SetupPage() {
       startModelDownload();
     } catch (err: any) {
       console.error("Setup failed:", err);
-      setError(err.response?.data?.detail || "Setup failed. Please try again.");
+      if (err.response?.status === 403) {
+        setError(
+          "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
+        );
+      } else {
+        setError(err.response?.data?.detail || "Setup failed. Please try again.");
+      }
       setStep(3); // Go back
     }
   };
@@ -413,18 +463,8 @@ export default function SetupPage() {
     // Removed automatic redirect
   };
 
-  const handleCompleteSetup = async () => {
-    try {
-      const demo = await getDemoRecording();
-      if (demo.id) {
-        router.push(`/recordings/${demo.id}`);
-      } else {
-        router.push("/");
-      }
-    } catch (error) {
-      console.error("Failed to fetch demo recording:", error);
-      router.push("/");
-    }
+  const handleCompleteSetup = () => {
+    router.push("/");
   };
 
   if (loading) {
@@ -564,6 +604,26 @@ export default function SetupPage() {
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Set up your administrator credentials
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Bootstrap Password
+                </label>
+                <input
+                  type="password"
+                  name="bootstrap_password"
+                  required
+                  onChange={(e) => {
+                    bootstrapPasswordRef.current = e.target.value;
+                    setError("");
+                  }}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="Enter first-run bootstrap password"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Set FIRST_RUN_PASSWORD before the first deployment. This password is only used for initialisation.
                 </p>
               </div>
 

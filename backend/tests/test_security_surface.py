@@ -13,6 +13,9 @@ from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
 
 
+BOOTSTRAP_PASSWORD = "bootstrap-secret"
+
+
 class _FakeResult:
     def __init__(self, initialized: bool):
         self._initialized = initialized
@@ -24,9 +27,21 @@ class _FakeResult:
 class _FakeSession:
     def __init__(self, initialized: bool):
         self._initialized = initialized
+        self._added = []
 
     async def execute(self, statement):
         return _FakeResult(self._initialized)
+
+    def add(self, value):
+        self._added.append(value)
+
+    async def commit(self):
+        if self._added:
+            self._initialized = True
+
+    async def refresh(self, value):
+        if getattr(value, "id", None) is None:
+            value.id = 1
 
 
 class _FakeScalarResult:
@@ -51,26 +66,31 @@ def _unauthorized_user():
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
+def _first_run_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str]:
+    return {setup.FIRST_RUN_PASSWORD_HEADER: password}
+
+
 @pytest.mark.anyio
-async def test_system_status_returns_only_initialized_flag() -> None:
+async def test_system_status_requires_authentication() -> None:
     app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = _unauthorized_user
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/system/status")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_system_status_returns_initialized_flag_for_authenticated_user() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/system/status")
 
     assert response.status_code == 200
     assert response.json() == {"initialized": True}
-
-
-@pytest.mark.anyio
-async def test_system_status_reports_uninitialized_without_extra_metadata() -> None:
-    app, _ = _build_app(initialized=False)
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/system/status")
-
-    assert response.status_code == 200
-    assert response.json() == {"initialized": False}
 
 
 @pytest.mark.anyio
@@ -119,6 +139,7 @@ async def test_public_invitation_validation_is_minimal(monkeypatch) -> None:
 @pytest.mark.anyio
 async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -> None:
     app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
 
     class _BrokenBackend:
         def validate_api_key(self):
@@ -130,6 +151,7 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
         response = await client.post(
             "/api/v1/setup/validate-llm",
             json={"provider": "openai", "api_key": "test-key"},
+            headers=_first_run_headers(),
         )
 
     assert response.status_code == 400
@@ -141,6 +163,7 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
 @pytest.mark.anyio
 async def test_setup_hf_validation_does_not_disclose_account_identity(monkeypatch) -> None:
     app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
 
     class _FakeHFResponse:
         def raise_for_status(self):
@@ -165,6 +188,7 @@ async def test_setup_hf_validation_does_not_disclose_account_identity(monkeypatc
         response = await client.post(
             "/api/v1/setup/validate-hf",
             json={"token": "hf_test_token"},
+            headers=_first_run_headers(),
         )
 
     assert response.status_code == 200
@@ -172,6 +196,131 @@ async def test_setup_hf_validation_does_not_disclose_account_identity(monkeypatc
         "valid": True,
         "message": "Hugging Face token is valid.",
     }
+
+
+@pytest.mark.anyio
+async def test_first_run_setup_rejects_missing_bootstrap_password(monkeypatch) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+    monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/system/setup",
+            json={"username": "owner", "password": "password123"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Bootstrap password required for first-run setup.",
+    }
+
+
+@pytest.mark.anyio
+async def test_first_run_setup_rejects_when_server_password_is_unset(monkeypatch) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.delenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, raising=False)
+    monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/system/setup",
+            headers=_first_run_headers(),
+            json={"username": "owner", "password": "password123"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": (
+            "First-run setup is disabled until FIRST_RUN_PASSWORD is set. "
+            "Set the env var and restart or redeploy Nojoin before initialising the system."
+        ),
+    }
+
+
+@pytest.mark.anyio
+async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+
+    async def _fake_seed_demo_data(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/system/setup",
+            headers=_first_run_headers(),
+            json={
+                "username": "owner",
+                "password": "password123",
+                "llm_provider": "gemini",
+                "gemini_api_key": "gem-secret-value",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"initialized": True}
+
+
+@pytest.mark.anyio
+async def test_initialised_setup_helpers_do_not_disclose_state_without_auth(monkeypatch) -> None:
+    app, _ = _build_app(initialized=True)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/setup/initial-config",
+            headers=_first_run_headers(),
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "First-run setup access denied.",
+    }
+
+
+@pytest.mark.anyio
+async def test_initialised_setup_post_does_not_disclose_state(monkeypatch) -> None:
+    app, _ = _build_app(initialized=True)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+    monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/system/setup",
+            headers=_first_run_headers(),
+            json={"username": "owner", "password": "password123"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "First-run setup access denied.",
+    }
+
+
+@pytest.mark.anyio
+async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-value")
+    monkeypatch.setenv("HF_TOKEN", "hf_super_secret_value")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/setup/initial-config",
+            headers=_first_run_headers(),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["gemini_api_key"] == "gem...alue"
+    assert response.json()["hf_token"] == "hf_...alue"
+    assert response.json()["selected_model"] is not None
+    assert "gemini-secret-value" not in response.text
+    assert "hf_super_secret_value" not in response.text
 
 
 @pytest.mark.anyio
@@ -268,10 +417,12 @@ async def test_operational_system_endpoints_require_authentication() -> None:
     app.dependency_overrides[get_current_user] = _unauthorized_user
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        status = await client.get("/api/v1/system/status")
         download_progress = await client.get("/api/v1/system/download-progress")
         models_status = await client.get("/api/v1/system/models/status")
         companion_releases = await client.get("/api/v1/system/companion-releases")
 
+    assert status.status_code == 401
     assert download_progress.status_code == 401
     assert models_status.status_code == 401
     assert companion_releases.status_code == 401

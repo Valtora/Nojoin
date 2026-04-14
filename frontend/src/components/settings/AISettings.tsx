@@ -166,7 +166,7 @@ export default function AISettings({
       if (provider === "hf") {
         res = await validateHF(key);
       } else {
-        res = await validateLLM(provider, key, undefined, url);
+        res = await validateLLM(provider, key, url);
         // If models are returned (e.g. from Ollama), update the list
         if (res.models) {
           setAvailableModels(res.models);

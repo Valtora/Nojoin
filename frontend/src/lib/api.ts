@@ -31,7 +31,20 @@ import {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
+const FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password";
 const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings?tab=account&forcePasswordChange=1";
+
+const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
+  if (!bootstrapPassword) {
+    return {};
+  }
+
+  return {
+    headers: {
+      [FIRST_RUN_PASSWORD_HEADER]: bootstrapPassword,
+    },
+  };
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -941,8 +954,21 @@ export const getSystemStatus = async (): Promise<{ initialized: boolean }> => {
   return response.data;
 };
 
-export const setupSystem = async (data: any): Promise<void> => {
-  await api.post("/system/setup", data);
+export const setupSystem = async (
+  data: {
+    username: string;
+    password: string;
+    llm_provider: string;
+    gemini_api_key?: string;
+    openai_api_key?: string;
+    anthropic_api_key?: string;
+    ollama_api_url?: string;
+    hf_token?: string;
+    selected_model?: string;
+  },
+  bootstrapPassword?: string,
+): Promise<void> => {
+  await api.post("/system/setup", data, buildFirstRunRequestConfig(bootstrapPassword));
 };
 
 export const checkFFmpeg = async (): Promise<{
@@ -994,7 +1020,7 @@ export const getTaskStatus = async (taskId: string): Promise<any> => {
   return response.data;
 };
 
-export const getInitialConfig = async (): Promise<{
+export const getInitialConfig = async (bootstrapPassword?: string): Promise<{
   llm_provider?: string;
   gemini_api_key?: string;
   openai_api_key?: string;
@@ -1003,13 +1029,11 @@ export const getInitialConfig = async (): Promise<{
   hf_token?: string;
   selected_model?: string;
 }> => {
-  try {
-    const response = await api.get("/setup/initial-config");
-    return response.data;
-  } catch (error) {
-    console.error("Failed to fetch initial config", error);
-    return {};
-  }
+  const response = await api.get(
+    "/setup/initial-config",
+    buildFirstRunRequestConfig(bootstrapPassword),
+  );
+  return response.data;
 };
 
 export const validateLLM = async (
@@ -1017,26 +1041,33 @@ export const validateLLM = async (
   apiKey: string,
   apiUrl?: string,
   model?: string,
+  bootstrapPassword?: string,
 ): Promise<{ valid: boolean; message?: string; models?: string[] }> => {
   const response = await api.post<{
     valid: boolean;
     message?: string;
     models?: string[];
-  }>("/setup/validate-llm", {
-    provider,
-    api_key: apiKey,
-    api_url: apiUrl,
-    model,
-  });
+  }>(
+    "/setup/validate-llm",
+    {
+      provider,
+      api_key: apiKey,
+      api_url: apiUrl,
+      model,
+    },
+    buildFirstRunRequestConfig(bootstrapPassword),
+  );
   return response.data;
 };
 
 export const validateHF = async (
   token: string,
+  bootstrapPassword?: string,
 ): Promise<{ valid: boolean; message?: string }> => {
   const response = await api.post<{ valid: boolean; message?: string }>(
     "/setup/validate-hf",
     { token },
+    buildFirstRunRequestConfig(bootstrapPassword),
   );
   return response.data;
 };
@@ -1164,8 +1195,12 @@ export const deleteInvitation = async (id: number): Promise<Invitation> => {
 
 export const validateInvitation = async (
   code: string,
-): Promise<{ valid: boolean }> => {
-  const response = await api.get<{ valid: boolean }>(`/invitations/validate/${code}`);
+): Promise<{ valid: boolean; role: string; inviter?: string }> => {
+  const response = await api.get<{
+    valid: boolean;
+    role: string;
+    inviter?: string;
+  }>(`/invitations/validate/${code}`);
   return response.data;
 };
 
@@ -1337,12 +1372,17 @@ export const listModels = async (
   provider: string,
   apiKey: string,
   apiUrl?: string,
+  bootstrapPassword?: string,
 ): Promise<{ models: string[] }> => {
-  const response = await api.post<{ models: string[] }>("/setup/list-models", {
-    provider,
-    api_key: apiKey,
-    api_url: apiUrl,
-  });
+  const response = await api.post<{ models: string[] }>(
+    "/setup/list-models",
+    {
+      provider,
+      api_key: apiKey,
+      api_url: apiUrl,
+    },
+    buildFirstRunRequestConfig(bootstrapPassword),
+  );
   return response.data;
 };
 

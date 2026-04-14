@@ -168,20 +168,24 @@ export default function DashboardHome() {
       paddingClassName="py-3 md:py-5"
     >
       <section className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] xl:items-start">
-        <div className="xl:col-start-1 xl:row-start-1">
+        <div id="dashboard-upcoming-meetings" className="xl:col-start-1 xl:row-start-1">
           <DashboardUpcomingMeetingsCard />
         </div>
 
         <div className="flex flex-col gap-6 xl:col-start-2 xl:row-start-1">
-          <MeetingControls
-            variant="dashboard"
-            onMeetingEnd={() => {
-              window.dispatchEvent(new Event("recording-updated"));
-            }}
-          />
+          <div id="dashboard-meeting-controls">
+            <MeetingControls
+              variant="dashboard"
+              onMeetingEnd={() => {
+                window.dispatchEvent(new Event("recording-updated"));
+              }}
+            />
+          </div>
 
-          <DashboardTasksPanel />
-          <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+          <div id="dashboard-task-cards">
+            <DashboardTasksPanel />
+          </div>
+          <div id="dashboard-recent-meetings" className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex items-center justify-between gap-4">
               <div className="mt-2 flex items-start gap-3">
                 <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">

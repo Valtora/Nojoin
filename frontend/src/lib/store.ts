@@ -43,6 +43,8 @@ interface NavigationState {
   // Tour State
   hasSeenTour: Record<number, boolean>;
   setHasSeenTour: (userId: number, seen: boolean) => void;
+  hasSeenRecordingsTour: Record<number, boolean>;
+  setHasSeenRecordingsTour: (userId: number, seen: boolean) => void;
   hasSeenTranscriptTour: Record<number, boolean>;
   setHasSeenTranscriptTour: (userId: number, seen: boolean) => void;
 
@@ -130,6 +132,14 @@ export const useNavigationStore = create<NavigationState>()(
         set((state) => ({
           hasSeenTour: { ...state.hasSeenTour, [userId]: seen },
         })),
+      hasSeenRecordingsTour: {},
+      setHasSeenRecordingsTour: (userId, seen) =>
+        set((state) => ({
+          hasSeenRecordingsTour: {
+            ...state.hasSeenRecordingsTour,
+            [userId]: seen,
+          },
+        })),
       hasSeenTranscriptTour: {},
       setHasSeenTranscriptTour: (userId, seen) =>
         set((state) => ({
@@ -163,6 +173,7 @@ export const useNavigationStore = create<NavigationState>()(
         recordingsSidebarWidth: state.recordingsSidebarWidth,
         expandedTagIds: state.expandedTagIds,
         hasSeenTour: state.hasSeenTour,
+        hasSeenRecordingsTour: state.hasSeenRecordingsTour,
         hasSeenTranscriptTour: state.hasSeenTranscriptTour,
         chatPanelHeight: state.chatPanelHeight,
         logShowTimestamps: state.logShowTimestamps,

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { login, getSystemStatus, getCurrentUser } from "@/lib/api";
+import Link from "next/link";
+import { login, getCurrentUser } from "@/lib/api";
 import { Lock, User } from "lucide-react";
 
 export default function LoginPage() {
@@ -14,19 +15,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const checkAuthAndStatus = async () => {
-      // 1. Check system status
-      try {
-        const status = await getSystemStatus();
-        if (!status.initialized) {
-          router.push("/setup");
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to check system status", e);
-      }
-
-      // 2. Check if already logged in with a valid token
+    const checkCurrentUser = async () => {
       try {
         const user = await getCurrentUser();
         router.push(
@@ -40,7 +29,7 @@ export default function LoginPage() {
       }
     };
     
-    checkAuthAndStatus();
+    checkCurrentUser();
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -128,6 +117,10 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </div>
+
+          <p className="text-center text-sm text-gray-600 dark:text-gray-300">
+            Need first-run initialisation? <Link href="/setup" className="font-medium text-orange-600 hover:text-orange-500">Open setup</Link>
+          </p>
         </form>
       </div>
     </div>
