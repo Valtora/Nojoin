@@ -11,11 +11,13 @@ Nojoin is still in active development and all releases should be considered pre-
 Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first successful system initialisation can occur.
 
 - The bootstrap password is only used while the system is uninitialised.
+- The web client sends the bootstrap secret via the standard `Authorization` header using the `Bootstrap` scheme rather than a bespoke setup header.
 - If `FIRST_RUN_PASSWORD` is missing, first-run setup fails closed until the operator sets it and restarts or redeploys.
 - After initialisation, normal authenticated admin operations do not use the bootstrap password path.
 - The bootstrap password is never returned by the API or persisted into Nojoin configuration.
+- Application log output redacts `Authorization`, cookies, bootstrap credentials, passwords, tokens, and API-key fields if they are accidentally included in a log record.
 
-Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record sensitive setup request headers.
+Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record `Authorization` headers or setup request bodies.
 
 ## Supported Versions
 

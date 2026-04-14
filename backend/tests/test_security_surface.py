@@ -14,6 +14,7 @@ from backend.main import create_app
 
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
+LEGACY_FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password"
 
 
 class _FakeResult:
@@ -66,8 +67,10 @@ def _unauthorized_user():
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
-def _first_run_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str]:
-    return {setup.FIRST_RUN_PASSWORD_HEADER: password}
+def _bootstrap_auth_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str]:
+    return {
+        "Authorization": f"{setup.FIRST_RUN_PASSWORD_AUTH_SCHEME} {password}",
+    }
 
 
 @pytest.mark.anyio
@@ -151,7 +154,7 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
         response = await client.post(
             "/api/v1/setup/validate-llm",
             json={"provider": "openai", "api_key": "test-key"},
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
         )
 
     assert response.status_code == 400
@@ -188,7 +191,7 @@ async def test_setup_hf_validation_does_not_disclose_account_identity(monkeypatc
         response = await client.post(
             "/api/v1/setup/validate-hf",
             json={"token": "hf_test_token"},
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
         )
 
     assert response.status_code == 200
@@ -217,6 +220,25 @@ async def test_first_run_setup_rejects_missing_bootstrap_password(monkeypatch) -
 
 
 @pytest.mark.anyio
+async def test_first_run_setup_rejects_legacy_bootstrap_header(monkeypatch) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+    monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/system/setup",
+            headers={LEGACY_FIRST_RUN_PASSWORD_HEADER: BOOTSTRAP_PASSWORD},
+            json={"username": "owner", "password": "password123"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Bootstrap password required for first-run setup.",
+    }
+
+
+@pytest.mark.anyio
 async def test_first_run_setup_rejects_when_server_password_is_unset(monkeypatch) -> None:
     app, _ = _build_app(initialized=False)
     monkeypatch.delenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, raising=False)
@@ -225,7 +247,7 @@ async def test_first_run_setup_rejects_when_server_password_is_unset(monkeypatch
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/v1/system/setup",
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
             json={"username": "owner", "password": "password123"},
         )
 
@@ -251,7 +273,7 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/v1/system/setup",
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
             json={
                 "username": "owner",
                 "password": "password123",
@@ -272,7 +294,7 @@ async def test_initialised_setup_helpers_do_not_disclose_state_without_auth(monk
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/v1/setup/initial-config",
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
         )
 
     assert response.status_code == 403
@@ -290,7 +312,7 @@ async def test_initialised_setup_post_does_not_disclose_state(monkeypatch) -> No
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/v1/system/setup",
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
             json={"username": "owner", "password": "password123"},
         )
 
@@ -312,7 +334,7 @@ async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/v1/setup/initial-config",
-            headers=_first_run_headers(),
+            headers=_bootstrap_auth_headers(),
         )
 
     assert response.status_code == 200

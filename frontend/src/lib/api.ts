@@ -31,7 +31,7 @@ import {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
-const FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password";
+const FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap";
 const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings?tab=account&forcePasswordChange=1";
 
 const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
@@ -41,13 +41,14 @@ const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
 
   return {
     headers: {
-      [FIRST_RUN_PASSWORD_HEADER]: bootstrapPassword,
+      Authorization: `${FIRST_RUN_PASSWORD_AUTH_SCHEME} ${bootstrapPassword}`,
     },
   };
 };
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  maxRedirects: 0,
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",

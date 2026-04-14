@@ -25,7 +25,7 @@ from backend.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
 
-FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password"
+FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap"
 FIRST_RUN_PASSWORD_ENV_KEY = "FIRST_RUN_PASSWORD"
 FIRST_RUN_PASSWORD_REQUIRED_DETAIL = "Bootstrap password required for first-run setup."
 FIRST_RUN_PASSWORD_NOT_CONFIGURED_DETAIL = (
@@ -117,6 +117,18 @@ async def is_system_initialized(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+def get_first_run_password(request: Request) -> Optional[str]:
+    authorization_header = request.headers.get("Authorization")
+    if not authorization_header:
+        return None
+
+    scheme, _, credential = authorization_header.partition(" ")
+    if scheme.lower() != FIRST_RUN_PASSWORD_AUTH_SCHEME.lower() or not credential:
+        return None
+
+    return credential.strip()
+
+
 def require_first_run_password(request: Request) -> None:
     configured_password = os.getenv(FIRST_RUN_PASSWORD_ENV_KEY)
     if not configured_password:
@@ -125,7 +137,7 @@ def require_first_run_password(request: Request) -> None:
             detail=FIRST_RUN_PASSWORD_NOT_CONFIGURED_DETAIL,
         )
 
-    provided_password = request.headers.get(FIRST_RUN_PASSWORD_HEADER)
+    provided_password = get_first_run_password(request)
     if not provided_password or not hmac.compare_digest(
         provided_password,
         configured_password,

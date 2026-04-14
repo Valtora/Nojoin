@@ -73,6 +73,60 @@ If you need Docker-specific development customisations, make them in your local 
 The compose template runs the published images.
 If you need source changes reflected inside containers, add local build or bind-mount changes in your ignored `docker-compose.yml`.
 
+### Build Nojoin Images Locally
+
+If you want the Docker stack to run your checked-out source instead of the published GHCR images, change the `api`, `worker`, and `frontend` services in your local `docker-compose.yml` from `image:` entries to local `build:` entries.
+
+One working pattern is:
+
+```yaml
+services:
+   api:
+      build:
+         context: .
+         dockerfile: docker/Dockerfile.api
+      image: nojoin-api:local
+      pull_policy: never
+
+   worker:
+      build:
+         context: .
+         dockerfile: docker/Dockerfile.worker
+      image: nojoin-worker:local
+      pull_policy: never
+
+   frontend:
+      build:
+         context: ./frontend
+         dockerfile: Dockerfile
+         args:
+            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      image: nojoin-frontend:local
+      pull_policy: never
+```
+
+This leaves PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images while forcing the Nojoin application services to build from the current checkout.
+
+For a clean rebuild after changing backend, worker, or shared application code:
+
+```bash
+docker compose down
+docker compose build --no-cache api worker frontend
+docker compose up -d --force-recreate
+```
+
+For the normal incremental workflow after the local `build:` entries are in place:
+
+```bash
+docker compose up -d --build
+```
+
+The frontend is served from a built container image rather than a source mount. After frontend-only changes, rebuild that service before testing through Nginx:
+
+```bash
+docker compose up -d --build frontend
+```
+
 If you only need supporting services while running code on the host, start the specific services you need.
 Examples include `db` and `redis`.
 

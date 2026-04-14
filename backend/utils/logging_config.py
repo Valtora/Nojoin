@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from logging.handlers import RotatingFileHandler
 from .path_manager import path_manager
 from .config_manager import config_manager
@@ -37,6 +38,85 @@ class CheckpointFilter(logging.Filter):
                     return False  # Don't log this message
         return True # Log this message
 
+
+class SensitiveDataFilter(logging.Filter):
+    _SENSITIVE_FIELD_NAMES = {
+        "access_token",
+        "anthropic_api_key",
+        "api_key",
+        "authorization",
+        "cookie",
+        "current_password",
+        "gemini_api_key",
+        "hf_token",
+        "new_password",
+        "openai_api_key",
+        "password",
+        "set-cookie",
+        "token",
+        "x-first-run-password",
+    }
+    _KEY_VALUE_PATTERNS = [
+        re.compile(r'(?i)("authorization"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('authorization'\s*:\s*')([^']+)(')"),
+        re.compile(r'(?i)("cookie"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('cookie'\s*:\s*')([^']+)(')"),
+        re.compile(r'(?i)("set-cookie"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('set-cookie'\s*:\s*')([^']+)(')"),
+        re.compile(r'(?i)("x-first-run-password"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('x-first-run-password'\s*:\s*')([^']+)(')"),
+        re.compile(r'(?i)("(?:access_token|anthropic_api_key|api_key|current_password|gemini_api_key|hf_token|new_password|openai_api_key|password|token)"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('(?:access_token|anthropic_api_key|api_key|current_password|gemini_api_key|hf_token|new_password|openai_api_key|password|token)'\s*:\s*')([^']+)(')"),
+    ]
+    _AUTH_SCHEME_PATTERN = re.compile(r'(?i)\b(authorization\s*[:=]\s*)(bearer|bootstrap)\s+([^\s,;]+)')
+
+    def _sanitize_string(self, value):
+        if not isinstance(value, str):
+            return value
+
+        sanitized = value
+        for pattern in self._KEY_VALUE_PATTERNS:
+            sanitized = pattern.sub(r'\1[REDACTED]\3', sanitized)
+        sanitized = self._AUTH_SCHEME_PATTERN.sub(r'\1\2 [REDACTED]', sanitized)
+        return sanitized
+
+    def _sanitize_value(self, key, value):
+        if isinstance(key, str) and key.lower() in self._SENSITIVE_FIELD_NAMES:
+            return "[REDACTED]"
+
+        if isinstance(value, dict):
+            return {
+                nested_key: self._sanitize_value(nested_key, nested_value)
+                for nested_key, nested_value in value.items()
+            }
+
+        if isinstance(value, tuple):
+            return tuple(self._sanitize_value(None, item) for item in value)
+
+        if isinstance(value, list):
+            return [self._sanitize_value(None, item) for item in value]
+
+        if isinstance(value, BaseException):
+            return self._sanitize_string(str(value))
+
+        return self._sanitize_string(value)
+
+    def filter(self, record):
+        record.msg = self._sanitize_value(None, record.msg)
+
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    key: self._sanitize_value(key, value)
+                    for key, value in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(self._sanitize_value(None, arg) for arg in record.args)
+            else:
+                record.args = self._sanitize_value(None, record.args)
+
+        return True
+
 def setup_logging(log_level=None):
     """Configures application-wide logging."""
     log_formatter = logging.Formatter(
@@ -59,6 +139,7 @@ def setup_logging(log_level=None):
 
     # Create the filter instance
     checkpoint_filter = CheckpointFilter()
+    sensitive_data_filter = SensitiveDataFilter()
 
     # File Handler (Rotating)
     # Rotate logs after 5MB, keep 3 backup logs
@@ -67,12 +148,14 @@ def setup_logging(log_level=None):
     )
     file_handler.setFormatter(log_formatter)
     file_handler.addFilter(checkpoint_filter) # Add filter
+    file_handler.addFilter(sensitive_data_filter)
     root_logger.addHandler(file_handler)
 
     # Console Handler (for displaying logs during development/debugging)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
     console_handler.addFilter(checkpoint_filter) # Add filter
+    console_handler.addFilter(sensitive_data_filter)
     root_logger.addHandler(console_handler)
 
     # Silence verbose loggers from dependencies
