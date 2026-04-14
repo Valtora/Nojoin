@@ -7,6 +7,7 @@ const VERSION_FILE = path.join(ROOT_DIR, 'docs', 'VERSION');
 const PACKAGE_JSON = path.join(ROOT_DIR, 'companion', 'package.json');
 const TAURI_CONF = path.join(ROOT_DIR, 'companion', 'src-tauri', 'tauri.conf.json');
 const CARGO_TOML = path.join(ROOT_DIR, 'companion', 'src-tauri', 'Cargo.toml');
+const CARGO_LOCK = path.join(ROOT_DIR, 'companion', 'src-tauri', 'Cargo.lock');
 
 // Read Source of Truth
 if (!fs.existsSync(VERSION_FILE)) {
@@ -73,6 +74,28 @@ if (fs.existsSync(CARGO_TOML)) {
     }
 } else {
     console.error(`[ERROR] Cargo.toml not found!`);
+}
+
+// 4. Update companion/src-tauri/Cargo.lock root package entry
+if (fs.existsSync(CARGO_LOCK)) {
+    let cargoLock = fs.readFileSync(CARGO_LOCK, 'utf8');
+    const packageBlockRegex = /(\[\[package\]\]\r?\nname = "nojoin-companion"\r?\nversion = ")(\d+\.\d+\.\d+)("\r?\n)/;
+    const match = cargoLock.match(packageBlockRegex);
+
+    if (match) {
+        const oldVer = match[2];
+        if (oldVer !== version) {
+            cargoLock = cargoLock.replace(packageBlockRegex, `$1${version}$3`);
+            fs.writeFileSync(CARGO_LOCK, cargoLock);
+            console.log(`[UPDATED] Cargo.lock: ${oldVer} -> ${version}`);
+        } else {
+            console.log(`[SKIPPED] Cargo.lock already has version ${version}`);
+        }
+    } else {
+        console.error(`[ERROR] Could not find nojoin-companion package entry in Cargo.lock`);
+    }
+} else {
+    console.error(`[ERROR] Cargo.lock not found!`);
 }
 
 console.log('Version sync complete.');
