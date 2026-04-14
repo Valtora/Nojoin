@@ -19,23 +19,22 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
    cd Nojoin
    ```
 
-2. Copy the example compose file.
+2. Create local deployment files from the tracked examples.
 
    ```bash
    cp docker-compose.example.yml docker-compose.yml
+   cp .env.example .env
    ```
 
-3. Start Nojoin.
+3. Set `FIRST_RUN_PASSWORD` in `.env`.
+
+4. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-If you want to build locally instead of pulling the published images, use:
-
-```bash
-docker compose build && docker compose up -d --wait
-```
+For source development workflows, use [DEVELOPMENT.md](DEVELOPMENT.md).
 
 If you do not have an NVIDIA GPU, see [DEPLOYMENT.md](DEPLOYMENT.md) for CPU-only instructions.
 
@@ -59,7 +58,7 @@ During setup you will usually want to provide:
 - Your preferred LLM provider.
 - Optional API keys for OpenAI, Anthropic, Gemini, or a local Ollama endpoint.
 
-You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#environment-variables).
+You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 
 ## 4. Install and Connect the Companion App
 

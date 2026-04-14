@@ -79,10 +79,10 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 ### Commands
 
 - **Start Infrastructure**:
-  - **NVIDIA GPU (Default)**: `docker compose up -d`
-  - **CPU**: `docker compose up -d` (Ensure the `deploy` section in `docker-compose.yaml` is commented out)
-  - **Build from source**: `docker compose build && docker compose up -d --wait`
-  - **Remote Access**: Ensure `.env` is configured with `NEXT_PUBLIC_API_URL` (including `/api` suffix) and `ALLOWED_ORIGINS`.
+  - **Operator deployment**: copy the compose and env templates to local files, then run `docker compose up -d`
+  - **CPU**: `docker compose up -d` after removing the `deploy` section from `docker-compose.yml`
+  - **Local source development**: use the host and local-compose workflows described in `docs/DEVELOPMENT.md`
+  - **Remote Access**: Ensure `.env` is configured with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
@@ -148,7 +148,7 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
 
 - **Frontend Verification:**
   - **Rule:** After ANY change to frontend code (`frontend/src/**/*`), a build check MUST be run to catch type errors that dev mode misses.
-  - **Command:** `docker compose up -d --build frontend` OR if working locally `cd frontend && npm run build`.
+  - **Command:** `cd frontend && npm run build`.
   - **Why:** Next.js dev mode is lenient; production builds are strict.
 - **Type Safety:**
   - **Rule:** When adding new data fields (e.g., to Settings or Models), update the TypeScript interfaces in `frontend/src/types/index.ts` **FIRST**.
@@ -184,7 +184,7 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
    - `frontend/src/components/RecordingCard.tsx`: The main grid view.
    - `frontend/src/components/Sidebar.tsx`: The sidebar list view.
    - **Failure to update both will result in inconsistent behavior.**
-6. **TESTING**: The user performs manual testing but the agent should rebuild the containers using `docker compose up -d --build` to catch any build-time errors and to allow for changes in code to be reflected in the running environment. The agent should also provide detailed instructions for testing the new feature, including any necessary setup steps, expected outcomes, and edge cases to consider.
+6. **TESTING**: The user performs manual testing but the agent should run the relevant host-side build checks and rebuild any locally customised container services when needed to catch build-time errors and ensure changes are reflected in the environment. The agent should also provide detailed instructions for testing the new feature, including any necessary setup steps, expected outcomes, and edge cases to consider.
 7. **COMPLETION**: Update the docs as needed.
 
 ### Constraints

@@ -44,29 +44,44 @@ Linux package example for Tauri prerequisites:
 sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-## Bringing Up Supporting Services
+## Compose Files
 
-For most local work you will want the Docker stack available.
+- `docker-compose.example.yml`: Deployment template using published images.
+- `docker-compose.yml`: Local working copy created from the template.
 
-### Pull-first path
+The repository does not ship a dedicated Docker Compose development override.
+If you need Docker-specific development customisations, make them in your local `docker-compose.yml`.
 
-```bash
-docker compose up -d
-```
+## Containerised Source Stack
 
-### Build-local path
+1. Create your local files from the templates:
 
-```bash
-docker compose build && docker compose up -d --wait
-```
+   ```bash
+   cp docker-compose.example.yml docker-compose.yml
+   cp .env.example .env
+   ```
 
-If you do not have an NVIDIA GPU, use CPU-only mode as described in [DEPLOYMENT.md](DEPLOYMENT.md).
+2. Set `FIRST_RUN_PASSWORD` in `.env`.
+3. Start the standard stack:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. Open `https://localhost:14443`.
+
+The compose template runs the published images.
+If you need source changes reflected inside containers, add local build or bind-mount changes in your ignored `docker-compose.yml`.
+
+If you only need supporting services while running code on the host, start the specific services you need.
+Examples include `db` and `redis`.
+
+If you do not have an NVIDIA GPU, use CPU-only mode as described in [DEPLOYMENT.md](DEPLOYMENT.md) before starting the stack.
 
 ## Backend Development Notes
 
-- FastAPI serves the API.
-- Celery handles heavy background processing.
-- PostgreSQL and Redis normally run through Docker Compose during development.
+- The compose template does not publish PostgreSQL or Redis to the host by default.
+- If you want host-based tooling or host-run services to talk to containerised PostgreSQL or Redis, add the required `ports` entries in your local `docker-compose.yml`.
 - Heavy ML libraries must stay inside worker task functions, not API startup paths.
 
 Useful migration commands:
@@ -78,7 +93,7 @@ alembic revision --autogenerate -m "message"
 
 ## Frontend Development
 
-Install dependencies and run the dev server:
+For the best feedback loop, run the frontend on the host:
 
 ```bash
 cd frontend

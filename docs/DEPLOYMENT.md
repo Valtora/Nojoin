@@ -17,29 +17,40 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 - Enough local storage for recordings, derived assets, and models.
 - If using a GPU on Linux, NVIDIA drivers and the NVIDIA Container Toolkit.
 
+## Compose Files
+
+- `docker-compose.example.yml`: Deployment template using the published GHCR images.
+- `docker-compose.yml`: Local working copy created from the template.
+
+The repository does not ship a separate Docker Compose development override.
+
 ## Quick Deployment
 
 1. Clone the repository.
-2. Copy `docker-compose.example.yml` to `docker-compose.yml`.
-3. Optionally create or adjust `.env`.
-4. Start the stack:
+2. Create your local deployment files:
+
+    ```bash
+    cp docker-compose.example.yml docker-compose.yml
+    cp .env.example .env
+    ```
+
+3. Set `FIRST_RUN_PASSWORD` in `.env`.
+4. Adjust `WEB_APP_URL` and `ALLOWED_ORIGINS` if the deployment is not local-only.
+5. Review `docker-compose.yml` and apply any private or machine-specific changes.
+6. Start the stack:
 
    ```bash
    docker compose up -d
    ```
 
-5. Open `https://localhost:14443`.
+7. Open `https://localhost:14443`.
 
-Before the first successful setup, set `FIRST_RUN_PASSWORD` in `.env` and keep it secret.
-Nojoin refuses first initialisation if this variable is missing. If you add or change it, restart or redeploy the stack before using the setup wizard.
+Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
+If you add or change it, redeploy the stack before using the setup wizard.
 
-The default `docker-compose.example.yml` is already configured for GPU inference.
+The compose template is already configured for GPU inference.
 
-If you want to build from local source instead of pulling the published images:
-
-```bash
-docker compose build && docker compose up -d --wait
-```
+If you are developing from local source instead of operating a deployment, read [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## GPU Support
 
@@ -59,6 +70,8 @@ docker compose build && docker compose up -d --wait
    sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
    ```
 
+The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility`.
+
 ### Windows
 
 - Use Docker Desktop with the WSL 2 backend.
@@ -69,19 +82,29 @@ docker compose build && docker compose up -d --wait
 If you do not have a compatible NVIDIA GPU:
 
 1. Open `docker-compose.yml`.
-2. Comment out the `deploy` section under the `worker` service.
+2. Remove the `deploy` section under the `worker` service.
 3. Start the stack normally with `docker compose up -d`.
 
 Processing will be slower, but the application remains usable.
 
-## Environment Variables
+## Configure .env
 
-These variables are the main deployment knobs to know about.
+Create `.env` from `.env.example` and treat it as the canonical operator configuration file.
+The compose stack derives internal service URLs for PostgreSQL, Redis, and Celery automatically, so those values are intentionally not part of `.env.example`.
+Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
+Nojoin auto-generates and persists its JWT signing key under `data/.secret_key`, so no `.env` setting is required for that.
 
-- `NEXT_PUBLIC_API_URL`: Public API base URL used by the frontend. Include the `/api` suffix.
-- `ALLOWED_ORIGINS`: Comma-separated list of trusted browser origins.
-- `WEB_APP_URL`: Exact public browser origin used for invitation links, OAuth callbacks, and other public URLs.
-- `FIRST_RUN_PASSWORD`: Required one-time bootstrap password for the first successful Nojoin initialisation.
+### Always Set
+
+- `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation.
+
+### Change for Remote or Reverse-Proxy Deployments
+
+- `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, and other public URLs.
+- `ALLOWED_ORIGINS`: Comma-separated list of trusted browser origins allowed to call the API.
+
+### Common Optional Values
+
 - `REDIS_PASSWORD`: Password for the internal Redis service.
 - `HF_TOKEN`: Hugging Face token used to download diarisation models.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
@@ -95,6 +118,10 @@ These variables are the main deployment knobs to know about.
 - `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.
 - `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft calendar OAuth client secret.
 - `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration supports the intended sign-in model.
+
+### Custom Frontend Build Value
+
+- `NEXT_PUBLIC_API_URL`: Only set this when building a custom frontend image and the frontend is not using the default same-origin `/api` path.
 
 For calendar-specific registration detail, read [CALENDAR.md](CALENDAR.md).
 
@@ -169,13 +196,15 @@ docker compose pull
 docker compose up -d
 ```
 
-### Local-Source Installations
+### Local Custom Builds
 
 ```bash
 docker compose down
 docker compose build
-docker compose up -d --wait
+docker compose up -d
 ```
+
+Use this only if your local `docker-compose.yml` includes custom build directives.
 
 Nojoin also exposes installed and latest published version information in **Settings > Updates**.
 

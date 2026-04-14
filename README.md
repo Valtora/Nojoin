@@ -43,27 +43,30 @@ Nojoin is built for people who want the usefulness of meeting assistants without
    cd Nojoin
    ```
 
-2. Copy the example compose file.
+2. Create local deployment files from the tracked examples.
 
    ```bash
    cp docker-compose.example.yml docker-compose.yml
+   cp .env.example .env
    ```
 
-3. Start Nojoin.
+3. Set `FIRST_RUN_PASSWORD` in `.env`.
+
+4. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-4. Open the web app.
+5. Open the web app.
 
    ```text
    https://localhost:14443
    ```
 
-5. Complete the first-run wizard.
+6. Complete the first-run wizard.
 
-6. Download and connect the latest Windows Companion build from GitHub Releases.
+7. Download and connect the latest Windows Companion build from GitHub Releases.
 
 Notes:
 
