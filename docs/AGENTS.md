@@ -112,18 +112,17 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
    - Push the tag: `git push origin v0.6.0`
 
 3. **CI/CD Pipeline** (`.github/workflows/release.yml`):
-   - **Trigger**: The push of the `v*` tag automatically triggers the pipeline.
-   - **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`.
-   - **Step 2: Companion Build**:
-     - **Auto-Sync**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.**
-     - **Build**: Compiles the Windows installer (`.exe`) and Portable build.
-     - **Release**: Uploads these artifacts to the GitHub Release created by the tag.
+  **Trigger**: The push of the `v*` tag automatically triggers the pipeline.
+
+  **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`. The API image also embeds the resolved server version for runtime display in Settings.
+
+  **Step 2: Companion Build**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.** It then compiles the Windows installer (`.exe`) and Portable build, and uploads those artifacts to the GitHub Release created by the tag.
 
 **Important**:
 
 - **Versioning**: Strict Semantic Versioning (`vX.Y.Z`).
-- **Source of Truth**: The Git Tag is the single source of truth. `docs/VERSION` is set from the tag during CI/CD. The companion app files are transiently updated during the build process.
-  - **Version Detection**: The API resolves the running version from the Docker image's `org.opencontainers.image.version` label (set by CI/CD), falling back to `docs/VERSION`. User-facing release metadata is resolved from GitHub Releases first, with GHCR tags and the GitHub raw `docs/VERSION` file only used as version fallbacks if release metadata is unavailable.
+- **Source of Truth**: The Git Tag is the single source of truth for published releases. Local source builds use `docs/VERSION`. The API image embeds the resolved server version at build time, and the companion app files are transiently updated during the build process.
+  - **Version Detection**: The API resolves the running version from build metadata embedded into the image (`NOJOIN_SERVER_VERSION` and `/app/.build-version`), falling back to bundled or local `docs/VERSION` in development and test contexts. User-facing release metadata is resolved from GitHub Releases first, with GHCR tags and the GitHub raw `docs/VERSION` file only used as version fallbacks if release metadata is unavailable.
 - **Platform**: Only Windows builds are currently supported for the Companion App.
 
 ## Code Style & Conventions

@@ -73,7 +73,7 @@ Use **Settings > System** for operational controls such as:
 
 Use **Settings > Updates** to see:
 
-- The running version.
+- The installed server version from the current API build.
 - The latest stable published release.
 - Release history and release notes.
 - Companion installer links.

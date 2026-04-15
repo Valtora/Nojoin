@@ -22,7 +22,8 @@ recordings
 .DS_Store
 .vscode
 nojoin/
-docs/
+docs/*
+!docs/VERSION
 Nojoin.py
 README.md
 LICENSE

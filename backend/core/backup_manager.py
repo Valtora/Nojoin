@@ -22,6 +22,7 @@ from backend.models.chat import ChatMessage
 from backend.models.task import UserTask
 from backend.utils.path_manager import PathManager
 from backend.utils.audio import ensure_ffmpeg_in_path
+from backend.utils.version import get_installed_version
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +65,7 @@ class BackupManager:
 
     @staticmethod
     def _get_app_version() -> str:
-        try:
-            path_manager = PathManager()
-            # Try to find VERSION file in docs folder relative to executable/project root
-            version_path = path_manager.executable_directory / "docs" / "VERSION"
-            if version_path.exists():
-                return version_path.read_text().strip()
-            return "0.0.0"
-        except Exception:
-            return "0.0.0"
+        return get_installed_version()
 
     @staticmethod
     def _redact_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:

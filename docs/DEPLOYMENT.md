@@ -220,7 +220,7 @@ docker compose up -d
 
 Use this only if your local `docker-compose.yml` includes custom build directives.
 
-Nojoin also exposes installed and latest published version information in **Settings > Updates**.
+Nojoin also exposes installed and latest published version information in **Settings > Updates**. The installed version is read from build metadata embedded into the API image, with local source builds falling back to `docs/VERSION`.
 
 ## Release Model
 
@@ -228,6 +228,7 @@ Nojoin uses a unified lock-step release model:
 
 - A `vX.Y.Z` tag drives the published release.
 - Docker images are published to GHCR.
+- The API image embeds the resolved server version during the build, so the installed version shown in Settings does not depend on Docker daemon inspection at runtime.
 - Windows Companion binaries are published alongside the server release.
 - The application surfaces release metadata primarily from GitHub Releases.
 

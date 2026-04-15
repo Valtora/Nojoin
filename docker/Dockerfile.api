@@ -51,8 +51,22 @@ COPY --from=builder /opt/venv /opt/venv
 # Set work directory
 WORKDIR /app
 
+ARG NOJOIN_SERVER_VERSION
+ENV NOJOIN_SERVER_VERSION=${NOJOIN_SERVER_VERSION}
+
 # Copy the rest of the application code
 COPY . .
+
+RUN set -eu; \
+    version="${NOJOIN_SERVER_VERSION:-}"; \
+    if [ -z "$version" ] && [ -f /app/docs/VERSION ]; then \
+        version="$(tr -d '[:space:]' < /app/docs/VERSION)"; \
+    fi; \
+    version="${version#v}"; \
+    if [ -z "$version" ]; then \
+        version="0.0.0"; \
+    fi; \
+    printf '%s\n' "$version" > /app/.build-version
 
 # Ensure entrypoint is executable
 RUN chmod +x /app/backend/entrypoint.sh

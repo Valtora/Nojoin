@@ -198,7 +198,7 @@ The General settings page lets each user choose the IANA timezone used for dashb
 
 The Updates page shows:
 
-- The running version.
+- The installed server version from the current API build.
 - The latest stable published release.
 - Release history and release notes.
 - Companion installer links.
