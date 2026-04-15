@@ -218,6 +218,10 @@ class IncrementalSyncResetRequired(Exception):
     pass
 
 
+class UnreadableCalendarConnectionState(Exception):
+    pass
+
+
 def _utc_now() -> datetime:
     return utc_now()
 
@@ -555,6 +559,63 @@ async def _request_json(
         return response.json()
 
 
+async def _reset_unreadable_provider_configuration(
+    db: AsyncSession,
+    row: CalendarProviderConfig,
+    provider: str,
+) -> None:
+    logger.warning(
+        "Calendar provider secret for %s could not be decrypted; removing stored provider configuration and falling back to environment configuration if available",
+        provider,
+    )
+    await db.delete(row)
+    await db.commit()
+
+
+def _load_connection_token_bundle(
+    connection: CalendarConnection,
+) -> tuple[str | None, str | None]:
+    try:
+        return (
+            decrypt_secret(connection.access_token_encrypted),
+            decrypt_secret(connection.refresh_token_encrypted),
+        )
+    except ValueError as exc:
+        raise UnreadableCalendarConnectionState() from exc
+
+
+async def _reset_connection_requiring_reconnect(
+    db: AsyncSession,
+    connection: CalendarConnection,
+) -> None:
+    logger.warning(
+        "Calendar connection %s (%s) contains unreadable encrypted data; removing stored connection and requiring reconnect",
+        connection.id,
+        connection.provider,
+    )
+    await db.delete(connection)
+
+
+async def _prune_unreadable_connections(db: AsyncSession, *, user_id: int) -> None:
+    statement = (
+        select(CalendarConnection)
+        .options(selectinload(CalendarConnection.calendars))
+        .where(CalendarConnection.user_id == user_id)
+    )
+    connections = list((await db.execute(statement)).scalars().unique().all())
+
+    removed_any = False
+    for connection in connections:
+        try:
+            _load_connection_token_bundle(connection)
+        except UnreadableCalendarConnectionState:
+            await _reset_connection_requiring_reconnect(db, connection)
+            removed_any = True
+
+    if removed_any:
+        await db.commit()
+
+
 async def get_provider_runtime_config(db: AsyncSession, provider: str) -> ProviderRuntimeConfig:
     statement = select(CalendarProviderConfig).where(CalendarProviderConfig.provider == provider)
     row = (await db.execute(statement)).scalar_one_or_none()
@@ -565,20 +626,32 @@ async def get_provider_runtime_config(db: AsyncSession, provider: str) -> Provid
     env_tenant_id = os.getenv(env_keys["tenant_id"]) if env_keys["tenant_id"] else None
 
     if row is not None:
+        try:
+            db_client_secret = decrypt_secret(row.client_secret_encrypted)
+        except ValueError:
+            await _reset_unreadable_provider_configuration(db, row, provider)
+            return ProviderRuntimeConfig(
+                provider=provider,
+                client_id=env_client_id,
+                client_secret=env_client_secret,
+                tenant_id=env_tenant_id or MICROSOFT_COMMON_TENANT,
+                enabled=True,
+                source="environment" if env_client_id or env_client_secret else "none",
+            )
+
         if row.enabled is False:
             return ProviderRuntimeConfig(
                 provider=provider,
                 client_id=row.client_id,
-                client_secret=decrypt_secret(row.client_secret_encrypted),
+                client_secret=db_client_secret,
                 tenant_id=row.tenant_id or env_tenant_id or MICROSOFT_COMMON_TENANT,
                 enabled=False,
                 source="database",
             )
 
-        db_client_secret = decrypt_secret(row.client_secret_encrypted)
         uses_database_values = any(
             value
-            for value in (row.client_id, row.client_secret_encrypted, row.tenant_id)
+            for value in (row.client_id, db_client_secret, row.tenant_id)
         )
         return ProviderRuntimeConfig(
             provider=provider,
@@ -1214,8 +1287,7 @@ async def _get_access_token_for_connection(
     connection: CalendarConnection,
     runtime_config: ProviderRuntimeConfig,
 ) -> str:
-    access_token = decrypt_secret(connection.access_token_encrypted)
-    refresh_token = decrypt_secret(connection.refresh_token_encrypted)
+    access_token, refresh_token = _load_connection_token_bundle(connection)
     now = _utc_now()
     if access_token and connection.token_expires_at and connection.token_expires_at > now + timedelta(minutes=2):
         return access_token
@@ -1467,6 +1539,7 @@ def _serialise_connection(connection: CalendarConnection) -> CalendarConnectionR
 
 async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
     providers = await list_provider_statuses(db)
+    await _prune_unreadable_connections(db, user_id=user.id)
     statement = (
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))
@@ -1557,7 +1630,12 @@ async def update_connection_selection(
             .options(selectinload(CalendarConnection.calendars))
             .where(CalendarConnection.id == connection.id)
         )
-    ).scalars().unique().one()
+    ).scalars().unique().one_or_none()
+    if refreshed is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Calendar connection was reset because its stored tokens could not be read. Reconnect the calendar account.",
+        )
     return _serialise_connection(refreshed)
 
 
@@ -1628,7 +1706,12 @@ async def refresh_connection_now(db: AsyncSession, user: User, connection_id: in
             .options(selectinload(CalendarConnection.calendars))
             .where(CalendarConnection.id == connection.id)
         )
-    ).scalars().unique().one()
+    ).scalars().unique().one_or_none()
+    if refreshed is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Calendar connection was reset because its stored tokens could not be read. Reconnect the calendar account.",
+        )
     return _serialise_connection(refreshed)
 
 
@@ -1785,6 +1868,10 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         connection.sync_error = None
         db.add(connection)
         await db.commit()
+    except UnreadableCalendarConnectionState:
+        await _reset_connection_requiring_reconnect(db, connection)
+        await db.commit()
+        return
     except Exception as exc:
         logger.warning(
             "Calendar sync failed for connection %s (%s)",
@@ -1907,6 +1994,7 @@ async def get_dashboard_summary(
 
     providers = await list_provider_statuses(db)
     provider_configured = any(provider.configured for provider in providers)
+    await _prune_unreadable_connections(db, user_id=user.id)
     statement = (
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))

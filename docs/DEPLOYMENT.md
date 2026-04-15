@@ -35,20 +35,23 @@ The repository does not ship a separate Docker Compose development override.
     ```
 
 3. Set `FIRST_RUN_PASSWORD` in `.env`.
-4. Adjust `WEB_APP_URL` and `ALLOWED_ORIGINS` if the deployment is not local-only.
-5. Review `docker-compose.yml` and apply any private or machine-specific changes.
-6. Start the stack:
+4. Set `DATA_ENCRYPTION_KEY` in `.env` before first production use.
+5. Adjust `WEB_APP_URL` and `ALLOWED_ORIGINS` if the deployment is not local-only.
+6. Review `docker-compose.yml` and apply any private or machine-specific changes.
+7. Start the stack:
 
    ```bash
    docker compose up -d
    ```
 
-7. Open `https://localhost:14443`.
+8. Open `https://localhost:14443`.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.
 
 The compose template is already configured for GPU inference.
+
+`DATA_ENCRYPTION_KEY` is strongly recommended for every non-ephemeral deployment. Earlier releases relied on the auto-generated `data/.data_encryption_key` fallback alone, which meant encrypted calendar secrets and tokens could become unreadable if the app data directory was replaced while the database volume was preserved. Setting a stable `DATA_ENCRYPTION_KEY` avoids that class of failure.
 
 If you are developing from local source instead of operating a deployment, read [DEVELOPMENT.md](DEVELOPMENT.md).
 
@@ -93,10 +96,12 @@ Create `.env` from `.env.example` and treat it as the canonical operator configu
 The compose stack derives internal service URLs for PostgreSQL, Redis, and Celery automatically, so those values are intentionally not part of `.env.example`.
 Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
 Nojoin auto-generates and persists its JWT signing key under `data/.secret_key`, so no `.env` setting is required for that.
+Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
 
 ### Always Set
 
 - `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation.
+- `DATA_ENCRYPTION_KEY`: Stable installation-wide encryption seed used for calendar OAuth client secrets and user calendar tokens. Set this once and keep it unchanged for the lifetime of the deployment.
 
 ### Change for Remote or Reverse-Proxy Deployments
 
@@ -118,6 +123,15 @@ Nojoin auto-generates and persists its JWT signing key under `data/.secret_key`,
 - `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.
 - `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft calendar OAuth client secret.
 - `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration supports the intended sign-in model.
+
+### DATA_ENCRYPTION_KEY Guidance
+
+- Set `DATA_ENCRYPTION_KEY` before users connect calendar accounts or an admin stores calendar provider secrets.
+- On an existing deployment that already has `data/.data_encryption_key`, copy that current value into `DATA_ENCRYPTION_KEY` before restarting the stack.
+- Keep the value stable across restarts, upgrades, image changes, and host migrations.
+- Store it in your secret manager, password vault, or deployment automation alongside other installation secrets.
+- Do not rotate it casually. Changing it without first re-encrypting stored secrets will make previously stored calendar credentials unreadable.
+- This is being documented explicitly as a hotfix follow-up for an oversight in `v0.8.1`, where relying on the generated key file alone could surprise operators during partial restores or host-level data replacement.
 
 ### Custom Frontend Build Value
 

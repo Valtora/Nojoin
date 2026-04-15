@@ -27,8 +27,9 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
    ```
 
 3. Set `FIRST_RUN_PASSWORD` in `.env`.
+4. Set `DATA_ENCRYPTION_KEY` in `.env` if this will be a persistent installation.
 
-4. Start Nojoin.
+5. Start Nojoin.
 
    ```bash
    docker compose up -d
@@ -37,6 +38,8 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 For source development workflows, use [DEVELOPMENT.md](DEVELOPMENT.md).
 
 If you do not have an NVIDIA GPU, see [DEPLOYMENT.md](DEPLOYMENT.md) for CPU-only instructions.
+
+`DATA_ENCRYPTION_KEY` prevents future decryptability issues if the app data directory and database do not move together during restores, host migrations, or partial replacements.
 
 ## 2. Open the Web App
 

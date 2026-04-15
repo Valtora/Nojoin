@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 
 import pytest
@@ -74,6 +75,26 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE calendar_events (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        calendar_id INTEGER NOT NULL,
+        provider_event_id VARCHAR(512) NOT NULL,
+        title VARCHAR(512) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        is_all_day BOOLEAN NOT NULL,
+        starts_at DATETIME,
+        ends_at DATETIME,
+        start_date DATE,
+        end_date DATE,
+        location_text TEXT,
+        meeting_url VARCHAR(2048),
+        source_url VARCHAR(2048),
+        external_updated_at DATETIME
+    )
+    """,
+    """
     CREATE TABLE user_tasks (
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
@@ -112,6 +133,16 @@ async def execute_sql(
     async with session_maker() as session:
         await session.execute(text(statement), params)
         await session.commit()
+
+
+async def fetch_scalar(
+    session_maker: sessionmaker,
+    statement: str,
+    params: dict[str, object] | None = None,
+):
+    async with session_maker() as session:
+        result = await session.execute(text(statement), params or {})
+        return result.scalar_one()
 
 
 async def seed_provider_config(session_maker: sessionmaker, *, provider: str) -> None:
@@ -156,6 +187,9 @@ async def seed_calendar_connection(
     *,
     connection_id: int,
     user_id: int,
+    provider: str = "google",
+    access_token_encrypted: str | None = None,
+    refresh_token_encrypted: str | None = None,
 ) -> None:
     await execute_sql(
         session_maker,
@@ -203,12 +237,12 @@ async def seed_calendar_connection(
             "created_at": TEST_TIMESTAMP,
             "updated_at": TEST_TIMESTAMP,
             "user_id": user_id,
-            "provider": "google",
+            "provider": provider,
             "provider_account_id": f"acct-{connection_id}",
             "email": "calendar-owner@example.com",
             "display_name": "Calendar Owner",
-            "access_token_encrypted": None,
-            "refresh_token_encrypted": None,
+            "access_token_encrypted": access_token_encrypted,
+            "refresh_token_encrypted": refresh_token_encrypted,
             "granted_scopes": json.dumps([]),
             "token_expires_at": None,
             "sync_status": "idle",
@@ -491,6 +525,166 @@ async def test_admin_provider_status_falls_back_to_allowed_origins_for_redirect_
         microsoft_provider["redirect_uri"]
         == "https://nojoin.example.com/api/v1/calendar/oauth/microsoft/callback"
     )
+
+
+@pytest.mark.anyio
+async def test_admin_provider_status_falls_back_to_environment_when_database_secret_is_invalid(
+    client: AsyncClient,
+    override_current_admin_user,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await execute_sql(
+        test_session_maker,
+        """
+        INSERT INTO calendar_provider_configs (
+            id,
+            created_at,
+            updated_at,
+            provider,
+            client_id,
+            client_secret_encrypted,
+            tenant_id,
+            enabled
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :provider,
+            :client_id,
+            :client_secret_encrypted,
+            :tenant_id,
+            :enabled
+        )
+        """,
+        {
+            "id": 1,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
+            "provider": "google",
+            "client_id": "stale-google-client-id",
+            "client_secret_encrypted": "not-a-valid-encrypted-secret",
+            "tenant_id": None,
+            "enabled": True,
+        },
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "env-google-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "env-google-client-secret")
+    override_current_admin_user(1)
+
+    caplog.set_level(logging.WARNING, logger="backend.services.calendar_service")
+    response = await client.get("/api/v1/calendar/admin/providers")
+
+    assert response.status_code == 200
+    google_provider = next(
+        provider for provider in response.json() if provider["provider"] == "google"
+    )
+    assert google_provider["source"] == "environment"
+    assert google_provider["configured"] is True
+    assert google_provider["client_id"] == "env-google-client-id"
+    assert google_provider["has_client_secret"] is True
+    assert "could not be decrypted" in caplog.text
+    assert (
+        await fetch_scalar(
+            test_session_maker,
+            "SELECT COUNT(*) FROM calendar_provider_configs WHERE provider = :provider",
+            {"provider": "google"},
+        )
+        == 0
+    )
+
+
+@pytest.mark.anyio
+async def test_calendar_overview_resets_connections_with_invalid_encrypted_tokens(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await seed_calendar_connection(
+        test_session_maker,
+        connection_id=301,
+        user_id=1,
+        access_token_encrypted="not-a-valid-encrypted-secret",
+    )
+    await seed_calendar_source(
+        test_session_maker,
+        calendar_id=401,
+        connection_id=301,
+        provider_calendar_id="primary",
+        name="Primary",
+        colour="#ff6600",
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "env-google-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "env-google-client-secret")
+    override_current_user(1)
+
+    response = await client.get("/api/v1/calendar")
+
+    assert response.status_code == 200
+    google_provider = next(
+        provider for provider in response.json()["providers"] if provider["provider"] == "google"
+    )
+    assert google_provider == {
+        "provider": "google",
+        "display_name": "Google",
+        "configured": True,
+    }
+    assert response.json()["connections"] == []
+    assert (
+        await fetch_scalar(
+            test_session_maker,
+            "SELECT COUNT(*) FROM calendar_connections WHERE id = :connection_id",
+            {"connection_id": 301},
+        )
+        == 0
+    )
+    assert (
+        await fetch_scalar(
+            test_session_maker,
+            "SELECT COUNT(*) FROM calendar_sources WHERE connection_id = :connection_id",
+            {"connection_id": 301},
+        )
+        == 0
+    )
+
+
+@pytest.mark.anyio
+async def test_calendar_dashboard_resets_connections_with_invalid_encrypted_tokens(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await seed_calendar_connection(
+        test_session_maker,
+        connection_id=302,
+        user_id=1,
+        access_token_encrypted="not-a-valid-encrypted-secret",
+    )
+    await seed_calendar_source(
+        test_session_maker,
+        calendar_id=402,
+        connection_id=302,
+        provider_calendar_id="primary",
+        name="Primary",
+        colour="#ff6600",
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "env-google-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "env-google-client-secret")
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/calendar/dashboard",
+        params={"month": "2026-04", "timezone": "UTC"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_configured"] is True
+    assert payload["connection_count"] == 0
+    assert payload["state"] == "no_accounts"
 
 
 @pytest.mark.anyio

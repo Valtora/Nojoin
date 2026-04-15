@@ -51,28 +51,30 @@ Nojoin is built for people who want the usefulness of meeting assistants without
    ```
 
 3. Set `FIRST_RUN_PASSWORD` in `.env`.
+4. Set `DATA_ENCRYPTION_KEY` in `.env` for any persistent deployment.
 
-4. Start Nojoin.
+5. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-5. Open the web app.
+6. Open the web app.
 
    ```text
    https://localhost:14443
    ```
 
-6. Complete the first-run wizard.
+7. Complete the first-run wizard.
 
-7. Download and connect the latest Windows Companion build from GitHub Releases.
+8. Download and connect the latest Windows Companion build from GitHub Releases.
 
 Notes:
 
 - An NVIDIA GPU is strongly recommended for faster processing.
 - CPU-only mode is supported.
 - The Companion app currently supports Windows only.
+- Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
 - For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
 
 ## Documentation

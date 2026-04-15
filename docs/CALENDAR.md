@@ -22,6 +22,7 @@ Users do not enter OAuth client IDs, client secrets, or tenant IDs themselves.
 - Use a stable HTTPS browser origin whenever possible.
 - Set `WEB_APP_URL` to the exact public browser origin used to access Nojoin.
 - Include that same origin in `ALLOWED_ORIGINS`.
+- Set a stable `DATA_ENCRYPTION_KEY` before storing provider secrets or connecting user calendars.
 - If you deploy behind a reverse proxy, make sure the browser origin and provider callback origin are identical.
 
 For the full hosting context, see [DEPLOYMENT.md](DEPLOYMENT.md).
@@ -36,11 +37,14 @@ You can provide the installation OAuth credentials in either of these ways:
 Supported environment variables:
 
 - `WEB_APP_URL`
+- `DATA_ENCRYPTION_KEY`
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `MICROSOFT_OAUTH_CLIENT_ID`
 - `MICROSOFT_OAUTH_CLIENT_SECRET`
 - `MICROSOFT_OAUTH_TENANT_ID`
+
+`DATA_ENCRYPTION_KEY` is not an OAuth credential, but it is what keeps stored calendar provider secrets and user calendar tokens readable across upgrades and infrastructure changes. Earlier `v0.8.1` deployments could rely only on the generated key file, which was an operational oversight for installations where the app data directory and database might be managed separately.
 
 ## End-User Connection Flow
 
