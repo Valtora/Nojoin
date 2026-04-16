@@ -43,6 +43,7 @@ It brings together:
 
 - Switch between month and agenda views.
 - Use `Today` to jump back to the current date context.
+- In month view, selecting a day opens a day agenda, and selecting today shows a live now marker against timed events.
 - When calendars are connected, per-calendar colours help distinguish event sources.
 - Event times render in your configured Nojoin timezone.
 - If no calendar is connected, the dashboard shows an empty state instead of fake data.

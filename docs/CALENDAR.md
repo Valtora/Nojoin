@@ -64,6 +64,7 @@ When calendar sync is configured:
 
 - The dashboard month view shows dots on days with synced events.
 - The agenda view focuses on future events rather than historical clutter.
+- Selecting a day in month view opens a day agenda, and selecting today shows a live now marker against timed events.
 - The `Today` action jumps back to the current month and date context.
 - Per-calendar colours can be used so different sources remain visually distinct.
 - Event times render in the user's configured Nojoin timezone.
