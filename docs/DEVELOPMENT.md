@@ -100,14 +100,61 @@ services:
          context: ./frontend
          dockerfile: Dockerfile
          args:
-            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       image: nojoin-frontend:local
       pull_policy: never
 ```
 
 This leaves PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images while forcing the Nojoin application services to build from the current checkout.
 
-For a clean rebuild after changing backend, worker, or shared application code:
+If you want the earlier rebuild-friendly development loop back in your local ignored `docker-compose.yml`, patch the `api` and `worker` services with a source mount and keep the frontend on a same-origin build value:
+
+```yaml
+services:
+   api:
+      command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+      volumes:
+         - .:/app
+         - ./data:/app/data
+         - ./data/recordings:/app/recordings
+         - model_cache:/shared_model_cache:ro
+         - backup_temp:/tmp
+
+   worker:
+      command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
+      volumes:
+         - .:/app
+         - ./data:/app/data
+         - model_cache:/home/appuser/.cache
+         - /sys/class/drm:/sys/class/drm:ro
+         - backup_temp:/tmp
+
+   frontend:
+      build:
+         args:
+            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      environment:
+         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+```
+
+Apply that only to your local `docker-compose.yml`, not to the tracked `docker-compose.example.yml`.
+The bind mounts and worker auto-restart command are development conveniences, while the tracked template remains the operator deployment file.
+
+With that local patch in place, the usual incremental loop is:
+
+```bash
+docker compose up -d --build api
+docker compose up -d --build worker
+docker compose up -d --build frontend
+```
+
+Practical use:
+
+- Run `docker compose up -d --build api` after API changes or shared backend changes when you want FastAPI restarted against the current checkout.
+- The worker sees the mounted source tree and `watchmedo` restarts Celery automatically for Python edits under `backend/`, so you usually only rebuild `worker` after dependency, Dockerfile, or worker-image changes.
+- Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
+
+If you need to discard cached layers or the application services drift out of sync, use a clean rebuild:
 
 ```bash
 docker compose down
@@ -115,7 +162,7 @@ docker compose build --no-cache api worker frontend
 docker compose up -d --force-recreate
 ```
 
-For the normal incremental workflow after the local `build:` entries are in place:
+If you are keeping only the local `build:` entries and not the source-mount patch above, the normal incremental workflow remains:
 
 ```bash
 docker compose up -d --build
