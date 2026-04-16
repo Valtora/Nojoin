@@ -139,6 +139,7 @@ services:
 
 Apply that only to your local `docker-compose.yml`, not to the tracked `docker-compose.example.yml`.
 The bind mounts and worker auto-restart command are development conveniences, while the tracked template remains the operator deployment file.
+The frontend does not need its own source-mount patch for this rebuild loop. As long as the local `frontend` service keeps its `build:` block and same-origin `NEXT_PUBLIC_API_URL` value, `docker compose up -d --build frontend` remains a normal part of the workflow.
 
 With that local patch in place, the usual incremental loop is:
 
@@ -152,7 +153,7 @@ Practical use:
 
 - Run `docker compose up -d --build api` after API changes or shared backend changes when you want FastAPI restarted against the current checkout.
 - The worker sees the mounted source tree and `watchmedo` restarts Celery automatically for Python edits under `backend/`, so you usually only rebuild `worker` after dependency, Dockerfile, or worker-image changes.
-- Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
+- Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx. This rebuild path works without the API and worker bind-mount changes because the frontend already builds from `./frontend`.
 
 If you need to discard cached layers or the application services drift out of sync, use a clean rebuild:
 
