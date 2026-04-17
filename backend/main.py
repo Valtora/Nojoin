@@ -2,16 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
-import time
 import logging
-from sqlalchemy.exc import OperationalError
 from backend.core.audio_setup import setup_audio_environment
-from sqlmodel import SQLModel, Session, text, select
-from backend.core.db import sync_engine
+from sqlmodel import select
 from backend.api.v1.api import api_router
-from alembic.config import Config
-from alembic import command
 from backend.api.services.health_service import APP_HEALTH_VERSION
+from backend.startup_migrations import run_startup_migrations, should_skip_startup_migrations
 
 setup_audio_environment()
 
@@ -70,31 +66,11 @@ async def ensure_recording_meeting_uids_on_startup() -> None:
 
 
 def run_migrations():
-    # Wait for DB to be ready
-    max_retries = 30
-    retry_interval = 1
-    
-    logger.info("Waiting for database connection...")
-    for i in range(max_retries):
-        try:
-            with sync_engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            logger.info("Database connection established.")
-            break
-        except OperationalError:
-            if i == max_retries - 1:
-                logger.error("Could not connect to database after multiple retries.")
-                raise
-            logger.info(f"Database not ready, retrying in {retry_interval}s...")
-            time.sleep(retry_interval)
+    if should_skip_startup_migrations():
+        logger.info("Skipping app-startup migrations because they already ran before process start.")
+        return
 
-    try:
-        import subprocess
-        import sys
-        # Use the same python interpreter to run alembic module
-        subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
-    except Exception as e:
-        logger.error(f"Error running migrations: {e}")
+    run_startup_migrations()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

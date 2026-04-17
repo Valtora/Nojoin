@@ -193,6 +193,12 @@ alembic upgrade head
 alembic revision --autogenerate -m "message"
 ```
 
+Development guardrails:
+
+- Do not delete or rename committed Alembic revision files once a database may have applied them.
+- The tracked development compose stack sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on the API service. If a local dev database is stamped to a revision that no longer exists in your checkout, startup will restamp it to the current checked-in head before running `alembic upgrade head`.
+- Keep that auto-repair flag limited to disposable local databases. For persistent deployments, fix the migration graph or reconcile the database revision manually instead of auto-stamping.
+
 ## Frontend Development
 
 For the best feedback loop, run the frontend on the host:
