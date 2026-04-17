@@ -123,18 +123,19 @@ export default function SetupPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const fieldKey = e.target.dataset.fieldKey || name;
+    setFormData((prev) => ({ ...prev, [fieldKey]: value }));
 
     // Reset validation messages when changing keys
-    if (name.includes("api_key")) {
+    if (fieldKey.includes("api_key")) {
       setLlmValidationMsg(null);
       setAvailableModels([]);
       setFormData((prev) => ({ ...prev, selected_model: "" }));
     }
-    if (name === "hf_token") {
+    if (fieldKey === "hf_token") {
       setHfValidationMsg(null);
     }
-    if (name === "llm_provider") {
+    if (fieldKey === "llm_provider") {
       setLlmValidationMsg(null);
       setAvailableModels([]);
       setFormData((prev) => ({ ...prev, selected_model: "" }));
@@ -517,7 +518,12 @@ export default function SetupPage() {
 
         <div className="p-8">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+            <div
+              id="setup-error"
+              role="alert"
+              aria-live="polite"
+              className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3"
+            >
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             </div>
@@ -597,7 +603,14 @@ export default function SetupPage() {
 
           {/* Step 1: Account */}
           {step === 1 && (
-            <form onSubmit={handleAccountSubmit} className="space-y-4">
+            <form
+              id="setup-admin-account-form"
+              name="setup-admin-account-form"
+              method="post"
+              onSubmit={handleAccountSubmit}
+              className="space-y-4"
+              autoComplete="on"
+            >
               <div className="text-center mb-6">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                   Create Admin Account
@@ -608,12 +621,19 @@ export default function SetupPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="setup-bootstrap-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Bootstrap Password
                 </label>
                 <input
+                  id="setup-bootstrap-password"
                   type="password"
-                  name="bootstrap_password"
+                  name="setup-bootstrap-password"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby={error ? "setup-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   required
                   onChange={(e) => {
                     bootstrapPasswordRef.current = e.target.value;
@@ -628,12 +648,20 @@ export default function SetupPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="setup-admin-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Username
                 </label>
                 <input
+                  id="setup-admin-username"
                   type="text"
-                  name="username"
+                  name="setup-admin-username"
+                  data-field-key="username"
+                  autoComplete="section-setup-admin username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby={error ? "setup-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   required
                   value={formData.username}
                   onChange={handleInputChange}
@@ -643,13 +671,19 @@ export default function SetupPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="setup-admin-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Password
                 </label>
                 <input
+                  id="setup-admin-new-password"
                   type="password"
-                  name="password"
+                  name="setup-admin-new-password"
+                  data-field-key="password"
+                  autoComplete="section-setup-admin new-password"
+                  aria-describedby={error ? "setup-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   required
+                  minLength={8}
                   value={formData.password}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
@@ -658,13 +692,19 @@ export default function SetupPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="setup-admin-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Confirm Password
                 </label>
                 <input
+                  id="setup-admin-confirm-password"
                   type="password"
-                  name="confirmPassword"
+                  name="setup-admin-confirm-password"
+                  data-field-key="confirmPassword"
+                  autoComplete="section-setup-admin new-password"
+                  aria-describedby={error ? "setup-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   required
+                  minLength={8}
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"

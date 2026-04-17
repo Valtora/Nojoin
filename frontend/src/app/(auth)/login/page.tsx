@@ -68,16 +68,32 @@ export default function LoginPage() {
             <h2 className="text-3xl font-bold text-orange-600">Nojoin</h2>
           </div>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form
+          id="login-form"
+          name="login-form"
+          method="post"
+          className="mt-8 space-y-6"
+          onSubmit={handleSubmit}
+          autoComplete="on"
+        >
           <div className="space-y-4">
             <div className="relative">
+              <label htmlFor="login-username" className="sr-only">
+                Username
+              </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <User className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
-                id="username"
-                name="username"
+                id="login-username"
+                name="login-username"
                 type="text"
+                autoComplete="section-login username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={Boolean(error)}
                 required
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Username"
@@ -86,13 +102,19 @@ export default function LoginPage() {
               />
             </div>
             <div className="relative">
+              <label htmlFor="login-current-password" className="sr-only">
+                Password
+              </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
-                id="password"
-                name="password"
+                id="login-current-password"
+                name="login-current-password"
                 type="password"
+                autoComplete="section-login current-password"
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={Boolean(error)}
                 required
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Password"
@@ -103,7 +125,12 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40">
+            <div
+              id="login-error"
+              role="alert"
+              aria-live="polite"
+              className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40"
+            >
               {error}
             </div>
           )}
