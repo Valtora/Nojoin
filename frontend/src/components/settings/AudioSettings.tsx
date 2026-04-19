@@ -1,11 +1,13 @@
 "use client";
 
 import { CompanionDevices, Settings } from "@/types";
+import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { AUDIO_KEYWORDS } from "./keywords";
 import { sanitizeIntegerString } from "@/lib/validation";
 import { useState } from "react";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { useNotificationStore } from "@/lib/notificationStore";
 import {
   AlertCircle,
   CheckCircle,
@@ -55,6 +57,14 @@ export default function AudioSettings({
     "connect",
     "status",
   ]);
+  const showWarnings = fuzzyMatch(searchQuery, [
+    "warning",
+    "warnings",
+    "dismiss",
+    "quiet",
+    "silence",
+    "reset warnings",
+  ]);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const [testingConnection, setTestingConnection] = useState(false);
@@ -62,6 +72,11 @@ export default function AudioSettings({
     "success" | "error" | null
   >(null);
   const { checkCompanion } = useServiceStatusStore();
+  const suppressQuietAudioWarnings = useAudioWarningStore(
+    (state) => state.suppressQuietAudioWarnings,
+  );
+  const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
+  const { addNotification } = useNotificationStore();
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
@@ -108,7 +123,7 @@ export default function AudioSettings({
     onUpdateCompanionConfig({ min_meeting_length: num });
   };
 
-  if (!showDevices && !showCompanion && searchQuery) {
+  if (!showDevices && !showCompanion && !showWarnings && searchQuery) {
     return <div className="text-gray-500">No matching settings found.</div>;
   }
 
@@ -266,6 +281,40 @@ export default function AudioSettings({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showWarnings && (
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Audio Warnings
+          </h3>
+          <div className="max-w-xl rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              Quiet-audio reminders
+            </p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Recording-time quiet-audio reminders can be dismissed for the rest of the current meeting or turned off permanently for advanced workflows.
+            </p>
+            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300">
+              Current status: {suppressQuietAudioWarnings ? "suppressed" : "enabled"}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  resetWarnings();
+                  addNotification({
+                    type: "success",
+                    message: "Audio warnings have been reset.",
+                  });
+                }}
+                className="inline-flex items-center rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-800 transition-colors hover:bg-orange-100 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-100 dark:hover:bg-orange-500/20"
+              >
+                Reset warnings
+              </button>
+            </div>
           </div>
         </div>
       )}

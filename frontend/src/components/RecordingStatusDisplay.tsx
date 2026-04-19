@@ -108,7 +108,7 @@ export default function RecordingStatusDisplay({
         : "Processing recording";
 
   const subheading = isActiveRecording
-    ? "Live waveform monitoring stays visible while the companion is capturing audio."
+    ? "Live audio waveform and timer are shown while your meeting is being recorded."
     : recording.processing_step ||
       (recording.status === RecordingStatus.QUEUED
         ? "Waiting for a worker to begin processing."
@@ -165,7 +165,11 @@ export default function RecordingStatusDisplay({
 
             <div className="mt-6 space-y-4">
               {isActiveRecording ? (
-                <LiveAudioWaveform enabled paused={isPaused} />
+                <LiveAudioWaveform
+                  recordingId={recording.id}
+                  enabled
+                  paused={isPaused}
+                />
               ) : (
                 <>
                   {progressValue !== null ? (

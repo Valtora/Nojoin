@@ -69,9 +69,11 @@ When a meeting is actively recording, the recording page becomes a live capture 
 
 You can monitor:
 
-- Live system-audio and microphone levels.
+- A unified live audio activity waveform.
 - Recording state and duration.
 - A persistent notes panel for user-authored context.
+
+If live audio stays quiet for a while, Nojoin may show a low-key inline reminder near the waveform instead of a persistent fault-style warning. `Dismiss` hides that reminder for the rest of the current meeting, `Don't show again` suppresses it until you re-enable it, and `Settings > Audio & Recording > Audio Warnings` lets you reset the warning state later.
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 

@@ -8,7 +8,8 @@ export const AI_KEYWORDS = [
 ];
 
 export const AUDIO_KEYWORDS = [
-  'device', 'input', 'output', 'microphone', 'speaker', 'audio', 'capture', 'playback'
+  'device', 'input', 'output', 'microphone', 'speaker', 'audio', 'capture', 'playback',
+  'warning', 'warnings', 'dismiss', 'quiet', 'silence', 'reset warnings'
 ];
 
 export const SYSTEM_KEYWORDS = [

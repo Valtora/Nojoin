@@ -9,12 +9,6 @@ interface DetailedHealthStatus {
   };
 }
 
-interface AudioLevels {
-  input_level: number;
-  output_level: number;
-  is_recording: boolean;
-}
-
 interface CompanionStatusResponse {
   status: string | { [key: string]: unknown };
   duration_seconds?: number;
@@ -39,12 +33,6 @@ interface ServiceStatusState {
   companionLatestVersion: string | null;
   recordingDuration: number;
 
-  // Audio levels
-  audioLevels: {
-    input: number;
-    output: number;
-  };
-
   // Polling state
   isPolling: boolean;
   backendFailCount: number;
@@ -53,7 +41,6 @@ interface ServiceStatusState {
   // Actions
   checkBackend: () => Promise<void>;
   checkCompanion: () => Promise<void>;
-  checkAudioLevels: () => Promise<void>;
   authorizeCompanion: () => Promise<boolean>;
   triggerCompanionUpdate: () => Promise<boolean>;
   startPolling: () => void;
@@ -67,7 +54,6 @@ const COMPANION_URL = "http://127.0.0.1:12345";
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   let backendTimer: NodeJS.Timeout | null = null;
   let companionTimer: NodeJS.Timeout | null = null;
-  let audioTimer: NodeJS.Timeout | null = null;
 
   const scheduleNextBackend = () => {
     if (!get().isPolling) return;
@@ -99,26 +85,6 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     }, delay);
   };
 
-  const scheduleNextAudio = () => {
-    if (!get().isPolling) return;
-
-    const { companion, companionStatus } = get();
-    let delay = 2000;
-
-    if (!companion) {
-      delay = 10000;
-    } else if (companionStatus !== "recording") {
-      delay = 5000;
-    } else {
-      delay = 1000;
-    }
-
-    if (audioTimer) clearTimeout(audioTimer);
-    audioTimer = setTimeout(() => {
-      get().checkAudioLevels();
-    }, delay);
-  };
-
   return {
     backend: true,
     db: true,
@@ -130,7 +96,6 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     companionUpdateAvailable: false,
     companionLatestVersion: null,
     recordingDuration: 0,
-    audioLevels: { input: 0, output: 0 },
     isPolling: false,
     backendFailCount: 0,
     companionFailCount: 0,
@@ -280,32 +245,6 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       scheduleNextCompanion();
     },
 
-    checkAudioLevels: async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-        const res = await fetch(`${COMPANION_URL}/levels`, {
-          signal: controller.signal,
-          method: "GET",
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data: AudioLevels = await res.json();
-          set({
-            audioLevels: {
-              input: data.input_level,
-              output: data.output_level,
-            },
-          });
-        }
-      } catch {
-        // Ignore audio level errors, handled by companion check
-      }
-      scheduleNextAudio();
-    },
-
     authorizeCompanion: async (): Promise<boolean> => {
       try {
         // Fetch a companion-specific JWT from the backend using cookie auth.
@@ -399,14 +338,12 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       set({ isPolling: true });
       get().checkBackend();
       get().checkCompanion();
-      get().checkAudioLevels();
     },
 
     stopPolling: () => {
       set({ isPolling: false });
       if (backendTimer) clearTimeout(backendTimer);
       if (companionTimer) clearTimeout(companionTimer);
-      if (audioTimer) clearTimeout(audioTimer);
     },
   };
 });

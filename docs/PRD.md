@@ -45,7 +45,7 @@ The primary user interface for interacting with the system.
   - **Task Capture:** The Task List is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on tasks, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
-  - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
+  - **Waveform Monitoring:** While the Companion is recording, the page shows a unified live audio activity waveform sourced from the local Companion service.
   - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
   - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
@@ -143,7 +143,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 The system provides the following core capabilities:
 
 - **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
-  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows calibrated live level bars for both channels.
+  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows a calibrated live audio activity waveform derived from both capture channels.
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
