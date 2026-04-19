@@ -336,7 +336,12 @@ export default function Sidebar() {
   }, [currentView, clearSelection]);
 
   useEffect(() => {
-    if (!mounted || pathname !== "/recordings" || filteredRecordings.length === 0) {
+    if (
+      !mounted ||
+      currentView !== "recordings" ||
+      pathname !== "/recordings" ||
+      filteredRecordings.length === 0
+    ) {
       return;
     }
 
@@ -348,7 +353,7 @@ export default function Sidebar() {
     );
 
     router.replace(`/recordings/${latestRecording.id}`);
-  }, [filteredRecordings, mounted, pathname, router]);
+  }, [currentView, filteredRecordings, mounted, pathname, router]);
 
   // Handle resizing
   useEffect(() => {
