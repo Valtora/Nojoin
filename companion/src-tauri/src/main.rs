@@ -28,11 +28,13 @@ mod win_notifications;
 mod tls;
 
 use config::Config;
-use state::{AppState, AppStatus};
+use state::{AppState, AppStatus, PAIRING_WINDOW_LIFETIME_SECS};
 use tauri_plugin_autostart::ManagerExt;
 
 // Define SharedAppState at module level so it's visible to commands
 struct SharedAppState(Arc<AppState>);
+
+const PAIRING_WINDOW_LABEL: &str = "pairing";
 
 #[tauri::command]
 fn get_config(state: tauri::State<SharedAppState>) -> Config {
@@ -42,40 +44,85 @@ fn get_config(state: tauri::State<SharedAppState>) -> Config {
 }
 
 #[tauri::command]
-fn resolve_pairing(state: tauri::State<SharedAppState>, window: tauri::Window, allowed: bool) {
-    let mut pending = state.0.pending_pairing.lock().unwrap();
-    if let Some(tx) = pending.take() {
-        let _ = tx.send(allowed);
-    }
-    let _ = window.close();
+fn start_pairing_mode(
+    app: tauri::AppHandle,
+    state: tauri::State<SharedAppState>,
+) -> Result<String, String> {
+    start_pairing_mode_internal(&app, &state.0)
 }
 
-#[tauri::command]
-fn save_config(state: tauri::State<SharedAppState>, server_url: String) -> Result<(), String> {
-    let mut config = state.0.config.lock().unwrap();
+fn close_pairing_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(PAIRING_WINDOW_LABEL) {
+        let _ = window.close();
+    }
+}
 
-    // Parse URL
-    // If it doesn't start with http:// or https://, assume https://
-    let url_str = if !server_url.contains("://") {
-        format!("https://{}", server_url)
-    } else {
-        server_url.clone()
-    };
+fn start_pairing_mode_internal(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+) -> Result<String, String> {
+    {
+        let status = state.status.lock().unwrap().clone();
+        if !matches!(status, AppStatus::Idle | AppStatus::BackendOffline) {
+            return Err("Pairing is unavailable while a recording is active.".to_string());
+        }
+    }
 
-    let url = reqwest::Url::parse(&url_str).map_err(|e| format!("Invalid URL: {}", e))?;
+    state.clear_pairing_session();
+    close_pairing_window(app);
 
-    config.api_protocol = url.scheme().to_string();
-    config.api_host = url.host_str().unwrap_or("localhost").to_string();
-    config.api_port = url.port().unwrap_or_else(|| {
-        if config.api_protocol == "http" {
-            80
-        } else {
-            443
+    let session = state.begin_pairing_session();
+    let window_url = format!(
+        "pairing.html?code={}&expires_in={}",
+        session.display_code,
+        session.remaining_seconds()
+    );
+
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        PAIRING_WINDOW_LABEL,
+        tauri::WebviewUrl::App(window_url.into()),
+    )
+    .title("Pair Nojoin Companion")
+    .inner_size(420.0, 360.0)
+    .always_on_top(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| {
+        state.clear_pairing_session();
+        format!("Failed to open pairing window: {}", e)
+    })?;
+
+    let state_on_close = state.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { .. } = event {
+            state_on_close.clear_pairing_session();
         }
     });
 
-    config.save().map_err(|e| e.to_string())?;
-    Ok(())
+    let expected_code = session.canonical_code.clone();
+    let state_on_expiry = state.clone();
+    let app_on_expiry = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(PAIRING_WINDOW_LIFETIME_SECS)).await;
+
+        let should_expire = state_on_expiry
+            .current_pairing_session()
+            .map(|active| active.canonical_code == expected_code)
+            .unwrap_or(false);
+
+        if should_expire {
+            state_on_expiry.clear_pairing_session();
+            close_pairing_window(&app_on_expiry);
+            notifications::show_notification(
+                &app_on_expiry,
+                "Pairing Expired",
+                "The pairing code expired. Start pairing again if needed.",
+            );
+        }
+    });
+
+    Ok(session.display_code)
 }
 
 #[tauri::command]
@@ -218,7 +265,7 @@ fn main() {
             notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
-        .invoke_handler(tauri::generate_handler![get_config, save_config, close_update_prompt, resolve_pairing])
+        .invoke_handler(tauri::generate_handler![get_config, start_pairing_mode, close_update_prompt])
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
@@ -266,7 +313,7 @@ fn main() {
                 tray_run_on_startup_item: Mutex::new(None),
                 tray_open_web_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
-                pending_pairing: Mutex::new(None),
+                pairing_session: Mutex::new(None),
             });
 
             app.manage(SharedAppState(state.clone()));
@@ -282,7 +329,8 @@ fn main() {
             let run_on_startup = CheckMenuItem::with_id(app, "run_on_startup", "Run on Startup", true, is_enabled, None::<&str>)?;
 
             let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Connection Settings", true, None::<&str>)?;
+            let pair = MenuItem::with_id(app, "pair", "Pair with Nojoin", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Companion Settings", true, None::<&str>)?;
             // Enables status item without attaching action.
             let status_item = MenuItem::with_id(app, "status", "Status: Waiting for connection...", true, None::<&str>)?;
 
@@ -295,6 +343,7 @@ fn main() {
                 &status_item,
                 &PredefinedMenuItem::separator(app)?,
                 &open_web,
+                &pair,
                 &settings,
                 &run_on_startup,
                 &check_updates,
@@ -313,6 +362,12 @@ fn main() {
                     match event.id.as_ref() {
                         "quit" => {
                             std::process::exit(0);
+                        }
+                        "pair" => {
+                            let state_wrapper = app.state::<SharedAppState>();
+                            if let Err(message) = start_pairing_mode_internal(app, &state_wrapper.0) {
+                                notifications::show_notification(app, "Pairing Unavailable", &message);
+                            }
                         }
                         "settings" => {
                             let window = app.get_webview_window("settings");

@@ -74,19 +74,30 @@ export default function SettingsPage() {
   const refreshCompanionConfig = useCallback(async () => {
     try {
       const res = await fetch(`${COMPANION_URL}/config`);
-      if (res.ok) {
-        const companionData: CompanionConfig = await res.json();
-        setCompanionConfig(companionData);
+      if (!res.ok) {
+        setCompanionConfig(null);
+        setCompanionDevices(null);
+        return false;
       }
 
+      const companionData: CompanionConfig = await res.json();
+      setCompanionConfig(companionData);
+
       const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-      if (devicesRes.ok) {
-        const devicesData: CompanionDevices = await devicesRes.json();
-        setCompanionDevices(devicesData);
+      if (!devicesRes.ok) {
+        setCompanionDevices(null);
+        return false;
       }
+
+      const devicesData: CompanionDevices = await devicesRes.json();
+      setCompanionDevices(devicesData);
+      setSelectedInputDevice(devicesData.selected_input);
+      setSelectedOutputDevice(devicesData.selected_output);
       return true;
     } catch (e) {
       console.error("Failed to refresh companion config", e);
+      setCompanionConfig(null);
+      setCompanionDevices(null);
       return false;
     }
   }, []);
@@ -169,7 +180,6 @@ export default function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       let currentSettings = {};
-      let currentCompanionConfig: CompanionConfig | null = null;
       let currentInputDevice: string | null = null;
       let currentOutputDevice: string | null = null;
 
@@ -205,29 +215,6 @@ export default function SettingsPage() {
         currentSettings = safeSettings;
         setForcePasswordChange(false);
 
-        // Try to load companion config (always at localhost:12345)
-        try {
-          const res = await fetch(`${COMPANION_URL}/config`);
-          if (res.ok) {
-            const companionData: CompanionConfig = await res.json();
-            setCompanionConfig(companionData);
-            currentCompanionConfig = companionData;
-          }
-
-          // Fetch available devices
-          const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-          if (devicesRes.ok) {
-            const devicesData: CompanionDevices = await devicesRes.json();
-            setCompanionDevices(devicesData);
-            setSelectedInputDevice(devicesData.selected_input);
-            setSelectedOutputDevice(devicesData.selected_output);
-            currentInputDevice = devicesData.selected_input;
-            currentOutputDevice = devicesData.selected_output;
-          }
-        } catch (e) {
-          console.error("Failed to load companion config/devices", e);
-          setCompanionDevices(null);
-        }
       } catch (e) {
         console.error("Failed to load settings", e);
       }
@@ -235,8 +222,8 @@ export default function SettingsPage() {
       // Update last saved state to prevent auto-save on load
       lastSavedState.current = JSON.stringify({
         settings: currentSettings,
-        companionApiPort: currentCompanionConfig?.api_port,
-        companionMinLength: currentCompanionConfig?.min_meeting_length,
+        companionApiPort: undefined,
+        companionMinLength: undefined,
         selectedInputDevice: currentInputDevice,
         selectedOutputDevice: currentOutputDevice,
       });

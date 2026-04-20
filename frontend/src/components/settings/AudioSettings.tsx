@@ -71,7 +71,7 @@ export default function AudioSettings({
   const [connectionResult, setConnectionResult] = useState<
     "success" | "error" | null
   >(null);
-  const { checkCompanion } = useServiceStatusStore();
+  const { checkCompanion, enableCompanionMonitoring } = useServiceStatusStore();
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -82,13 +82,13 @@ export default function AudioSettings({
     setTestingConnection(true);
     setConnectionResult(null);
     try {
-      await checkCompanion();
-      // Get fresh state after check
-      const status = useServiceStatusStore.getState().companion;
-      if (status) {
-        if (onRefreshCompanionConfig) {
-          await onRefreshCompanionConfig();
-        }
+      const refreshed = onRefreshCompanionConfig
+        ? await onRefreshCompanionConfig()
+        : false;
+
+      if (refreshed) {
+        enableCompanionMonitoring();
+        await checkCompanion();
         setConnectionResult("success");
       } else {
         setConnectionResult("error");
@@ -248,10 +248,10 @@ export default function AudioSettings({
             ) : (
               <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-                  Companion App Disconnected
+                  Companion App Not Connected
                 </p>
                 <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
-                  The companion app must be running to configure audio devices.
+                  Companion audio settings are loaded only when you request them. Start the app, pair it if needed, then retry here.
                 </p>
 
                 <div className="flex items-center gap-3">

@@ -30,6 +30,7 @@ log = "0.4"
 fern = "0.7"
 directories = "5.0"
 open = "5.0"
+rand = "0.8"
 tauri-plugin-autostart = { version = "2" }
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"

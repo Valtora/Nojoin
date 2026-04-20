@@ -25,6 +25,7 @@ interface ServiceStatusState {
   worker: boolean;
   companion: boolean;
   companionAuthenticated: boolean;
+  companionMonitoringEnabled: boolean;
 
   // Companion details
   companionStatus: "idle" | "recording" | "paused" | "error";
@@ -41,7 +42,8 @@ interface ServiceStatusState {
   // Actions
   checkBackend: () => Promise<void>;
   checkCompanion: () => Promise<void>;
-  authorizeCompanion: () => Promise<boolean>;
+  enableCompanionMonitoring: () => void;
+  pairCompanion: (pairingCode: string) => Promise<boolean>;
   triggerCompanionUpdate: () => Promise<boolean>;
   startPolling: () => void;
   stopPolling: () => void;
@@ -71,7 +73,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   };
 
   const scheduleNextCompanion = () => {
-    if (!get().isPolling) return;
+    if (!get().isPolling || !get().companionMonitoringEnabled) return;
 
     const failCount = get().companionFailCount;
     const delay =
@@ -89,8 +91,9 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     backend: true,
     db: true,
     worker: true,
-    companion: true,
+    companion: false,
     companionAuthenticated: false,
+    companionMonitoringEnabled: false,
     companionStatus: "idle",
     companionVersion: null,
     companionUpdateAvailable: false,
@@ -168,6 +171,10 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     },
 
     checkCompanion: async () => {
+      if (!get().companionMonitoringEnabled) {
+        return;
+      }
+
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -245,10 +252,24 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       scheduleNextCompanion();
     },
 
-    authorizeCompanion: async (): Promise<boolean> => {
+    enableCompanionMonitoring: () => {
+      if (get().companionMonitoringEnabled) {
+        return;
+      }
+
+      set({ companionMonitoringEnabled: true });
+      if (get().isPolling) {
+        void get().checkCompanion();
+      }
+    },
+
+    pairCompanion: async (pairingCode: string): Promise<boolean> => {
+      const trimmedCode = pairingCode.trim().toUpperCase();
+      if (!trimmedCode) {
+        throw new Error("Pairing code is required.");
+      }
+
       try {
-        // Fetch a companion-specific JWT from the backend using cookie auth.
-        // Uses fetch directly to avoid the axios 401 interceptor redirecting to /login.
         const apiBase = process.env.NEXT_PUBLIC_API_URL
           ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
           : "https://localhost:14443/api/v1";
@@ -260,7 +281,6 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         }
         const { token } = await tokenRes.json();
 
-        // Fetch the TLS fingerprint
         const fpRes = await fetch(`${apiBase}/system/fingerprint`, {
           credentials: "include",
         });
@@ -270,17 +290,13 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
            tls_fingerprint = fpData.fingerprint;
         }
 
-        // Get current protocol, host and port to configure the companion app
-        const api_protocol = window.location.protocol.replace(':', '');
+        const api_protocol = window.location.protocol.replace(":", "");
         const api_host = window.location.hostname;
         let api_port = parseInt(
           window.location.port ||
             (window.location.protocol === "https:" ? "443" : "80"),
         );
 
-        // Special handling for local development:
-        // If accessing via localhost:3000 (Next.js dev server), point Companion to the standard Backend port (14443)
-        // because the Companion requires HTTPS and the Backend is likely running in Docker on 14443.
         if (
           (api_host === "localhost" || api_host === "127.0.0.1") &&
           api_port === 3000
@@ -288,11 +304,12 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           api_port = 14443;
         }
 
-        const res = await fetch(`${COMPANION_URL}/auth`, {
+        const res = await fetch(`${COMPANION_URL}/pair/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            token,
+            pairing_code: trimmedCode,
+            bootstrap_token: token,
             api_protocol,
             api_host,
             api_port,
@@ -300,21 +317,29 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           }),
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            set({ companionAuthenticated: true });
-            // Trigger a status check to update state
-            get().checkCompanion();
-            return true;
-          } else {
-             throw new Error(data.message || "Pairing was denied or failed");
-          }
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(
+            data?.message || `Companion app returned ${res.status}`,
+          );
         }
-        throw new Error(`Companion app returned ${res.status}`);
+
+        if (!data?.success) {
+          throw new Error(data?.message || "Pairing failed.");
+        }
+
+        set({
+          companion: true,
+          companionAuthenticated: true,
+          companionMonitoringEnabled: true,
+          companionFailCount: 0,
+        });
+        await get().checkCompanion();
+        return true;
       } catch (e: any) {
-        console.error("Failed to authorize companion:", e);
-        throw e; // Rethrow so the UI can catch and display it
+        console.error("Failed to pair companion:", e);
+        throw e;
       }
     },
 
@@ -337,7 +362,9 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       if (get().isPolling) return;
       set({ isPolling: true });
       get().checkBackend();
-      get().checkCompanion();
+      if (get().companionMonitoringEnabled) {
+        void get().checkCompanion();
+      }
     },
 
     stopPolling: () => {

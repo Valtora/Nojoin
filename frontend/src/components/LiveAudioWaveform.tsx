@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
+import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
 const COMPANION_URL = "http://127.0.0.1:12345";
 const HISTORY_LENGTH = 48;
@@ -117,6 +118,9 @@ export default function LiveAudioWaveform({
   enabled,
   paused = false,
 }: LiveAudioWaveformProps) {
+  const companionMonitoringEnabled = useServiceStatusStore(
+    (state) => state.companionMonitoringEnabled,
+  );
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
   const inputCalibrationHistoryRef = useRef<number[]>([]);
@@ -142,7 +146,7 @@ export default function LiveAudioWaveform({
       setShowQuietHint(false);
     };
 
-    if (!enabled) {
+    if (!enabled || !companionMonitoringEnabled) {
       setAudioHistory(zeroHistory());
       inputCalibrationHistoryRef.current = [];
       outputCalibrationHistoryRef.current = [];
@@ -243,7 +247,7 @@ export default function LiveAudioWaveform({
         window.clearTimeout(timeoutId);
       }
     };
-  }, [enabled, paused, recordingId]);
+  }, [enabled, companionMonitoringEnabled, paused, recordingId]);
 
   const showActivityHint = Boolean(
     showQuietHint && !suppressQuietAudioWarnings && !dismissedForMeeting,

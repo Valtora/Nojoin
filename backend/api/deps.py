@@ -242,6 +242,32 @@ async def get_current_recording_client_user(
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
     return user
 
+
+async def get_current_companion_bootstrap_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(reusable_oauth2),
+) -> User:
+    actual_token = token or request.cookies.get("access_token")
+
+    if not actual_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await get_authenticated_user_from_token(
+        db,
+        actual_token,
+        allowed_token_types={COMPANION_TOKEN_TYPE},
+        required_scopes_by_type={
+            COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
+        },
+    )
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
+    return user
+
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:

@@ -1,5 +1,5 @@
 use crate::notifications;
-use crate::state::{AppState, AppStatus, AudioCommand};
+use crate::state::{AppState, AppStatus, AudioCommand, PairingValidationError};
 use crate::uploader;
 use axum::debug_handler;
 use axum::{
@@ -37,24 +37,17 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::AllowOrigin::predicate(
             move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
-                if request_parts.uri.path() == "/auth" {
-                    return true;
-                }
-
                 if let Ok(origin_str) = origin.to_str() {
-                    if origin_str == "http://localhost:14141"
-                        || origin_str == "https://localhost:14141"
-                        || origin_str == "http://localhost:3000"
-                    {
-                        return true;
-                    }
-
                     let config = cors_state.config.lock().unwrap();
-                    let expected_origin = config.get_web_url();
-
-                    if !expected_origin.is_empty() && origin_str.eq_ignore_ascii_case(&expected_origin) {
-                        return true;
+                    if !is_allowed_loopback_host(request_parts.headers.get("host"), &config) {
+                        return false;
                     }
+
+                    if request_parts.uri.path() == "/pair/complete" {
+                        return cors_state.is_pairing_active() && !origin_str.is_empty();
+                    }
+
+                    return is_allowed_origin_value(origin_str, &config);
                 }
                 false
             },
@@ -64,7 +57,8 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 
     let app = Router::new()
         .route("/status", get(get_status))
-        .route("/auth", post(authorize))
+        .route("/auth", post(deprecated_authorize))
+        .route("/pair/complete", post(complete_pairing))
         .route("/config", get(get_config).post(update_config))
         .route("/devices", get(get_devices))
         .route("/levels", get(get_audio_levels))
@@ -96,15 +90,7 @@ struct StatusResponse {
     latest_version: Option<String>,
 }
 
-fn is_allowed_origin(origin_header: Option<&axum::http::HeaderValue>, config: &crate::config::Config) -> bool {
-    let origin = match origin_header {
-        Some(o) => match o.to_str() {
-            Ok(s) => s,
-            Err(_) => return false,
-        },
-        None => return false, // Require origin header for these checks
-    };
-
+fn is_allowed_origin_value(origin: &str, config: &crate::config::Config) -> bool {
     if origin == "http://localhost:14141"
         || origin == "https://localhost:14141"
         || origin == "http://localhost:3000"
@@ -120,19 +106,74 @@ fn is_allowed_origin(origin_header: Option<&axum::http::HeaderValue>, config: &c
     false
 }
 
+fn is_allowed_origin(
+    origin_header: Option<&axum::http::HeaderValue>,
+    config: &crate::config::Config,
+) -> bool {
+    let origin = match origin_header {
+        Some(origin) => match origin.to_str() {
+            Ok(value) => value,
+            Err(_) => return false,
+        },
+        None => return false,
+    };
+
+    is_allowed_origin_value(origin, config)
+}
+
+fn is_allowed_loopback_host(
+    host_header: Option<&axum::http::HeaderValue>,
+    config: &crate::config::Config,
+) -> bool {
+    let host = match host_header {
+        Some(host) => match host.to_str() {
+            Ok(value) => value,
+            Err(_) => return false,
+        },
+        None => return false,
+    };
+
+    let localhost = format!("localhost:{}", config.local_port);
+    let ipv4_loopback = format!("127.0.0.1:{}", config.local_port);
+    let ipv6_loopback = format!("[::1]:{}", config.local_port);
+
+    host.eq_ignore_ascii_case(&localhost)
+        || host.eq_ignore_ascii_case(&ipv4_loopback)
+        || host.eq_ignore_ascii_case(&ipv6_loopback)
+}
+
+fn ensure_loopback_request(
+    headers: &axum::http::HeaderMap,
+    config: &crate::config::Config,
+) -> Result<(), StatusCode> {
+    if is_allowed_loopback_host(headers.get("host"), config) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+fn ensure_authenticated_origin(
+    headers: &axum::http::HeaderMap,
+    config: &crate::config::Config,
+) -> Result<(), StatusCode> {
+    if is_allowed_origin(headers.get("origin"), config) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
 async fn get_status(
     headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
 ) -> Result<Json<StatusResponse>, StatusCode> {
     let state = &context.state;
-    
-    let is_allowed = {
-        let config = state.config.lock().unwrap();
-        is_allowed_origin(headers.get("origin"), &config)
-    };
 
-    if !is_allowed {
-        return Err(StatusCode::FORBIDDEN);
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -177,69 +218,10 @@ async fn get_status(
     }))
 }
 
-async fn prompt_pairing(context: &ServerContext, origin: String) -> bool {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    {
-        let mut pending = context.state.pending_pairing.lock().unwrap();
-        if pending.is_some() {
-            return false;
-        }
-        *pending = Some(tx);
-    }
-
-    let window_label = "pairing";
-    let app = &context.app_handle;
-
-    // Close any previous dangling window
-    if let Some(window) = app.get_webview_window(window_label) {
-        let _ = window.close();
-    }
-
-    let safe_origin = origin.replace("://", "%3A%2F%2F").replace(":", "%3A");
-    let window_url = format!("pairing.html?origin={}", safe_origin);
-
-    let builder = tauri::WebviewWindowBuilder::new(
-        app,
-        window_label,
-        tauri::WebviewUrl::App(window_url.into()),
-    )
-    .title("Pairing Request")
-    .inner_size(400.0, 300.0)
-    .always_on_top(true)
-    .resizable(false);
-
-    let window = match builder.build() {
-        Ok(w) => w,
-        Err(e) => {
-            error!("Failed to build pairing window: {}", e);
-            let mut pending = context.state.pending_pairing.lock().unwrap();
-            *pending = None;
-            return false;
-        }
-    };
-
-    let context_clone = context.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { .. } = event {
-            let mut pending = context_clone.state.pending_pairing.lock().unwrap();
-            if let Some(tx) = pending.take() {
-                let _ = tx.send(false);
-            }
-        }
-    });
-
-    if let Ok(allowed) = rx.await {
-        allowed
-    } else {
-        false
-    }
-}
-
-// Authorization endpoint for web-based device pairing
 #[derive(serde::Deserialize)]
-struct AuthRequest {
-    token: String,
+struct PairingCompleteRequest {
+    pairing_code: String,
+    bootstrap_token: String,
     api_host: Option<String>,
     api_port: Option<u16>,
     api_protocol: Option<String>,
@@ -247,61 +229,179 @@ struct AuthRequest {
 }
 
 #[derive(serde::Serialize)]
-struct AuthResponse {
+struct PairingCompleteResponse {
     success: bool,
     message: String,
 }
 
+async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<(), String> {
+    let protocol = payload
+        .api_protocol
+        .as_deref()
+        .ok_or_else(|| "Missing API protocol".to_string())?;
+    let host = payload
+        .api_host
+        .as_deref()
+        .ok_or_else(|| "Missing API host".to_string())?;
+    let port = payload
+        .api_port
+        .ok_or_else(|| "Missing API port".to_string())?;
+
+    let validation_url = format!(
+        "{}://{}:{}/api/v1/login/companion-token/validate",
+        protocol, host, port
+    );
+    let client = crate::tls::create_client(payload.tls_fingerprint.clone())
+        .map_err(|err| err.to_string())?;
+
+    let response = client
+        .get(validation_url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", payload.bootstrap_token),
+        )
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Bootstrap token validation failed with status {}",
+            response.status()
+        ))
+    }
+}
+
 #[debug_handler]
-async fn authorize(
+async fn complete_pairing(
     State(context): State<ServerContext>,
     headers: axum::http::HeaderMap,
-    Json(payload): Json<AuthRequest>,
-) -> Json<AuthResponse> {
+    Json(payload): Json<PairingCompleteRequest>,
+) -> (StatusCode, Json<PairingCompleteResponse>) {
     let state = &context.state;
-    info!("Received authorization request");
+    info!("Received pairing completion request");
 
-    let origin = headers
-        .get("origin")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-    let is_allowed = {
+    {
         let config = state.config.lock().unwrap();
-        let expected = config.get_web_url();
-        origin == "http://localhost:14141"
-            || origin == "https://localhost:14141"
-            || origin == "http://localhost:3000"
-            || (!expected.is_empty() && origin.eq_ignore_ascii_case(&expected))
-    };
-
-    if !is_allowed {
-        let display_origin = if origin.is_empty() { "Unknown App".to_string() } else { origin.clone() };
-        info!(
-            "Unknown origin {} attempting to pair. Prompting user.",
-            display_origin
-        );
-        let allowed_by_user = prompt_pairing(&context, display_origin.clone()).await;
-        if !allowed_by_user {
-            error!("Pairing request from {} was denied by the user.", display_origin);
-            return Json(AuthResponse {
-                success: false,
-                message: "Pairing was denied by the user".to_string(),
-            });
+        if let Err(status) = ensure_loopback_request(&headers, &config) {
+            return (
+                status,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Pairing requests must target the local loopback server.".to_string(),
+                }),
+            );
         }
     }
 
-    if payload.token.is_empty() {
-        return Json(AuthResponse {
-            success: false,
-            message: "Token cannot be empty".to_string(),
-        });
+    let origin = match headers.get("origin").and_then(|value| value.to_str().ok()) {
+        Some(origin) if !origin.is_empty() => origin.to_string(),
+        _ => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Pairing requests must include a valid Origin header.".to_string(),
+                }),
+            );
+        }
+    };
+
+    if payload.bootstrap_token.trim().is_empty()
+        || payload.api_host.as_deref().unwrap_or("").trim().is_empty()
+        || payload.api_protocol.as_deref().unwrap_or("").trim().is_empty()
+        || payload.api_port.is_none()
+        || payload.pairing_code.trim().is_empty()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(PairingCompleteResponse {
+                success: false,
+                message: "Pairing code, bootstrap token, protocol, host, and port are required.".to_string(),
+            }),
+        );
     }
 
-    // Save the token and connection details to config
+    {
+        let status = state.status.lock().unwrap().clone();
+        if !matches!(status, AppStatus::Idle | AppStatus::BackendOffline) {
+            return (
+                StatusCode::CONFLICT,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Companion pairing is blocked while a recording is active.".to_string(),
+                }),
+            );
+        }
+    }
+
+    match state.validate_pairing_code(&payload.pairing_code) {
+        Ok(()) => {
+            state.clear_pairing_session();
+            if let Some(window) = context.app_handle.get_webview_window("pairing") {
+                let _ = window.close();
+            }
+        }
+        Err(PairingValidationError::NotActive) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Pairing mode is not active. Start pairing from the Companion app first.".to_string(),
+                }),
+            );
+        }
+        Err(PairingValidationError::Expired) => {
+            if let Some(window) = context.app_handle.get_webview_window("pairing") {
+                let _ = window.close();
+            }
+            return (
+                StatusCode::GONE,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "The pairing code has expired. Start pairing again in the Companion app.".to_string(),
+                }),
+            );
+        }
+        Err(PairingValidationError::Invalid) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "The pairing code is invalid.".to_string(),
+                }),
+            );
+        }
+        Err(PairingValidationError::LockedOut) => {
+            if let Some(window) = context.app_handle.get_webview_window("pairing") {
+                let _ = window.close();
+            }
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Too many invalid pairing attempts. Start pairing again in the Companion app.".to_string(),
+                }),
+            );
+        }
+    }
+
+    if let Err(err) = validate_bootstrap_token(&payload).await {
+        error!("Bootstrap token validation failed: {}", err);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(PairingCompleteResponse {
+                success: false,
+                message: "The backend bootstrap token is invalid or expired. Start pairing again from Nojoin.".to_string(),
+            }),
+        );
+    }
+
     {
         let mut config = state.config.lock().unwrap();
-        config.api_token = payload.token;
+        config.api_token = payload.bootstrap_token;
 
         if let Some(host) = payload.api_host {
             config.api_host = host;
@@ -318,30 +418,50 @@ async fn authorize(
         if let Some(fingerprint) = payload.tls_fingerprint {
             config.tls_fingerprint = Some(fingerprint);
         } else if config.tls_fingerprint.is_some() {
-            // Unset it if not provided to allow fallback or avoid breaking on host change
             config.tls_fingerprint = None;
         }
 
         if let Err(e) = config.save() {
             error!("Failed to save config: {}", e);
-            return Json(AuthResponse {
-                success: false,
-                message: format!("Failed to save config: {}", e),
-            });
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: format!("Failed to save pairing config: {}", e),
+                }),
+            );
         }
     }
 
-    info!("Companion app authorized and configured successfully");
+    *state.web_url.lock().unwrap() = Some(origin.clone());
+    *state.current_recording_id.lock().unwrap() = None;
+    *state.current_recording_token.lock().unwrap() = None;
+    *state.current_sequence.lock().unwrap() = 1;
+
+    info!("Companion pairing completed successfully for origin {}", origin);
     notifications::show_notification(
         &context.app_handle,
         "Connected to Nojoin",
-        "Companion app is now connected and configured.",
+        "Companion app is now paired with this Nojoin deployment.",
     );
 
-    Json(AuthResponse {
-        success: true,
-        message: "Authorization and configuration successful".to_string(),
-    })
+    (
+        StatusCode::OK,
+        Json(PairingCompleteResponse {
+            success: true,
+            message: "Pairing completed successfully.".to_string(),
+        }),
+    )
+}
+
+async fn deprecated_authorize() -> (StatusCode, Json<PairingCompleteResponse>) {
+    (
+        StatusCode::GONE,
+        Json(PairingCompleteResponse {
+            success: false,
+            message: "Manual pairing now requires /pair/complete with a Companion-generated code.".to_string(),
+        }),
+    )
 }
 
 #[derive(serde::Serialize)]
@@ -356,14 +476,11 @@ async fn get_audio_levels(
     State(context): State<ServerContext>,
 ) -> Result<Json<AudioLevelsResponse>, StatusCode> {
     let state = &context.state;
-    
-    let is_allowed = {
-        let config = state.config.lock().unwrap();
-        is_allowed_origin(headers.get("origin"), &config)
-    };
 
-    if !is_allowed {
-        return Err(StatusCode::FORBIDDEN);
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -382,13 +499,10 @@ async fn get_live_audio_levels(
 ) -> Result<Json<AudioLevelsResponse>, StatusCode> {
     let state = &context.state;
 
-    let is_allowed = {
+    {
         let config = state.config.lock().unwrap();
-        is_allowed_origin(headers.get("origin"), &config)
-    };
-
-    if !is_allowed {
-        return Err(StatusCode::FORBIDDEN);
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -415,11 +529,34 @@ struct StartResponse {
 
 #[debug_handler]
 async fn start_recording(
+    headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
     Json(payload): Json<StartRequest>,
 ) -> (StatusCode, Json<StartResponse>) {
     let state = &context.state;
     info!("Received start_recording request for '{}'", payload.name);
+
+    {
+        let config = state.config.lock().unwrap();
+        if let Err(status) = ensure_loopback_request(&headers, &config) {
+            return (
+                status,
+                Json(StartResponse {
+                    id: 0,
+                    message: "Requests must target the Companion loopback address.".to_string(),
+                }),
+            );
+        }
+        if let Err(status) = ensure_authenticated_origin(&headers, &config) {
+            return (
+                status,
+                Json(StartResponse {
+                    id: 0,
+                    message: "This origin is not allowed to control the Companion app.".to_string(),
+                }),
+            );
+        }
+    }
 
     // Check status (and drop lock immediately)
     {
@@ -540,11 +677,19 @@ struct StopRequest {
 }
 
 async fn stop_recording(
+    headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
     Json(payload): Json<Option<StopRequest>>,
 ) -> Result<Json<String>, StatusCode> {
     let state = &context.state;
     info!("Received stop_recording request");
+
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
+    }
+
     // Update token if provided
     if let Some(req) = payload {
         if let Some(token) = req.token {
@@ -586,9 +731,19 @@ async fn stop_recording(
     Ok(Json("Stopped".to_string()))
 }
 
-async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<String>, StatusCode> {
+async fn pause_recording(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<String>, StatusCode> {
     let state = &context.state;
     info!("Received pause_recording request");
+
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
+    }
+
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
@@ -626,10 +781,18 @@ async fn pause_recording(State(context): State<ServerContext>) -> Result<Json<St
 }
 
 async fn resume_recording(
+    headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
 ) -> Result<Json<String>, StatusCode> {
     let state = &context.state;
     info!("Received resume_recording request");
+
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
+    }
+
     let recording_id = *state.current_recording_id.lock().unwrap();
     {
         let mut status = state.status.lock().unwrap();
@@ -673,14 +836,23 @@ struct ConfigResponse {
     min_meeting_length: Option<u32>,
 }
 
-async fn get_config(State(context): State<ServerContext>) -> Json<ConfigResponse> {
+async fn get_config(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<ConfigResponse>, StatusCode> {
     let state = &context.state;
-    let config = state.config.lock().unwrap();
-    Json(ConfigResponse {
-        api_port: config.api_port,
-        local_port: config.local_port,
-        min_meeting_length: config.min_meeting_length,
-    })
+
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
+
+        return Ok(Json(ConfigResponse {
+            api_port: config.api_port,
+            local_port: config.local_port,
+            min_meeting_length: config.min_meeting_length,
+        }));
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -697,8 +869,18 @@ struct DevicesResponse {
     selected_output: Option<String>,
 }
 
-async fn get_devices(State(context): State<ServerContext>) -> Json<DevicesResponse> {
+async fn get_devices(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> Result<Json<DevicesResponse>, StatusCode> {
     let state = &context.state;
+
+    {
+        let config = state.config.lock().unwrap();
+        ensure_loopback_request(&headers, &config)?;
+        ensure_authenticated_origin(&headers, &config)?;
+    }
+
     let host = cpal::default_host();
 
     let default_input_name = host.default_input_device().and_then(|d| d.name().ok());
@@ -734,12 +916,12 @@ async fn get_devices(State(context): State<ServerContext>) -> Json<DevicesRespon
 
     let config = state.config.lock().unwrap();
 
-    Json(DevicesResponse {
+    Ok(Json(DevicesResponse {
         input_devices,
         output_devices,
         selected_input: config.input_device_name.clone(),
         selected_output: config.output_device_name.clone(),
-    })
+    }))
 }
 
 #[derive(serde::Deserialize)]
@@ -752,11 +934,15 @@ struct ConfigUpdate {
 }
 
 async fn update_config(
+    headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
     Json(payload): Json<ConfigUpdate>,
 ) -> Result<Json<ConfigResponse>, StatusCode> {
     let state = &context.state;
     let mut config = state.config.lock().unwrap();
+
+    ensure_loopback_request(&headers, &config)?;
+    ensure_authenticated_origin(&headers, &config)?;
 
     if let Some(port) = payload.api_port {
         config.api_port = port;
@@ -786,8 +972,21 @@ async fn update_config(
     }))
 }
 
-async fn trigger_update(State(context): State<ServerContext>) -> StatusCode {
+async fn trigger_update(
+    headers: axum::http::HeaderMap,
+    State(context): State<ServerContext>,
+) -> StatusCode {
     let state = &context.state;
+
+    {
+        let config = state.config.lock().unwrap();
+        if ensure_loopback_request(&headers, &config).is_err()
+            || ensure_authenticated_origin(&headers, &config).is_err()
+        {
+            return StatusCode::FORBIDDEN;
+        }
+    }
+
     let url = state.latest_update_url.lock().unwrap().clone();
 
     if let Some(target_url) = url {

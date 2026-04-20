@@ -16,11 +16,12 @@ export default function MeetingControls({
   variant = "sidebar",
 }: MeetingControlsProps) {
   const {
-    companion,
+    backend,
     companionAuthenticated,
     companionStatus,
     recordingDuration,
     checkCompanion,
+    enableCompanionMonitoring,
   } = useServiceStatusStore();
   
   // Local state for smooth timer, synced with store
@@ -73,13 +74,17 @@ export default function MeetingControls({
       });
       
       if (!res.ok) {
-        if (res.status === 500) {
-           setError('Failed to reach Backend API from Companion App.');
+        if (res.status === 403) {
+          setError('Companion pairing is required. Start pairing from the Companion app and enter the displayed code.');
+        } else if (res.status === 500) {
+          setError('Failed to reach Backend API from Companion App.');
         } else {
            setError(`Companion App error: ${res.statusText}`);
         }
         return null;
       }
+
+      enableCompanionMonitoring();
       
       // Trigger immediate check to update status
       // Small delay to allow companion to process
@@ -121,16 +126,16 @@ export default function MeetingControls({
   const handleResume = () => sendCommand('resume');
 
   if (variant === "dashboard") {
-    const startDisabled = !companion || !companionAuthenticated;
-    const statusText = !companion
-      ? 'Companion app offline.'
-      : !companionAuthenticated
-        ? 'Connect companion app before starting.'
-        : companionStatus === 'recording'
-          ? 'Meeting is recording.'
-          : companionStatus === 'paused'
-            ? 'Meeting is paused.'
-            : 'Ready to start a meeting.';
+    const startDisabled = !backend;
+    const statusText = !backend
+      ? 'Nojoin backend unavailable.'
+      : companionStatus === 'recording'
+        ? 'Meeting is recording.'
+        : companionStatus === 'paused'
+          ? 'Meeting is paused.'
+          : companionAuthenticated
+            ? 'Ready to start a meeting.'
+            : 'Open the Companion app and pair it before your first recording.';
 
     return (
       <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
@@ -223,6 +228,7 @@ export default function MeetingControls({
         {companionStatus === 'idle' ? (
           <button
             onClick={handleStart}
+            disabled={!backend}
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
           >
             <Mic className="w-4 h-4" />

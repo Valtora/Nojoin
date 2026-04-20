@@ -11,6 +11,7 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
     startPolling,
@@ -87,7 +88,12 @@ export default function ServiceStatusAlerts() {
       }
 
       // Companion
-      if (!companion && !notificationIds.current.companion) {
+      if (!companionMonitoringEnabled) {
+        if (notificationIds.current.companion) {
+          removeActiveNotification(notificationIds.current.companion);
+          notificationIds.current.companion = null;
+        }
+      } else if (!companion && !notificationIds.current.companion) {
         // Displays error only after the startup grace period with > 2 consecutive failures.
         if (!isStartupRef.current && companionFailCount > 2) {
           notificationIds.current.companion = addNotification({
@@ -109,6 +115,7 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
     addNotification,

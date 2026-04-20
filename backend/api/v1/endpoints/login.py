@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from backend.api.deps import get_db, get_current_user
+from backend.api.deps import get_db, get_current_companion_bootstrap_user, get_current_user
 from backend.core import security
 from backend.models.user import User
 from backend.utils.rate_limit import enforce_rate_limit
@@ -148,4 +148,14 @@ async def get_companion_token(
     return {
         "token": token,
         "expires_in": security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES * 60,
+    }
+
+
+@router.get("/login/companion-token/validate")
+async def validate_companion_token(
+    current_user: User = Depends(get_current_companion_bootstrap_user),
+) -> Any:
+    return {
+        "valid": True,
+        "username": current_user.username,
     }
