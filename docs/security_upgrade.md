@@ -134,23 +134,23 @@ Goal: freeze the security and UX rules before code changes start.
 
 Tasks:
 
-- [ ] 0.1 Review and approve the Phase 0 frozen spec in this document.
-- [ ] 0.2 Review and approve the no-anonymous-detection rule.
-- [ ] 0.3 Review and approve the manual Companion-initiated pairing flow.
-- [ ] 0.4 Review and approve the pairing code contract and expiry model.
-- [ ] 0.5 Review and approve the route classification and token contract.
-- [ ] 0.6 Review and approve the machine-local versus backend-specific settings boundary.
-- [ ] 0.7 Review and approve the active-recording guard and emergency override stance.
-- [ ] 0.8 Publish the approved Phase 0 spec as the implementation baseline for later phases.
+- [x] 0.1 Review and approve the Phase 0 frozen spec in this document.
+- [x] 0.2 Review and approve the no-anonymous-detection rule.
+- [x] 0.3 Review and approve the manual Companion-initiated pairing flow.
+- [x] 0.4 Review and approve the pairing code contract and expiry model.
+- [x] 0.5 Review and approve the route classification and token contract.
+- [x] 0.6 Review and approve the machine-local versus backend-specific settings boundary.
+- [x] 0.7 Review and approve the active-recording guard and emergency override stance.
+- [x] 0.8 Publish the approved Phase 0 spec as the implementation baseline for later phases.
 
 Exit criteria:
 
-- [ ] Phase 0 frozen spec is approved.
-- [ ] Anonymous detection is explicitly rejected.
-- [ ] Pairing UX rules are approved.
-- [ ] Pairing code rules are approved.
-- [ ] Ownership and override rules are approved.
-- [ ] Settings-boundary rules are frozen.
+- [x] Phase 0 frozen spec is approved.
+- [x] Anonymous detection is explicitly rejected.
+- [x] Pairing UX rules are approved.
+- [x] Pairing code rules are approved.
+- [x] Ownership and override rules are approved.
+- [x] Settings-boundary rules are frozen.
 
 ### Phase 0 Frozen Specification
 
