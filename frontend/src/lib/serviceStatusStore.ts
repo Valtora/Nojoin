@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  companionLocalFetch,
+  COMPANION_URL,
+} from "@/lib/companionLocalApi";
 
 interface DetailedHealthStatus {
   status: string;
@@ -70,8 +74,6 @@ interface ServiceStatusState {
 
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
 const NORMAL_INTERVAL = 10000;
-const COMPANION_URL = "http://127.0.0.1:12345";
-
 const getCompanionApiBase = () =>
   process.env.NEXT_PUBLIC_API_URL
     ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
@@ -240,10 +242,14 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-        const res = await fetch(`${COMPANION_URL}/status`, {
+        const res = await companionLocalFetch(
+          "/status",
+          {
           signal: controller.signal,
           method: "GET",
-        });
+          },
+          "status:read",
+        );
         clearTimeout(timeoutId);
 
         if (res.ok) {
@@ -392,9 +398,13 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
 
     triggerCompanionUpdate: async (): Promise<boolean> => {
       try {
-        const res = await fetch(`${COMPANION_URL}/update`, {
-          method: "POST",
-        });
+        const res = await companionLocalFetch(
+          "/update",
+          {
+            method: "POST",
+          },
+          "update:trigger",
+        );
         if (res.ok) {
           return true;
         }

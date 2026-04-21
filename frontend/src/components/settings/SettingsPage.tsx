@@ -22,6 +22,7 @@ import {
   Shield,
   PlayCircle,
 } from "lucide-react";
+import { companionLocalFetch } from "@/lib/companionLocalApi";
 import { getMatchScore } from "@/lib/searchUtils";
 import { TAB_KEYWORDS } from "./keywords";
 import VersionTag from "./VersionTag";
@@ -41,8 +42,6 @@ interface CompanionConfig {
   local_port: number;
   min_meeting_length?: number;
 }
-
-const COMPANION_URL = "http://127.0.0.1:12345";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -73,7 +72,11 @@ export default function SettingsPage() {
 
   const refreshCompanionConfig = useCallback(async () => {
     try {
-      const res = await fetch(`${COMPANION_URL}/config`);
+      const res = await companionLocalFetch(
+        "/config",
+        { method: "GET" },
+        "settings:read",
+      );
       if (!res.ok) {
         setCompanionConfig(null);
         setCompanionDevices(null);
@@ -83,7 +86,11 @@ export default function SettingsPage() {
       const companionData: CompanionConfig = await res.json();
       setCompanionConfig(companionData);
 
-      const devicesRes = await fetch(`${COMPANION_URL}/devices`);
+      const devicesRes = await companionLocalFetch(
+        "/devices",
+        { method: "GET" },
+        "devices:read",
+      );
       if (!devicesRes.ok) {
         setCompanionDevices(null);
         return false;
@@ -292,26 +299,34 @@ export default function SettingsPage() {
 
       // Save companion config (api_port) if available
       if (companionConfig) {
-        await fetch(`${COMPANION_URL}/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_port: companionConfig.api_port,
-            min_meeting_length: companionConfig.min_meeting_length,
-          }),
-        });
+        await companionLocalFetch(
+          "/config",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              api_port: companionConfig.api_port,
+              min_meeting_length: companionConfig.min_meeting_length,
+            }),
+          },
+          "settings:write",
+        );
       }
 
       // Save device selections if companion is connected
       if (companionDevices) {
-        await fetch(`${COMPANION_URL}/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input_device_name: selectedInputDevice,
-            output_device_name: selectedOutputDevice,
-          }),
-        });
+        await companionLocalFetch(
+          "/config",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input_device_name: selectedInputDevice,
+              output_device_name: selectedOutputDevice,
+            }),
+          },
+          "settings:write",
+        );
       }
 
       // Update last saved state

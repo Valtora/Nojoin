@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
+import { companionLocalFetch } from "@/lib/companionLocalApi";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
-const COMPANION_URL = "http://127.0.0.1:12345";
 const HISTORY_LENGTH = 48;
 const POLL_INTERVAL_MS = 180;
 const CALIBRATION_WINDOW = 72;
@@ -165,10 +165,14 @@ export default function LiveAudioWaveform({
 
     const pollLevels = async () => {
       try {
-        const response = await fetch(`${COMPANION_URL}/levels/live`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
+        const response = await companionLocalFetch(
+          "/levels/live",
+          {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          },
+          "waveform:read",
+        );
 
         if (!response.ok) {
           throw new Error(`Companion returned ${response.status}`);

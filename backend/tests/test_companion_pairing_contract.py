@@ -18,6 +18,7 @@ from backend.api.v1.endpoints import login
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.companion_pairing import CompanionPairing
 from backend.core import security
+from jose import jwt
 import backend.services.companion_pairing_service as pairing_service
 
 SCHEMA_STATEMENTS = [
@@ -406,3 +407,99 @@ async def test_prepare_pair_fails_closed_on_incomplete_cleanup(
     assert response.json()["detail"] == (
         "Companion pairing cleanup is incomplete. Revoke the pairing and pair again."
     )
+
+
+@pytest.mark.anyio
+async def test_issue_local_control_token_for_active_pairing(
+    client: AsyncClient,
+    override_current_user,
+    override_companion_bootstrap_details,
+) -> None:
+    payload = await prepare_pairing(client, override_current_user)
+    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
+    validate = await client.get("/api/v1/login/companion-token/validate")
+    assert validate.status_code == 200
+
+    override_current_user(1, "alice")
+    response = await client.post(
+        "/api/v1/login/companion-local-token",
+        headers={"Origin": "http://localhost:14141"},
+        json={"actions": [security.LOCAL_CONTROL_STATUS_READ_ACTION]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["expires_in"] == security.COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS
+
+    decoded = jwt.decode(
+        body["token"],
+        payload["local_control_secret"],
+        algorithms=[security.ALGORITHM],
+        audience=security.COMPANION_LOCAL_CONTROL_AUDIENCE,
+    )
+    assert decoded["token_type"] == security.COMPANION_LOCAL_CONTROL_TOKEN_TYPE
+    assert decoded["origin"] == "http://localhost:14141"
+    assert decoded["actions"] == [security.LOCAL_CONTROL_STATUS_READ_ACTION]
+    assert decoded[security.COMPANION_PAIRING_ID_CLAIM] == payload["backend_pairing_id"]
+    assert decoded["secret_version"] == payload["local_control_secret_version"]
+
+
+@pytest.mark.anyio
+async def test_issue_local_control_token_rejects_wrong_origin(
+    client: AsyncClient,
+    override_current_user,
+    override_companion_bootstrap_details,
+) -> None:
+    payload = await prepare_pairing(client, override_current_user)
+    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
+    validate = await client.get("/api/v1/login/companion-token/validate")
+    assert validate.status_code == 200
+
+    override_current_user(1, "alice")
+    response = await client.post(
+        "/api/v1/login/companion-local-token",
+        headers={"Origin": "http://localhost:3000"},
+        json={"actions": [security.LOCAL_CONTROL_STATUS_READ_ACTION]},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Local control tokens may only be issued to the paired web origin."
+    )
+
+
+@pytest.mark.anyio
+async def test_issue_local_control_token_fails_closed_without_active_pairing(
+    client: AsyncClient,
+    override_current_user,
+) -> None:
+    override_current_user(1, "alice")
+    response = await client.post(
+        "/api/v1/login/companion-local-token",
+        headers={"Origin": "http://localhost:14141"},
+        json={"actions": [security.LOCAL_CONTROL_STATUS_READ_ACTION]},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Companion pairing is not active. Pair again from Nojoin."
+
+
+@pytest.mark.anyio
+async def test_issue_local_control_token_still_supports_get_requests(
+    client: AsyncClient,
+    override_current_user,
+    override_companion_bootstrap_details,
+) -> None:
+    payload = await prepare_pairing(client, override_current_user)
+    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
+    validate = await client.get("/api/v1/login/companion-token/validate")
+    assert validate.status_code == 200
+
+    override_current_user(1, "alice")
+    response = await client.get(
+        "/api/v1/login/companion-local-token",
+        headers={"Origin": "http://localhost:14141"},
+        params={"actions": security.LOCAL_CONTROL_STATUS_READ_ACTION},
+    )
+
+    assert response.status_code == 200

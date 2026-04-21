@@ -474,41 +474,43 @@ Goal: implement the technical guardrails used by every local route.
 
 Tasks:
 
-- [ ] 3.1 Add strict `Host` validation for every local route.
-- [ ] 3.2 Canonicalize accepted loopback hosts such as `127.0.0.1`, `localhost`, and future explicit IPv6 loopback support if added.
-- [ ] 3.3 Reject any request whose `Host` does not resolve to an approved loopback form.
-- [ ] 3.4 Add authenticated route guards that require a short-lived local control token for all steady-state local routes.
-- [ ] 3.5 Bind origin checks to the currently paired backend origin instead of broad hard-coded development origins.
-- [ ] 3.6 Return consistent `401`, `403`, and `409` responses for unauthenticated, unauthorized, expired-pairing, and busy-state cases.
-- [ ] 3.7 Add tests for malformed `Host`, rebinding-style hostnames, missing tokens, expired tokens, and wrong-origin tokens.
+- [x] 3.1 Add strict `Host` validation for every local route.
+- [x] 3.2 Canonicalize accepted loopback hosts such as `127.0.0.1`, `localhost`, and future explicit IPv6 loopback support if added.
+- [x] 3.3 Reject any request whose `Host` does not resolve to an approved loopback form.
+- [x] 3.4 Add authenticated route guards that require a short-lived local control token for all steady-state local routes.
+- [x] 3.5 Bind origin checks to the currently paired backend origin instead of broad hard-coded development origins.
+- [x] 3.6 Return consistent `401`, `403`, and `409` responses for unauthenticated, unauthorized, expired-pairing, and busy-state cases.
+- [x] 3.7 Add tests for malformed `Host`, rebinding-style hostnames, missing tokens, expired tokens, and wrong-origin tokens.
 
 Exit criteria:
 
-- [ ] There is one reusable local request guard model.
-- [ ] Sensitive routes can no longer be called without local control auth.
+- [x] There is one reusable local request guard model.
+- [x] Sensitive routes can no longer be called without local control auth.
 
 ## Phase 4 - Pairing Flow Redesign
 
 Goal: move to a manual Companion-initiated pairing flow that uses a displayed code and never relies on anonymous detection.
 
+Status review note (2026-04-21): much of the manual pairing flow landed earlier than this original phase ordering. The current codebase has the tray entry point, pairing window, displayed short-lived code, backend preparation flow, frontend code-entry UI, and pairing-route enforcement in place. The remaining open work in this phase is mainly the direct re-pair replacement UX and fuller regression coverage.
+
 Tasks:
 
-- [ ] 4.1 Add a tray action for entering pairing mode.
-- [ ] 4.2 Add a Companion pairing window that displays the current pairing code clearly.
-- [ ] 4.3 Generate pairing codes in the `ABCD-EFGH` display format.
-- [ ] 4.4 Decide and implement the allowed alphabet to avoid ambiguous characters where practical.
-- [ ] 4.5 Make pairing mode time-bounded and single-use.
-- [ ] 4.6 Accept pairing submissions only while pairing mode is open and the submitted code matches the displayed code.
-- [ ] 4.7 Ensure pairing mode closes automatically on success, expiry, manual cancellation, or window close.
-- [ ] 4.8 Rate-limit invalid pairing submissions and reject replay of expired or already-used codes.
-- [ ] 4.9 Block re-pair attempts while a recording is active or uploading unless an explicit override policy is approved.
+- [x] 4.1 Add a tray action for entering pairing mode.
+- [x] 4.2 Add a Companion pairing window that displays the current pairing code clearly.
+- [x] 4.3 Generate pairing codes in the `ABCD-EFGH` display format.
+- [x] 4.4 Decide and implement the allowed alphabet to avoid ambiguous characters where practical.
+- [x] 4.5 Make pairing mode time-bounded and single-use.
+- [x] 4.6 Accept pairing submissions only while pairing mode is open and the submitted code matches the displayed code.
+- [x] 4.7 Ensure pairing mode closes automatically on success, expiry, manual cancellation, or window close.
+- [x] 4.8 Rate-limit invalid pairing submissions and reject replay of expired or already-used codes.
+- [x] 4.9 Block re-pair attempts while a recording is active or uploading unless an explicit override policy is approved.
 - [ ] 4.10 On success, replace the current backend trust state atomically and clear stale secrets from the previously paired backend.
 - [ ] 4.11 Add tests for tray flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording.
 
 Exit criteria:
 
-- [ ] Pairing is manual, time-bounded, code-gated, and Companion-initiated.
-- [ ] A malicious page cannot silently open or complete pairing in the background.
+- [x] Pairing is manual, time-bounded, code-gated, and Companion-initiated.
+- [x] A malicious page cannot silently open or complete pairing in the background.
 
 ## Phase 5 - Local Control Token Issuance and Validation
 
@@ -516,30 +518,32 @@ Goal: require a local control credential on every steady-state local request aft
 
 Tasks:
 
-- [ ] 5.1 Add a backend endpoint that mints short-lived local control tokens for the current paired Companion relationship.
-- [ ] 5.2 Include claims for backend origin, user identity, allowed actions, and expiry.
-- [ ] 5.3 If a stable Companion installation identifier is needed, keep it internal to the pairing contract rather than building profile-management logic around it.
-- [ ] 5.4 Sign local control tokens with the shared local control secret or equivalent per-pairing material rather than the general API JWT secret.
-- [ ] 5.5 Add Companion-side validation for signature, expiry, backend match, and origin match.
-- [ ] 5.6 Add action policy checks so write routes cannot be invoked with read-only tokens.
-- [ ] 5.7 Add secret rotation support for re-pair and manual unpair events.
+- [x] 5.1 Add a backend endpoint that mints short-lived local control tokens for the current paired Companion relationship.
+- [x] 5.2 Include claims for backend origin, user identity, allowed actions, and expiry.
+- [x] 5.3 If a stable Companion installation identifier is needed, keep it internal to the pairing contract rather than building profile-management logic around it.
+- [x] 5.4 Sign local control tokens with the shared local control secret or equivalent per-pairing material rather than the general API JWT secret.
+- [x] 5.5 Add Companion-side validation for signature, expiry, backend match, and origin match.
+- [x] 5.6 Add action policy checks so write routes cannot be invoked with read-only tokens.
+- [x] 5.7 Add secret rotation support for re-pair and manual unpair events.
 - [ ] 5.8 Add tests for forgery, wrong origin, expired token, revoked pairing, and rotated secrets.
 
 Exit criteria:
 
-- [ ] All steady-state local routes can require short-lived local auth.
-- [ ] Token validation is fully local to the Companion after token issuance.
+- [x] All steady-state local routes can require short-lived local auth.
+- [x] Token validation is fully local to the Companion after token issuance.
 
 ## Phase 6 - Recording Lifecycle Hardening
 
 Goal: make start, stop, pause, and resume obey both backend-level and user-level authorization rules.
 
+Status review note (2026-04-21): local-control auth is already enforced on the lifecycle routes and `start` still carries a fresh backend bootstrap token. The remaining open items in this phase are primarily owner enforcement and full backend-switch blocking during active sessions.
+
 Tasks:
 
-- [ ] 6.1 Require a local control token on `start`, `stop`, `pause`, and `resume`.
-- [ ] 6.2 Keep fresh backend bootstrap tokens for `start` and any other recording-lifecycle calls that need backend user identity.
+- [x] 6.1 Require a local control token on `start`, `stop`, `pause`, and `resume`.
+- [x] 6.2 Keep fresh backend bootstrap tokens for `start` and any other recording-lifecycle calls that need backend user identity.
 - [ ] 6.3 Decide whether `pause`, `resume`, and `stop` must also carry a fresh backend-derived identity token or whether stored recording-owner metadata is sufficient.
-- [ ] 6.4 Persist active recording ownership metadata at recording start.
+- [x] 6.4 Persist active recording ownership metadata at recording start.
 - [ ] 6.5 Enforce same-user or approved-override rules for `pause`, `resume`, and `stop`.
 - [ ] 6.6 Reject backend-switch or re-pair attempts while recording or uploading is active.
 - [ ] 6.7 Add a tray-level emergency stop policy for offline or expired-token recovery.
@@ -556,23 +560,23 @@ Goal: remove anonymous Companion probing and adopt the manual code-based pairing
 
 Tasks:
 
-- [ ] 7.1 Remove anonymous localhost detection logic from the frontend.
-- [ ] 7.2 Remove any pre-pair loopback polling used to infer whether the Companion is installed, running, or reachable.
-- [ ] 7.3 Replace auto-detection UX with a manual pairing flow that instructs the user to open the Companion app and start pairing there.
-- [ ] 7.4 Add a frontend code-entry UI for the user to submit the displayed pairing code.
-- [ ] 7.5 Attempt localhost pairing only after explicit user submission of the Companion-displayed code.
-- [ ] 7.6 Start authenticated Companion status polling only after a successful pairing has already been established.
-- [ ] 7.7 Add frontend logic to request short-lived local control tokens before local Companion calls.
-- [ ] 7.8 Require local control tokens on recording controls, settings fetches, device fetches, waveform fetches, and update triggers.
-- [ ] 7.9 Remove direct anonymous localhost command calls from the meeting controls.
-- [ ] 7.10 Remove direct anonymous localhost reads for settings, devices, waveform, update, and other steady-state features.
+- [x] 7.1 Remove anonymous localhost detection logic from the frontend.
+- [x] 7.2 Remove any pre-pair loopback polling used to infer whether the Companion is installed, running, or reachable.
+- [x] 7.3 Replace auto-detection UX with a manual pairing flow that instructs the user to open the Companion app and start pairing there.
+- [x] 7.4 Add a frontend code-entry UI for the user to submit the displayed pairing code.
+- [x] 7.5 Attempt localhost pairing only after explicit user submission of the Companion-displayed code.
+- [x] 7.6 Start authenticated Companion status polling only after a successful pairing has already been established.
+- [x] 7.7 Add frontend logic to request short-lived local control tokens before local Companion calls.
+- [x] 7.8 Require local control tokens on recording controls, settings fetches, device fetches, waveform fetches, and update triggers.
+- [x] 7.9 Remove direct anonymous localhost command calls from the meeting controls.
+- [x] 7.10 Remove direct anonymous localhost reads for settings, devices, waveform, update, and other steady-state features.
 - [ ] 7.11 Add UI states for `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `paired`, and `re-pair blocked while recording`.
 - [ ] 7.12 Add manual QA for pairing to dev, switching to prod by re-pair, and preserving machine-local settings across the switch.
 
 Exit criteria:
 
-- [ ] The frontend no longer depends on anonymous localhost visibility.
-- [ ] Pairing is manual and code-driven from the user's point of view.
+- [x] The frontend no longer depends on anonymous localhost visibility.
+- [x] Pairing is manual and code-driven from the user's point of view.
 
 ## Phase 8 - Companion Tray and Settings UX
 
@@ -581,15 +585,15 @@ Goal: expose the new manual pairing and backend-switch model clearly inside the 
 Tasks:
 
 - [ ] 8.1 Add tray actions for entering and cancelling pairing mode.
-- [ ] 8.2 Add clear pairing-window copy that tells the user to enter the displayed code into Nojoin.
-- [ ] 8.3 Display the currently paired backend origin or a clear `not paired` state in Companion settings.
-- [ ] 8.4 Add an explicit `Forget current pairing` or equivalent action if manual unpair is approved.
-- [ ] 8.5 Add blocked-state copy when pairing is unavailable because recording or upload is active.
+- [x] 8.2 Add clear pairing-window copy that tells the user to enter the displayed code into Nojoin.
+- [x] 8.3 Display the currently paired backend origin or a clear `not paired` state in Companion settings.
+- [x] 8.4 Add an explicit `Forget current pairing` or equivalent action if manual unpair is approved.
+- [x] 8.5 Add blocked-state copy when pairing is unavailable because recording or upload is active.
 - [ ] 8.6 Add notification copy for pairing success, pairing failure, pairing expiry, manual unpair, and backend switch completion.
 
 Exit criteria:
 
-- [ ] The manual pairing flow is understandable from the Companion alone.
+- [x] The manual pairing flow is understandable from the Companion alone.
 - [ ] Users can understand how to switch from one backend to another by re-pairing.
 
 ## Phase 9 - Compatibility, Migration, and Rollout Controls
@@ -641,14 +645,14 @@ Exit criteria:
 
 The project should not be considered complete until all of the following are true:
 
-- [ ] An arbitrary web page cannot start, stop, pause, or resume a recording.
-- [ ] An arbitrary web page cannot silently re-pair the Companion to a different backend.
-- [ ] An unauthenticated frontend cannot determine that a Companion process is running on loopback.
-- [ ] Pairing can only be initiated manually from the Companion app.
-- [ ] Pairing requires a valid short-lived displayed code in the `ABCD-EFGH` format.
-- [ ] The Companion is associated with only one backend at a time.
-- [ ] Switching between development and production requires explicit re-pairing and never happens because of background polling.
-- [ ] Machine-local settings are preserved across backend switches where safe.
+- [x] An arbitrary web page cannot start, stop, pause, or resume a recording.
+- [x] An arbitrary web page cannot silently re-pair the Companion to a different backend.
+- [x] An unauthenticated frontend cannot determine that a Companion process is running on loopback.
+- [x] Pairing can only be initiated manually from the Companion app.
+- [x] Pairing requires a valid short-lived displayed code in the `ABCD-EFGH` format.
+- [x] The Companion is associated with only one backend at a time.
+- [x] Switching between development and production requires explicit re-pairing and never happens because of background polling.
+- [x] Machine-local settings are preserved across backend switches where safe.
 - [ ] While a recording is active or uploading, re-pairing is blocked unless an explicitly approved override path is used.
 
 ## Implementation Notes

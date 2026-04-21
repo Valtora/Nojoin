@@ -5,11 +5,23 @@ import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 import { getCompanionToken } from '@/lib/api';
+import {
+  companionLocalFetch,
+  readCompanionLocalError,
+  type CompanionLocalAction,
+} from '@/lib/companionLocalApi';
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
   variant?: "sidebar" | "dashboard";
 }
+
+const COMPANION_COMMAND_ACTIONS: Record<string, CompanionLocalAction> = {
+  start: 'recording:start',
+  stop: 'recording:stop',
+  pause: 'recording:pause',
+  resume: 'recording:resume',
+};
 
 export default function MeetingControls({
   onMeetingEnd,
@@ -67,19 +79,32 @@ export default function MeetingControls({
   const sendCommand = async (command: string, body?: any) => {
     setError(null);
     try {
-      const res = await fetch(`http://127.0.0.1:12345/${command}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      const action = COMPANION_COMMAND_ACTIONS[command];
+      const res = await companionLocalFetch(
+        `/${command}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: body ? JSON.stringify(body) : undefined,
+        },
+        action,
+      );
       
       if (!res.ok) {
+        const errorMessage = await readCompanionLocalError(
+          res,
+          `Companion App error: ${res.status}`,
+        );
         if (res.status === 403) {
-          setError('Companion pairing is required. Start pairing from the Companion app and enter the displayed code.');
+          setError(errorMessage);
+        } else if (res.status === 401) {
+          setError(errorMessage);
+        } else if (res.status === 409) {
+          setError(errorMessage);
         } else if (res.status === 500) {
-          setError('Failed to reach Backend API from Companion App.');
+          setError(errorMessage || 'Failed to reach Backend API from Companion App.');
         } else {
-           setError(`Companion App error: ${res.statusText}`);
+           setError(errorMessage);
         }
         return null;
       }
@@ -95,6 +120,8 @@ export default function MeetingControls({
     } catch (err: any) {
       if (err instanceof TypeError && err.message === "Failed to fetch") {
         setError('Companion App is offline or unreachable.');
+      } else if (err instanceof Error && err.message) {
+        setError(err.message);
       } else {
         setError('Failed to connect to Companion App.');
       }
@@ -114,8 +141,7 @@ export default function MeetingControls({
   };
 
   const handleStop = async () => {
-    const token = await getCompanionToken();
-    await sendCommand('stop', { token });
+    await sendCommand('stop');
     setElapsedTime(0);
     if (onMeetingEnd) {
         // Small delay to allow backend to receive the final chunk

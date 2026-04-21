@@ -17,12 +17,39 @@ from backend.utils.path_manager import path_manager
 SESSION_TOKEN_TYPE = "session"
 API_TOKEN_TYPE = "api"
 COMPANION_TOKEN_TYPE = "companion"
+COMPANION_LOCAL_CONTROL_TOKEN_TYPE = "companion_local_control"
 
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 COMPANION_BOOTSTRAP_SCOPE = "companion:init"
 COMPANION_RECORDING_SCOPE = "recordings:companion"
 COMPANION_PAIRING_ID_CLAIM = "companion_pairing_id"
+COMPANION_LOCAL_CONTROL_AUDIENCE = "nojoin-companion-local"
+COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS = 120
+LOCAL_CONTROL_STATUS_READ_ACTION = "status:read"
+LOCAL_CONTROL_SETTINGS_READ_ACTION = "settings:read"
+LOCAL_CONTROL_SETTINGS_WRITE_ACTION = "settings:write"
+LOCAL_CONTROL_DEVICES_READ_ACTION = "devices:read"
+LOCAL_CONTROL_WAVEFORM_READ_ACTION = "waveform:read"
+LOCAL_CONTROL_RECORDING_START_ACTION = "recording:start"
+LOCAL_CONTROL_RECORDING_STOP_ACTION = "recording:stop"
+LOCAL_CONTROL_RECORDING_PAUSE_ACTION = "recording:pause"
+LOCAL_CONTROL_RECORDING_RESUME_ACTION = "recording:resume"
+LOCAL_CONTROL_UPDATE_TRIGGER_ACTION = "update:trigger"
+LOCAL_CONTROL_ALLOWED_ACTIONS = frozenset(
+    {
+        LOCAL_CONTROL_STATUS_READ_ACTION,
+        LOCAL_CONTROL_SETTINGS_READ_ACTION,
+        LOCAL_CONTROL_SETTINGS_WRITE_ACTION,
+        LOCAL_CONTROL_DEVICES_READ_ACTION,
+        LOCAL_CONTROL_WAVEFORM_READ_ACTION,
+        LOCAL_CONTROL_RECORDING_START_ACTION,
+        LOCAL_CONTROL_RECORDING_STOP_ACTION,
+        LOCAL_CONTROL_RECORDING_PAUSE_ACTION,
+        LOCAL_CONTROL_RECORDING_RESUME_ACTION,
+        LOCAL_CONTROL_UPDATE_TRIGGER_ACTION,
+    }
+)
 
 def _get_secret_key() -> str:
     """Get or generate a persistent SECRET_KEY.
@@ -90,6 +117,38 @@ def create_access_token(
 
 def generate_local_control_secret() -> str:
     return secrets.token_urlsafe(48)
+
+
+def create_local_control_token(
+    *,
+    secret_key: str,
+    subject: Union[str, Any],
+    user_id: int,
+    username: str,
+    origin: str,
+    actions: list[str],
+    pairing_session_id: str,
+    secret_version: int,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    expire = utc_now() + (
+        expires_delta or timedelta(seconds=COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS)
+    )
+    issued_at = utc_now()
+    payload = {
+        "aud": COMPANION_LOCAL_CONTROL_AUDIENCE,
+        "exp": expire,
+        "iat": issued_at,
+        "sub": str(subject),
+        "token_type": COMPANION_LOCAL_CONTROL_TOKEN_TYPE,
+        "user_id": user_id,
+        "username": username,
+        "origin": origin,
+        "actions": sorted(set(actions)),
+        COMPANION_PAIRING_ID_CLAIM: pairing_session_id,
+        "secret_version": secret_version,
+    }
+    return jwt.encode(payload, secret_key, algorithm=ALGORITHM)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

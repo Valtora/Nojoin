@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,8 @@ from backend.services.companion_pairing_service import (
     cancel_pending_companion_pairings,
     CompanionPairingStateError,
     finalize_companion_pairing,
+    get_active_companion_pairing_auth,
+    normalize_origin,
     prepare_companion_pairing,
     revoke_companion_pairings,
 )
@@ -55,6 +57,83 @@ class CompanionPairingRevokeResponse(BaseModel):
 class CompanionPairingCancelResponse(BaseModel):
     cancelled: bool
     cancelled_count: int
+
+
+class CompanionLocalControlTokenResponse(BaseModel):
+    token: str
+    expires_in: int
+
+
+class CompanionLocalControlTokenRequest(BaseModel):
+    actions: list[str]
+
+
+def _parse_local_control_actions(raw_actions: str | list[str]) -> list[str]:
+    raw_values = raw_actions.split(",") if isinstance(raw_actions, str) else raw_actions
+    actions = sorted(
+        {
+            action.strip()
+            for action in raw_values
+            if isinstance(action, str) and action.strip()
+        }
+    )
+    if not actions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one local control action is required.",
+        )
+
+    invalid_actions = [
+        action for action in actions if action not in security.LOCAL_CONTROL_ALLOWED_ACTIONS
+    ]
+    if invalid_actions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unsupported local control action(s): " + ", ".join(invalid_actions)
+            ),
+        )
+
+    return actions
+
+
+async def _issue_companion_local_control_token(
+    request: Request,
+    *,
+    requested_actions: list[str],
+    db: AsyncSession,
+    current_user: User,
+) -> CompanionLocalControlTokenResponse:
+    try:
+        pairing_auth = await get_active_companion_pairing_auth(
+            db,
+            current_user=current_user,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    request_origin = normalize_origin(request.headers.get("origin"))
+    if request_origin != pairing_auth.paired_web_origin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local control tokens may only be issued to the paired web origin.",
+        )
+
+    token = security.create_local_control_token(
+        secret_key=pairing_auth.local_control_secret,
+        subject=current_user.username,
+        user_id=current_user.id,
+        username=current_user.username,
+        origin=pairing_auth.paired_web_origin,
+        actions=requested_actions,
+        pairing_session_id=pairing_auth.pairing_session_id,
+        secret_version=pairing_auth.local_control_secret_version,
+    )
+
+    return CompanionLocalControlTokenResponse(
+        token=token,
+        expires_in=security.COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS,
+    )
 
 
 def _build_login_metadata(user: User) -> dict[str, Any]:
@@ -190,6 +269,42 @@ async def get_companion_token(
         "token": token,
         "expires_in": security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES * 60,
     }
+
+
+@router.get(
+    "/login/companion-local-token",
+    response_model=CompanionLocalControlTokenResponse,
+)
+async def get_companion_local_control_token(
+    request: Request,
+    actions: str = Query(..., description="Comma-separated local control actions"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanionLocalControlTokenResponse:
+    return await _issue_companion_local_control_token(
+        request,
+        requested_actions=_parse_local_control_actions(actions),
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/login/companion-local-token",
+    response_model=CompanionLocalControlTokenResponse,
+)
+async def create_companion_local_control_token(
+    payload: CompanionLocalControlTokenRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanionLocalControlTokenResponse:
+    return await _issue_companion_local_control_token(
+        request,
+        requested_actions=_parse_local_control_actions(payload.actions),
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.post(

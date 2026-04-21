@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.core import security
-from backend.core.encryption import encrypt_secret
+from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.companion_pairing import (
     CompanionPairing,
     CompanionPairingRevocationReason,
@@ -41,6 +41,14 @@ class PreparedCompanionPairingPayload:
     backend_pairing_id: str
 
 
+@dataclass(frozen=True)
+class ActiveCompanionPairingAuth:
+    pairing_session_id: str
+    paired_web_origin: str
+    local_control_secret: str
+    local_control_secret_version: int
+
+
 def _normalize_origin(origin: str | None) -> str | None:
     if not origin:
         return None
@@ -53,6 +61,10 @@ def _normalize_origin(origin: str | None) -> str | None:
     if parsed.port and parsed.port != default_port:
         return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
     return f"{parsed.scheme}://{parsed.hostname}"
+
+
+def normalize_origin(origin: str | None) -> str | None:
+    return _normalize_origin(origin)
 
 
 def _parse_api_origin(origin: str) -> tuple[str, str, int]:
@@ -313,6 +325,44 @@ async def finalize_companion_pairing(
     db.add(pairing)
     await db.commit()
     return pairing
+
+
+async def get_active_companion_pairing_auth(
+    db: AsyncSession,
+    *,
+    current_user: User,
+) -> ActiveCompanionPairingAuth:
+    rows = await _load_pairings_for_user(db, current_user.id)
+    active_rows, pending_rows, _ = _group_pairings(rows)
+
+    if pending_rows:
+        raise CompanionPairingStateError(
+            "A newer Companion pairing is pending. Pair again from Nojoin."
+        )
+
+    active_row = active_rows[0] if active_rows else None
+    if active_row is None:
+        raise CompanionPairingStateError(
+            "Companion pairing is not active. Pair again from Nojoin."
+        )
+
+    latest_live_version = _latest_live_secret_version(rows)
+    if active_row.local_control_secret_version != latest_live_version:
+        raise CompanionPairingStateError(
+            "Companion pairing state is stale or rotated. Pair again from Nojoin."
+        )
+
+    if not active_row.local_control_secret_encrypted:
+        raise CompanionPairingStateError(
+            "Companion pairing state is incomplete. Revoke the pairing and pair again."
+        )
+
+    return ActiveCompanionPairingAuth(
+        pairing_session_id=active_row.pairing_session_id,
+        paired_web_origin=active_row.paired_web_origin,
+        local_control_secret=decrypt_secret(active_row.local_control_secret_encrypted),
+        local_control_secret_version=active_row.local_control_secret_version,
+    )
 
 
 async def revoke_companion_pairings(

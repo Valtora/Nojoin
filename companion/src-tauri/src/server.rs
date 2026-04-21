@@ -5,12 +5,17 @@ use crate::uploader;
 use axum::debug_handler;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderValue, StatusCode, uri::Authority},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use cpal::traits::{DeviceTrait, HostTrait};
+use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use log::{error, info};
+use reqwest::Url;
+use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Manager;
@@ -40,12 +45,18 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
             move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
                 if let Ok(origin_str) = origin.to_str() {
                     let config = cors_state.config.lock().unwrap();
-                    if !is_allowed_loopback_host(request_parts.headers.get("host"), &config) {
+                    if canonicalize_loopback_host(
+                        request_parts.headers.get("host"),
+                        config.local_port(),
+                    )
+                    .is_none()
+                    {
                         return false;
                     }
 
                     if request_parts.uri.path() == "/pair/complete" {
-                        return cors_state.is_pairing_active() && !origin_str.is_empty();
+                        return cors_state.is_pairing_active()
+                            && canonicalize_origin_value(origin_str).is_some();
                     }
 
                     return is_allowed_origin_value(origin_str, &config);
@@ -91,87 +102,387 @@ struct StatusResponse {
     latest_version: Option<String>,
 }
 
-fn is_allowed_origin_value(origin: &str, config: &Config) -> bool {
-    if origin == "http://localhost:14141"
-        || origin == "https://localhost:14141"
-        || origin == "http://localhost:3000"
-    {
-        return true;
+const LOCAL_CONTROL_TOKEN_TYPE: &str = "companion_local_control";
+const LOCAL_CONTROL_AUDIENCE: &str = "nojoin-companion-local";
+const LOCAL_CONTROL_STATUS_READ_ACTION: &str = "status:read";
+const LOCAL_CONTROL_SETTINGS_READ_ACTION: &str = "settings:read";
+const LOCAL_CONTROL_SETTINGS_WRITE_ACTION: &str = "settings:write";
+const LOCAL_CONTROL_DEVICES_READ_ACTION: &str = "devices:read";
+const LOCAL_CONTROL_WAVEFORM_READ_ACTION: &str = "waveform:read";
+const LOCAL_CONTROL_RECORDING_START_ACTION: &str = "recording:start";
+const LOCAL_CONTROL_RECORDING_STOP_ACTION: &str = "recording:stop";
+const LOCAL_CONTROL_RECORDING_PAUSE_ACTION: &str = "recording:pause";
+const LOCAL_CONTROL_RECORDING_RESUME_ACTION: &str = "recording:resume";
+const LOCAL_CONTROL_UPDATE_TRIGGER_ACTION: &str = "update:trigger";
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct LocalControlClaims {
+    aud: String,
+    sub: String,
+    user_id: i64,
+    username: String,
+    origin: String,
+    actions: Vec<String>,
+    exp: usize,
+    iat: usize,
+    token_type: String,
+    #[serde(rename = "companion_pairing_id")]
+    companion_pairing_id: String,
+    secret_version: u32,
+}
+
+#[derive(Debug, Clone)]
+struct LocalRequestGuard {
+    #[allow(dead_code)]
+    claims: LocalControlClaims,
+    #[allow(dead_code)]
+    origin: String,
+    #[allow(dead_code)]
+    host: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct LocalGuardErrorResponse {
+    error: &'static str,
+    message: String,
+}
+
+#[derive(Debug)]
+struct LocalGuardRejection {
+    status: StatusCode,
+    error: &'static str,
+    message: String,
+}
+
+type LocalApiResult<T> = Result<T, LocalGuardRejection>;
+
+impl LocalGuardRejection {
+    fn unauthenticated(error: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            error,
+            message: message.into(),
+        }
     }
 
-    let expected_origin = config.get_web_url();
-    if !expected_origin.is_empty() && origin.eq_ignore_ascii_case(&expected_origin) {
-        return true;
+    fn forbidden(error: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            error,
+            message: message.into(),
+        }
     }
 
-    false
+    fn conflict(error: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            error,
+            message: message.into(),
+        }
+    }
+
+    fn internal(error: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error,
+            message: message.into(),
+        }
+    }
 }
 
-fn is_allowed_origin(origin_header: Option<&axum::http::HeaderValue>, config: &Config) -> bool {
-    let origin = match origin_header {
-        Some(origin) => match origin.to_str() {
-            Ok(value) => value,
-            Err(_) => return false,
-        },
-        None => return false,
-    };
+impl IntoResponse for LocalGuardRejection {
+    fn into_response(self) -> Response {
+        let mut response = (
+            self.status,
+            Json(LocalGuardErrorResponse {
+                error: self.error,
+                message: self.message,
+            }),
+        )
+            .into_response();
 
-    is_allowed_origin_value(origin, config)
+        if self.status == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static("Bearer"),
+            );
+        }
+
+        response
+    }
 }
 
-fn is_allowed_loopback_host(
-    host_header: Option<&axum::http::HeaderValue>,
-    config: &Config,
-) -> bool {
-    let host = match host_header {
-        Some(host) => match host.to_str() {
-            Ok(value) => value,
-            Err(_) => return false,
-        },
-        None => return false,
-    };
-
-    let localhost = format!("localhost:{}", config.local_port());
-    let ipv4_loopback = format!("127.0.0.1:{}", config.local_port());
-    let ipv6_loopback = format!("[::1]:{}", config.local_port());
-
-    host.eq_ignore_ascii_case(&localhost)
-        || host.eq_ignore_ascii_case(&ipv4_loopback)
-        || host.eq_ignore_ascii_case(&ipv6_loopback)
+fn is_standard_origin_port(protocol: &str, port: u16) -> bool {
+    (protocol.eq_ignore_ascii_case("https") && port == 443)
+        || (protocol.eq_ignore_ascii_case("http") && port == 80)
 }
 
-fn ensure_loopback_request(
-    headers: &axum::http::HeaderMap,
-    config: &Config,
-) -> Result<(), StatusCode> {
-    if is_allowed_loopback_host(headers.get("host"), config) {
-        Ok(())
+fn format_host_for_origin(host: &str) -> String {
+    if host.contains(':') && !host.starts_with('[') && !host.ends_with(']') {
+        format!("[{}]", host)
     } else {
-        Err(StatusCode::FORBIDDEN)
+        host.to_string()
     }
+}
+
+fn canonicalize_origin_value(origin: &str) -> Option<String> {
+    let url = Url::parse(origin.trim()).ok()?;
+    let scheme = url.scheme().trim().to_ascii_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return None;
+    }
+
+    let host = url.host_str()?.to_string();
+    let port = url.port_or_known_default()? as u16;
+    let formatted_host = format_host_for_origin(&host);
+
+    if is_standard_origin_port(&scheme, port) {
+        Some(format!("{}://{}", scheme, formatted_host))
+    } else {
+        Some(format!("{}://{}:{}", scheme, formatted_host, port))
+    }
+}
+
+fn canonicalize_loopback_host(
+    host_header: Option<&HeaderValue>,
+    expected_port: u16,
+) -> Option<String> {
+    let host = host_header?.to_str().ok()?.trim();
+    let authority = Authority::from_str(host).ok()?;
+    let port = authority.port_u16()?;
+    if port != expected_port {
+        return None;
+    }
+
+    let normalized_host = authority
+        .host()
+        .trim_matches(|value| value == '[' || value == ']')
+        .to_ascii_lowercase();
+
+    let canonical_host = match normalized_host.as_str() {
+        "localhost" => "localhost".to_string(),
+        "127.0.0.1" => "127.0.0.1".to_string(),
+        "::1" => "::1".to_string(),
+        _ => return None,
+    };
+
+    if canonical_host.contains(':') {
+        Some(format!("[{}]:{}", canonical_host, port))
+    } else {
+        Some(format!("{}:{}", canonical_host, port))
+    }
+}
+
+fn is_allowed_origin_value(origin: &str, config: &Config) -> bool {
+    let expected_origin = match config.paired_web_origin() {
+        Some(origin) => origin,
+        None => return false,
+    };
+
+    canonicalize_origin_value(origin)
+        .map(|value| value == expected_origin)
+        .unwrap_or(false)
+}
+
+fn ensure_loopback_request(headers: &HeaderMap, config: &Config) -> Result<String, LocalGuardRejection> {
+    canonicalize_loopback_host(headers.get("host"), config.local_port()).ok_or_else(|| {
+        LocalGuardRejection::forbidden(
+            "invalid_local_host",
+            "Requests must target the configured loopback Companion host.",
+        )
+    })
 }
 
 fn ensure_authenticated_origin(
-    headers: &axum::http::HeaderMap,
+    headers: &HeaderMap,
     config: &Config,
-) -> Result<(), StatusCode> {
-    if is_allowed_origin(headers.get("origin"), config) {
-        Ok(())
-    } else {
-        Err(StatusCode::FORBIDDEN)
+) -> Result<String, LocalGuardRejection> {
+    let expected_origin = config.paired_web_origin().ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+
+    let origin = headers
+        .get("origin")
+        .ok_or_else(|| {
+            LocalGuardRejection::forbidden(
+                "invalid_local_origin",
+                "Requests must include the paired web Origin header.",
+            )
+        })?
+        .to_str()
+        .ok()
+        .and_then(canonicalize_origin_value)
+        .ok_or_else(|| {
+            LocalGuardRejection::forbidden(
+                "invalid_local_origin",
+                "Requests must include a valid paired web Origin header.",
+            )
+        })?;
+
+    if origin != expected_origin {
+        return Err(LocalGuardRejection::forbidden(
+            "invalid_local_origin",
+            "This origin is not allowed to control the Companion app.",
+        ));
     }
+
+    Ok(origin)
+}
+
+fn validate_local_control_token(
+    headers: &HeaderMap,
+    config: &Config,
+    required_action: &'static str,
+) -> Result<LocalControlClaims, LocalGuardRejection> {
+    let backend = config.backend_connection().ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+
+    let paired_origin = backend.paired_web_origin.clone().ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+    let local_control_secret = backend.local_control_secret.clone().ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+    let pairing_id = backend.backend_pairing_id.clone().ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+    let secret_version = backend.local_control_secret_version.ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is missing or expired. Pair again from Nojoin.",
+        )
+    })?;
+
+    let auth_header = headers.get(header::AUTHORIZATION).ok_or_else(|| {
+        LocalGuardRejection::unauthenticated(
+            "missing_local_control_token",
+            "Local control bearer token is required.",
+        )
+    })?;
+    let auth_value = auth_header.to_str().map_err(|_| {
+        LocalGuardRejection::forbidden(
+            "invalid_local_control_token",
+            "Local control token header is malformed.",
+        )
+    })?;
+    let (scheme, token) = auth_value.split_once(' ').ok_or_else(|| {
+        LocalGuardRejection::unauthenticated(
+            "missing_local_control_token",
+            "Local control bearer token is required.",
+        )
+    })?;
+    if !scheme.eq_ignore_ascii_case("Bearer") || token.trim().is_empty() {
+        return Err(LocalGuardRejection::unauthenticated(
+            "missing_local_control_token",
+            "Local control bearer token is required.",
+        ));
+    }
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.set_audience(&[LOCAL_CONTROL_AUDIENCE]);
+    validation.leeway = 0;
+    validation.required_spec_claims = HashSet::from([
+        "aud".to_string(),
+        "exp".to_string(),
+        "sub".to_string(),
+        "token_type".to_string(),
+    ]);
+
+    let claims = match decode::<LocalControlClaims>(
+        token.trim(),
+        &DecodingKey::from_secret(local_control_secret.as_bytes()),
+        &validation,
+    ) {
+        Ok(decoded) => decoded.claims,
+        Err(error) => match error.kind() {
+            ErrorKind::ExpiredSignature => {
+                return Err(LocalGuardRejection::unauthenticated(
+                    "expired_local_control_token",
+                    "Local control token has expired.",
+                ));
+            }
+            _ => {
+                return Err(LocalGuardRejection::forbidden(
+                    "invalid_local_control_token",
+                    "Local control token is invalid.",
+                ));
+            }
+        },
+    };
+
+    if claims.token_type != LOCAL_CONTROL_TOKEN_TYPE {
+        return Err(LocalGuardRejection::forbidden(
+            "invalid_local_control_token",
+            "Local control token type is invalid.",
+        ));
+    }
+    if claims.origin != paired_origin {
+        return Err(LocalGuardRejection::forbidden(
+            "wrong_local_control_origin",
+            "Local control token origin does not match the paired backend origin.",
+        ));
+    }
+    if claims.companion_pairing_id != pairing_id || claims.secret_version != secret_version {
+        return Err(LocalGuardRejection::conflict(
+            "local_pairing_conflict",
+            "Companion pairing state is stale or rotated. Pair again from Nojoin.",
+        ));
+    }
+    if !claims.actions.iter().any(|action| action == required_action) {
+        return Err(LocalGuardRejection::forbidden(
+            "invalid_local_control_token",
+            "Local control token does not allow this route.",
+        ));
+    }
+
+    Ok(claims)
+}
+
+fn guard_steady_state_request(
+    headers: &HeaderMap,
+    config: &Config,
+    required_action: &'static str,
+) -> Result<LocalRequestGuard, LocalGuardRejection> {
+    let host = ensure_loopback_request(headers, config)?;
+    let origin = ensure_authenticated_origin(headers, config)?;
+    let claims = validate_local_control_token(headers, config, required_action)?;
+
+    Ok(LocalRequestGuard {
+        claims,
+        origin,
+        host,
+    })
 }
 
 async fn get_status(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<StatusResponse>, StatusCode> {
+) -> LocalApiResult<Json<StatusResponse>> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -391,7 +702,7 @@ pub async fn revoke_backend_pairings(backend: &BackendConnection) -> Result<u64,
 #[debug_handler]
 async fn complete_pairing(
     State(context): State<ServerContext>,
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     Json(payload): Json<PairingCompleteRequest>,
 ) -> (StatusCode, Json<PairingCompleteResponse>) {
     let state = &context.state;
@@ -399,9 +710,9 @@ async fn complete_pairing(
 
     {
         let config = state.config.lock().unwrap();
-        if let Err(status) = ensure_loopback_request(&headers, &config) {
+        if ensure_loopback_request(&headers, &config).is_err() {
             return (
-                status,
+                StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
                     success: false,
                     message: "Pairing requests must target the local loopback server.".to_string(),
@@ -410,8 +721,12 @@ async fn complete_pairing(
         }
     }
 
-    let origin = match headers.get("origin").and_then(|value| value.to_str().ok()) {
-        Some(origin) if !origin.is_empty() => origin.to_string(),
+    let origin = match headers
+        .get("origin")
+        .and_then(|value| value.to_str().ok())
+        .and_then(canonicalize_origin_value)
+    {
+        Some(origin) => origin,
         _ => {
             return (
                 StatusCode::FORBIDDEN,
@@ -599,15 +914,23 @@ async fn complete_pairing(
     )
 }
 
-async fn deprecated_authorize() -> (StatusCode, Json<PairingCompleteResponse>) {
-    (
+async fn deprecated_authorize(
+    headers: HeaderMap,
+    State(context): State<ServerContext>,
+) -> LocalApiResult<(StatusCode, Json<PairingCompleteResponse>)> {
+    {
+        let config = context.state.config.lock().unwrap();
+        let _host = ensure_loopback_request(&headers, &config)?;
+    }
+
+    Ok((
         StatusCode::GONE,
         Json(PairingCompleteResponse {
             success: false,
             message: "Manual pairing now requires /pair/complete with a Companion-generated code."
                 .to_string(),
         }),
-    )
+    ))
 }
 
 #[derive(serde::Serialize)]
@@ -618,15 +941,18 @@ struct AudioLevelsResponse {
 }
 
 async fn get_audio_levels(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<AudioLevelsResponse>, StatusCode> {
+) -> LocalApiResult<Json<AudioLevelsResponse>> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_WAVEFORM_READ_ACTION,
+        )?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -640,15 +966,18 @@ async fn get_audio_levels(
 }
 
 async fn get_live_audio_levels(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<AudioLevelsResponse>, StatusCode> {
+) -> LocalApiResult<Json<AudioLevelsResponse>> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_WAVEFORM_READ_ACTION,
+        )?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -675,46 +1004,33 @@ struct StartResponse {
 
 #[debug_handler]
 async fn start_recording(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
     Json(payload): Json<StartRequest>,
-) -> (StatusCode, Json<StartResponse>) {
+) -> LocalApiResult<(StatusCode, Json<StartResponse>)> {
     let state = &context.state;
     info!("Received start_recording request for '{}'", payload.name);
 
     {
         let config = state.config.lock().unwrap();
-        if let Err(status) = ensure_loopback_request(&headers, &config) {
-            return (
-                status,
-                Json(StartResponse {
-                    id: 0,
-                    message: "Requests must target the Companion loopback address.".to_string(),
-                }),
-            );
-        }
-        if let Err(status) = ensure_authenticated_origin(&headers, &config) {
-            return (
-                status,
-                Json(StartResponse {
-                    id: 0,
-                    message: "This origin is not allowed to control the Companion app.".to_string(),
-                }),
-            );
-        }
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_RECORDING_START_ACTION,
+        )?;
     }
 
     // Check status (and drop lock immediately)
     {
         let status = state.status.lock().unwrap();
         if *status != AppStatus::Idle && *status != AppStatus::BackendOffline {
-            return (
-                StatusCode::BAD_REQUEST,
+            return Ok((
+                StatusCode::CONFLICT,
                 Json(StartResponse {
                     id: 0,
-                    message: "Already recording".to_string(),
+                    message: "Recording is already active or busy.".to_string(),
                 }),
-            );
+            ));
         }
     }
 
@@ -755,13 +1071,13 @@ async fn start_recording(
 
                     if upload_token.is_none() {
                         error!("Backend did not return a recording upload token.");
-                        return (
+                        return Ok((
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(StartResponse {
                                 id: 0,
                                 message: "Recording upload token missing".to_string(),
                             }),
-                        );
+                        ));
                     }
 
                     // Start Audio Thread
@@ -787,13 +1103,13 @@ async fn start_recording(
                     );
                     info!("Recording started successfully. ID: {}", id);
 
-                    return (
+                    return Ok((
                         StatusCode::OK,
                         Json(StartResponse {
                             id,
                             message: "Recording started".to_string(),
                         }),
-                    );
+                    ));
                 }
             }
         }
@@ -802,30 +1118,29 @@ async fn start_recording(
         }
     }
 
-    (
+    Ok((
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(StartResponse {
             id: 0,
             message: "Failed to start recording".to_string(),
         }),
-    )
+    ))
 }
 
-#[derive(serde::Deserialize)]
-struct StopRequest {}
-
 async fn stop_recording(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-    Json(_payload): Json<Option<StopRequest>>,
-) -> Result<Json<String>, StatusCode> {
+) -> LocalApiResult<Json<String>> {
     let state = &context.state;
     info!("Received stop_recording request");
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_RECORDING_STOP_ACTION,
+        )?;
     }
 
     let recording_id = *state.current_recording_id.lock().unwrap();
@@ -867,16 +1182,19 @@ async fn stop_recording(
 }
 
 async fn pause_recording(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<String>, StatusCode> {
+) -> LocalApiResult<Json<String>> {
     let state = &context.state;
     info!("Received pause_recording request");
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_RECORDING_PAUSE_ACTION,
+        )?;
     }
 
     let recording_id = *state.current_recording_id.lock().unwrap();
@@ -921,16 +1239,19 @@ async fn pause_recording(
 }
 
 async fn resume_recording(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<String>, StatusCode> {
+) -> LocalApiResult<Json<String>> {
     let state = &context.state;
     info!("Received resume_recording request");
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_RECORDING_RESUME_ACTION,
+        )?;
     }
 
     let recording_id = *state.current_recording_id.lock().unwrap();
@@ -982,15 +1303,18 @@ struct ConfigResponse {
 }
 
 async fn get_config(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<ConfigResponse>, StatusCode> {
+) -> LocalApiResult<Json<ConfigResponse>> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_SETTINGS_READ_ACTION,
+        )?;
 
         return Ok(Json(ConfigResponse {
             api_port: config.api_port(),
@@ -1015,15 +1339,18 @@ struct DevicesResponse {
 }
 
 async fn get_devices(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> Result<Json<DevicesResponse>, StatusCode> {
+) -> LocalApiResult<Json<DevicesResponse>> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        ensure_loopback_request(&headers, &config)?;
-        ensure_authenticated_origin(&headers, &config)?;
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_DEVICES_READ_ACTION,
+        )?;
     }
 
     let host = cpal::default_host();
@@ -1079,15 +1406,18 @@ struct ConfigUpdate {
 }
 
 async fn update_config(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
     Json(payload): Json<ConfigUpdate>,
-) -> Result<Json<ConfigResponse>, StatusCode> {
+) -> LocalApiResult<Json<ConfigResponse>> {
     let state = &context.state;
     let mut config = state.config.lock().unwrap();
 
-    ensure_loopback_request(&headers, &config)?;
-    ensure_authenticated_origin(&headers, &config)?;
+    let _guard = guard_steady_state_request(
+        &headers,
+        &config,
+        LOCAL_CONTROL_SETTINGS_WRITE_ACTION,
+    )?;
 
     let mut updated = config.clone();
     let mut should_save = false;
@@ -1127,7 +1457,10 @@ async fn update_config(
     if should_save {
         if let Err(e) = updated.save() {
             eprintln!("Failed to save config: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(LocalGuardRejection::internal(
+                "local_config_save_failed",
+                "Failed to save Companion settings.",
+            ));
         }
         *config = updated;
     }
@@ -1140,18 +1473,18 @@ async fn update_config(
 }
 
 async fn trigger_update(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(context): State<ServerContext>,
-) -> StatusCode {
+) -> LocalApiResult<StatusCode> {
     let state = &context.state;
 
     {
         let config = state.config.lock().unwrap();
-        if ensure_loopback_request(&headers, &config).is_err()
-            || ensure_authenticated_origin(&headers, &config).is_err()
-        {
-            return StatusCode::FORBIDDEN;
-        }
+        let _guard = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_UPDATE_TRIGGER_ACTION,
+        )?;
     }
 
     let url = state.latest_update_url.lock().unwrap().clone();
@@ -1159,10 +1492,221 @@ async fn trigger_update(
     if let Some(target_url) = url {
         if let Err(e) = open::that(target_url) {
             error!("Failed to open update URL: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(StatusCode::INTERNAL_SERVER_ERROR);
         }
-        StatusCode::OK
+        Ok(StatusCode::OK)
     } else {
-        StatusCode::NOT_FOUND
+        Ok(StatusCode::NOT_FOUND)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+    use jsonwebtoken::{encode, EncodingKey, Header};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn build_test_config() -> Config {
+        Config {
+            version: 1,
+            machine_local: crate::config::MachineLocalSettings {
+                local_port: 12345,
+                input_device_name: None,
+                output_device_name: None,
+                last_version: None,
+                min_meeting_length: None,
+                run_on_startup: None,
+            },
+            backend: Some(BackendConnection {
+                api_protocol: "https".to_string(),
+                api_host: "localhost".to_string(),
+                api_port: 14443,
+                api_token: "bootstrap-token".to_string(),
+                tls_fingerprint: None,
+                paired_web_origin: Some("https://paired.example.com".to_string()),
+                local_control_secret: Some("test-local-control-secret".to_string()),
+                backend_pairing_id: Some("pairing-123".to_string()),
+                local_control_secret_version: Some(3),
+            }),
+        }
+    }
+
+    fn now_timestamp() -> usize {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize
+    }
+
+    fn build_claims() -> LocalControlClaims {
+        let now = now_timestamp();
+        LocalControlClaims {
+            aud: LOCAL_CONTROL_AUDIENCE.to_string(),
+            sub: "alice".to_string(),
+            user_id: 1,
+            username: "alice".to_string(),
+            origin: "https://paired.example.com".to_string(),
+            actions: vec![LOCAL_CONTROL_STATUS_READ_ACTION.to_string()],
+            exp: now + 120,
+            iat: now,
+            token_type: LOCAL_CONTROL_TOKEN_TYPE.to_string(),
+            companion_pairing_id: "pairing-123".to_string(),
+            secret_version: 3,
+        }
+    }
+
+    fn encode_token(claims: &LocalControlClaims, secret: &str) -> String {
+        encode(
+            &Header::default(),
+            claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap()
+    }
+
+    fn build_headers(
+        host: &str,
+        origin: &str,
+        authorization: Option<String>,
+    ) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("host", HeaderValue::from_str(host).unwrap());
+        headers.insert("origin", HeaderValue::from_str(origin).unwrap());
+        if let Some(value) = authorization {
+            headers.insert(header::AUTHORIZATION, HeaderValue::from_str(&value).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn guard_rejects_malformed_host() {
+        let config = build_test_config();
+        let claims = build_claims();
+        let token = encode_token(&claims, "test-local-control-secret");
+        let headers = build_headers(
+            "http://127.0.0.1:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::FORBIDDEN);
+        assert_eq!(rejection.error, "invalid_local_host");
+    }
+
+    #[test]
+    fn guard_rejects_rebinding_hostnames() {
+        let config = build_test_config();
+        let claims = build_claims();
+        let token = encode_token(&claims, "test-local-control-secret");
+        let headers = build_headers(
+            "127.0.0.1.nip.io:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::FORBIDDEN);
+        assert_eq!(rejection.error, "invalid_local_host");
+    }
+
+    #[test]
+    fn guard_requires_local_control_token() {
+        let config = build_test_config();
+        let headers = build_headers("127.0.0.1:12345", "https://paired.example.com", None);
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(rejection.error, "missing_local_control_token");
+    }
+
+    #[test]
+    fn guard_rejects_expired_local_control_token() {
+        let config = build_test_config();
+        let mut claims = build_claims();
+        let now = now_timestamp();
+        claims.iat = now.saturating_sub(120);
+        claims.exp = now.saturating_sub(120);
+        let token = encode_token(&claims, "test-local-control-secret");
+        let headers = build_headers(
+            "127.0.0.1:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(rejection.error, "expired_local_control_token");
+    }
+
+    #[test]
+    fn guard_rejects_wrong_origin_token() {
+        let config = build_test_config();
+        let mut claims = build_claims();
+        claims.origin = "https://wrong.example.com".to_string();
+        let token = encode_token(&claims, "test-local-control-secret");
+        let headers = build_headers(
+            "127.0.0.1:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::FORBIDDEN);
+        assert_eq!(rejection.error, "wrong_local_control_origin");
+    }
+
+    #[test]
+    fn guard_rejects_stale_pairing_tokens() {
+        let config = build_test_config();
+        let mut claims = build_claims();
+        claims.secret_version = 2;
+        let token = encode_token(&claims, "test-local-control-secret");
+        let headers = build_headers(
+            "127.0.0.1:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let rejection = guard_steady_state_request(
+            &headers,
+            &config,
+            LOCAL_CONTROL_STATUS_READ_ACTION,
+        )
+        .unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::CONFLICT);
+        assert_eq!(rejection.error, "local_pairing_conflict");
     }
 }
