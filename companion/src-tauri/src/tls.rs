@@ -1,5 +1,5 @@
 use rustls::client::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::{Certificate, ServerName, Error as RustlsError};
+use rustls::{Certificate, Error as RustlsError, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use sha2::{Digest, Sha256};
 use std::time::SystemTime;
@@ -11,7 +11,9 @@ pub struct PinnedCertVerifier {
 
 impl PinnedCertVerifier {
     pub fn new(expected_fingerprint: Option<String>) -> Self {
-        Self { expected_fingerprint }
+        Self {
+            expected_fingerprint,
+        }
     }
 }
 
@@ -28,7 +30,7 @@ impl ServerCertVerifier for PinnedCertVerifier {
         let mut hasher = Sha256::new();
         hasher.update(&end_entity.0);
         let result = hasher.finalize();
-        
+
         let fingerprint = result
             .iter()
             .map(|b| format!("{:02X}", b))
@@ -44,7 +46,9 @@ impl ServerCertVerifier for PinnedCertVerifier {
                 expected,
                 fingerprint
             );
-            return Err(RustlsError::General("Certificate fingerprint mismatch".into()));
+            return Err(RustlsError::General(
+                "Certificate fingerprint mismatch".into(),
+            ));
         }
 
         // If no fingerprint is pinned, we allow it (Fallback or unconfigured state).

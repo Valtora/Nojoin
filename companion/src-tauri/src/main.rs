@@ -23,11 +23,11 @@ mod config;
 mod notifications;
 mod server;
 mod state;
+mod tls;
 mod uploader;
 mod win_notifications;
-mod tls;
 
-use config::Config;
+use config::{Config, MachineLocalUpdate};
 use state::{AppState, AppStatus, PAIRING_WINDOW_LIFETIME_SECS};
 use tauri_plugin_autostart::ManagerExt;
 
@@ -36,11 +36,47 @@ struct SharedAppState(Arc<AppState>);
 
 const PAIRING_WINDOW_LABEL: &str = "pairing";
 
+#[derive(serde::Serialize)]
+struct ConfigView {
+    version: u32,
+    api_protocol: String,
+    api_host: String,
+    api_port: u16,
+    api_token: String,
+    tls_fingerprint: Option<String>,
+    paired_web_origin: Option<String>,
+    local_port: u16,
+    input_device_name: Option<String>,
+    output_device_name: Option<String>,
+    last_version: Option<String>,
+    min_meeting_length: Option<u32>,
+    run_on_startup: Option<bool>,
+}
+
+impl From<&Config> for ConfigView {
+    fn from(config: &Config) -> Self {
+        Self {
+            version: config.version,
+            api_protocol: config.api_protocol(),
+            api_host: config.api_host(),
+            api_port: config.api_port(),
+            api_token: config.api_token(),
+            tls_fingerprint: config.tls_fingerprint(),
+            paired_web_origin: config.paired_web_origin(),
+            local_port: config.local_port(),
+            input_device_name: config.input_device_name().map(|value| value.to_string()),
+            output_device_name: config.output_device_name().map(|value| value.to_string()),
+            last_version: config.last_version().map(|value| value.to_string()),
+            min_meeting_length: config.min_meeting_length(),
+            run_on_startup: config.run_on_startup(),
+        }
+    }
+}
+
 #[tauri::command]
-fn get_config(state: tauri::State<SharedAppState>) -> Config {
-    // Access the inner Arc<AppState> via .0 on the dereferenced state
+fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
     let config = state.0.config.lock().unwrap();
-    config.clone()
+    ConfigView::from(&*config)
 }
 
 #[tauri::command]
@@ -235,17 +271,12 @@ fn open_web_interface(app: &tauri::AppHandle) {
     let state_wrapper = app.state::<SharedAppState>();
     let state = &state_wrapper.0;
 
-    let url = {
-        let dynamic_url = state.web_url.lock().unwrap().clone();
-        if let Some(d_url) = dynamic_url {
-            Some(d_url)
-        } else {
-            let config = state.config.lock().unwrap();
-            Some(config.get_web_url())
-        }
+    let target_url = {
+        let config = state.config.lock().unwrap();
+        config.get_web_url()
     };
 
-    if let Some(target_url) = url {
+    if !target_url.is_empty() {
         let _ = open::that(target_url);
     } else {
         notifications::show_notification(app, "Error", "Backend URL not found.");
@@ -272,7 +303,7 @@ fn main() {
 
             let autostart_manager = app.autolaunch();
             let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
-            if let Some(should_run) = config.run_on_startup {
+            if let Some(should_run) = config.run_on_startup() {
                 if should_run && !is_enabled {
                     if let Err(e) = autostart_manager.enable() {
                         error!("Failed to enable autostart on load: {}", e);
@@ -287,8 +318,10 @@ fn main() {
                     }
                 }
             } else {
-                config.run_on_startup = Some(is_enabled);
-                let _ = config.save();
+                let _ = config.update_machine_local_and_save(MachineLocalUpdate {
+                    run_on_startup: Some(Some(is_enabled)),
+                    ..Default::default()
+                });
             }
 
             let state = Arc::new(AppState {
@@ -304,7 +337,6 @@ fn main() {
                 output_level: AtomicU32::new(0),
                 live_input_level: AtomicU32::new(0),
                 live_output_level: AtomicU32::new(0),
-                web_url: Mutex::new(None),
                 is_backend_connected: AtomicBool::new(false),
                 update_available: AtomicBool::new(false),
                 latest_version: Mutex::new(None),
@@ -424,8 +456,10 @@ fn main() {
                                         let _ = item.set_checked(false);
                                     }
                                     let mut config = state.config.lock().unwrap();
-                                    config.run_on_startup = Some(false);
-                                    let _ = config.save();
+                                    let _ = config.update_machine_local_and_save(MachineLocalUpdate {
+                                        run_on_startup: Some(Some(false)),
+                                        ..Default::default()
+                                    });
                                 }
                             } else {
                                 if let Err(e) = autostart_manager.enable() {
@@ -436,8 +470,10 @@ fn main() {
                                         let _ = item.set_checked(true);
                                     }
                                     let mut config = state.config.lock().unwrap();
-                                    config.run_on_startup = Some(true);
-                                    let _ = config.save();
+                                    let _ = config.update_machine_local_and_save(MachineLocalUpdate {
+                                        run_on_startup: Some(Some(true)),
+                                        ..Default::default()
+                                    });
                                 }
                             }
                         }
@@ -458,15 +494,17 @@ fn main() {
                 let mut config = state.config.lock().unwrap();
                 let current_version = app.package_info().version.to_string();
 
-                if let Some(last_ver) = &config.last_version {
-                    if last_ver != &current_version {
+                if let Some(last_ver) = config.last_version() {
+                    if last_ver != current_version {
                         notifications::show_notification(app.handle(), "Updated", &format!("Nojoin Companion App Updated v{}", current_version));
                     }
                 }
 
-                if config.last_version.as_ref() != Some(&current_version) {
-                    config.last_version = Some(current_version);
-                    let _ = config.save();
+                if config.last_version() != Some(current_version.as_str()) {
+                    let _ = config.update_machine_local_and_save(MachineLocalUpdate {
+                        last_version: Some(Some(current_version)),
+                        ..Default::default()
+                    });
                 }
             }
 
@@ -503,24 +541,24 @@ fn main() {
                 rt.spawn(async move {
                     let fingerprint = {
                         let config = state_fetch.config.lock().unwrap();
-                        config.tls_fingerprint.clone()
+                        config.tls_fingerprint()
                     };
-                    
+
                     let mut client = reqwest::Client::builder()
                         .use_preconfigured_tls(crate::tls::create_tls_config(fingerprint.clone()))
                         .timeout(Duration::from_secs(5))
                         .build()
                         .unwrap_or_default();
-                    
+
                     let mut current_fingerprint = fingerprint;
 
                     loop {
                         // 1. Perform Health Check
                         let (status_origin, fingerprint) = {
                             let config = state_fetch.config.lock().unwrap();
-                            (config.get_web_url(), config.tls_fingerprint.clone())
+                            (config.get_web_url(), config.tls_fingerprint())
                         };
-                        
+
                         // Recreate client if fingerprint changed
                         if current_fingerprint != fingerprint {
                             client = reqwest::Client::builder()

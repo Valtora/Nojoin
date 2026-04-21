@@ -6,7 +6,6 @@ use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-
 pub async fn upload_segment(
     recording_id: i64,
     sequence: i32,
@@ -15,7 +14,7 @@ pub async fn upload_segment(
     api_token: &str,
 ) -> Result<()> {
     // Allow invalid certs for self-signed SSL (development)
-    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
 
     // Read file manually to avoid issues with Form::file
     let mut file = File::open(file_path).await?;
@@ -86,7 +85,7 @@ pub async fn upload_segment(
 }
 
 pub async fn finalize_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
-    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
     let url = format!(
         "{}/recordings/{}/finalize",
         config.get_api_url(),
@@ -145,7 +144,7 @@ pub async fn update_client_status(
     config: &Config,
     api_token: &str,
 ) -> Result<()> {
-    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
     let url = format!(
         "{}/recordings/{}/client_status?status={}",
         config.get_api_url(),
@@ -173,7 +172,7 @@ pub async fn update_status_with_progress(
     config: &Config,
     api_token: &str,
 ) -> Result<()> {
-    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
     let url = format!(
         "{}/recordings/{}/client_status?status={}&upload_progress={}",
         config.get_api_url(),
@@ -196,8 +195,12 @@ pub async fn update_status_with_progress(
 }
 
 pub async fn discard_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
-    let client = crate::tls::create_client(config.tls_fingerprint.clone())?;
-    let url = format!("{}/recordings/{}/discard", config.get_api_url(), recording_id);
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let url = format!(
+        "{}/recordings/{}/discard",
+        config.get_api_url(),
+        recording_id
+    );
 
     let res = client
         .post(&url)

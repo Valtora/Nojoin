@@ -97,8 +97,6 @@ pub struct AppState {
     pub output_level: AtomicU32,
     pub live_input_level: AtomicU32,
     pub live_output_level: AtomicU32,
-    // Dynamic Web URL fetched from backend
-    pub web_url: Mutex<Option<String>>,
     pub is_backend_connected: AtomicBool,
     // Update status
     pub update_available: AtomicBool,
@@ -148,7 +146,7 @@ impl AppState {
     /// Check if the companion has a valid API token configured
     pub fn is_authenticated(&self) -> bool {
         let config = self.config.lock().unwrap();
-        !config.api_token.is_empty()
+        config.is_authenticated()
     }
 
     pub fn begin_pairing_session(&self) -> PairingSession {

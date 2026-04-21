@@ -105,6 +105,11 @@
                     return;
                 }
 
+                if (config.paired_web_origin) {
+                    backendValue.textContent = config.paired_web_origin;
+                    return;
+                }
+
                 const protocol = config.api_protocol || 'https';
                 const host = config.api_host || 'localhost';
                 const port = config.api_port || 14443;

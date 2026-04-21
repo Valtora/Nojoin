@@ -17,11 +17,11 @@ use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
-    if let Some(ref name) = config.input_device_name {
+    if let Some(name) = config.input_device_name() {
         if let Ok(devices) = host.input_devices() {
             for device in devices {
                 if let Ok(device_name) = device.name() {
-                    if &device_name == name {
+                    if device_name == name {
                         info!("Using configured input device: {}", device_name);
                         return Some(device);
                     }
@@ -37,11 +37,11 @@ fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
 }
 
 fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
-    if let Some(ref name) = config.output_device_name {
+    if let Some(name) = config.output_device_name() {
         if let Ok(devices) = host.output_devices() {
             for device in devices {
                 if let Ok(device_name) = device.name() {
-                    if &device_name == name {
+                    if device_name == name {
                         info!("Using configured output device: {}", device_name);
                         return Some(device);
                     }
@@ -150,7 +150,7 @@ pub fn run_audio_loop(
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
                             // Check minimum length
-                            let min_minutes = config.min_meeting_length.unwrap_or(0);
+                            let min_minutes = config.min_meeting_length().unwrap_or(0);
                             let duration_secs = duration.as_secs();
                             let recording_token = state_finalize.current_recording_token.lock().unwrap().clone();
 
@@ -591,7 +591,15 @@ fn run_mixing_loop(
                 return;
             };
 
-            match uploader::upload_segment(recording_id, seq, &path_clone, &config, &recording_token).await {
+            match uploader::upload_segment(
+                recording_id,
+                seq,
+                &path_clone,
+                &config,
+                &recording_token,
+            )
+            .await
+            {
                 Ok(_) => {
                     info!("Segment {} uploaded successfully", seq);
                     tx.send(seq).ok();
@@ -622,15 +630,24 @@ fn run_mixing_loop(
 
     rt.block_on(async {
         let Some(recording_token) = recording_token.as_deref() else {
-            log::error!("Missing recording upload token while reporting upload progress for {}", recording_id);
+            log::error!(
+                "Missing recording upload token while reporting upload progress for {}",
+                recording_id
+            );
             return;
         };
 
         // Set initial status
         if should_report_uploading {
-            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config, recording_token)
-                .await
-                .ok();
+            uploader::update_status_with_progress(
+                recording_id,
+                "UPLOADING",
+                0,
+                &config,
+                recording_token,
+            )
+            .await
+            .ok();
         }
 
         let mut completed_count = 0;
@@ -644,9 +661,15 @@ fn run_mixing_loop(
             };
 
             if should_report_uploading {
-                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config, recording_token)
-                    .await
-                    .ok();
+                uploader::update_status_with_progress(
+                    recording_id,
+                    "UPLOADING",
+                    progress,
+                    &config,
+                    recording_token,
+                )
+                .await
+                .ok();
             }
         }
 

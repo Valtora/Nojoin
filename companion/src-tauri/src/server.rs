@@ -1,3 +1,4 @@
+use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::notifications;
 use crate::state::{AppState, AppStatus, AudioCommand, PairingValidationError};
 use crate::uploader;
@@ -24,7 +25,7 @@ pub struct ServerContext {
 pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     let local_port = {
         let config = state.config.lock().unwrap();
-        config.local_port
+        config.local_port()
     };
 
     let context = ServerContext {
@@ -90,7 +91,7 @@ struct StatusResponse {
     latest_version: Option<String>,
 }
 
-fn is_allowed_origin_value(origin: &str, config: &crate::config::Config) -> bool {
+fn is_allowed_origin_value(origin: &str, config: &Config) -> bool {
     if origin == "http://localhost:14141"
         || origin == "https://localhost:14141"
         || origin == "http://localhost:3000"
@@ -106,10 +107,7 @@ fn is_allowed_origin_value(origin: &str, config: &crate::config::Config) -> bool
     false
 }
 
-fn is_allowed_origin(
-    origin_header: Option<&axum::http::HeaderValue>,
-    config: &crate::config::Config,
-) -> bool {
+fn is_allowed_origin(origin_header: Option<&axum::http::HeaderValue>, config: &Config) -> bool {
     let origin = match origin_header {
         Some(origin) => match origin.to_str() {
             Ok(value) => value,
@@ -123,7 +121,7 @@ fn is_allowed_origin(
 
 fn is_allowed_loopback_host(
     host_header: Option<&axum::http::HeaderValue>,
-    config: &crate::config::Config,
+    config: &Config,
 ) -> bool {
     let host = match host_header {
         Some(host) => match host.to_str() {
@@ -133,9 +131,9 @@ fn is_allowed_loopback_host(
         None => return false,
     };
 
-    let localhost = format!("localhost:{}", config.local_port);
-    let ipv4_loopback = format!("127.0.0.1:{}", config.local_port);
-    let ipv6_loopback = format!("[::1]:{}", config.local_port);
+    let localhost = format!("localhost:{}", config.local_port());
+    let ipv4_loopback = format!("127.0.0.1:{}", config.local_port());
+    let ipv6_loopback = format!("[::1]:{}", config.local_port());
 
     host.eq_ignore_ascii_case(&localhost)
         || host.eq_ignore_ascii_case(&ipv4_loopback)
@@ -144,7 +142,7 @@ fn is_allowed_loopback_host(
 
 fn ensure_loopback_request(
     headers: &axum::http::HeaderMap,
-    config: &crate::config::Config,
+    config: &Config,
 ) -> Result<(), StatusCode> {
     if is_allowed_loopback_host(headers.get("host"), config) {
         Ok(())
@@ -155,7 +153,7 @@ fn ensure_loopback_request(
 
 fn ensure_authenticated_origin(
     headers: &axum::http::HeaderMap,
-    config: &crate::config::Config,
+    config: &Config,
 ) -> Result<(), StatusCode> {
     if is_allowed_origin(headers.get("origin"), config) {
         Ok(())
@@ -179,7 +177,7 @@ async fn get_status(
     let status = state.status.lock().unwrap().clone();
     let (authenticated, api_host) = {
         let config = state.config.lock().unwrap();
-        (!config.api_token.is_empty(), config.api_host.clone())
+        (config.is_authenticated(), config.api_host())
     };
 
     let duration = {
@@ -311,7 +309,12 @@ async fn complete_pairing(
 
     if payload.bootstrap_token.trim().is_empty()
         || payload.api_host.as_deref().unwrap_or("").trim().is_empty()
-        || payload.api_protocol.as_deref().unwrap_or("").trim().is_empty()
+        || payload
+            .api_protocol
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
         || payload.api_port.is_none()
         || payload.pairing_code.trim().is_empty()
     {
@@ -319,7 +322,8 @@ async fn complete_pairing(
             StatusCode::BAD_REQUEST,
             Json(PairingCompleteResponse {
                 success: false,
-                message: "Pairing code, bootstrap token, protocol, host, and port are required.".to_string(),
+                message: "Pairing code, bootstrap token, protocol, host, and port are required."
+                    .to_string(),
             }),
         );
     }
@@ -331,7 +335,8 @@ async fn complete_pairing(
                 StatusCode::CONFLICT,
                 Json(PairingCompleteResponse {
                     success: false,
-                    message: "Companion pairing is blocked while a recording is active.".to_string(),
+                    message: "Companion pairing is blocked while a recording is active."
+                        .to_string(),
                 }),
             );
         }
@@ -349,7 +354,9 @@ async fn complete_pairing(
                 StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
                     success: false,
-                    message: "Pairing mode is not active. Start pairing from the Companion app first.".to_string(),
+                    message:
+                        "Pairing mode is not active. Start pairing from the Companion app first."
+                            .to_string(),
                 }),
             );
         }
@@ -361,7 +368,9 @@ async fn complete_pairing(
                 StatusCode::GONE,
                 Json(PairingCompleteResponse {
                     success: false,
-                    message: "The pairing code has expired. Start pairing again in the Companion app.".to_string(),
+                    message:
+                        "The pairing code has expired. Start pairing again in the Companion app."
+                            .to_string(),
                 }),
             );
         }
@@ -399,29 +408,19 @@ async fn complete_pairing(
         );
     }
 
+    let backend = BackendConnection {
+        api_protocol: payload.api_protocol.unwrap_or_default(),
+        api_host: payload.api_host.unwrap_or_default(),
+        api_port: payload.api_port.unwrap_or_default(),
+        api_token: payload.bootstrap_token,
+        tls_fingerprint: payload.tls_fingerprint,
+        paired_web_origin: Some(origin.clone()),
+        local_control_secret: None,
+    };
+
     {
         let mut config = state.config.lock().unwrap();
-        config.api_token = payload.bootstrap_token;
-
-        if let Some(host) = payload.api_host {
-            config.api_host = host;
-        }
-
-        if let Some(port) = payload.api_port {
-            config.api_port = port;
-        }
-
-        if let Some(protocol) = payload.api_protocol {
-            config.api_protocol = protocol;
-        }
-
-        if let Some(fingerprint) = payload.tls_fingerprint {
-            config.tls_fingerprint = Some(fingerprint);
-        } else if config.tls_fingerprint.is_some() {
-            config.tls_fingerprint = None;
-        }
-
-        if let Err(e) = config.save() {
+        if let Err(e) = config.replace_backend_and_save(backend) {
             error!("Failed to save config: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -433,12 +432,14 @@ async fn complete_pairing(
         }
     }
 
-    *state.web_url.lock().unwrap() = Some(origin.clone());
     *state.current_recording_id.lock().unwrap() = None;
     *state.current_recording_token.lock().unwrap() = None;
     *state.current_sequence.lock().unwrap() = 1;
 
-    info!("Companion pairing completed successfully for origin {}", origin);
+    info!(
+        "Companion pairing completed successfully for origin {}",
+        origin
+    );
     notifications::show_notification(
         &context.app_handle,
         "Connected to Nojoin",
@@ -459,7 +460,8 @@ async fn deprecated_authorize() -> (StatusCode, Json<PairingCompleteResponse>) {
         StatusCode::GONE,
         Json(PairingCompleteResponse {
             success: false,
-            message: "Manual pairing now requires /pair/complete with a Companion-generated code.".to_string(),
+            message: "Manual pairing now requires /pair/complete with a Companion-generated code."
+                .to_string(),
         }),
     )
 }
@@ -572,25 +574,19 @@ async fn start_recording(
         }
     }
 
-    // Update token if provided (for backward compatibility)
-    if let Some(token) = payload.token {
-        let mut config = state.config.lock().unwrap();
-        config.api_token = token;
-        if let Err(e) = config.save() {
-            error!("Failed to save config: {}", e);
-        }
-    }
-
     // Call backend to create recording
     let fingerprint = {
         let config = state.config.lock().unwrap();
-        config.tls_fingerprint.clone()
+        config.tls_fingerprint()
     };
     let client = crate::tls::create_client(fingerprint).unwrap_or_default();
 
     let (api_url, token) = {
         let config = state.config.lock().unwrap();
-        (config.get_api_url(), config.api_token.clone())
+        (
+            config.get_api_url(),
+            payload.token.clone().unwrap_or_else(|| config.api_token()),
+        )
     };
 
     let res = client
@@ -672,14 +668,12 @@ async fn start_recording(
 }
 
 #[derive(serde::Deserialize)]
-struct StopRequest {
-    token: Option<String>,
-}
+struct StopRequest {}
 
 async fn stop_recording(
     headers: axum::http::HeaderMap,
     State(context): State<ServerContext>,
-    Json(payload): Json<Option<StopRequest>>,
+    Json(_payload): Json<Option<StopRequest>>,
 ) -> Result<Json<String>, StatusCode> {
     let state = &context.state;
     info!("Received stop_recording request");
@@ -688,14 +682,6 @@ async fn stop_recording(
         let config = state.config.lock().unwrap();
         ensure_loopback_request(&headers, &config)?;
         ensure_authenticated_origin(&headers, &config)?;
-    }
-
-    // Update token if provided
-    if let Some(req) = payload {
-        if let Some(token) = req.token {
-            let mut config = state.config.lock().unwrap();
-            config.api_token = token;
-        }
     }
 
     let recording_id = *state.current_recording_id.lock().unwrap();
@@ -713,11 +699,16 @@ async fn stop_recording(
         let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Some(token) = token {
-                if let Err(e) = uploader::update_client_status(id, "UPLOADING", &config_clone, &token).await {
+                if let Err(e) =
+                    uploader::update_client_status(id, "UPLOADING", &config_clone, &token).await
+                {
                     error!("Failed to update client status: {}", e);
                 }
             } else {
-                error!("Missing recording upload token while stopping recording {}", id);
+                error!(
+                    "Missing recording upload token while stopping recording {}",
+                    id
+                );
             }
         });
     }
@@ -766,11 +757,16 @@ async fn pause_recording(
         let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Some(token) = token {
-                if let Err(e) = uploader::update_client_status(id, "PAUSED", &config_clone, &token).await {
+                if let Err(e) =
+                    uploader::update_client_status(id, "PAUSED", &config_clone, &token).await
+                {
                     error!("Failed to update client status: {}", e);
                 }
             } else {
-                error!("Missing recording upload token while pausing recording {}", id);
+                error!(
+                    "Missing recording upload token while pausing recording {}",
+                    id
+                );
             }
         });
     }
@@ -811,11 +807,16 @@ async fn resume_recording(
         let token = state.current_recording_token.lock().unwrap().clone();
         tokio::spawn(async move {
             if let Some(token) = token {
-                if let Err(e) = uploader::update_client_status(id, "RECORDING", &config_clone, &token).await {
+                if let Err(e) =
+                    uploader::update_client_status(id, "RECORDING", &config_clone, &token).await
+                {
                     error!("Failed to update client status: {}", e);
                 }
             } else {
-                error!("Missing recording upload token while resuming recording {}", id);
+                error!(
+                    "Missing recording upload token while resuming recording {}",
+                    id
+                );
             }
         });
     }
@@ -848,9 +849,9 @@ async fn get_config(
         ensure_authenticated_origin(&headers, &config)?;
 
         return Ok(Json(ConfigResponse {
-            api_port: config.api_port,
-            local_port: config.local_port,
-            min_meeting_length: config.min_meeting_length,
+            api_port: config.api_port(),
+            local_port: config.local_port(),
+            min_meeting_length: config.min_meeting_length(),
         }));
     }
 }
@@ -919,8 +920,8 @@ async fn get_devices(
     Ok(Json(DevicesResponse {
         input_devices,
         output_devices,
-        selected_input: config.input_device_name.clone(),
-        selected_output: config.output_device_name.clone(),
+        selected_input: config.input_device_name().map(|value| value.to_string()),
+        selected_output: config.output_device_name().map(|value| value.to_string()),
     }))
 }
 
@@ -944,31 +945,53 @@ async fn update_config(
     ensure_loopback_request(&headers, &config)?;
     ensure_authenticated_origin(&headers, &config)?;
 
-    if let Some(port) = payload.api_port {
-        config.api_port = port;
-    }
-    if let Some(token) = payload.api_token {
-        config.api_token = token;
-    }
-    if payload.input_device_name.is_some() {
-        config.input_device_name = payload.input_device_name;
-    }
-    if payload.output_device_name.is_some() {
-        config.output_device_name = payload.output_device_name;
-    }
-    if let Some(min_len) = payload.min_meeting_length {
-        config.min_meeting_length = Some(min_len);
+    let mut updated = config.clone();
+    let mut should_save = false;
+
+    if payload.api_port.is_some() || payload.api_token.is_some() {
+        let mut backend = updated.backend_or_default();
+        if let Some(port) = payload.api_port {
+            backend.api_port = port;
+            should_save = true;
+        }
+        if let Some(token) = payload.api_token {
+            backend.api_token = token;
+            should_save = true;
+        }
+        updated.replace_backend(backend);
     }
 
-    if let Err(e) = config.save() {
-        eprintln!("Failed to save config: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut machine_local_update = MachineLocalUpdate::default();
+    let mut machine_local_changed = false;
+    if let Some(input_device_name) = payload.input_device_name {
+        machine_local_update.input_device_name = Some(Some(input_device_name));
+        machine_local_changed = true;
+    }
+    if let Some(output_device_name) = payload.output_device_name {
+        machine_local_update.output_device_name = Some(Some(output_device_name));
+        machine_local_changed = true;
+    }
+    if let Some(min_len) = payload.min_meeting_length {
+        machine_local_update.min_meeting_length = Some(Some(min_len));
+        machine_local_changed = true;
+    }
+    if machine_local_changed {
+        updated.apply_machine_local_update(machine_local_update);
+        should_save = true;
+    }
+
+    if should_save {
+        if let Err(e) = updated.save() {
+            eprintln!("Failed to save config: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        *config = updated;
     }
 
     Ok(Json(ConfigResponse {
-        api_port: config.api_port,
-        local_port: config.local_port,
-        min_meeting_length: config.min_meeting_length,
+        api_port: config.api_port(),
+        local_port: config.local_port(),
+        min_meeting_length: config.min_meeting_length(),
     }))
 }
 

@@ -419,18 +419,35 @@ Goal: separate machine-local settings from backend-specific trust state and make
 
 Tasks:
 
-- [ ] 1.1 Redefine the Companion config schema around one active backend association at a time.
-- [ ] 1.2 Preserve machine-local settings such as local port, device choices, and run-on-startup outside the backend trust block.
-- [ ] 1.3 Group backend-specific state into a single replaceable connection block.
-- [ ] 1.4 Add atomic replace semantics so a successful re-pair swaps the full backend trust block in one operation.
-- [ ] 1.5 Ensure failed or partial re-pair attempts do not leave mixed old and new backend state behind.
-- [ ] 1.6 Migrate legacy config files into the new state layout without losing machine-local preferences.
-- [ ] 1.7 Add tests for legacy migration, failed migration fallback, and atomic backend-state replacement.
+- [x] 1.1 Inventory every currently persisted Companion field and classify it as machine-local, backend-specific, derived runtime state, or legacy-only migration input.
+- [x] 1.2 Freeze the exact field classification for `local_port`, `input_device_name`, `output_device_name`, `run_on_startup`, `min_meeting_length`, `last_version`, `api_protocol`, `api_host`, `api_port`, `api_token`, `tls_fingerprint`, and paired web origin.
+- [x] 1.3 Introduce an explicit persisted config root with a schema version so future migrations do not depend on shape inference alone.
+- [x] 1.4 Introduce a machine-local settings block for fields that must survive backend switching.
+- [x] 1.5 Introduce a backend connection block for all trust-coupled fields, including the paired web origin and placeholders for future local-control secret material.
+- [x] 1.6 Add config helper accessors for API URL, paired web origin, TLS fingerprint, and paired/authenticated state so call sites stop reaching into raw fields directly.
+- [x] 1.7 Add one backend-replacement API on the config layer that swaps the entire backend connection block in one write.
+- [x] 1.8 Add a machine-local update API on the config layer that updates device and local settings without mutating backend trust state.
+- [x] 1.9 Move the currently runtime-only paired web origin into persisted backend-specific state and define how the runtime cache derives from it.
+- [x] 1.10 Refactor Companion call sites in `main.rs`, `server.rs`, `audio.rs`, and `uploader.rs` to use the new config helpers instead of top-level backend fields.
+- [x] 1.11 Remove field-by-field backend mutation from pairing, recording start, and settings update flows.
+- [x] 1.12 Add migration from the oldest legacy config shape (`api_url`, `web_app_url`, flat device fields) into the new root structure.
+- [x] 1.13 Add migration from the current flat config shape into the new root structure without losing machine-local preferences.
+- [x] 1.14 Define malformed-config recovery rules so unsafe backend trust state is cleared or rebuilt without mixing partially migrated data into a live pairing.
+- [x] 1.15 Preserve save-path behavior, dev override loading, and platform-specific app-data paths during the schema change.
+- [x] 1.16 Add round-trip serialization tests for the new config format.
+- [x] 1.17 Add migration tests for both legacy and current flat config inputs.
+- [x] 1.18 Add atomic replacement tests proving that failed re-pair preparation cannot leave a half-old, half-new backend block on disk.
+- [x] 1.19 Add regression tests proving that machine-local settings survive backend replacement unchanged.
 
 Exit criteria:
 
-- [ ] Machine-local settings are preserved cleanly across backend switches.
-- [ ] Backend trust state is no longer mutated field-by-field during re-pair.
+- [x] Every persisted Companion field has an approved classification.
+- [x] The config file has a versioned root with separate machine-local and backend-specific blocks.
+- [x] Paired web origin and trust-coupled fields live only inside the backend connection block.
+- [x] Backend replacement happens through one atomic config operation rather than field-by-field mutation.
+- [x] Legacy and current flat configs migrate successfully into the new structure.
+- [x] Machine-local settings are preserved cleanly across backend switches in tests.
+- [x] Companion call sites no longer depend on top-level `api_*`, `api_token`, and `tls_fingerprint` fields.
 
 ## Phase 2 - Backend Pairing Contract and Persistence
 
