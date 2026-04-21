@@ -9,22 +9,24 @@
         font-family:
           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
           Arial, sans-serif;
-        padding: 20px;
-        background-color: #f3f4f6;
+        margin: 0;
+        padding: 18px;
+        box-sizing: border-box;
+        background:
+          radial-gradient(circle at top right, rgba(234, 88, 12, 0.16), transparent 38%),
+          linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
         color: #1f2937;
         text-align: center;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        height: 100vh;
-        margin: 0;
-        box-sizing: border-box;
+      }
+      button {
+        font: inherit;
       }
       .container {
         background: white;
         padding: 28px 24px;
         border-radius: 12px;
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+        border: 1px solid #dbe3ee;
       }
       h2 {
         margin-top: 0;
@@ -35,29 +37,179 @@
         font-size: 0.95rem;
         color: #4b5563;
       }
-      .code {
+      .code-panel {
+        position: relative;
         margin: 20px 0 10px;
-        padding: 18px 16px;
+      }
+      .code {
+        margin: 0;
+        padding: 22px 64px 22px 22px;
         border-radius: 10px;
         background: #111827;
         color: white;
-        font-size: 2rem;
+        font-size: 1.85rem;
         font-weight: 700;
-        letter-spacing: 0.2em;
+        letter-spacing: 0.16em;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .copy-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 1px solid rgba(203, 213, 225, 0.24);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease;
+      }
+      .copy-button:hover {
+        background: rgba(255, 255, 255, 0.16);
+        border-color: rgba(226, 232, 240, 0.4);
+      }
+      .copy-button:active {
+        background: rgba(255, 255, 255, 0.24);
+      }
+      .copy-button.copied {
+        border-color: rgba(249, 115, 22, 0.45);
+        background: rgba(249, 115, 22, 0.16);
+        color: #fdba74;
+      }
+      .copy-button svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+      }
+      .copy-status {
+        min-height: 1.25rem;
+        margin-bottom: 10px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #0f766e;
+      }
+      .copy-status.error {
+        color: #b91c1c;
       }
       .countdown {
         font-size: 0.9rem;
         color: #ea580c;
         font-weight: 600;
       }
-      .hint {
+      .actions {
+        display: flex;
+        justify-content: center;
+        margin-top: 18px;
+      }
+      .cancel-button {
+        min-width: 164px;
+        padding: 10px 14px;
+        border: 1px solid #fdba74;
+        border-radius: 12px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease,
+          opacity 120ms ease;
+      }
+      .cancel-button:hover {
+        background: #ffedd5;
+        border-color: #fb923c;
+      }
+      .cancel-button:disabled {
+        opacity: 0.7;
+        cursor: wait;
+      }
+      .support-row {
+        display: flex;
+        justify-content: center;
         margin-top: 16px;
-        padding: 12px;
-        border-radius: 8px;
+      }
+      .help-tooltip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .help-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border: 1px solid #d7dee8;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #64748b;
+        cursor: help;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease;
+      }
+      .help-button:hover,
+      .help-button:focus-visible {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        color: #1e293b;
+        outline: none;
+      }
+      .help-button svg {
+        width: 18px;
+        height: 18px;
+      }
+      .tooltip {
+        position: absolute;
+        bottom: calc(100% + 10px);
+        left: 50%;
+        width: min(320px, calc(100vw - 72px));
+        padding: 12px 14px;
+        border-radius: 12px;
         background: #fff7ed;
         color: #9a3412;
         border: 1px solid #fdba74;
-        font-size: 0.9rem;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+        font-size: 0.88rem;
+        line-height: 1.45;
+        text-align: left;
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 6px);
+        transition:
+          opacity 120ms ease,
+          transform 120ms ease;
+      }
+      .tooltip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        width: 12px;
+        height: 12px;
+        border-right: 1px solid #fdba74;
+        border-bottom: 1px solid #fdba74;
+        background: #fff7ed;
+        transform: translate(-50%, -7px) rotate(45deg);
+      }
+      .help-tooltip:hover .tooltip,
+      .help-tooltip:focus-within .tooltip {
+        opacity: 1;
+        transform: translate(-50%, 0);
       }
       .expired {
         color: #b91c1c;
@@ -70,21 +222,47 @@
       <p>
         In Nojoin, open the manual pairing flow and enter this code.
       </p>
-      <div class="code" id="pairingCode">---- ----</div>
+      <div class="code-panel">
+        <div class="code" id="pairingCode">---- ----</div>
+        <button class="copy-button" id="copyButton" type="button" aria-label="Copy pairing code">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 9.75A2.25 2.25 0 0 1 11.25 7.5h6A2.25 2.25 0 0 1 19.5 9.75v8.25a2.25 2.25 0 0 1-2.25 2.25h-6A2.25 2.25 0 0 1 9 18V9.75Z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>
+            <path d="M14.25 7.5V6A2.25 2.25 0 0 0 12 3.75H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="copy-status" id="copyStatus" aria-live="polite"></div>
       <div class="countdown" id="countdown">Code expires soon</div>
-      <div class="hint">
-        This code is single-use and only works while this window stays open.
-        To switch to another Nojoin deployment later, start pairing again from
-        the Companion app.
+      <div class="actions">
+        <button class="cancel-button" id="cancelButton" type="button">Cancel Pairing</button>
+      </div>
+      <div class="support-row">
+        <div class="help-tooltip">
+          <button class="help-button" type="button" aria-label="Pairing help">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 16.25v-.25c0-1.1.52-1.68 1.39-2.3.83-.59 1.61-1.23 1.61-2.51 0-1.84-1.48-3.19-3.56-3.19-1.75 0-3.11.83-3.86 2.34" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 19.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" fill="currentColor"/>
+              <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="tooltip" role="tooltip">
+            This code is single-use and only works while this window stays open. To connect this companion to a different Nojoin deployment later, disconnect the current backend from Settings first.
+          </div>
+        </div>
       </div>
     </div>
 
     <script>
+      const { invoke } = window.__TAURI__.core;
       const urlParams = new URLSearchParams(window.location.search);
       const displayCode = urlParams.get("code") || "---- ----";
       const expiresIn = Number(urlParams.get("expires_in") || "300");
       const pairingCodeEl = document.getElementById("pairingCode");
+      const copyButton = document.getElementById("copyButton");
+      const cancelButton = document.getElementById("cancelButton");
+      const copyStatusEl = document.getElementById("copyStatus");
       const countdownEl = document.getElementById("countdown");
+      let copyStatusResetTimer = null;
 
       pairingCodeEl.textContent = displayCode;
 
@@ -94,6 +272,7 @@
         if (remainingSeconds <= 0) {
           countdownEl.textContent = "Code expired. Start pairing again from the Companion app.";
           countdownEl.classList.add("expired");
+          void resizeToFit();
           return;
         }
 
@@ -102,7 +281,81 @@
         countdownEl.textContent = `Code expires in ${minutes}:${String(seconds).padStart(2, "0")}`;
       }
 
+      function setCopyStatus(message, isError = false) {
+        copyStatusEl.textContent = message;
+        copyStatusEl.classList.toggle("error", isError);
+        void resizeToFit();
+      }
+
+      async function copyPairingCode() {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(displayCode);
+          } else {
+            const helperInput = document.createElement("textarea");
+            helperInput.value = displayCode;
+            helperInput.setAttribute("readonly", "");
+            helperInput.style.position = "absolute";
+            helperInput.style.left = "-9999px";
+            document.body.appendChild(helperInput);
+            helperInput.select();
+            document.execCommand("copy");
+            document.body.removeChild(helperInput);
+          }
+
+          window.clearTimeout(copyStatusResetTimer);
+          copyButton.classList.add("copied");
+          setCopyStatus("Pairing code copied to clipboard.");
+          copyStatusResetTimer = window.setTimeout(() => {
+            copyButton.classList.remove("copied");
+            setCopyStatus("");
+          }, 1800);
+        } catch (_error) {
+          setCopyStatus("Unable to copy automatically. Select the code and copy it manually.", true);
+        }
+      }
+
+      async function cancelPairing() {
+        cancelButton.disabled = true;
+        cancelButton.textContent = "Cancelling...";
+
+        try {
+          await invoke("cancel_pairing_request");
+        } catch (error) {
+          cancelButton.disabled = false;
+          cancelButton.textContent = "Cancel Pairing";
+          setCopyStatus(`Failed to cancel pairing: ${error}`, true);
+        }
+      }
+
+      async function resizeToFit() {
+        const container = document.querySelector(".container");
+        if (!container) {
+          return;
+        }
+
+        const width = Math.ceil(Math.max(360, container.scrollWidth + 36));
+        const height = Math.ceil(Math.max(230, document.documentElement.scrollHeight + 20));
+
+        try {
+          await invoke("resize_current_window", { width, height });
+        } catch (_error) {
+          // Ignore resize failures.
+        }
+      }
+
       renderCountdown();
+      copyButton.addEventListener("click", () => {
+        void copyPairingCode();
+      });
+      cancelButton.addEventListener("click", () => {
+        void cancelPairing();
+      });
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          void resizeToFit();
+        });
+      });
       window.setInterval(() => {
         remainingSeconds -= 1;
         renderCountdown();

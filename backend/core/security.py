@@ -22,6 +22,7 @@ WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 COMPANION_BOOTSTRAP_SCOPE = "companion:init"
 COMPANION_RECORDING_SCOPE = "recordings:companion"
+COMPANION_PAIRING_ID_CLAIM = "companion_pairing_id"
 
 def _get_secret_key() -> str:
     """Get or generate a persistent SECRET_KEY.
@@ -85,6 +86,10 @@ def create_access_token(
 
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def generate_local_control_secret() -> str:
+    return secrets.token_urlsafe(48)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

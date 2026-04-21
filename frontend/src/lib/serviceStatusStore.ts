@@ -19,6 +19,24 @@ interface CompanionStatusResponse {
   latest_version?: string | null;
 }
 
+interface CompanionPairingPayload {
+  pairing_code: string;
+  bootstrap_token: string;
+  expires_in: number;
+  api_protocol: string;
+  api_host: string;
+  api_port: number;
+  tls_fingerprint?: string | null;
+  local_control_secret: string;
+  local_control_secret_version: number;
+  backend_pairing_id: string;
+}
+
+interface CompanionPairingErrorResponse {
+  detail?: string;
+  message?: string;
+}
+
 interface ServiceStatusState {
   backend: boolean;
   db: boolean;
@@ -44,6 +62,7 @@ interface ServiceStatusState {
   checkCompanion: () => Promise<void>;
   enableCompanionMonitoring: () => void;
   pairCompanion: (pairingCode: string) => Promise<boolean>;
+  cancelPendingCompanionPairing: () => Promise<boolean>;
   triggerCompanionUpdate: () => Promise<boolean>;
   startPolling: () => void;
   stopPolling: () => void;
@@ -52,6 +71,48 @@ interface ServiceStatusState {
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
 const NORMAL_INTERVAL = 10000;
 const COMPANION_URL = "http://127.0.0.1:12345";
+
+const getCompanionApiBase = () =>
+  process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
+    : "https://localhost:14443/api/v1";
+
+const readPairingError = (
+  payload: CompanionPairingPayload | CompanionPairingErrorResponse | null,
+  fallback: string,
+) => {
+  const pairingError = payload as CompanionPairingErrorResponse | null;
+  return pairingError?.detail || pairingError?.message || fallback;
+};
+
+const cancelPendingCompanionPairingRequest = async (apiBase: string) => {
+  const response = await fetch(`${apiBase}/login/companion-pairing/pending`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const responseBody = (await response.json().catch(
+    () => null,
+  )) as CompanionPairingErrorResponse | null;
+
+  if (!response.ok) {
+    throw new Error(
+      readPairingError(
+        responseBody,
+        `Failed to cancel pending companion pairing: ${response.status}`,
+      ),
+    );
+  }
+
+  return true;
+};
+
+const bestEffortCancelPendingCompanionPairing = async (apiBase: string) => {
+  try {
+    await cancelPendingCompanionPairingRequest(apiBase);
+  } catch (error) {
+    console.error("Failed to cancel pending companion pairing:", error);
+  }
+};
 
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   let backendTimer: NodeJS.Timeout | null = null;
@@ -269,52 +330,30 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         throw new Error("Pairing code is required.");
       }
 
+      const apiBase = getCompanionApiBase();
+      let pairingPrepared = false;
+
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL
-          ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
-          : "https://localhost:14443/api/v1";
-        const tokenRes = await fetch(`${apiBase}/login/companion-token`, {
+        const pairingRes = await fetch(`${apiBase}/login/companion-pairing`, {
+          method: "POST",
           credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairing_code: trimmedCode }),
         });
-        if (!tokenRes.ok) {
-          throw new Error(`Failed to fetch companion token: ${tokenRes.status}`);
-        }
-        const { token } = await tokenRes.json();
+        const pairingPayload = (await pairingRes.json().catch(
+          () => null,
+        )) as CompanionPairingPayload | null;
 
-        const fpRes = await fetch(`${apiBase}/system/fingerprint`, {
-          credentials: "include",
-        });
-        let tls_fingerprint = null;
-        if (fpRes.ok) {
-           const fpData = await fpRes.json();
-           tls_fingerprint = fpData.fingerprint;
+        if (!pairingRes.ok) {
+          throw new Error(readPairingError(pairingPayload, `Failed to prepare companion pairing: ${pairingRes.status}`));
         }
 
-        const api_protocol = window.location.protocol.replace(":", "");
-        const api_host = window.location.hostname;
-        let api_port = parseInt(
-          window.location.port ||
-            (window.location.protocol === "https:" ? "443" : "80"),
-        );
-
-        if (
-          (api_host === "localhost" || api_host === "127.0.0.1") &&
-          api_port === 3000
-        ) {
-          api_port = 14443;
-        }
+        pairingPrepared = true;
 
         const res = await fetch(`${COMPANION_URL}/pair/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pairing_code: trimmedCode,
-            bootstrap_token: token,
-            api_protocol,
-            api_host,
-            api_port,
-            tls_fingerprint,
-          }),
+          body: JSON.stringify(pairingPayload),
         });
 
         const data = await res.json().catch(() => null);
@@ -338,9 +377,17 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         await get().checkCompanion();
         return true;
       } catch (e: any) {
+        if (pairingPrepared) {
+          await bestEffortCancelPendingCompanionPairing(apiBase);
+        }
         console.error("Failed to pair companion:", e);
         throw e;
       }
+    },
+
+    cancelPendingCompanionPairing: async (): Promise<boolean> => {
+      const apiBase = getCompanionApiBase();
+      return cancelPendingCompanionPairingRequest(apiBase);
     },
 
     triggerCompanionUpdate: async (): Promise<boolean> => {

@@ -455,18 +455,18 @@ Goal: support secure one-backend pairing and re-pair without introducing multi-d
 
 Tasks:
 
-- [ ] 2.1 Add backend endpoints for the manual code-based pairing workflow.
-- [ ] 2.2 Define the authenticated frontend request that turns a user-entered pairing code into a pairing payload.
-- [ ] 2.3 Persist backend-side local control secret material or equivalent pairing state needed for later local control token issuance.
-- [ ] 2.4 Define overwrite semantics when a Companion previously paired elsewhere is re-paired to this backend.
-- [ ] 2.5 Define revocation and secret rotation rules for re-pair and manual unpair flows.
-- [ ] 2.6 Fail closed when the backend sees stale, conflicting, or partially rotated pairing state.
-- [ ] 2.7 Add tests for first pair, re-pair, revoked pair, rotated secret, and incomplete cleanup cases.
+- [x] 2.1 Add backend endpoints for the manual code-based pairing workflow.
+- [x] 2.2 Define the authenticated frontend request that turns a user-entered pairing code into a pairing payload.
+- [x] 2.3 Persist backend-side local control secret material or equivalent pairing state needed for later local control token issuance.
+- [x] 2.4 Define overwrite semantics when a Companion previously paired elsewhere is re-paired to this backend.
+- [x] 2.5 Define revocation and secret rotation rules for re-pair and manual unpair flows.
+- [x] 2.6 Fail closed when the backend sees stale, conflicting, or partially rotated pairing state.
+- [x] 2.7 Add tests for first pair, re-pair, revoked pair, rotated secret, and incomplete cleanup cases.
 
 Exit criteria:
 
-- [ ] The backend supports secure first-pair and re-pair flows.
-- [ ] No multi-deployment profile model is required to switch backends.
+- [x] The backend supports secure first-pair and re-pair flows.
+- [x] No multi-deployment profile model is required to switch backends.
 
 ## Phase 3 - Local API Guard Primitives
 

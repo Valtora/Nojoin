@@ -168,6 +168,10 @@ pub struct BackendConnection {
     pub paired_web_origin: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_control_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_pairing_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_control_secret_version: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -209,6 +213,10 @@ impl BackendConnection {
             .as_deref()
             .and_then(canonicalize_origin);
         self.local_control_secret = normalize_optional_string(self.local_control_secret);
+        self.backend_pairing_id = normalize_optional_string(self.backend_pairing_id);
+        self.local_control_secret_version = self
+            .local_control_secret_version
+            .filter(|value| *value > 0);
         self
     }
 
@@ -231,6 +239,8 @@ impl Default for BackendConnection {
             tls_fingerprint: None,
             paired_web_origin: None,
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         }
     }
 }
@@ -298,6 +308,10 @@ impl Config {
         self.backend.clone().unwrap_or_default()
     }
 
+    pub fn backend_connection(&self) -> Option<BackendConnection> {
+        self.backend.clone()
+    }
+
     pub fn local_port(&self) -> u16 {
         self.machine_local.local_port
     }
@@ -327,6 +341,11 @@ impl Config {
         self.backend = Some(backend.normalized());
     }
 
+    pub fn clear_backend(&mut self) {
+        self.version = CURRENT_CONFIG_VERSION;
+        self.backend = None;
+    }
+
     pub fn replace_backend_and_save(
         &mut self,
         backend: BackendConnection,
@@ -342,6 +361,17 @@ impl Config {
     ) -> Result<(), std::io::Error> {
         let mut updated = self.clone();
         updated.replace_backend(backend);
+        self.save_updated_to(updated, path)
+    }
+
+    pub fn clear_backend_and_save(&mut self) -> Result<(), std::io::Error> {
+        let config_path = Self::get_config_path();
+        self.clear_backend_and_save_to(&config_path)
+    }
+
+    fn clear_backend_and_save_to(&mut self, path: &Path) -> Result<(), std::io::Error> {
+        let mut updated = self.clone();
+        updated.clear_backend();
         self.save_updated_to(updated, path)
     }
 
@@ -479,6 +509,8 @@ impl Config {
             )),
             paired_web_origin: None,
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         }
         .normalized();
 
@@ -547,6 +579,8 @@ impl Config {
                     tls_fingerprint: None,
                     paired_web_origin,
                     local_control_secret: None,
+                    backend_pairing_id: None,
+                    local_control_secret_version: None,
                 }
                 .normalized(),
             ),
@@ -693,6 +727,8 @@ mod tests {
             tls_fingerprint: Some("AA:BB".to_string()),
             paired_web_origin: Some("https://app.example.com/workspace".to_string()),
             local_control_secret: Some("reserved-secret".to_string()),
+            backend_pairing_id: Some("pairing-one".to_string()),
+            local_control_secret_version: Some(1),
         });
 
         config.save_to(&path).unwrap();
@@ -819,6 +855,8 @@ mod tests {
             tls_fingerprint: Some("OLD".to_string()),
             paired_web_origin: Some("https://old.example.com".to_string()),
             local_control_secret: Some("old-secret".to_string()),
+            backend_pairing_id: Some("pairing-old".to_string()),
+            local_control_secret_version: Some(1),
         });
 
         let before = config.backend.clone().unwrap();
@@ -830,6 +868,8 @@ mod tests {
             tls_fingerprint: Some("NEW".to_string()),
             paired_web_origin: Some("https://new.example.com:8443/app".to_string()),
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         };
 
         config.replace_backend(replacement);
@@ -858,6 +898,8 @@ mod tests {
             tls_fingerprint: Some("STABLE".to_string()),
             paired_web_origin: Some("https://stable.example.com".to_string()),
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         });
         config.save_to(&path).unwrap();
 
@@ -877,6 +919,8 @@ mod tests {
                 tls_fingerprint: Some("REPLACEMENT".to_string()),
                 paired_web_origin: Some("https://replacement.example.com:8443".to_string()),
                 local_control_secret: Some("future-secret".to_string()),
+                backend_pairing_id: Some("pairing-replacement".to_string()),
+                local_control_secret_version: Some(2),
             },
             &path,
         );
@@ -912,6 +956,8 @@ mod tests {
             tls_fingerprint: Some("FIRST".to_string()),
             paired_web_origin: Some("https://first.example.com".to_string()),
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         });
 
         config.replace_backend(BackendConnection {
@@ -922,6 +968,8 @@ mod tests {
             tls_fingerprint: Some("SECOND".to_string()),
             paired_web_origin: Some("https://second.example.com".to_string()),
             local_control_secret: None,
+            backend_pairing_id: None,
+            local_control_secret_version: None,
         });
 
         assert_eq!(config.machine_local, machine_before);

@@ -13,6 +13,7 @@ use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    LogicalSize,
     Manager,
 };
 
@@ -35,6 +36,7 @@ use tauri_plugin_autostart::ManagerExt;
 struct SharedAppState(Arc<AppState>);
 
 const PAIRING_WINDOW_LABEL: &str = "pairing";
+const SETTINGS_WINDOW_LABEL: &str = "settings";
 
 #[derive(serde::Serialize)]
 struct ConfigView {
@@ -73,6 +75,170 @@ impl From<&Config> for ConfigView {
     }
 }
 
+#[derive(serde::Serialize)]
+struct SettingsView {
+    backend_label: String,
+    is_paired: bool,
+    is_pairing_active: bool,
+}
+
+fn derive_backend_label(config: &Config) -> String {
+    if !config.is_authenticated() {
+        return "Not paired".to_string();
+    }
+
+    if let Some(origin) = config.paired_web_origin() {
+        return origin;
+    }
+
+    let protocol = config.api_protocol();
+    let host = config.api_host();
+    let port = config.api_port();
+    if (protocol == "http" && port == 80) || (protocol == "https" && port == 443) {
+        format!("{}://{}", protocol, host)
+    } else {
+        format!("{}://{}:{}", protocol, host, port)
+    }
+}
+
+fn current_tray_status_text(state: &Arc<AppState>) -> String {
+    if !state.is_authenticated() {
+        return "Status: Waiting for connection...".to_string();
+    }
+
+    let status = state.status.lock().unwrap().clone();
+    match status {
+        AppStatus::Idle => "Status: Ready to Record".to_string(),
+        AppStatus::Recording => "Status: Recording".to_string(),
+        AppStatus::Paused => "Status: Recording Paused".to_string(),
+        AppStatus::Uploading => "Status: Uploading Recording".to_string(),
+        AppStatus::BackendOffline => "Status: Backend Not Found...".to_string(),
+        AppStatus::Error(_) => "Status: Error".to_string(),
+    }
+}
+
+fn update_tray_status_ui(state: &Arc<AppState>) {
+    let status_text = current_tray_status_text(state);
+
+    if let Some(item) = state.tray_status_item.lock().unwrap().as_ref() {
+        let _ = item.set_text(&status_text);
+    }
+
+    if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
+        let _ = tray.set_tooltip(Some(&status_text));
+    }
+}
+
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    is_autostart_enabled: bool,
+) -> tauri::Result<Menu<tauri::Wry>> {
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
+    let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
+    let check_updates =
+        MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
+    let run_on_startup = CheckMenuItem::with_id(
+        app,
+        "run_on_startup",
+        "Run on Startup",
+        true,
+        is_autostart_enabled,
+        None::<&str>,
+    )?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let status_item = MenuItem::with_id(
+        app,
+        "status",
+        &current_tray_status_text(state),
+        true,
+        None::<&str>,
+    )?;
+
+    *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
+    *state.tray_run_on_startup_item.lock().unwrap() = Some(run_on_startup.clone());
+
+    let show_start_pairing = !state.is_authenticated();
+    state
+        .tray_start_pairing_visible
+        .store(show_start_pairing, Ordering::SeqCst);
+
+    let separator_one = PredefinedMenuItem::separator(app)?;
+    let separator_two = PredefinedMenuItem::separator(app)?;
+
+    if show_start_pairing {
+        let pair = MenuItem::with_id(app, "pair", "Start Pairing", true, None::<&str>)?;
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &separator_one,
+                &pair,
+                &settings,
+                &run_on_startup,
+                &check_updates,
+                &view_logs,
+                &about,
+                &separator_two,
+                &quit,
+            ],
+        )
+    } else {
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &separator_one,
+                &settings,
+                &run_on_startup,
+                &check_updates,
+                &view_logs,
+                &about,
+                &separator_two,
+                &quit,
+            ],
+        )
+    }
+}
+
+fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    match build_tray_menu(app, state, is_autostart_enabled) {
+        Ok(menu) => {
+            if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
+                if let Err(err) = tray.set_menu(Some(menu)) {
+                    error!("Failed to refresh tray menu: {}", err);
+                }
+            }
+            update_tray_status_ui(state);
+        }
+        Err(err) => error!("Failed to build tray menu: {}", err),
+    }
+}
+
+fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        app,
+        SETTINGS_WINDOW_LABEL,
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .title("Settings")
+    .inner_size(540.0, 420.0)
+    .min_inner_size(380.0, 280.0)
+    .resizable(false)
+    .center()
+    .build()
+    .map(|_| ())
+    .map_err(|err| format!("Failed to open settings window: {}", err))
+}
+
 #[tauri::command]
 fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
     let config = state.0.config.lock().unwrap();
@@ -80,11 +246,133 @@ fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
 }
 
 #[tauri::command]
-fn start_pairing_mode(
+fn get_settings_state(state: tauri::State<SharedAppState>) -> SettingsView {
+    let backend_label = {
+        let config = state.0.config.lock().unwrap();
+        derive_backend_label(&config)
+    };
+
+    SettingsView {
+        backend_label,
+        is_paired: state.0.is_authenticated(),
+        is_pairing_active: state.0.is_pairing_active(),
+    }
+}
+
+#[tauri::command]
+async fn start_pairing_mode(
     app: tauri::AppHandle,
-    state: tauri::State<SharedAppState>,
+    state: tauri::State<'_, SharedAppState>,
 ) -> Result<String, String> {
-    start_pairing_mode_internal(&app, &state.0)
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let app_handle = app.clone();
+    let shared_state = state.0.clone();
+
+    app.run_on_main_thread(move || {
+        let result = start_pairing_mode_internal(&app_handle, &shared_state);
+        let _ = tx.send(result);
+    })
+    .map_err(|err| format!("Failed to schedule pairing window creation: {}", err))?;
+
+    rx.await
+        .map_err(|_| "Failed to receive pairing window result.".to_string())?
+}
+
+#[tauri::command]
+async fn cancel_pairing_request(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedAppState>,
+) -> Result<String, String> {
+    let had_local_pairing = state.0.is_pairing_active();
+    state.0.clear_pairing_session();
+    close_pairing_window(&app);
+
+    let backend = {
+        let config = state.0.config.lock().unwrap();
+        config.backend_connection()
+    };
+    let has_backend = backend.is_some();
+
+    let local_message = if had_local_pairing {
+        Some("Cancelled the active local pairing session.".to_string())
+    } else {
+        None
+    };
+
+    let remote_message = match backend {
+        Some(backend) => match server::cancel_pending_pairing_for_backend(&backend).await {
+            Ok(0) => "No pending backend pairing request was found.".to_string(),
+            Ok(count) => format!(
+                "Cancelled {} pending backend pairing request{}.",
+                count,
+                if count == 1 { "" } else { "s" }
+            ),
+            Err(err) => format!(
+                "Closed the local pairing session, but backend cleanup could not be confirmed: {}.",
+                err
+            ),
+        },
+        None => "No pairing request is currently active.".to_string(),
+    };
+
+    Ok(match local_message {
+        Some(local_message) if has_backend => format!("{} {}", local_message, remote_message),
+        Some(local_message) => local_message,
+        None => remote_message,
+    })
+}
+
+#[tauri::command]
+async fn disconnect_backend(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedAppState>,
+) -> Result<String, String> {
+    state.0.clear_pairing_session();
+    close_pairing_window(&app);
+
+    let backend = {
+        let mut config = state.0.config.lock().unwrap();
+        let backend = config.backend_connection();
+        if backend.is_some() {
+            config
+                .clear_backend_and_save()
+                .map_err(|err| format!("Failed to save settings: {}", err))?;
+        }
+        backend
+    };
+
+    refresh_tray_menu(&app, &state.0);
+
+    let Some(backend) = backend else {
+        return Ok("No backend is currently paired.".to_string());
+    };
+
+    match server::revoke_backend_pairings(&backend).await {
+        Ok(0) => Ok("Disconnected from the current backend.".to_string()),
+        Ok(count) => Ok(format!(
+            "Disconnected from the current backend and revoked {} backend pairing{}.",
+            count,
+            if count == 1 { "" } else { "s" }
+        )),
+        Err(err) => Ok(format!(
+            "Disconnected locally from the current backend, but backend cleanup could not be confirmed: {}.",
+            err
+        )),
+    }
+}
+
+#[tauri::command]
+fn resize_current_window(
+    window: tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let clamped_width = width.clamp(360.0, 720.0);
+    let clamped_height = height.clamp(220.0, 760.0);
+
+    window
+        .set_size(LogicalSize::new(clamped_width, clamped_height))
+        .map_err(|err| format!("Failed to resize window: {}", err))
 }
 
 fn close_pairing_window(app: &tauri::AppHandle) {
@@ -97,6 +385,13 @@ fn start_pairing_mode_internal(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
 ) -> Result<String, String> {
+    if state.is_authenticated() {
+        return Err(
+            "Disconnect the current backend in Settings before starting a new pairing session."
+                .to_string(),
+        );
+    }
+
     {
         let status = state.status.lock().unwrap().clone();
         if !matches!(status, AppStatus::Idle | AppStatus::BackendOffline) {
@@ -120,9 +415,11 @@ fn start_pairing_mode_internal(
         tauri::WebviewUrl::App(window_url.into()),
     )
     .title("Pair Nojoin Companion")
-    .inner_size(420.0, 360.0)
+    .inner_size(480.0, 340.0)
+    .min_inner_size(360.0, 240.0)
     .always_on_top(true)
     .resizable(false)
+    .center()
     .build()
     .map_err(|e| {
         state.clear_pairing_session();
@@ -296,10 +593,19 @@ fn main() {
             notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
-        .invoke_handler(tauri::generate_handler![get_config, start_pairing_mode, close_update_prompt])
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            get_settings_state,
+            start_pairing_mode,
+            cancel_pairing_request,
+            disconnect_backend,
+            resize_current_window,
+            close_update_prompt
+        ])
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
+            let is_initially_paired = config.is_authenticated();
 
             let autostart_manager = app.autolaunch();
             let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
@@ -343,48 +649,15 @@ fn main() {
                 latest_update_url: Mutex::new(None),
                 tray_status_item: Mutex::new(None),
                 tray_run_on_startup_item: Mutex::new(None),
-                tray_open_web_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
+                tray_start_pairing_visible: AtomicBool::new(!is_initially_paired),
                 pairing_session: Mutex::new(None),
             });
 
             app.manage(SharedAppState(state.clone()));
 
-            // Create Menu Items
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
-            let help = MenuItem::with_id(app, "help", "Help", true, None::<&str>)?;
-            let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
-            let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
-
-            // Initialize run_on_startup checkmark using enforced is_enabled
-            let run_on_startup = CheckMenuItem::with_id(app, "run_on_startup", "Run on Startup", true, is_enabled, None::<&str>)?;
-
-            let open_web = MenuItem::with_id(app, "open_web", "Open Nojoin", true, None::<&str>)?;
-            let pair = MenuItem::with_id(app, "pair", "Pair with Nojoin", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Companion Settings", true, None::<&str>)?;
-            // Enables status item without attaching action.
-            let status_item = MenuItem::with_id(app, "status", "Status: Waiting for connection...", true, None::<&str>)?;
-
-            // Store items in state
-            *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
-            *state.tray_run_on_startup_item.lock().unwrap() = Some(run_on_startup.clone());
-            *state.tray_open_web_item.lock().unwrap() = Some(open_web.clone());
-
-            let menu = Menu::with_items(app, &[
-                &status_item,
-                &PredefinedMenuItem::separator(app)?,
-                &open_web,
-                &pair,
-                &settings,
-                &run_on_startup,
-                &check_updates,
-                &view_logs,
-                &help,
-                &about,
-                &PredefinedMenuItem::separator(app)?,
-                &quit,
-            ])?;
+            let app_handle = app.handle();
+            let menu = build_tray_menu(&app_handle, &state, is_enabled)?;
 
             let tray = TrayIconBuilder::new()
                 .tooltip("Nojoin Companion")
@@ -402,23 +675,9 @@ fn main() {
                             }
                         }
                         "settings" => {
-                            let window = app.get_webview_window("settings");
-                            if let Some(window) = window {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            } else {
-                                let _ = tauri::WebviewWindowBuilder::new(
-                                    app,
-                                    "settings",
-                                    tauri::WebviewUrl::App("settings.html".into())
-                                )
-                                .title("Nojoin Companion Settings")
-                                .inner_size(400.0, 350.0)
-                                .build();
+                            if let Err(message) = open_settings_window(app) {
+                                notifications::show_notification(app, "Settings Error", &message);
                             }
-                        }
-                        "open_web" => {
-                            open_web_interface(app);
                         }
                         "about" => {
                              notifications::show_notification(
@@ -426,9 +685,6 @@ fn main() {
                                  "About Nojoin Companion",
                                  &format!("This is the Nojoin Companion App that let's Nojoin listen in on your meetings.\n\nVersion {}", app.package_info().version)
                              );
-                        }
-                        "help" => {
-                            let _ = open::that("https://github.com/Valtora/Nojoin");
                         }
                         "view_logs" => {
                             let log_path = get_log_path();
@@ -537,6 +793,7 @@ fn main() {
 
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
+                let app_handle_status = app_handle.clone();
 
                 rt.spawn(async move {
                     let fingerprint = {
@@ -596,34 +853,16 @@ fn main() {
                             }
                         }
 
-                        // 2. Update Tray Icon Text
-                        if let Ok(status) = state_fetch.status.try_lock() {
-                             let status_text = if !state_fetch.is_authenticated() {
-                                 "Status: Waiting for connection..."
-                             } else {
-                                 match *status {
-                                     AppStatus::Idle => "Status: Ready to Record",
-                                     AppStatus::Recording => "Status: Recording",
-                                     AppStatus::Paused => "Status: Recording Paused",
-                                     AppStatus::Uploading => "Status: Uploading Recording",
-                                     AppStatus::BackendOffline => "Status: Backend Not Found...",
-                                     AppStatus::Error(_) => "Status: Error",
-                                 }
-                             };
-
-                             if let Some(item) = state_fetch.tray_status_item.lock().unwrap().as_ref() {
-                                 let _ = item.set_text(status_text);
-                             }
-
-                             if let Some(tray) = state_fetch.tray_icon.lock().unwrap().as_ref() {
-                                 let _ = tray.set_tooltip(Some(status_text));
-                             }
-
-                             let is_connected = state_fetch.is_backend_connected.load(Ordering::SeqCst);
-                             if let Some(item) = state_fetch.tray_open_web_item.lock().unwrap().as_ref() {
-                                 let _ = item.set_enabled(is_connected);
-                             }
+                        let should_show_start_pairing = !state_fetch.is_authenticated();
+                        if state_fetch
+                            .tray_start_pairing_visible
+                            .load(Ordering::SeqCst)
+                            != should_show_start_pairing
+                        {
+                            refresh_tray_menu(&app_handle_status, &state_fetch);
                         }
+
+                        update_tray_status_ui(&state_fetch);
 
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }

@@ -106,8 +106,8 @@ pub struct AppState {
     // Tray Menu Items
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_run_on_startup_item: Mutex<Option<CheckMenuItem<Wry>>>,
-    pub tray_open_web_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
+    pub tray_start_pairing_visible: AtomicBool,
 
     // Manual pairing state
     pub pairing_session: Mutex<Option<PairingSession>>,

@@ -39,6 +39,11 @@ RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS = {
     **STANDARD_USER_SCOPE_REQUIREMENTS,
     COMPANION_TOKEN_TYPE: {COMPANION_RECORDING_SCOPE},
 }
+PAIRING_MANAGEMENT_TOKEN_TYPES = STANDARD_USER_TOKEN_TYPES | {COMPANION_TOKEN_TYPE}
+PAIRING_MANAGEMENT_SCOPE_REQUIREMENTS = {
+    **STANDARD_USER_SCOPE_REQUIREMENTS,
+    COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
+}
 PASSWORD_CHANGE_EXEMPT_ROUTES = {
     ("/api/v1/users/me", "GET"),
     ("/api/v1/users/me/password", "PUT"),
@@ -248,6 +253,45 @@ async def get_current_companion_bootstrap_user(
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(reusable_oauth2),
 ) -> User:
+    user, _ = await get_current_companion_bootstrap_details(
+        request,
+        db,
+        token,
+    )
+    return user
+
+
+async def get_current_companion_bootstrap_details(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(reusable_oauth2),
+) -> tuple[User, dict[str, Any]]:
+    actual_token = token or request.cookies.get("access_token")
+
+    if not actual_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user, payload = await get_authenticated_token_details(
+        db,
+        actual_token,
+        allowed_token_types={COMPANION_TOKEN_TYPE},
+        required_scopes_by_type={
+            COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
+        },
+    )
+    enforce_password_change_policy(user, path=request.url.path, method=request.method)
+    return user, payload
+
+
+async def get_current_pairing_management_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(reusable_oauth2),
+) -> User:
     actual_token = token or request.cookies.get("access_token")
 
     if not actual_token:
@@ -260,10 +304,8 @@ async def get_current_companion_bootstrap_user(
     user = await get_authenticated_user_from_token(
         db,
         actual_token,
-        allowed_token_types={COMPANION_TOKEN_TYPE},
-        required_scopes_by_type={
-            COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
-        },
+        allowed_token_types=PAIRING_MANAGEMENT_TOKEN_TYPES,
+        required_scopes_by_type=PAIRING_MANAGEMENT_SCOPE_REQUIREMENTS,
     )
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
     return user

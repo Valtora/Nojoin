@@ -312,6 +312,7 @@ export default function MainNav() {
     companion,
     companionAuthenticated,
     pairCompanion,
+    cancelPendingCompanionPairing,
     companionUpdateAvailable,
     triggerCompanionUpdate,
   } = useServiceStatusStore();
@@ -628,7 +629,10 @@ export default function MainNav() {
   };
 
   const [pairingError, setPairingError] = useState<string | null>(null);
+  const [pairingNotice, setPairingNotice] = useState<string | null>(null);
   const [isPairingCompanion, setIsPairingCompanion] = useState(false);
+  const [isCancellingPendingPairing, setIsCancellingPendingPairing] =
+    useState(false);
 
   const formatPairingCode = (value: string) => {
     const canonical = value
@@ -645,6 +649,7 @@ export default function MainNav() {
 
   const openPairingModal = () => {
     setPairingError(null);
+    setPairingNotice(null);
     setPairingCode("");
     setIsPairModalOpen(true);
   };
@@ -652,6 +657,7 @@ export default function MainNav() {
   const handlePairCompanion = async () => {
     setIsPairingCompanion(true);
     setPairingError(null);
+    setPairingNotice(null);
     try {
       await pairCompanion(pairingCode);
       setIsPairModalOpen(false);
@@ -667,6 +673,25 @@ export default function MainNav() {
     }
   };
 
+  const handleCancelPendingPairing = async () => {
+    setIsCancellingPendingPairing(true);
+    setPairingNotice(null);
+
+    try {
+      await cancelPendingCompanionPairing();
+      setPairingError(null);
+      setPairingNotice(
+        "Previous pending pairing request cancelled. Enter the current Companion code and try again.",
+      );
+    } catch (e: any) {
+      setPairingError(
+        e?.message || "Failed to cancel the previous pending pairing request.",
+      );
+    } finally {
+      setIsCancellingPendingPairing(false);
+    }
+  };
+
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? isNavCollapsed : false;
 
@@ -676,6 +701,8 @@ export default function MainNav() {
     : "Pair Companion";
   const showUpdateCompanionButton =
     mounted && companion && companionUpdateAvailable;
+  const pairingHasPendingConflict =
+    pairingError?.toLowerCase().includes("still pending") ?? false;
   const isDashboardRoute = pathname === "/";
   const isRecordingsRoute =
     pathname === "/recordings" || pathname.startsWith("/recordings/");
@@ -1290,6 +1317,12 @@ export default function MainNav() {
               </div>
             )}
 
+            {pairingNotice && (
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                {pairingNotice}
+              </div>
+            )}
+
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
@@ -1298,10 +1331,26 @@ export default function MainNav() {
               >
                 Cancel
               </button>
+              {pairingHasPendingConflict && (
+                <button
+                  type="button"
+                  onClick={() => void handleCancelPendingPairing()}
+                  disabled={isPairingCompanion || isCancellingPendingPairing}
+                  className="rounded-2xl border border-orange-300 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-50 disabled:cursor-not-allowed disabled:border-orange-200 disabled:text-orange-300 dark:border-orange-500/30 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:disabled:border-orange-500/20 dark:disabled:text-orange-500/50"
+                >
+                  {isCancellingPendingPairing
+                    ? "Cancelling Pending..."
+                    : "Cancel Previous Request"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void handlePairCompanion()}
-                disabled={isPairingCompanion || pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8}
+                disabled={
+                  isPairingCompanion ||
+                  isCancellingPendingPairing ||
+                  pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8
+                }
                 className="rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
               >
                 {isPairingCompanion ? "Pairing..." : "Complete Pairing"}

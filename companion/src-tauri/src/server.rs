@@ -224,6 +224,9 @@ struct PairingCompleteRequest {
     api_port: Option<u16>,
     api_protocol: Option<String>,
     tls_fingerprint: Option<String>,
+    local_control_secret: Option<String>,
+    backend_pairing_id: Option<String>,
+    local_control_secret_version: Option<u32>,
 }
 
 #[derive(serde::Serialize)]
@@ -270,6 +273,119 @@ async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<()
             response.status()
         ))
     }
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PairingManagementResponse {
+    revoked_count: Option<u64>,
+    cancelled_count: Option<u64>,
+}
+
+async fn send_pairing_management_request(
+    protocol: &str,
+    host: &str,
+    port: u16,
+    token: &str,
+    tls_fingerprint: Option<String>,
+    path: &str,
+) -> Result<u64, String> {
+    let url = format!("{}://{}:{}/api/v1{}", protocol, host, port, path);
+    let client = crate::tls::create_client(tls_fingerprint).map_err(|err| err.to_string())?;
+
+    let response = client
+        .delete(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let status = response.status();
+    let body = response.text().await.map_err(|err| err.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Pairing management request failed with status {}", status));
+    }
+
+    let parsed: PairingManagementResponse = serde_json::from_str(&body).unwrap_or_default();
+    Ok(parsed
+        .revoked_count
+        .or(parsed.cancelled_count)
+        .unwrap_or_default())
+}
+
+async fn cancel_pending_pairing_from_request(
+    payload: &PairingCompleteRequest,
+) -> Result<u64, String> {
+    let protocol = payload
+        .api_protocol
+        .as_deref()
+        .ok_or_else(|| "Missing API protocol".to_string())?;
+    let host = payload
+        .api_host
+        .as_deref()
+        .ok_or_else(|| "Missing API host".to_string())?;
+    let port = payload
+        .api_port
+        .ok_or_else(|| "Missing API port".to_string())?;
+
+    send_pairing_management_request(
+        protocol,
+        host,
+        port,
+        &payload.bootstrap_token,
+        payload.tls_fingerprint.clone(),
+        "/login/companion-pairing/pending",
+    )
+    .await
+}
+
+async fn revoke_pairings_from_request(payload: &PairingCompleteRequest) -> Result<u64, String> {
+    let protocol = payload
+        .api_protocol
+        .as_deref()
+        .ok_or_else(|| "Missing API protocol".to_string())?;
+    let host = payload
+        .api_host
+        .as_deref()
+        .ok_or_else(|| "Missing API host".to_string())?;
+    let port = payload
+        .api_port
+        .ok_or_else(|| "Missing API port".to_string())?;
+
+    send_pairing_management_request(
+        protocol,
+        host,
+        port,
+        &payload.bootstrap_token,
+        payload.tls_fingerprint.clone(),
+        "/login/companion-pairing",
+    )
+    .await
+}
+
+pub async fn cancel_pending_pairing_for_backend(
+    backend: &BackendConnection,
+) -> Result<u64, String> {
+    send_pairing_management_request(
+        &backend.api_protocol,
+        &backend.api_host,
+        backend.api_port,
+        &backend.api_token,
+        backend.tls_fingerprint.clone(),
+        "/login/companion-pairing/pending",
+    )
+    .await
+}
+
+pub async fn revoke_backend_pairings(backend: &BackendConnection) -> Result<u64, String> {
+    send_pairing_management_request(
+        &backend.api_protocol,
+        &backend.api_host,
+        backend.api_port,
+        &backend.api_token,
+        backend.tls_fingerprint.clone(),
+        "/login/companion-pairing",
+    )
+    .await
 }
 
 #[debug_handler]
@@ -350,6 +466,9 @@ async fn complete_pairing(
             }
         }
         Err(PairingValidationError::NotActive) => {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+                error!("Failed to cancel pending pairing after inactive request: {}", err);
+            }
             return (
                 StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
@@ -364,6 +483,9 @@ async fn complete_pairing(
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
             }
+            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+                error!("Failed to cancel pending pairing after expiry: {}", err);
+            }
             return (
                 StatusCode::GONE,
                 Json(PairingCompleteResponse {
@@ -375,6 +497,9 @@ async fn complete_pairing(
             );
         }
         Err(PairingValidationError::Invalid) => {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+                error!("Failed to cancel pending pairing after invalid code: {}", err);
+            }
             return (
                 StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
@@ -386,6 +511,9 @@ async fn complete_pairing(
         Err(PairingValidationError::LockedOut) => {
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
+            }
+            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+                error!("Failed to cancel pending pairing after lockout: {}", err);
             }
             return (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -399,6 +527,12 @@ async fn complete_pairing(
 
     if let Err(err) = validate_bootstrap_token(&payload).await {
         error!("Bootstrap token validation failed: {}", err);
+        if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
+            error!(
+                "Failed to cancel pending pairing after bootstrap validation failure: {}",
+                cancel_err
+            );
+        }
         return (
             StatusCode::UNAUTHORIZED,
             Json(PairingCompleteResponse {
@@ -409,27 +543,37 @@ async fn complete_pairing(
     }
 
     let backend = BackendConnection {
-        api_protocol: payload.api_protocol.unwrap_or_default(),
-        api_host: payload.api_host.unwrap_or_default(),
+        api_protocol: payload.api_protocol.clone().unwrap_or_default(),
+        api_host: payload.api_host.clone().unwrap_or_default(),
         api_port: payload.api_port.unwrap_or_default(),
-        api_token: payload.bootstrap_token,
-        tls_fingerprint: payload.tls_fingerprint,
+        api_token: payload.bootstrap_token.clone(),
+        tls_fingerprint: payload.tls_fingerprint.clone(),
         paired_web_origin: Some(origin.clone()),
-        local_control_secret: None,
+        local_control_secret: payload.local_control_secret.clone(),
+        backend_pairing_id: payload.backend_pairing_id.clone(),
+        local_control_secret_version: payload.local_control_secret_version,
     };
 
-    {
+    let save_result = {
         let mut config = state.config.lock().unwrap();
-        if let Err(e) = config.replace_backend_and_save(backend) {
-            error!("Failed to save config: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(PairingCompleteResponse {
-                    success: false,
-                    message: format!("Failed to save pairing config: {}", e),
-                }),
+        config.replace_backend_and_save(backend)
+    };
+
+    if let Err(e) = save_result {
+        error!("Failed to save config: {}", e);
+        if let Err(revoke_err) = revoke_pairings_from_request(&payload).await {
+            error!(
+                "Failed to revoke backend pairing after local save failure: {}",
+                revoke_err
             );
         }
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(PairingCompleteResponse {
+                success: false,
+                message: format!("Failed to save pairing config: {}", e),
+            }),
+        );
     }
 
     *state.current_recording_id.lock().unwrap() = None;

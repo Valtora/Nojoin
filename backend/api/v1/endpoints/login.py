@@ -2,18 +2,59 @@ from datetime import timedelta
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from backend.api.deps import get_db, get_current_companion_bootstrap_user, get_current_user
+from backend.api.deps import (
+    get_db,
+    get_current_companion_bootstrap_details,
+    get_current_pairing_management_user,
+    get_current_user,
+)
+from backend.api.v1.endpoints.system import resolve_tls_fingerprint
 from backend.core import security
 from backend.models.user import User
+from backend.services.companion_pairing_service import (
+    cancel_pending_companion_pairings,
+    CompanionPairingStateError,
+    finalize_companion_pairing,
+    prepare_companion_pairing,
+    revoke_companion_pairings,
+)
 from backend.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
 LOGIN_RATE_LIMIT = 10
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+
+
+class CompanionPairingPrepareRequest(BaseModel):
+    pairing_code: str
+
+
+class CompanionPairingPrepareResponse(BaseModel):
+    pairing_code: str
+    bootstrap_token: str
+    expires_in: int
+    api_protocol: str
+    api_host: str
+    api_port: int
+    tls_fingerprint: str | None = None
+    local_control_secret: str
+    local_control_secret_version: int
+    backend_pairing_id: str
+
+
+class CompanionPairingRevokeResponse(BaseModel):
+    revoked: bool
+    revoked_count: int
+
+
+class CompanionPairingCancelResponse(BaseModel):
+    cancelled: bool
+    cancelled_count: int
 
 
 def _build_login_metadata(user: User) -> dict[str, Any]:
@@ -151,10 +192,93 @@ async def get_companion_token(
     }
 
 
+@router.post(
+    "/login/companion-pairing",
+    response_model=CompanionPairingPrepareResponse,
+)
+async def prepare_companion_pairing_payload(
+    payload: CompanionPairingPrepareRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanionPairingPrepareResponse:
+    pairing_code = payload.pairing_code.strip().upper()
+    if not pairing_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pairing code is required",
+        )
+
+    try:
+        prepared = await prepare_companion_pairing(
+            db,
+            current_user=current_user,
+            pairing_code=pairing_code,
+            paired_web_origin=request.headers.get("origin"),
+            tls_fingerprint=resolve_tls_fingerprint(),
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingPrepareResponse(**prepared.__dict__)
+
+
+@router.delete(
+    "/login/companion-pairing",
+    response_model=CompanionPairingRevokeResponse,
+)
+async def revoke_companion_pairing(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_pairing_management_user),
+) -> CompanionPairingRevokeResponse:
+    revoked_count = await revoke_companion_pairings(
+        db,
+        current_user=current_user,
+    )
+    return CompanionPairingRevokeResponse(
+        revoked=revoked_count > 0,
+        revoked_count=revoked_count,
+    )
+
+
+@router.delete(
+    "/login/companion-pairing/pending",
+    response_model=CompanionPairingCancelResponse,
+)
+async def cancel_pending_companion_pairing(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_pairing_management_user),
+) -> CompanionPairingCancelResponse:
+    cancelled_count = await cancel_pending_companion_pairings(
+        db,
+        current_user=current_user,
+    )
+    return CompanionPairingCancelResponse(
+        cancelled=cancelled_count > 0,
+        cancelled_count=cancelled_count,
+    )
+
+
 @router.get("/login/companion-token/validate")
 async def validate_companion_token(
-    current_user: User = Depends(get_current_companion_bootstrap_user),
+    companion_details: tuple[User, dict[str, Any]] = Depends(
+        get_current_companion_bootstrap_details
+    ),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
+    current_user, payload = companion_details
+    pairing_session_id = payload.get(security.COMPANION_PAIRING_ID_CLAIM)
+
+    if isinstance(pairing_session_id, str) and pairing_session_id:
+        try:
+            await finalize_companion_pairing(
+                db,
+                current_user=current_user,
+                pairing_session_id=pairing_session_id,
+            )
+        except CompanionPairingStateError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
     return {
         "valid": True,
         "username": current_user.username,
