@@ -487,159 +487,123 @@ Exit criteria:
 - [x] There is one reusable local request guard model.
 - [x] Sensitive routes can no longer be called without local control auth.
 
-## Phase 4 - Pairing Flow Redesign
+## Re-Baselined Delivery Plan (2026-04-22)
 
-Goal: move to a manual Companion-initiated pairing flow that uses a displayed code and never relies on anonymous detection.
+The original phase order no longer reflects the actual dependency chain in the codebase.
 
-Status review note (2026-04-21): much of the manual pairing flow landed earlier than this original phase ordering. The current codebase has the tray entry point, pairing window, displayed short-lived code, backend preparation flow, frontend code-entry UI, and pairing-route enforcement in place. The remaining open work in this phase is mainly the direct re-pair replacement UX and fuller regression coverage.
+Completed in full:
+
+- Phase 0
+- Phase 1
+- Phase 2
+- Phase 3
+
+Delivered ahead of the original schedule and now treated as completed foundation work:
+
+- the manual Companion-initiated pairing flow, including the pairing window, displayed short-lived code, and pairing-route enforcement
+- local control token issuance and Companion-side validation
+- removal of anonymous localhost detection from the frontend
+- authenticated frontend calls for steady-state local Companion routes
+- persisted recording ownership metadata and local-control auth on recording lifecycle routes
+- Companion paired-state display, manual unpair action, and blocked-state copy
+
+The remaining work is re-grouped below into the next sequential waterfall plan.
+Old task numbers are referenced in parentheses for traceability.
+
+## Phase 4 - Re-Pair Completion and Pairing State Closure
+
+Goal: finish the backend-switch mechanics so pairing and re-pairing can be treated as final and safe.
 
 Tasks:
 
-- [x] 4.1 Add a tray action for entering pairing mode.
-- [x] 4.2 Add a Companion pairing window that displays the current pairing code clearly.
-- [x] 4.3 Generate pairing codes in the `ABCD-EFGH` display format.
-- [x] 4.4 Decide and implement the allowed alphabet to avoid ambiguous characters where practical.
-- [x] 4.5 Make pairing mode time-bounded and single-use.
-- [x] 4.6 Accept pairing submissions only while pairing mode is open and the submitted code matches the displayed code.
-- [x] 4.7 Ensure pairing mode closes automatically on success, expiry, manual cancellation, or window close.
-- [x] 4.8 Rate-limit invalid pairing submissions and reject replay of expired or already-used codes.
-- [x] 4.9 Block re-pair attempts while a recording is active or uploading unless an explicit override policy is approved.
-- [ ] 4.10 On success, replace the current backend trust state atomically and clear stale secrets from the previously paired backend.
-- [ ] 4.11 Add tests for tray flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording.
+- [ ] 4.1 Complete atomic replacement of backend trust state on successful pairing and clear stale secrets from the previously paired backend. (was 4.10)
+- [ ] 4.2 Reject backend-switch or re-pair attempts while recording or uploading is active across the full pairing path. (was 6.6)
+- [ ] 4.3 Add tray actions for entering and cancelling pairing mode. (was 8.1)
+- [ ] 4.4 Add regression tests for tray flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording. (was 4.11)
 
 Exit criteria:
 
-- [x] Pairing is manual, time-bounded, code-gated, and Companion-initiated.
-- [x] A malicious page cannot silently open or complete pairing in the background.
+- [ ] Successful re-pair replaces the backend trust block atomically and leaves no stale secrets behind.
+- [ ] Re-pair is impossible while recording or upload work is active.
+- [ ] Pairing mode can be entered and cancelled locally from the tray.
+- [ ] Pairing-state transitions have regression coverage.
 
-## Phase 5 - Local Control Token Issuance and Validation
+## Phase 5 - Recording Ownership and Offline Recovery
 
-Goal: require a local control credential on every steady-state local request after pairing.
-
-Tasks:
-
-- [x] 5.1 Add a backend endpoint that mints short-lived local control tokens for the current paired Companion relationship.
-- [x] 5.2 Include claims for backend origin, user identity, allowed actions, and expiry.
-- [x] 5.3 If a stable Companion installation identifier is needed, keep it internal to the pairing contract rather than building profile-management logic around it.
-- [x] 5.4 Sign local control tokens with the shared local control secret or equivalent per-pairing material rather than the general API JWT secret.
-- [x] 5.5 Add Companion-side validation for signature, expiry, backend match, and origin match.
-- [x] 5.6 Add action policy checks so write routes cannot be invoked with read-only tokens.
-- [x] 5.7 Add secret rotation support for re-pair and manual unpair events.
-- [ ] 5.8 Add tests for forgery, wrong origin, expired token, revoked pairing, and rotated secrets.
-
-Exit criteria:
-
-- [x] All steady-state local routes can require short-lived local auth.
-- [x] Token validation is fully local to the Companion after token issuance.
-
-## Phase 6 - Recording Lifecycle Hardening
-
-Goal: make start, stop, pause, and resume obey both backend-level and user-level authorization rules.
-
-Status review note (2026-04-21): local-control auth is already enforced on the lifecycle routes and `start` still carries a fresh backend bootstrap token. The remaining open items in this phase are primarily owner enforcement and full backend-switch blocking during active sessions.
+Goal: finish the user-level authorization model for active recordings and define the safe local recovery path.
 
 Tasks:
 
-- [x] 6.1 Require a local control token on `start`, `stop`, `pause`, and `resume`.
-- [x] 6.2 Keep fresh backend bootstrap tokens for `start` and any other recording-lifecycle calls that need backend user identity.
-- [ ] 6.3 Decide whether `pause`, `resume`, and `stop` must also carry a fresh backend-derived identity token or whether stored recording-owner metadata is sufficient.
-- [x] 6.4 Persist active recording ownership metadata at recording start.
-- [ ] 6.5 Enforce same-user or approved-override rules for `pause`, `resume`, and `stop`.
-- [ ] 6.6 Reject backend-switch or re-pair attempts while recording or uploading is active.
-- [ ] 6.7 Add a tray-level emergency stop policy for offline or expired-token recovery.
-- [ ] 6.8 Add tests for owner mismatch, cross-tab collisions, blocked backend switch during active recording, and backend-offline stop behavior.
+- [ ] 5.1 Decide whether `pause`, `resume`, and `stop` must also carry a fresh backend-derived identity token or whether stored recording-owner metadata is sufficient. (was 6.3)
+- [ ] 5.2 Enforce same-user or approved-override rules for `pause`, `resume`, and `stop`. (was 6.5)
+- [ ] 5.3 Add a tray-level emergency stop policy for offline or expired-token recovery. (was 6.7)
+- [ ] 5.4 Add tests for owner mismatch, cross-tab collisions, blocked backend switch during active recording, and backend-offline stop behavior. (was 6.8)
 
 Exit criteria:
 
 - [ ] Recording lifecycle actions are bound to both the paired backend and the allowed local caller.
-- [ ] There is a safe recovery path when the backend is unavailable.
+- [ ] There is a defined and tested recovery path when the backend is unavailable.
 
-## Phase 7 - Frontend Integration
+## Phase 6 - UX State and Operator Messaging Completion
 
-Goal: remove anonymous Companion probing and adopt the manual code-based pairing and authenticated local-control model.
-
-Tasks:
-
-- [x] 7.1 Remove anonymous localhost detection logic from the frontend.
-- [x] 7.2 Remove any pre-pair loopback polling used to infer whether the Companion is installed, running, or reachable.
-- [x] 7.3 Replace auto-detection UX with a manual pairing flow that instructs the user to open the Companion app and start pairing there.
-- [x] 7.4 Add a frontend code-entry UI for the user to submit the displayed pairing code.
-- [x] 7.5 Attempt localhost pairing only after explicit user submission of the Companion-displayed code.
-- [x] 7.6 Start authenticated Companion status polling only after a successful pairing has already been established.
-- [x] 7.7 Add frontend logic to request short-lived local control tokens before local Companion calls.
-- [x] 7.8 Require local control tokens on recording controls, settings fetches, device fetches, waveform fetches, and update triggers.
-- [x] 7.9 Remove direct anonymous localhost command calls from the meeting controls.
-- [x] 7.10 Remove direct anonymous localhost reads for settings, devices, waveform, update, and other steady-state features.
-- [ ] 7.11 Add UI states for `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `paired`, and `re-pair blocked while recording`.
-- [ ] 7.12 Add manual QA for pairing to dev, switching to prod by re-pair, and preserving machine-local settings across the switch.
-
-Exit criteria:
-
-- [x] The frontend no longer depends on anonymous localhost visibility.
-- [x] Pairing is manual and code-driven from the user's point of view.
-
-## Phase 8 - Companion Tray and Settings UX
-
-Goal: expose the new manual pairing and backend-switch model clearly inside the Companion.
+Goal: make the secured pairing and backend-switch model understandable from both the frontend and the Companion.
 
 Tasks:
 
-- [ ] 8.1 Add tray actions for entering and cancelling pairing mode.
-- [x] 8.2 Add clear pairing-window copy that tells the user to enter the displayed code into Nojoin.
-- [x] 8.3 Display the currently paired backend origin or a clear `not paired` state in Companion settings.
-- [x] 8.4 Add an explicit `Forget current pairing` or equivalent action if manual unpair is approved.
-- [x] 8.5 Add blocked-state copy when pairing is unavailable because recording or upload is active.
-- [ ] 8.6 Add notification copy for pairing success, pairing failure, pairing expiry, manual unpair, and backend switch completion.
+- [ ] 6.1 Add frontend UI states for `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `paired`, and `re-pair blocked while recording`. (was 7.11)
+- [ ] 6.2 Add notification copy for pairing success, pairing failure, pairing expiry, manual unpair, and backend switch completion. (was 8.6)
 
 Exit criteria:
 
-- [x] The manual pairing flow is understandable from the Companion alone.
+- [ ] The frontend and Companion expose all required steady-state, blocked-state, and failure-state UX for the new pairing model.
 - [ ] Users can understand how to switch from one backend to another by re-pairing.
 
-## Phase 9 - Compatibility, Migration, and Rollout Controls
+## Phase 7 - Compatibility, Migration, and Verification
 
-Goal: make the rollout safe for existing users and mixed-version environments.
+Goal: make the rollout safe for existing users and mixed-version environments, then close the remaining evidence gaps.
 
 Tasks:
 
-- [ ] 9.1 Define a compatibility policy for old frontend plus new Companion and new frontend plus old Companion combinations.
-- [ ] 9.2 Decide whether version gating or feature negotiation is needed before enabling the new pairing flow.
-- [ ] 9.3 Add legacy fallback behavior that fails closed rather than silently dropping into insecure mode.
-- [ ] 9.4 Add migration messaging for users who already have an older Companion pairing configured.
-- [ ] 9.5 Decide whether one-time re-pairing is mandatory after upgrade and implement the required migration path.
-- [ ] 9.6 Add rollback and recovery instructions for broken or partially rotated pairings.
-- [ ] 9.7 Add release-note content describing the new one-companion-one-backend model and the need to re-pair when switching between dev and prod.
+- [ ] 7.1 Define a compatibility policy for old frontend plus new Companion and new frontend plus old Companion combinations. (was 9.1)
+- [ ] 7.2 Decide whether version gating or feature negotiation is needed before enabling the new pairing flow. (was 9.2)
+- [ ] 7.3 Add legacy fallback behavior that fails closed rather than silently dropping into insecure mode. (was 9.3)
+- [ ] 7.4 Add migration messaging for users who already have an older Companion pairing configured. (was 9.4)
+- [ ] 7.5 Decide whether one-time re-pairing is mandatory after upgrade and implement the required migration path. (was 9.5)
+- [ ] 7.6 Add rollback and recovery instructions for broken or partially rotated pairings. (was 9.6)
+- [ ] 7.7 Add release-note content describing the new one-Companion-one-backend model and the need to re-pair when switching between dev and prod. (was 9.7)
+- [ ] 7.8 Add tests for forgery, wrong origin, expired token, revoked pairing, and rotated secrets. (was 5.8)
+- [ ] 7.9 Build an automated test matrix for pairing, command auth, revocation, migration, and backend switching by re-pair. (was 10.1)
+- [ ] 7.10 Run manual security tests for CSRF, localhost page abuse, DNS rebinding, `Host` spoofing, pairing replay, and origin confusion. (was 10.2)
+- [ ] 7.11 Run manual product tests for dev-to-prod re-pair, machine-local settings preservation, active recording guard behavior, and revoked-pair recovery. (was 7.12, 10.3)
+- [ ] 7.12 Review the finished implementation against the original audit findings and verify each finding is fully addressed. (was 10.4)
 
 Exit criteria:
 
 - [ ] Existing users can upgrade without losing machine-local settings.
 - [ ] Mixed-version behavior is defined and safe.
+- [ ] The original audit findings are closed with evidence.
 
-## Phase 10 - Verification, Audit Closure, and Documentation
+## Phase 8 - Documentation Closure
 
-Goal: close the loop on the original findings and update the documentation to match the final workflow.
+Goal: update the product, operator, developer, and automation documentation to match the shipped behavior.
 
 Tasks:
 
-- [ ] 10.1 Build an automated test matrix for pairing, command auth, revocation, migration, and backend switching by re-pair.
-- [ ] 10.2 Run manual security tests for CSRF, localhost page abuse, DNS rebinding, `Host` spoofing, pairing replay, and origin confusion.
-- [ ] 10.3 Run manual product tests for dev-to-prod re-pair, machine-local settings preservation, active recording guard behavior, and revoked-pair recovery.
-- [ ] 10.4 Review the finished implementation against the original audit findings and verify each finding is fully addressed.
-- [ ] 10.5 Update `ARCHITECTURE.md` to describe the manual Companion-initiated pairing model and the one-backend association.
-- [ ] 10.6 Update `PRD.md` to reflect that anonymous Companion detection is removed and pairing is code-based and manual.
-- [ ] 10.7 Update `USAGE.md` to explain how users pair and re-pair the Companion when switching between deployments.
-- [ ] 10.8 Update `GETTING_STARTED.md` to explain the new first-pair workflow.
-- [ ] 10.9 Update `ADMIN.md` to explain operational impacts, including re-pair requirements after backend switching or security resets.
-- [ ] 10.10 Update `DEVELOPMENT.md` to explain the local development re-pair workflow when moving between dev and prod backends on one machine.
-- [ ] 10.11 Update `SECURITY.md` if the documented local-attack posture, pairing safeguards, or operator expectations materially change.
-- [ ] 10.12 Update `AGENTS.md` so future automation work follows the new pairing and localhost security model.
-- [ ] 10.13 Update `README.md` documentation index entries if the user journey for Companion pairing changes meaningfully.
-- [ ] 10.14 Add an operator-facing migration note if one-time re-pairing is required after the upgrade.
+- [ ] 8.1 Update `ARCHITECTURE.md` to describe the manual Companion-initiated pairing model and the one-backend association. (was 10.5)
+- [ ] 8.2 Update `PRD.md` to reflect that anonymous Companion detection is removed and pairing is code-based and manual. (was 10.6)
+- [ ] 8.3 Update `USAGE.md` to explain how users pair and re-pair the Companion when switching between deployments. (was 10.7)
+- [ ] 8.4 Update `GETTING_STARTED.md` to explain the new first-pair workflow. (was 10.8)
+- [ ] 8.5 Update `ADMIN.md` to explain operational impacts, including re-pair requirements after backend switching or security resets. (was 10.9)
+- [ ] 8.6 Update `DEVELOPMENT.md` to explain the local development re-pair workflow when moving between dev and prod backends on one machine. (was 10.10)
+- [ ] 8.7 Update `SECURITY.md` if the documented local-attack posture, pairing safeguards, or operator expectations materially change. (was 10.11)
+- [ ] 8.8 Update `AGENTS.md` so future automation work follows the new pairing and localhost security model. (was 10.12)
+- [ ] 8.9 Update `README.md` documentation index entries if the user journey for Companion pairing changes meaningfully. (was 10.13)
+- [ ] 8.10 Add an operator-facing migration note if one-time re-pairing is required after the upgrade. (was 10.14)
 
 Exit criteria:
 
-- [ ] The original audit findings are closed with evidence.
 - [ ] The final documented behavior matches the shipped implementation.
+- [ ] Operator and developer documentation describe re-pairing, migration, and backend switching clearly.
 
 ## Cross-Phase Acceptance Criteria
 
