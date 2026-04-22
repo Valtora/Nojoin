@@ -11,10 +11,10 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
+from backend.api.deps import get_current_companion_bootstrap_user, get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
 from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
-from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
+from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate, RecordingUploadTokenResponse
 from backend.models.user import User
 from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
@@ -323,6 +323,39 @@ async def upload_segment(
         )
         
     return {"status": "received", "segment": sequence}
+
+
+@router.post("/{recording_id}/upload-token", response_model=RecordingUploadTokenResponse)
+async def refresh_upload_token(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_companion_bootstrap_user),
+):
+    """
+    Re-issue a companion upload token for an existing in-flight recording.
+    """
+    recording = await db.get(Recording, recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording is no longer accepting companion uploads",
+        )
+
+    upload_token = security.create_access_token(
+        current_user.username,
+        token_type=security.COMPANION_TOKEN_TYPE,
+        scopes=[security.COMPANION_RECORDING_SCOPE],
+        expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
+        extra_claims={"recording_id": recording.id},
+    )
+
+    return RecordingUploadTokenResponse(
+        recording_id=recording.id,
+        upload_token=upload_token,
+    )
 
 @router.post("/{recording_id}/finalize", response_model=Recording)
 async def finalize_upload(

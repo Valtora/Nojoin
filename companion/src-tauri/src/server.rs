@@ -1,6 +1,9 @@
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::notifications;
-use crate::state::{pairing_block_message, AppState, AppStatus, AudioCommand, PairingValidationError};
+use crate::state::{
+    pairing_block_message, ActiveRecordingOwner, AppState, AppStatus, AudioCommand,
+    PairingValidationError, RecordingRecoveryState,
+};
 use crate::uploader;
 use axum::debug_handler;
 use axum::{
@@ -470,6 +473,221 @@ fn guard_steady_state_request(
     })
 }
 
+fn ensure_same_recording_owner(
+    owner: Option<&ActiveRecordingOwner>,
+    claims: &LocalControlClaims,
+    action: &'static str,
+) -> Result<(), LocalGuardRejection> {
+    let owner = owner.ok_or_else(|| {
+        LocalGuardRejection::conflict(
+            "recording_owner_missing",
+            "Active recording ownership metadata is missing. Start a new recording before retrying recording controls.",
+        )
+    })?;
+
+    if owner.companion_pairing_id != claims.companion_pairing_id {
+        return Err(LocalGuardRejection::conflict(
+            "recording_owner_conflict",
+            "Active recording ownership no longer matches the current Companion pairing.",
+        ));
+    }
+
+    if owner.user_id != claims.user_id {
+        return Err(LocalGuardRejection::forbidden(
+            "recording_owner_mismatch",
+            format!(
+                "Only the user who started this recording can {} it.",
+                action
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone)]
+pub struct RecordingStatusUpdate {
+    recording_id: i64,
+    status: &'static str,
+    config: Config,
+    token: Option<String>,
+    state: Arc<AppState>,
+}
+
+fn active_recording_id(state: &Arc<AppState>) -> Result<i64, String> {
+    (*state.current_recording_id.lock().unwrap())
+        .ok_or_else(|| "No active recording is currently running.".to_string())
+}
+
+fn build_recording_status_update(
+    state: &Arc<AppState>,
+    recording_id: i64,
+    status: &'static str,
+) -> RecordingStatusUpdate {
+    RecordingStatusUpdate {
+        recording_id,
+        status,
+        config: state.config.lock().unwrap().clone(),
+        token: state.current_recording_token.lock().unwrap().clone(),
+        state: state.clone(),
+    }
+}
+
+pub fn spawn_recording_status_update(update: RecordingStatusUpdate) {
+    tauri::async_runtime::spawn(async move {
+        if let Some(token) = update.token {
+            match uploader::update_client_status(
+                update.recording_id,
+                update.status,
+                &update.config,
+                &token,
+            )
+            .await
+            {
+                Ok(Some(new_token)) => {
+                    *update.state.current_recording_token.lock().unwrap() = Some(new_token);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    error!(
+                        "Failed to update client status {} for recording {}: {}",
+                        update.status,
+                        update.recording_id,
+                        error
+                    );
+                }
+            }
+        } else {
+            error!(
+                "Missing recording upload token while reporting {} for recording {}",
+                update.status,
+                update.recording_id
+            );
+        }
+    });
+}
+
+pub fn pause_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatusUpdate, String> {
+    let recording_id = active_recording_id(state)?;
+
+    {
+        let mut status = state.status.lock().unwrap();
+        if *status != AppStatus::Recording {
+            return Err(match *status {
+                AppStatus::Paused => "Recording is already paused.".to_string(),
+                _ => "No active recording is currently running.".to_string(),
+            });
+        }
+
+        *status = AppStatus::Paused;
+
+        let mut start_time = state.recording_start_time.lock().unwrap();
+        if let Some(started_at) = *start_time {
+            if let Ok(elapsed) = started_at.elapsed() {
+                let mut accumulated = state.accumulated_duration.lock().unwrap();
+                *accumulated += elapsed;
+            }
+        }
+        *start_time = None;
+    }
+
+    state
+        .audio_command_tx
+        .send(AudioCommand::Pause)
+        .map_err(|err| format!("Failed to pause recording: {}", err))?;
+    state.clear_recording_recovery_state();
+
+    Ok(build_recording_status_update(state, recording_id, "PAUSED"))
+}
+
+pub fn resume_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatusUpdate, String> {
+    let recording_id = active_recording_id(state)?;
+
+    if state.recording_recovery_state() != RecordingRecoveryState::None {
+        return Err("Recording cannot resume until Nojoin reconnects.".to_string());
+    }
+
+    {
+        let mut status = state.status.lock().unwrap();
+        if *status != AppStatus::Paused {
+            return Err(match *status {
+                AppStatus::Recording => "Recording is already running.".to_string(),
+                _ => "No paused recording is currently available.".to_string(),
+            });
+        }
+
+        *status = AppStatus::Recording;
+        let mut sequence = state.current_sequence.lock().unwrap();
+        *sequence += 1;
+        *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
+    }
+
+    state
+        .audio_command_tx
+        .send(AudioCommand::Resume)
+        .map_err(|err| format!("Failed to resume recording: {}", err))?;
+    state.clear_recording_recovery_state();
+
+    Ok(build_recording_status_update(state, recording_id, "RECORDING"))
+}
+
+pub fn stop_recording_locally(
+    state: &Arc<AppState>,
+    queue_upload_until_reconnect: bool,
+) -> Result<RecordingStatusUpdate, String> {
+    let recording_id = active_recording_id(state)?;
+
+    {
+        let mut status = state.status.lock().unwrap();
+        if *status != AppStatus::Recording && *status != AppStatus::Paused {
+            return Err("No active recording is currently running.".to_string());
+        }
+
+        *status = AppStatus::Uploading;
+    }
+
+    state
+        .audio_command_tx
+        .send(AudioCommand::Stop)
+        .map_err(|err| format!("Failed to stop recording: {}", err))?;
+    if queue_upload_until_reconnect {
+        state.set_recording_recovery_state(RecordingRecoveryState::StopRequested);
+    } else {
+        state.clear_recording_recovery_state();
+    }
+
+    Ok(build_recording_status_update(state, recording_id, "UPLOADING"))
+}
+
+pub fn mark_recording_waiting_for_reconnect(state: &Arc<AppState>) -> Result<bool, String> {
+    if state.current_recording_id.lock().unwrap().is_none() {
+        return Err("No active recording is currently running.".to_string());
+    }
+
+    let status = state.status.lock().unwrap().clone();
+    let next_recovery_state = match status {
+        AppStatus::Recording | AppStatus::Paused => RecordingRecoveryState::WaitingForReconnect,
+        AppStatus::Uploading => RecordingRecoveryState::StopRequested,
+        _ => return Err("No active recording is currently running.".to_string()),
+    };
+
+    if state.recording_recovery_state() == next_recovery_state {
+        return Ok(false);
+    }
+
+    state.set_recording_recovery_state(next_recovery_state);
+    Ok(true)
+}
+
+pub fn restore_recording_after_reconnect(state: &Arc<AppState>) -> RecordingRecoveryState {
+    let previous_state = state.recording_recovery_state();
+    if previous_state != RecordingRecoveryState::None {
+        state.clear_recording_recovery_state();
+    }
+
+    previous_state
+}
+
 async fn get_status(
     headers: HeaderMap,
     State(context): State<ServerContext>,
@@ -895,6 +1113,8 @@ async fn complete_pairing(
 
     *state.current_recording_id.lock().unwrap() = None;
     *state.current_recording_token.lock().unwrap() = None;
+    state.clear_current_recording_owner();
+    state.clear_recording_recovery_state();
     *state.current_sequence.lock().unwrap() = 1;
 
     if should_revoke_previous_backend {
@@ -917,6 +1137,7 @@ async fn complete_pairing(
         "Connected to Nojoin",
         "Companion app is now paired with this Nojoin deployment.",
     );
+    crate::refresh_tray_menu(&context.app_handle, state);
 
     (
         StatusCode::OK,
@@ -1024,14 +1245,14 @@ async fn start_recording(
     let state = &context.state;
     info!("Received start_recording request for '{}'", payload.name);
 
-    {
+    let guard = {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
+        guard_steady_state_request(
             &headers,
             &config,
             LOCAL_CONTROL_RECORDING_START_ACTION,
-        )?;
-    }
+        )?
+    };
 
     // Check status (and drop lock immediately)
     {
@@ -1096,6 +1317,12 @@ async fn start_recording(
                     // Start Audio Thread
                     *state.current_recording_id.lock().unwrap() = Some(id);
                     *state.current_recording_token.lock().unwrap() = upload_token;
+                    state.set_current_recording_owner(ActiveRecordingOwner {
+                        user_id: guard.claims.user_id,
+                        username: guard.claims.username.clone(),
+                        companion_pairing_id: guard.claims.companion_pairing_id.clone(),
+                    });
+                    state.clear_recording_recovery_state();
                     *state.current_sequence.lock().unwrap() = 1;
                     *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
                     *state.accumulated_duration.lock().unwrap() = Duration::new(0, 0);
@@ -1105,15 +1332,17 @@ async fn start_recording(
                         .send(AudioCommand::Start(id))
                         .unwrap();
 
-                    // Re-acquire lock to update status
-                    let mut status = state.status.lock().unwrap();
-                    *status = AppStatus::Recording;
+                    {
+                        let mut status = state.status.lock().unwrap();
+                        *status = AppStatus::Recording;
+                    }
 
                     notifications::show_notification(
                         &context.app_handle,
                         "Recording Started",
                         &format!("Recording '{}' started.", recording_name),
                     );
+                    crate::refresh_tray_menu(&context.app_handle, state);
                     info!("Recording started successfully. ID: {}", id);
 
                     return Ok((
@@ -1147,43 +1376,29 @@ async fn stop_recording(
     let state = &context.state;
     info!("Received stop_recording request");
 
-    {
+    let guard = {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
+        guard_steady_state_request(
             &headers,
             &config,
             LOCAL_CONTROL_RECORDING_STOP_ACTION,
-        )?;
+        )?
+    };
+
+    if state.current_recording_id.lock().unwrap().is_none() {
+        return Err(LocalGuardRejection::conflict(
+            "recording_not_active",
+            "No active recording is currently running.",
+        ));
     }
+    let owner = state.current_recording_owner();
+    ensure_same_recording_owner(owner.as_ref(), &guard.claims, "stop")?;
 
-    let recording_id = *state.current_recording_id.lock().unwrap();
-
-    {
-        let mut status = state.status.lock().unwrap();
-        *status = AppStatus::Uploading;
-
-        // Do NOT clear current_recording_id here. Audio thread needs it.
-    }
-    state.audio_command_tx.send(AudioCommand::Stop).unwrap();
-
-    if let Some(id) = recording_id {
-        let config_clone = state.config.lock().unwrap().clone();
-        let token = state.current_recording_token.lock().unwrap().clone();
-        tokio::spawn(async move {
-            if let Some(token) = token {
-                if let Err(e) =
-                    uploader::update_client_status(id, "UPLOADING", &config_clone, &token).await
-                {
-                    error!("Failed to update client status: {}", e);
-                }
-            } else {
-                error!(
-                    "Missing recording upload token while stopping recording {}",
-                    id
-                );
-            }
-        });
-    }
+    let status_update = stop_recording_locally(state, false).map_err(|message| {
+        LocalGuardRejection::conflict("recording_not_active", message)
+    })?;
+    spawn_recording_status_update(status_update);
+    crate::refresh_tray_menu(&context.app_handle, state);
 
     notifications::show_notification(
         &context.app_handle,
@@ -1201,50 +1416,29 @@ async fn pause_recording(
     let state = &context.state;
     info!("Received pause_recording request");
 
-    {
+    let guard = {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
+        guard_steady_state_request(
             &headers,
             &config,
             LOCAL_CONTROL_RECORDING_PAUSE_ACTION,
-        )?;
-    }
+        )?
+    };
 
-    let recording_id = *state.current_recording_id.lock().unwrap();
-    {
-        let mut status = state.status.lock().unwrap();
-        *status = AppStatus::Paused;
-
-        // Accumulate time
-        let mut start_time = state.recording_start_time.lock().unwrap();
-        if let Some(s) = *start_time {
-            if let Ok(elapsed) = s.elapsed() {
-                let mut acc = state.accumulated_duration.lock().unwrap();
-                *acc += elapsed;
-            }
-        }
-        *start_time = None;
+    if state.current_recording_id.lock().unwrap().is_none() {
+        return Err(LocalGuardRejection::conflict(
+            "recording_not_active",
+            "No active recording is currently running.",
+        ));
     }
-    state.audio_command_tx.send(AudioCommand::Pause).unwrap();
+    let owner = state.current_recording_owner();
+    ensure_same_recording_owner(owner.as_ref(), &guard.claims, "pause")?;
 
-    if let Some(id) = recording_id {
-        let config_clone = state.config.lock().unwrap().clone();
-        let token = state.current_recording_token.lock().unwrap().clone();
-        tokio::spawn(async move {
-            if let Some(token) = token {
-                if let Err(e) =
-                    uploader::update_client_status(id, "PAUSED", &config_clone, &token).await
-                {
-                    error!("Failed to update client status: {}", e);
-                }
-            } else {
-                error!(
-                    "Missing recording upload token while pausing recording {}",
-                    id
-                );
-            }
-        });
-    }
+    let status_update = pause_recording_locally(state).map_err(|message| {
+        LocalGuardRejection::conflict("recording_not_active", message)
+    })?;
+    spawn_recording_status_update(status_update);
+    crate::refresh_tray_menu(&context.app_handle, state);
 
     notifications::show_notification(&context.app_handle, "Recording Paused", "Recording paused.");
     info!("Recording paused");
@@ -1258,46 +1452,29 @@ async fn resume_recording(
     let state = &context.state;
     info!("Received resume_recording request");
 
-    {
+    let guard = {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
+        guard_steady_state_request(
             &headers,
             &config,
             LOCAL_CONTROL_RECORDING_RESUME_ACTION,
-        )?;
-    }
+        )?
+    };
 
-    let recording_id = *state.current_recording_id.lock().unwrap();
-    {
-        let mut status = state.status.lock().unwrap();
-        *status = AppStatus::Recording;
-        let mut seq = state.current_sequence.lock().unwrap();
-        *seq += 1;
-
-        // Resume timing
-        let mut start_time = state.recording_start_time.lock().unwrap();
-        *start_time = Some(SystemTime::now());
+    if state.current_recording_id.lock().unwrap().is_none() {
+        return Err(LocalGuardRejection::conflict(
+            "recording_not_active",
+            "No active recording is currently running.",
+        ));
     }
-    state.audio_command_tx.send(AudioCommand::Resume).unwrap();
+    let owner = state.current_recording_owner();
+    ensure_same_recording_owner(owner.as_ref(), &guard.claims, "resume")?;
 
-    if let Some(id) = recording_id {
-        let config_clone = state.config.lock().unwrap().clone();
-        let token = state.current_recording_token.lock().unwrap().clone();
-        tokio::spawn(async move {
-            if let Some(token) = token {
-                if let Err(e) =
-                    uploader::update_client_status(id, "RECORDING", &config_clone, &token).await
-                {
-                    error!("Failed to update client status: {}", e);
-                }
-            } else {
-                error!(
-                    "Missing recording upload token while resuming recording {}",
-                    id
-                );
-            }
-        });
-    }
+    let status_update = resume_recording_locally(state).map_err(|message| {
+        LocalGuardRejection::conflict("recording_not_active", message)
+    })?;
+    spawn_recording_status_update(status_update);
+    crate::refresh_tray_menu(&context.app_handle, state);
 
     notifications::show_notification(
         &context.app_handle,
@@ -1517,8 +1694,11 @@ async fn trigger_update(
 mod tests {
     use super::*;
     use axum::http::HeaderMap;
+    use crossbeam_channel::unbounded;
     use jsonwebtoken::{encode, EncodingKey, Header};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicBool, AtomicU32};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn build_test_config() -> Config {
         Config {
@@ -1567,6 +1747,45 @@ mod tests {
             companion_pairing_id: "pairing-123".to_string(),
             secret_version: 3,
         }
+    }
+
+    fn build_recording_owner() -> ActiveRecordingOwner {
+        ActiveRecordingOwner {
+            user_id: 1,
+            username: "alice".to_string(),
+            companion_pairing_id: "pairing-123".to_string(),
+        }
+    }
+
+    fn build_test_state() -> (Arc<AppState>, crossbeam_channel::Receiver<AudioCommand>) {
+        let (audio_command_tx, audio_command_rx) = unbounded::<AudioCommand>();
+
+        let state = AppState {
+            status: Mutex::new(AppStatus::Idle),
+            current_recording_id: Mutex::new(None),
+            current_recording_token: Mutex::new(None),
+            current_recording_owner: Mutex::new(None),
+            recording_recovery_state: Mutex::new(RecordingRecoveryState::None),
+            current_sequence: Mutex::new(1),
+            audio_command_tx,
+            config: Mutex::new(build_test_config()),
+            recording_start_time: Mutex::new(None),
+            accumulated_duration: Mutex::new(Duration::new(0, 0)),
+            input_level: AtomicU32::new(0),
+            output_level: AtomicU32::new(0),
+            live_input_level: AtomicU32::new(0),
+            live_output_level: AtomicU32::new(0),
+            is_backend_connected: AtomicBool::new(false),
+            update_available: AtomicBool::new(false),
+            latest_version: Mutex::new(None),
+            latest_update_url: Mutex::new(None),
+            tray_status_item: Mutex::new(None),
+            tray_run_on_startup_item: Mutex::new(None),
+            tray_icon: Mutex::new(None),
+            pairing_session: Mutex::new(None),
+        };
+
+        (Arc::new(state), audio_command_rx)
     }
 
     fn encode_token(claims: &LocalControlClaims, secret: &str) -> String {
@@ -1721,5 +1940,106 @@ mod tests {
 
         assert_eq!(rejection.status, StatusCode::CONFLICT);
         assert_eq!(rejection.error, "local_pairing_conflict");
+    }
+
+    #[test]
+    fn recording_owner_check_accepts_same_user_across_tabs() {
+        let claims = build_claims();
+        let owner = build_recording_owner();
+
+        let result = ensure_same_recording_owner(Some(&owner), &claims, "pause");
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn recording_owner_check_rejects_different_user() {
+        let mut claims = build_claims();
+        claims.user_id = 2;
+        claims.username = "bob".to_string();
+        let owner = build_recording_owner();
+
+        let rejection = ensure_same_recording_owner(Some(&owner), &claims, "stop").unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::FORBIDDEN);
+        assert_eq!(rejection.error, "recording_owner_mismatch");
+    }
+
+    #[test]
+    fn recording_owner_check_rejects_mismatched_pairing() {
+        let claims = build_claims();
+        let mut owner = build_recording_owner();
+        owner.companion_pairing_id = "pairing-old".to_string();
+
+        let rejection = ensure_same_recording_owner(Some(&owner), &claims, "resume").unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::CONFLICT);
+        assert_eq!(rejection.error, "recording_owner_conflict");
+    }
+
+    #[test]
+    fn recording_owner_check_fails_closed_when_metadata_is_missing() {
+        let claims = build_claims();
+
+        let rejection = ensure_same_recording_owner(None, &claims, "stop").unwrap_err();
+
+        assert_eq!(rejection.status, StatusCode::CONFLICT);
+        assert_eq!(rejection.error, "recording_owner_missing");
+    }
+
+    #[test]
+    fn backend_disconnect_marks_recording_for_reconnect_without_pausing() {
+        let (state, audio_command_rx) = build_test_state();
+        *state.current_recording_id.lock().unwrap() = Some(42);
+        *state.current_recording_token.lock().unwrap() = Some("upload-token".to_string());
+        *state.status.lock().unwrap() = AppStatus::Recording;
+        *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
+
+        let changed = mark_recording_waiting_for_reconnect(&state).unwrap();
+
+        assert!(changed);
+        assert_eq!(*state.status.lock().unwrap(), AppStatus::Recording);
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::WaitingForReconnect
+        );
+        assert!(audio_command_rx.is_empty());
+    }
+
+    #[test]
+    fn offline_stop_enters_uploading_and_marks_upload_queue() {
+        let (state, audio_command_rx) = build_test_state();
+        *state.current_recording_id.lock().unwrap() = Some(77);
+        *state.current_recording_token.lock().unwrap() = Some("upload-token".to_string());
+        *state.status.lock().unwrap() = AppStatus::Recording;
+        state.set_recording_recovery_state(RecordingRecoveryState::WaitingForReconnect);
+
+        let update = stop_recording_locally(&state, true).unwrap();
+
+        assert_eq!(*state.status.lock().unwrap(), AppStatus::Uploading);
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::StopRequested
+        );
+        assert!(matches!(audio_command_rx.recv().unwrap(), AudioCommand::Stop));
+        assert_eq!(update.recording_id, 77);
+        assert_eq!(update.status, "UPLOADING");
+    }
+
+    #[test]
+    fn reconnect_clears_recovery_marker_without_stopping_recording() {
+        let (state, _audio_command_rx) = build_test_state();
+        *state.current_recording_id.lock().unwrap() = Some(88);
+        *state.status.lock().unwrap() = AppStatus::Recording;
+        state.set_recording_recovery_state(RecordingRecoveryState::WaitingForReconnect);
+
+        let previous_state = restore_recording_after_reconnect(&state);
+
+        assert_eq!(previous_state, RecordingRecoveryState::WaitingForReconnect);
+        assert_eq!(*state.status.lock().unwrap(), AppStatus::Recording);
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::None
+        );
     }
 }

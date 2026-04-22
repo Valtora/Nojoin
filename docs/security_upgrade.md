@@ -504,7 +504,7 @@ Delivered ahead of the original schedule and now treated as completed foundation
 - local control token issuance and Companion-side validation
 - removal of anonymous localhost detection from the frontend
 - authenticated frontend calls for steady-state local Companion routes
-- persisted recording ownership metadata and local-control auth on recording lifecycle routes
+- local-control auth on recording lifecycle routes
 - Companion paired-state display, manual unpair action, and blocked-state copy
 
 The remaining work is re-grouped below into the next sequential waterfall plan.
@@ -516,17 +516,17 @@ Goal: finish the backend-switch mechanics so pairing and re-pairing can be treat
 
 Tasks:
 
-- [ ] 4.1 Complete atomic replacement of backend trust state on successful pairing and clear stale secrets from the previously paired backend. (was 4.10)
-- [ ] 4.2 Reject backend-switch or re-pair attempts while recording or uploading is active across the full pairing path. (was 6.6)
-- [ ] 4.3 Add Settings-window controls for entering and cancelling pairing mode. (was 8.1)
-- [ ] 4.4 Add regression tests for Settings-driven pairing flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording. (was 4.11)
+- [x] 4.1 Complete atomic replacement of backend trust state on successful pairing and clear stale secrets from the previously paired backend. (was 4.10)
+- [x] 4.2 Reject backend-switch or re-pair attempts while recording or uploading is active across the full pairing path. (was 6.6)
+- [x] 4.3 Add Settings-window controls for entering and cancelling pairing mode. (was 8.1)
+- [x] 4.4 Add regression tests for Settings-driven pairing flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording. (was 4.11)
 
 Exit criteria:
 
-- [ ] Successful re-pair replaces the backend trust block atomically and leaves no stale secrets behind.
-- [ ] Re-pair is impossible while recording or upload work is active.
-- [ ] Pairing mode can be entered and cancelled locally from the Settings window.
-- [ ] Pairing-state transitions have regression coverage.
+- [x] Successful re-pair replaces the backend trust block atomically and leaves no stale secrets behind.
+- [x] Re-pair is impossible while recording or upload work is active.
+- [x] Pairing mode can be entered and cancelled locally from the Settings window.
+- [x] Pairing-state transitions have regression coverage.
 
 ## Phase 5 - Recording Ownership and Offline Recovery
 
@@ -534,15 +534,15 @@ Goal: finish the user-level authorization model for active recordings and define
 
 Tasks:
 
-- [ ] 5.1 Decide whether `pause`, `resume`, and `stop` must also carry a fresh backend-derived identity token or whether stored recording-owner metadata is sufficient. (was 6.3)
-- [ ] 5.2 Enforce same-user or approved-override rules for `pause`, `resume`, and `stop`. (was 6.5)
-- [ ] 5.3 Add a tray-level emergency stop policy for offline or expired-token recovery. (was 6.7)
-- [ ] 5.4 Add tests for owner mismatch, cross-tab collisions, blocked backend switch during active recording, and backend-offline stop behavior. (was 6.8)
+- [x] 5.1 Decide whether `pause`, `resume`, and `stop` must also carry a fresh backend-derived identity token or whether stored recording-owner metadata is sufficient. Decision: stored recording-owner metadata plus the existing short-lived local-control token is sufficient; `start` remains the route that also requires a fresh backend bootstrap token. (was 6.3)
+- [x] 5.2 Enforce same-user or approved-override rules for `pause`, `resume`, and `stop`. Current implementation enforces same-user by default using stored recording-owner metadata plus the validated local-control token claims. (was 6.5)
+- [x] 5.3 Add a tray-level emergency stop policy for offline or expired-token recovery. Current implementation keeps an active recording running locally when backend health checks fail, notifies the user that they may need to stop it from the tray, and queues saved audio for upload once Nojoin reconnects if they stop while offline. (was 6.7)
+- [x] 5.4 Add tests for owner mismatch, cross-tab collisions, blocked backend switch during active recording, and backend-offline stop behavior. Owner mismatch and same-user cross-tab checks live in `server.rs`, blocked backend switching during an active recording was covered in Phase 4, and backend-loss state tracking plus offline manual-stop upload queue behavior now have direct Companion regression tests. (was 6.8)
 
 Exit criteria:
 
-- [ ] Recording lifecycle actions are bound to both the paired backend and the allowed local caller.
-- [ ] There is a defined and tested recovery path when the backend is unavailable.
+- [x] Recording lifecycle actions are bound to both the paired backend and the allowed local caller.
+- [x] There is a defined and tested recovery path when the backend is unavailable.
 
 ## Phase 6 - UX State and Operator Messaging Completion
 
@@ -617,7 +617,7 @@ The project should not be considered complete until all of the following are tru
 - [x] The Companion is associated with only one backend at a time.
 - [x] Switching between development and production requires explicit re-pairing and never happens because of background polling.
 - [x] Machine-local settings are preserved across backend switches where safe.
-- [ ] While a recording is active or uploading, re-pairing is blocked unless an explicitly approved override path is used.
+- [x] While a recording is active or uploading, re-pairing is blocked unless an explicitly approved override path is used.
 
 ## Implementation Notes
 

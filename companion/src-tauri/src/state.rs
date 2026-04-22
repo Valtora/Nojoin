@@ -99,10 +99,26 @@ impl PairingSession {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveRecordingOwner {
+    pub user_id: i64,
+    pub username: String,
+    pub companion_pairing_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordingRecoveryState {
+    None,
+    WaitingForReconnect,
+    StopRequested,
+}
+
 pub struct AppState {
     pub status: Mutex<AppStatus>,
     pub current_recording_id: Mutex<Option<i64>>,
     pub current_recording_token: Mutex<Option<String>>,
+    pub current_recording_owner: Mutex<Option<ActiveRecordingOwner>>,
+    pub recording_recovery_state: Mutex<RecordingRecoveryState>,
     pub current_sequence: Mutex<i32>,
     pub audio_command_tx: Sender<AudioCommand>,
     pub config: Mutex<Config>,
@@ -244,6 +260,33 @@ impl AppState {
     pub fn complete_pairing_session(&self) {
         self.clear_pairing_session();
     }
+
+    pub fn set_current_recording_owner(&self, owner: ActiveRecordingOwner) {
+        let mut current_owner = self.current_recording_owner.lock().unwrap();
+        *current_owner = Some(owner);
+    }
+
+    pub fn current_recording_owner(&self) -> Option<ActiveRecordingOwner> {
+        self.current_recording_owner.lock().unwrap().clone()
+    }
+
+    pub fn clear_current_recording_owner(&self) {
+        let mut current_owner = self.current_recording_owner.lock().unwrap();
+        *current_owner = None;
+    }
+
+    pub fn recording_recovery_state(&self) -> RecordingRecoveryState {
+        *self.recording_recovery_state.lock().unwrap()
+    }
+
+    pub fn set_recording_recovery_state(&self, recovery_state: RecordingRecoveryState) {
+        let mut current_state = self.recording_recovery_state.lock().unwrap();
+        *current_state = recovery_state;
+    }
+
+    pub fn clear_recording_recovery_state(&self) {
+        self.set_recording_recovery_state(RecordingRecoveryState::None);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -258,7 +301,8 @@ pub enum AudioCommand {
 mod tests {
     use super::{
         canonicalize_pairing_code, pairing_block_message, AppState, AppStatus, AudioCommand,
-        PairingSession, PairingValidationError, MAX_PAIRING_ATTEMPTS,
+        PairingSession, PairingValidationError, RecordingRecoveryState,
+        MAX_PAIRING_ATTEMPTS,
     };
     use crate::config::Config;
     use crossbeam_channel::unbounded;
@@ -273,6 +317,8 @@ mod tests {
             status: Mutex::new(AppStatus::Idle),
             current_recording_id: Mutex::new(None),
             current_recording_token: Mutex::new(None),
+            current_recording_owner: Mutex::new(None),
+            recording_recovery_state: Mutex::new(RecordingRecoveryState::None),
             current_sequence: Mutex::new(1),
             audio_command_tx,
             config: Mutex::new(Config::default()),
@@ -377,6 +423,34 @@ mod tests {
         assert_eq!(
             pairing_block_message(&AppStatus::Uploading),
             Some("Pairing is unavailable while uploads are still finishing.")
+        );
+    }
+
+    #[test]
+    fn recording_recovery_state_round_trips() {
+        let state = test_state();
+
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::None
+        );
+
+        state.set_recording_recovery_state(RecordingRecoveryState::WaitingForReconnect);
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::WaitingForReconnect
+        );
+
+        state.set_recording_recovery_state(RecordingRecoveryState::StopRequested);
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::StopRequested
+        );
+
+        state.clear_recording_recovery_state();
+        assert_eq!(
+            state.recording_recovery_state(),
+            RecordingRecoveryState::None
         );
     }
 }

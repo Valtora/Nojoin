@@ -2,9 +2,41 @@ use crate::config::Config;
 use anyhow::Result;
 use log::{error, info, warn};
 use reqwest::multipart;
+use reqwest::StatusCode;
+use serde::Deserialize;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+
+#[derive(Deserialize)]
+struct RecordingUploadTokenResponse {
+    upload_token: String,
+}
+
+async fn refresh_recording_upload_token(recording_id: i64, config: &Config) -> Result<String> {
+    let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let url = format!(
+        "{}/recordings/{}/upload-token",
+        config.get_api_url(),
+        recording_id
+    );
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.api_token()))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to refresh recording upload token: {}",
+            response.status()
+        ));
+    }
+
+    let payload = response.json::<RecordingUploadTokenResponse>().await?;
+    Ok(payload.upload_token)
+}
 
 pub async fn upload_segment(
     recording_id: i64,
@@ -12,9 +44,11 @@ pub async fn upload_segment(
     file_path: &Path,
     config: &Config,
     api_token: &str,
-) -> Result<()> {
+) -> Result<Option<String>> {
     // Allow invalid certs for self-signed SSL (development)
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let mut upload_token = api_token.to_string();
+    let mut refreshed_token = None;
 
     // Read file manually to avoid issues with Form::file
     let mut file = File::open(file_path).await?;
@@ -41,7 +75,7 @@ pub async fn upload_segment(
 
         let res = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", api_token))
+            .header("Authorization", format!("Bearer {}", upload_token))
             .multipart(form)
             .send()
             .await;
@@ -53,7 +87,28 @@ pub async fn upload_segment(
                         "Segment {} uploaded successfully for recording {}",
                         sequence, recording_id
                     );
-                    return Ok(());
+                    return Ok(refreshed_token);
+                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
+                    match refresh_recording_upload_token(recording_id, config).await {
+                        Ok(new_token) => {
+                            info!(
+                                "Refreshed upload token for recording {} after a 401 while uploading segment {}.",
+                                recording_id,
+                                sequence,
+                            );
+                            upload_token = new_token.clone();
+                            refreshed_token = Some(new_token);
+                            continue;
+                        }
+                        Err(error) => {
+                            warn!(
+                                "Upload token refresh failed for recording {} after a 401 on segment {}: {}",
+                                recording_id,
+                                sequence,
+                                error,
+                            );
+                        }
+                    }
                 } else {
                     warn!(
                         "Upload failed (attempt {}/{}): {}",
@@ -84,8 +139,14 @@ pub async fn upload_segment(
     }
 }
 
-pub async fn finalize_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
+pub async fn finalize_recording(
+    recording_id: i64,
+    config: &Config,
+    api_token: &str,
+) -> Result<Option<String>> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let mut upload_token = api_token.to_string();
+    let mut refreshed_token = None;
     let url = format!(
         "{}/recordings/{}/finalize",
         config.get_api_url(),
@@ -99,7 +160,7 @@ pub async fn finalize_recording(recording_id: i64, config: &Config, api_token: &
         attempts += 1;
         let res = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", api_token))
+            .header("Authorization", format!("Bearer {}", upload_token))
             .send()
             .await;
 
@@ -107,7 +168,26 @@ pub async fn finalize_recording(recording_id: i64, config: &Config, api_token: &
             Ok(response) => {
                 if response.status().is_success() {
                     info!("Recording {} finalized successfully", recording_id);
-                    return Ok(());
+                    return Ok(refreshed_token);
+                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
+                    match refresh_recording_upload_token(recording_id, config).await {
+                        Ok(new_token) => {
+                            info!(
+                                "Refreshed upload token for recording {} after a 401 during finalize.",
+                                recording_id,
+                            );
+                            upload_token = new_token.clone();
+                            refreshed_token = Some(new_token);
+                            continue;
+                        }
+                        Err(error) => {
+                            warn!(
+                                "Upload token refresh failed for recording {} after a 401 during finalize: {}",
+                                recording_id,
+                                error,
+                            );
+                        }
+                    }
                 } else {
                     warn!(
                         "Finalize failed (attempt {}/{}): {}",
@@ -143,8 +223,9 @@ pub async fn update_client_status(
     status: &str,
     config: &Config,
     api_token: &str,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let mut upload_token = api_token.to_string();
     let url = format!(
         "{}/recordings/{}/client_status?status={}",
         config.get_api_url(),
@@ -154,15 +235,29 @@ pub async fn update_client_status(
 
     let res = client
         .put(&url)
-        .header("Authorization", format!("Bearer {}", api_token))
+        .header("Authorization", format!("Bearer {}", upload_token))
         .send()
         .await?;
+
+    if res.status() == StatusCode::UNAUTHORIZED {
+        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        upload_token = new_token.clone();
+        let retry = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", upload_token))
+            .send()
+            .await?;
+        if !retry.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to update status: {}", retry.status()));
+        }
+        return Ok(Some(new_token));
+    }
 
     if !res.status().is_success() {
         return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
     }
 
-    Ok(())
+    Ok(None)
 }
 
 pub async fn update_status_with_progress(
@@ -171,8 +266,9 @@ pub async fn update_status_with_progress(
     progress: i32,
     config: &Config,
     api_token: &str,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let mut upload_token = api_token.to_string();
     let url = format!(
         "{}/recordings/{}/client_status?status={}&upload_progress={}",
         config.get_api_url(),
@@ -183,19 +279,38 @@ pub async fn update_status_with_progress(
 
     let res = client
         .put(&url)
-        .header("Authorization", format!("Bearer {}", api_token))
+        .header("Authorization", format!("Bearer {}", upload_token))
         .send()
         .await?;
+
+    if res.status() == StatusCode::UNAUTHORIZED {
+        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        upload_token = new_token.clone();
+        let retry = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", upload_token))
+            .send()
+            .await?;
+        if !retry.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to update status: {}", retry.status()));
+        }
+        return Ok(Some(new_token));
+    }
 
     if !res.status().is_success() {
         return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
     }
 
-    Ok(())
+    Ok(None)
 }
 
-pub async fn discard_recording(recording_id: i64, config: &Config, api_token: &str) -> Result<()> {
+pub async fn discard_recording(
+    recording_id: i64,
+    config: &Config,
+    api_token: &str,
+) -> Result<Option<String>> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let mut upload_token = api_token.to_string();
     let url = format!(
         "{}/recordings/{}/discard",
         config.get_api_url(),
@@ -204,9 +319,30 @@ pub async fn discard_recording(recording_id: i64, config: &Config, api_token: &s
 
     let res = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_token))
+        .header("Authorization", format!("Bearer {}", upload_token))
         .send()
         .await?;
+
+    if res.status() == StatusCode::UNAUTHORIZED {
+        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        upload_token = new_token.clone();
+        let retry = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", upload_token))
+            .send()
+            .await?;
+        if !retry.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to delete recording: {}",
+                retry.status()
+            ));
+        }
+        info!(
+            "Recording {} deleted successfully (too short)",
+            recording_id
+        );
+        return Ok(Some(new_token));
+    }
 
     if !res.status().is_success() {
         return Err(anyhow::anyhow!(
@@ -219,5 +355,5 @@ pub async fn discard_recording(recording_id: i64, config: &Config, api_token: &s
         "Recording {} deleted successfully (too short)",
         recording_id
     );
-    Ok(())
+    Ok(None)
 }

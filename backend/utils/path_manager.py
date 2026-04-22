@@ -69,7 +69,7 @@ class PathManager:
         
         # Check if we're in a typical development structure
         # Look for indicators like requirements.txt, README.md, etc.
-        script_dir = Path(__file__).parent.parent.parent
+        script_dir = self._get_project_root()
         dev_indicators = ['requirements.txt', 'README.md', '.git', 'Nojoin.py']
         
         if any((script_dir / indicator).exists() for indicator in dev_indicators):
@@ -79,12 +79,38 @@ class PathManager:
         # Default to production for safety
         self._deployment_mode = 'production'
         return 'production'
+
+    def _get_project_root(self) -> Path:
+        return Path(__file__).parent.parent.parent
+
+    def _is_containerized_runtime(self) -> bool:
+        containerized_flag = os.getenv('NOJOIN_CONTAINERIZED', '')
+        if containerized_flag.lower() in {'1', 'true', 'yes', 'on'}:
+            return True
+
+        return Path('/.dockerenv').exists() or Path('/run/.containerenv').exists()
+
+    def _get_container_data_directory(self, project_root: Path) -> Path:
+        configured_data_dir = os.getenv('NOJOIN_DATA_DIR', '').strip()
+        if configured_data_dir:
+            configured_path = Path(configured_data_dir).expanduser()
+            if not configured_path.is_absolute():
+                configured_path = project_root / configured_path
+            return configured_path
+
+        return project_root / 'data'
     
     def _initialize_directories(self):
         """Initialize application and user data directories based on deployment mode."""
-        if self._deployment_mode == 'development':
+        project_root = self._get_project_root()
+
+        if self._is_containerized_runtime():
+            # Containerized deployments persist application data under /app/data.
+            self._executable_directory = project_root
+            self._app_directory = project_root
+            self._user_data_directory = self._get_container_data_directory(project_root)
+        elif self._deployment_mode == 'development':
             # Development mode: everything in project directory
-            project_root = Path(__file__).parent.parent.parent
             self._executable_directory = project_root  # Assets are in project root
             self._app_directory = project_root  # Keep for backward compatibility
             self._user_data_directory = project_root / 'data'
@@ -106,7 +132,7 @@ class PathManager:
                 return Path(sys.executable).parent
         else:
             # Running as script - return script directory
-            return Path(__file__).parent.parent.parent
+            return self._get_project_root()
     
     def _get_app_directory(self) -> Path:
         """Get platform-appropriate application directory."""
@@ -274,7 +300,7 @@ class PathManager:
             return False
         
         # Look for old files in project structure
-        old_project_root = Path(__file__).parent.parent.parent
+        old_project_root = self._get_project_root()
         old_nojoin_dir = old_project_root / 'nojoin'
         
         migration_needed = False

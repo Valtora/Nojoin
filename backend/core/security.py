@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import logging
 from typing import Any, Optional, Union
 from jose import jwt
 from passlib.context import CryptContext
@@ -9,6 +10,8 @@ from pathlib import Path
 from backend.utils.time import utc_now
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+logger = logging.getLogger(__name__)
 
 
 from backend.utils.path_manager import path_manager
@@ -63,13 +66,50 @@ def _get_secret_key() -> str:
         return env_key
     
     key_file = path_manager.user_data_directory / ".secret_key"
+    _migrate_legacy_secret_file(key_file)
     if key_file.exists():
-        return key_file.read_text().strip()
+        return key_file.read_text(encoding="utf-8").strip()
     
     new_key = secrets.token_hex(32)
     key_file.parent.mkdir(parents=True, exist_ok=True)
-    key_file.write_text(new_key)
+    key_file.write_text(new_key, encoding="utf-8")
     return new_key
+
+
+def _legacy_documents_secret_file(file_name: str) -> Path:
+    return Path.home() / "Documents" / "Nojoin" / file_name
+
+
+def _migrate_legacy_secret_file(
+    current_key_file: Path,
+    legacy_key_file: Optional[Path] = None,
+) -> None:
+    legacy_key_file = legacy_key_file or _legacy_documents_secret_file(current_key_file.name)
+    if legacy_key_file == current_key_file or not legacy_key_file.exists():
+        return
+
+    legacy_value = legacy_key_file.read_text(encoding="utf-8").strip()
+    current_value = None
+    if current_key_file.exists():
+        current_value = current_key_file.read_text(encoding="utf-8").strip()
+
+    if current_value != legacy_value:
+        current_key_file.parent.mkdir(parents=True, exist_ok=True)
+        current_key_file.write_text(legacy_value, encoding="utf-8")
+        logger.warning(
+            "Migrated legacy SECRET_KEY from %s to %s so tokens survive container restarts.",
+            legacy_key_file,
+            current_key_file,
+        )
+
+    migrated_key_file = legacy_key_file.with_name(f"{legacy_key_file.name}.migrated")
+    try:
+        legacy_key_file.replace(migrated_key_file)
+    except OSError:
+        logger.warning(
+            "Unable to move legacy SECRET_KEY file %s out of the legacy path.",
+            legacy_key_file,
+        )
 
 
 SECRET_KEY = _get_secret_key()

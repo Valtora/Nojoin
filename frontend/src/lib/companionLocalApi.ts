@@ -28,6 +28,16 @@ interface CachedCompanionToken {
   expiresAt: number;
 }
 
+export class CompanionLocalRequestError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "CompanionLocalRequestError";
+    this.status = status;
+  }
+}
+
 const TOKEN_REFRESH_SKEW_MS = 10_000;
 const tokenCache = new Map<string, CachedCompanionToken>();
 const tokenRequestCache = new Map<string, Promise<string>>();
@@ -40,6 +50,18 @@ const getCompanionApiBase = () =>
 const normaliseActions = (
   actions: CompanionLocalAction | CompanionLocalAction[],
 ) => [...new Set(Array.isArray(actions) ? actions : [actions])].sort();
+
+const getTokenCacheKey = (
+  actions: CompanionLocalAction | CompanionLocalAction[],
+) => normaliseActions(actions).join(",");
+
+const invalidateCompanionLocalToken = (
+  actions: CompanionLocalAction | CompanionLocalAction[],
+) => {
+  const cacheKey = getTokenCacheKey(actions);
+  tokenCache.delete(cacheKey);
+  tokenRequestCache.delete(cacheKey);
+};
 
 const readErrorPayload = async (response: Response, fallback: string) => {
   const payload = (await response.json().catch(
@@ -73,11 +95,12 @@ const loadCompanionLocalToken = async (
       });
 
       if (!response.ok) {
-        throw new Error(
+        throw new CompanionLocalRequestError(
           await readErrorPayload(
             response,
             `Failed to fetch companion local control token: ${response.status}`,
           ),
+          response.status,
         );
       }
 
@@ -103,17 +126,27 @@ export const companionLocalFetch = async (
   init: RequestInit = {},
   actions: CompanionLocalAction | CompanionLocalAction[],
 ) => {
-  const token = await loadCompanionLocalToken(
-    actions,
-    init.signal ?? undefined,
-  );
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
+  const executeRequest = async () => {
+    const token = await loadCompanionLocalToken(
+      actions,
+      init.signal ?? undefined,
+    );
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${token}`);
 
-  return fetch(`${COMPANION_URL}${path}`, {
-    ...init,
-    headers,
-  });
+    return fetch(`${COMPANION_URL}${path}`, {
+      ...init,
+      headers,
+    });
+  };
+
+  let response = await executeRequest();
+  if (response.status === 401) {
+    invalidateCompanionLocalToken(actions);
+    response = await executeRequest();
+  }
+
+  return response;
 };
 
 export const readCompanionLocalError = readErrorPayload;

@@ -130,3 +130,8 @@ class RecordingInitResponse(SQLModel):
     id: int
     name: str
     upload_token: str
+
+
+class RecordingUploadTokenResponse(SQLModel):
+    recording_id: int
+    upload_token: str

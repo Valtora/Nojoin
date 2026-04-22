@@ -29,6 +29,7 @@ export default function MeetingControls({
 }: MeetingControlsProps) {
   const {
     backend,
+    companion,
     companionAuthenticated,
     companionStatus,
     recordingDuration,
@@ -44,14 +45,12 @@ export default function MeetingControls({
 
   // Sync local timer with store duration
   useEffect(() => {
-    if (recordingDuration > 0) {
-      setElapsedTime(recordingDuration);
-    }
+    setElapsedTime(recordingDuration);
   }, [recordingDuration]);
 
   // Timer logic
   useEffect(() => {
-    if (companionStatus === 'recording') {
+    if (companion && companionStatus === 'recording') {
       timerRef.current = setInterval(() => {
         setElapsedTime(prev => prev + 1);
       }, 1000);
@@ -64,7 +63,7 @@ export default function MeetingControls({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [companionStatus]);
+  }, [companion, companionStatus]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -152,9 +151,14 @@ export default function MeetingControls({
   const handleResume = () => sendCommand('resume');
 
   if (variant === "dashboard") {
-    const startDisabled = !backend;
+    const hasActiveRecording = companion && companionStatus !== 'idle';
+    const startDisabled = !backend || !companion || !companionAuthenticated;
     const statusText = !backend
       ? 'Nojoin backend unavailable.'
+      : !companion && companionAuthenticated
+        ? 'Companion is reconnecting. Recording state will resync automatically.'
+      : !companion
+        ? 'Open the Companion app to record audio.'
       : companionStatus === 'recording'
         ? 'Meeting is recording.'
         : companionStatus === 'paused'
@@ -186,14 +190,14 @@ export default function MeetingControls({
             </div>
           )}
 
-          {companionStatus === 'idle' ? (
+          {!hasActiveRecording ? (
             <button
               onClick={handleStart}
               disabled={startDisabled}
               className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
               <Mic className="w-4 h-4" />
-              Start Meeting
+              {!companion && companionAuthenticated ? 'Companion reconnecting...' : 'Start Meeting'}
             </button>
           ) : (
             <div className="space-y-3">
@@ -251,14 +255,14 @@ export default function MeetingControls({
       <div className="w-full">
         {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
         
-        {companionStatus === 'idle' ? (
+        {(!companion || companionStatus === 'idle') ? (
           <button
             onClick={handleStart}
-            disabled={!backend}
+            disabled={!backend || !companion || !companionAuthenticated}
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
           >
             <Mic className="w-4 h-4" />
-            Start Meeting
+            {!companion && companionAuthenticated ? 'Companion reconnecting...' : 'Start Meeting'}
           </button>
         ) : (
           <div className="flex items-center gap-2 w-full">

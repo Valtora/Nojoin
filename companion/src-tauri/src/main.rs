@@ -29,7 +29,10 @@ mod uploader;
 mod win_notifications;
 
 use config::{Config, MachineLocalUpdate};
-use state::{pairing_block_message, AppState, AppStatus, PAIRING_WINDOW_LIFETIME_SECS};
+use state::{
+    pairing_block_message, AppState, AppStatus, RecordingRecoveryState,
+    PAIRING_WINDOW_LIFETIME_SECS,
+};
 use tauri_plugin_autostart::ManagerExt;
 
 // Define SharedAppState at module level so it's visible to commands
@@ -107,12 +110,31 @@ fn current_tray_status_text(state: &Arc<AppState>) -> String {
     }
 
     let status = state.status.lock().unwrap().clone();
+    let recovery_state = state.recording_recovery_state();
     match status {
         AppStatus::Idle => "Status: Ready to Record".to_string(),
-        AppStatus::Recording => "Status: Recording".to_string(),
-        AppStatus::Paused => "Status: Recording Paused".to_string(),
-        AppStatus::Uploading => "Status: Uploading Recording".to_string(),
-        AppStatus::BackendOffline => "Status: Backend Not Found...".to_string(),
+        AppStatus::Recording => match recovery_state {
+            RecordingRecoveryState::WaitingForReconnect => {
+                "Status: Recording while Nojoin is offline".to_string()
+            }
+            _ => "Status: Recording".to_string(),
+        },
+        AppStatus::Paused => match recovery_state {
+            RecordingRecoveryState::None => "Status: Recording Paused".to_string(),
+            RecordingRecoveryState::WaitingForReconnect => {
+                "Status: Recording paused while Nojoin is offline".to_string()
+            }
+            RecordingRecoveryState::StopRequested => {
+                "Status: Upload queued until Nojoin reconnects".to_string()
+            }
+        },
+        AppStatus::Uploading => match recovery_state {
+            RecordingRecoveryState::StopRequested => {
+                "Status: Upload queued until Nojoin reconnects".to_string()
+            }
+            _ => "Status: Uploading Recording".to_string(),
+        },
+        AppStatus::BackendOffline => "Status: Nojoin Offline".to_string(),
         AppStatus::Error(_) => "Status: Error".to_string(),
     }
 }
@@ -134,6 +156,25 @@ fn build_tray_menu(
     state: &Arc<AppState>,
     is_autostart_enabled: bool,
 ) -> tauri::Result<Menu<tauri::Wry>> {
+    let status = state.status.lock().unwrap().clone();
+    let recovery_state = state.recording_recovery_state();
+    let has_active_recording = state.current_recording_id.lock().unwrap().is_some();
+    let can_pause_recording = has_active_recording
+        && matches!(status, AppStatus::Recording)
+        && recovery_state == RecordingRecoveryState::None;
+    let can_resume_recording = has_active_recording
+        && matches!(status, AppStatus::Paused)
+        && recovery_state == RecordingRecoveryState::None
+        && state.is_backend_connected.load(Ordering::SeqCst);
+    let stop_recording_label = match recovery_state {
+        RecordingRecoveryState::StopRequested => "Upload Queued Until Reconnect",
+        RecordingRecoveryState::WaitingForReconnect => "Stop Recording and Queue Upload",
+        RecordingRecoveryState::None => "Stop Recording",
+    };
+    let can_stop_recording = has_active_recording
+        && matches!(status, AppStatus::Recording | AppStatus::Paused)
+        && recovery_state != RecordingRecoveryState::StopRequested;
+
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
     let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
@@ -155,30 +196,73 @@ fn build_tray_menu(
         true,
         None::<&str>,
     )?;
+    let pause_recording = MenuItem::with_id(
+        app,
+        "pause_recording",
+        "Pause Recording",
+        can_pause_recording,
+        None::<&str>,
+    )?;
+    let resume_recording = MenuItem::with_id(
+        app,
+        "resume_recording",
+        "Resume Recording",
+        can_resume_recording,
+        None::<&str>,
+    )?;
+    let stop_recording = MenuItem::with_id(
+        app,
+        "stop_recording",
+        stop_recording_label,
+        can_stop_recording,
+        None::<&str>,
+    )?;
 
     *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
     *state.tray_run_on_startup_item.lock().unwrap() = Some(run_on_startup.clone());
 
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
+    let separator_three = PredefinedMenuItem::separator(app)?;
 
-    Menu::with_items(
-        app,
-        &[
-            &status_item,
-            &separator_one,
-            &settings,
-            &run_on_startup,
-            &check_updates,
-            &view_logs,
-            &about,
-            &separator_two,
-            &quit,
-        ],
-    )
+    if has_active_recording && matches!(status, AppStatus::Recording | AppStatus::Paused) {
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &separator_one,
+                &pause_recording,
+                &resume_recording,
+                &stop_recording,
+                &separator_three,
+                &settings,
+                &run_on_startup,
+                &check_updates,
+                &view_logs,
+                &about,
+                &separator_two,
+                &quit,
+            ],
+        )
+    } else {
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &separator_one,
+                &settings,
+                &run_on_startup,
+                &check_updates,
+                &view_logs,
+                &about,
+                &separator_two,
+                &quit,
+            ],
+        )
+    }
 }
 
-fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
+pub fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
     let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
     match build_tray_menu(app, state, is_autostart_enabled) {
         Ok(menu) => {
@@ -191,6 +275,107 @@ fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
         }
         Err(err) => error!("Failed to build tray menu: {}", err),
     }
+}
+
+fn handle_backend_disconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    let status = state.status.lock().unwrap().clone();
+    match status {
+        AppStatus::Recording | AppStatus::Paused | AppStatus::Uploading => {
+            let previous_recovery_state = state.recording_recovery_state();
+            match server::mark_recording_waiting_for_reconnect(state) {
+                Ok(changed) => {
+                    if changed && previous_recovery_state == RecordingRecoveryState::None {
+                        let message = match status {
+                            AppStatus::Recording => "Connection to Nojoin was lost. Recording will continue locally. Use the tray menu to stop it if you want to queue the upload until reconnect.",
+                            AppStatus::Paused => "Connection to Nojoin was lost while the recording was paused. Resume stays blocked until reconnect, but you can still stop it from the tray to queue the upload.",
+                            AppStatus::Uploading => "Connection to Nojoin was lost while audio was uploading. The upload will stay queued until reconnect.",
+                            _ => unreachable!(),
+                        };
+                        notifications::show_notification(app, "Nojoin Connection Lost", message);
+                    }
+                }
+                Err(message) => error!("Failed to mark recording recovery state: {}", message),
+            }
+        }
+        AppStatus::Idle => {
+            let mut status = state.status.lock().unwrap();
+            *status = AppStatus::BackendOffline;
+        }
+        _ => {}
+    }
+
+    refresh_tray_menu(app, state);
+}
+
+fn handle_backend_reconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    let status = state.status.lock().unwrap().clone();
+    let previous_recovery_state = server::restore_recording_after_reconnect(state);
+    match previous_recovery_state {
+        RecordingRecoveryState::WaitingForReconnect => {
+            let message = match status {
+                AppStatus::Recording => "Connection restored. The active recording continued locally and can now be stopped normally from Nojoin or the tray menu.",
+                AppStatus::Paused => "Connection restored. Recording is still paused. Resume or stop it from Nojoin or the tray menu.",
+                _ => "Connection restored.",
+            };
+            notifications::show_notification(app, "Nojoin Reconnected", message);
+        }
+        RecordingRecoveryState::StopRequested => {
+            notifications::show_notification(
+                app,
+                "Nojoin Reconnected",
+                "Connection restored. Queued uploads will resume automatically.",
+            );
+        }
+        RecordingRecoveryState::None => {
+            let mut status = state.status.lock().unwrap();
+            if *status == AppStatus::BackendOffline {
+                *status = AppStatus::Idle;
+            }
+        }
+    }
+
+    refresh_tray_menu(app, state);
+}
+
+fn pause_recording_from_tray(app: &tauri::AppHandle, state: &Arc<AppState>) -> Result<(), String> {
+    let status_update = server::pause_recording_locally(state)?;
+    server::spawn_recording_status_update(status_update);
+    notifications::show_notification(app, "Recording Paused", "Recording paused from the Companion tray.");
+    refresh_tray_menu(app, state);
+    Ok(())
+}
+
+fn resume_recording_from_tray(app: &tauri::AppHandle, state: &Arc<AppState>) -> Result<(), String> {
+    if !state.is_backend_connected.load(Ordering::SeqCst) {
+        return Err("Nojoin is still offline. Wait for the connection to recover before resuming.".to_string());
+    }
+
+    let status_update = server::resume_recording_locally(state)?;
+    server::spawn_recording_status_update(status_update);
+    notifications::show_notification(app, "Recording Resumed", "Recording resumed from the Companion tray.");
+    refresh_tray_menu(app, state);
+    Ok(())
+}
+
+fn stop_recording_from_tray(app: &tauri::AppHandle, state: &Arc<AppState>) -> Result<(), String> {
+    let is_connected = state.is_backend_connected.load(Ordering::SeqCst);
+    let recovery_state = state.recording_recovery_state();
+
+    if is_connected && recovery_state == RecordingRecoveryState::None {
+        let status_update = server::stop_recording_locally(state, false)?;
+        server::spawn_recording_status_update(status_update);
+        notifications::show_notification(app, "Recording Stopped", "Processing audio...");
+    } else {
+        let _status_update = server::stop_recording_locally(state, true)?;
+        notifications::show_notification(
+            app,
+            "Recording Stopped",
+            "Recording stopped locally. Audio is saved and queued for upload when Nojoin reconnects.",
+        );
+    }
+
+    refresh_tray_menu(app, state);
+    Ok(())
 }
 
 fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
@@ -597,6 +782,8 @@ fn main() {
                 status: Mutex::new(AppStatus::Idle),
                 current_recording_id: Mutex::new(None),
                 current_recording_token: Mutex::new(None),
+                current_recording_owner: Mutex::new(None),
+                recording_recovery_state: Mutex::new(RecordingRecoveryState::None),
                 current_sequence: Mutex::new(1),
                 audio_command_tx: audio_tx.clone(),
                 config: Mutex::new(config),
@@ -633,6 +820,30 @@ fn main() {
                         "settings" => {
                             if let Err(message) = open_settings_window(app) {
                                 notifications::show_notification(app, "Settings Error", &message);
+                            }
+                        }
+                        "pause_recording" => {
+                            let state_wrapper = app.state::<SharedAppState>();
+                            let state = state_wrapper.0.clone();
+                            if let Err(message) = pause_recording_from_tray(app, &state) {
+                                notifications::show_notification(app, "Recording Pause Error", &message);
+                                refresh_tray_menu(app, &state);
+                            }
+                        }
+                        "resume_recording" => {
+                            let state_wrapper = app.state::<SharedAppState>();
+                            let state = state_wrapper.0.clone();
+                            if let Err(message) = resume_recording_from_tray(app, &state) {
+                                notifications::show_notification(app, "Recording Resume Error", &message);
+                                refresh_tray_menu(app, &state);
+                            }
+                        }
+                        "stop_recording" => {
+                            let state_wrapper = app.state::<SharedAppState>();
+                            let state = state_wrapper.0.clone();
+                            if let Err(message) = stop_recording_from_tray(app, &state) {
+                                notifications::show_notification(app, "Recording Stop Error", &message);
+                                refresh_tray_menu(app, &state);
                             }
                         }
                         "about" => {
@@ -749,6 +960,7 @@ fn main() {
 
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
+                let app_handle_status = app_handle.clone();
                 rt.spawn(async move {
                     let fingerprint = {
                         let config = state_fetch.config.lock().unwrap();
@@ -786,24 +998,15 @@ fn main() {
                             Ok(resp) => {
                                 if resp.status().is_success() {
                                     state_fetch.is_backend_connected.store(true, Ordering::SeqCst);
-                                    let mut status = state_fetch.status.lock().unwrap();
-                                    if *status == AppStatus::BackendOffline {
-                                        *status = AppStatus::Idle;
-                                    }
+                                    handle_backend_reconnect(&app_handle_status, &state_fetch);
                                 } else {
                                     state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
-                                    let mut status = state_fetch.status.lock().unwrap();
-                                    if *status == AppStatus::Idle {
-                                        *status = AppStatus::BackendOffline;
-                                    }
+                                    handle_backend_disconnect(&app_handle_status, &state_fetch);
                                 }
                             }
                             Err(_) => {
                                 state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
-                                let mut status = state_fetch.status.lock().unwrap();
-                                if *status == AppStatus::Idle {
-                                    *status = AppStatus::BackendOffline;
-                                }
+                                handle_backend_disconnect(&app_handle_status, &state_fetch);
                             }
                         }
 

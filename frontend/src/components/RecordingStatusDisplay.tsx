@@ -43,18 +43,16 @@ function formatEta(seconds: number) {
 }
 
 function LiveRecordingTimer() {
-  const { companionStatus, recordingDuration } = useServiceStatusStore();
+  const { companion, companionStatus, recordingDuration } = useServiceStatusStore();
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (recordingDuration > 0) {
-      setElapsedTime(recordingDuration);
-    }
+    setElapsedTime(recordingDuration);
   }, [recordingDuration]);
 
   useEffect(() => {
-    if (companionStatus === "recording") {
+    if (companion && companionStatus === "recording") {
       timerRef.current = setInterval(() => {
         setElapsedTime((current) => current + 1);
       }, 1000);
@@ -68,7 +66,7 @@ function LiveRecordingTimer() {
         clearInterval(timerRef.current);
       }
     };
-  }, [companionStatus]);
+  }, [companion, companionStatus]);
 
   return (
     <div className="text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">

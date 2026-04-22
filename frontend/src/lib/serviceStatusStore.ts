@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  CompanionLocalRequestError,
   companionLocalFetch,
   COMPANION_URL,
 } from "@/lib/companionLocalApi";
@@ -136,7 +137,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   };
 
   const scheduleNextCompanion = () => {
-    if (!get().isPolling || !get().companionMonitoringEnabled) return;
+    if (!get().isPolling) return;
 
     const failCount = get().companionFailCount;
     const delay =
@@ -234,10 +235,6 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     },
 
     checkCompanion: async () => {
-      if (!get().companionMonitoringEnabled) {
-        return;
-      }
-
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -274,25 +271,9 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             }
           }
 
-          // Check if re-authorization is needed due to host mismatch
-          let isAuthenticated = data.authenticated === true;
-          if (isAuthenticated && data.api_host) {
-            const currentHost = window.location.hostname;
-            const isLocal = (h: string) =>
-              h === "localhost" || h === "127.0.0.1";
-
-            // Companion expected local if current is local.
-            // If current is remote, companion must match remote
-            if (isLocal(currentHost)) {
-              if (!isLocal(data.api_host)) isAuthenticated = false;
-            } else {
-              if (data.api_host !== currentHost) isAuthenticated = false;
-            }
-          }
-
           set({
             companion: true,
-            companionAuthenticated: isAuthenticated,
+            companionAuthenticated: data.authenticated === true,
             companionStatus: status,
             companionVersion: data.version || null,
             companionUpdateAvailable: data.update_available || false,
@@ -301,17 +282,38 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companionFailCount: 0,
           });
         } else {
+          const clearAuthentication =
+            res.status === 403 || res.status === 409;
           set((state) => ({
             companion: false,
-            companionAuthenticated: false,
+            companionAuthenticated: clearAuthentication
+              ? false
+              : state.companionAuthenticated,
+            ...(clearAuthentication
+              ? {
+                  companionStatus: "idle" as const,
+                  recordingDuration: 0,
+                }
+              : {}),
             companionUpdateAvailable: false,
             companionFailCount: state.companionFailCount + 1,
           }));
         }
-      } catch {
+      } catch (error) {
+        const clearAuthentication =
+          error instanceof CompanionLocalRequestError &&
+          (error.status === 403 || error.status === 409);
         set((state) => ({
           companion: false,
-          companionAuthenticated: false,
+          companionAuthenticated: clearAuthentication
+            ? false
+            : state.companionAuthenticated,
+          ...(clearAuthentication
+            ? {
+                companionStatus: "idle" as const,
+                recordingDuration: 0,
+              }
+            : {}),
           companionUpdateAvailable: false,
           companionFailCount: state.companionFailCount + 1,
         }));
@@ -418,10 +420,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     startPolling: () => {
       if (get().isPolling) return;
       set({ isPolling: true });
-      get().checkBackend();
-      if (get().companionMonitoringEnabled) {
-        void get().checkCompanion();
-      }
+      void get().checkBackend();
+      void get().checkCompanion();
     },
 
     stopPolling: () => {

@@ -118,9 +118,7 @@ export default function LiveAudioWaveform({
   enabled,
   paused = false,
 }: LiveAudioWaveformProps) {
-  const companionMonitoringEnabled = useServiceStatusStore(
-    (state) => state.companionMonitoringEnabled,
-  );
+  const companion = useServiceStatusStore((state) => state.companion);
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
   const inputCalibrationHistoryRef = useRef<number[]>([]);
@@ -146,7 +144,7 @@ export default function LiveAudioWaveform({
       setShowQuietHint(false);
     };
 
-    if (!enabled || !companionMonitoringEnabled) {
+    if (!enabled || !companion) {
       setAudioHistory(zeroHistory());
       inputCalibrationHistoryRef.current = [];
       outputCalibrationHistoryRef.current = [];
@@ -251,7 +249,7 @@ export default function LiveAudioWaveform({
         window.clearTimeout(timeoutId);
       }
     };
-  }, [enabled, companionMonitoringEnabled, paused, recordingId]);
+  }, [companion, enabled, paused, recordingId]);
 
   const showActivityHint = Boolean(
     showQuietHint && !suppressQuietAudioWarnings && !dismissedForMeeting,

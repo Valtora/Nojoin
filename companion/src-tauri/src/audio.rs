@@ -16,6 +16,22 @@ use std::thread;
 use tauri::AppHandle;
 use tokio::sync::mpsc;
 
+async fn wait_for_backend_reconnect(state: &Arc<AppState>, reason: &str) {
+    let mut logged_wait = false;
+
+    while !state.is_backend_connected.load(Ordering::SeqCst) {
+        if !logged_wait {
+            info!(
+                "Backend unavailable; waiting to {} once Nojoin reconnects.",
+                reason
+            );
+            logged_wait = true;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+}
+
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
     if let Some(name) = config.input_device_name() {
         if let Ok(devices) = host.input_devices() {
@@ -159,10 +175,17 @@ pub fn run_audio_loop(
                                 return;
                             };
 
+                            if !state_finalize.is_backend_connected.load(Ordering::SeqCst) {
+                                wait_for_backend_reconnect(&state_finalize, "finalize the saved recording").await;
+                            }
+
                             if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
                                 info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
                                 match uploader::discard_recording(rec_id, &config, &recording_token).await {
-                                    Ok(_) => {
+                                    Ok(refreshed_token) => {
+                                        if let Some(new_token) = refreshed_token {
+                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                        }
                                         info!("Deleted short recording.");
                                         notifications::show_notification(
                                             &app_handle_finalize,
@@ -174,7 +197,12 @@ pub fn run_audio_loop(
                                         eprintln!("Failed to delete short recording: {}", e);
                                         // Attempts finalization if delete fails.
                                         match uploader::finalize_recording(rec_id, &config, &recording_token).await {
-                                            Ok(_) => println!("Recording finalized (after delete failed)"),
+                                            Ok(refreshed_token) => {
+                                                if let Some(new_token) = refreshed_token {
+                                                    *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                                }
+                                                println!("Recording finalized (after delete failed)")
+                                            }
                                             Err(e) => eprintln!("Failed to finalize: {}", e),
                                         }
                                     },
@@ -182,7 +210,12 @@ pub fn run_audio_loop(
                             } else {
                                 // Sleep unnecessary; upload verified complete.
                                 match uploader::finalize_recording(rec_id, &config, &recording_token).await {
-                                    Ok(_) => println!("Recording finalized"),
+                                    Ok(refreshed_token) => {
+                                        if let Some(new_token) = refreshed_token {
+                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                        }
+                                        println!("Recording finalized")
+                                    }
                                     Err(e) => eprintln!("Failed to finalize: {}", e),
                                 }
                             }
@@ -198,6 +231,11 @@ pub fn run_audio_loop(
                                 let mut token = state_finalize.current_recording_token.lock().unwrap();
                                 *token = None;
 
+                                let mut owner = state_finalize.current_recording_owner.lock().unwrap();
+                                *owner = None;
+
+                                state_finalize.clear_recording_recovery_state();
+
                                 let mut seq = state_finalize.current_sequence.lock().unwrap();
                                 *seq = 1;
 
@@ -211,6 +249,8 @@ pub fn run_audio_loop(
                     // If no ID, just reset status
                     let mut status = state.status.lock().unwrap();
                     *status = AppStatus::Idle;
+                    *state.current_recording_owner.lock().unwrap() = None;
+                    state.clear_recording_recovery_state();
                 }
             }
         }
@@ -578,7 +618,7 @@ fn run_mixing_loop(
         info!("Segment {} recorded: {:?}", current_sequence, path);
 
         // Upload segment in background
-        let _state_upload = state.clone();
+        let state_upload = state.clone();
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();
@@ -591,6 +631,14 @@ fn run_mixing_loop(
                 return;
             };
 
+            if !state_upload.is_backend_connected.load(Ordering::SeqCst) {
+                wait_for_backend_reconnect(
+                    &state_upload,
+                    &format!("upload queued segment {}", seq),
+                )
+                .await;
+            }
+
             match uploader::upload_segment(
                 recording_id,
                 seq,
@@ -600,7 +648,10 @@ fn run_mixing_loop(
             )
             .await
             {
-                Ok(_) => {
+                Ok(refreshed_token) => {
+                    if let Some(new_token) = refreshed_token {
+                        *state_upload.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                    }
                     info!("Segment {} uploaded successfully", seq);
                     tx.send(seq).ok();
                 }
@@ -629,13 +680,18 @@ fn run_mixing_loop(
     };
 
     rt.block_on(async {
-        let Some(recording_token) = recording_token.as_deref() else {
+        let Some(recording_token) = recording_token else {
             log::error!(
                 "Missing recording upload token while reporting upload progress for {}",
                 recording_id
             );
             return;
         };
+        let mut recording_token = recording_token;
+
+        if should_report_uploading && !state.is_backend_connected.load(Ordering::SeqCst) {
+            wait_for_backend_reconnect(&state, "resume queued upload progress").await;
+        }
 
         // Set initial status
         if should_report_uploading {
@@ -644,9 +700,15 @@ fn run_mixing_loop(
                 "UPLOADING",
                 0,
                 &config,
-                recording_token,
+                &recording_token,
             )
             .await
+            .map(|refreshed_token| {
+                if let Some(new_token) = refreshed_token {
+                    *state.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                    recording_token = new_token;
+                }
+            })
             .ok();
         }
 
@@ -666,9 +728,15 @@ fn run_mixing_loop(
                     "UPLOADING",
                     progress,
                     &config,
-                    recording_token,
+                    &recording_token,
                 )
                 .await
+                .map(|refreshed_token| {
+                    if let Some(new_token) = refreshed_token {
+                        *state.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                        recording_token = new_token;
+                    }
+                })
                 .ok();
             }
         }
