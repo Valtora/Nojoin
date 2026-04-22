@@ -56,7 +56,7 @@ Pairing should only ever begin when the user explicitly chooses a pairing action
 
 Recommended policy:
 
-- The Companion tray exposes `Pair with Nojoin`.
+- The Companion exposes `Pair with Nojoin` in its Settings window.
 - Entering pairing mode opens a Companion window that displays a short-lived pairing code.
 - The pairing code format is 8 characters presented as 4 characters, a dash, then 4 characters, for example `ABCD-EFGH`.
 - The user manually enters that code into the frontend of the Nojoin deployment they want to pair with.
@@ -518,14 +518,14 @@ Tasks:
 
 - [ ] 4.1 Complete atomic replacement of backend trust state on successful pairing and clear stale secrets from the previously paired backend. (was 4.10)
 - [ ] 4.2 Reject backend-switch or re-pair attempts while recording or uploading is active across the full pairing path. (was 6.6)
-- [ ] 4.3 Add tray actions for entering and cancelling pairing mode. (was 8.1)
-- [ ] 4.4 Add regression tests for tray flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording. (was 4.11)
+- [ ] 4.3 Add Settings-window controls for entering and cancelling pairing mode. (was 8.1)
+- [ ] 4.4 Add regression tests for Settings-driven pairing flow, invalid code, expired code, replay, closed pairing window, and blocked re-pair during active recording. (was 4.11)
 
 Exit criteria:
 
 - [ ] Successful re-pair replaces the backend trust block atomically and leaves no stale secrets behind.
 - [ ] Re-pair is impossible while recording or upload work is active.
-- [ ] Pairing mode can be entered and cancelled locally from the tray.
+- [ ] Pairing mode can be entered and cancelled locally from the Settings window.
 - [ ] Pairing-state transitions have regression coverage.
 
 ## Phase 5 - Recording Ownership and Offline Recovery

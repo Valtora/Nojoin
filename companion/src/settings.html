@@ -177,7 +177,7 @@
 
         <div class="actions">
             <button id="startPairingBtn" class="primary">Start Pairing</button>
-            <button id="cancelPairingBtn" class="secondary" hidden>Cancel Pending Pairing Request</button>
+            <button id="cancelPairingBtn" class="secondary" hidden>Cancel Local Pairing Session</button>
             <button id="disconnectBtn" class="danger" hidden>Disconnect Current Backend</button>
         </div>
 
@@ -196,7 +196,7 @@
         const disconnectBtn = document.getElementById('disconnectBtn');
         const statusDiv = document.getElementById('status');
         const noteText = document.getElementById('noteText');
-        const cancelPairingIdleLabel = 'Cancel Pending Pairing Request';
+        const cancelPairingIdleLabel = 'Cancel Local Pairing Session';
 
         let resizeTimer = null;
 
@@ -247,22 +247,26 @@
 
         function renderSettings(view) {
             backendValue.textContent = view.backend_label;
-            startPairingBtn.hidden = view.is_paired;
-            cancelPairingBtn.hidden = !(view.is_paired || view.is_pairing_active);
+            startPairingBtn.hidden = false;
+            startPairingBtn.textContent = view.is_pairing_active
+                ? 'Generate New Pairing Code'
+                : view.is_paired
+                    ? 'Start Re-pairing'
+                    : 'Start Pairing';
+            cancelPairingBtn.hidden = !view.is_pairing_active;
             disconnectBtn.hidden = !view.is_paired;
-            cancelPairingBtn.dataset.idleLabel = view.is_paired
-                ? cancelPairingIdleLabel
-                : 'Cancel Local Pairing Session';
+            cancelPairingBtn.dataset.idleLabel = cancelPairingIdleLabel;
             cancelPairingBtn.textContent = currentCancelPairingLabel();
 
-            if (view.is_paired) {
-                pairingStateValue.textContent = view.is_pairing_active
-                    ? 'Connected, with a local pairing request still open'
-                    : 'Connected';
-                noteText.textContent = 'To connect this companion to a different Nojoin deployment, disconnect the current backend first. Use Cancel Pending Pairing Request to clear any replacement attempt that is still in progress.';
+            if (view.is_paired && view.is_pairing_active) {
+                pairingStateValue.textContent = 'Connected, replacement code active';
+                noteText.textContent = 'Complete pairing in Nojoin to replace the current backend. If you cancel now, the current backend stays active and unchanged.';
+            } else if (view.is_paired) {
+                pairingStateValue.textContent = 'Connected';
+                noteText.textContent = 'Start re-pairing here to connect this companion to a different Nojoin deployment. The current backend remains active until the new pairing succeeds.';
             } else if (view.is_pairing_active) {
                 pairingStateValue.textContent = 'Local pairing code active';
-                noteText.textContent = 'Finish pairing in Nojoin using the current code, or cancel the local pairing session here if you want to start over. When the companion is not yet paired, backend-side cleanup must be done from Nojoin.';
+                noteText.textContent = 'Finish pairing in Nojoin using the current code, or cancel the local pairing session here if you want to start over.';
             } else {
                 pairingStateValue.textContent = 'Disconnected';
                 noteText.textContent = 'Start pairing here to connect this companion to a Nojoin deployment.';
@@ -284,16 +288,23 @@
 
         startPairingBtn.addEventListener('click', async () => {
             try {
-                setButtonBusy(startPairingBtn, true, 'Opening Pairing...', 'Start Pairing');
+                const idleLabel = startPairingBtn.textContent;
+                setButtonBusy(startPairingBtn, true, 'Opening Pairing...', idleLabel);
 
                 await invoke('start_pairing_mode');
 
-                setStatus('Pairing window opened. Enter the displayed code in Nojoin.', 'success');
+                setStatus(
+                    idleLabel === 'Start Re-pairing' || idleLabel === 'Generate New Pairing Code'
+                        ? 'Pairing window opened. Complete pairing in Nojoin to replace the current backend.'
+                        : 'Pairing window opened. Enter the displayed code in Nojoin.',
+                    'success',
+                );
                 await loadSettings();
             } catch (e) {
                 setStatus('Error: ' + e, 'error');
             } finally {
-                setButtonBusy(startPairingBtn, false, 'Opening Pairing...', 'Start Pairing');
+                await loadSettings();
+                startPairingBtn.disabled = false;
             }
         });
 
@@ -336,6 +347,10 @@
                     void resizeToFit();
                 });
             });
+        });
+
+        window.addEventListener('focus', () => {
+            void loadSettings();
         });
     </script>
 </body>

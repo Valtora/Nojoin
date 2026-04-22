@@ -1,6 +1,6 @@
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::notifications;
-use crate::state::{AppState, AppStatus, AudioCommand, PairingValidationError};
+use crate::state::{pairing_block_message, AppState, AppStatus, AudioCommand, PairingValidationError};
 use crate::uploader;
 use axum::debug_handler;
 use axum::{
@@ -649,30 +649,6 @@ async fn cancel_pending_pairing_from_request(
     .await
 }
 
-async fn revoke_pairings_from_request(payload: &PairingCompleteRequest) -> Result<u64, String> {
-    let protocol = payload
-        .api_protocol
-        .as_deref()
-        .ok_or_else(|| "Missing API protocol".to_string())?;
-    let host = payload
-        .api_host
-        .as_deref()
-        .ok_or_else(|| "Missing API host".to_string())?;
-    let port = payload
-        .api_port
-        .ok_or_else(|| "Missing API port".to_string())?;
-
-    send_pairing_management_request(
-        protocol,
-        host,
-        port,
-        &payload.bootstrap_token,
-        payload.tls_fingerprint.clone(),
-        "/login/companion-pairing",
-    )
-    .await
-}
-
 pub async fn cancel_pending_pairing_for_backend(
     backend: &BackendConnection,
 ) -> Result<u64, String> {
@@ -697,6 +673,13 @@ pub async fn revoke_backend_pairings(backend: &BackendConnection) -> Result<u64,
         "/login/companion-pairing",
     )
     .await
+}
+
+fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendConnection) -> bool {
+    previous.api_protocol.eq_ignore_ascii_case(&replacement.api_protocol)
+        && previous.api_host.eq_ignore_ascii_case(&replacement.api_host)
+        && previous.api_port == replacement.api_port
+        && previous.paired_web_origin == replacement.paired_web_origin
 }
 
 #[debug_handler]
@@ -761,25 +744,19 @@ async fn complete_pairing(
 
     {
         let status = state.status.lock().unwrap().clone();
-        if !matches!(status, AppStatus::Idle | AppStatus::BackendOffline) {
+        if let Some(message) = pairing_block_message(&status) {
             return (
                 StatusCode::CONFLICT,
                 Json(PairingCompleteResponse {
                     success: false,
-                    message: "Companion pairing is blocked while a recording is active."
-                        .to_string(),
+                    message: message.to_string(),
                 }),
             );
         }
     }
 
-    match state.validate_pairing_code(&payload.pairing_code) {
-        Ok(()) => {
-            state.clear_pairing_session();
-            if let Some(window) = context.app_handle.get_webview_window("pairing") {
-                let _ = window.close();
-            }
-        }
+    match state.begin_pairing_completion(&payload.pairing_code) {
+        Ok(()) => {}
         Err(PairingValidationError::NotActive) => {
             if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
                 error!("Failed to cancel pending pairing after inactive request: {}", err);
@@ -838,10 +815,20 @@ async fn complete_pairing(
                 }),
             );
         }
+        Err(PairingValidationError::InProgress) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "A pairing completion is already in progress.".to_string(),
+                }),
+            );
+        }
     }
 
     if let Err(err) = validate_bootstrap_token(&payload).await {
         error!("Bootstrap token validation failed: {}", err);
+        state.release_pairing_completion();
         if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
             error!(
                 "Failed to cancel pending pairing after bootstrap validation failure: {}",
@@ -869,17 +856,27 @@ async fn complete_pairing(
         local_control_secret_version: payload.local_control_secret_version,
     };
 
+    let previous_backend = {
+        let config = state.config.lock().unwrap();
+        config.backend_connection()
+    };
+    let should_revoke_previous_backend = previous_backend
+        .as_ref()
+        .map(|existing| !is_same_backend_target(existing, &backend))
+        .unwrap_or(false);
+
     let save_result = {
         let mut config = state.config.lock().unwrap();
-        config.replace_backend_and_save(backend)
+        config.replace_backend_and_save(backend.clone())
     };
 
     if let Err(e) = save_result {
         error!("Failed to save config: {}", e);
-        if let Err(revoke_err) = revoke_pairings_from_request(&payload).await {
+        state.release_pairing_completion();
+        if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
             error!(
-                "Failed to revoke backend pairing after local save failure: {}",
-                revoke_err
+                "Failed to cancel pending pairing after local save failure: {}",
+                cancel_err
             );
         }
         return (
@@ -891,9 +888,25 @@ async fn complete_pairing(
         );
     }
 
+    state.complete_pairing_session();
+    if let Some(window) = context.app_handle.get_webview_window("pairing") {
+        let _ = window.close();
+    }
+
     *state.current_recording_id.lock().unwrap() = None;
     *state.current_recording_token.lock().unwrap() = None;
     *state.current_sequence.lock().unwrap() = 1;
+
+    if should_revoke_previous_backend {
+        if let Some(previous_backend) = previous_backend {
+            if let Err(revoke_err) = revoke_backend_pairings(&previous_backend).await {
+                error!(
+                    "Failed to revoke pairing state on the previous backend after successful re-pair: {}",
+                    revoke_err
+                );
+            }
+        }
+    }
 
     info!(
         "Companion pairing completed successfully for origin {}",

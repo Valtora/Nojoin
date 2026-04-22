@@ -29,7 +29,7 @@ mod uploader;
 mod win_notifications;
 
 use config::{Config, MachineLocalUpdate};
-use state::{AppState, AppStatus, PAIRING_WINDOW_LIFETIME_SECS};
+use state::{pairing_block_message, AppState, AppStatus, PAIRING_WINDOW_LIFETIME_SECS};
 use tauri_plugin_autostart::ManagerExt;
 
 // Define SharedAppState at module level so it's visible to commands
@@ -159,47 +159,23 @@ fn build_tray_menu(
     *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
     *state.tray_run_on_startup_item.lock().unwrap() = Some(run_on_startup.clone());
 
-    let show_start_pairing = !state.is_authenticated();
-    state
-        .tray_start_pairing_visible
-        .store(show_start_pairing, Ordering::SeqCst);
-
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
 
-    if show_start_pairing {
-        let pair = MenuItem::with_id(app, "pair", "Start Pairing", true, None::<&str>)?;
-        Menu::with_items(
-            app,
-            &[
-                &status_item,
-                &separator_one,
-                &pair,
-                &settings,
-                &run_on_startup,
-                &check_updates,
-                &view_logs,
-                &about,
-                &separator_two,
-                &quit,
-            ],
-        )
-    } else {
-        Menu::with_items(
-            app,
-            &[
-                &status_item,
-                &separator_one,
-                &settings,
-                &run_on_startup,
-                &check_updates,
-                &view_logs,
-                &about,
-                &separator_two,
-                &quit,
-            ],
-        )
-    }
+    Menu::with_items(
+        app,
+        &[
+            &status_item,
+            &separator_one,
+            &settings,
+            &run_on_startup,
+            &check_updates,
+            &view_logs,
+            &about,
+            &separator_two,
+            &quit,
+        ],
+    )
 }
 
 fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
@@ -291,34 +267,29 @@ async fn cancel_pairing_request(
         let config = state.0.config.lock().unwrap();
         config.backend_connection()
     };
-    let has_backend = backend.is_some();
+    if !had_local_pairing {
+        return Ok("No local pairing session is currently active.".to_string());
+    }
 
-    let local_message = if had_local_pairing {
-        Some("Cancelled the active local pairing session.".to_string())
-    } else {
-        None
-    };
-
-    let remote_message = match backend {
+    let backend_cleanup = match backend {
         Some(backend) => match server::cancel_pending_pairing_for_backend(&backend).await {
-            Ok(0) => "No pending backend pairing request was found.".to_string(),
-            Ok(count) => format!(
-                "Cancelled {} pending backend pairing request{}.",
+            Ok(0) => None,
+            Ok(count) => Some(format!(
+                "Cleared {} pending backend pairing request{} for the current backend.",
                 count,
                 if count == 1 { "" } else { "s" }
-            ),
-            Err(err) => format!(
-                "Closed the local pairing session, but backend cleanup could not be confirmed: {}.",
+            )),
+            Err(err) => Some(format!(
+                "The local pairing session was cancelled, but backend cleanup could not be confirmed: {}.",
                 err
-            ),
+            )),
         },
-        None => "No pairing request is currently active.".to_string(),
+        None => None,
     };
 
-    Ok(match local_message {
-        Some(local_message) if has_backend => format!("{} {}", local_message, remote_message),
-        Some(local_message) => local_message,
-        None => remote_message,
+    Ok(match backend_cleanup {
+        Some(message) => format!("Cancelled the active local pairing session. {}", message),
+        None => "Cancelled the active local pairing session.".to_string(),
     })
 }
 
@@ -385,17 +356,10 @@ fn start_pairing_mode_internal(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
 ) -> Result<String, String> {
-    if state.is_authenticated() {
-        return Err(
-            "Disconnect the current backend in Settings before starting a new pairing session."
-                .to_string(),
-        );
-    }
-
     {
         let status = state.status.lock().unwrap().clone();
-        if !matches!(status, AppStatus::Idle | AppStatus::BackendOffline) {
-            return Err("Pairing is unavailable while a recording is active.".to_string());
+        if let Some(message) = pairing_block_message(&status) {
+            return Err(message.to_string());
         }
     }
 
@@ -605,7 +569,6 @@ fn main() {
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
-            let is_initially_paired = config.is_authenticated();
 
             let autostart_manager = app.autolaunch();
             let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
@@ -650,7 +613,6 @@ fn main() {
                 tray_status_item: Mutex::new(None),
                 tray_run_on_startup_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
-                tray_start_pairing_visible: AtomicBool::new(!is_initially_paired),
                 pairing_session: Mutex::new(None),
             });
 
@@ -667,12 +629,6 @@ fn main() {
                     match event.id.as_ref() {
                         "quit" => {
                             std::process::exit(0);
-                        }
-                        "pair" => {
-                            let state_wrapper = app.state::<SharedAppState>();
-                            if let Err(message) = start_pairing_mode_internal(app, &state_wrapper.0) {
-                                notifications::show_notification(app, "Pairing Unavailable", &message);
-                            }
                         }
                         "settings" => {
                             if let Err(message) = open_settings_window(app) {
@@ -793,8 +749,6 @@ fn main() {
 
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
-                let app_handle_status = app_handle.clone();
-
                 rt.spawn(async move {
                     let fingerprint = {
                         let config = state_fetch.config.lock().unwrap();
@@ -851,15 +805,6 @@ fn main() {
                                     *status = AppStatus::BackendOffline;
                                 }
                             }
-                        }
-
-                        let should_show_start_pairing = !state_fetch.is_authenticated();
-                        if state_fetch
-                            .tray_start_pairing_visible
-                            .load(Ordering::SeqCst)
-                            != should_show_start_pairing
-                        {
-                            refresh_tray_menu(&app_handle_status, &state_fetch);
                         }
 
                         update_tray_status_ui(&state_fetch);

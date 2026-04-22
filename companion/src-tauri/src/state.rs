@@ -24,12 +24,26 @@ pub enum AppStatus {
     Error(String),
 }
 
+pub fn pairing_block_message(status: &AppStatus) -> Option<&'static str> {
+    match status {
+        AppStatus::Idle | AppStatus::BackendOffline => None,
+        AppStatus::Recording | AppStatus::Paused => {
+            Some("Pairing is unavailable while a recording is active.")
+        }
+        AppStatus::Uploading => Some("Pairing is unavailable while uploads are still finishing."),
+        AppStatus::Error(_) => {
+            Some("Pairing is unavailable until the Companion returns to an idle state.")
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PairingSession {
     pub canonical_code: String,
     pub display_code: String,
     pub expires_at: SystemTime,
     pub failed_attempts: u8,
+    pub completion_in_progress: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +52,7 @@ pub enum PairingValidationError {
     Expired,
     Invalid,
     LockedOut,
+    InProgress,
 }
 
 pub fn canonicalize_pairing_code(input: &str) -> String {
@@ -68,6 +83,7 @@ impl PairingSession {
             canonical_code,
             expires_at: SystemTime::now() + Duration::from_secs(PAIRING_WINDOW_LIFETIME_SECS),
             failed_attempts: 0,
+            completion_in_progress: false,
         }
     }
 
@@ -107,7 +123,6 @@ pub struct AppState {
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_run_on_startup_item: Mutex<Option<CheckMenuItem<Wry>>>,
     pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
-    pub tray_start_pairing_visible: AtomicBool,
 
     // Manual pairing state
     pub pairing_session: Mutex<Option<PairingSession>>,
@@ -179,7 +194,7 @@ impl AppState {
         self.current_pairing_session().is_some()
     }
 
-    pub fn validate_pairing_code(
+    pub fn begin_pairing_completion(
         &self,
         submitted_code: &str,
     ) -> Result<(), PairingValidationError> {
@@ -194,7 +209,12 @@ impl AppState {
             return Err(PairingValidationError::Expired);
         }
 
+        if session.completion_in_progress {
+            return Err(PairingValidationError::InProgress);
+        }
+
         if session.canonical_code == canonicalize_pairing_code(submitted_code) {
+            session.completion_in_progress = true;
             return Ok(());
         }
 
@@ -206,6 +226,24 @@ impl AppState {
 
         Err(PairingValidationError::Invalid)
     }
+
+    pub fn release_pairing_completion(&self) {
+        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let Some(session) = pairing_session.as_mut() else {
+            return;
+        };
+
+        if session.is_expired() {
+            *pairing_session = None;
+            return;
+        }
+
+        session.completion_in_progress = false;
+    }
+
+    pub fn complete_pairing_session(&self) {
+        self.clear_pairing_session();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -214,4 +252,131 @@ pub enum AudioCommand {
     Pause,
     Resume,
     Stop,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        canonicalize_pairing_code, pairing_block_message, AppState, AppStatus, AudioCommand,
+        PairingSession, PairingValidationError, MAX_PAIRING_ATTEMPTS,
+    };
+    use crate::config::Config;
+    use crossbeam_channel::unbounded;
+    use std::sync::atomic::{AtomicBool, AtomicU32};
+    use std::sync::Mutex;
+    use std::time::{Duration, SystemTime};
+
+    fn test_state() -> AppState {
+        let (audio_command_tx, _audio_command_rx) = unbounded::<AudioCommand>();
+
+        AppState {
+            status: Mutex::new(AppStatus::Idle),
+            current_recording_id: Mutex::new(None),
+            current_recording_token: Mutex::new(None),
+            current_sequence: Mutex::new(1),
+            audio_command_tx,
+            config: Mutex::new(Config::default()),
+            recording_start_time: Mutex::new(None),
+            accumulated_duration: Mutex::new(Duration::new(0, 0)),
+            input_level: AtomicU32::new(0),
+            output_level: AtomicU32::new(0),
+            live_input_level: AtomicU32::new(0),
+            live_output_level: AtomicU32::new(0),
+            is_backend_connected: AtomicBool::new(false),
+            update_available: AtomicBool::new(false),
+            latest_version: Mutex::new(None),
+            latest_update_url: Mutex::new(None),
+            tray_status_item: Mutex::new(None),
+            tray_run_on_startup_item: Mutex::new(None),
+            tray_icon: Mutex::new(None),
+            pairing_session: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn begin_pairing_completion_blocks_replay_until_released() {
+        let state = test_state();
+        let session = state.begin_pairing_session();
+
+        assert_eq!(canonicalize_pairing_code(&session.display_code), session.canonical_code);
+        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+        assert_eq!(
+            state.begin_pairing_completion(&session.display_code),
+            Err(PairingValidationError::InProgress)
+        );
+
+        state.release_pairing_completion();
+
+        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+    }
+
+    #[test]
+    fn complete_pairing_session_clears_replay_state() {
+        let state = test_state();
+        let session = state.begin_pairing_session();
+
+        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+        state.complete_pairing_session();
+
+        assert_eq!(
+            state.begin_pairing_completion(&session.display_code),
+            Err(PairingValidationError::NotActive)
+        );
+    }
+
+    #[test]
+    fn expired_pairing_session_fails_closed_and_clears_state() {
+        let state = test_state();
+        let expired = PairingSession {
+            canonical_code: "ABCDEFGH".to_string(),
+            display_code: "ABCD-EFGH".to_string(),
+            expires_at: SystemTime::now() - Duration::from_secs(1),
+            failed_attempts: 0,
+            completion_in_progress: false,
+        };
+        *state.pairing_session.lock().unwrap() = Some(expired);
+
+        assert_eq!(
+            state.begin_pairing_completion("ABCD-EFGH"),
+            Err(PairingValidationError::Expired)
+        );
+        assert!(!state.is_pairing_active());
+    }
+
+    #[test]
+    fn invalid_pairing_attempts_lock_out_after_budget() {
+        let state = test_state();
+        state.begin_pairing_session();
+
+        for _ in 0..(MAX_PAIRING_ATTEMPTS - 1) {
+            assert_eq!(
+                state.begin_pairing_completion("ZZZZ-ZZZZ"),
+                Err(PairingValidationError::Invalid)
+            );
+        }
+
+        assert_eq!(
+            state.begin_pairing_completion("ZZZZ-ZZZZ"),
+            Err(PairingValidationError::LockedOut)
+        );
+        assert!(!state.is_pairing_active());
+    }
+
+    #[test]
+    fn pairing_block_message_matches_busy_states() {
+        assert_eq!(pairing_block_message(&AppStatus::Idle), None);
+        assert_eq!(pairing_block_message(&AppStatus::BackendOffline), None);
+        assert_eq!(
+            pairing_block_message(&AppStatus::Recording),
+            Some("Pairing is unavailable while a recording is active.")
+        );
+        assert_eq!(
+            pairing_block_message(&AppStatus::Paused),
+            Some("Pairing is unavailable while a recording is active.")
+        );
+        assert_eq!(
+            pairing_block_message(&AppStatus::Uploading),
+            Some("Pairing is unavailable while uploads are still finishing.")
+        );
+    }
 }
