@@ -550,13 +550,13 @@ Goal: make the secured pairing and backend-switch model understandable from both
 
 Tasks:
 
-- [ ] 6.1 Add frontend UI states for `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `paired`, and `re-pair blocked while recording`. (was 7.11)
-- [ ] 6.2 Add notification copy for pairing success, pairing failure, pairing expiry, manual unpair, and backend switch completion. (was 8.6)
+- [x] 6.1 Add frontend UI states for `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `paired`, and `re-pair blocked while recording`. The frontend now distinguishes `not paired`, `pairing code required`, `pairing expired`, `pairing failed`, `connected`, `temporarily disconnected but still paired`, and `re-pair blocked while recording or upload completion is still active`, with the pairing and status controls consolidated under Settings -> Companion App and an explicit manual-disconnect signal that drops the browser back to `not paired` immediately when the Companion app intentionally disconnects. (was 7.11)
+- [x] 6.2 Add notification copy for pairing success, pairing failure, pairing expiry, manual unpair, and backend switch completion. Frontend toasts now cover pairing success, pairing failure, pairing expiry, and pending-pairing recovery guidance, while the Companion surfaces pairing expiry, pairing lockout failure, manual unpair, pairing refresh, and backend switch completion with explicit copy about what remains active and what the user should do next. (was 8.6)
 
 Exit criteria:
 
-- [ ] The frontend and Companion expose all required steady-state, blocked-state, and failure-state UX for the new pairing model.
-- [ ] Users can understand how to switch from one backend to another by re-pairing.
+- [x] The frontend and Companion expose all required steady-state, blocked-state, and failure-state UX for the new pairing model.
+- [x] Users can understand how to switch from one backend to another by re-pairing.
 
 ## Phase 7 - Compatibility, Migration, and Verification
 

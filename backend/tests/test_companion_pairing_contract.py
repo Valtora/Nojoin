@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +19,7 @@ from backend.api.v1.endpoints import login
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.companion_pairing import CompanionPairing
 from backend.core import security
+from backend.services.companion_frontend_events import companion_frontend_events
 from jose import jwt
 import backend.services.companion_pairing_service as pairing_service
 
@@ -263,6 +265,45 @@ async def test_manual_unpair_revokes_pairing_and_blocks_stale_validate(
 
     assert stale_validate.status_code == 409
     assert stale_validate.json()["detail"] == "Companion pairing was revoked. Pair again from Nojoin."
+
+
+@pytest.mark.anyio
+async def test_explicit_disconnect_revokes_pairing_and_emits_frontend_signal(
+    client: AsyncClient,
+    override_current_user,
+    override_companion_bootstrap_details,
+    override_pairing_management_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    payload = await prepare_pairing(client, override_current_user)
+    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
+    validate = await client.get("/api/v1/login/companion-token/validate")
+    assert validate.status_code == 200
+
+    queue = await companion_frontend_events.subscribe(1)
+    try:
+        override_pairing_management_user(1, "alice")
+        disconnect = await client.post("/api/v1/login/companion-pairing/disconnect")
+
+        assert disconnect.status_code == 200
+        assert disconnect.json() == {
+            "disconnected": True,
+            "revoked_count": 1,
+            "signal_type": "companion-explicit-disconnect",
+        }
+
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        assert event["type"] == "companion-explicit-disconnect"
+        assert event["reason"] == "manual_disconnect"
+        assert event["source"] == "companion_app"
+
+        rows = await fetch_pairings(test_session_maker)
+        assert len(rows) == 1
+        assert rows[0].status == "revoked"
+        assert rows[0].local_control_secret_encrypted is None
+        assert rows[0].revocation_reason == "manual_unpair"
+    finally:
+        await companion_frontend_events.unsubscribe(1, queue)
 
 
 @pytest.mark.anyio

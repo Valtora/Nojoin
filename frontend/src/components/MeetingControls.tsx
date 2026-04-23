@@ -42,6 +42,10 @@ export default function MeetingControls({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const hasLiveRecording =
+    companion &&
+    (companionStatus === 'recording' || companionStatus === 'paused');
+  const isCompanionUploading = companion && companionStatus === 'uploading';
 
   // Sync local timer with store duration
   useEffect(() => {
@@ -139,6 +143,15 @@ export default function MeetingControls({
     }
   };
 
+  const handlePrimaryAction = () => {
+    if (!companionAuthenticated) {
+      router.push('/settings?tab=companion');
+      return;
+    }
+
+    void handleStart();
+  };
+
   const handleStop = async () => {
     await sendCommand('stop');
     setElapsedTime(0);
@@ -151,18 +164,26 @@ export default function MeetingControls({
   const handleResume = () => sendCommand('resume');
 
   if (variant === "dashboard") {
-    const hasActiveRecording = companion && companionStatus !== 'idle';
-    const startDisabled = !backend || !companion || !companionAuthenticated;
+    const startDisabled =
+      companionAuthenticated && (!backend || !companion || isCompanionUploading);
     const statusText = !backend
       ? 'Nojoin backend unavailable.'
       : !companion && companionAuthenticated
-        ? 'Companion is reconnecting. Recording state will resync automatically.'
+        ? 'Companion is temporarily disconnected. Existing pairing will resync automatically when it reconnects.'
+      : !companionAuthenticated
+        ? 'Companion is not paired with this Nojoin backend. Start pairing from Companion Settings first.'
       : !companion
         ? 'Open the Companion app to record audio.'
+      : companionStatus === 'uploading'
+        ? 'Companion is finishing the previous upload before another meeting can begin.'
+      : companionStatus === 'backend-offline'
+        ? 'Companion is paired, but Nojoin is offline. Recording can resume once the backend reconnects.'
       : companionStatus === 'recording'
         ? 'Meeting is recording.'
         : companionStatus === 'paused'
           ? 'Meeting is paused.'
+        : companionStatus === 'error'
+          ? 'Companion needs attention before it can start another meeting.'
           : companionAuthenticated
             ? 'Ready to start a meeting.'
             : 'Open the Companion app and pair it before your first recording.';
@@ -190,14 +211,20 @@ export default function MeetingControls({
             </div>
           )}
 
-          {!hasActiveRecording ? (
+          {!hasLiveRecording ? (
             <button
-              onClick={handleStart}
+              onClick={handlePrimaryAction}
               disabled={startDisabled}
               className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
               <Mic className="w-4 h-4" />
-              {!companion && companionAuthenticated ? 'Companion reconnecting...' : 'Start Meeting'}
+              {!companion && companionAuthenticated
+                ? 'Companion reconnecting...'
+                : isCompanionUploading
+                  ? 'Finishing upload...'
+                  : !companionAuthenticated
+                    ? 'Pair Companion in Settings'
+                    : 'Start Meeting'}
             </button>
           ) : (
             <div className="space-y-3">
@@ -255,14 +282,23 @@ export default function MeetingControls({
       <div className="w-full">
         {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
         
-        {(!companion || companionStatus === 'idle') ? (
+        {!hasLiveRecording ? (
           <button
-            onClick={handleStart}
-            disabled={!backend || !companion || !companionAuthenticated}
+            onClick={handlePrimaryAction}
+            disabled={
+              companionAuthenticated &&
+              (!backend || !companion || isCompanionUploading)
+            }
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
           >
             <Mic className="w-4 h-4" />
-            {!companion && companionAuthenticated ? 'Companion reconnecting...' : 'Start Meeting'}
+            {!companion && companionAuthenticated
+              ? 'Companion reconnecting...'
+              : isCompanionUploading
+                ? 'Finishing upload...'
+                : !companionAuthenticated
+                  ? 'Pair Companion in Settings'
+                  : 'Start Meeting'}
           </button>
         ) : (
           <div className="flex items-center gap-2 w-full">

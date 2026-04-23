@@ -246,7 +246,7 @@
             </svg>
           </button>
           <div class="tooltip" role="tooltip">
-            This code is single-use and only works while this window stays open. To connect this companion to a different Nojoin deployment later, disconnect the current backend from Settings first.
+            This code is single-use and only works while this window stays open. To switch this companion to a different Nojoin deployment later, start re-pairing from Companion Settings. The current backend stays active until the new pairing succeeds.
           </div>
         </div>
       </div>
@@ -270,7 +270,7 @@
 
       function renderCountdown() {
         if (remainingSeconds <= 0) {
-          countdownEl.textContent = "Code expired. Start pairing again from the Companion app.";
+          countdownEl.textContent = "Code expired. Start pairing again from Companion Settings.";
           countdownEl.classList.add("expired");
           void resizeToFit();
           return;

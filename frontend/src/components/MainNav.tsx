@@ -19,9 +19,6 @@ import {
   X,
   Bell,
   LogOut,
-  Download,
-  Link2,
-  RefreshCw,
   ChevronsDown,
   ChevronsUp,
 } from "lucide-react";
@@ -38,14 +35,11 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigationStore, ViewType } from "@/lib/store";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import {
   getTags,
   updateTag,
   deleteTag,
   createTag,
-  getCompanionReleases,
-  CompanionReleases,
   logout
 } from "@/lib/api";
 import { Tag } from "@/types";
@@ -56,7 +50,6 @@ import ImportAudioModal from "./ImportAudioModal";
 import ConfirmationModal from "./ConfirmationModal";
 import CreateTagModal from "./CreateTagModal";
 import NotificationHistoryModal from "./NotificationHistoryModal";
-import { getDownloadUrl, detectPlatform } from "@/lib/platform";
 import ContextMenu from "./ContextMenu";
 
 interface NavItemProps {
@@ -309,14 +302,6 @@ export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
   const {
-    companion,
-    companionAuthenticated,
-    pairCompanion,
-    cancelPendingCompanionPairing,
-    companionUpdateAvailable,
-    triggerCompanionUpdate,
-  } = useServiceStatusStore();
-  const {
     currentView,
     setCurrentView,
     selectedTagIds,
@@ -331,24 +316,10 @@ export default function MainNav() {
     isMobileNavOpen,
     setMobileNavOpen,
   } = useNavigationStore();
-  const [companionReleases, setCompanionReleases] =
-    useState<CompanionReleases | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const MIN_WIDTH = 224;
   const MAX_WIDTH = 400;
   const COLLAPSED_WIDTH = 64;
-
-  useEffect(() => {
-    const fetchReleases = async () => {
-      try {
-        const releases = await getCompanionReleases();
-        setCompanionReleases(releases);
-      } catch (error) {
-        console.error("Failed to fetch companion releases:", error);
-      }
-    };
-    void fetchReleases();
-  }, []);
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -376,9 +347,6 @@ export default function MainNav() {
     return () => window.removeEventListener("click", handleClick);
   }, []);
 
-  const handleUpdateCompanion = async () => {
-    await triggerCompanionUpdate();
-  };
   const [newTagName, setNewTagName] = useState("");
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -387,8 +355,6 @@ export default function MainNav() {
   // const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
-  const [isPairModalOpen, setIsPairModalOpen] = useState(false);
-  const [pairingCode, setPairingCode] = useState("");
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -616,93 +582,8 @@ export default function MainNav() {
     window.dispatchEvent(new CustomEvent("recording-updated"));
   };
 
-  const handleDownloadCompanion = () => {
-    const platform = detectPlatform();
-
-    if (platform === "windows" && companionReleases?.windows_url) {
-      window.open(companionReleases.windows_url, "_blank");
-      return;
-    }
-
-    const downloadUrl = getDownloadUrl();
-    window.open(downloadUrl, "_blank");
-  };
-
-  const [pairingError, setPairingError] = useState<string | null>(null);
-  const [pairingNotice, setPairingNotice] = useState<string | null>(null);
-  const [isPairingCompanion, setIsPairingCompanion] = useState(false);
-  const [isCancellingPendingPairing, setIsCancellingPendingPairing] =
-    useState(false);
-
-  const formatPairingCode = (value: string) => {
-    const canonical = value
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 8);
-
-    if (canonical.length <= 4) {
-      return canonical;
-    }
-
-    return `${canonical.slice(0, 4)}-${canonical.slice(4)}`;
-  };
-
-  const openPairingModal = () => {
-    setPairingError(null);
-    setPairingNotice(null);
-    setPairingCode("");
-    setIsPairModalOpen(true);
-  };
-
-  const handlePairCompanion = async () => {
-    setIsPairingCompanion(true);
-    setPairingError(null);
-    setPairingNotice(null);
-    try {
-      await pairCompanion(pairingCode);
-      setIsPairModalOpen(false);
-      setPairingCode("");
-    } catch (e: any) {
-      if (e instanceof TypeError && e.message === "Failed to fetch") {
-        setPairingError("Companion App is offline or not installed.");
-      } else {
-        setPairingError(e.message || "Failed to pair with Companion App.");
-      }
-    } finally {
-      setIsPairingCompanion(false);
-    }
-  };
-
-  const handleCancelPendingPairing = async () => {
-    setIsCancellingPendingPairing(true);
-    setPairingNotice(null);
-
-    try {
-      await cancelPendingCompanionPairing();
-      setPairingError(null);
-      setPairingNotice(
-        "Previous pending pairing request cancelled. Enter the current Companion code and try again.",
-      );
-    } catch (e: any) {
-      setPairingError(
-        e?.message || "Failed to cancel the previous pending pairing request.",
-      );
-    } finally {
-      setIsCancellingPendingPairing(false);
-    }
-  };
-
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? isNavCollapsed : false;
-
-  const showDownloadButton = mounted && !companionAuthenticated;
-  const pairButtonLabel = companionAuthenticated
-    ? "Re-pair Companion"
-    : "Pair Companion";
-  const showUpdateCompanionButton =
-    mounted && companion && companionUpdateAvailable;
-  const pairingHasPendingConflict =
-    pairingError?.toLowerCase().includes("still pending") ?? false;
   const isDashboardRoute = pathname === "/";
   const isRecordingsRoute =
     pathname === "/recordings" || pathname.startsWith("/recordings/");
@@ -1126,66 +1007,6 @@ export default function MainNav() {
 
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
-          {/* Download Companion Button */}
-          {showDownloadButton && (
-            <button
-              id="nav-download-companion"
-              onClick={handleDownloadCompanion}
-              title={collapsed ? "Download Companion" : undefined}
-              className={`
-                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                bg-orange-600 hover:bg-orange-700 text-white font-medium
-                ${collapsed ? "justify-center" : ""}
-              `}
-            >
-              <Download className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <span className="text-sm truncate">Download Companion</span>
-              )}
-            </button>
-          )}
-
-          <div className="flex flex-col gap-1 w-full">
-            <button
-              id="nav-pair-companion"
-              onClick={openPairingModal}
-              title={collapsed ? pairButtonLabel : undefined}
-              className={`
-                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                bg-orange-600 hover:bg-orange-700 text-white font-medium
-                ${collapsed ? "justify-center" : ""}
-              `}
-            >
-              <Link2 className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <span className="text-sm truncate">{pairButtonLabel}</span>
-              )}
-            </button>
-            {!collapsed && !companionAuthenticated && (
-              <div className="px-1 text-center text-xs font-medium text-gray-500 dark:text-gray-400">
-                Start pairing from the Companion app, then enter the code here.
-              </div>
-            )}
-          </div>
-
-          {/* Update Companion Button */}
-          {showUpdateCompanionButton && (
-            <button
-              onClick={handleUpdateCompanion}
-              title={collapsed ? "Update Companion App" : undefined}
-              className={`
-                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                bg-blue-600 hover:bg-blue-700 text-white font-medium
-                ${collapsed ? "justify-center" : ""}
-              `}
-            >
-              <RefreshCw className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <span className="text-sm truncate">Update Companion App</span>
-              )}
-            </button>
-          )}
-
           <NavItem
             id="nav-people"
             icon={<Users className="w-5 h-5" />}
@@ -1266,99 +1087,6 @@ export default function MainNav() {
         }
         confirmText="Create"
       />
-
-      {isPairModalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4">
-          <div className="w-full max-w-md rounded-3xl border border-white/70 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-gray-900">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-                  Pair Companion
-                </h2>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                  Open the Nojoin Companion app, choose Pair with Nojoin, then
-                  enter the displayed code below.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsPairModalOpen(false)}
-                className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                aria-label="Close pairing dialog"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Pairing code
-              </label>
-              <input
-                type="text"
-                value={pairingCode}
-                onChange={(e) => setPairingCode(formatPairingCode(e.target.value))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    void handlePairCompanion();
-                  }
-                }}
-                placeholder="ABCD-EFGH"
-                autoFocus
-                className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.22em] text-gray-950 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Pairing codes are short-lived and expire quickly if the Companion window closes.
-              </p>
-            </div>
-
-            {pairingError && (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                {pairingError}
-              </div>
-            )}
-
-            {pairingNotice && (
-              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                {pairingNotice}
-              </div>
-            )}
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setIsPairModalOpen(false)}
-                className="rounded-2xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                Cancel
-              </button>
-              {pairingHasPendingConflict && (
-                <button
-                  type="button"
-                  onClick={() => void handleCancelPendingPairing()}
-                  disabled={isPairingCompanion || isCancellingPendingPairing}
-                  className="rounded-2xl border border-orange-300 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-50 disabled:cursor-not-allowed disabled:border-orange-200 disabled:text-orange-300 dark:border-orange-500/30 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:disabled:border-orange-500/20 dark:disabled:text-orange-500/50"
-                >
-                  {isCancellingPendingPairing
-                    ? "Cancelling Pending..."
-                    : "Cancel Previous Request"}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => void handlePairCompanion()}
-                disabled={
-                  isPairingCompanion ||
-                  isCancellingPendingPairing ||
-                  pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8
-                }
-                className="rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
-              >
-                {isPairingCompanion ? "Pairing..." : "Complete Pairing"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

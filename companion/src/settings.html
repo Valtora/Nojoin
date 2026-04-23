@@ -263,12 +263,12 @@
                 noteText.textContent = 'Complete pairing in Nojoin to replace the current backend. If you cancel now, the current backend stays active and unchanged.';
             } else if (view.is_paired) {
                 pairingStateValue.textContent = 'Connected';
-                noteText.textContent = 'Start re-pairing here to connect this companion to a different Nojoin deployment. The current backend remains active until the new pairing succeeds.';
+                noteText.textContent = 'Start re-pairing here to switch this companion to a different Nojoin deployment. The current backend remains active until the new pairing succeeds.';
             } else if (view.is_pairing_active) {
-                pairingStateValue.textContent = 'Local pairing code active';
-                noteText.textContent = 'Finish pairing in Nojoin using the current code, or cancel the local pairing session here if you want to start over.';
+                pairingStateValue.textContent = 'Pairing code active';
+                noteText.textContent = 'Finish pairing in Nojoin using the current code, or cancel this local pairing session here if you want to start over.';
             } else {
-                pairingStateValue.textContent = 'Disconnected';
+                pairingStateValue.textContent = 'Not paired';
                 noteText.textContent = 'Start pairing here to connect this companion to a Nojoin deployment.';
             }
 
@@ -295,13 +295,13 @@
 
                 setStatus(
                     idleLabel === 'Start Re-pairing' || idleLabel === 'Generate New Pairing Code'
-                        ? 'Pairing window opened. Complete pairing in Nojoin to replace the current backend.'
-                        : 'Pairing window opened. Enter the displayed code in Nojoin.',
+                        ? 'Pairing window opened. Complete pairing in Nojoin to switch this companion to the selected backend. The current backend stays active until the new pairing succeeds.'
+                        : 'Pairing window opened. Enter the displayed code in Nojoin to finish pairing.',
                     'success',
                 );
                 await loadSettings();
             } catch (e) {
-                setStatus('Error: ' + e, 'error');
+                setStatus(String(e), 'error');
             } finally {
                 await loadSettings();
                 startPairingBtn.disabled = false;
@@ -316,7 +316,7 @@
                 setStatus(message, 'info');
                 await loadSettings();
             } catch (e) {
-                setStatus('Error: ' + e, 'error');
+                setStatus(String(e), 'error');
             } finally {
                 setButtonBusy(
                     cancelPairingBtn,
@@ -334,7 +334,7 @@
                 setStatus(message, 'info');
                 await loadSettings();
             } catch (e) {
-                setStatus('Error: ' + e, 'error');
+                setStatus(String(e), 'error');
             } finally {
                 setButtonBusy(disconnectBtn, false, 'Disconnecting...', 'Disconnect Current Backend');
             }

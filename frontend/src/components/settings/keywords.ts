@@ -9,7 +9,15 @@ export const AI_KEYWORDS = [
 
 export const AUDIO_KEYWORDS = [
   'device', 'input', 'output', 'microphone', 'speaker', 'audio', 'capture', 'playback',
-  'warning', 'warnings', 'dismiss', 'quiet', 'silence', 'reset warnings'
+  'warning', 'warnings', 'dismiss', 'quiet', 'silence', 'reset warnings',
+  'meeting length', 'minimum meeting length', 'recording length', 'loopback'
+];
+
+export const COMPANION_KEYWORDS = [
+  'companion', 'companion app', 'pair', 'pairing', 'pairing code',
+  'manual pairing', 'connect', 'connection', 'disconnect', 'backend switch',
+  'switch backend', 'reconnect', 'download companion', 'installer', 'update companion',
+  'status', 'local recording', ...AUDIO_KEYWORDS
 ];
 
 export const SYSTEM_KEYWORDS = [
@@ -40,7 +48,7 @@ export const INVITES_KEYWORDS = [
 export const TAB_KEYWORDS: Record<string, string[]> = {
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
-  audio: AUDIO_KEYWORDS,
+  companion: COMPANION_KEYWORDS,
   updates: UPDATES_KEYWORDS,
   system: SYSTEM_KEYWORDS,
   account: ACCOUNT_KEYWORDS,

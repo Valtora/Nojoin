@@ -1,6 +1,6 @@
 "use client";
 
-import { CompanionDevices, Settings } from "@/types";
+import { CompanionDevices } from "@/types";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { AUDIO_KEYWORDS } from "./keywords";
@@ -10,7 +10,6 @@ import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 import {
   AlertCircle,
-  CheckCircle,
   Loader2,
   Mic,
   RefreshCw,
@@ -19,8 +18,6 @@ import {
 } from "lucide-react";
 
 interface AudioSettingsProps {
-  settings: Settings;
-  onUpdateSettings: (newSettings: Settings) => void;
   companionConfig: {
     api_port: number;
     local_port: number;
@@ -37,6 +34,7 @@ interface AudioSettingsProps {
   selectedOutputDevice: string | null;
   onSelectOutputDevice: (device: string | null) => void;
   searchQuery?: string;
+  suppressNoMatch?: boolean;
 }
 
 export default function AudioSettings({
@@ -49,14 +47,9 @@ export default function AudioSettings({
   selectedOutputDevice,
   onSelectOutputDevice,
   searchQuery = "",
+  suppressNoMatch = false,
 }: AudioSettingsProps) {
   const showDevices = fuzzyMatch(searchQuery, AUDIO_KEYWORDS);
-  const showCompanion = fuzzyMatch(searchQuery, [
-    "companion",
-    "app",
-    "connect",
-    "status",
-  ]);
   const showWarnings = fuzzyMatch(searchQuery, [
     "warning",
     "warnings",
@@ -123,49 +116,39 @@ export default function AudioSettings({
     onUpdateCompanionConfig({ min_meeting_length: num });
   };
 
-  if (!showDevices && !showCompanion && !showWarnings && searchQuery) {
-    return <div className="text-gray-500">No matching settings found.</div>;
+  if (!showDevices && !showWarnings && searchQuery) {
+    return suppressNoMatch ? null : <div className="text-gray-500">No matching settings found.</div>;
   }
 
   return (
     <div className="space-y-8">
       {showDevices && (
         <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Devices
-          </h3>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+              Recording Devices
+            </h3>
+            <button
+              onClick={handleTestConnection}
+              disabled={testingConnection}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {testingConnection ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3 h-3" />
+              )}
+              Refresh devices
+            </button>
+          </div>
           <div className="max-w-xl space-y-4">
             {companionDevices ? (
               <>
-                {/* Connection Status Block */}
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-medium text-green-900 dark:text-green-300 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" /> Companion App
-                      Connected
-                    </h4>
-                    <p className="text-xs text-green-700 dark:text-green-400 mt-1">
-                      Running on port {companionConfig?.local_port || 12345}
-                    </p>
+                {connectionResult === "success" && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300">
+                    Companion device list refreshed.
                   </div>
-                  <button
-                    onClick={handleTestConnection}
-                    disabled={testingConnection}
-                    className="text-xs bg-white dark:bg-gray-800 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-300 px-3 py-1.5 rounded hover:bg-green-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-                  >
-                    {testingConnection ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-3 h-3" />
-                    )}
-                    Check Connection
-                  </button>
-                  {connectionResult === "success" && (
-                    <span className="absolute right-4 top-4 text-xs text-green-600 font-bold">
-                      OK
-                    </span>
-                  )}
-                </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -248,10 +231,10 @@ export default function AudioSettings({
             ) : (
               <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-                  Companion App Not Connected
+                  Device settings unavailable
                 </p>
                 <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
-                  Companion audio settings are loaded only when you request them. Start the app, pair it if needed, then retry here.
+                  Nojoin could not load the current Companion device list. Use the Companion App connection section above to pair or reconnect, then retry here.
                 </p>
 
                 <div className="flex items-center gap-3">

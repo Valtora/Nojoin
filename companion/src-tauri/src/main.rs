@@ -503,18 +503,30 @@ async fn disconnect_backend(
         return Ok("No backend is currently paired.".to_string());
     };
 
-    match server::revoke_backend_pairings(&backend).await {
-        Ok(0) => Ok("Disconnected from the current backend.".to_string()),
-        Ok(count) => Ok(format!(
-            "Disconnected from the current backend and revoked {} backend pairing{}.",
-            count,
-            if count == 1 { "" } else { "s" }
-        )),
-        Err(err) => Ok(format!(
-            "Disconnected locally from the current backend, but backend cleanup could not be confirmed: {}.",
-            err
-        )),
-    }
+    let (response_message, notification_body) = match server::signal_explicit_backend_disconnect(&backend).await {
+        Ok(0) => (
+            "Disconnected from the current backend. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
+            "This Companion is no longer paired with a Nojoin backend. Start pairing again from Settings when you are ready.".to_string(),
+        ),
+        Ok(count) => (
+            format!(
+                "Disconnected from the current backend and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
+                count,
+                if count == 1 { "" } else { "s" }
+            ),
+            "This Companion is no longer paired with a Nojoin backend. Start pairing again from Settings when you are ready.".to_string(),
+        ),
+        Err(err) => (
+            format!(
+                "Disconnected locally from the current backend, but backend cleanup could not be confirmed: {}.",
+                err
+            ),
+            "This Companion is no longer paired locally. Backend cleanup could not be confirmed, so verify the old backend before reconnecting elsewhere.".to_string(),
+        ),
+    };
+
+    notifications::show_notification(&app, "Companion Unpaired", &notification_body);
+    Ok(response_message)
 }
 
 #[tauri::command]
@@ -551,6 +563,7 @@ fn start_pairing_mode_internal(
     state.clear_pairing_session();
     close_pairing_window(app);
 
+    let was_previously_paired = state.is_authenticated();
     let session = state.begin_pairing_session();
     let window_url = format!(
         "pairing.html?code={}&expires_in={}",
@@ -599,7 +612,11 @@ fn start_pairing_mode_internal(
             notifications::show_notification(
                 &app_on_expiry,
                 "Pairing Expired",
-                "The pairing code expired. Start pairing again if needed.",
+                if was_previously_paired {
+                    "The replacement pairing code expired. The current backend stays connected. Start re-pairing again if you still want to switch backends."
+                } else {
+                    "The pairing code expired. Start pairing again from Companion Settings if needed."
+                },
             );
         }
     });

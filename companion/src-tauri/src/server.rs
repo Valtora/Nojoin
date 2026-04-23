@@ -16,7 +16,7 @@ use axum::{
 use cpal::traits::{DeviceTrait, HostTrait};
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use log::{error, info};
-use reqwest::Url;
+use reqwest::{Method, Url};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -811,6 +811,7 @@ struct PairingManagementResponse {
 }
 
 async fn send_pairing_management_request(
+    method: Method,
     protocol: &str,
     host: &str,
     port: u16,
@@ -822,7 +823,7 @@ async fn send_pairing_management_request(
     let client = crate::tls::create_client(tls_fingerprint).map_err(|err| err.to_string())?;
 
     let response = client
-        .delete(url)
+        .request(method, url)
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
@@ -857,6 +858,7 @@ async fn cancel_pending_pairing_from_request(
         .ok_or_else(|| "Missing API port".to_string())?;
 
     send_pairing_management_request(
+        Method::DELETE,
         protocol,
         host,
         port,
@@ -871,6 +873,7 @@ pub async fn cancel_pending_pairing_for_backend(
     backend: &BackendConnection,
 ) -> Result<u64, String> {
     send_pairing_management_request(
+        Method::DELETE,
         &backend.api_protocol,
         &backend.api_host,
         backend.api_port,
@@ -883,12 +886,28 @@ pub async fn cancel_pending_pairing_for_backend(
 
 pub async fn revoke_backend_pairings(backend: &BackendConnection) -> Result<u64, String> {
     send_pairing_management_request(
+        Method::DELETE,
         &backend.api_protocol,
         &backend.api_host,
         backend.api_port,
         &backend.api_token,
         backend.tls_fingerprint.clone(),
         "/login/companion-pairing",
+    )
+    .await
+}
+
+pub async fn signal_explicit_backend_disconnect(
+    backend: &BackendConnection,
+) -> Result<u64, String> {
+    send_pairing_management_request(
+        Method::POST,
+        &backend.api_protocol,
+        &backend.api_host,
+        backend.api_port,
+        &backend.api_token,
+        backend.tls_fingerprint.clone(),
+        "/login/companion-pairing/disconnect",
     )
     .await
 }
@@ -1025,6 +1044,11 @@ async fn complete_pairing(
             if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
                 error!("Failed to cancel pending pairing after lockout: {}", err);
             }
+            notifications::show_notification(
+                &context.app_handle,
+                "Pairing Failed",
+                "Too many invalid pairing attempts were made. Start pairing again from Companion Settings.",
+            );
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(PairingCompleteResponse {
@@ -1078,6 +1102,7 @@ async fn complete_pairing(
         let config = state.config.lock().unwrap();
         config.backend_connection()
     };
+    let had_existing_backend = previous_backend.is_some();
     let should_revoke_previous_backend = previous_backend
         .as_ref()
         .map(|existing| !is_same_backend_target(existing, &backend))
@@ -1132,10 +1157,29 @@ async fn complete_pairing(
         "Companion pairing completed successfully for origin {}",
         origin
     );
+    let (notification_title, notification_body, success_message) = if should_revoke_previous_backend {
+        (
+            "Backend Switch Complete",
+            "Companion is now paired with this Nojoin deployment. Future recordings and local controls will use this backend.",
+            "Backend switch completed successfully.",
+        )
+    } else if had_existing_backend {
+        (
+            "Pairing Refreshed",
+            "Companion pairing was refreshed for this Nojoin deployment.",
+            "Pairing refreshed successfully.",
+        )
+    } else {
+        (
+            "Pairing Complete",
+            "Companion is now paired with this Nojoin deployment.",
+            "Pairing completed successfully.",
+        )
+    };
     notifications::show_notification(
         &context.app_handle,
-        "Connected to Nojoin",
-        "Companion app is now paired with this Nojoin deployment.",
+        notification_title,
+        notification_body,
     );
     crate::refresh_tray_menu(&context.app_handle, state);
 
@@ -1143,7 +1187,7 @@ async fn complete_pairing(
         StatusCode::OK,
         Json(PairingCompleteResponse {
             success: true,
-            message: "Pairing completed successfully.".to_string(),
+            message: success_message.to_string(),
         }),
     )
 }

@@ -1,6 +1,9 @@
+import asyncio
+import json
 from datetime import timedelta
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +18,10 @@ from backend.api.deps import (
 from backend.api.v1.endpoints.system import resolve_tls_fingerprint
 from backend.core import security
 from backend.models.user import User
+from backend.services.companion_frontend_events import (
+    COMPANION_EXPLICIT_DISCONNECT_EVENT,
+    companion_frontend_events,
+)
 from backend.services.companion_pairing_service import (
     cancel_pending_companion_pairings,
     CompanionPairingStateError,
@@ -57,6 +64,12 @@ class CompanionPairingRevokeResponse(BaseModel):
 class CompanionPairingCancelResponse(BaseModel):
     cancelled: bool
     cancelled_count: int
+
+
+class CompanionPairingDisconnectResponse(BaseModel):
+    disconnected: bool
+    revoked_count: int
+    signal_type: str
 
 
 class CompanionLocalControlTokenResponse(BaseModel):
@@ -356,6 +369,26 @@ async def revoke_companion_pairing(
     )
 
 
+@router.post(
+    "/login/companion-pairing/disconnect",
+    response_model=CompanionPairingDisconnectResponse,
+)
+async def disconnect_companion_pairing(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_pairing_management_user),
+) -> CompanionPairingDisconnectResponse:
+    revoked_count = await revoke_companion_pairings(
+        db,
+        current_user=current_user,
+    )
+    await companion_frontend_events.publish_explicit_disconnect(current_user.id)
+    return CompanionPairingDisconnectResponse(
+        disconnected=True,
+        revoked_count=revoked_count,
+        signal_type=COMPANION_EXPLICIT_DISCONNECT_EVENT,
+    )
+
+
 @router.delete(
     "/login/companion-pairing/pending",
     response_model=CompanionPairingCancelResponse,
@@ -371,6 +404,40 @@ async def cancel_pending_companion_pairing(
     return CompanionPairingCancelResponse(
         cancelled=cancelled_count > 0,
         cancelled_count=cancelled_count,
+    )
+
+
+@router.get("/login/companion-events")
+async def stream_companion_events(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    async def event_generator():
+        queue = await companion_frontend_events.subscribe(current_user.id)
+        try:
+            yield "event: ready\ndata: {}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield "event: ping\ndata: {}\n\n"
+                    continue
+
+                yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+        finally:
+            await companion_frontend_events.unsubscribe(current_user.id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

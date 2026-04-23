@@ -11,9 +11,12 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    companionAuthenticated,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
+    checkBackend,
+    checkCompanion,
     startPolling,
     stopPolling,
   } = useServiceStatusStore();
@@ -25,6 +28,8 @@ export default function ServiceStatusAlerts() {
     worker: null,
     companion: null,
   });
+  const companionNotificationState = useRef<string | null>(null);
+  const previousCompanionAuthenticated = useRef(false);
 
   // Track startup grace period
   const isStartupRef = useRef(true);
@@ -42,8 +47,74 @@ export default function ServiceStatusAlerts() {
     return () => stopPolling();
   }, [startPolling, stopPolling]);
 
+  useEffect(() => {
+    const refreshStatuses = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void checkBackend();
+      void checkCompanion();
+    };
+
+    window.addEventListener("focus", refreshStatuses);
+    document.addEventListener("visibilitychange", refreshStatuses);
+
+    return () => {
+      window.removeEventListener("focus", refreshStatuses);
+      document.removeEventListener("visibilitychange", refreshStatuses);
+    };
+  }, [checkBackend, checkCompanion]);
+
+  useEffect(() => {
+    if (
+      !isStartupRef.current &&
+      companionMonitoringEnabled &&
+      previousCompanionAuthenticated.current &&
+      !companionAuthenticated
+    ) {
+      addNotification({
+        type: "info",
+        message:
+          "Companion pairing ended for this Nojoin backend. Start pairing again from Companion Settings if you still need local recording controls.",
+      });
+    }
+
+    previousCompanionAuthenticated.current = companionAuthenticated;
+  }, [
+    addNotification,
+    companionAuthenticated,
+    companionMonitoringEnabled,
+  ]);
+
   // Monitor Service Status
   useEffect(() => {
+    const clearCompanionNotification = () => {
+      if (notificationIds.current.companion) {
+        removeActiveNotification(notificationIds.current.companion);
+        notificationIds.current.companion = null;
+      }
+      companionNotificationState.current = null;
+    };
+
+    const showCompanionNotification = (
+      stateKey: string,
+      type: "error" | "warning" | "info",
+      message: string,
+    ) => {
+      if (companionNotificationState.current === stateKey) {
+        return;
+      }
+
+      clearCompanionNotification();
+      notificationIds.current.companion = addNotification({
+        type,
+        message,
+        persistent: true,
+      });
+      companionNotificationState.current = stateKey;
+    };
+
     const updateNotifications = () => {
       // Backend
       if (!backend && !notificationIds.current.backend) {
@@ -89,23 +160,23 @@ export default function ServiceStatusAlerts() {
 
       // Companion
       if (!companionMonitoringEnabled) {
-        if (notificationIds.current.companion) {
-          removeActiveNotification(notificationIds.current.companion);
-          notificationIds.current.companion = null;
+        clearCompanionNotification();
+      } else if (!isStartupRef.current && !companion && companionFailCount > 2) {
+        if (companionAuthenticated) {
+          showCompanionNotification(
+            "paired-disconnected",
+            "warning",
+            "Companion temporarily disconnected. Existing pairing stays valid, and local recording state will resync when the app reconnects.",
+          );
+        } else {
+          showCompanionNotification(
+            "pairing-required",
+            "info",
+            "Companion pairing required. Start pairing from Companion Settings, then enter the code in Nojoin.",
+          );
         }
-      } else if (!companion && !notificationIds.current.companion) {
-        // Displays error only after the startup grace period with > 2 consecutive failures.
-        if (!isStartupRef.current && companionFailCount > 2) {
-          notificationIds.current.companion = addNotification({
-            type: "error",
-            message:
-              "Companion App Disconnected: Start the app to record audio.",
-            persistent: true,
-          });
-        }
-      } else if (companion && notificationIds.current.companion) {
-        removeActiveNotification(notificationIds.current.companion);
-        notificationIds.current.companion = null;
+      } else {
+        clearCompanionNotification();
       }
     };
 
@@ -115,6 +186,7 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    companionAuthenticated,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
