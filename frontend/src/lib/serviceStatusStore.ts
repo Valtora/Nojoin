@@ -181,10 +181,35 @@ const bestEffortCancelPendingCompanionPairing = async (apiBase: string) => {
   }
 };
 
+const frontendPairingRuntimeId =
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `pair-runtime-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`;
+
+let frontendPairingRequestSequence = 0;
+
+const nextFrontendPairingRequestId = () => {
+  frontendPairingRequestSequence += 1;
+  return `${frontendPairingRuntimeId}:${frontendPairingRequestSequence}:${Date.now().toString(36)}`;
+};
+
+const isPairingAlreadyInProgressError = (error: unknown) =>
+  error instanceof CompanionPairingError &&
+  error.phase === "complete" &&
+  error.status === 409 &&
+  error.message.toLowerCase().includes("already in progress");
+
+const isPendingPairingPrepareConflict = (error: unknown) =>
+  error instanceof CompanionPairingError &&
+  error.phase === "prepare" &&
+  error.status === 409 &&
+  error.message.toLowerCase().includes("still pending");
+
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   let backendTimer: NodeJS.Timeout | null = null;
   let companionTimer: NodeJS.Timeout | null = null;
   let companionEventSource: EventSource | null = null;
+  let pairingRequestPromise: Promise<boolean> | null = null;
 
   const handleCompanionPairingEndedState = () => {
     set((state) => ({
@@ -431,72 +456,119 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         throw new Error("Pairing code is required.");
       }
 
-      const apiBase = getCompanionApiBase();
-      let pairingPrepared = false;
-
-      try {
-        const pairingRes = await fetch(`${apiBase}/login/companion-pairing`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pairing_code: trimmedCode }),
-        });
-        const pairingPayload = (await pairingRes.json().catch(
-          () => null,
-        )) as CompanionPairingPayload | null;
-
-        if (!pairingRes.ok) {
-          throw new CompanionPairingError(
-            readPairingError(
-              pairingPayload,
-              `Failed to prepare companion pairing: ${pairingRes.status}`,
-            ),
-            pairingRes.status,
-            "prepare",
-          );
-        }
-
-        pairingPrepared = true;
-
-        const res = await fetch(`${COMPANION_URL}/pair/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(pairingPayload),
-        });
-
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          throw new CompanionPairingError(
-            data?.message || `Companion app returned ${res.status}`,
-            res.status,
-            "complete",
-          );
-        }
-
-        if (!data?.success) {
-          throw new CompanionPairingError(
-            data?.message || "Pairing failed.",
-            res.status,
-            "complete",
-          );
-        }
-
-        set({
-          companion: true,
-          companionAuthenticated: true,
-          companionMonitoringEnabled: true,
-          companionFailCount: 0,
-        });
-        await get().checkCompanion();
-        return true;
-      } catch (e: unknown) {
-        if (pairingPrepared) {
-          await bestEffortCancelPendingCompanionPairing(apiBase);
-        }
-        console.error("Failed to pair companion:", e);
-        throw e;
+      if (pairingRequestPromise) {
+        return pairingRequestPromise;
       }
+
+      pairingRequestPromise = (async () => {
+        const apiBase = getCompanionApiBase();
+        let pairingPrepared = false;
+        const frontendPairingRequestId = nextFrontendPairingRequestId();
+
+        const preparePairing = async () => {
+          const pairingRes = await fetch(`${apiBase}/login/companion-pairing`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pairing_code: trimmedCode }),
+          });
+          const pairingPayload = (await pairingRes.json().catch(
+            () => null,
+          )) as CompanionPairingPayload | null;
+
+          if (!pairingRes.ok) {
+            throw new CompanionPairingError(
+              readPairingError(
+                pairingPayload,
+                `Failed to prepare companion pairing: ${pairingRes.status}`,
+              ),
+              pairingRes.status,
+              "prepare",
+            );
+          }
+
+          return pairingPayload;
+        };
+
+        try {
+          let pairingPayload: CompanionPairingPayload | null;
+
+          try {
+            pairingPayload = await preparePairing();
+          } catch (error) {
+            if (!isPendingPairingPrepareConflict(error)) {
+              throw error;
+            }
+
+            console.info(
+              "Cancelling stale pending companion pairing before retrying with the current code",
+              {
+                frontendPairingRuntimeId,
+                frontendPairingRequestId,
+                pairingCode: trimmedCode,
+              },
+            );
+            await cancelPendingCompanionPairingRequest(apiBase);
+            pairingPayload = await preparePairing();
+          }
+
+          pairingPrepared = true;
+
+          console.info("Submitting companion pairing completion request", {
+            frontendPairingRuntimeId,
+            frontendPairingRequestId,
+            backendPairingId: pairingPayload?.backend_pairing_id,
+          });
+
+          const res = await fetch(`${COMPANION_URL}/pair/complete`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Nojoin-Frontend-Runtime": frontendPairingRuntimeId,
+              "X-Nojoin-Frontend-Pair-Request": frontendPairingRequestId,
+              "X-Nojoin-Frontend-Source": "settings-companion",
+            },
+            body: JSON.stringify(pairingPayload),
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+            throw new CompanionPairingError(
+              data?.message || `Companion app returned ${res.status}`,
+              res.status,
+              "complete",
+            );
+          }
+
+          if (!data?.success) {
+            throw new CompanionPairingError(
+              data?.message || "Pairing failed.",
+              res.status,
+              "complete",
+            );
+          }
+
+          set({
+            companion: true,
+            companionAuthenticated: true,
+            companionMonitoringEnabled: true,
+            companionFailCount: 0,
+          });
+          await get().checkCompanion();
+          return true;
+        } catch (error: unknown) {
+          if (pairingPrepared && !isPairingAlreadyInProgressError(error)) {
+            await bestEffortCancelPendingCompanionPairing(apiBase);
+          }
+          console.error("Failed to pair companion:", error);
+          throw error;
+        } finally {
+          pairingRequestPromise = null;
+        }
+      })();
+
+      return pairingRequestPromise;
     },
 
     cancelPendingCompanionPairing: async (): Promise<boolean> => {

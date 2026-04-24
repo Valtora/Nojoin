@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Download,
@@ -238,8 +238,17 @@ const resolvePairingFailure = (
       return {
         state: "failed",
         message:
-          "A previous pairing attempt is still pending. Cancel the earlier request or enter the current Companion code before retrying.",
+          "A previous pairing attempt is still pending. Cancel the earlier request and retry with the current Companion code.",
         notificationType: "warning",
+      };
+    }
+
+    if (error.status === 409 && lowerMessage.includes("already in progress")) {
+      return {
+        state: "failed",
+        message:
+          "Pairing confirmation is already running. Wait a few seconds for the current request to finish before retrying.",
+        notificationType: "info",
       };
     }
 
@@ -339,6 +348,35 @@ export default function CompanionAppSettings({
   const [isCancellingPendingPairing, setIsCancellingPendingPairing] =
     useState(false);
   const [isTriggeringUpdate, setIsTriggeringUpdate] = useState(false);
+  const pairingRequestInFlightRef = useRef(false);
+  const refreshCompanionConfigRef = useRef(onRefreshCompanionConfig);
+
+  useEffect(() => {
+    refreshCompanionConfigRef.current = onRefreshCompanionConfig;
+  }, [onRefreshCompanionConfig]);
+
+  const synchronizeSuccessfulPairing = async () => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const latestStoreState = useServiceStatusStore.getState();
+      if (!latestStoreState.companionAuthenticated) {
+        await latestStoreState.checkCompanion();
+      }
+
+      if (useServiceStatusStore.getState().companionAuthenticated) {
+        const refreshed =
+          (await refreshCompanionConfigRef.current?.()) ?? true;
+        if (refreshed) {
+          return true;
+        }
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 250);
+      });
+    }
+
+    return useServiceStatusStore.getState().companionAuthenticated;
+  };
 
   useEffect(() => {
     const fetchReleases = async () => {
@@ -354,17 +392,15 @@ export default function CompanionAppSettings({
   }, []);
 
   useEffect(() => {
-    void onRefreshCompanionConfig?.();
-  }, [onRefreshCompanionConfig]);
-
-  useEffect(() => {
     const refreshCompanionState = () => {
       if (document.visibilityState !== "visible") {
         return;
       }
 
       void checkCompanion();
-      void onRefreshCompanionConfig?.();
+      if (companionAuthenticated) {
+        void onRefreshCompanionConfig?.();
+      }
     };
 
     window.addEventListener("focus", refreshCompanionState);
@@ -374,7 +410,7 @@ export default function CompanionAppSettings({
       window.removeEventListener("focus", refreshCompanionState);
       document.removeEventListener("visibilitychange", refreshCompanionState);
     };
-  }, [checkCompanion, onRefreshCompanionConfig]);
+  }, [checkCompanion, companionAuthenticated, onRefreshCompanionConfig]);
 
   useEffect(() => {
     if (!companionAuthenticated || companion) {
@@ -404,14 +440,14 @@ export default function CompanionAppSettings({
   ]);
 
   useEffect(() => {
-    if (companionAuthenticated) {
-      setPairingAttemptState("idle");
-      setPairingCode("");
-      setPairingError(null);
-      setPairingNotice(null);
+    if (!companionAuthenticated) {
       return;
     }
 
+    setPairingAttemptState("idle");
+    setPairingCode("");
+    setPairingError(null);
+    setPairingNotice(null);
     void onRefreshCompanionConfig?.();
   }, [companionAuthenticated, onRefreshCompanionConfig]);
 
@@ -458,17 +494,26 @@ export default function CompanionAppSettings({
     window.open(downloadUrl, "_blank");
   };
 
-  const handlePairCompanion = async () => {
+  const handlePairCompanion = async (
+    event?: FormEvent<HTMLFormElement>,
+  ) => {
+    event?.preventDefault();
+
     if (pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8) {
       return;
     }
 
+    if (pairingRequestInFlightRef.current) {
+      return;
+    }
+
+    pairingRequestInFlightRef.current = true;
     setIsPairingCompanion(true);
     setPairingError(null);
     setPairingNotice(null);
     try {
       await pairCompanion(pairingCode);
-      await onRefreshCompanionConfig?.();
+      await synchronizeSuccessfulPairing();
       setPairingAttemptState("idle");
       addNotification({
         type: "success",
@@ -484,6 +529,7 @@ export default function CompanionAppSettings({
         message: failure.message,
       });
     } finally {
+      pairingRequestInFlightRef.current = false;
       setIsPairingCompanion(false);
     }
   };
@@ -581,7 +627,10 @@ export default function CompanionAppSettings({
                 <p className="mt-1 text-sm leading-6">{pairingSummary.message}</p>
               </div>
 
-              <div className="mt-4 space-y-3">
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={(event) => void handlePairCompanion(event)}
+              >
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Pairing code
                 </label>
@@ -591,11 +640,6 @@ export default function CompanionAppSettings({
                   onChange={(event) =>
                     setPairingCode(formatPairingCode(event.target.value))
                   }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      void handlePairCompanion();
-                    }
-                  }}
                   placeholder="ABCD-EFGH"
                   autoFocus
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.22em] text-gray-950 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
@@ -603,46 +647,44 @@ export default function CompanionAppSettings({
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Pairing codes are short-lived and expire quickly if the Companion window closes.
                 </p>
-              </div>
-
-              {pairingError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                  {pairingError}
-                </div>
-              )}
-
-              {pairingNotice && (
-                <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                  {pairingNotice}
-                </div>
-              )}
-
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                {pairingHasPendingConflict && (
-                  <button
-                    type="button"
-                    onClick={() => void handleCancelPendingPairing()}
-                    disabled={isPairingCompanion || isCancellingPendingPairing}
-                    className="rounded-xl border border-orange-300 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-50 disabled:cursor-not-allowed disabled:border-orange-200 disabled:text-orange-300 dark:border-orange-500/30 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:disabled:border-orange-500/20 dark:disabled:text-orange-500/50"
-                  >
-                    {isCancellingPendingPairing
-                      ? "Cancelling Pending..."
-                      : "Cancel Previous Request"}
-                  </button>
+                {pairingError && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+                    {pairingError}
+                  </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void handlePairCompanion()}
-                  disabled={
-                    isPairingCompanion ||
-                    isCancellingPendingPairing ||
-                    pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8
-                  }
-                  className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
-                >
-                  {isPairingCompanion ? "Pairing..." : "Complete Pairing"}
-                </button>
-              </div>
+
+                {pairingNotice && (
+                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                    {pairingNotice}
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  {pairingHasPendingConflict && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCancelPendingPairing()}
+                      disabled={isPairingCompanion || isCancellingPendingPairing}
+                      className="rounded-xl border border-orange-300 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-50 disabled:cursor-not-allowed disabled:border-orange-200 disabled:text-orange-300 dark:border-orange-500/30 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:disabled:border-orange-500/20 dark:disabled:text-orange-500/50"
+                    >
+                      {isCancellingPendingPairing
+                        ? "Cancelling Pending..."
+                        : "Cancel Previous Request"}
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={
+                      isPairingCompanion ||
+                      isCancellingPendingPairing ||
+                      pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8
+                    }
+                    className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+                  >
+                    {isPairingCompanion ? "Pairing..." : "Complete Pairing"}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </section>

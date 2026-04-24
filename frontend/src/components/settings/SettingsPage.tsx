@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import {
   CompanionLocalRequestError,
+  type CompanionLocalAction,
   companionLocalFetch,
 } from "@/lib/companionLocalApi";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
@@ -53,6 +54,11 @@ interface CompanionConfig {
   min_meeting_length?: number;
 }
 
+const COMPANION_CONFIG_READ_ACTIONS: CompanionLocalAction[] = [
+  "settings:read",
+  "devices:read",
+];
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const handleCompanionPairingEnded = useServiceStatusStore(
@@ -80,18 +86,75 @@ export default function SettingsPage() {
   const { addNotification } = useNotificationStore();
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshCompanionConfigRequestRef = useRef<Promise<boolean> | null>(
+    null,
+  );
   const isFirstLoad = useRef(true);
   const lastSavedState = useRef<string>("");
 
   const refreshCompanionConfig = useCallback(async () => {
-    try {
-      const res = await companionLocalFetch(
-        "/config",
-        { method: "GET" },
-        "settings:read",
-      );
-      if (!res.ok) {
-        if (res.status === 403 || res.status === 409) {
+    const companionAuthenticated =
+      useServiceStatusStore.getState().companionAuthenticated;
+
+    if (!companionAuthenticated) {
+      setCompanionConfig(null);
+      setCompanionDevices(null);
+      setSelectedInputDevice(null);
+      setSelectedOutputDevice(null);
+      return false;
+    }
+
+    if (refreshCompanionConfigRequestRef.current) {
+      return refreshCompanionConfigRequestRef.current;
+    }
+
+    const request = (async () => {
+      try {
+        const res = await companionLocalFetch(
+          "/config",
+          { method: "GET" },
+          COMPANION_CONFIG_READ_ACTIONS,
+        );
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 409) {
+            handleCompanionPairingEnded();
+          }
+          setCompanionConfig(null);
+          setCompanionDevices(null);
+          setSelectedInputDevice(null);
+          setSelectedOutputDevice(null);
+          return false;
+        }
+
+        const companionData: CompanionConfig = await res.json();
+        setCompanionConfig(companionData);
+
+        const devicesRes = await companionLocalFetch(
+          "/devices",
+          { method: "GET" },
+          COMPANION_CONFIG_READ_ACTIONS,
+        );
+        if (!devicesRes.ok) {
+          if (devicesRes.status === 403 || devicesRes.status === 409) {
+            handleCompanionPairingEnded();
+          }
+          setCompanionDevices(null);
+          setSelectedInputDevice(null);
+          setSelectedOutputDevice(null);
+          return false;
+        }
+
+        const devicesData: CompanionDevices = await devicesRes.json();
+        setCompanionDevices(devicesData);
+        setSelectedInputDevice(devicesData.selected_input);
+        setSelectedOutputDevice(devicesData.selected_output);
+        return true;
+      } catch (e) {
+        console.error("Failed to refresh companion config", e);
+        if (
+          e instanceof CompanionLocalRequestError &&
+          (e.status === 403 || e.status === 409)
+        ) {
           handleCompanionPairingEnded();
         }
         setCompanionConfig(null);
@@ -100,44 +163,13 @@ export default function SettingsPage() {
         setSelectedOutputDevice(null);
         return false;
       }
+    })();
 
-      const companionData: CompanionConfig = await res.json();
-      setCompanionConfig(companionData);
+    refreshCompanionConfigRequestRef.current = request.finally(() => {
+      refreshCompanionConfigRequestRef.current = null;
+    });
 
-      const devicesRes = await companionLocalFetch(
-        "/devices",
-        { method: "GET" },
-        "devices:read",
-      );
-      if (!devicesRes.ok) {
-        if (devicesRes.status === 403 || devicesRes.status === 409) {
-          handleCompanionPairingEnded();
-        }
-        setCompanionDevices(null);
-        setSelectedInputDevice(null);
-        setSelectedOutputDevice(null);
-        return false;
-      }
-
-      const devicesData: CompanionDevices = await devicesRes.json();
-      setCompanionDevices(devicesData);
-      setSelectedInputDevice(devicesData.selected_input);
-      setSelectedOutputDevice(devicesData.selected_output);
-      return true;
-    } catch (e) {
-      console.error("Failed to refresh companion config", e);
-      if (
-        e instanceof CompanionLocalRequestError &&
-        (e.status === 403 || e.status === 409)
-      ) {
-        handleCompanionPairingEnded();
-      }
-      setCompanionConfig(null);
-      setCompanionDevices(null);
-      setSelectedInputDevice(null);
-      setSelectedOutputDevice(null);
-      return false;
-    }
+    return refreshCompanionConfigRequestRef.current;
   }, [handleCompanionPairingEnded]);
 
   // Determine which tabs have matches and their scores
