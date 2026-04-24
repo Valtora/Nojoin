@@ -1,7 +1,8 @@
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::notifications;
 use crate::state::{
-    pairing_block_message, ActiveRecordingOwner, AppState, AppStatus, AudioCommand,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label,
+    ActiveRecordingOwner, AppState, AppStatus, AudioCommand, PairingSession,
     PairingValidationError, RecordingRecoveryState,
 };
 use crate::uploader;
@@ -15,13 +16,15 @@ use axum::{
 };
 use cpal::traits::{DeviceTrait, HostTrait};
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
-use log::{error, info};
+use log::{error, info, warn};
 use reqwest::{Method, Url};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Manager;
+use tokio::net::{lookup_host, TcpStream};
+use tokio_rustls::TlsConnector;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
@@ -117,6 +120,7 @@ const LOCAL_CONTROL_RECORDING_STOP_ACTION: &str = "recording:stop";
 const LOCAL_CONTROL_RECORDING_PAUSE_ACTION: &str = "recording:pause";
 const LOCAL_CONTROL_RECORDING_RESUME_ACTION: &str = "recording:resume";
 const LOCAL_CONTROL_UPDATE_TRIGGER_ACTION: &str = "update:trigger";
+const PAIRING_NETWORK_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct LocalControlClaims {
@@ -764,6 +768,323 @@ struct PairingCompleteResponse {
     message: String,
 }
 
+fn compact_log_value(value: &str, max_len: usize) -> String {
+    let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.len() <= max_len {
+        collapsed
+    } else {
+        format!("{}...", &collapsed[..max_len])
+    }
+}
+
+fn short_pairing_id(pairing_id: Option<&str>) -> String {
+    let Some(pairing_id) = pairing_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return "<missing>".to_string();
+    };
+
+    if pairing_id.len() <= 12 {
+        pairing_id.to_string()
+    } else {
+        format!("{}...", &pairing_id[..12])
+    }
+}
+
+fn read_optional_log_header(headers: &HeaderMap, name: &str, max_len: usize) -> String {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| compact_log_value(value, max_len))
+        .unwrap_or_else(|| "<missing>".to_string())
+}
+
+fn pairing_backend_target(payload: &PairingCompleteRequest) -> String {
+    let protocol = payload.api_protocol.as_deref().unwrap_or("<missing>").trim();
+    let host = payload.api_host.as_deref().unwrap_or("<missing>").trim();
+    let port = payload
+        .api_port
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "<missing>".to_string());
+
+    format!("{}://{}:{}", protocol, host, port)
+}
+
+async fn log_backend_connectivity_diagnostics(protocol: &str, host: &str, port: u16) {
+    let backend_target = format!("{}://{}:{}", protocol, host, port);
+    let resolution_started_at = Instant::now();
+    let resolved_addrs = match tokio::time::timeout(
+        Duration::from_secs(3),
+        lookup_host((host, port)),
+    )
+    .await
+    {
+        Ok(Ok(addrs)) => {
+            let mut resolved = addrs.collect::<Vec<_>>();
+            resolved.sort();
+            resolved.dedup();
+            info!(
+                "Resolved pairing backend {} to [{}] in {} ms",
+                backend_target,
+                resolved
+                    .iter()
+                    .map(|addr| addr.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                resolution_started_at.elapsed().as_millis()
+            );
+            resolved
+        }
+        Ok(Err(err)) => {
+            warn!(
+                "Failed to resolve pairing backend {} after {} ms: {}",
+                backend_target,
+                resolution_started_at.elapsed().as_millis(),
+                err
+            );
+            return;
+        }
+        Err(_) => {
+            warn!(
+                "Timed out resolving pairing backend {} after {} ms",
+                backend_target,
+                resolution_started_at.elapsed().as_millis()
+            );
+            return;
+        }
+    };
+
+    if resolved_addrs.is_empty() {
+        warn!("Resolved pairing backend {} to no addresses", backend_target);
+        return;
+    }
+
+    for addr in resolved_addrs.iter().take(4) {
+        let connect_started_at = Instant::now();
+        match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect(*addr)).await {
+            Ok(Ok(stream)) => {
+                let local_addr = stream
+                    .local_addr()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|_| "<unknown>".to_string());
+                info!(
+                    "Connected TCP to pairing backend {} via {} from {} in {} ms",
+                    backend_target,
+                    addr,
+                    local_addr,
+                    connect_started_at.elapsed().as_millis()
+                );
+                drop(stream);
+                return;
+            }
+            Ok(Err(err)) => {
+                warn!(
+                    "Failed TCP connect to pairing backend {} via {} after {} ms: {}",
+                    backend_target,
+                    addr,
+                    connect_started_at.elapsed().as_millis(),
+                    err
+                );
+            }
+            Err(_) => {
+                warn!(
+                    "Timed out TCP connect to pairing backend {} via {} after {} ms",
+                    backend_target,
+                    addr,
+                    connect_started_at.elapsed().as_millis()
+                );
+            }
+        }
+    }
+}
+
+fn short_cert_fingerprint_label(cert: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let digest = Sha256::digest(cert);
+    let fingerprint = digest
+        .iter()
+        .map(|byte| format!("{:02X}", byte))
+        .collect::<Vec<_>>()
+        .join(":");
+
+    if fingerprint.len() <= 23 {
+        fingerprint
+    } else {
+        format!("{}...{}", &fingerprint[..11], &fingerprint[fingerprint.len() - 11..])
+    }
+}
+
+async fn log_backend_tls_handshake_diagnostics(
+    protocol: &str,
+    host: &str,
+    port: u16,
+    tls_fingerprint: Option<String>,
+) {
+    let backend_target = format!("{}://{}:{}", protocol, host, port);
+    let server_name = match rustls::pki_types::ServerName::try_from(host.to_owned()) {
+        Ok(server_name) => server_name,
+        Err(err) => {
+            warn!(
+                "Failed to prepare TLS server name for pairing backend {}: {}",
+                backend_target, err
+            );
+            return;
+        }
+    };
+
+    let resolved_addrs = match tokio::time::timeout(Duration::from_secs(3), lookup_host((host, port))).await {
+        Ok(Ok(addrs)) => {
+            let mut resolved = addrs.collect::<Vec<_>>();
+            resolved.sort();
+            resolved.dedup();
+            resolved
+        }
+        Ok(Err(err)) => {
+            warn!(
+                "Skipping TLS handshake diagnostic for {} because DNS resolution failed: {}",
+                backend_target, err
+            );
+            return;
+        }
+        Err(_) => {
+            warn!(
+                "Skipping TLS handshake diagnostic for {} because DNS resolution timed out",
+                backend_target
+            );
+            return;
+        }
+    };
+
+    if resolved_addrs.is_empty() {
+        warn!(
+            "Skipping TLS handshake diagnostic for {} because DNS returned no addresses",
+            backend_target
+        );
+        return;
+    }
+
+    let connector = TlsConnector::from(Arc::new(crate::tls::create_tls_config(tls_fingerprint)));
+
+    for addr in resolved_addrs.iter().take(2) {
+        let tcp_stream = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect(*addr)).await {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(err)) => {
+                warn!(
+                    "Skipping TLS handshake diagnostic for {} via {} because TCP connect failed: {}",
+                    backend_target, addr, err
+                );
+                continue;
+            }
+            Err(_) => {
+                warn!(
+                    "Skipping TLS handshake diagnostic for {} via {} because TCP connect timed out",
+                    backend_target, addr
+                );
+                continue;
+            }
+        };
+
+        let handshake_started_at = Instant::now();
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            connector.connect(server_name.clone(), tcp_stream),
+        )
+        .await
+        {
+            Ok(Ok(tls_stream)) => {
+                let (_, connection) = tls_stream.get_ref();
+                let negotiated_alpn = connection
+                    .alpn_protocol()
+                    .map(|value| String::from_utf8_lossy(value).into_owned())
+                    .unwrap_or_else(|| "<none>".to_string());
+                let peer_cert = connection
+                    .peer_certificates()
+                    .and_then(|certs| certs.first())
+                    .map(|cert| short_cert_fingerprint_label(cert.as_ref()))
+                    .unwrap_or_else(|| "<missing>".to_string());
+
+                info!(
+                    "Completed TLS handshake to pairing backend {} via {} in {} ms (alpn={}, peer_cert={})",
+                    backend_target,
+                    addr,
+                    handshake_started_at.elapsed().as_millis(),
+                    negotiated_alpn,
+                    peer_cert
+                );
+                return;
+            }
+            Ok(Err(err)) => {
+                warn!(
+                    "TLS handshake to pairing backend {} via {} failed after {} ms: {}",
+                    backend_target,
+                    addr,
+                    handshake_started_at.elapsed().as_millis(),
+                    err
+                );
+            }
+            Err(_) => {
+                warn!(
+                    "TLS handshake to pairing backend {} via {} timed out after {} ms",
+                    backend_target,
+                    addr,
+                    handshake_started_at.elapsed().as_millis()
+                );
+            }
+        }
+    }
+}
+
+fn summarize_pairing_request(
+    payload: &PairingCompleteRequest,
+    origin_header: Option<&str>,
+    host_header: Option<&str>,
+) -> String {
+    format!(
+        "origin_header={} host_header={} backend_target={} pairing_code={} code_hash={} tls_fingerprint_present={} backend_pairing_id={} local_secret_present={} local_secret_version={}",
+        origin_header
+            .map(|value| compact_log_value(value, 120))
+            .unwrap_or_else(|| "<missing>".to_string()),
+        host_header
+            .map(|value| compact_log_value(value, 120))
+            .unwrap_or_else(|| "<missing>".to_string()),
+        pairing_backend_target(payload),
+        pairing_code_log_label(&payload.pairing_code),
+        pairing_code_fingerprint(&payload.pairing_code),
+        payload
+            .tls_fingerprint
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+        short_pairing_id(payload.backend_pairing_id.as_deref()),
+        payload
+            .local_control_secret
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+        payload
+            .local_control_secret_version
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "<missing>".to_string()),
+    )
+}
+
+fn summarize_pairing_session(session: Option<&PairingSession>) -> String {
+    match session {
+        Some(session) => format!(
+            "active_pairing=code:{} code_hash:{} expires_in={}s failed_attempts={} completion_in_progress={} expired={}",
+            pairing_code_log_label(&session.canonical_code),
+            pairing_code_fingerprint(&session.canonical_code),
+            session.remaining_seconds(),
+            session.failed_attempts,
+            session.completion_in_progress,
+            session.is_expired(),
+        ),
+        None => "active_pairing=<none>".to_string(),
+    }
+}
+
 async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<(), String> {
     let protocol = payload
         .api_protocol
@@ -777,29 +1098,72 @@ async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<()
         .api_port
         .ok_or_else(|| "Missing API port".to_string())?;
 
-    let validation_url = format!(
-        "{}://{}:{}/api/v1/login/companion-token/validate",
-        protocol, host, port
+    let backend_target = format!("{}://{}:{}", protocol, host, port);
+    let validation_url = format!("{}/api/v1/login/companion-token/validate", backend_target);
+    let started_at = Instant::now();
+    let client_started_at = Instant::now();
+    info!(
+        "Validating pairing bootstrap token against {} (backend_pairing_id={})",
+        backend_target,
+        short_pairing_id(payload.backend_pairing_id.as_deref())
     );
     let client = crate::tls::create_client(payload.tls_fingerprint.clone())
         .map_err(|err| err.to_string())?;
+    info!(
+        "Built outbound pairing validation client for {} in {} ms",
+        backend_target,
+        client_started_at.elapsed().as_millis()
+    );
+    log_backend_connectivity_diagnostics(protocol, host, port).await;
+    log_backend_tls_handshake_diagnostics(protocol, host, port, payload.tls_fingerprint.clone()).await;
 
-    let response = client
-        .get(validation_url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", payload.bootstrap_token),
-        )
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+    let response = match tokio::time::timeout(
+        Duration::from_secs(PAIRING_NETWORK_TIMEOUT_SECS),
+        client
+            .get(validation_url.clone())
+            .header(
+                "Authorization",
+                format!("Bearer {}", payload.bootstrap_token),
+            )
+            .send(),
+    )
+    .await
+    {
+        Ok(Ok(response)) => response,
+        Ok(Err(err)) => {
+            return Err(format!(
+                "Request to {} failed after {} ms: {}",
+                validation_url,
+                started_at.elapsed().as_millis(),
+                err
+            ));
+        }
+        Err(_) => {
+            return Err(format!(
+                "Request to {} timed out after {} ms before a response was received",
+                validation_url,
+                started_at.elapsed().as_millis()
+            ));
+        }
+    };
 
     if response.status().is_success() {
+        info!(
+            "Bootstrap token validation succeeded for {} in {} ms (backend_pairing_id={})",
+            backend_target,
+            started_at.elapsed().as_millis(),
+            short_pairing_id(payload.backend_pairing_id.as_deref())
+        );
         Ok(())
     } else {
+        let status = response.status();
+        let body = response.text().await.map_err(|err| err.to_string())?;
         Err(format!(
-            "Bootstrap token validation failed with status {}",
-            response.status()
+            "Bootstrap token validation failed for {} in {} ms with status {} and body '{}'",
+            backend_target,
+            started_at.elapsed().as_millis(),
+            status,
+            compact_log_value(&body, 240)
         ))
     }
 }
@@ -819,23 +1183,74 @@ async fn send_pairing_management_request(
     tls_fingerprint: Option<String>,
     path: &str,
 ) -> Result<u64, String> {
+    let method_name = method.as_str().to_string();
+    let backend_target = format!("{}://{}:{}", protocol, host, port);
     let url = format!("{}://{}:{}/api/v1{}", protocol, host, port, path);
-    let client = crate::tls::create_client(tls_fingerprint).map_err(|err| err.to_string())?;
+    let started_at = Instant::now();
+    let client_started_at = Instant::now();
+    let client = crate::tls::create_client(tls_fingerprint.clone()).map_err(|err| err.to_string())?;
+    info!(
+        "Built outbound pairing management client for {}{} in {} ms",
+        backend_target,
+        path,
+        client_started_at.elapsed().as_millis()
+    );
+    log_backend_connectivity_diagnostics(protocol, host, port).await;
+    log_backend_tls_handshake_diagnostics(protocol, host, port, tls_fingerprint.clone()).await;
 
-    let response = client
-        .request(method, url)
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+    let response = match tokio::time::timeout(
+        Duration::from_secs(PAIRING_NETWORK_TIMEOUT_SECS),
+        client
+            .request(method, url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send(),
+    )
+    .await
+    {
+        Ok(Ok(response)) => response,
+        Ok(Err(err)) => {
+            return Err(format!(
+                "Pairing management request {} {}{} failed after {} ms: {}",
+                method_name,
+                backend_target,
+                path,
+                started_at.elapsed().as_millis(),
+                err
+            ));
+        }
+        Err(_) => {
+            return Err(format!(
+                "Pairing management request {} {}{} timed out after {} ms before a response was received",
+                method_name,
+                backend_target,
+                path,
+                started_at.elapsed().as_millis()
+            ));
+        }
+    };
 
     let status = response.status();
     let body = response.text().await.map_err(|err| err.to_string())?;
     if !status.is_success() {
-        return Err(format!("Pairing management request failed with status {}", status));
+        return Err(format!(
+            "Pairing management request {} {}{} failed in {} ms with status {} and body '{}'",
+            method_name,
+            backend_target,
+            path,
+            started_at.elapsed().as_millis(),
+            status,
+            compact_log_value(&body, 240)
+        ));
     }
 
     let parsed: PairingManagementResponse = serde_json::from_str(&body).unwrap_or_default();
+    info!(
+        "Pairing management request {} {}{} succeeded in {} ms",
+        method_name,
+        backend_target,
+        path,
+        started_at.elapsed().as_millis()
+    );
     Ok(parsed
         .revoked_count
         .or(parsed.cancelled_count)
@@ -926,11 +1341,40 @@ async fn complete_pairing(
     Json(payload): Json<PairingCompleteRequest>,
 ) -> (StatusCode, Json<PairingCompleteResponse>) {
     let state = &context.state;
-    info!("Received pairing completion request");
+    let host_header = headers.get("host").and_then(|value| value.to_str().ok());
+    let origin_header = headers.get("origin").and_then(|value| value.to_str().ok());
+    let frontend_runtime_header =
+        read_optional_log_header(&headers, "x-nojoin-frontend-runtime", 160);
+    let frontend_request_header =
+        read_optional_log_header(&headers, "x-nojoin-frontend-pair-request", 160);
+    let frontend_source_header =
+        read_optional_log_header(&headers, "x-nojoin-frontend-source", 80);
+    let referer_header = read_optional_log_header(&headers, "referer", 160);
+    let sec_fetch_mode_header = read_optional_log_header(&headers, "sec-fetch-mode", 40);
+    let sec_fetch_site_header = read_optional_log_header(&headers, "sec-fetch-site", 40);
+    let request_summary = format!(
+        "{} frontend_runtime={} frontend_request={} frontend_source={} referer={} sec_fetch_mode={} sec_fetch_site={}",
+        summarize_pairing_request(&payload, origin_header, host_header),
+        frontend_runtime_header,
+        frontend_request_header,
+        frontend_source_header,
+        referer_header,
+        sec_fetch_mode_header,
+        sec_fetch_site_header
+    );
+    let session_summary = summarize_pairing_session(state.pairing_session_snapshot().as_ref());
+    info!(
+        "Received pairing completion request: {}; {}",
+        request_summary, session_summary
+    );
 
     {
         let config = state.config.lock().unwrap();
         if ensure_loopback_request(&headers, &config).is_err() {
+            warn!(
+                "Rejected pairing completion because request was not loopback-safe: {}",
+                request_summary
+            );
             return (
                 StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
@@ -948,6 +1392,10 @@ async fn complete_pairing(
     {
         Some(origin) => origin,
         _ => {
+            warn!(
+                "Rejected pairing completion because Origin header was invalid: {}",
+                request_summary
+            );
             return (
                 StatusCode::FORBIDDEN,
                 Json(PairingCompleteResponse {
@@ -969,6 +1417,10 @@ async fn complete_pairing(
         || payload.api_port.is_none()
         || payload.pairing_code.trim().is_empty()
     {
+        warn!(
+            "Rejected pairing completion because required fields were missing: {}",
+            request_summary
+        );
         return (
             StatusCode::BAD_REQUEST,
             Json(PairingCompleteResponse {
@@ -982,6 +1434,10 @@ async fn complete_pairing(
     {
         let status = state.status.lock().unwrap().clone();
         if let Some(message) = pairing_block_message(&status) {
+            warn!(
+                "Rejected pairing completion because companion state blocked pairing: status={:?}; {}",
+                status, request_summary
+            );
             return (
                 StatusCode::CONFLICT,
                 Json(PairingCompleteResponse {
@@ -993,8 +1449,19 @@ async fn complete_pairing(
     }
 
     match state.begin_pairing_completion(&payload.pairing_code) {
-        Ok(()) => {}
+        Ok(()) => {
+            info!(
+                "Accepted pairing completion request and locked active pairing session: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
+        }
         Err(PairingValidationError::NotActive) => {
+            warn!(
+                "Rejected pairing completion because no active pairing session was present: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
             if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
                 error!("Failed to cancel pending pairing after inactive request: {}", err);
             }
@@ -1009,6 +1476,11 @@ async fn complete_pairing(
             );
         }
         Err(PairingValidationError::Expired) => {
+            warn!(
+                "Rejected pairing completion because the active pairing session expired: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
             }
@@ -1026,6 +1498,11 @@ async fn complete_pairing(
             );
         }
         Err(PairingValidationError::Invalid) => {
+            warn!(
+                "Rejected pairing completion because the submitted pairing code did not match the active session: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
             if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
                 error!("Failed to cancel pending pairing after invalid code: {}", err);
             }
@@ -1038,6 +1515,11 @@ async fn complete_pairing(
             );
         }
         Err(PairingValidationError::LockedOut) => {
+            warn!(
+                "Rejected pairing completion because the pairing attempt budget was exhausted: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
             }
@@ -1058,6 +1540,11 @@ async fn complete_pairing(
             );
         }
         Err(PairingValidationError::InProgress) => {
+            warn!(
+                "Rejected pairing completion because another completion is already in progress: {}; {}",
+                request_summary,
+                summarize_pairing_session(state.pairing_session_snapshot().as_ref())
+            );
             return (
                 StatusCode::CONFLICT,
                 Json(PairingCompleteResponse {
@@ -1069,7 +1556,10 @@ async fn complete_pairing(
     }
 
     if let Err(err) = validate_bootstrap_token(&payload).await {
-        error!("Bootstrap token validation failed: {}", err);
+        error!(
+            "Bootstrap token validation failed during pairing completion: {}; {}",
+            err, request_summary
+        );
         state.release_pairing_completion();
         if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
             error!(
@@ -1114,7 +1604,10 @@ async fn complete_pairing(
     };
 
     if let Err(e) = save_result {
-        error!("Failed to save config: {}", e);
+        error!(
+            "Failed to save pairing config after successful bootstrap validation: {}; {}",
+            e, request_summary
+        );
         state.release_pairing_completion();
         if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
             error!(
@@ -1131,6 +1624,14 @@ async fn complete_pairing(
         );
     }
 
+    info!(
+        "Persisted paired backend configuration: origin={} backend_target={} had_existing_backend={} revoke_previous_backend={}",
+        origin,
+        pairing_backend_target(&payload),
+        had_existing_backend,
+        should_revoke_previous_backend
+    );
+
     state.complete_pairing_session();
     if let Some(window) = context.app_handle.get_webview_window("pairing") {
         let _ = window.close();
@@ -1144,10 +1645,19 @@ async fn complete_pairing(
 
     if should_revoke_previous_backend {
         if let Some(previous_backend) = previous_backend {
+            let previous_backend_target = format!(
+                "{}://{}:{}",
+                previous_backend.api_protocol, previous_backend.api_host, previous_backend.api_port
+            );
             if let Err(revoke_err) = revoke_backend_pairings(&previous_backend).await {
                 error!(
                     "Failed to revoke pairing state on the previous backend after successful re-pair: {}",
                     revoke_err
+                );
+            } else {
+                info!(
+                    "Revoked pairing state on previous backend after successful re-pair: {}",
+                    previous_backend_target
                 );
             }
         }

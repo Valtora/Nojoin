@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use log::{error, info};
+use log::{error, info, warn};
 use reqwest;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -30,7 +30,8 @@ mod win_notifications;
 
 use config::{Config, MachineLocalUpdate};
 use state::{
-    pairing_block_message, AppState, AppStatus, RecordingRecoveryState,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, AppState,
+    AppStatus, RecordingRecoveryState,
     PAIRING_WINDOW_LIFETIME_SECS,
 };
 use tauri_plugin_autostart::ManagerExt;
@@ -565,6 +566,13 @@ fn start_pairing_mode_internal(
 
     let was_previously_paired = state.is_authenticated();
     let session = state.begin_pairing_session();
+    info!(
+        "Started pairing mode: code={} code_hash={} expires_in={}s previously_paired={}",
+        pairing_code_log_label(&session.canonical_code),
+        pairing_code_fingerprint(&session.canonical_code),
+        session.remaining_seconds(),
+        was_previously_paired
+    );
     let window_url = format!(
         "pairing.html?code={}&expires_in={}",
         session.display_code,
@@ -589,9 +597,22 @@ fn start_pairing_mode_internal(
     })?;
 
     let state_on_close = state.clone();
+    let code_on_close = session.canonical_code.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { .. } = event {
-            state_on_close.clear_pairing_session();
+            let should_clear_active_session = state_on_close
+                .current_pairing_session()
+                .map(|active| active.canonical_code == code_on_close)
+                .unwrap_or(false);
+
+            if should_clear_active_session {
+                info!(
+                    "Pairing window closed before completion: code={} code_hash={}",
+                    pairing_code_log_label(&code_on_close),
+                    pairing_code_fingerprint(&code_on_close)
+                );
+                state_on_close.clear_pairing_session();
+            }
         }
     });
 
@@ -607,6 +628,12 @@ fn start_pairing_mode_internal(
             .unwrap_or(false);
 
         if should_expire {
+            warn!(
+                "Pairing session expired before completion: code={} code_hash={} previously_paired={}",
+                pairing_code_log_label(&expected_code),
+                pairing_code_fingerprint(&expected_code),
+                was_previously_paired
+            );
             state_on_expiry.clear_pairing_session();
             close_pairing_window(&app_on_expiry);
             notifications::show_notification(
@@ -984,8 +1011,7 @@ fn main() {
                         config.tls_fingerprint()
                     };
 
-                    let mut client = reqwest::Client::builder()
-                        .use_preconfigured_tls(crate::tls::create_tls_config(fingerprint.clone()))
+                    let mut client = crate::tls::create_client_builder(fingerprint.clone())
                         .timeout(Duration::from_secs(5))
                         .build()
                         .unwrap_or_default();
@@ -1001,8 +1027,7 @@ fn main() {
 
                         // Recreate client if fingerprint changed
                         if current_fingerprint != fingerprint {
-                            client = reqwest::Client::builder()
-                                .use_preconfigured_tls(crate::tls::create_tls_config(fingerprint.clone()))
+                            client = crate::tls::create_client_builder(fingerprint.clone())
                                 .timeout(Duration::from_secs(5))
                                 .build()
                                 .unwrap_or_default();

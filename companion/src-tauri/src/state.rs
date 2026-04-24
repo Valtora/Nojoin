@@ -2,6 +2,8 @@ use crate::config::Config;
 use crossbeam_channel::Sender;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
@@ -61,6 +63,34 @@ pub fn canonicalize_pairing_code(input: &str) -> String {
         .filter(|ch| ch.is_ascii_alphanumeric())
         .map(|ch| ch.to_ascii_uppercase())
         .collect()
+}
+
+pub fn pairing_code_log_label(input: &str) -> String {
+    let canonical = canonicalize_pairing_code(input);
+    if canonical.is_empty() {
+        return "<empty>".to_string();
+    }
+
+    if canonical.len() <= 4 {
+        return canonical;
+    }
+
+    format!(
+        "{}...{}",
+        &canonical[..2],
+        &canonical[canonical.len() - 2..]
+    )
+}
+
+pub fn pairing_code_fingerprint(input: &str) -> String {
+    let canonical = canonicalize_pairing_code(input);
+    if canonical.is_empty() {
+        return "empty".to_string();
+    }
+
+    let mut hasher = DefaultHasher::new();
+    canonical.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn format_pairing_code(canonical_code: &str) -> String {
@@ -206,6 +236,10 @@ impl AppState {
         pairing_session.clone()
     }
 
+    pub fn pairing_session_snapshot(&self) -> Option<PairingSession> {
+        self.pairing_session.lock().unwrap().clone()
+    }
+
     pub fn is_pairing_active(&self) -> bool {
         self.current_pairing_session().is_some()
     }
@@ -300,9 +334,9 @@ pub enum AudioCommand {
 #[cfg(test)]
 mod tests {
     use super::{
-        canonicalize_pairing_code, pairing_block_message, AppState, AppStatus, AudioCommand,
-        PairingSession, PairingValidationError, RecordingRecoveryState,
-        MAX_PAIRING_ATTEMPTS,
+        canonicalize_pairing_code, pairing_block_message, pairing_code_fingerprint,
+        pairing_code_log_label, AppState, AppStatus, AudioCommand, PairingSession,
+        PairingValidationError, RecordingRecoveryState, MAX_PAIRING_ATTEMPTS,
     };
     use crate::config::Config;
     use crossbeam_channel::unbounded;
@@ -354,6 +388,15 @@ mod tests {
         state.release_pairing_completion();
 
         assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+    }
+
+    #[test]
+    fn pairing_code_log_helpers_are_redacted_and_stable() {
+        assert_eq!(pairing_code_log_label("ab-cd1234"), "AB...34");
+        assert_eq!(
+            pairing_code_fingerprint("ab-cd1234"),
+            pairing_code_fingerprint("ABCD1234")
+        );
     }
 
     #[test]
