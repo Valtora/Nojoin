@@ -1,5 +1,7 @@
+use crate::companion_auth;
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::notifications;
+use crate::secret_store::{self, BackendSecretBundle};
 use crate::state::{
     pairing_block_message, pairing_code_fingerprint, pairing_code_log_label,
     ActiveRecordingOwner, AppState, AppStatus, AudioCommand, PairingSession,
@@ -17,14 +19,12 @@ use axum::{
 use cpal::traits::{DeviceTrait, HostTrait};
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use log::{error, info, warn};
-use reqwest::{Method, Url};
+use reqwest::Url;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
-use tokio::net::{lookup_host, TcpStream};
-use tokio_rustls::TlsConnector;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
@@ -120,7 +120,6 @@ const LOCAL_CONTROL_RECORDING_STOP_ACTION: &str = "recording:stop";
 const LOCAL_CONTROL_RECORDING_PAUSE_ACTION: &str = "recording:pause";
 const LOCAL_CONTROL_RECORDING_RESUME_ACTION: &str = "recording:resume";
 const LOCAL_CONTROL_UPDATE_TRIGGER_ACTION: &str = "update:trigger";
-const PAIRING_NETWORK_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct LocalControlClaims {
@@ -357,12 +356,14 @@ fn validate_local_control_token(
             "Companion pairing state is missing or expired. Pair again from Nojoin.",
         )
     })?;
-    let local_control_secret = backend.local_control_secret.clone().ok_or_else(|| {
-        LocalGuardRejection::conflict(
-            "local_pairing_conflict",
-            "Companion pairing state is missing or expired. Pair again from Nojoin.",
-        )
-    })?;
+    let local_control_secret = secret_store::load_backend_secret_bundle_for_backend(&backend)
+        .map_err(|_| {
+            LocalGuardRejection::conflict(
+                "local_pairing_conflict",
+                "Companion pairing state is missing or expired. Pair again from Nojoin.",
+            )
+        })?
+        .local_control_secret;
     let pairing_id = backend.backend_pairing_id.clone().ok_or_else(|| {
         LocalGuardRejection::conflict(
             "local_pairing_conflict",
@@ -752,7 +753,7 @@ async fn get_status(
 #[derive(serde::Deserialize)]
 struct PairingCompleteRequest {
     pairing_code: String,
-    bootstrap_token: String,
+    companion_credential_secret: String,
     api_host: Option<String>,
     api_port: Option<u16>,
     api_protocol: Option<String>,
@@ -811,100 +812,6 @@ fn pairing_backend_target(payload: &PairingCompleteRequest) -> String {
     format!("{}://{}:{}", protocol, host, port)
 }
 
-async fn log_backend_connectivity_diagnostics(protocol: &str, host: &str, port: u16) {
-    let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let resolution_started_at = Instant::now();
-    let resolved_addrs = match tokio::time::timeout(
-        Duration::from_secs(3),
-        lookup_host((host, port)),
-    )
-    .await
-    {
-        Ok(Ok(addrs)) => {
-            let mut resolved = addrs.collect::<Vec<_>>();
-            resolved.sort();
-            resolved.dedup();
-            info!(
-                "Resolved pairing backend {} to [{}] in {} ms",
-                backend_target,
-                resolved
-                    .iter()
-                    .map(|addr| addr.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                resolution_started_at.elapsed().as_millis()
-            );
-            resolved
-        }
-        Ok(Err(err)) => {
-            warn!(
-                "Failed to resolve pairing backend {} after {} ms: {}",
-                backend_target,
-                resolution_started_at.elapsed().as_millis(),
-                err
-            );
-            return;
-        }
-        Err(_) => {
-            warn!(
-                "Timed out resolving pairing backend {} after {} ms",
-                backend_target,
-                resolution_started_at.elapsed().as_millis()
-            );
-            return;
-        }
-    };
-
-    if resolved_addrs.is_empty() {
-        warn!("Resolved pairing backend {} to no addresses", backend_target);
-        return;
-    }
-
-    for addr in resolved_addrs.iter().take(4) {
-        let connect_started_at = Instant::now();
-        match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect(*addr)).await {
-            Ok(Ok(stream)) => {
-                let local_addr = stream
-                    .local_addr()
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|_| "<unknown>".to_string());
-                info!(
-                    "Connected TCP to pairing backend {} via {} from {} in {} ms",
-                    backend_target,
-                    addr,
-                    local_addr,
-                    connect_started_at.elapsed().as_millis()
-                );
-                drop(stream);
-                return;
-            }
-            Ok(Err(err)) => {
-                warn!(
-                    "Failed TCP connect to pairing backend {} via {} after {} ms: {}",
-                    backend_target,
-                    addr,
-                    connect_started_at.elapsed().as_millis(),
-                    err
-                );
-            }
-            Err(_) => {
-                warn!(
-                    "Timed out TCP connect to pairing backend {} via {} after {} ms",
-                    backend_target,
-                    addr,
-                    connect_started_at.elapsed().as_millis()
-                );
-            }
-        }
-    }
-}
-
-fn short_cert_fingerprint_label(cert: &[u8]) -> String {
-    let fingerprint = crate::tls::format_certificate_fingerprint(cert);
-
-    short_fingerprint_label(&fingerprint)
-}
-
 fn short_fingerprint_label(fingerprint: &str) -> String {
     let normalized = fingerprint.trim();
 
@@ -916,126 +823,6 @@ fn short_fingerprint_label(fingerprint: &str) -> String {
             &normalized[..11],
             &normalized[normalized.len() - 11..]
         )
-    }
-}
-
-async fn log_backend_tls_handshake_diagnostics(
-    protocol: &str,
-    host: &str,
-    port: u16,
-    tls_fingerprint: Option<String>,
-) {
-    let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let server_name = match rustls::pki_types::ServerName::try_from(host.to_owned()) {
-        Ok(server_name) => server_name,
-        Err(err) => {
-            warn!(
-                "Failed to prepare TLS server name for pairing backend {}: {}",
-                backend_target, err
-            );
-            return;
-        }
-    };
-
-    let resolved_addrs = match tokio::time::timeout(Duration::from_secs(3), lookup_host((host, port))).await {
-        Ok(Ok(addrs)) => {
-            let mut resolved = addrs.collect::<Vec<_>>();
-            resolved.sort();
-            resolved.dedup();
-            resolved
-        }
-        Ok(Err(err)) => {
-            warn!(
-                "Skipping TLS handshake diagnostic for {} because DNS resolution failed: {}",
-                backend_target, err
-            );
-            return;
-        }
-        Err(_) => {
-            warn!(
-                "Skipping TLS handshake diagnostic for {} because DNS resolution timed out",
-                backend_target
-            );
-            return;
-        }
-    };
-
-    if resolved_addrs.is_empty() {
-        warn!(
-            "Skipping TLS handshake diagnostic for {} because DNS returned no addresses",
-            backend_target
-        );
-        return;
-    }
-
-    let connector = TlsConnector::from(Arc::new(crate::tls::create_tls_config(tls_fingerprint)));
-
-    for addr in resolved_addrs.iter().take(2) {
-        let tcp_stream = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect(*addr)).await {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(err)) => {
-                warn!(
-                    "Skipping TLS handshake diagnostic for {} via {} because TCP connect failed: {}",
-                    backend_target, addr, err
-                );
-                continue;
-            }
-            Err(_) => {
-                warn!(
-                    "Skipping TLS handshake diagnostic for {} via {} because TCP connect timed out",
-                    backend_target, addr
-                );
-                continue;
-            }
-        };
-
-        let handshake_started_at = Instant::now();
-        match tokio::time::timeout(
-            Duration::from_secs(5),
-            connector.connect(server_name.clone(), tcp_stream),
-        )
-        .await
-        {
-            Ok(Ok(tls_stream)) => {
-                let (_, connection) = tls_stream.get_ref();
-                let negotiated_alpn = connection
-                    .alpn_protocol()
-                    .map(|value| String::from_utf8_lossy(value).into_owned())
-                    .unwrap_or_else(|| "<none>".to_string());
-                let peer_cert = connection
-                    .peer_certificates()
-                    .and_then(|certs| certs.first())
-                    .map(|cert| short_cert_fingerprint_label(cert.as_ref()))
-                    .unwrap_or_else(|| "<missing>".to_string());
-
-                info!(
-                    "Completed TLS handshake to pairing backend {} via {} in {} ms (alpn={}, peer_cert={})",
-                    backend_target,
-                    addr,
-                    handshake_started_at.elapsed().as_millis(),
-                    negotiated_alpn,
-                    peer_cert
-                );
-                return;
-            }
-            Ok(Err(err)) => {
-                warn!(
-                    "TLS handshake to pairing backend {} via {} failed after {} ms: {}",
-                    backend_target,
-                    addr,
-                    handshake_started_at.elapsed().as_millis(),
-                    err
-                );
-            }
-            Err(_) => {
-                warn!(
-                    "TLS handshake to pairing backend {} via {} timed out after {} ms",
-                    backend_target,
-                    addr,
-                    handshake_started_at.elapsed().as_millis()
-                );
-            }
-        }
     }
 }
 
@@ -1124,175 +911,45 @@ async fn capture_pairing_tls_fingerprint(
     Ok(fingerprint)
 }
 
-async fn validate_bootstrap_token(
+async fn exchange_companion_access_token_for_pairing(
     payload: &PairingCompleteRequest,
     tls_fingerprint: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let (protocol, host, port) = pairing_backend_details(payload)?;
+    let pairing_session_id = payload
+        .backend_pairing_id
+        .as_deref()
+        .ok_or_else(|| "Missing backend pairing id".to_string())?;
+    let companion_credential_secret = payload.companion_credential_secret.trim();
+    if companion_credential_secret.is_empty() {
+        return Err("Missing companion credential secret".to_string());
+    }
 
     let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let validation_url = format!("{}/api/v1/login/companion-token/validate", backend_target);
     let started_at = Instant::now();
-    let client_started_at = Instant::now();
     info!(
-        "Validating pairing bootstrap token against {} (backend_pairing_id={})",
+        "Exchanging companion credential against {} (backend_pairing_id={})",
         backend_target,
         short_pairing_id(payload.backend_pairing_id.as_deref())
     );
-    let client = crate::tls::create_client(Some(tls_fingerprint.to_string()))
-        .map_err(|err| err.to_string())?;
-    info!(
-        "Built outbound pairing validation client for {} in {} ms",
-        backend_target,
-        client_started_at.elapsed().as_millis()
-    );
-    log_backend_connectivity_diagnostics(protocol, host, port).await;
-    log_backend_tls_handshake_diagnostics(
+
+    let access_token = companion_auth::exchange_access_token_for_target(
         protocol,
         host,
         port,
+        pairing_session_id,
+        companion_credential_secret,
         Some(tls_fingerprint.to_string()),
     )
-    .await;
+    .await?;
 
-    let response = match tokio::time::timeout(
-        Duration::from_secs(PAIRING_NETWORK_TIMEOUT_SECS),
-        client
-            .get(validation_url.clone())
-            .header(
-                "Authorization",
-                format!("Bearer {}", payload.bootstrap_token),
-            )
-            .send(),
-    )
-    .await
-    {
-        Ok(Ok(response)) => response,
-        Ok(Err(err)) => {
-            return Err(format!(
-                "Request to {} failed after {} ms: {}",
-                validation_url,
-                started_at.elapsed().as_millis(),
-                err
-            ));
-        }
-        Err(_) => {
-            return Err(format!(
-                "Request to {} timed out after {} ms before a response was received",
-                validation_url,
-                started_at.elapsed().as_millis()
-            ));
-        }
-    };
-
-    if response.status().is_success() {
-        info!(
-            "Bootstrap token validation succeeded for {} in {} ms (backend_pairing_id={})",
-            backend_target,
-            started_at.elapsed().as_millis(),
-            short_pairing_id(payload.backend_pairing_id.as_deref())
-        );
-        Ok(())
-    } else {
-        let status = response.status();
-        let body = response.text().await.map_err(|err| err.to_string())?;
-        Err(format!(
-            "Bootstrap token validation failed for {} in {} ms with status {} and body '{}'",
-            backend_target,
-            started_at.elapsed().as_millis(),
-            status,
-            compact_log_value(&body, 240)
-        ))
-    }
-}
-
-#[derive(serde::Deserialize, Default)]
-struct PairingManagementResponse {
-    revoked_count: Option<u64>,
-    cancelled_count: Option<u64>,
-}
-
-async fn send_pairing_management_request(
-    method: Method,
-    protocol: &str,
-    host: &str,
-    port: u16,
-    token: &str,
-    tls_fingerprint: Option<String>,
-    path: &str,
-) -> Result<u64, String> {
-    let method_name = method.as_str().to_string();
-    let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let url = format!("{}://{}:{}/api/v1{}", protocol, host, port, path);
-    let started_at = Instant::now();
-    let client_started_at = Instant::now();
-    let client = crate::tls::create_client(tls_fingerprint.clone()).map_err(|err| err.to_string())?;
     info!(
-        "Built outbound pairing management client for {}{} in {} ms",
+        "Companion credential exchange succeeded for {} in {} ms (backend_pairing_id={})",
         backend_target,
-        path,
-        client_started_at.elapsed().as_millis()
+        started_at.elapsed().as_millis(),
+        short_pairing_id(payload.backend_pairing_id.as_deref())
     );
-    log_backend_connectivity_diagnostics(protocol, host, port).await;
-    log_backend_tls_handshake_diagnostics(protocol, host, port, tls_fingerprint.clone()).await;
-
-    let response = match tokio::time::timeout(
-        Duration::from_secs(PAIRING_NETWORK_TIMEOUT_SECS),
-        client
-            .request(method, url)
-            .header("Authorization", format!("Bearer {}", token))
-            .send(),
-    )
-    .await
-    {
-        Ok(Ok(response)) => response,
-        Ok(Err(err)) => {
-            return Err(format!(
-                "Pairing management request {} {}{} failed after {} ms: {}",
-                method_name,
-                backend_target,
-                path,
-                started_at.elapsed().as_millis(),
-                err
-            ));
-        }
-        Err(_) => {
-            return Err(format!(
-                "Pairing management request {} {}{} timed out after {} ms before a response was received",
-                method_name,
-                backend_target,
-                path,
-                started_at.elapsed().as_millis()
-            ));
-        }
-    };
-
-    let status = response.status();
-    let body = response.text().await.map_err(|err| err.to_string())?;
-    if !status.is_success() {
-        return Err(format!(
-            "Pairing management request {} {}{} failed in {} ms with status {} and body '{}'",
-            method_name,
-            backend_target,
-            path,
-            started_at.elapsed().as_millis(),
-            status,
-            compact_log_value(&body, 240)
-        ));
-    }
-
-    let parsed: PairingManagementResponse = serde_json::from_str(&body).unwrap_or_default();
-    info!(
-        "Pairing management request {} {}{} succeeded in {} ms",
-        method_name,
-        backend_target,
-        path,
-        started_at.elapsed().as_millis()
-    );
-    Ok(parsed
-        .revoked_count
-        .or(parsed.cancelled_count)
-        .unwrap_or_default())
+    Ok(access_token)
 }
 
 async fn cancel_pending_pairing_from_request(
@@ -1310,58 +967,22 @@ async fn cancel_pending_pairing_from_request(
     let port = payload
         .api_port
         .ok_or_else(|| "Missing API port".to_string())?;
+    let pairing_session_id = payload
+        .backend_pairing_id
+        .as_deref()
+        .ok_or_else(|| "Missing backend pairing id".to_string())?;
+    let companion_credential_secret = payload.companion_credential_secret.trim();
+    if companion_credential_secret.is_empty() {
+        return Err("Missing companion credential secret".to_string());
+    }
 
-    send_pairing_management_request(
-        Method::DELETE,
+    companion_auth::cancel_pending_pairing_for_target(
         protocol,
         host,
         port,
-        &payload.bootstrap_token,
+        pairing_session_id,
+        companion_credential_secret,
         tls_fingerprint.or_else(|| payload.tls_fingerprint.clone()),
-        "/login/companion-pairing/pending",
-    )
-    .await
-}
-
-pub async fn cancel_pending_pairing_for_backend(
-    backend: &BackendConnection,
-) -> Result<u64, String> {
-    send_pairing_management_request(
-        Method::DELETE,
-        &backend.api_protocol,
-        &backend.api_host,
-        backend.api_port,
-        &backend.api_token,
-        backend.tls_fingerprint.clone(),
-        "/login/companion-pairing/pending",
-    )
-    .await
-}
-
-pub async fn revoke_backend_pairings(backend: &BackendConnection) -> Result<u64, String> {
-    send_pairing_management_request(
-        Method::DELETE,
-        &backend.api_protocol,
-        &backend.api_host,
-        backend.api_port,
-        &backend.api_token,
-        backend.tls_fingerprint.clone(),
-        "/login/companion-pairing",
-    )
-    .await
-}
-
-pub async fn signal_explicit_backend_disconnect(
-    backend: &BackendConnection,
-) -> Result<u64, String> {
-    send_pairing_management_request(
-        Method::POST,
-        &backend.api_protocol,
-        &backend.api_host,
-        backend.api_port,
-        &backend.api_token,
-        backend.tls_fingerprint.clone(),
-        "/login/companion-pairing/disconnect",
     )
     .await
 }
@@ -1445,7 +1066,7 @@ async fn complete_pairing(
         }
     };
 
-    if payload.bootstrap_token.trim().is_empty()
+    if payload.companion_credential_secret.trim().is_empty()
         || payload.api_host.as_deref().unwrap_or("").trim().is_empty()
         || payload
             .api_protocol
@@ -1455,6 +1076,19 @@ async fn complete_pairing(
             .is_empty()
         || payload.api_port.is_none()
         || payload.pairing_code.trim().is_empty()
+        || payload
+            .local_control_secret
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        || payload
+            .backend_pairing_id
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        || payload.local_control_secret_version.unwrap_or_default() == 0
     {
         warn!(
             "Rejected pairing completion because required fields were missing: {}",
@@ -1464,7 +1098,7 @@ async fn complete_pairing(
             StatusCode::BAD_REQUEST,
             Json(PairingCompleteResponse {
                 success: false,
-                message: "Pairing code, bootstrap token, protocol, host, and port are required."
+                message: "Pairing code, companion credential, local control secret, protocol, host, port, and pairing metadata are required."
                     .to_string(),
             }),
         );
@@ -1618,9 +1252,9 @@ async fn complete_pairing(
         }
     };
 
-    if let Err(err) = validate_bootstrap_token(&payload, &captured_tls_fingerprint).await {
+    if let Err(err) = exchange_companion_access_token_for_pairing(&payload, &captured_tls_fingerprint).await {
         error!(
-            "Bootstrap token validation failed during pairing completion: {}; {}",
+            "Companion credential exchange failed during pairing completion: {}; {}",
             err, request_summary
         );
         state.release_pairing_completion();
@@ -1639,7 +1273,7 @@ async fn complete_pairing(
             StatusCode::UNAUTHORIZED,
             Json(PairingCompleteResponse {
                 success: false,
-                message: "The backend bootstrap token is invalid or expired. Start pairing again from Nojoin.".to_string(),
+                message: "The backend pairing credential is invalid or expired. Start pairing again from Nojoin.".to_string(),
             }),
         );
     }
@@ -1648,23 +1282,60 @@ async fn complete_pairing(
         api_protocol: payload.api_protocol.clone().unwrap_or_default(),
         api_host: payload.api_host.clone().unwrap_or_default(),
         api_port: payload.api_port.unwrap_or_default(),
-        api_token: payload.bootstrap_token.clone(),
         tls_fingerprint: Some(captured_tls_fingerprint.clone()),
         paired_web_origin: Some(origin.clone()),
-        local_control_secret: payload.local_control_secret.clone(),
         backend_pairing_id: payload.backend_pairing_id.clone(),
         local_control_secret_version: payload.local_control_secret_version,
+    };
+    let new_secret_bundle = BackendSecretBundle {
+        companion_credential_secret: payload.companion_credential_secret.trim().to_string(),
+        local_control_secret: payload
+            .local_control_secret
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     };
 
     let previous_backend = {
         let config = state.config.lock().unwrap();
         config.backend_connection()
     };
+    let previous_secret_bundle = previous_backend
+        .as_ref()
+        .and_then(|existing| secret_store::load_backend_secret_bundle_for_backend(existing).ok());
     let had_existing_backend = previous_backend.is_some();
     let should_revoke_previous_backend = previous_backend
         .as_ref()
         .map(|existing| !is_same_backend_target(existing, &backend))
         .unwrap_or(false);
+
+    if let Err(error) = secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle)
+    {
+        error!(
+            "Failed to save the local companion secret bundle after successful credential exchange: {}; {}",
+            error, request_summary
+        );
+        state.release_pairing_completion();
+        if let Err(cancel_err) = cancel_pending_pairing_from_request(
+            &payload,
+            Some(captured_tls_fingerprint.clone()),
+        )
+        .await
+        {
+            error!(
+                "Failed to cancel pending pairing after local secret save failure: {}",
+                cancel_err
+            );
+        }
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(PairingCompleteResponse {
+                success: false,
+                message: format!("Failed to save pairing secrets: {}", error),
+            }),
+        );
+    }
 
     let save_result = {
         let mut config = state.config.lock().unwrap();
@@ -1676,6 +1347,13 @@ async fn complete_pairing(
             "Failed to save pairing config after successful bootstrap validation: {}; {}",
             e, request_summary
         );
+        if let Err(delete_error) = secret_store::delete_backend_secret_bundle_for_backend(&backend)
+        {
+            error!(
+                "Failed to delete newly saved companion secret bundle after config save failure: {}",
+                delete_error
+            );
+        }
         state.release_pairing_completion();
         if let Err(cancel_err) = cancel_pending_pairing_from_request(
             &payload,
@@ -1717,20 +1395,47 @@ async fn complete_pairing(
     *state.current_sequence.lock().unwrap() = 1;
 
     if should_revoke_previous_backend {
-        if let Some(previous_backend) = previous_backend {
+        if let Some(previous_backend) = previous_backend.as_ref() {
             let previous_backend_target = format!(
                 "{}://{}:{}",
                 previous_backend.api_protocol, previous_backend.api_host, previous_backend.api_port
             );
-            if let Err(revoke_err) = revoke_backend_pairings(&previous_backend).await {
+            match previous_secret_bundle {
+                Some(bundle) => {
+                    if let Err(revoke_err) = companion_auth::revoke_backend_pairings_with_bundle(
+                        &previous_backend,
+                        &bundle,
+                    )
+                    .await
+                    {
+                        error!(
+                            "Failed to revoke pairing state on the previous backend after successful re-pair: {}",
+                            revoke_err
+                        );
+                    } else {
+                        info!(
+                            "Revoked pairing state on previous backend after successful re-pair: {}",
+                            previous_backend_target
+                        );
+                    }
+                }
+                None => {
+                    error!(
+                        "Failed to load the previous backend companion secret bundle for remote cleanup after successful re-pair: {}",
+                        previous_backend_target
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(previous_backend) = previous_backend.as_ref() {
+        if previous_backend.backend_pairing_id != backend.backend_pairing_id {
+            if let Err(delete_error) = secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
+            {
                 error!(
-                    "Failed to revoke pairing state on the previous backend after successful re-pair: {}",
-                    revoke_err
-                );
-            } else {
-                info!(
-                    "Revoked pairing state on previous backend after successful re-pair: {}",
-                    previous_backend_target
+                    "Failed to delete the previous backend companion secret bundle after successful pairing: {}",
+                    delete_error
                 );
             }
         }
@@ -1854,7 +1559,6 @@ async fn get_live_audio_levels(
 #[derive(serde::Deserialize)]
 struct StartRequest {
     name: String,
-    token: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -1907,13 +1611,16 @@ async fn start_recording(
         )
     })?;
 
-    let (api_url, token) = {
-        let config = state.config.lock().unwrap();
-        (
-            config.get_api_url(),
-            payload.token.clone().unwrap_or_else(|| config.api_token()),
-        )
-    };
+    let config_snapshot = { state.config.lock().unwrap().clone() };
+    let token = companion_auth::exchange_access_token_for_config(&config_snapshot)
+        .await
+        .map_err(|error| {
+            LocalGuardRejection::internal(
+                "backend_access_token_error",
+                format!("Failed to authenticate with the paired backend: {}", error),
+            )
+        })?;
+    let api_url = config_snapshot.get_api_url();
 
     let res = client
         .post(format!("{}/recordings/init", api_url))
@@ -2221,7 +1928,6 @@ async fn get_devices(
 #[derive(serde::Deserialize)]
 struct ConfigUpdate {
     api_port: Option<u16>,
-    api_token: Option<String>,
     input_device_name: Option<String>,
     output_device_name: Option<String>,
     min_meeting_length: Option<u32>,
@@ -2244,14 +1950,10 @@ async fn update_config(
     let mut updated = config.clone();
     let mut should_save = false;
 
-    if payload.api_port.is_some() || payload.api_token.is_some() {
+    if payload.api_port.is_some() {
         let mut backend = updated.backend_or_default();
         if let Some(port) = payload.api_port {
             backend.api_port = port;
-            should_save = true;
-        }
-        if let Some(token) = payload.api_token {
-            backend.api_token = token;
             should_save = true;
         }
         updated.replace_backend(backend);
@@ -2328,13 +2030,30 @@ mod tests {
     use axum::http::HeaderMap;
     use crossbeam_channel::unbounded;
     use jsonwebtoken::{encode, EncodingKey, Header};
-    use std::sync::atomic::{AtomicBool, AtomicU32};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    fn next_test_pairing_id() -> String {
+        static NEXT_TEST_PAIRING_ID: AtomicU32 = AtomicU32::new(1);
+        format!(
+            "pairing-{}",
+            NEXT_TEST_PAIRING_ID.fetch_add(1, Ordering::Relaxed)
+        )
+    }
+
     fn build_test_config() -> Config {
+        let pairing_id = next_test_pairing_id();
+        let _ = crate::secret_store::save_backend_secret_bundle(
+            &pairing_id,
+            &crate::secret_store::BackendSecretBundle {
+                companion_credential_secret: "pairing-secret".to_string(),
+                local_control_secret: "test-local-control-secret".to_string(),
+            },
+        );
+
         Config {
-            version: 1,
+            version: 3,
             machine_local: crate::config::MachineLocalSettings {
                 local_port: 12345,
                 input_device_name: None,
@@ -2347,11 +2066,9 @@ mod tests {
                 api_protocol: "https".to_string(),
                 api_host: "localhost".to_string(),
                 api_port: 14443,
-                api_token: "bootstrap-token".to_string(),
                 tls_fingerprint: Some("AA:BB:CC".to_string()),
                 paired_web_origin: Some("https://paired.example.com".to_string()),
-                local_control_secret: Some("test-local-control-secret".to_string()),
-                backend_pairing_id: Some("pairing-123".to_string()),
+                backend_pairing_id: Some(pairing_id),
                 local_control_secret_version: Some(3),
             }),
         }
@@ -2364,7 +2081,7 @@ mod tests {
             .as_secs() as usize
     }
 
-    fn build_claims() -> LocalControlClaims {
+    fn build_claims(pairing_id: &str) -> LocalControlClaims {
         let now = now_timestamp();
         LocalControlClaims {
             aud: LOCAL_CONTROL_AUDIENCE.to_string(),
@@ -2376,16 +2093,16 @@ mod tests {
             exp: now + 120,
             iat: now,
             token_type: LOCAL_CONTROL_TOKEN_TYPE.to_string(),
-            companion_pairing_id: "pairing-123".to_string(),
+            companion_pairing_id: pairing_id.to_string(),
             secret_version: 3,
         }
     }
 
-    fn build_recording_owner() -> ActiveRecordingOwner {
+    fn build_recording_owner(pairing_id: &str) -> ActiveRecordingOwner {
         ActiveRecordingOwner {
             user_id: 1,
             username: "alice".to_string(),
-            companion_pairing_id: "pairing-123".to_string(),
+            companion_pairing_id: pairing_id.to_string(),
         }
     }
 
@@ -2446,7 +2163,7 @@ mod tests {
     #[test]
     fn guard_rejects_malformed_host() {
         let config = build_test_config();
-        let claims = build_claims();
+        let claims = build_claims(&config.backend_pairing_id().unwrap());
         let token = encode_token(&claims, "test-local-control-secret");
         let headers = build_headers(
             "http://127.0.0.1:12345",
@@ -2468,7 +2185,7 @@ mod tests {
     #[test]
     fn guard_rejects_rebinding_hostnames() {
         let config = build_test_config();
-        let claims = build_claims();
+        let claims = build_claims(&config.backend_pairing_id().unwrap());
         let token = encode_token(&claims, "test-local-control-secret");
         let headers = build_headers(
             "127.0.0.1.nip.io:12345",
@@ -2506,7 +2223,7 @@ mod tests {
     #[test]
     fn guard_rejects_expired_local_control_token() {
         let config = build_test_config();
-        let mut claims = build_claims();
+        let mut claims = build_claims(&config.backend_pairing_id().unwrap());
         let now = now_timestamp();
         claims.iat = now.saturating_sub(120);
         claims.exp = now.saturating_sub(120);
@@ -2531,7 +2248,7 @@ mod tests {
     #[test]
     fn guard_rejects_wrong_origin_token() {
         let config = build_test_config();
-        let mut claims = build_claims();
+        let mut claims = build_claims(&config.backend_pairing_id().unwrap());
         claims.origin = "https://wrong.example.com".to_string();
         let token = encode_token(&claims, "test-local-control-secret");
         let headers = build_headers(
@@ -2554,7 +2271,7 @@ mod tests {
     #[test]
     fn guard_rejects_stale_pairing_tokens() {
         let config = build_test_config();
-        let mut claims = build_claims();
+        let mut claims = build_claims(&config.backend_pairing_id().unwrap());
         claims.secret_version = 2;
         let token = encode_token(&claims, "test-local-control-secret");
         let headers = build_headers(
@@ -2576,8 +2293,8 @@ mod tests {
 
     #[test]
     fn recording_owner_check_accepts_same_user_across_tabs() {
-        let claims = build_claims();
-        let owner = build_recording_owner();
+        let claims = build_claims("pairing-123");
+        let owner = build_recording_owner("pairing-123");
 
         let result = ensure_same_recording_owner(Some(&owner), &claims, "pause");
 
@@ -2586,10 +2303,10 @@ mod tests {
 
     #[test]
     fn recording_owner_check_rejects_different_user() {
-        let mut claims = build_claims();
+        let mut claims = build_claims("pairing-123");
         claims.user_id = 2;
         claims.username = "bob".to_string();
-        let owner = build_recording_owner();
+        let owner = build_recording_owner("pairing-123");
 
         let rejection = ensure_same_recording_owner(Some(&owner), &claims, "stop").unwrap_err();
 
@@ -2599,8 +2316,8 @@ mod tests {
 
     #[test]
     fn recording_owner_check_rejects_mismatched_pairing() {
-        let claims = build_claims();
-        let mut owner = build_recording_owner();
+        let claims = build_claims("pairing-123");
+        let mut owner = build_recording_owner("pairing-123");
         owner.companion_pairing_id = "pairing-old".to_string();
 
         let rejection = ensure_same_recording_owner(Some(&owner), &claims, "resume").unwrap_err();
@@ -2611,7 +2328,7 @@ mod tests {
 
     #[test]
     fn recording_owner_check_fails_closed_when_metadata_is_missing() {
-        let claims = build_claims();
+        let claims = build_claims("pairing-123");
 
         let rejection = ensure_same_recording_owner(None, &claims, "stop").unwrap_err();
 

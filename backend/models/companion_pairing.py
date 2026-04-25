@@ -48,6 +48,10 @@ class CompanionPairing(BaseDBModel, table=True):
         default=None,
         sa_column=Column(String(255), nullable=True),
     )
+    companion_credential_hash: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(128), nullable=True),
+    )
     local_control_secret_encrypted: Optional[str] = Field(
         default=None,
         sa_column=Column(Text, nullable=True),

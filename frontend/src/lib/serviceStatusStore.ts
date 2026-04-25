@@ -26,8 +26,7 @@ interface CompanionStatusResponse {
 
 interface CompanionPairingPayload {
   pairing_code: string;
-  bootstrap_token: string;
-  expires_in: number;
+  companion_credential_secret: string;
   api_protocol: string;
   api_host: string;
   api_port: number;

@@ -48,13 +48,14 @@ The Companion app is responsible for:
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The user manually pairs the Companion app to one Nojoin backend at a time using a short-lived pairing code. During that flow, the Companion captures and pins the backend TLS certificate it first sees, then stores a bootstrap token for recording initialisation.
-3. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
-4. The Companion uploads audio segments using that recording-scoped token.
-5. Finalisation queues the recording for backend processing.
-6. The web client shows a live capture or processing status workspace while the job runs.
+2. The user manually pairs the Companion app to one Nojoin backend at a time using a short-lived pairing code. During that flow, the Companion captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata in `config.json`.
+3. When the Companion needs backend access, it exchanges the stored companion credential for a short-lived companion access token.
+4. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
+5. The Companion uploads audio segments using that recording-scoped token.
+6. Finalisation queues the recording for backend processing.
+7. The web client shows a live capture or processing status workspace while the job runs.
 
-Disconnecting the current backend from Companion Settings clears the stored backend trust state and returns the Companion to a clean first-pair state.
+Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
 
 ## Processing Pipeline
 
@@ -86,7 +87,8 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a bootstrap token.
+- **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a revocable companion credential plus local control secret.
+- **Companion backend access**: Short-lived companion access tokens exchanged on demand by the Companion.
 - **Companion upload operations**: Short-lived per-recording tokens.
 
 Forced password rotation is enforced server-side. Flagged users can only reach their self-profile, password update flow, and logout until the rotation is complete.

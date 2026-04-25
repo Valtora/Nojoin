@@ -30,8 +30,7 @@ class CompanionPairingStateError(Exception):
 @dataclass(frozen=True)
 class PreparedCompanionPairingPayload:
     pairing_code: str
-    bootstrap_token: str
-    expires_in: int
+    companion_credential_secret: str
     api_protocol: str
     api_host: str
     api_port: int
@@ -47,6 +46,20 @@ class ActiveCompanionPairingAuth:
     paired_web_origin: str
     local_control_secret: str
     local_control_secret_version: int
+
+
+@dataclass(frozen=True)
+class CompanionExchangeUser:
+    id: int
+    username: str
+    is_active: bool
+
+
+@dataclass(frozen=True)
+class CompanionCredentialExchangeResult:
+    user: CompanionExchangeUser
+    pairing_session_id: str
+    activated: bool
 
 
 def _normalize_origin(origin: str | None) -> str | None:
@@ -85,6 +98,7 @@ def _ensure_complete_pairing(row: CompanionPairing) -> None:
         or not row.api_protocol
         or not row.api_host
         or row.api_port <= 0
+        or not row.companion_credential_hash
         or not row.local_control_secret_encrypted
         or row.local_control_secret_version < 1
     ):
@@ -94,6 +108,10 @@ def _ensure_complete_pairing(row: CompanionPairing) -> None:
 
 
 def _ensure_revoked_pairing_is_clean(row: CompanionPairing) -> None:
+    if row.companion_credential_hash is not None:
+        raise CompanionPairingStateError(
+            "Companion pairing cleanup is incomplete. Revoke the pairing and pair again."
+        )
     if row.local_control_secret_encrypted is not None:
         raise CompanionPairingStateError(
             "Companion pairing cleanup is incomplete. Revoke the pairing and pair again."
@@ -177,6 +195,7 @@ def _revoke_pairing_row(
     reason: CompanionPairingRevocationReason,
 ) -> None:
     row.status = CompanionPairingStatus.REVOKED.value
+    row.companion_credential_hash = None
     row.local_control_secret_encrypted = None
     row.revoked_at = utc_now()
     row.revocation_reason = reason.value
@@ -214,18 +233,10 @@ async def prepare_companion_pairing(
         )
 
     api_protocol, api_host, api_port = _parse_api_origin(get_trusted_web_origin())
+    companion_credential_secret = security.generate_companion_credential_secret()
     local_control_secret = security.generate_local_control_secret()
     pairing_session_id = uuid4().hex
     local_control_secret_version = _next_secret_version(rows)
-
-    bootstrap_token = security.create_access_token(
-        current_user.username,
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
-        extra_claims={
-            security.COMPANION_PAIRING_ID_CLAIM: pairing_session_id,
-        },
-    )
 
     pairing = CompanionPairing(
         user_id=current_user.id,
@@ -236,6 +247,9 @@ async def prepare_companion_pairing(
         api_port=api_port,
         paired_web_origin=normalized_origin,
         tls_fingerprint=tls_fingerprint,
+        companion_credential_hash=security.hash_companion_credential_secret(
+            companion_credential_secret
+        ),
         local_control_secret_encrypted=encrypt_secret(local_control_secret),
         local_control_secret_version=local_control_secret_version,
         supersedes_pairing_session_id=(
@@ -248,8 +262,7 @@ async def prepare_companion_pairing(
 
     return PreparedCompanionPairingPayload(
         pairing_code=pairing_code,
-        bootstrap_token=bootstrap_token,
-        expires_in=security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES * 60,
+        companion_credential_secret=companion_credential_secret,
         api_protocol=api_protocol,
         api_host=api_host,
         api_port=api_port,
@@ -257,6 +270,77 @@ async def prepare_companion_pairing(
         local_control_secret=local_control_secret,
         local_control_secret_version=local_control_secret_version,
         backend_pairing_id=pairing_session_id,
+    )
+
+
+async def exchange_companion_credential(
+    db: AsyncSession,
+    *,
+    pairing_session_id: str,
+    companion_credential_secret: str,
+) -> CompanionCredentialExchangeResult:
+    result = await db.execute(
+        select(CompanionPairing).where(
+            CompanionPairing.pairing_session_id == pairing_session_id
+        )
+    )
+    pairing = result.scalar_one_or_none()
+    if pairing is None:
+        raise CompanionPairingStateError(
+            "Companion pairing state is stale or revoked. Pair again from Nojoin."
+        )
+
+    if pairing.status == CompanionPairingStatus.REVOKED.value:
+        raise CompanionPairingStateError(
+            "Companion pairing was revoked. Pair again from Nojoin."
+        )
+
+    if not pairing.companion_credential_hash:
+        raise CompanionPairingStateError(
+            "Companion pairing state is incomplete. Revoke the pairing and pair again."
+        )
+
+    if not security.verify_companion_credential_secret(
+        companion_credential_secret,
+        pairing.companion_credential_hash,
+    ):
+        raise CompanionPairingStateError(
+            "Companion pairing credential is invalid. Pair again from Nojoin.",
+            status_code=401,
+        )
+
+    user_row = (
+        await db.execute(
+            select(User.id, User.username, User.is_active).where(User.id == pairing.user_id)
+        )
+    ).one_or_none()
+    if user_row is None:
+        raise CompanionPairingStateError(
+            "Companion pairing user no longer exists. Pair again from Nojoin.",
+            status_code=401,
+        )
+    user = CompanionExchangeUser(
+        id=user_row[0],
+        username=user_row[1],
+        is_active=user_row[2],
+    )
+    if not user.is_active:
+        raise CompanionPairingStateError(
+            "Inactive user",
+            status_code=400,
+        )
+
+    activated = pairing.status == CompanionPairingStatus.PENDING.value
+    active_pairing = await finalize_companion_pairing(
+        db,
+        current_user=user,
+        pairing_session_id=pairing_session_id,
+    )
+
+    return CompanionCredentialExchangeResult(
+        user=user,
+        pairing_session_id=active_pairing.pairing_session_id,
+        activated=activated,
     )
 
 
@@ -311,6 +395,7 @@ async def finalize_companion_pairing(
                 "Companion pairing replacement state is incomplete. Revoke the pairing and pair again."
             )
         active_row.status = CompanionPairingStatus.REVOKED.value
+        active_row.companion_credential_hash = None
         active_row.local_control_secret_encrypted = None
         active_row.revoked_at = utc_now()
         active_row.revocation_reason = CompanionPairingRevocationReason.REPLACED.value

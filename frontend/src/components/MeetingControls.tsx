@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
-import { getCompanionToken } from '@/lib/api';
 import {
   companionLocalFetch,
   readCompanionLocalError,
@@ -135,8 +134,7 @@ export default function MeetingControls({
 
   const handleStart = async () => {
     const name = "";
-    const token = await getCompanionToken();
-    const response = await sendCommand('start', { name, token });
+    const response = await sendCommand('start', { name });
     if (response && response.id) {
         router.push(`/recordings/${response.id}`);
         if (onMeetingEnd) onMeetingEnd(); // Refresh list to show new meeting

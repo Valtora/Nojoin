@@ -2708,6 +2708,7 @@ dependencies = [
  "tokio-rustls",
  "tower-http 0.5.2",
  "win32_notif",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

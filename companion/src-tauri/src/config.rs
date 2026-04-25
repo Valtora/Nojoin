@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const CURRENT_CONFIG_VERSION: u32 = 2;
+const CURRENT_CONFIG_VERSION: u32 = 3;
 const DEFAULT_API_PORT: u16 = 14443;
 const DEFAULT_LOCAL_PORT: u16 = 12345;
 
@@ -152,14 +152,10 @@ pub struct BackendConnection {
     pub api_host: String,
     #[serde(default = "default_api_port")]
     pub api_port: u16,
-    #[serde(default)]
-    pub api_token: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paired_web_origin: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_control_secret: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend_pairing_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,13 +194,11 @@ impl BackendConnection {
         } else {
             self.api_port
         };
-        self.api_token = self.api_token.trim().to_string();
         self.tls_fingerprint = normalize_optional_string(self.tls_fingerprint);
         self.paired_web_origin = self
             .paired_web_origin
             .as_deref()
             .and_then(canonicalize_origin);
-        self.local_control_secret = normalize_optional_string(self.local_control_secret);
         self.backend_pairing_id = normalize_optional_string(self.backend_pairing_id);
         self.local_control_secret_version = self
             .local_control_secret_version
@@ -221,20 +215,13 @@ impl BackendConnection {
     }
 
     pub fn has_complete_pairing_state(&self) -> bool {
-        !self.api_token.is_empty()
-            && self
-                .tls_fingerprint
+        self
+            .tls_fingerprint
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .is_some()
             && self.paired_web_origin.is_some()
-            && self
-                .local_control_secret
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_some()
             && self
                 .backend_pairing_id
                 .as_deref()
@@ -251,10 +238,8 @@ impl Default for BackendConnection {
             api_protocol: default_api_protocol(),
             api_host: default_api_host(),
             api_port: DEFAULT_API_PORT,
-            api_token: String::new(),
             tls_fingerprint: None,
             paired_web_origin: None,
-            local_control_secret: None,
             backend_pairing_id: None,
             local_control_secret_version: None,
         }
@@ -287,10 +272,6 @@ impl Config {
         self.backend_or_default().api_port
     }
 
-    pub fn api_token(&self) -> String {
-        self.backend_or_default().api_token
-    }
-
     pub fn tls_fingerprint(&self) -> Option<String> {
         self.backend
             .as_ref()
@@ -301,6 +282,12 @@ impl Config {
         self.backend
             .as_ref()
             .and_then(|backend| backend.paired_web_origin.clone())
+    }
+
+    pub fn backend_pairing_id(&self) -> Option<String> {
+        self.backend
+            .as_ref()
+            .and_then(|backend| backend.backend_pairing_id.clone())
     }
 
     pub fn get_web_url(&self) -> String {
@@ -720,10 +707,8 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "prod.example.com".to_string(),
             api_port: 443,
-            api_token: "bootstrap-token".to_string(),
             tls_fingerprint: Some("AA:BB".to_string()),
             paired_web_origin: Some("https://app.example.com/workspace".to_string()),
-            local_control_secret: Some("reserved-secret".to_string()),
             backend_pairing_id: Some("pairing-one".to_string()),
             local_control_secret_version: Some(1),
         });
@@ -839,10 +824,8 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "old.example.com".to_string(),
             api_port: 443,
-            api_token: "old-token".to_string(),
             tls_fingerprint: Some("OLD".to_string()),
             paired_web_origin: Some("https://old.example.com".to_string()),
-            local_control_secret: Some("old-secret".to_string()),
             backend_pairing_id: Some("pairing-old".to_string()),
             local_control_secret_version: Some(1),
         });
@@ -852,12 +835,10 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "new.example.com".to_string(),
             api_port: 8443,
-            api_token: "new-token".to_string(),
             tls_fingerprint: Some("NEW".to_string()),
             paired_web_origin: Some("https://new.example.com:8443/app".to_string()),
-            local_control_secret: None,
-            backend_pairing_id: None,
-            local_control_secret_version: None,
+            backend_pairing_id: Some("pairing-new".to_string()),
+            local_control_secret_version: Some(2),
         };
 
         config.replace_backend(replacement);
@@ -865,13 +846,12 @@ mod tests {
         assert_ne!(config.backend.as_ref().unwrap(), &before);
         assert_eq!(config.api_host(), "new.example.com");
         assert_eq!(config.api_port(), 8443);
-        assert_eq!(config.api_token(), "new-token");
         assert_eq!(config.tls_fingerprint().as_deref(), Some("NEW"));
         assert_eq!(
             config.paired_web_origin().as_deref(),
             Some("https://new.example.com:8443")
         );
-        assert_eq!(config.backend.as_ref().unwrap().local_control_secret, None);
+        assert_eq!(config.backend_pairing_id().as_deref(), Some("pairing-new"));
     }
 
     #[test]
@@ -882,12 +862,10 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "stable.example.com".to_string(),
             api_port: 443,
-            api_token: "stable-token".to_string(),
             tls_fingerprint: Some("STABLE".to_string()),
             paired_web_origin: Some("https://stable.example.com".to_string()),
-            local_control_secret: None,
-            backend_pairing_id: None,
-            local_control_secret_version: None,
+            backend_pairing_id: Some("pairing-stable".to_string()),
+            local_control_secret_version: Some(1),
         });
         config.save_to(&path).unwrap();
 
@@ -903,10 +881,8 @@ mod tests {
                 api_protocol: "https".to_string(),
                 api_host: "replacement.example.com".to_string(),
                 api_port: 8443,
-                api_token: "replacement-token".to_string(),
                 tls_fingerprint: Some("REPLACEMENT".to_string()),
                 paired_web_origin: Some("https://replacement.example.com:8443".to_string()),
-                local_control_secret: Some("future-secret".to_string()),
                 backend_pairing_id: Some("pairing-replacement".to_string()),
                 local_control_secret_version: Some(2),
             },
@@ -940,29 +916,25 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "first.example.com".to_string(),
             api_port: 443,
-            api_token: "first-token".to_string(),
             tls_fingerprint: Some("FIRST".to_string()),
             paired_web_origin: Some("https://first.example.com".to_string()),
-            local_control_secret: None,
-            backend_pairing_id: None,
-            local_control_secret_version: None,
+            backend_pairing_id: Some("pairing-first".to_string()),
+            local_control_secret_version: Some(1),
         });
 
         config.replace_backend(BackendConnection {
             api_protocol: "https".to_string(),
             api_host: "second.example.com".to_string(),
             api_port: 443,
-            api_token: "second-token".to_string(),
             tls_fingerprint: Some("SECOND".to_string()),
             paired_web_origin: Some("https://second.example.com".to_string()),
-            local_control_secret: None,
-            backend_pairing_id: None,
-            local_control_secret_version: None,
+            backend_pairing_id: Some("pairing-second".to_string()),
+            local_control_secret_version: Some(2),
         });
 
         assert_eq!(config.machine_local, machine_before);
         assert_eq!(config.api_host(), "second.example.com");
-        assert_eq!(config.api_token(), "second-token");
+        assert_eq!(config.backend_pairing_id().as_deref(), Some("pairing-second"));
     }
 
     #[test]
@@ -973,10 +945,8 @@ mod tests {
             api_protocol: "https".to_string(),
             api_host: "paired.example.com".to_string(),
             api_port: 443,
-            api_token: "bootstrap-token".to_string(),
             tls_fingerprint: Some("AA:BB:CC".to_string()),
             paired_web_origin: Some("https://paired.example.com".to_string()),
-            local_control_secret: Some("local-control-secret".to_string()),
             backend_pairing_id: Some("pairing-123".to_string()),
             local_control_secret_version: Some(3),
         });
@@ -997,7 +967,7 @@ mod tests {
     #[test]
     fn current_version_backend_without_fingerprint_is_cleared_on_recovery() {
         let content = r#"{
-            "version": 2,
+            "version": 3,
             "machine_local": {
                 "local_port": 12345
             },
@@ -1005,9 +975,7 @@ mod tests {
                 "api_protocol": "https",
                 "api_host": "paired.example.com",
                 "api_port": 443,
-                "api_token": "bootstrap-token",
                 "paired_web_origin": "https://paired.example.com",
-                "local_control_secret": "local-control-secret",
                 "backend_pairing_id": "pairing-123",
                 "local_control_secret_version": 3
             }

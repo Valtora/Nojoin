@@ -209,9 +209,11 @@ Because the Companion uses a strict one-backend pairing model, you cannot remain
 If you are testing changes and need to switch your Companion between a production instance and your local development stack:
 
 1. Open the Companion app settings.
-2. Select "Pair with Nojoin".
-3. Enter the displayed code into the target frontend (either your local dev site or production site). 
-4. The Companion will cleanly drop its previous trust state and authenticate with the newly paired backend.
+2. Either select "Disconnect Current Backend" first, or immediately start a fresh pairing against the target backend.
+3. Enter the displayed code into the target frontend (either your local dev site or production site).
+4. The Companion will cleanly replace its previous trust state, clear any previous local secret bundle, and authenticate with the newly paired backend.
+
+After upgrading across the companion credential-storage security change, expect an initial forced re-pair. Older plaintext pairing state is intentionally discarded.
 
 ## Related Docs
 

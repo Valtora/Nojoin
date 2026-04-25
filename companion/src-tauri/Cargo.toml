@@ -40,6 +40,7 @@ tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
 win32_notif = "0.10.2"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

@@ -162,7 +162,6 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
                 data={"username": "owner", "password": "password123"},
             ),
             await client.post("/api/v1/login/logout"),
-            await client.get("/api/v1/login/companion-token"),
         ]
 
     for response in responses:

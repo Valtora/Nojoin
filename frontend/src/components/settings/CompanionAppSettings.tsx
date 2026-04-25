@@ -275,7 +275,7 @@ const resolvePairingFailure = (
       return {
         state: "failed",
         message:
-          "Pairing could not be confirmed because the backend bootstrap token expired. Generate a new code and retry.",
+          "Pairing could not be confirmed because the backend pairing credential was rejected. Generate a new code and retry.",
         notificationType: "error",
       };
     }

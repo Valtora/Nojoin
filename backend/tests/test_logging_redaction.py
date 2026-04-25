@@ -14,6 +14,8 @@ def test_sensitive_data_filter_redacts_mapping_values() -> None:
             {
                 "Authorization": "Bootstrap bootstrap-secret",
                 "Cookie": "access_token=session-secret",
+                "companion_credential_secret": "pairing-secret",
+                "local_control_secret": "local-secret",
                 "User-Agent": "Nojoin Test",
                 "X-First-Run-Password": "legacy-secret",
             },
@@ -25,6 +27,8 @@ def test_sensitive_data_filter_redacts_mapping_values() -> None:
     headers = record.args if isinstance(record.args, dict) else record.args[0]
     assert headers["Authorization"] == "[REDACTED]"
     assert headers["Cookie"] == "[REDACTED]"
+    assert headers["companion_credential_secret"] == "[REDACTED]"
+    assert headers["local_control_secret"] == "[REDACTED]"
     assert headers["X-First-Run-Password"] == "[REDACTED]"
     assert headers["User-Agent"] == "Nojoin Test"
 
@@ -36,7 +40,7 @@ def test_sensitive_data_filter_redacts_secret_strings() -> None:
         pathname=__file__,
         lineno=30,
         msg=(
-            'payload={"password":"super-secret","token":"hf-secret","api_key":"openai-secret"} '
+            'payload={"password":"super-secret","token":"hf-secret","api_key":"openai-secret","companion_credential_secret":"pairing-secret","local_control_secret":"local-secret"} '
             'authorization=Bootstrap bootstrap-secret'
         ),
         args=(),
@@ -47,5 +51,7 @@ def test_sensitive_data_filter_redacts_secret_strings() -> None:
     assert "super-secret" not in record.msg
     assert "hf-secret" not in record.msg
     assert "openai-secret" not in record.msg
+    assert "pairing-secret" not in record.msg
+    assert "local-secret" not in record.msg
     assert "bootstrap-secret" not in record.msg
     assert "[REDACTED]" in record.msg

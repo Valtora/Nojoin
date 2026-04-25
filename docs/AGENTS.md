@@ -40,7 +40,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **API Layer**: All API calls MUST go through `src/lib/api.ts`.
   - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
   - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Companion pairing uses a manual code-based flow, establishing a single-backend association and receiving a bootstrap token for recording initialisation.
+  - Companion pairing uses a manual code-based flow, establishing a single-backend association and receiving a revocable companion credential plus local control secret. The browser never receives a reusable Companion bearer token.
   - `/api/v1/recordings/init` returns a short-lived upload token bound to the newly created recording. The Companion must use that token for segment uploads, client-status updates, finalisation, and discard flows.
   - `force_password_change` is enforced server-side. Flagged users may only fetch `/api/v1/users/me`, update `/api/v1/users/me/password`, or log out until they rotate their password.
   - Never put bearer tokens into URL query strings or other browser-visible locations.

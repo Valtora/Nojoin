@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import hashlib
 import logging
 from typing import Any, Optional, Union
 from jose import jwt
@@ -117,13 +118,14 @@ ALGORITHM = "HS256"
 
 SESSION_TOKEN_EXPIRE_MINUTES = 12 * 60
 API_TOKEN_EXPIRE_MINUTES = 60
-COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES = 12 * 60
+COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES = 5
+COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS = COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES * 60
 COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES = 12 * 60
 
 TOKEN_EXPIRY_MINUTES = {
     SESSION_TOKEN_TYPE: SESSION_TOKEN_EXPIRE_MINUTES,
     API_TOKEN_TYPE: API_TOKEN_EXPIRE_MINUTES,
-    COMPANION_TOKEN_TYPE: COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES,
+    COMPANION_TOKEN_TYPE: COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES,
 }
 
 def create_access_token(
@@ -157,6 +159,19 @@ def create_access_token(
 
 def generate_local_control_secret() -> str:
     return secrets.token_urlsafe(48)
+
+
+def generate_companion_credential_secret() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_companion_credential_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def verify_companion_credential_secret(secret: str, expected_hash: str) -> bool:
+    candidate_hash = hash_companion_credential_secret(secret)
+    return secrets.compare_digest(candidate_hash, expected_hash)
 
 
 def create_local_control_token(

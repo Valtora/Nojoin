@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -12,7 +13,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlmodel import select
 
-from backend.api import deps
 from backend.api.deps import get_current_pairing_management_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints import login
@@ -26,7 +26,9 @@ import backend.services.companion_pairing_service as pairing_service
 SCHEMA_STATEMENTS = [
     """
     CREATE TABLE users (
-        id INTEGER PRIMARY KEY
+        id INTEGER PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT 1
     )
     """,
     """
@@ -42,6 +44,7 @@ SCHEMA_STATEMENTS = [
         api_port INTEGER NOT NULL,
         paired_web_origin VARCHAR(2048) NOT NULL,
         tls_fingerprint VARCHAR(255),
+        companion_credential_hash VARCHAR(128),
         local_control_secret_encrypted TEXT,
         local_control_secret_version INTEGER NOT NULL,
         supersedes_pairing_session_id VARCHAR(64),
@@ -65,9 +68,19 @@ def build_test_user(user_id: int = 1, username: str = "alice"):
     )
 
 
-async def seed_user(session_maker: sessionmaker, user_id: int = 1) -> None:
+async def seed_user(
+    session_maker: sessionmaker,
+    user_id: int = 1,
+    username: str = "alice",
+    is_active: bool = True,
+) -> None:
     async with session_maker() as session:
-        await session.execute(text("INSERT INTO users (id) VALUES (:id)"), {"id": user_id})
+        await session.execute(
+            text(
+                "INSERT INTO users (id, username, is_active) VALUES (:id, :username, :is_active)"
+            ),
+            {"id": user_id, "username": username, "is_active": is_active},
+        )
         await session.commit()
 
 
@@ -88,6 +101,19 @@ async def prepare_pairing(client: AsyncClient, override_current_user) -> dict[st
     )
     assert response.status_code == 200
     return response.json()
+
+
+async def exchange_pairing_credential(
+    client: AsyncClient,
+    payload: dict[str, object],
+) -> Any:
+    return await client.post(
+        "/api/v1/login/companion-token/exchange",
+        json={
+            "pairing_session_id": payload["backend_pairing_id"],
+            "companion_credential_secret": payload["companion_credential_secret"],
+        },
+    )
 
 
 @pytest.fixture
@@ -152,17 +178,6 @@ def override_current_user(api_app: FastAPI):
 
 
 @pytest.fixture
-def override_companion_bootstrap_details(api_app: FastAPI):
-    def _override(pairing_session_id: str, user_id: int = 1, username: str = "alice") -> None:
-        api_app.dependency_overrides[deps.get_current_companion_bootstrap_details] = lambda: (
-            build_test_user(user_id, username),
-            {security.COMPANION_PAIRING_ID_CLAIM: pairing_session_id},
-        )
-
-    return _override
-
-
-@pytest.fixture
 def override_pairing_management_user(api_app: FastAPI):
     def _override(user_id: int = 1, username: str = "alice") -> None:
         api_app.dependency_overrides[get_current_pairing_management_user] = lambda: (
@@ -176,7 +191,6 @@ def override_pairing_management_user(api_app: FastAPI):
 async def test_first_pair_persists_secret_and_activates_on_validate(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     test_session_maker: sessionmaker,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
@@ -187,33 +201,76 @@ async def test_first_pair_persists_secret_and_activates_on_validate(
     assert payload["tls_fingerprint"] == "AA:BB:CC"
     assert payload["local_control_secret_version"] == 1
     assert payload["local_control_secret"]
+    assert payload["companion_credential_secret"]
 
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
+    exchange = await exchange_pairing_credential(client, payload)
 
-    assert validate.status_code == 200
-    assert validate.json() == {"valid": True, "username": "alice"}
+    assert exchange.status_code == 200
+    body = exchange.json()
+    assert body["token_type"] == "bearer"
+    assert body["expires_in"] == security.COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS
+
+    decoded = jwt.decode(
+        body["access_token"],
+        security.SECRET_KEY,
+        algorithms=[security.ALGORITHM],
+    )
+    assert decoded["token_type"] == security.COMPANION_TOKEN_TYPE
+    assert decoded["sub"] == "alice"
+    assert decoded[security.COMPANION_PAIRING_ID_CLAIM] == payload["backend_pairing_id"]
+    assert security.COMPANION_BOOTSTRAP_SCOPE in decoded["scopes"]
 
     rows = await fetch_pairings(test_session_maker)
     assert len(rows) == 1
     assert rows[0].status == "active"
     assert rows[0].local_control_secret_version == 1
     assert rows[0].paired_web_origin == "http://localhost:14141"
+    assert rows[0].companion_credential_hash is not None
     assert rows[0].local_control_secret_encrypted != payload["local_control_secret"]
+    assert security.verify_companion_credential_secret(
+        payload["companion_credential_secret"],
+        rows[0].companion_credential_hash,
+    )
     assert decrypt_secret(rows[0].local_control_secret_encrypted) == payload["local_control_secret"]
+
+
+@pytest.mark.anyio
+async def test_exchange_rejects_invalid_companion_credential(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    payload = await prepare_pairing(client, override_current_user)
+
+    response = await client.post(
+        "/api/v1/login/companion-token/exchange",
+        json={
+            "pairing_session_id": payload["backend_pairing_id"],
+            "companion_credential_secret": "wrong-secret",
+        },
+    )
+
+    assert response.status_code == 401
+    assert (
+        response.json()["detail"]
+        == "Companion pairing credential is invalid. Pair again from Nojoin."
+    )
+
+    rows = await fetch_pairings(test_session_maker)
+    assert len(rows) == 1
+    assert rows[0].status == "pending"
+    assert rows[0].companion_credential_hash is not None
 
 
 @pytest.mark.anyio
 async def test_repair_rotates_secret_and_revokes_previous_pairing(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     test_session_maker: sessionmaker,
 ) -> None:
     first_payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    first_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert first_validate.status_code == 200
+    first_exchange = await exchange_pairing_credential(client, first_payload)
+    assert first_exchange.status_code == 200
 
     second_payload = await prepare_pairing(client, override_current_user)
     assert second_payload["local_control_secret_version"] == 2
@@ -221,17 +278,21 @@ async def test_repair_rotates_secret_and_revokes_previous_pairing(
     rows_before_validate = await fetch_pairings(test_session_maker)
     assert [row.status for row in rows_before_validate] == ["active", "pending"]
 
-    override_companion_bootstrap_details(str(second_payload["backend_pairing_id"]))
-    second_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert second_validate.status_code == 200
+    second_exchange = await exchange_pairing_credential(client, second_payload)
+    assert second_exchange.status_code == 200
 
     rows = await fetch_pairings(test_session_maker)
     assert len(rows) == 2
     assert rows[0].status == "revoked"
+    assert rows[0].companion_credential_hash is None
     assert rows[0].local_control_secret_encrypted is None
     assert rows[0].revocation_reason == "replaced"
     assert rows[1].status == "active"
     assert rows[1].local_control_secret_version == 2
+    assert security.verify_companion_credential_secret(
+        second_payload["companion_credential_secret"],
+        rows[1].companion_credential_hash,
+    )
     assert decrypt_secret(rows[1].local_control_secret_encrypted) == second_payload["local_control_secret"]
 
 
@@ -239,14 +300,12 @@ async def test_repair_rotates_secret_and_revokes_previous_pairing(
 async def test_manual_unpair_revokes_pairing_and_blocks_stale_validate(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     override_pairing_management_user,
     test_session_maker: sessionmaker,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
-    assert validate.status_code == 200
+    exchange = await exchange_pairing_credential(client, payload)
+    assert exchange.status_code == 200
 
     override_pairing_management_user(1, "alice")
     revoke = await client.delete("/api/v1/login/companion-pairing")
@@ -257,11 +316,11 @@ async def test_manual_unpair_revokes_pairing_and_blocks_stale_validate(
     rows = await fetch_pairings(test_session_maker)
     assert len(rows) == 1
     assert rows[0].status == "revoked"
+    assert rows[0].companion_credential_hash is None
     assert rows[0].local_control_secret_encrypted is None
     assert rows[0].revocation_reason == "manual_unpair"
 
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    stale_validate = await client.get("/api/v1/login/companion-token/validate")
+    stale_validate = await exchange_pairing_credential(client, payload)
 
     assert stale_validate.status_code == 409
     assert stale_validate.json()["detail"] == "Companion pairing was revoked. Pair again from Nojoin."
@@ -271,14 +330,12 @@ async def test_manual_unpair_revokes_pairing_and_blocks_stale_validate(
 async def test_explicit_disconnect_revokes_pairing_and_emits_frontend_signal(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     override_pairing_management_user,
     test_session_maker: sessionmaker,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
-    assert validate.status_code == 200
+    exchange = await exchange_pairing_credential(client, payload)
+    assert exchange.status_code == 200
 
     queue = await companion_frontend_events.subscribe(1)
     try:
@@ -300,6 +357,7 @@ async def test_explicit_disconnect_revokes_pairing_and_emits_frontend_signal(
         rows = await fetch_pairings(test_session_maker)
         assert len(rows) == 1
         assert rows[0].status == "revoked"
+        assert rows[0].companion_credential_hash is None
         assert rows[0].local_control_secret_encrypted is None
         assert rows[0].revocation_reason == "manual_unpair"
     finally:
@@ -310,14 +368,12 @@ async def test_explicit_disconnect_revokes_pairing_and_emits_frontend_signal(
 async def test_cancel_pending_pairing_preserves_active_pairing(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     override_pairing_management_user,
     test_session_maker: sessionmaker,
 ) -> None:
     first_payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    first_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert first_validate.status_code == 200
+    first_exchange = await exchange_pairing_credential(client, first_payload)
+    assert first_exchange.status_code == 200
 
     second_payload = await prepare_pairing(client, override_current_user)
     assert second_payload["local_control_secret_version"] == 2
@@ -333,6 +389,7 @@ async def test_cancel_pending_pairing_preserves_active_pairing(
     assert rows[0].status == "active"
     assert rows[0].revocation_reason is None
     assert rows[1].status == "revoked"
+    assert rows[1].companion_credential_hash is None
     assert rows[1].local_control_secret_encrypted is None
     assert rows[1].revocation_reason == "pending_cancelled"
 
@@ -341,13 +398,11 @@ async def test_cancel_pending_pairing_preserves_active_pairing(
 async def test_cancel_pending_pairing_allows_new_prepare_and_active_validate(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
     override_pairing_management_user,
 ) -> None:
     first_payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    first_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert first_validate.status_code == 200
+    first_exchange = await exchange_pairing_credential(client, first_payload)
+    assert first_exchange.status_code == 200
 
     second_payload = await prepare_pairing(client, override_current_user)
     assert second_payload["local_control_secret_version"] == 2
@@ -356,10 +411,8 @@ async def test_cancel_pending_pairing_allows_new_prepare_and_active_validate(
     cancel = await client.delete("/api/v1/login/companion-pairing/pending")
     assert cancel.status_code == 200
 
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    active_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert active_validate.status_code == 200
-    assert active_validate.json() == {"valid": True, "username": "alice"}
+    active_exchange = await exchange_pairing_credential(client, first_payload)
+    assert active_exchange.status_code == 200
 
     third_payload = await prepare_pairing(client, override_current_user)
     assert third_payload["local_control_secret_version"] == 3
@@ -369,18 +422,15 @@ async def test_cancel_pending_pairing_allows_new_prepare_and_active_validate(
 async def test_old_pairing_validate_fails_closed_when_newer_secret_is_pending(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
 ) -> None:
     first_payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    first_validate = await client.get("/api/v1/login/companion-token/validate")
-    assert first_validate.status_code == 200
+    first_exchange = await exchange_pairing_credential(client, first_payload)
+    assert first_exchange.status_code == 200
 
     second_payload = await prepare_pairing(client, override_current_user)
     assert second_payload["local_control_secret_version"] == 2
 
-    override_companion_bootstrap_details(str(first_payload["backend_pairing_id"]))
-    stale_validate = await client.get("/api/v1/login/companion-token/validate")
+    stale_validate = await exchange_pairing_credential(client, first_payload)
 
     assert stale_validate.status_code == 409
     assert stale_validate.json()["detail"] == "Companion pairing state is stale or rotated. Pair again from Nojoin."
@@ -408,6 +458,7 @@ async def test_prepare_pair_fails_closed_on_incomplete_cleanup(
                     api_port,
                     paired_web_origin,
                     tls_fingerprint,
+                    companion_credential_hash,
                     local_control_secret_encrypted,
                     local_control_secret_version,
                     supersedes_pairing_session_id,
@@ -425,6 +476,7 @@ async def test_prepare_pair_fails_closed_on_incomplete_cleanup(
                     14443,
                     'http://localhost:14141',
                     'AA:BB:CC',
+                    NULL,
                     :secret,
                     2,
                     NULL,
@@ -454,12 +506,10 @@ async def test_prepare_pair_fails_closed_on_incomplete_cleanup(
 async def test_issue_local_control_token_for_active_pairing(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
-    assert validate.status_code == 200
+    exchange = await exchange_pairing_credential(client, payload)
+    assert exchange.status_code == 200
 
     override_current_user(1, "alice")
     response = await client.post(
@@ -489,12 +539,10 @@ async def test_issue_local_control_token_for_active_pairing(
 async def test_issue_local_control_token_rejects_wrong_origin(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
-    assert validate.status_code == 200
+    exchange = await exchange_pairing_credential(client, payload)
+    assert exchange.status_code == 200
 
     override_current_user(1, "alice")
     response = await client.post(
@@ -529,12 +577,10 @@ async def test_issue_local_control_token_fails_closed_without_active_pairing(
 async def test_issue_local_control_token_still_supports_get_requests(
     client: AsyncClient,
     override_current_user,
-    override_companion_bootstrap_details,
 ) -> None:
     payload = await prepare_pairing(client, override_current_user)
-    override_companion_bootstrap_details(str(payload["backend_pairing_id"]))
-    validate = await client.get("/api/v1/login/companion-token/validate")
-    assert validate.status_code == 200
+    exchange = await exchange_pairing_credential(client, payload)
+    assert exchange.status_code == 200
 
     override_current_user(1, "alice")
     response = await client.get(

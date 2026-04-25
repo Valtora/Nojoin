@@ -132,11 +132,6 @@ export const getCurrentUser = async (): Promise<User> => {
   return response.data;
 };
 
-export const getCompanionToken = async (): Promise<string> => {
-  const response = await api.get<{ token: string }>("/login/companion-token");
-  return response.data.token;
-};
-
 export interface RecordingFilters {
   q?: string;
   start_date?: string;

@@ -20,9 +20,11 @@ use tauri::{
 use semver::Version;
 
 mod audio;
+mod companion_auth;
 mod config;
 mod notifications;
 mod server;
+mod secret_store;
 mod state;
 mod tls;
 mod uploader;
@@ -48,7 +50,6 @@ struct ConfigView {
     api_protocol: String,
     api_host: String,
     api_port: u16,
-    api_token: String,
     tls_fingerprint: Option<String>,
     paired_web_origin: Option<String>,
     local_port: u16,
@@ -66,7 +67,6 @@ impl From<&Config> for ConfigView {
             api_protocol: config.api_protocol(),
             api_host: config.api_host(),
             api_port: config.api_port(),
-            api_token: config.api_token(),
             tls_fingerprint: config.tls_fingerprint(),
             paired_web_origin: config.paired_web_origin(),
             local_port: config.local_port(),
@@ -458,7 +458,7 @@ async fn cancel_pairing_request(
     }
 
     let backend_cleanup = match backend {
-        Some(backend) => match server::cancel_pending_pairing_for_backend(&backend).await {
+        Some(backend) => match companion_auth::cancel_pending_pairing_for_backend(&backend).await {
             Ok(0) => None,
             Ok(count) => Some(format!(
                 "Cleared {} pending backend pairing request{} for the current backend.",
@@ -488,16 +488,29 @@ async fn disconnect_backend(
     close_pairing_window(&app);
     state.0.is_backend_connected.store(false, Ordering::SeqCst);
 
-    let backend = {
+    let (backend, secret_bundle, secret_cleanup_error) = {
         let mut config = state.0.config.lock().unwrap();
         let backend = config.backend_connection();
+        let secret_bundle = backend
+            .as_ref()
+            .and_then(|current| secret_store::load_backend_secret_bundle_for_backend(current).ok());
         if backend.is_some() {
             config
                 .clear_backend_and_save()
                 .map_err(|err| format!("Failed to save settings: {}", err))?;
         }
-        backend
+        let secret_cleanup_error = backend
+            .as_ref()
+            .and_then(|current| secret_store::delete_backend_secret_bundle_for_backend(current).err());
+        (backend, secret_bundle, secret_cleanup_error)
     };
+
+    if let Some(error) = secret_cleanup_error.as_ref() {
+        warn!(
+            "Failed to delete the local companion secret bundle during disconnect: {}",
+            error
+        );
+    }
 
     refresh_tray_menu(&app, &state.0);
 
@@ -505,24 +518,35 @@ async fn disconnect_backend(
         return Ok("No backend is currently paired.".to_string());
     };
 
-    let (response_message, notification_body) = match server::signal_explicit_backend_disconnect(&backend).await {
-        Ok(0) => (
-            "Disconnected from the current backend and cleared the saved trust state. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
-            "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
-        ),
-        Ok(count) => (
-            format!(
-                "Disconnected from the current backend, cleared the saved trust state, and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
-                count,
-                if count == 1 { "" } else { "s" }
+    let (response_message, notification_body) = match secret_bundle {
+        Some(bundle) => match companion_auth::signal_explicit_backend_disconnect_with_bundle(
+            &backend,
+            &bundle,
+        )
+        .await
+        {
+            Ok(0) => (
+                "Disconnected from the current backend and cleared the saved trust state. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
+                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
             ),
-            "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
-        ),
-        Err(err) => (
-            format!(
-                "Disconnected locally from the current backend and cleared the saved trust state, but backend cleanup could not be confirmed: {}.",
-                err
+            Ok(count) => (
+                format!(
+                    "Disconnected from the current backend, cleared the saved trust state, and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ),
+                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
             ),
+            Err(err) => (
+                format!(
+                    "Disconnected locally from the current backend and cleared the saved trust state, but backend cleanup could not be confirmed: {}.",
+                    err
+                ),
+                "This Companion is no longer paired locally and the saved certificate trust has been cleared. Backend cleanup could not be confirmed, so verify the old backend before reconnecting elsewhere.".to_string(),
+            ),
+        },
+        None => (
+            "Disconnected locally from the current backend and cleared the saved trust state, but backend cleanup could not be confirmed because the stored companion credential was unavailable.".to_string(),
             "This Companion is no longer paired locally and the saved certificate trust has been cleared. Backend cleanup could not be confirmed, so verify the old backend before reconnecting elsewhere.".to_string(),
         ),
     };
@@ -738,6 +762,36 @@ fn get_log_path() -> PathBuf {
     app_data.join("nojoin-companion.log")
 }
 
+fn reconcile_backend_secret_state(config: &mut Config) {
+    let Some(backend) = config.backend_connection() else {
+        return;
+    };
+
+    if !backend.has_complete_pairing_state() {
+        return;
+    }
+
+    if let Err(error) = secret_store::load_backend_secret_bundle_for_backend(&backend) {
+        warn!(
+            "Clearing paired backend because the local companion secret bundle could not be loaded: {}",
+            error
+        );
+        if let Err(clear_error) = config.clear_backend_and_save() {
+            error!(
+                "Failed to clear paired backend after companion secret bundle load failure: {}",
+                clear_error
+            );
+        }
+        if let Err(delete_error) = secret_store::delete_backend_secret_bundle_for_backend(&backend)
+        {
+            warn!(
+                "Failed to delete stale companion secret bundle after clearing the paired backend: {}",
+                delete_error
+            );
+        }
+    }
+}
+
 fn setup_logging() -> Result<(), fern::InitError> {
     let log_path = get_log_path();
 
@@ -799,6 +853,7 @@ fn main() {
         .setup(|app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
+            reconcile_backend_secret_state(&mut config);
 
             let autostart_manager = app.autolaunch();
             let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);

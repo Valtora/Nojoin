@@ -45,10 +45,12 @@ class SensitiveDataFilter(logging.Filter):
         "anthropic_api_key",
         "api_key",
         "authorization",
+        "companion_credential_secret",
         "cookie",
         "current_password",
         "gemini_api_key",
         "hf_token",
+        "local_control_secret",
         "new_password",
         "openai_api_key",
         "password",
@@ -65,8 +67,8 @@ class SensitiveDataFilter(logging.Filter):
         re.compile(r"(?i)('set-cookie'\s*:\s*')([^']+)(')"),
         re.compile(r'(?i)("x-first-run-password"\s*:\s*")([^"]+)(")'),
         re.compile(r"(?i)('x-first-run-password'\s*:\s*')([^']+)(')"),
-        re.compile(r'(?i)("(?:access_token|anthropic_api_key|api_key|current_password|gemini_api_key|hf_token|new_password|openai_api_key|password|token)"\s*:\s*")([^"]+)(")'),
-        re.compile(r"(?i)('(?:access_token|anthropic_api_key|api_key|current_password|gemini_api_key|hf_token|new_password|openai_api_key|password|token)'\s*:\s*')([^']+)(')"),
+        re.compile(r'(?i)("(?:access_token|anthropic_api_key|api_key|companion_credential_secret|current_password|gemini_api_key|hf_token|local_control_secret|new_password|openai_api_key|password|token)"\s*:\s*")([^"]+)(")'),
+        re.compile(r"(?i)('(?:access_token|anthropic_api_key|api_key|companion_credential_secret|current_password|gemini_api_key|hf_token|local_control_secret|new_password|openai_api_key|password|token)'\s*:\s*')([^']+)(')"),
     ]
     _AUTH_SCHEME_PATTERN = re.compile(r'(?i)\b(authorization\s*[:=]\s*)(bearer|bootstrap)\s+([^\s,;]+)')
 

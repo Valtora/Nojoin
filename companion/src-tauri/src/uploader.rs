@@ -15,6 +15,9 @@ struct RecordingUploadTokenResponse {
 
 async fn refresh_recording_upload_token(recording_id: i64, config: &Config) -> Result<String> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
+    let access_token = crate::companion_auth::exchange_access_token_for_config(config)
+        .await
+        .map_err(|error| anyhow::anyhow!(error))?;
     let url = format!(
         "{}/recordings/{}/upload-token",
         config.get_api_url(),
@@ -23,7 +26,7 @@ async fn refresh_recording_upload_token(recording_id: i64, config: &Config) -> R
 
     let response = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", config.api_token()))
+        .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await?;
 

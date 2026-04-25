@@ -11,7 +11,6 @@ from sqlmodel import select
 
 from backend.api.deps import (
     get_db,
-    get_current_companion_bootstrap_details,
     get_current_pairing_management_user,
     get_current_user,
 )
@@ -25,6 +24,7 @@ from backend.services.companion_frontend_events import (
 from backend.services.companion_pairing_service import (
     cancel_pending_companion_pairings,
     CompanionPairingStateError,
+    exchange_companion_credential,
     finalize_companion_pairing,
     get_active_companion_pairing_auth,
     normalize_origin,
@@ -45,8 +45,7 @@ class CompanionPairingPrepareRequest(BaseModel):
 
 class CompanionPairingPrepareResponse(BaseModel):
     pairing_code: str
-    bootstrap_token: str
-    expires_in: int
+    companion_credential_secret: str
     api_protocol: str
     api_host: str
     api_port: int
@@ -54,6 +53,17 @@ class CompanionPairingPrepareResponse(BaseModel):
     local_control_secret: str
     local_control_secret_version: int
     backend_pairing_id: str
+
+
+class CompanionCredentialExchangeRequest(BaseModel):
+    pairing_session_id: str
+    companion_credential_secret: str
+
+
+class CompanionAccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
 
 
 class CompanionPairingRevokeResponse(BaseModel):
@@ -264,26 +274,6 @@ async def logout_user(response: Response) -> Any:
     )
     return {"message": "Logged out successfully"}
 
-@router.get("/login/companion-token")
-async def get_companion_token(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """
-    Issues a bootstrap JWT for companion pairing and recording initialisation.
-    """
-    access_token_expires = timedelta(minutes=security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES)
-    token = security.create_access_token(
-        current_user.username,
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
-        expires_delta=access_token_expires,
-    )
-    return {
-        "token": token,
-        "expires_in": security.COMPANION_BOOTSTRAP_TOKEN_EXPIRE_MINUTES * 60,
-    }
-
-
 @router.get(
     "/login/companion-local-token",
     response_model=CompanionLocalControlTokenResponse,
@@ -441,27 +431,43 @@ async def stream_companion_events(
     )
 
 
-@router.get("/login/companion-token/validate")
-async def validate_companion_token(
-    companion_details: tuple[User, dict[str, Any]] = Depends(
-        get_current_companion_bootstrap_details
-    ),
+@router.post(
+    "/login/companion-token/exchange",
+    response_model=CompanionAccessTokenResponse,
+)
+async def exchange_companion_token(
+    payload: CompanionCredentialExchangeRequest,
     db: AsyncSession = Depends(get_db),
-) -> Any:
-    current_user, payload = companion_details
-    pairing_session_id = payload.get(security.COMPANION_PAIRING_ID_CLAIM)
+) -> CompanionAccessTokenResponse:
+    pairing_session_id = payload.pairing_session_id.strip()
+    companion_credential_secret = payload.companion_credential_secret.strip()
 
-    if isinstance(pairing_session_id, str) and pairing_session_id:
-        try:
-            await finalize_companion_pairing(
-                db,
-                current_user=current_user,
-                pairing_session_id=pairing_session_id,
-            )
-        except CompanionPairingStateError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if not pairing_session_id or not companion_credential_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pairing session id and companion credential secret are required.",
+        )
 
-    return {
-        "valid": True,
-        "username": current_user.username,
-    }
+    try:
+        exchange_result = await exchange_companion_credential(
+            db,
+            pairing_session_id=pairing_session_id,
+            companion_credential_secret=companion_credential_secret,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    access_token = security.create_access_token(
+        exchange_result.user.username,
+        token_type=security.COMPANION_TOKEN_TYPE,
+        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
+        expires_delta=timedelta(seconds=security.COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS),
+        extra_claims={
+            security.COMPANION_PAIRING_ID_CLAIM: exchange_result.pairing_session_id,
+        },
+    )
+    return CompanionAccessTokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=security.COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS,
+    )
