@@ -71,6 +71,7 @@ interface ServiceStatusState {
   backend: boolean;
   db: boolean;
   worker: boolean;
+  backendVersion: string | null;
   companion: boolean;
   companionAuthenticated: boolean;
   companionMonitoringEnabled: boolean;
@@ -296,6 +297,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     backend: true,
     db: true,
     worker: true,
+    backendVersion: null,
     companion: false,
     companionAuthenticated: false,
     companionMonitoringEnabled: false,
@@ -329,6 +331,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             backend: true,
             db: data.components.db === "connected",
             worker: data.components.worker === "active",
+            backendVersion: data.version,
             backendFailCount: 0,
           });
           scheduleNextBackend();

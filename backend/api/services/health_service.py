@@ -8,14 +8,12 @@ from sqlmodel import Session, text
 
 from backend.celery_app import celery_app
 from backend.core.db import sync_engine
-
-APP_HEALTH_VERSION = "2.0.0"
-
+from backend.utils.version import get_installed_version
 
 async def get_system_health_status() -> dict[str, Any]:
     health_status = {
         "status": "ok",
-        "version": APP_HEALTH_VERSION,
+        "version": get_installed_version(),
         "components": {
             "db": "unknown",
             "worker": "unknown",

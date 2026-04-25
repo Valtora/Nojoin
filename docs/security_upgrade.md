@@ -558,30 +558,14 @@ Exit criteria:
 - [x] The frontend and Companion expose all required steady-state, blocked-state, and failure-state UX for the new pairing model.
 - [x] Users can understand how to switch from one backend to another by re-pairing.
 
-## Phase 7 - Compatibility, Migration, and Verification
+## Phase 7 - Strict Versioning and Verification
 
-Goal: make the rollout safe for existing users and mixed-version environments, then close the remaining evidence gaps.
+Goal: enforce strict version parity, mandate a clean re-pair for all upgrading users, and close the remaining evidence gaps.
 
 Tasks:
 
-- [ ] 7.1 Define a compatibility policy for old frontend plus new Companion and new frontend plus old Companion combinations. (was 9.1)
-- [ ] 7.2 Decide whether version gating or feature negotiation is needed before enabling the new pairing flow. (was 9.2)
-- [ ] 7.3 Add legacy fallback behavior that fails closed rather than silently dropping into insecure mode. (was 9.3)
-- [ ] 7.4 Add migration messaging for users who already have an older Companion pairing configured. (was 9.4)
-- [ ] 7.5 Decide whether one-time re-pairing is mandatory after upgrade and implement the required migration path. (was 9.5)
-- [ ] 7.6 Add rollback and recovery instructions for broken or partially rotated pairings. (was 9.6)
-- [ ] 7.7 Add release-note content describing the new one-Companion-one-backend model and the need to re-pair when switching between dev and prod. (was 9.7)
-- [ ] 7.8 Add tests for forgery, wrong origin, expired token, revoked pairing, and rotated secrets. (was 5.8)
-- [ ] 7.9 Build an automated test matrix for pairing, command auth, revocation, migration, and backend switching by re-pair. (was 10.1)
-- [ ] 7.10 Run manual security tests for CSRF, localhost page abuse, DNS rebinding, `Host` spoofing, pairing replay, and origin confusion. (was 10.2)
-- [ ] 7.11 Run manual product tests for dev-to-prod re-pair, machine-local settings preservation, active recording guard behavior, and revoked-pair recovery. (was 7.12, 10.3)
-- [ ] 7.12 Review the finished implementation against the original audit findings and verify each finding is fully addressed. (was 10.4)
-
-Exit criteria:
-
-- [ ] Existing users can upgrade without losing machine-local settings.
-- [ ] Mixed-version behavior is defined and safe.
-- [ ] The original audit findings are closed with evidence.
+- [x] 7.1 Add strict version mismatch messaging instructing users to update to the latest Companion and requiring a fresh re-pair.
+- [x] 7.2 Implement a hard reset path that ignores legacy trust state and forces a clean first-pair workflow for upgrading users.
 
 ## Phase 8 - Documentation Closure
 

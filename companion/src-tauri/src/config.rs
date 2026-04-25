@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const CURRENT_CONFIG_VERSION: u32 = 1;
+const CURRENT_CONFIG_VERSION: u32 = 2;
 const DEFAULT_API_PORT: u16 = 14443;
 const DEFAULT_LOCAL_PORT: u16 = 12345;
 
@@ -458,14 +458,15 @@ impl Config {
 
     fn recover_versioned_config(content: &str) -> Option<(Config, bool)> {
         let parsed: VersionedConfigRoot = serde_json::from_str(content).ok()?;
-        let mut needs_save = parsed.version.unwrap_or_default() != CURRENT_CONFIG_VERSION;
+        let parsed_version = parsed.version.unwrap_or_default();
+        let mut needs_save = parsed_version != CURRENT_CONFIG_VERSION;
 
         let machine_local = parsed.machine_local.unwrap_or_else(|| {
             needs_save = true;
             MachineLocalSettings::default()
         });
 
-        let backend = match parsed.backend {
+        let mut backend = match parsed.backend {
             Some(Value::Null) | None => None,
             Some(value) => match serde_json::from_value::<BackendConnection>(value) {
                 Ok(connection) => {
@@ -486,6 +487,12 @@ impl Config {
             },
         };
 
+        if parsed_version < CURRENT_CONFIG_VERSION {
+            info!("Upgrading from legacy config version {}. Dropping backend trust state to force a clean re-pair.", parsed_version);
+            backend = None;
+            needs_save = true;
+        }
+
         let config = Config {
             version: CURRENT_CONFIG_VERSION,
             machine_local,
@@ -497,24 +504,8 @@ impl Config {
 
     fn migrate_from_current_flat(value: &Value) -> Option<Config> {
         let object = value.as_object()?;
-        let mut backend = BackendConnection {
-            api_protocol: optional_string_field(object, "api_protocol")
-                .unwrap_or_else(default_api_protocol),
-            api_host: optional_string_field(object, "api_host").unwrap_or_else(default_api_host),
-            api_port: optional_u16_field(object, "api_port").unwrap_or(DEFAULT_API_PORT),
-            api_token: optional_string_field(object, "api_token").unwrap_or_default(),
-            tls_fingerprint: normalize_optional_string(optional_string_field(
-                object,
-                "tls_fingerprint",
-            )),
-            paired_web_origin: None,
-            local_control_secret: None,
-            backend_pairing_id: None,
-            local_control_secret_version: None,
-        }
-        .normalized();
-
-        backend.paired_web_origin = Some(backend.derived_web_origin());
+        // Drop legacy trust state to force a clean re-pair for upgrading users
+        let backend = None;
 
         Some(Config {
             version: CURRENT_CONFIG_VERSION,
@@ -535,21 +526,16 @@ impl Config {
                 min_meeting_length: optional_u32_field(object, "min_meeting_length"),
                 run_on_startup: optional_bool_field(object, "run_on_startup"),
             },
-            backend: Some(backend),
+            backend,
         })
     }
 
     fn migrate_from_legacy(value: &Value) -> Option<Config> {
         let object = value.as_object()?;
-        let (api_protocol, api_host, api_port) = optional_string_field(object, "api_url")
-            .as_deref()
-            .and_then(parse_api_endpoint)
-            .unwrap_or_else(|| (default_api_protocol(), default_api_host(), DEFAULT_API_PORT));
-
-        let paired_web_origin = optional_string_field(object, "web_app_url")
-            .as_deref()
-            .and_then(canonicalize_origin)
-            .or_else(|| Some(build_origin(&api_protocol, &api_host, api_port)));
+        
+        // Legacy fields are used to populate some machine-local fallback values if needed,
+        // but backend trust state is explicitly dropped to force a clean re-pair for upgrading users.
+        let backend = None;
 
         Some(Config {
             version: CURRENT_CONFIG_VERSION,
@@ -570,20 +556,7 @@ impl Config {
                 min_meeting_length: optional_u32_field(object, "min_meeting_length"),
                 run_on_startup: optional_bool_field(object, "run_on_startup"),
             },
-            backend: Some(
-                BackendConnection {
-                    api_protocol,
-                    api_host,
-                    api_port,
-                    api_token: optional_string_field(object, "api_token").unwrap_or_default(),
-                    tls_fingerprint: None,
-                    paired_web_origin,
-                    local_control_secret: None,
-                    backend_pairing_id: None,
-                    local_control_secret_version: None,
-                }
-                .normalized(),
-            ),
+            backend,
         })
     }
 
@@ -768,13 +741,8 @@ mod tests {
             config.machine_local.output_device_name.as_deref(),
             Some("Legacy Speakers")
         );
-        assert_eq!(config.api_host(), "legacy.example.com");
-        assert_eq!(config.api_port(), 15443);
-        assert_eq!(config.api_token(), "legacy-token");
-        assert_eq!(
-            config.paired_web_origin().as_deref(),
-            Some("https://web.legacy.example.com")
-        );
+        // The backend trust block is explicitly dropped during migration now
+        assert!(config.backend.is_none());
     }
 
     #[test]
@@ -803,13 +771,9 @@ mod tests {
         assert_eq!(config.last_version(), Some("0.8.1"));
         assert_eq!(config.min_meeting_length(), Some(8));
         assert_eq!(config.run_on_startup(), Some(true));
-        assert_eq!(config.api_host(), "flat.example.com");
-        assert_eq!(config.api_token(), "flat-token");
-        assert_eq!(config.tls_fingerprint().as_deref(), Some("AA:BB:CC"));
-        assert_eq!(
-            config.paired_web_origin().as_deref(),
-            Some("https://flat.example.com:14443")
-        );
+        
+        // The backend trust block is explicitly dropped during migration now
+        assert!(config.backend.is_none());
     }
 
     #[test]

@@ -6,7 +6,7 @@ import logging
 from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import select
 from backend.api.v1.api import api_router
-from backend.api.services.health_service import APP_HEALTH_VERSION
+from backend.utils.version import get_installed_version
 from backend.startup_migrations import run_startup_migrations, should_skip_startup_migrations
 
 setup_audio_environment()
@@ -89,7 +89,7 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
     app = FastAPI(
         title="Nojoin API",
         description="Backend API for Nojoin - Containerized Meeting Intelligence",
-        version=APP_HEALTH_VERSION,
+        version=get_installed_version(),
         openapi_url=None,
         docs_url=None,
         redoc_url=None,

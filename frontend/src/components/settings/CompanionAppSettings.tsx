@@ -68,10 +68,20 @@ const CALLOUT_STYLES: Record<CalloutTone, string> = {
 };
 
 const buildConnectionSummary = (
+  backendVersion: string | null,
   companion: boolean,
   companionAuthenticated: boolean,
   companionStatus: string,
+  companionVersion: string | null,
 ): CalloutState => {
+  if (companionAuthenticated && backendVersion && companionVersion && backendVersion !== companionVersion) {
+    return {
+      title: "Version Mismatch",
+      message: `Your Companion version (${companionVersion}) does not match the Nojoin server version (${backendVersion}). A mandatory re-pair is required after updating the Companion app to match the server version.`,
+      tone: "error",
+    };
+  }
+
   if (!companionAuthenticated) {
     return {
       title: "Not paired",
@@ -326,6 +336,7 @@ export default function CompanionAppSettings({
   searchQuery = "",
 }: CompanionAppSettingsProps) {
   const {
+    backendVersion,
     companion,
     companionAuthenticated,
     companionStatus,
@@ -473,9 +484,11 @@ export default function CompanionAppSettings({
   const pairingHasPendingConflict =
     pairingError?.toLowerCase().includes("still pending") ?? false;
   const connectionSummary = buildConnectionSummary(
+    backendVersion,
     companion,
     companionAuthenticated,
     companionStatus,
+    companionVersion,
   );
   const pairingSummary = buildPairingSummary(
     pairingAttemptState,
