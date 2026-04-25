@@ -38,6 +38,7 @@ Use the links below by task rather than treating the root README as the source o
 | Learn how to use the dashboard and recordings workspace | [USAGE.md](USAGE.md) |
 | Configure Google or Outlook calendar sync | [CALENDAR.md](CALENDAR.md) |
 | Manage users, invitations, and admin settings | [ADMIN.md](ADMIN.md) |
+| Pair the Companion app to a different deployment | [USAGE.md](USAGE.md) |
 | Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |

@@ -19,6 +19,18 @@ Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first succes
 
 Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record `Authorization` headers or setup request bodies.
 
+## Companion Pairing and Local API Security
+
+The Nojoin Companion app requires a strict manual pairing workflow. 
+
+- The Companion exposes a short-lived local API only for authenticated requests. 
+- Anonymous discovery of the Companion via the loopback interface is explicitly blocked. The frontend cannot silently detect if the Companion is running.
+- Pairing must be manually initiated by the user from within the Companion app, which generates a single-use, short-lived 8-character pairing code.
+- Re-pairing to a different Nojoin backend replaces the previous trust relationship atomically.
+- All requests to the Companion's local API require a short-lived local control token and strict Host validation (e.g. `127.0.0.1` or `localhost`).
+
+Operators and users should be aware that switching between deployments requires an explicit re-pair.
+
 ## Supported Versions
 
 As Nojoin is in active development, only the latest version is supported. We encourage all users to use the most up-to-date version of the application.

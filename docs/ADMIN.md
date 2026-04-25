@@ -85,6 +85,12 @@ Use **Settings > Updates** to see:
 - For remote deployments, configure a trusted public origin with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
 - Treat backup archives as sensitive material.
 
+### Companion Pairing and Security Resets
+
+- The Companion app forms a strict 1-to-1 association with a single backend.
+- Users must manually re-pair the Companion from its settings if they switch to a different Nojoin deployment, or if the backend's identity/URL changes.
+- Major security upgrades to the Companion will drop legacy trust state. After such upgrades, users will be required to perform a clean first-pair workflow before they can record.
+
 ## Related Docs
 
 - [DEPLOYMENT.md](DEPLOYMENT.md)

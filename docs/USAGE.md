@@ -12,13 +12,15 @@ For deployment, administration, calendar provider setup, and backup operations, 
 4. Open the finished recording in the `/recordings` workspace.
 5. Wait for processing to complete so the transcript and notes appear.
 
-## Companion Connectivity
+## Companion Connectivity and Pairing
 
-The Companion only performs a shallow backend reachability check.
+The Companion connects to one Nojoin deployment at a time. It requires a manual pairing process to establish trust.
 
-- A connected Companion means the Nojoin web origin answered the minimal health check.
+- **First Pair:** Open the Companion app settings and select "Pair with Nojoin". A short-lived 8-character code will appear. Open the Nojoin web app and enter this code to establish the connection.
+- **Switching Deployments (Re-pairing):** If you use multiple Nojoin instances (e.g., development and production), you must explicitly re-pair when switching between them. Open the Companion app, initiate pairing mode to get a new code, and enter it into the target deployment's web app.
+- A connected Companion means it is successfully paired and securely communicating with the Nojoin web origin.
 - Detailed service health, release information, and administrative diagnostics remain inside the authenticated web app.
-- If the Companion cannot connect, verify the public HTTPS origin, reverse proxy routing, and certificate trust before troubleshooting user sessions.
+- If the Companion cannot connect, ensure it is paired to the correct instance, and verify the public HTTPS origin, reverse proxy routing, and certificate trust before troubleshooting user sessions.
 
 ## Tours and Onboarding
 

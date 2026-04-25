@@ -48,7 +48,7 @@ The Companion app is responsible for:
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The web app authorises the Companion with a bootstrap token for pairing and recording initialisation.
+2. The user manually pairs the Companion app to one Nojoin backend at a time using a short-lived pairing code. The backend issues a bootstrap token for recording initialisation.
 3. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
 4. The Companion uploads audio segments using that recording-scoped token.
 5. Finalisation queues the recording for backend processing.
@@ -84,7 +84,7 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **Companion pairing**: A bootstrap token.
+- **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a bootstrap token.
 - **Companion upload operations**: Short-lived per-recording tokens.
 
 Forced password rotation is enforced server-side. Flagged users can only reach their self-profile, password update flow, and logout until the rotation is complete.

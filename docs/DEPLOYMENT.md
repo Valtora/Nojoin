@@ -191,7 +191,13 @@ location / {
 }
 ```
 
-## Migrations
+## Upgrading and Migration
+
+- Keep server and Companion app versions aligned.
+- When performing major upgrades, check release notes for breaking changes.
+- **Companion Security Upgrade**: Upgrading to a version that implements the strict one-backend manual pairing model will automatically clear out any legacy connection state in the Companion app. You will need to perform a clean first-pair workflow (Settings > Pair with Nojoin) to continue using the Companion.
+
+## Database Migrations
 
 Useful Alembic commands:
 

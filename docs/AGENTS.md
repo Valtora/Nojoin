@@ -40,7 +40,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **API Layer**: All API calls MUST go through `src/lib/api.ts`.
   - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
   - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Companion pairing uses `/api/v1/login/companion-token`, which returns a bootstrap token for pairing and recording initialisation.
+  - Companion pairing uses a manual code-based flow, establishing a single-backend association and receiving a bootstrap token for recording initialisation.
   - `/api/v1/recordings/init` returns a short-lived upload token bound to the newly created recording. The Companion must use that token for segment uploads, client-status updates, finalisation, and discard flows.
   - `force_password_change` is enforced server-side. Flagged users may only fetch `/api/v1/users/me`, update `/api/v1/users/me/password`, or log out until they rotate their password.
   - Never put bearer tokens into URL query strings or other browser-visible locations.
@@ -68,9 +68,10 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
 - **Authorization**:
-  - The web app sends the bootstrap Companion token and current host/port to the `/auth` endpoint.
-  - Each `/recordings/init` response then provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
-  - The app automatically updates the configuration and connects.
+  - The Companion app initiates pairing manually, displaying a single-use code.
+  - The web app sends the code and bootstrap Companion token to the Companion's pairing endpoint.
+  - The Companion local API has two classes of routes: the short-lived pairing route, and the authenticated steady-state routes that require a short-lived local control token and strict Host validation. Anonymous detection is explicitly blocked.
+  - Each `/recordings/init` response provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
   - Manual configuration is available via System Tray > Settings.
 - **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.
 

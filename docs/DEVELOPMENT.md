@@ -237,6 +237,17 @@ npm run tauri build
 
 If you are building signed updates locally, ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` are available in your environment.
 
+### Testing and Switching Deployments
+
+Because the Companion uses a strict one-backend pairing model, you cannot remain simultaneously paired to both a local development backend (e.g. `https://localhost:14443`) and a production or staging backend. 
+
+If you are testing changes and need to switch your Companion between a production instance and your local development stack:
+
+1. Open the Companion app settings.
+2. Select "Pair with Nojoin".
+3. Enter the displayed code into the target frontend (either your local dev site or production site). 
+4. The Companion will cleanly drop its previous trust state and authenticate with the newly paired backend.
+
 ## Related Docs
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)

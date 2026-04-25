@@ -63,14 +63,15 @@ During setup you will usually want to provide:
 
 You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 
-## 4. Install and Connect the Companion App
+## 4. Install and Pair the Companion App
 
 1. Download the latest Windows Companion build from the GitHub Releases page.
 2. Run the installer or portable build.
-3. Open Nojoin and use the Companion connection flow.
-4. Confirm the app shows as connected before starting a live recording.
+3. Open the Companion app settings and select "Pair with Nojoin" to generate a pairing code.
+4. Open the Nojoin web app, follow the Companion pairing flow, and enter the pairing code to establish the connection.
+5. Confirm the app shows as paired and connected before starting a live recording.
 
-The web app can also surface Companion download links from the Updates page and when the Companion is unreachable.
+The web app can also surface Companion download links from the Updates page and when the Companion is not paired or reachable.
 
 ## 5. Make Your First Recording
 
