@@ -486,6 +486,7 @@ async fn disconnect_backend(
 ) -> Result<String, String> {
     state.0.clear_pairing_session();
     close_pairing_window(&app);
+    state.0.is_backend_connected.store(false, Ordering::SeqCst);
 
     let backend = {
         let mut config = state.0.config.lock().unwrap();
@@ -506,23 +507,23 @@ async fn disconnect_backend(
 
     let (response_message, notification_body) = match server::signal_explicit_backend_disconnect(&backend).await {
         Ok(0) => (
-            "Disconnected from the current backend. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
-            "This Companion is no longer paired with a Nojoin backend. Start pairing again from Settings when you are ready.".to_string(),
+            "Disconnected from the current backend and cleared the saved trust state. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
+            "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
         ),
         Ok(count) => (
             format!(
-                "Disconnected from the current backend and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
+                "Disconnected from the current backend, cleared the saved trust state, and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
                 count,
                 if count == 1 { "" } else { "s" }
             ),
-            "This Companion is no longer paired with a Nojoin backend. Start pairing again from Settings when you are ready.".to_string(),
+            "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
         ),
         Err(err) => (
             format!(
-                "Disconnected locally from the current backend, but backend cleanup could not be confirmed: {}.",
+                "Disconnected locally from the current backend and cleared the saved trust state, but backend cleanup could not be confirmed: {}.",
                 err
             ),
-            "This Companion is no longer paired locally. Backend cleanup could not be confirmed, so verify the old backend before reconnecting elsewhere.".to_string(),
+            "This Companion is no longer paired locally and the saved certificate trust has been cleared. Backend cleanup could not be confirmed, so verify the old backend before reconnecting elsewhere.".to_string(),
         ),
     };
 
@@ -1006,35 +1007,57 @@ fn main() {
                 let state_fetch = state_server.clone();
                 let app_handle_status = app_handle.clone();
                 rt.spawn(async move {
-                    let fingerprint = {
-                        let config = state_fetch.config.lock().unwrap();
-                        config.tls_fingerprint()
-                    };
-
-                    let mut client = crate::tls::create_client_builder(fingerprint.clone())
-                        .timeout(Duration::from_secs(5))
-                        .build()
-                        .unwrap_or_default();
-
-                    let mut current_fingerprint = fingerprint;
+                    let mut client: Option<reqwest::Client> = None;
+                    let mut current_fingerprint: Option<String> = None;
 
                     loop {
                         // 1. Perform Health Check
-                        let (status_origin, fingerprint) = {
+                        let (status_origin, fingerprint, is_authenticated) = {
                             let config = state_fetch.config.lock().unwrap();
-                            (config.get_web_url(), config.tls_fingerprint())
+                            (
+                                config.get_web_url(),
+                                config.tls_fingerprint(),
+                                config.is_authenticated(),
+                            )
                         };
 
+                        if !is_authenticated {
+                            client = None;
+                            current_fingerprint = None;
+                            state_fetch.is_backend_connected.store(false, Ordering::SeqCst);
+                            update_tray_status_ui(&state_fetch);
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            continue;
+                        }
+
                         // Recreate client if fingerprint changed
-                        if current_fingerprint != fingerprint {
-                            client = crate::tls::create_client_builder(fingerprint.clone())
+                        if client.is_none() || current_fingerprint != fingerprint {
+                            match crate::tls::create_client_builder(fingerprint.clone())
                                 .timeout(Duration::from_secs(5))
                                 .build()
-                                .unwrap_or_default();
-                            current_fingerprint = fingerprint;
+                            {
+                                Ok(new_client) => {
+                                    client = Some(new_client);
+                                    current_fingerprint = fingerprint.clone();
+                                }
+                                Err(err) => {
+                                    error!("Failed to build backend status client: {}", err);
+                                    state_fetch
+                                        .is_backend_connected
+                                        .store(false, Ordering::SeqCst);
+                                    handle_backend_disconnect(&app_handle_status, &state_fetch);
+                                    update_tray_status_ui(&state_fetch);
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    continue;
+                                }
+                            }
                         }
 
                         let status_url = format!("{}/api/health", status_origin);
+                        let Some(client) = client.as_ref() else {
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            continue;
+                        };
 
                         match client.get(&status_url).send().await {
                             Ok(resp) => {

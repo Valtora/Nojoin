@@ -900,19 +900,22 @@ async fn log_backend_connectivity_diagnostics(protocol: &str, host: &str, port: 
 }
 
 fn short_cert_fingerprint_label(cert: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
+    let fingerprint = crate::tls::format_certificate_fingerprint(cert);
 
-    let digest = Sha256::digest(cert);
-    let fingerprint = digest
-        .iter()
-        .map(|byte| format!("{:02X}", byte))
-        .collect::<Vec<_>>()
-        .join(":");
+    short_fingerprint_label(&fingerprint)
+}
 
-    if fingerprint.len() <= 23 {
-        fingerprint
+fn short_fingerprint_label(fingerprint: &str) -> String {
+    let normalized = fingerprint.trim();
+
+    if normalized.len() <= 23 {
+        normalized.to_string()
     } else {
-        format!("{}...{}", &fingerprint[..11], &fingerprint[fingerprint.len() - 11..])
+        format!(
+            "{}...{}",
+            &normalized[..11],
+            &normalized[normalized.len() - 11..]
+        )
     }
 }
 
@@ -1042,7 +1045,7 @@ fn summarize_pairing_request(
     host_header: Option<&str>,
 ) -> String {
     format!(
-        "origin_header={} host_header={} backend_target={} pairing_code={} code_hash={} tls_fingerprint_present={} backend_pairing_id={} local_secret_present={} local_secret_version={}",
+        "origin_header={} host_header={} backend_target={} pairing_code={} code_hash={} payload_tls_fingerprint_present={} backend_pairing_id={} local_secret_present={} local_secret_version={}",
         origin_header
             .map(|value| compact_log_value(value, 120))
             .unwrap_or_else(|| "<missing>".to_string()),
@@ -1085,7 +1088,7 @@ fn summarize_pairing_session(session: Option<&PairingSession>) -> String {
     }
 }
 
-async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<(), String> {
+fn pairing_backend_details(payload: &PairingCompleteRequest) -> Result<(&str, &str, u16), String> {
     let protocol = payload
         .api_protocol
         .as_deref()
@@ -1098,6 +1101,35 @@ async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<()
         .api_port
         .ok_or_else(|| "Missing API port".to_string())?;
 
+    Ok((protocol, host, port))
+}
+
+async fn capture_pairing_tls_fingerprint(
+    payload: &PairingCompleteRequest,
+) -> Result<String, String> {
+    let (protocol, host, port) = pairing_backend_details(payload)?;
+    if !protocol.eq_ignore_ascii_case("https") {
+        return Err("Pairing requires an HTTPS backend target.".to_string());
+    }
+
+    let fingerprint = crate::tls::capture_tls_fingerprint(host, port).await?;
+    info!(
+        "Captured pairing TLS fingerprint for {}://{}:{} (peer_cert={})",
+        protocol,
+        host,
+        port,
+        short_fingerprint_label(&fingerprint)
+    );
+
+    Ok(fingerprint)
+}
+
+async fn validate_bootstrap_token(
+    payload: &PairingCompleteRequest,
+    tls_fingerprint: &str,
+) -> Result<(), String> {
+    let (protocol, host, port) = pairing_backend_details(payload)?;
+
     let backend_target = format!("{}://{}:{}", protocol, host, port);
     let validation_url = format!("{}/api/v1/login/companion-token/validate", backend_target);
     let started_at = Instant::now();
@@ -1107,7 +1139,7 @@ async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<()
         backend_target,
         short_pairing_id(payload.backend_pairing_id.as_deref())
     );
-    let client = crate::tls::create_client(payload.tls_fingerprint.clone())
+    let client = crate::tls::create_client(Some(tls_fingerprint.to_string()))
         .map_err(|err| err.to_string())?;
     info!(
         "Built outbound pairing validation client for {} in {} ms",
@@ -1115,7 +1147,13 @@ async fn validate_bootstrap_token(payload: &PairingCompleteRequest) -> Result<()
         client_started_at.elapsed().as_millis()
     );
     log_backend_connectivity_diagnostics(protocol, host, port).await;
-    log_backend_tls_handshake_diagnostics(protocol, host, port, payload.tls_fingerprint.clone()).await;
+    log_backend_tls_handshake_diagnostics(
+        protocol,
+        host,
+        port,
+        Some(tls_fingerprint.to_string()),
+    )
+    .await;
 
     let response = match tokio::time::timeout(
         Duration::from_secs(PAIRING_NETWORK_TIMEOUT_SECS),
@@ -1259,6 +1297,7 @@ async fn send_pairing_management_request(
 
 async fn cancel_pending_pairing_from_request(
     payload: &PairingCompleteRequest,
+    tls_fingerprint: Option<String>,
 ) -> Result<u64, String> {
     let protocol = payload
         .api_protocol
@@ -1278,7 +1317,7 @@ async fn cancel_pending_pairing_from_request(
         host,
         port,
         &payload.bootstrap_token,
-        payload.tls_fingerprint.clone(),
+        tls_fingerprint.or_else(|| payload.tls_fingerprint.clone()),
         "/login/companion-pairing/pending",
     )
     .await
@@ -1462,7 +1501,7 @@ async fn complete_pairing(
                 request_summary,
                 summarize_pairing_session(state.pairing_session_snapshot().as_ref())
             );
-            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
                 error!("Failed to cancel pending pairing after inactive request: {}", err);
             }
             return (
@@ -1484,7 +1523,7 @@ async fn complete_pairing(
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
             }
-            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
                 error!("Failed to cancel pending pairing after expiry: {}", err);
             }
             return (
@@ -1503,7 +1542,7 @@ async fn complete_pairing(
                 request_summary,
                 summarize_pairing_session(state.pairing_session_snapshot().as_ref())
             );
-            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
                 error!("Failed to cancel pending pairing after invalid code: {}", err);
             }
             return (
@@ -1523,7 +1562,7 @@ async fn complete_pairing(
             if let Some(window) = context.app_handle.get_webview_window("pairing") {
                 let _ = window.close();
             }
-            if let Err(err) = cancel_pending_pairing_from_request(&payload).await {
+            if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
                 error!("Failed to cancel pending pairing after lockout: {}", err);
             }
             notifications::show_notification(
@@ -1555,13 +1594,42 @@ async fn complete_pairing(
         }
     }
 
-    if let Err(err) = validate_bootstrap_token(&payload).await {
+    let captured_tls_fingerprint = match capture_pairing_tls_fingerprint(&payload).await {
+        Ok(fingerprint) => fingerprint,
+        Err(err) => {
+            error!(
+                "TLS capture failed during pairing completion: {}; {}",
+                err, request_summary
+            );
+            state.release_pairing_completion();
+            if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload, None).await {
+                error!(
+                    "Failed to cancel pending pairing after TLS capture failure: {}",
+                    cancel_err
+                );
+            }
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Unable to capture the backend TLS certificate. Verify the Nojoin URL and certificate, then start pairing again from Nojoin.".to_string(),
+                }),
+            );
+        }
+    };
+
+    if let Err(err) = validate_bootstrap_token(&payload, &captured_tls_fingerprint).await {
         error!(
             "Bootstrap token validation failed during pairing completion: {}; {}",
             err, request_summary
         );
         state.release_pairing_completion();
-        if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
+        if let Err(cancel_err) = cancel_pending_pairing_from_request(
+            &payload,
+            Some(captured_tls_fingerprint.clone()),
+        )
+        .await
+        {
             error!(
                 "Failed to cancel pending pairing after bootstrap validation failure: {}",
                 cancel_err
@@ -1581,7 +1649,7 @@ async fn complete_pairing(
         api_host: payload.api_host.clone().unwrap_or_default(),
         api_port: payload.api_port.unwrap_or_default(),
         api_token: payload.bootstrap_token.clone(),
-        tls_fingerprint: payload.tls_fingerprint.clone(),
+        tls_fingerprint: Some(captured_tls_fingerprint.clone()),
         paired_web_origin: Some(origin.clone()),
         local_control_secret: payload.local_control_secret.clone(),
         backend_pairing_id: payload.backend_pairing_id.clone(),
@@ -1609,7 +1677,12 @@ async fn complete_pairing(
             e, request_summary
         );
         state.release_pairing_completion();
-        if let Err(cancel_err) = cancel_pending_pairing_from_request(&payload).await {
+        if let Err(cancel_err) = cancel_pending_pairing_from_request(
+            &payload,
+            Some(captured_tls_fingerprint.clone()),
+        )
+        .await
+        {
             error!(
                 "Failed to cancel pending pairing after local save failure: {}",
                 cancel_err
@@ -1827,7 +1900,12 @@ async fn start_recording(
         let config = state.config.lock().unwrap();
         config.tls_fingerprint()
     };
-    let client = crate::tls::create_client(fingerprint).unwrap_or_default();
+    let client = crate::tls::create_client(fingerprint).map_err(|err| {
+        LocalGuardRejection::internal(
+            "local_tls_client_error",
+            format!("Failed to prepare the paired backend TLS client: {}", err),
+        )
+    })?;
 
     let (api_url, token) = {
         let config = state.config.lock().unwrap();
@@ -2270,7 +2348,7 @@ mod tests {
                 api_host: "localhost".to_string(),
                 api_port: 14443,
                 api_token: "bootstrap-token".to_string(),
-                tls_fingerprint: None,
+                tls_fingerprint: Some("AA:BB:CC".to_string()),
                 paired_web_origin: Some("https://paired.example.com".to_string()),
                 local_control_secret: Some("test-local-control-secret".to_string()),
                 backend_pairing_id: Some("pairing-123".to_string()),

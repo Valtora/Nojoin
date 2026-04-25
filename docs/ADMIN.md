@@ -89,6 +89,8 @@ Use **Settings > Updates** to see:
 
 - The Companion app forms a strict 1-to-1 association with a single backend.
 - Users must manually re-pair the Companion from its settings if they switch to a different Nojoin deployment, or if the backend's identity/URL changes.
+- The Companion pins the backend TLS certificate it first sees during pairing. Replacing or rotating that backend certificate requires an explicit re-pair.
+- Using Disconnect Current Backend in Companion Settings clears the saved backend certificate trust and returns the app to a clean first-pair state.
 - Major security upgrades to the Companion will drop legacy trust state. After such upgrades, users will be required to perform a clean first-pair workflow before they can record.
 
 ## Related Docs

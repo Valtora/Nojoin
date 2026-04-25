@@ -89,7 +89,8 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.
 - **Companion IPC Security:** Strict Origin validation to prevent Cross-Site Request Forgery (CSRF) and unauthorized local scripts from interfacing with the local Companion server.
-- **Trusted Public Origin:** Invitation links and TLS fingerprint resolution use the configured public web origin and allowed-origin fallback, rather than trusting request Host headers.
+- **Companion TOFU TLS Pinning:** During manual pairing, the Companion captures and pins the backend TLS certificate it first sees. Subsequent Companion traffic requires that pinned certificate until the user explicitly disconnects or re-pairs.
+- **Trusted Public Origin:** Invitation links and Companion pairing API targeting use the configured public web origin and allowed-origin fallback, rather than trusting request Host headers.
 - **CORS & Remote Access:**
   - **CORS:** Restricted to allowed origins. Configurable via the `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
   - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.

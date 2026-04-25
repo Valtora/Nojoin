@@ -21,12 +21,15 @@ Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxi
 
 ## Companion Pairing and Local API Security
 
-The Nojoin Companion app requires a strict manual pairing workflow. 
+The Nojoin Companion app requires a strict manual pairing workflow.
 
-- The Companion exposes a short-lived local API only for authenticated requests. 
+- The Companion exposes a short-lived local API only for authenticated requests.
 - Anonymous discovery of the Companion via the loopback interface is explicitly blocked. The frontend cannot silently detect if the Companion is running.
 - Pairing must be manually initiated by the user from within the Companion app, which generates a single-use, short-lived 8-character pairing code.
+- During pairing, the Companion captures and pins the first backend TLS certificate it sees for that backend target.
 - Re-pairing to a different Nojoin backend replaces the previous trust relationship atomically.
+- After pairing, all Companion-to-backend HTTPS traffic requires the pinned backend certificate. If the backend certificate changes, the Companion must be explicitly re-paired.
+- Explicitly disconnecting the current backend from Companion Settings clears the saved backend certificate pin and returns the app to a clean first-pair state.
 - All requests to the Companion's local API require a short-lived local control token and strict Host validation (e.g. `127.0.0.1` or `localhost`).
 
 Operators and users should be aware that switching between deployments requires an explicit re-pair.

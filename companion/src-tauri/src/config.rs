@@ -93,14 +93,6 @@ fn canonicalize_origin(value: &str) -> Option<String> {
     Some(build_origin(&protocol, &host, port))
 }
 
-fn parse_api_endpoint(value: &str) -> Option<(String, String, u16)> {
-    let url = Url::parse(value).ok()?;
-    let protocol = normalize_protocol(url.scheme());
-    let host = normalize_host(url.host_str()?);
-    let port = url.port_or_known_default()? as u16;
-    Some((protocol, host, port))
-}
-
 fn optional_string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
     object
         .get(key)
@@ -227,6 +219,30 @@ impl BackendConnection {
     pub fn derived_web_origin(&self) -> String {
         build_origin(&self.api_protocol, &self.api_host, self.api_port)
     }
+
+    pub fn has_complete_pairing_state(&self) -> bool {
+        !self.api_token.is_empty()
+            && self
+                .tls_fingerprint
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            && self.paired_web_origin.is_some()
+            && self
+                .local_control_secret
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            && self
+                .backend_pairing_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            && self.local_control_secret_version.unwrap_or_default() > 0
+    }
 }
 
 impl Default for BackendConnection {
@@ -295,7 +311,7 @@ impl Config {
     pub fn is_authenticated(&self) -> bool {
         self.backend
             .as_ref()
-            .map(|backend| !backend.api_token.is_empty())
+            .map(BackendConnection::has_complete_pairing_state)
             .unwrap_or(false)
     }
 
@@ -474,7 +490,15 @@ impl Config {
                     if normalized != connection {
                         needs_save = true;
                     }
-                    Some(normalized)
+                    if normalized.has_complete_pairing_state() {
+                        Some(normalized)
+                    } else {
+                        warn!(
+                            "Clearing incomplete backend trust state during recovery. Start pairing again from Companion Settings."
+                        );
+                        needs_save = true;
+                        None
+                    }
                 }
                 Err(error) => {
                     warn!(
@@ -939,5 +963,60 @@ mod tests {
         assert_eq!(config.machine_local, machine_before);
         assert_eq!(config.api_host(), "second.example.com");
         assert_eq!(config.api_token(), "second-token");
+    }
+
+    #[test]
+    fn clear_backend_save_drops_backend_trust_block() {
+        let path = temp_config_path("clear-backend");
+        let mut config = Config::default();
+        config.replace_backend(BackendConnection {
+            api_protocol: "https".to_string(),
+            api_host: "paired.example.com".to_string(),
+            api_port: 443,
+            api_token: "bootstrap-token".to_string(),
+            tls_fingerprint: Some("AA:BB:CC".to_string()),
+            paired_web_origin: Some("https://paired.example.com".to_string()),
+            local_control_secret: Some("local-control-secret".to_string()),
+            backend_pairing_id: Some("pairing-123".to_string()),
+            local_control_secret_version: Some(3),
+        });
+        config.save_to(&path).unwrap();
+
+        config.clear_backend_and_save_to(&path).unwrap();
+
+        let disk = fs::read_to_string(&path).unwrap();
+        let (loaded, needs_save) = Config::parse_or_migrate(&disk).unwrap();
+
+        assert!(!needs_save);
+        assert!(loaded.backend.is_none());
+        assert!(!loaded.is_authenticated());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn current_version_backend_without_fingerprint_is_cleared_on_recovery() {
+        let content = r#"{
+            "version": 2,
+            "machine_local": {
+                "local_port": 12345
+            },
+            "backend": {
+                "api_protocol": "https",
+                "api_host": "paired.example.com",
+                "api_port": 443,
+                "api_token": "bootstrap-token",
+                "paired_web_origin": "https://paired.example.com",
+                "local_control_secret": "local-control-secret",
+                "backend_pairing_id": "pairing-123",
+                "local_control_secret_version": 3
+            }
+        }"#;
+
+        let (config, needs_save) = Config::parse_or_migrate(content).unwrap();
+
+        assert!(needs_save);
+        assert!(config.backend.is_none());
+        assert!(!config.is_authenticated());
     }
 }
