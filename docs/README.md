@@ -22,7 +22,6 @@ Use the links below by task rather than treating the root README as the source o
 ## Policies and Project References
 
 - [SECURITY.md](SECURITY.md): Security policy and vulnerability reporting.
-- [security_upgrade.md](security_upgrade.md): Waterfall implementation plan for Companion local API hardening and manual one-backend pairing.
 - [LEGAL.md](LEGAL.md): Legal disclaimer and recording-law responsibility.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Community conduct expectations.
 - [PRD.md](PRD.md): Product requirements and longer-term feature scope.
