@@ -5,7 +5,9 @@ import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 import {
+  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
   companionLocalFetch,
+  isCompanionLocalConnectionError,
   readCompanionLocalError,
   type CompanionLocalAction,
 } from '@/lib/companionLocalApi';
@@ -30,6 +32,7 @@ export default function MeetingControls({
     backend,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
     companionStatus,
     recordingDuration,
     checkCompanion,
@@ -120,8 +123,8 @@ export default function MeetingControls({
       return await res.json();
       
     } catch (err: any) {
-      if (err instanceof TypeError && err.message === "Failed to fetch") {
-        setError('Companion App is offline or unreachable.');
+      if (isCompanionLocalConnectionError(err)) {
+        setError(COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE);
       } else if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
@@ -166,6 +169,8 @@ export default function MeetingControls({
       companionAuthenticated && (!backend || !companion || isCompanionUploading);
     const statusText = !backend
       ? 'Nojoin backend unavailable.'
+      : !companion && companionAuthenticated && companionLocalConnectionUnavailable
+        ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
       : !companion && companionAuthenticated
         ? 'Companion is temporarily disconnected. Existing pairing will resync automatically when it reconnects.'
       : !companionAuthenticated
@@ -217,7 +222,9 @@ export default function MeetingControls({
             >
               <Mic className="w-4 h-4" />
               {!companion && companionAuthenticated
-                ? 'Companion reconnecting...'
+                ? companionLocalConnectionUnavailable
+                  ? 'Repair in Companion Settings'
+                  : 'Companion reconnecting...'
                 : isCompanionUploading
                   ? 'Finishing upload...'
                   : !companionAuthenticated
@@ -291,7 +298,9 @@ export default function MeetingControls({
           >
             <Mic className="w-4 h-4" />
             {!companion && companionAuthenticated
-              ? 'Companion reconnecting...'
+              ? companionLocalConnectionUnavailable
+                ? 'Repair in Companion Settings'
+                : 'Companion reconnecting...'
               : isCompanionUploading
                 ? 'Finishing upload...'
                 : !companionAuthenticated

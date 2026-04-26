@@ -8,6 +8,7 @@ import { sanitizeIntegerString } from "@/lib/validation";
 import { useState } from "react";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE } from "@/lib/companionLocalApi";
 import {
   AlertCircle,
   Loader2,
@@ -64,7 +65,11 @@ export default function AudioSettings({
   const [connectionResult, setConnectionResult] = useState<
     "success" | "error" | null
   >(null);
-  const { checkCompanion, enableCompanionMonitoring } = useServiceStatusStore();
+  const {
+    checkCompanion,
+    companionLocalConnectionUnavailable,
+    enableCompanionMonitoring,
+  } = useServiceStatusStore();
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -234,7 +239,9 @@ export default function AudioSettings({
                   Device settings unavailable
                 </p>
                 <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
-                  Nojoin could not load the current Companion device list. Use the Companion App connection section above to pair or reconnect, then retry here.
+                  {companionLocalConnectionUnavailable
+                    ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
+                    : "Nojoin could not load the current Companion device list. Use the Companion App connection section above to pair or reconnect, then retry here."}
                 </p>
 
                 <div className="flex items-center gap-3">

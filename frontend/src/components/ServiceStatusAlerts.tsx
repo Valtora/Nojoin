@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE } from "@/lib/companionLocalApi";
 
 export default function ServiceStatusAlerts() {
   const { addNotification, removeActiveNotification } = useNotificationStore();
@@ -12,6 +13,7 @@ export default function ServiceStatusAlerts() {
     worker,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
@@ -163,11 +165,19 @@ export default function ServiceStatusAlerts() {
         clearCompanionNotification();
       } else if (!isStartupRef.current && !companion && companionFailCount > 2) {
         if (companionAuthenticated) {
-          showCompanionNotification(
-            "paired-disconnected",
-            "warning",
-            "Companion temporarily disconnected. Existing pairing stays valid, and local recording state will resync when the app reconnects.",
-          );
+          if (companionLocalConnectionUnavailable) {
+            showCompanionNotification(
+              "local-connection-unavailable",
+              "warning",
+              COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
+            );
+          } else {
+            showCompanionNotification(
+              "paired-disconnected",
+              "warning",
+              "Companion temporarily disconnected. Existing pairing stays valid, and local recording state will resync when the app reconnects.",
+            );
+          }
         } else {
           showCompanionNotification(
             "pairing-required",
@@ -187,6 +197,7 @@ export default function ServiceStatusAlerts() {
     worker,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,

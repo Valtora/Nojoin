@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  CompanionLocalConnectionError,
   CompanionLocalRequestError,
   companionLocalFetch,
   COMPANION_URL,
@@ -73,6 +74,7 @@ interface ServiceStatusState {
   backendVersion: string | null;
   companion: boolean;
   companionAuthenticated: boolean;
+  companionLocalConnectionUnavailable: boolean;
   companionMonitoringEnabled: boolean;
 
   // Companion details
@@ -215,6 +217,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     set((state) => ({
       companion: false,
       companionAuthenticated: false,
+      companionLocalConnectionUnavailable: false,
       companionStatus: "idle",
       companionVersion: state.companionVersion,
       companionUpdateAvailable: false,
@@ -299,6 +302,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     backendVersion: null,
     companion: false,
     companionAuthenticated: false,
+    companionLocalConnectionUnavailable: false,
     companionMonitoringEnabled: false,
     companionStatus: "idle",
     companionVersion: null,
@@ -399,6 +403,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           set({
             companion: true,
             companionAuthenticated: data.authenticated === true,
+            companionLocalConnectionUnavailable: false,
             companionStatus: status,
             companionVersion: data.version || null,
             companionUpdateAvailable: data.update_available || false,
@@ -414,6 +419,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             set((state) => ({
               companion: false,
               companionAuthenticated: state.companionAuthenticated,
+              companionLocalConnectionUnavailable: false,
               companionUpdateAvailable: false,
               companionFailCount: state.companionFailCount + 1,
             }));
@@ -429,6 +435,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           set((state) => ({
             companion: false,
             companionAuthenticated: state.companionAuthenticated,
+            companionLocalConnectionUnavailable:
+              error instanceof CompanionLocalConnectionError,
             companionUpdateAvailable: false,
             companionFailCount: state.companionFailCount + 1,
           }));
@@ -554,6 +562,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           set({
             companion: true,
             companionAuthenticated: true,
+            companionLocalConnectionUnavailable: false,
             companionMonitoringEnabled: true,
             companionFailCount: 0,
           });

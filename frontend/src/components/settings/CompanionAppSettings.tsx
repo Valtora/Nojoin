@@ -17,6 +17,10 @@ import {
 } from "@/lib/serviceStatusStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getCompanionReleases, type CompanionReleases } from "@/lib/api";
+import {
+  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
+  isCompanionLocalConnectionError,
+} from "@/lib/companionLocalApi";
 import { detectPlatform, getDownloadUrl } from "@/lib/platform";
 import { fuzzyMatch } from "@/lib/searchUtils";
 
@@ -77,6 +81,7 @@ const buildConnectionSummary = (
   backendVersion: string | null,
   companion: boolean,
   companionAuthenticated: boolean,
+  companionLocalConnectionUnavailable: boolean,
   companionStatus: string,
   companionVersion: string | null,
 ): CalloutState => {
@@ -98,6 +103,14 @@ const buildConnectionSummary = (
   }
 
   if (!companion) {
+    if (companionLocalConnectionUnavailable) {
+      return {
+        title: "Local connection unavailable",
+        message: COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
+        tone: "warning",
+      };
+    }
+
     return {
       title: "Temporarily disconnected",
       message:
@@ -207,16 +220,12 @@ const resolvePairingFailure = (
   message: string;
   notificationType: "error" | "warning" | "info";
 } => {
-  if (
-    error instanceof TypeError &&
-    (error.message === "Failed to fetch" ||
-      error.message === "NetworkError when attempting to fetch resource.")
-  ) {
+  if (isCompanionLocalConnectionError(error)) {
     return {
       state: "unreachable",
       message: pairingMode === "firefox"
         ? "Firefox could not reach the local Companion. Enable Firefox Support in the Companion app settings, restart Firefox, then try again with a fresh code."
-        : "Companion app is unreachable. Start it, reopen pairing from Companion Settings, then try again.",
+        : COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
       notificationType: "error",
     };
   }
@@ -351,6 +360,7 @@ export default function CompanionAppSettings({
     backendVersion,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
     companionStatus,
     companionVersion,
     companionUpdateAvailable,
@@ -507,6 +517,7 @@ export default function CompanionAppSettings({
     backendVersion,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
     companionStatus,
     companionVersion,
   );

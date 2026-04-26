@@ -316,6 +316,10 @@ Sub-tasks:
 
 ### Step 3. Update the frontend local transport layer
 
+Status: Complete.
+
+The frontend local API helper now targets `https://127.0.0.1:12345`, and the audited frontend consumers for pairing completion, status polling, recording controls, waveform polling, Companion settings, device enumeration, and update triggers all route through the secure local API path while preserving existing request shapes and local control token usage. When a local HTTPS request fails before a local status payload is available, browser-facing surfaces use the repair-oriented message: "Companion local connection is unavailable. Open Companion Settings and use the repair or troubleshooting steps." Firefox-specific pairing guidance remains explicit opt-in through Companion Firefox Support and Firefox Windows root trust.
+
 #### Task 3.1. Switch the local API base URL to HTTPS
 
 Sub-tasks:

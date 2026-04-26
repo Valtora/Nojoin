@@ -1,4 +1,6 @@
 export const COMPANION_URL = "https://127.0.0.1:12345";
+export const COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE =
+  "Companion local connection is unavailable. Open Companion Settings and use the repair or troubleshooting steps.";
 
 export type CompanionLocalAction =
   | "status:read"
@@ -37,6 +39,33 @@ export class CompanionLocalRequestError extends Error {
     this.status = status;
   }
 }
+
+const isFetchNetworkError = (error: unknown) => {
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase();
+    return (
+      message === "failed to fetch" ||
+      message.includes("networkerror") ||
+      message.includes("load failed")
+    );
+  }
+
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError" || error.name === "NetworkError";
+  }
+
+  return false;
+};
+
+export class CompanionLocalConnectionError extends Error {
+  constructor() {
+    super(COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE);
+    this.name = "CompanionLocalConnectionError";
+  }
+}
+
+export const isCompanionLocalConnectionError = (error: unknown) =>
+  error instanceof CompanionLocalConnectionError || isFetchNetworkError(error);
 
 const TOKEN_REFRESH_SKEW_MS = 10_000;
 const tokenCache = new Map<string, CachedCompanionToken>();
@@ -134,10 +163,17 @@ export const companionLocalFetch = async (
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
 
-    return fetch(`${COMPANION_URL}${path}`, {
-      ...init,
-      headers,
-    });
+    try {
+      return await fetch(`${COMPANION_URL}${path}`, {
+        ...init,
+        headers,
+      });
+    } catch (error) {
+      if (isFetchNetworkError(error)) {
+        throw new CompanionLocalConnectionError();
+      }
+      throw error;
+    }
   };
 
   let response = await executeRequest();
