@@ -18,10 +18,13 @@ use tauri::{
 };
 
 use semver::Version;
+#[cfg(windows)]
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod audio;
 mod companion_auth;
 mod config;
+mod local_https_identity;
 mod notifications;
 mod server;
 mod secret_store;
@@ -106,11 +109,20 @@ fn derive_backend_label(config: &Config) -> String {
 }
 
 fn current_tray_status_text(state: &Arc<AppState>) -> String {
+    let status = state.status.lock().unwrap().clone();
+    if let AppStatus::Error(message) = &status {
+        let trimmed = message.trim();
+        return if trimmed.is_empty() {
+            "Status: Error".to_string()
+        } else {
+            format!("Status: {}", trimmed)
+        };
+    }
+
     if !state.is_authenticated() {
         return "Status: Waiting for connection...".to_string();
     }
 
-    let status = state.status.lock().unwrap().clone();
     let recovery_state = state.recording_recovery_state();
     match status {
         AppStatus::Idle => "Status: Ready to Record".to_string(),
@@ -581,6 +593,9 @@ fn start_pairing_mode_internal(
 ) -> Result<String, String> {
     {
         let status = state.status.lock().unwrap().clone();
+        if let AppStatus::Error(message) = &status {
+            return Err(message.clone());
+        }
         if let Some(message) = pairing_block_message(&status) {
             return Err(message.to_string());
         }
@@ -792,6 +807,138 @@ fn reconcile_backend_secret_state(config: &mut Config) {
     }
 }
 
+#[cfg(windows)]
+struct PromptingLocalCaTrustStore {
+    app: tauri::AppHandle,
+    inner: local_https_identity::SystemLocalCaTrustStore,
+}
+
+#[cfg(windows)]
+impl PromptingLocalCaTrustStore {
+    fn new(app: tauri::AppHandle) -> Self {
+        Self {
+            app,
+            inner: local_https_identity::SystemLocalCaTrustStore,
+        }
+    }
+}
+
+#[cfg(windows)]
+impl local_https_identity::LocalCaTrustStore for PromptingLocalCaTrustStore {
+    fn is_ca_trusted(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
+        self.inner.is_ca_trusted(ca_certificate_der)
+    }
+
+    fn install_ca(&self, ca_certificate_der: &[u8]) -> Result<(), String> {
+        if !confirm_local_https_trust_install(&self.app) {
+            return Err(
+                "The local HTTPS trust installation was canceled before the Windows confirmation dialog."
+                    .to_string(),
+            );
+        }
+
+        self.inner.install_ca(ca_certificate_der)
+    }
+}
+
+#[cfg(windows)]
+fn confirm_local_https_trust_install(app: &tauri::AppHandle) -> bool {
+    app.dialog()
+        .message(
+            "Nojoin Companion needs to add a local Windows certificate so your browser can securely connect to the Companion on this device.\n\nThis applies only to secure local Companion communication, not general internet traffic. Windows will show its own confirmation dialog next. Click Continue here, then click Yes in the Windows dialog.",
+        )
+        .title("Approve Secure Local Connection")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Continue".to_string(),
+            "Cancel".to_string(),
+        ))
+        .blocking_show()
+}
+
+#[cfg(windows)]
+fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) -> bool {
+    let paths = local_https_identity::LocalHttpsPaths::current();
+    let trust_store = PromptingLocalCaTrustStore::new(app.clone());
+
+    match local_https_identity::ensure_local_https_identity_with(
+        &paths,
+        &trust_store,
+        time::OffsetDateTime::now_utc(),
+    ) {
+        Ok(result) => match result.state {
+            local_https_identity::LocalHttpsReconcileState::Ready(_) => {
+                if result.changes.bootstrapped_identity {
+                    info!(
+                        "Bootstrapped the local HTTPS identity for the Companion local API. trust_installed={} leaf_regenerated={}",
+                        result.changes.trust_installed,
+                        result.changes.leaf_regenerated
+                    );
+                    notifications::show_notification(
+                        app,
+                        "Local HTTPS Enabled",
+                        "Companion created and trusted its local HTTPS identity for secure browser connections.",
+                    );
+                } else {
+                    if result.changes.trust_installed {
+                        info!(
+                            "Reinstalled the local HTTPS CA trust in the current-user store during startup reconciliation."
+                        );
+                        notifications::show_notification(
+                            app,
+                            "Local HTTPS Repaired",
+                            "Companion repaired its local HTTPS trust so secure browser connections can resume.",
+                        );
+                    }
+                    if result.changes.leaf_regenerated {
+                        info!(
+                            "Regenerated the local HTTPS leaf certificate during startup reconciliation."
+                        );
+                    }
+                }
+
+                true
+            }
+            local_https_identity::LocalHttpsReconcileState::RepairRequired(repair) => {
+                let status_message = "Local HTTPS needs repair. Open Companion Settings.";
+                error!(
+                    "Blocking local server startup because local HTTPS requires repair: reason={:?} message={}",
+                    repair.reason,
+                    repair.message
+                );
+                *state.status.lock().unwrap() = AppStatus::Error(status_message.to_string());
+                refresh_tray_menu(app, state);
+                notifications::show_notification(
+                    app,
+                    "Local HTTPS Repair Required",
+                    "Companion local HTTPS needs repair. Open Companion Settings and use the repair or troubleshooting steps. The local browser connection will stay offline until this is fixed.",
+                );
+                false
+            }
+        },
+        Err(error) => {
+            let status_message = "Local HTTPS initialization failed. Open Companion Settings.";
+            error!(
+                "Blocking local server startup because local HTTPS reconciliation failed unexpectedly: {}",
+                error
+            );
+            *state.status.lock().unwrap() = AppStatus::Error(status_message.to_string());
+            refresh_tray_menu(app, state);
+            notifications::show_notification(
+                app,
+                "Local HTTPS Startup Failed",
+                "Companion could not initialize its local HTTPS identity. Open Companion Settings and use the repair or troubleshooting steps. The local browser connection will stay offline until this is fixed.",
+            );
+            false
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn reconcile_local_https_startup(_app: &tauri::AppHandle, _state: &Arc<AppState>) -> bool {
+    true
+}
+
 fn setup_logging() -> Result<(), fern::InitError> {
     let log_path = get_log_path();
 
@@ -836,6 +983,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
@@ -1058,6 +1206,8 @@ fn main() {
             thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
 
+                let should_start_local_server = reconcile_local_https_startup(&app_handle, &state_server);
+
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
                 let app_handle_status = app_handle.clone();
@@ -1136,7 +1286,16 @@ fn main() {
                     }
                 });
 
-                rt.block_on(server::start_server(state_server, app_handle));
+                if should_start_local_server {
+                    rt.block_on(server::start_server(state_server, app_handle));
+                } else {
+                    warn!(
+                        "Companion local server startup is blocked until local HTTPS is repaired."
+                    );
+                    rt.block_on(async {
+                        std::future::pending::<()>().await;
+                    });
+                }
             });
 
             Ok(())

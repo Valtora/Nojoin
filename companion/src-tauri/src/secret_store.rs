@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 const SECRET_STORE_DIR: &str = "secrets";
 const SECRET_FILE_EXTENSION: &str = "bin";
+const BACKEND_SECRET_DESCRIPTION: &str = "Nojoin Companion Backend Secret";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BackendSecretBundle {
@@ -56,11 +57,21 @@ fn backend_pairing_id(backend: &BackendConnection) -> Result<String, String> {
 pub fn load_backend_secret_bundle(pairing_id: &str) -> Result<BackendSecretBundle, String> {
     let normalized_pairing_id = normalized_pairing_id(pairing_id)?;
     let path = secret_file_path(&normalized_pairing_id);
-    let protected_bytes = fs::read(&path)
-        .map_err(|error| format!("Failed to read backend secret bundle {}: {}", path.display(), error))?;
+    let protected_bytes = fs::read(&path).map_err(|error| {
+        format!(
+            "Failed to read backend secret bundle {}: {}",
+            path.display(),
+            error
+        )
+    })?;
     let decrypted = unprotect_bytes(&protected_bytes)?;
-    let bundle: BackendSecretBundle = serde_json::from_slice(&decrypted)
-        .map_err(|error| format!("Failed to parse backend secret bundle {}: {}", path.display(), error))?;
+    let bundle: BackendSecretBundle = serde_json::from_slice(&decrypted).map_err(|error| {
+        format!(
+            "Failed to parse backend secret bundle {}: {}",
+            path.display(),
+            error
+        )
+    })?;
 
     bundle.normalized().ok_or_else(|| {
         format!(
@@ -82,9 +93,9 @@ pub fn save_backend_secret_bundle(
     bundle: &BackendSecretBundle,
 ) -> Result<(), String> {
     let normalized_pairing_id = normalized_pairing_id(pairing_id)?;
-    let normalized_bundle = bundle.normalized().ok_or_else(|| {
-        "Companion secret bundle is incomplete and cannot be saved.".to_string()
-    })?;
+    let normalized_bundle = bundle
+        .normalized()
+        .ok_or_else(|| "Companion secret bundle is incomplete and cannot be saved.".to_string())?;
     let path = secret_file_path(&normalized_pairing_id);
 
     if let Some(parent) = path.parent() {
@@ -99,8 +110,8 @@ pub fn save_backend_secret_bundle(
 
     let serialized = serde_json::to_vec(&normalized_bundle)
         .map_err(|error| format!("Failed to serialize backend secret bundle: {}", error))?;
-    let protected = protect_bytes(&serialized)?;
-    let temp_path = temp_secret_path(&path);
+    let protected = protect_bytes_with_description(BACKEND_SECRET_DESCRIPTION, &serialized)?;
+    let temp_path = temp_write_path(&path);
 
     fs::write(&temp_path, protected).map_err(|error| {
         format!(
@@ -128,24 +139,27 @@ pub fn delete_backend_secret_bundle(pairing_id: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    fs::remove_file(&path)
-        .map_err(|error| format!("Failed to delete backend secret bundle {}: {}", path.display(), error))
+    fs::remove_file(&path).map_err(|error| {
+        format!(
+            "Failed to delete backend secret bundle {}: {}",
+            path.display(),
+            error
+        )
+    })
 }
 
-pub fn delete_backend_secret_bundle_for_backend(
-    backend: &BackendConnection,
-) -> Result<(), String> {
+pub fn delete_backend_secret_bundle_for_backend(backend: &BackendConnection) -> Result<(), String> {
     let pairing_id = backend_pairing_id(backend)?;
     delete_backend_secret_bundle(&pairing_id)
 }
 
-fn temp_secret_path(path: &Path) -> PathBuf {
+pub(crate) fn temp_write_path(path: &Path) -> PathBuf {
     let mut temp_path = path.to_path_buf();
     temp_path.set_extension("tmp");
     temp_path
 }
 
-fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
     if target.exists() {
         fs::remove_file(target).map_err(|error| {
             format!(
@@ -166,14 +180,17 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect_bytes_with_description(
+    description: &str,
+    data: &[u8],
+) -> Result<Vec<u8>, String> {
     use std::ptr;
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
         CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
 
-    let description: Vec<u16> = "Nojoin Companion Backend Secret\0".encode_utf16().collect();
+    let description: Vec<u16> = format!("{}\0", description).encode_utf16().collect();
     let mut input = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
@@ -201,7 +218,8 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let bytes = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+    let bytes =
+        unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
     unsafe {
         LocalFree(output.pbData.cast());
     }
@@ -209,7 +227,7 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(windows)]
-fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     use std::ptr;
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
@@ -244,7 +262,8 @@ fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let bytes = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+    let bytes =
+        unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
     unsafe {
         if !description_ptr.is_null() {
             LocalFree(description_ptr.cast());
@@ -255,11 +274,14 @@ fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(windows))]
-fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect_bytes_with_description(
+    _description: &str,
+    data: &[u8],
+) -> Result<Vec<u8>, String> {
     Ok(data.to_vec())
 }
 
 #[cfg(not(windows))]
-fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(data.to_vec())
 }
