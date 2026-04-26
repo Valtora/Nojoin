@@ -543,7 +543,7 @@ impl Config {
 
     fn migrate_from_legacy(value: &Value) -> Option<Config> {
         let object = value.as_object()?;
-        
+
         // Legacy fields are used to populate some machine-local fallback values if needed,
         // but backend trust state is explicitly dropped to force a clean re-pair for upgrading users.
         let backend = None;
@@ -780,7 +780,7 @@ mod tests {
         assert_eq!(config.last_version(), Some("0.8.1"));
         assert_eq!(config.min_meeting_length(), Some(8));
         assert_eq!(config.run_on_startup(), Some(true));
-        
+
         // The backend trust block is explicitly dropped during migration now
         assert!(config.backend.is_none());
     }

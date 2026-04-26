@@ -378,8 +378,14 @@ mod tests {
         let state = test_state();
         let session = state.begin_pairing_session();
 
-        assert_eq!(canonicalize_pairing_code(&session.display_code), session.canonical_code);
-        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+        assert_eq!(
+            canonicalize_pairing_code(&session.display_code),
+            session.canonical_code
+        );
+        assert_eq!(
+            state.begin_pairing_completion(&session.display_code),
+            Ok(())
+        );
         assert_eq!(
             state.begin_pairing_completion(&session.display_code),
             Err(PairingValidationError::InProgress)
@@ -387,7 +393,10 @@ mod tests {
 
         state.release_pairing_completion();
 
-        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+        assert_eq!(
+            state.begin_pairing_completion(&session.display_code),
+            Ok(())
+        );
     }
 
     #[test]
@@ -404,7 +413,10 @@ mod tests {
         let state = test_state();
         let session = state.begin_pairing_session();
 
-        assert_eq!(state.begin_pairing_completion(&session.display_code), Ok(()));
+        assert_eq!(
+            state.begin_pairing_completion(&session.display_code),
+            Ok(())
+        );
         state.complete_pairing_session();
 
         assert_eq!(

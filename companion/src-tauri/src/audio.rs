@@ -650,7 +650,8 @@ fn run_mixing_loop(
             {
                 Ok(refreshed_token) => {
                     if let Some(new_token) = refreshed_token {
-                        *state_upload.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                        *state_upload.current_recording_token.lock().unwrap() =
+                            Some(new_token.clone());
                     }
                     info!("Segment {} uploaded successfully", seq);
                     tx.send(seq).ok();

@@ -109,6 +109,15 @@
         button.secondary:hover {
             background: #ffedd5;
         }
+        button.trust {
+            margin-top: 12px;
+            background: #fff7ed;
+            border-color: #fdba74;
+            color: var(--accent-strong);
+        }
+        button.trust:hover {
+            background: #ffedd5;
+        }
         button.danger {
             background: var(--danger-soft);
             border-color: #fecdd3;
@@ -157,6 +166,12 @@
             color: var(--muted);
             line-height: 1.45;
         }
+        .card-note {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
     </style>
 </head>
 <body>
@@ -172,6 +187,12 @@
             <div class="card">
                 <div class="label">Pairing State</div>
                 <div class="value" id="pairingStateValue">Loading...</div>
+            </div>
+            <div class="card">
+                <div class="label">Firefox Support</div>
+                <div class="value">Enable Firefox local pairing</div>
+                <p class="card-note">Installs the Nojoin local HTTPS CA into the Windows machine trust store after your approval, so Firefox can trust the Companion local connection.</p>
+                <button id="enableFirefoxBtn" class="trust">Enable Firefox Support</button>
             </div>
         </div>
 
@@ -194,6 +215,7 @@
         const startPairingBtn = document.getElementById('startPairingBtn');
         const cancelPairingBtn = document.getElementById('cancelPairingBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
+        const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
         const statusDiv = document.getElementById('status');
         const noteText = document.getElementById('noteText');
         const cancelPairingIdleLabel = 'Cancel Local Pairing Session';
@@ -337,6 +359,18 @@
                 setStatus(String(e), 'error');
             } finally {
                 setButtonBusy(disconnectBtn, false, 'Disconnecting...', 'Disconnect Current Backend');
+            }
+        });
+
+        enableFirefoxBtn.addEventListener('click', async () => {
+            try {
+                setButtonBusy(enableFirefoxBtn, true, 'Opening Windows Approval...', 'Enable Firefox Support');
+                const message = await invoke('enable_firefox_support');
+                setStatus(message, 'success');
+            } catch (e) {
+                setStatus(String(e), 'error');
+            } finally {
+                setButtonBusy(enableFirefoxBtn, false, 'Opening Windows Approval...', 'Enable Firefox Support');
             }
         });
 

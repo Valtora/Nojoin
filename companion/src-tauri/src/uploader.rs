@@ -91,7 +91,8 @@ pub async fn upload_segment(
                         sequence, recording_id
                     );
                     return Ok(refreshed_token);
-                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
+                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none()
+                {
                     match refresh_recording_upload_token(recording_id, config).await {
                         Ok(new_token) => {
                             info!(
@@ -172,7 +173,8 @@ pub async fn finalize_recording(
                 if response.status().is_success() {
                     info!("Recording {} finalized successfully", recording_id);
                     return Ok(refreshed_token);
-                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
+                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none()
+                {
                     match refresh_recording_upload_token(recording_id, config).await {
                         Ok(new_token) => {
                             info!(
@@ -251,7 +253,10 @@ pub async fn update_client_status(
             .send()
             .await?;
         if !retry.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to update status: {}", retry.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to update status: {}",
+                retry.status()
+            ));
         }
         return Ok(Some(new_token));
     }
@@ -295,7 +300,10 @@ pub async fn update_status_with_progress(
             .send()
             .await?;
         if !retry.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to update status: {}", retry.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to update status: {}",
+                retry.status()
+            ));
         }
         return Ok(Some(new_token));
     }

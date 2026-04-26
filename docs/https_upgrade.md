@@ -40,8 +40,8 @@ This preserves the current browser-to-Companion architecture while fixing both p
 - The browser-facing `localHttpsStatus` field exposes exactly three values: `ready`, `repairing`, and `needs-repair`.
 - The browser does not use backend-mirrored or other fallback channels to infer local HTTPS status when the local secure endpoint is unreachable.
 - Chromium-based browsers are release-blocking compatibility targets for this remediation.
-- Firefox parity is deferred from this remediation and should be handled as explicit follow-up work.
-- Nojoin and the Companion must not modify user browser configuration as part of this remediation.
+- Firefox is supported through an explicit Firefox Pairing Mode walkthrough that directs the user to enable Firefox support in Companion Settings.
+- Nojoin and the Companion must not silently modify user browser configuration as part of this remediation.
 - Best-effort cleanup of the generated local CA happens only on uninstall paths where the user explicitly chooses to delete app data.
 
 ## Alternatives Considered
@@ -76,7 +76,7 @@ This preserves the current browser-to-Companion architecture while fixing both p
 
 - Replace the current control plane with a backend relay.
 - Redesign pairing, upload, or recording ownership semantics.
-- Add machine-wide certificate trust by default.
+- Add machine-wide certificate trust by default. The machine-wide trust change is only needed for Firefox and must stay user-triggered, clearly explained, and administrator-approved.
 - Add support for non-Windows Companion platforms.
 - Introduce an insecure HTTP fallback path in normal builds.
 
@@ -95,10 +95,11 @@ This preserves the current browser-to-Companion architecture while fixing both p
 - The Companion also generates a server leaf certificate signed by that local CA.
 - The local CA is trusted only in the Windows current-user certificate store.
 - The leaf certificate must include SANs for `localhost`, `127.0.0.1`, and `::1`.
+- The leaf certificate must publish a local file-backed CRL distribution point so Windows Schannel can complete revocation checks without external network access.
 - The leaf certificate is used only by the Companion local API listener.
 - The CA validity window is 5 years.
 - The leaf validity window is 180 days.
-- The Companion renews the leaf certificate when fewer than 30 days remain, without rotating the CA.
+- The Companion renews the leaf certificate when fewer than 30 days remain, without rotating the CA, and refreshes the local CRL during startup reconciliation.
 
 Using a per-user local CA instead of directly trusting a one-off leaf certificate keeps trust stable across leaf renewal, upgrades, and frequent local rebuilds.
 
@@ -107,7 +108,8 @@ Using a per-user local CA instead of directly trusting a one-off leaf certificat
 - All private key material remains local to the Windows user profile.
 - Private key material is stored under a dedicated `local_https` area in the Companion app-data directory.
 - Private key material is protected with the existing DPAPI pattern already used for Companion secret material.
-- Public certificate metadata may be stored alongside the encrypted private material for diagnostics and repair.
+- Public certificate metadata and the local CRL sidecar may be stored alongside the encrypted private material for diagnostics and repair.
+- Startup reconciliation may also publish the generated local CRL into the Windows current-user CA store so Schannel can validate the local chain without relying on external revocation infrastructure.
 - A schema version should be stored for the local HTTPS identity so future certificate or storage changes can be migrated explicitly.
 - The local HTTPS store remains separate from backend pairing secrets even if it reuses the same DPAPI helper pattern.
 - Identity continuity is defined by the stable bundle identity and app-data path rather than an extra executable-binding mechanism.
@@ -137,8 +139,10 @@ Using a per-user local CA instead of directly trusting a one-off leaf certificat
 - Existing backend certificate pinning behavior stays unchanged.
 - The Companion local server must support preflight behavior needed by modern browsers when a secure page calls a secure loopback origin.
 - Chromium-based browsers are part of the release-blocking compatibility matrix for this flow.
-- Firefox behavior is out of scope for the initial remediation and should be documented as follow-up work.
-- Nojoin and the Companion do not modify browser preferences, policies, profiles, certificate stores, or other browser configuration as part of this remediation.
+- Firefox support is provided through a separate Firefox Pairing Mode in the browser settings UI.
+- Firefox Pairing Mode directs the user to enable Firefox support in Companion Settings. That Companion action explicitly installs the Nojoin local HTTPS CA into the Windows Local Machine trusted root store after user confirmation and Windows administrator approval.
+- Firefox users still need `security.enterprise_roots.enabled=true` so Firefox imports trusted Windows machine roots, and Firefox should be restarted after the Companion action.
+- Nojoin and the Companion do not silently modify browser preferences, policies, profiles, certificate stores, or other browser configuration as part of this remediation.
 
 ### Upgrade and Development Behavior
 
@@ -267,6 +271,8 @@ Sub-tasks:
 
 ### Step 2. Convert the Companion local server from HTTP to HTTPS
 
+Status: Complete.
+
 #### Task 2.1. Add TLS server support for the loopback listener
 
 Sub-tasks:
@@ -349,8 +355,9 @@ Sub-tasks:
 Sub-tasks:
 
 - Document Chromium-based browsers as the supported browser target for this remediation.
-- Document Firefox parity as deferred follow-up work.
-- Document that Nojoin and the Companion do not change user browser configuration as part of the local HTTPS upgrade.
+- Document Firefox support through explicit Firefox Pairing Mode.
+- Document that Firefox users must opt in to the Companion Firefox Support action and Firefox Windows root trust before local HTTPS pairing can succeed.
+- Document that Nojoin and the Companion do not silently change user browser configuration as part of the local HTTPS upgrade.
 
 ### Step 4. Add Companion diagnostics and recovery flows
 
@@ -455,6 +462,7 @@ Sub-tasks:
 Sub-tasks:
 
 - Verify first-run pairing from an HTTPS-served Nojoin origin in Chromium-based browsers.
+- Verify Firefox pairing after the user explicitly enables Firefox Support in Companion Settings, confirms Firefox Windows root trust, restarts Firefox, and generates a fresh code.
 - Verify reconnection after Companion restart.
 - Verify recording start, pause, resume, and stop.
 - Verify waveform and settings behavior.
@@ -479,7 +487,7 @@ Sub-tasks:
 - The Companion local HTTPS identity is generated per user, persists across upgrades, and does not churn during normal debug rebuilds that preserve app data.
 - The existing `/pair/complete` flow and local control token protocol remain unchanged apart from the transport scheme.
 - Chromium-based browsers work in the supported setup without requiring a manual browser security exception.
-- Firefox support is explicitly documented as deferred follow-up work.
+- Firefox works after the user explicitly enables Firefox Support in Companion Settings and Firefox Windows root trust through Firefox Pairing Mode.
 - Uninstall removes the generated local CA only when the user explicitly chooses app-data deletion, and otherwise leaves local trust material intact.
 - Backend pairing, backend TLS pinning, upload-token behavior, and recording ownership semantics remain unchanged.
 

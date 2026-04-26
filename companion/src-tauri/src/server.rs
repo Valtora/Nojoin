@@ -1,30 +1,36 @@
 use crate::companion_auth;
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
+use crate::local_https_identity::LocalHttpsServerIdentity;
 use crate::notifications;
 use crate::secret_store::{self, BackendSecretBundle};
 use crate::state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label,
-    ActiveRecordingOwner, AppState, AppStatus, AudioCommand, PairingSession,
-    PairingValidationError, RecordingRecoveryState,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, ActiveRecordingOwner,
+    AppState, AppStatus, AudioCommand, PairingSession, PairingValidationError,
+    RecordingRecoveryState,
 };
 use crate::uploader;
 use axum::debug_handler;
 use axum::{
     extract::State,
-    http::{header, HeaderMap, HeaderValue, StatusCode, uri::Authority},
+    http::{header, uri::Authority, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use cpal::traits::{DeviceTrait, HostTrait};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder as HyperConnectionBuilder;
+use hyper_util::service::TowerToHyperService;
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use log::{error, info, warn};
 use reqwest::Url;
+use rustls::ServerConfig;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
+use tokio_rustls::TlsAcceptor;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
@@ -33,7 +39,11 @@ pub struct ServerContext {
     pub app_handle: tauri::AppHandle,
 }
 
-pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
+pub async fn start_server(
+    state: Arc<AppState>,
+    app_handle: tauri::AppHandle,
+    server_identity: LocalHttpsServerIdentity,
+) -> Result<(), String> {
     let local_port = {
         let config = state.config.lock().unwrap();
         config.local_port()
@@ -43,37 +53,23 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         state: state.clone(),
         app_handle,
     };
+    let app = build_local_api_router(context);
 
-    let cors_state = state.clone();
+    let bind_addr = format!("127.0.0.1:{}", local_port);
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to bind the local HTTPS listener on {}: {}",
+                bind_addr, error
+            )
+        })?;
 
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::AllowOrigin::predicate(
-            move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
-                if let Ok(origin_str) = origin.to_str() {
-                    let config = cors_state.config.lock().unwrap();
-                    if canonicalize_loopback_host(
-                        request_parts.headers.get("host"),
-                        config.local_port(),
-                    )
-                    .is_none()
-                    {
-                        return false;
-                    }
+    serve_https_router(listener, app, server_identity).await
+}
 
-                    if request_parts.uri.path() == "/pair/complete" {
-                        return cors_state.is_pairing_active()
-                            && canonicalize_origin_value(origin_str).is_some();
-                    }
-
-                    return is_allowed_origin_value(origin_str, &config);
-                }
-                false
-            },
-        ))
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
-
-    let app = Router::new()
+fn build_local_api_router(context: ServerContext) -> Router {
+    Router::new()
         .route("/status", get(get_status))
         .route("/auth", post(deprecated_authorize))
         .route("/pair/complete", post(complete_pairing))
@@ -86,13 +82,125 @@ pub async fn start_server(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         .route("/pause", post(pause_recording))
         .route("/resume", post(resume_recording))
         .route("/update", post(trigger_update))
-        .layer(cors)
-        .with_state(context);
+        .layer(build_cors_layer(context.state.clone()))
+        .with_state(context)
+}
 
-    let bind_addr = format!("127.0.0.1:{}", local_port);
-    info!("Server running on http://{}", bind_addr);
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+fn build_cors_layer(state: Arc<AppState>) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(tower_http::cors::AllowOrigin::predicate(
+            move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
+                if let Ok(origin_str) = origin.to_str() {
+                    let config = state.config.lock().unwrap();
+                    if canonicalize_loopback_host(
+                        request_parts.headers.get("host"),
+                        config.local_port(),
+                    )
+                    .is_none()
+                    {
+                        return false;
+                    }
+
+                    if request_parts.uri.path() == "/pair/complete" {
+                        return state.is_pairing_active()
+                            && canonicalize_origin_value(origin_str).is_some();
+                    }
+
+                    return is_allowed_origin_value(origin_str, &config);
+                }
+
+                false
+            },
+        ))
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static(FRONTEND_RUNTIME_HEADER),
+            HeaderName::from_static(FRONTEND_PAIR_REQUEST_HEADER),
+            HeaderName::from_static(FRONTEND_SOURCE_HEADER),
+        ])
+        .allow_private_network(true)
+}
+
+fn build_tls_server_config(
+    server_identity: LocalHttpsServerIdentity,
+) -> Result<Arc<ServerConfig>, String> {
+    let mut config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(server_identity.certificate_chain, server_identity.private_key)
+        .map_err(|error| {
+            format!(
+                "Failed to build the local HTTPS server configuration from the persisted identity: {}",
+                error
+            )
+        })?;
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Ok(Arc::new(config))
+}
+
+async fn serve_https_router(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    server_identity: LocalHttpsServerIdentity,
+) -> Result<(), String> {
+    let bound_addr = listener.local_addr().map_err(|error| {
+        format!(
+            "Failed to read the bound local HTTPS listener address: {}",
+            error
+        )
+    })?;
+    let tls_acceptor = TlsAcceptor::from(build_tls_server_config(server_identity)?);
+    let connection_builder = HyperConnectionBuilder::new(TokioExecutor::new());
+
+    info!("Server running on https://{}", bound_addr);
+
+    loop {
+        let (tcp_stream, remote_addr) = match listener.accept().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                warn!("Failed to accept a local HTTPS connection: {}", error);
+                continue;
+            }
+        };
+
+        let tls_acceptor = tls_acceptor.clone();
+        let connection_builder = connection_builder.clone();
+        let app = app.clone();
+
+        tokio::spawn(async move {
+            if let Err(error) = tcp_stream.set_nodelay(true) {
+                warn!(
+                    "Failed to set TCP_NODELAY on local HTTPS connection {}: {}",
+                    remote_addr, error
+                );
+            }
+
+            let tls_stream = match tls_acceptor.accept(tcp_stream).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    warn!(
+                        "Rejected local HTTPS connection from {} during TLS handshake: {}",
+                        remote_addr, error
+                    );
+                    return;
+                }
+            };
+
+            let io = TokioIo::new(tls_stream);
+            let service = TowerToHyperService::new(app);
+
+            if let Err(error) = connection_builder
+                .serve_connection_with_upgrades(io, service)
+                .await
+            {
+                warn!(
+                    "Local HTTPS connection error for {}: {}",
+                    remote_addr, error
+                );
+            }
+        });
+    }
 }
 
 use std::time::SystemTime;
@@ -120,6 +228,9 @@ const LOCAL_CONTROL_RECORDING_STOP_ACTION: &str = "recording:stop";
 const LOCAL_CONTROL_RECORDING_PAUSE_ACTION: &str = "recording:pause";
 const LOCAL_CONTROL_RECORDING_RESUME_ACTION: &str = "recording:resume";
 const LOCAL_CONTROL_UPDATE_TRIGGER_ACTION: &str = "update:trigger";
+const FRONTEND_RUNTIME_HEADER: &str = "x-nojoin-frontend-runtime";
+const FRONTEND_PAIR_REQUEST_HEADER: &str = "x-nojoin-frontend-pair-request";
+const FRONTEND_SOURCE_HEADER: &str = "x-nojoin-frontend-source";
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct LocalControlClaims {
@@ -208,10 +319,9 @@ impl IntoResponse for LocalGuardRejection {
             .into_response();
 
         if self.status == StatusCode::UNAUTHORIZED {
-            response.headers_mut().insert(
-                header::WWW_AUTHENTICATE,
-                HeaderValue::from_static("Bearer"),
-            );
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         }
 
         response
@@ -290,7 +400,10 @@ fn is_allowed_origin_value(origin: &str, config: &Config) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_loopback_request(headers: &HeaderMap, config: &Config) -> Result<String, LocalGuardRejection> {
+fn ensure_loopback_request(
+    headers: &HeaderMap,
+    config: &Config,
+) -> Result<String, LocalGuardRejection> {
     canonicalize_loopback_host(headers.get("host"), config.local_port()).ok_or_else(|| {
         LocalGuardRejection::forbidden(
             "invalid_local_host",
@@ -452,7 +565,11 @@ fn validate_local_control_token(
             "Companion pairing state is stale or rotated. Pair again from Nojoin.",
         ));
     }
-    if !claims.actions.iter().any(|action| action == required_action) {
+    if !claims
+        .actions
+        .iter()
+        .any(|action| action == required_action)
+    {
         return Err(LocalGuardRejection::forbidden(
             "invalid_local_control_token",
             "Local control token does not allow this route.",
@@ -556,17 +673,14 @@ pub fn spawn_recording_status_update(update: RecordingStatusUpdate) {
                 Err(error) => {
                     error!(
                         "Failed to update client status {} for recording {}: {}",
-                        update.status,
-                        update.recording_id,
-                        error
+                        update.status, update.recording_id, error
                     );
                 }
             }
         } else {
             error!(
                 "Missing recording upload token while reporting {} for recording {}",
-                update.status,
-                update.recording_id
+                update.status, update.recording_id
             );
         }
     });
@@ -633,7 +747,11 @@ pub fn resume_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatus
         .map_err(|err| format!("Failed to resume recording: {}", err))?;
     state.clear_recording_recovery_state();
 
-    Ok(build_recording_status_update(state, recording_id, "RECORDING"))
+    Ok(build_recording_status_update(
+        state,
+        recording_id,
+        "RECORDING",
+    ))
 }
 
 pub fn stop_recording_locally(
@@ -661,7 +779,11 @@ pub fn stop_recording_locally(
         state.clear_recording_recovery_state();
     }
 
-    Ok(build_recording_status_update(state, recording_id, "UPLOADING"))
+    Ok(build_recording_status_update(
+        state,
+        recording_id,
+        "UPLOADING",
+    ))
 }
 
 pub fn mark_recording_waiting_for_reconnect(state: &Arc<AppState>) -> Result<bool, String> {
@@ -697,15 +819,17 @@ async fn get_status(
     headers: HeaderMap,
     State(context): State<ServerContext>,
 ) -> LocalApiResult<Json<StatusResponse>> {
-    let state = &context.state;
+    build_status_response(&headers, &context.state).map(Json)
+}
 
+fn build_status_response(
+    headers: &HeaderMap,
+    state: &Arc<AppState>,
+) -> LocalApiResult<StatusResponse> {
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -739,7 +863,7 @@ async fn get_status(
         .load(std::sync::atomic::Ordering::Relaxed);
     let latest_version = state.latest_version.lock().unwrap().clone();
 
-    Ok(Json(StatusResponse {
+    Ok(StatusResponse {
         status,
         duration_seconds: duration.as_secs(),
         version: env!("CARGO_PKG_VERSION"),
@@ -747,7 +871,7 @@ async fn get_status(
         api_host,
         update_available,
         latest_version,
-    }))
+    })
 }
 
 #[derive(serde::Deserialize)]
@@ -779,10 +903,7 @@ fn compact_log_value(value: &str, max_len: usize) -> String {
 }
 
 fn short_pairing_id(pairing_id: Option<&str>) -> String {
-    let Some(pairing_id) = pairing_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(pairing_id) = pairing_id.map(str::trim).filter(|value| !value.is_empty()) else {
         return "<missing>".to_string();
     };
 
@@ -802,7 +923,11 @@ fn read_optional_log_header(headers: &HeaderMap, name: &str, max_len: usize) -> 
 }
 
 fn pairing_backend_target(payload: &PairingCompleteRequest) -> String {
-    let protocol = payload.api_protocol.as_deref().unwrap_or("<missing>").trim();
+    let protocol = payload
+        .api_protocol
+        .as_deref()
+        .unwrap_or("<missing>")
+        .trim();
     let host = payload.api_host.as_deref().unwrap_or("<missing>").trim();
     let port = payload
         .api_port
@@ -988,8 +1113,12 @@ async fn cancel_pending_pairing_from_request(
 }
 
 fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendConnection) -> bool {
-    previous.api_protocol.eq_ignore_ascii_case(&replacement.api_protocol)
-        && previous.api_host.eq_ignore_ascii_case(&replacement.api_host)
+    previous
+        .api_protocol
+        .eq_ignore_ascii_case(&replacement.api_protocol)
+        && previous
+            .api_host
+            .eq_ignore_ascii_case(&replacement.api_host)
         && previous.api_port == replacement.api_port
         && previous.paired_web_origin == replacement.paired_web_origin
 }
@@ -1003,12 +1132,10 @@ async fn complete_pairing(
     let state = &context.state;
     let host_header = headers.get("host").and_then(|value| value.to_str().ok());
     let origin_header = headers.get("origin").and_then(|value| value.to_str().ok());
-    let frontend_runtime_header =
-        read_optional_log_header(&headers, "x-nojoin-frontend-runtime", 160);
+    let frontend_runtime_header = read_optional_log_header(&headers, FRONTEND_RUNTIME_HEADER, 160);
     let frontend_request_header =
-        read_optional_log_header(&headers, "x-nojoin-frontend-pair-request", 160);
-    let frontend_source_header =
-        read_optional_log_header(&headers, "x-nojoin-frontend-source", 80);
+        read_optional_log_header(&headers, FRONTEND_PAIR_REQUEST_HEADER, 160);
+    let frontend_source_header = read_optional_log_header(&headers, FRONTEND_SOURCE_HEADER, 80);
     let referer_header = read_optional_log_header(&headers, "referer", 160);
     let sec_fetch_mode_header = read_optional_log_header(&headers, "sec-fetch-mode", 40);
     let sec_fetch_site_header = read_optional_log_header(&headers, "sec-fetch-site", 40);
@@ -1136,7 +1263,10 @@ async fn complete_pairing(
                 summarize_pairing_session(state.pairing_session_snapshot().as_ref())
             );
             if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
-                error!("Failed to cancel pending pairing after inactive request: {}", err);
+                error!(
+                    "Failed to cancel pending pairing after inactive request: {}",
+                    err
+                );
             }
             return (
                 StatusCode::FORBIDDEN,
@@ -1177,7 +1307,10 @@ async fn complete_pairing(
                 summarize_pairing_session(state.pairing_session_snapshot().as_ref())
             );
             if let Err(err) = cancel_pending_pairing_from_request(&payload, None).await {
-                error!("Failed to cancel pending pairing after invalid code: {}", err);
+                error!(
+                    "Failed to cancel pending pairing after invalid code: {}",
+                    err
+                );
             }
             return (
                 StatusCode::FORBIDDEN,
@@ -1252,17 +1385,17 @@ async fn complete_pairing(
         }
     };
 
-    if let Err(err) = exchange_companion_access_token_for_pairing(&payload, &captured_tls_fingerprint).await {
+    if let Err(err) =
+        exchange_companion_access_token_for_pairing(&payload, &captured_tls_fingerprint).await
+    {
         error!(
             "Companion credential exchange failed during pairing completion: {}; {}",
             err, request_summary
         );
         state.release_pairing_completion();
-        if let Err(cancel_err) = cancel_pending_pairing_from_request(
-            &payload,
-            Some(captured_tls_fingerprint.clone()),
-        )
-        .await
+        if let Err(cancel_err) =
+            cancel_pending_pairing_from_request(&payload, Some(captured_tls_fingerprint.clone()))
+                .await
         {
             error!(
                 "Failed to cancel pending pairing after bootstrap validation failure: {}",
@@ -1310,18 +1443,17 @@ async fn complete_pairing(
         .map(|existing| !is_same_backend_target(existing, &backend))
         .unwrap_or(false);
 
-    if let Err(error) = secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle)
+    if let Err(error) =
+        secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle)
     {
         error!(
             "Failed to save the local companion secret bundle after successful credential exchange: {}; {}",
             error, request_summary
         );
         state.release_pairing_completion();
-        if let Err(cancel_err) = cancel_pending_pairing_from_request(
-            &payload,
-            Some(captured_tls_fingerprint.clone()),
-        )
-        .await
+        if let Err(cancel_err) =
+            cancel_pending_pairing_from_request(&payload, Some(captured_tls_fingerprint.clone()))
+                .await
         {
             error!(
                 "Failed to cancel pending pairing after local secret save failure: {}",
@@ -1355,11 +1487,9 @@ async fn complete_pairing(
             );
         }
         state.release_pairing_completion();
-        if let Err(cancel_err) = cancel_pending_pairing_from_request(
-            &payload,
-            Some(captured_tls_fingerprint.clone()),
-        )
-        .await
+        if let Err(cancel_err) =
+            cancel_pending_pairing_from_request(&payload, Some(captured_tls_fingerprint.clone()))
+                .await
         {
             error!(
                 "Failed to cancel pending pairing after local save failure: {}",
@@ -1431,7 +1561,8 @@ async fn complete_pairing(
 
     if let Some(previous_backend) = previous_backend.as_ref() {
         if previous_backend.backend_pairing_id != backend.backend_pairing_id {
-            if let Err(delete_error) = secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
+            if let Err(delete_error) =
+                secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
             {
                 error!(
                     "Failed to delete the previous backend companion secret bundle after successful pairing: {}",
@@ -1445,7 +1576,8 @@ async fn complete_pairing(
         "Companion pairing completed successfully for origin {}",
         origin
     );
-    let (notification_title, notification_body, success_message) = if should_revoke_previous_backend {
+    let (notification_title, notification_body, success_message) = if should_revoke_previous_backend
+    {
         (
             "Backend Switch Complete",
             "Companion is now paired with this Nojoin deployment. Future recordings and local controls will use this backend.",
@@ -1464,11 +1596,7 @@ async fn complete_pairing(
             "Pairing completed successfully.",
         )
     };
-    notifications::show_notification(
-        &context.app_handle,
-        notification_title,
-        notification_body,
-    );
+    notifications::show_notification(&context.app_handle, notification_title, notification_body);
     crate::refresh_tray_menu(&context.app_handle, state);
 
     (
@@ -1514,11 +1642,8 @@ async fn get_audio_levels(
 
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_WAVEFORM_READ_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_WAVEFORM_READ_ACTION)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -1539,11 +1664,8 @@ async fn get_live_audio_levels(
 
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_WAVEFORM_READ_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_WAVEFORM_READ_ACTION)?;
     }
 
     let status = state.status.lock().unwrap().clone();
@@ -1578,11 +1700,7 @@ async fn start_recording(
 
     let guard = {
         let config = state.config.lock().unwrap();
-        guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_RECORDING_START_ACTION,
-        )?
+        guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_START_ACTION)?
     };
 
     // Check status (and drop lock immediately)
@@ -1717,11 +1835,7 @@ async fn stop_recording(
 
     let guard = {
         let config = state.config.lock().unwrap();
-        guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_RECORDING_STOP_ACTION,
-        )?
+        guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_STOP_ACTION)?
     };
 
     if state.current_recording_id.lock().unwrap().is_none() {
@@ -1733,9 +1847,8 @@ async fn stop_recording(
     let owner = state.current_recording_owner();
     ensure_same_recording_owner(owner.as_ref(), &guard.claims, "stop")?;
 
-    let status_update = stop_recording_locally(state, false).map_err(|message| {
-        LocalGuardRejection::conflict("recording_not_active", message)
-    })?;
+    let status_update = stop_recording_locally(state, false)
+        .map_err(|message| LocalGuardRejection::conflict("recording_not_active", message))?;
     spawn_recording_status_update(status_update);
     crate::refresh_tray_menu(&context.app_handle, state);
 
@@ -1757,11 +1870,7 @@ async fn pause_recording(
 
     let guard = {
         let config = state.config.lock().unwrap();
-        guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_RECORDING_PAUSE_ACTION,
-        )?
+        guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_PAUSE_ACTION)?
     };
 
     if state.current_recording_id.lock().unwrap().is_none() {
@@ -1773,9 +1882,8 @@ async fn pause_recording(
     let owner = state.current_recording_owner();
     ensure_same_recording_owner(owner.as_ref(), &guard.claims, "pause")?;
 
-    let status_update = pause_recording_locally(state).map_err(|message| {
-        LocalGuardRejection::conflict("recording_not_active", message)
-    })?;
+    let status_update = pause_recording_locally(state)
+        .map_err(|message| LocalGuardRejection::conflict("recording_not_active", message))?;
     spawn_recording_status_update(status_update);
     crate::refresh_tray_menu(&context.app_handle, state);
 
@@ -1793,11 +1901,7 @@ async fn resume_recording(
 
     let guard = {
         let config = state.config.lock().unwrap();
-        guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_RECORDING_RESUME_ACTION,
-        )?
+        guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_RESUME_ACTION)?
     };
 
     if state.current_recording_id.lock().unwrap().is_none() {
@@ -1809,9 +1913,8 @@ async fn resume_recording(
     let owner = state.current_recording_owner();
     ensure_same_recording_owner(owner.as_ref(), &guard.claims, "resume")?;
 
-    let status_update = resume_recording_locally(state).map_err(|message| {
-        LocalGuardRejection::conflict("recording_not_active", message)
-    })?;
+    let status_update = resume_recording_locally(state)
+        .map_err(|message| LocalGuardRejection::conflict("recording_not_active", message))?;
     spawn_recording_status_update(status_update);
     crate::refresh_tray_menu(&context.app_handle, state);
 
@@ -1839,11 +1942,8 @@ async fn get_config(
 
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_SETTINGS_READ_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_SETTINGS_READ_ACTION)?;
 
         return Ok(Json(ConfigResponse {
             api_port: config.api_port(),
@@ -1875,11 +1975,8 @@ async fn get_devices(
 
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_DEVICES_READ_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_DEVICES_READ_ACTION)?;
     }
 
     let host = cpal::default_host();
@@ -1941,11 +2038,8 @@ async fn update_config(
     let state = &context.state;
     let mut config = state.config.lock().unwrap();
 
-    let _guard = guard_steady_state_request(
-        &headers,
-        &config,
-        LOCAL_CONTROL_SETTINGS_WRITE_ACTION,
-    )?;
+    let _guard =
+        guard_steady_state_request(&headers, &config, LOCAL_CONTROL_SETTINGS_WRITE_ACTION)?;
 
     let mut updated = config.clone();
     let mut should_save = false;
@@ -2004,11 +2098,8 @@ async fn trigger_update(
 
     {
         let config = state.config.lock().unwrap();
-        let _guard = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_UPDATE_TRIGGER_ACTION,
-        )?;
+        let _guard =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_UPDATE_TRIGGER_ACTION)?;
     }
 
     let url = state.latest_update_url.lock().unwrap().clone();
@@ -2027,12 +2118,82 @@ async fn trigger_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::local_https_identity;
     use axum::http::HeaderMap;
+    use axum::response::IntoResponse;
+    use axum::{extract::State, response::Json};
     use crossbeam_channel::unbounded;
     use jsonwebtoken::{encode, EncodingKey, Header};
+    use rand::random;
+    use reqwest::{Certificate, Method};
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Mutex as StdMutex;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use time::OffsetDateTime;
+
+    #[derive(Default)]
+    struct FakeTrustStore {
+        trusted_fingerprints: StdMutex<BTreeSet<String>>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct StatusResponseBody {
+        status: AppStatus,
+        authenticated: bool,
+        api_host: String,
+    }
+
+    impl local_https_identity::LocalCaTrustStore for FakeTrustStore {
+        fn is_ca_trusted(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
+            Ok(self
+                .trusted_fingerprints
+                .lock()
+                .unwrap()
+                .contains(&fingerprint_for_test(ca_certificate_der)))
+        }
+
+        fn install_ca(&self, ca_certificate_der: &[u8]) -> Result<(), String> {
+            self.trusted_fingerprints
+                .lock()
+                .unwrap()
+                .insert(fingerprint_for_test(ca_certificate_der));
+            Ok(())
+        }
+
+        fn install_crl(&self, _crl_der: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "nojoin-server-test-{}-{}",
+                std::process::id(),
+                random::<u64>()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn paths(&self) -> local_https_identity::LocalHttpsPaths {
+            local_https_identity::LocalHttpsPaths::from_app_data_dir(&self.path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     fn next_test_pairing_id() -> String {
         static NEXT_TEST_PAIRING_ID: AtomicU32 = AtomicU32::new(1);
@@ -2146,18 +2307,100 @@ mod tests {
         .unwrap()
     }
 
-    fn build_headers(
-        host: &str,
-        origin: &str,
-        authorization: Option<String>,
-    ) -> HeaderMap {
+    fn build_headers(host: &str, origin: &str, authorization: Option<String>) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("host", HeaderValue::from_str(host).unwrap());
         headers.insert("origin", HeaderValue::from_str(origin).unwrap());
         if let Some(value) = authorization {
-            headers.insert(header::AUTHORIZATION, HeaderValue::from_str(&value).unwrap());
+            headers.insert(
+                header::AUTHORIZATION,
+                HeaderValue::from_str(&value).unwrap(),
+            );
         }
         headers
+    }
+
+    fn fingerprint_for_test(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{:02X}", byte))
+            .collect::<Vec<String>>()
+            .join(":")
+    }
+
+    fn fixed_https_identity_now() -> OffsetDateTime {
+        OffsetDateTime::now_utc()
+    }
+
+    fn build_test_https_identity() -> local_https_identity::LocalHttpsReadyIdentity {
+        let temp_dir = TestDir::new();
+        let paths = temp_dir.paths();
+        let trust_store = FakeTrustStore::default();
+        let result = local_https_identity::ensure_local_https_identity_with(
+            &paths,
+            &trust_store,
+            fixed_https_identity_now(),
+        )
+        .unwrap();
+
+        match result.state {
+            local_https_identity::LocalHttpsReconcileState::Ready(ready_identity) => ready_identity,
+            local_https_identity::LocalHttpsReconcileState::RepairRequired(repair) => {
+                panic!(
+                    "expected a ready HTTPS identity, got repair-required: {}",
+                    repair.message
+                )
+            }
+        }
+    }
+
+    async fn test_status_handler(
+        headers: HeaderMap,
+        State(state): State<Arc<AppState>>,
+    ) -> LocalApiResult<Json<StatusResponse>> {
+        build_status_response(&headers, &state).map(Json)
+    }
+
+    async fn test_pairing_handler() -> impl IntoResponse {
+        StatusCode::NO_CONTENT
+    }
+
+    fn build_test_transport_router(state: Arc<AppState>) -> Router {
+        Router::new()
+            .route("/status", get(test_status_handler))
+            .route("/pair/complete", post(test_pairing_handler))
+            .layer(build_cors_layer(state.clone()))
+            .with_state(state)
+    }
+
+    async fn start_test_https_server(
+        app: Router,
+        server_identity: LocalHttpsServerIdentity,
+    ) -> (
+        std::net::SocketAddr,
+        tokio::task::JoinHandle<Result<(), String>>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task =
+            tokio::spawn(async move { serve_https_router(listener, app, server_identity).await });
+        (addr, task)
+    }
+
+    fn set_test_local_port(state: &Arc<AppState>, port: u16) {
+        state.config.lock().unwrap().machine_local.local_port = port;
+    }
+
+    fn build_https_client(ca_certificate_der: &[u8]) -> reqwest::Client {
+        reqwest::Client::builder()
+            .add_root_certificate(Certificate::from_der(ca_certificate_der).unwrap())
+            .build()
+            .unwrap()
     }
 
     #[test]
@@ -2171,12 +2414,9 @@ mod tests {
             Some(format!("Bearer {}", token)),
         );
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::FORBIDDEN);
         assert_eq!(rejection.error, "invalid_local_host");
@@ -2193,12 +2433,9 @@ mod tests {
             Some(format!("Bearer {}", token)),
         );
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::FORBIDDEN);
         assert_eq!(rejection.error, "invalid_local_host");
@@ -2209,12 +2446,9 @@ mod tests {
         let config = build_test_config();
         let headers = build_headers("127.0.0.1:12345", "https://paired.example.com", None);
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::UNAUTHORIZED);
         assert_eq!(rejection.error, "missing_local_control_token");
@@ -2234,12 +2468,9 @@ mod tests {
             Some(format!("Bearer {}", token)),
         );
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::UNAUTHORIZED);
         assert_eq!(rejection.error, "expired_local_control_token");
@@ -2257,12 +2488,9 @@ mod tests {
             Some(format!("Bearer {}", token)),
         );
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::FORBIDDEN);
         assert_eq!(rejection.error, "wrong_local_control_origin");
@@ -2280,12 +2508,9 @@ mod tests {
             Some(format!("Bearer {}", token)),
         );
 
-        let rejection = guard_steady_state_request(
-            &headers,
-            &config,
-            LOCAL_CONTROL_STATUS_READ_ACTION,
-        )
-        .unwrap_err();
+        let rejection =
+            guard_steady_state_request(&headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)
+                .unwrap_err();
 
         assert_eq!(rejection.status, StatusCode::CONFLICT);
         assert_eq!(rejection.error, "local_pairing_conflict");
@@ -2370,7 +2595,10 @@ mod tests {
             state.recording_recovery_state(),
             RecordingRecoveryState::StopRequested
         );
-        assert!(matches!(audio_command_rx.recv().unwrap(), AudioCommand::Stop));
+        assert!(matches!(
+            audio_command_rx.recv().unwrap(),
+            AudioCommand::Stop
+        ));
         assert_eq!(update.recording_id, 77);
         assert_eq!(update.status, "UPLOADING");
     }
@@ -2390,5 +2618,140 @@ mod tests {
             state.recording_recovery_state(),
             RecordingRecoveryState::None
         );
+    }
+
+    #[tokio::test]
+    async fn https_transport_serves_steady_state_status_route() {
+        let (state, _audio_command_rx) = build_test_state();
+        let ready_identity = build_test_https_identity();
+        let ca_certificate_der = ready_identity.persisted_identity.ca.certificate_der.clone();
+        let app = build_test_transport_router(state.clone());
+        let (addr, server_task) =
+            start_test_https_server(app, ready_identity.server_identity).await;
+        set_test_local_port(&state, addr.port());
+
+        let client = build_https_client(&ca_certificate_der);
+        let token = encode_token(
+            &build_claims(&state.config.lock().unwrap().backend_pairing_id().unwrap()),
+            "test-local-control-secret",
+        );
+
+        let response = client
+            .get(format!("https://{}/status", addr))
+            .header("origin", "https://paired.example.com")
+            .header("authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = response.json::<StatusResponseBody>().await.unwrap();
+        assert_eq!(payload.status, AppStatus::Idle);
+        assert!(payload.authenticated);
+        assert_eq!(payload.api_host, "localhost");
+
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn https_transport_handles_pairing_preflight_and_secure_post() {
+        let (state, _audio_command_rx) = build_test_state();
+        state.begin_pairing_session();
+
+        let ready_identity = build_test_https_identity();
+        let ca_certificate_der = ready_identity.persisted_identity.ca.certificate_der.clone();
+        let app = build_test_transport_router(state.clone());
+        let (addr, server_task) =
+            start_test_https_server(app, ready_identity.server_identity).await;
+        set_test_local_port(&state, addr.port());
+
+        let client = build_https_client(&ca_certificate_der);
+        let pairing_url = format!("https://{}/pair/complete", addr);
+
+        let preflight = client
+            .request(Method::OPTIONS, &pairing_url)
+            .header("origin", "https://paired.example.com")
+            .header("access-control-request-method", "POST")
+            .header(
+                "access-control-request-headers",
+                "content-type,x-nojoin-frontend-runtime,x-nojoin-frontend-pair-request,x-nojoin-frontend-source",
+            )
+            .header("access-control-request-private-network", "true")
+            .send()
+            .await
+            .unwrap();
+
+        assert!(preflight.status().is_success());
+        assert_eq!(
+            preflight
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "https://paired.example.com"
+        );
+        assert_eq!(
+            preflight
+                .headers()
+                .get("access-control-allow-private-network")
+                .unwrap(),
+            "true"
+        );
+        let allowed_headers = preflight
+            .headers()
+            .get("access-control-allow-headers")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_ascii_lowercase();
+        for expected_header in [
+            "content-type",
+            "x-nojoin-frontend-runtime",
+            "x-nojoin-frontend-pair-request",
+            "x-nojoin-frontend-source",
+        ] {
+            assert!(
+                allowed_headers
+                    .split(',')
+                    .any(|allowed_header| allowed_header.trim() == expected_header),
+                "missing allowed header {expected_header} in {allowed_headers}"
+            );
+        }
+
+        let response = client
+            .post(&pairing_url)
+            .header("origin", "https://paired.example.com")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "https://paired.example.com"
+        );
+
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn https_transport_has_no_plain_http_fallback() {
+        let (state, _audio_command_rx) = build_test_state();
+        let ready_identity = build_test_https_identity();
+        let app = build_test_transport_router(state);
+        let (addr, server_task) =
+            start_test_https_server(app, ready_identity.server_identity).await;
+
+        let result = reqwest::Client::new()
+            .get(format!("http://{}/status", addr))
+            .send()
+            .await;
+
+        assert!(result.is_err());
+
+        server_task.abort();
     }
 }

@@ -13,8 +13,7 @@ use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    LogicalSize,
-    Manager,
+    LogicalSize, Manager,
 };
 
 use semver::Version;
@@ -26,8 +25,8 @@ mod companion_auth;
 mod config;
 mod local_https_identity;
 mod notifications;
-mod server;
 mod secret_store;
+mod server;
 mod state;
 mod tls;
 mod uploader;
@@ -35,9 +34,8 @@ mod win_notifications;
 
 use config::{Config, MachineLocalUpdate};
 use state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, AppState,
-    AppStatus, RecordingRecoveryState,
-    PAIRING_WINDOW_LIFETIME_SECS,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, AppState, AppStatus,
+    RecordingRecoveryState, PAIRING_WINDOW_LIFETIME_SECS,
 };
 use tauri_plugin_autostart::ManagerExt;
 
@@ -191,8 +189,13 @@ fn build_tray_menu(
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
     let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
-    let check_updates =
-        MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        app,
+        "check_updates",
+        "Check for Updates",
+        true,
+        None::<&str>,
+    )?;
     let run_on_startup = CheckMenuItem::with_id(
         app,
         "run_on_startup",
@@ -353,19 +356,30 @@ fn handle_backend_reconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
 fn pause_recording_from_tray(app: &tauri::AppHandle, state: &Arc<AppState>) -> Result<(), String> {
     let status_update = server::pause_recording_locally(state)?;
     server::spawn_recording_status_update(status_update);
-    notifications::show_notification(app, "Recording Paused", "Recording paused from the Companion tray.");
+    notifications::show_notification(
+        app,
+        "Recording Paused",
+        "Recording paused from the Companion tray.",
+    );
     refresh_tray_menu(app, state);
     Ok(())
 }
 
 fn resume_recording_from_tray(app: &tauri::AppHandle, state: &Arc<AppState>) -> Result<(), String> {
     if !state.is_backend_connected.load(Ordering::SeqCst) {
-        return Err("Nojoin is still offline. Wait for the connection to recover before resuming.".to_string());
+        return Err(
+            "Nojoin is still offline. Wait for the connection to recover before resuming."
+                .to_string(),
+        );
     }
 
     let status_update = server::resume_recording_locally(state)?;
     server::spawn_recording_status_update(status_update);
-    notifications::show_notification(app, "Recording Resumed", "Recording resumed from the Companion tray.");
+    notifications::show_notification(
+        app,
+        "Recording Resumed",
+        "Recording resumed from the Companion tray.",
+    );
     refresh_tray_menu(app, state);
     Ok(())
 }
@@ -511,9 +525,9 @@ async fn disconnect_backend(
                 .clear_backend_and_save()
                 .map_err(|err| format!("Failed to save settings: {}", err))?;
         }
-        let secret_cleanup_error = backend
-            .as_ref()
-            .and_then(|current| secret_store::delete_backend_secret_bundle_for_backend(current).err());
+        let secret_cleanup_error = backend.as_ref().and_then(|current| {
+            secret_store::delete_backend_secret_bundle_for_backend(current).err()
+        });
         (backend, secret_bundle, secret_cleanup_error)
     };
 
@@ -565,6 +579,57 @@ async fn disconnect_backend(
 
     notifications::show_notification(&app, "Companion Unpaired", &notification_body);
     Ok(response_message)
+}
+
+#[tauri::command]
+async fn enable_firefox_support(app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        warn!("Firefox support setup was requested on a non-Windows platform.");
+        Err("Firefox support setup is only available on Windows.".to_string())
+    }
+
+    #[cfg(windows)]
+    {
+        info!("Firefox support setup requested from Companion Settings.");
+        if !confirm_firefox_machine_root_install(&app) {
+            warn!("Firefox support setup was canceled in the Companion confirmation dialog.");
+            return Err("Firefox support setup was canceled.".to_string());
+        }
+
+        info!("Firefox support setup confirmed; launching elevated installer task.");
+        match tauri::async_runtime::spawn_blocking(
+            local_https_identity::install_firefox_machine_root_support,
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                info!("Firefox support setup completed successfully.");
+            }
+            Ok(Err(error)) => {
+                error!("Firefox support setup failed: {}", error);
+                return Err(error);
+            }
+            Err(error) => {
+                error!(
+                    "Firefox support setup task failed before completion: {}",
+                    error
+                );
+                return Err(format!("Firefox support setup task failed: {}", error));
+            }
+        }
+
+        notifications::show_notification(
+            &app,
+            "Firefox Support Enabled",
+            "Restart Firefox, then pair again from Nojoin using a fresh Companion code.",
+        );
+        Ok(
+            "Firefox support was enabled for this Windows device. Restart Firefox, then generate a fresh pairing code and try pairing again."
+                .to_string(),
+        )
+    }
 }
 
 #[tauri::command]
@@ -839,6 +904,10 @@ impl local_https_identity::LocalCaTrustStore for PromptingLocalCaTrustStore {
 
         self.inner.install_ca(ca_certificate_der)
     }
+
+    fn install_crl(&self, crl_der: &[u8]) -> Result<(), String> {
+        self.inner.install_crl(crl_der)
+    }
 }
 
 #[cfg(windows)]
@@ -857,7 +926,25 @@ fn confirm_local_https_trust_install(app: &tauri::AppHandle) -> bool {
 }
 
 #[cfg(windows)]
-fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) -> bool {
+fn confirm_firefox_machine_root_install(app: &tauri::AppHandle) -> bool {
+    app.dialog()
+        .message(
+            "Firefox can only use Nojoin's local HTTPS certificate after you explicitly enable Firefox support.\n\nThis will install the Nojoin local HTTPS CA into the Windows Local Machine trusted root store so Firefox can import it when Windows root trust is enabled. Windows will show an administrator approval prompt next. Continue only if you want Firefox on this device to trust the Nojoin Companion local connection.",
+        )
+        .title("Enable Firefox Support")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Continue".to_string(),
+            "Cancel".to_string(),
+        ))
+        .blocking_show()
+}
+
+#[cfg(windows)]
+fn reconcile_local_https_startup(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+) -> Option<local_https_identity::LocalHttpsServerIdentity> {
     let paths = local_https_identity::LocalHttpsPaths::current();
     let trust_store = PromptingLocalCaTrustStore::new(app.clone());
 
@@ -867,7 +954,7 @@ fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) 
         time::OffsetDateTime::now_utc(),
     ) {
         Ok(result) => match result.state {
-            local_https_identity::LocalHttpsReconcileState::Ready(_) => {
+            local_https_identity::LocalHttpsReconcileState::Ready(ready_identity) => {
                 if result.changes.bootstrapped_identity {
                     info!(
                         "Bootstrapped the local HTTPS identity for the Companion local API. trust_installed={} leaf_regenerated={}",
@@ -897,7 +984,7 @@ fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) 
                     }
                 }
 
-                true
+                Some(ready_identity.server_identity)
             }
             local_https_identity::LocalHttpsReconcileState::RepairRequired(repair) => {
                 let status_message = "Local HTTPS needs repair. Open Companion Settings.";
@@ -913,7 +1000,7 @@ fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) 
                     "Local HTTPS Repair Required",
                     "Companion local HTTPS needs repair. Open Companion Settings and use the repair or troubleshooting steps. The local browser connection will stay offline until this is fixed.",
                 );
-                false
+                None
             }
         },
         Err(error) => {
@@ -929,14 +1016,20 @@ fn reconcile_local_https_startup(app: &tauri::AppHandle, state: &Arc<AppState>) 
                 "Local HTTPS Startup Failed",
                 "Companion could not initialize its local HTTPS identity. Open Companion Settings and use the repair or troubleshooting steps. The local browser connection will stay offline until this is fixed.",
             );
-            false
+            None
         }
     }
 }
 
 #[cfg(not(windows))]
-fn reconcile_local_https_startup(_app: &tauri::AppHandle, _state: &Arc<AppState>) -> bool {
-    true
+fn reconcile_local_https_startup(
+    _app: &tauri::AppHandle,
+    _state: &Arc<AppState>,
+) -> Option<local_https_identity::LocalHttpsServerIdentity> {
+    warn!(
+        "Companion local HTTPS listener startup is only supported on Windows; leaving the local server offline on this platform."
+    );
+    None
 }
 
 fn setup_logging() -> Result<(), fern::InitError> {
@@ -995,6 +1088,7 @@ fn main() {
             start_pairing_mode,
             cancel_pairing_request,
             disconnect_backend,
+            enable_firefox_support,
             resize_current_window,
             close_update_prompt
         ])
@@ -1206,7 +1300,8 @@ fn main() {
             thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
 
-                let should_start_local_server = reconcile_local_https_startup(&app_handle, &state_server);
+                let local_https_server_identity =
+                    reconcile_local_https_startup(&app_handle, &state_server);
 
                 // Health Check & Status Update Loop
                 let state_fetch = state_server.clone();
@@ -1286,8 +1381,26 @@ fn main() {
                     }
                 });
 
-                if should_start_local_server {
-                    rt.block_on(server::start_server(state_server, app_handle));
+                if let Some(server_identity) = local_https_server_identity {
+                    if let Err(error) = rt.block_on(server::start_server(
+                        state_server.clone(),
+                        app_handle.clone(),
+                        server_identity,
+                    )) {
+                        error!("Companion local HTTPS server stopped: {}", error);
+                        *state_server.status.lock().unwrap() = AppStatus::Error(
+                            "Local HTTPS listener failed. Open Companion Settings.".to_string(),
+                        );
+                        refresh_tray_menu(&app_handle, &state_server);
+                        notifications::show_notification(
+                            &app_handle,
+                            "Local HTTPS Server Failed",
+                            "Companion could not keep its local HTTPS listener online. Open Companion Settings and use the repair or troubleshooting steps.",
+                        );
+                        rt.block_on(async {
+                            std::future::pending::<()>().await;
+                        });
+                    }
                 } else {
                     warn!(
                         "Companion local server startup is blocked until local HTTPS is repaired."

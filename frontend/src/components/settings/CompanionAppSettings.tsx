@@ -3,9 +3,11 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Copy,
   Download,
   Link2,
   RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 
 import { CompanionDevices } from "@/types";
@@ -48,6 +50,8 @@ type PairingAttemptState =
   | "blocked"
   | "unreachable";
 
+type PairingMode = "standard" | "firefox";
+
 type CalloutTone = "success" | "info" | "warning" | "error";
 
 interface CalloutState {
@@ -66,6 +70,8 @@ const CALLOUT_STYLES: Record<CalloutTone, string> = {
   error:
     "border-red-200 bg-red-50 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200",
 };
+
+const FIREFOX_ENTERPRISE_ROOTS_PREF = "security.enterprise_roots.enabled";
 
 const buildConnectionSummary = (
   backendVersion: string | null,
@@ -195,16 +201,22 @@ const buildPairingSummary = (
 
 const resolvePairingFailure = (
   error: unknown,
+  pairingMode: PairingMode,
 ): {
   state: PairingAttemptState;
   message: string;
   notificationType: "error" | "warning" | "info";
 } => {
-  if (error instanceof TypeError && error.message === "Failed to fetch") {
+  if (
+    error instanceof TypeError &&
+    (error.message === "Failed to fetch" ||
+      error.message === "NetworkError when attempting to fetch resource.")
+  ) {
     return {
       state: "unreachable",
-      message:
-        "Companion app is unreachable. Start it, reopen pairing from Companion Settings, then try again.",
+      message: pairingMode === "firefox"
+        ? "Firefox could not reach the local Companion. Enable Firefox Support in the Companion app settings, restart Firefox, then try again with a fresh code."
+        : "Companion app is unreachable. Start it, reopen pairing from Companion Settings, then try again.",
       notificationType: "error",
     };
   }
@@ -351,8 +363,10 @@ export default function CompanionAppSettings({
   const [companionReleases, setCompanionReleases] =
     useState<CompanionReleases | null>(null);
   const [pairingCode, setPairingCode] = useState("");
+  const [pairingMode, setPairingMode] = useState<PairingMode>("standard");
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingNotice, setPairingNotice] = useState<string | null>(null);
+  const [firefoxPreferenceCopied, setFirefoxPreferenceCopied] = useState(false);
   const [pairingAttemptState, setPairingAttemptState] =
     useState<PairingAttemptState>("idle");
   const [isPairingCompanion, setIsPairingCompanion] = useState(false);
@@ -365,6 +379,12 @@ export default function CompanionAppSettings({
   useEffect(() => {
     refreshCompanionConfigRef.current = onRefreshCompanionConfig;
   }, [onRefreshCompanionConfig]);
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent)) {
+      setPairingMode("firefox");
+    }
+  }, []);
 
   const synchronizeSuccessfulPairing = async () => {
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -507,6 +527,30 @@ export default function CompanionAppSettings({
     window.open(downloadUrl, "_blank");
   };
 
+  const handlePairingModeChange = (mode: PairingMode) => {
+    setPairingMode(mode);
+    setPairingError(null);
+    setPairingNotice(null);
+    if (pairingAttemptState === "unreachable") {
+      setPairingAttemptState("idle");
+    }
+  };
+
+  const handleCopyFirefoxPreference = async () => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      setPairingError(`Copy ${FIREFOX_ENTERPRISE_ROOTS_PREF} manually.`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(FIREFOX_ENTERPRISE_ROOTS_PREF);
+      setFirefoxPreferenceCopied(true);
+      window.setTimeout(() => setFirefoxPreferenceCopied(false), 1800);
+    } catch {
+      setPairingError(`Copy ${FIREFOX_ENTERPRISE_ROOTS_PREF} manually.`);
+    }
+  };
+
   const handlePairCompanion = async (
     event?: FormEvent<HTMLFormElement>,
   ) => {
@@ -534,7 +578,7 @@ export default function CompanionAppSettings({
           "Companion paired successfully. Local recording controls are ready on this Nojoin deployment.",
       });
     } catch (error) {
-      const failure = resolvePairingFailure(error);
+      const failure = resolvePairingFailure(error, pairingMode);
       setPairingAttemptState(failure.state);
       setPairingError(failure.message);
       addNotification({
@@ -633,6 +677,86 @@ export default function CompanionAppSettings({
                 </div>
               </div>
 
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Pairing mode
+                </p>
+                <div
+                  className="grid gap-2 sm:grid-cols-2"
+                  role="radiogroup"
+                  aria-label="Companion pairing mode"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={pairingMode === "standard"}
+                    onClick={() => handlePairingModeChange("standard")}
+                    className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                      pairingMode === "standard"
+                        ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-100"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:border-gray-600"
+                    }`}
+                  >
+                    <Link2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="block text-sm font-semibold">Standard</span>
+                      <span className="mt-1 block text-xs opacity-80">Chrome and Edge</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={pairingMode === "firefox"}
+                    onClick={() => handlePairingModeChange("firefox")}
+                    className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                      pairingMode === "firefox"
+                        ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-100"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:border-gray-600"
+                    }`}
+                  >
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="block text-sm font-semibold">Firefox</span>
+                      <span className="mt-1 block text-xs opacity-80">Opt-in Windows root trust</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {pairingMode === "firefox" && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold">Firefox trust setup</p>
+                      <p className="mt-1 text-sm leading-6">
+                        Firefox needs an explicit Companion setting before it can trust the local HTTPS connection. Nojoin will not change this browser setting for you.
+                      </p>
+                    </div>
+                  </div>
+                  <ol className="mt-3 space-y-2 text-sm leading-6">
+                    <li>
+                      <span className="font-semibold">1.</span> In the Companion app, open Settings and select <span className="font-semibold">Enable Firefox Support</span>. Approve the Windows administrator prompt.
+                    </li>
+                    <li>
+                      <span className="font-semibold">2.</span> In Firefox, open <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">about:config</code> and search for <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">{FIREFOX_ENTERPRISE_ROOTS_PREF}</code>.
+                    </li>
+                    <li>
+                      <span className="font-semibold">3.</span> Confirm it is set to <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">true</code>, then restart Firefox.
+                    </li>
+                    <li>
+                      <span className="font-semibold">4.</span> Generate a fresh Companion pairing code and complete pairing below.
+                    </li>
+                  </ol>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyFirefoxPreference()}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white/70 px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-white dark:border-amber-500/30 dark:bg-gray-950/40 dark:text-amber-100 dark:hover:bg-gray-950/70"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {firefoxPreferenceCopied ? "Copied" : "Copy setting name"}
+                  </button>
+                </div>
+              )}
+
               <div className={`mt-4 rounded-xl border px-4 py-3 ${CALLOUT_STYLES[pairingSummary.tone]}`}>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                   {pairingSummary.title}
@@ -658,7 +782,9 @@ export default function CompanionAppSettings({
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.22em] text-gray-950 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Pairing codes are short-lived and expire quickly if the Companion window closes.
+                  {pairingMode === "firefox"
+                    ? "Use a fresh code after Companion Firefox Support is enabled and Firefox has restarted. Codes expire quickly if the Companion window closes."
+                    : "Pairing codes are short-lived and expire quickly if the Companion window closes."}
                 </p>
                 {pairingError && (
                   <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
