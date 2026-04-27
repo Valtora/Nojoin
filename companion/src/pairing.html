@@ -5,6 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pair Nojoin Companion</title>
     <style>
+      :root {
+        color-scheme: light dark;
+        --bg-start: #f8fafc;
+        --bg-end: #eef2f7;
+        --surface: #ffffff;
+        --surface-border: #dbe3ee;
+        --text: #1f2937;
+        --muted: #4b5563;
+        --accent: #ea580c;
+        --accent-strong: #9a3412;
+        --accent-soft: #fff7ed;
+        --danger: #b91c1c;
+        --surface-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+        --code-surface: #111827;
+        --code-text: #ffffff;
+        --help-surface: #ffffff;
+        --help-border: #d7dee8;
+        --help-text: #64748b;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-start: #0f172a;
+          --bg-end: #111c2d;
+          --surface: #162234;
+          --surface-border: #263548;
+          --text: #e2e8f0;
+          --muted: #94a3b8;
+          --accent: #ea580c;
+          --accent-strong: #fb923c;
+          --accent-soft: rgba(234, 88, 12, 0.18);
+          --danger: #f87171;
+          --surface-shadow: 0 12px 30px rgba(2, 6, 23, 0.34);
+          --code-surface: #020617;
+          --code-text: #e2e8f0;
+          --help-surface: #111c2d;
+          --help-border: #334155;
+          --help-text: #94a3b8;
+        }
+      }
+
       body {
         font-family:
           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
@@ -14,19 +55,19 @@
         box-sizing: border-box;
         background:
           radial-gradient(circle at top right, rgba(234, 88, 12, 0.16), transparent 38%),
-          linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-        color: #1f2937;
+          linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+        color: var(--text);
         text-align: center;
       }
       button {
         font: inherit;
       }
       .container {
-        background: white;
+        background: var(--surface);
         padding: 28px 24px;
         border-radius: 12px;
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
-        border: 1px solid #dbe3ee;
+        box-shadow: var(--surface-shadow);
+        border: 1px solid var(--surface-border);
       }
       h2 {
         margin-top: 0;
@@ -35,7 +76,7 @@
       p {
         margin: 12px 0;
         font-size: 0.95rem;
-        color: #4b5563;
+        color: var(--muted);
       }
       .code-panel {
         position: relative;
@@ -45,8 +86,8 @@
         margin: 0;
         padding: 22px 64px 22px 22px;
         border-radius: 10px;
-        background: #111827;
-        color: white;
+        background: var(--code-surface);
+        color: var(--code-text);
         font-size: 1.85rem;
         font-weight: 700;
         letter-spacing: 0.16em;
@@ -98,11 +139,11 @@
         color: #0f766e;
       }
       .copy-status.error {
-        color: #b91c1c;
+        color: var(--danger);
       }
       .countdown {
         font-size: 0.9rem;
-        color: #ea580c;
+        color: var(--accent);
         font-weight: 600;
       }
       .actions {
@@ -113,10 +154,10 @@
       .cancel-button {
         min-width: 164px;
         padding: 10px 14px;
-        border: 1px solid #fdba74;
+        border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--surface-border));
         border-radius: 12px;
-        background: #fff7ed;
-        color: #9a3412;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
         font-size: 0.95rem;
         font-weight: 600;
         cursor: pointer;
@@ -152,10 +193,10 @@
         width: 34px;
         height: 34px;
         padding: 0;
-        border: 1px solid #d7dee8;
+        border: 1px solid var(--help-border);
         border-radius: 999px;
-        background: #ffffff;
-        color: #64748b;
+        background: var(--help-surface);
+        color: var(--help-text);
         cursor: help;
         transition:
           background-color 120ms ease,
@@ -164,9 +205,9 @@
       }
       .help-button:hover,
       .help-button:focus-visible {
-        background: #f8fafc;
-        border-color: #cbd5e1;
-        color: #1e293b;
+        background: color-mix(in srgb, var(--help-surface) 72%, var(--surface));
+        border-color: color-mix(in srgb, var(--help-border) 72%, var(--surface-border));
+        color: var(--text);
         outline: none;
       }
       .help-button svg {
@@ -180,9 +221,9 @@
         width: min(320px, calc(100vw - 72px));
         padding: 12px 14px;
         border-radius: 12px;
-        background: #fff7ed;
-        color: #9a3412;
-        border: 1px solid #fdba74;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--surface-border));
         box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
         font-size: 0.88rem;
         line-height: 1.45;
@@ -201,9 +242,9 @@
         left: 50%;
         width: 12px;
         height: 12px;
-        border-right: 1px solid #fdba74;
-        border-bottom: 1px solid #fdba74;
-        background: #fff7ed;
+        border-right: 1px solid color-mix(in srgb, var(--accent) 36%, var(--surface-border));
+        border-bottom: 1px solid color-mix(in srgb, var(--accent) 36%, var(--surface-border));
+        background: var(--accent-soft);
         transform: translate(-50%, -7px) rotate(45deg);
       }
       .help-tooltip:hover .tooltip,
@@ -212,7 +253,7 @@
         transform: translate(-50%, 0);
       }
       .expired {
-        color: #b91c1c;
+        color: var(--danger);
       }
     </style>
   </head>

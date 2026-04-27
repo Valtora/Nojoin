@@ -6,7 +6,10 @@
     <title>Nojoin Companion</title>
     <style>
         :root {
-            color-scheme: light;
+            color-scheme: light dark;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --surface-soft: #f8fafc;
             --panel-border: #dbe3ee;
             --text: #162033;
             --muted: #64748b;
@@ -23,10 +26,33 @@
             --danger-soft: #fff1f2;
             --shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
         }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f172a;
+                --surface: #111c2d;
+                --surface-soft: #162234;
+                --panel-border: #263548;
+                --text: #e2e8f0;
+                --muted: #94a3b8;
+                --accent: #ea580c;
+                --accent-strong: #fb923c;
+                --accent-soft: rgba(234, 88, 12, 0.18);
+                --success: #4ade80;
+                --success-soft: rgba(34, 197, 94, 0.18);
+                --info: #60a5fa;
+                --info-soft: rgba(59, 130, 246, 0.2);
+                --warning: #f59e0b;
+                --warning-soft: rgba(245, 158, 11, 0.18);
+                --danger: #f87171;
+                --danger-soft: rgba(248, 113, 113, 0.18);
+                --shadow: 0 18px 40px rgba(2, 6, 23, 0.36);
+            }
+        }
         body {
             margin: 0;
             padding: 18px 20px;
-            background: #f8fafc;
+            background: var(--bg);
             color: var(--text);
             font-family: "Segoe UI", "Inter", system-ui, sans-serif;
             box-sizing: border-box;
@@ -38,28 +64,8 @@
             width: min(460px, 100%);
             padding: 0;
         }
-        .brand {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 7px 10px;
-            border-radius: 999px;
-            background: #f8fafc;
-            color: var(--muted);
-            font-size: 0.77rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-        }
-        .brand::before {
-            content: "";
-            width: 8px;
-            height: 8px;
-            border-radius: 999px;
-            background: var(--accent);
-        }
         .hero {
-            margin-top: 16px;
+            margin-top: 0;
         }
         .status-pill {
             display: inline-flex;
@@ -72,22 +78,19 @@
             font-weight: 700;
             line-height: 1;
         }
+        .summary-status {
+            margin-top: 10px;
+        }
         h1 {
-            margin: 14px 0 0;
+            margin: 0;
             font-size: 1.42rem;
             line-height: 1.1;
         }
         .lead {
-            margin: 12px 0 0;
+            margin: 14px 0 0;
             color: var(--text);
             font-size: 0.97rem;
             line-height: 1.5;
-        }
-        .supporting {
-            margin: 10px 0 0;
-            color: var(--muted);
-            font-size: 0.9rem;
-            line-height: 1.45;
         }
         .summary-grid {
             display: grid;
@@ -116,12 +119,6 @@
             font-weight: 700;
             line-height: 1.4;
             word-break: break-word;
-        }
-        .summary-note {
-            margin: 8px 0 0;
-            color: var(--muted);
-            font-size: 0.88rem;
-            line-height: 1.42;
         }
         .status-message {
             display: none;
@@ -169,12 +166,12 @@
             background: var(--accent-strong);
         }
         button.secondary {
-            background: #ffffff;
+            background: var(--surface);
             border-color: var(--panel-border);
             color: var(--text);
         }
         button.secondary:hover {
-            background: #f8fafc;
+            background: var(--surface-soft);
         }
         button[hidden] {
             display: none;
@@ -212,25 +209,16 @@
 </head>
 <body>
     <div class="shell" data-tone="setup">
-        <div class="brand">Nojoin Companion</div>
-
         <div class="hero">
-            <div class="status-pill" id="statusPill">Loading launcher state...</div>
             <h1 id="title">Nojoin Companion</h1>
             <p class="lead" id="lead">Loading current launcher state...</p>
-            <p class="supporting" id="supporting">Checking the current backend and local browser connection.</p>
         </div>
 
         <div class="summary-grid">
             <div class="summary-card">
                 <span class="summary-label">Current Backend</span>
                 <span class="summary-value" id="backendValue">Loading...</span>
-                <p class="summary-note" id="backendNote">Checking pairing state...</p>
-            </div>
-            <div class="summary-card">
-                <span class="summary-label">Local Browser Connection</span>
-                <span class="summary-value" id="localConnectionValue">Loading...</span>
-                <p class="summary-note" id="localConnectionNote">Checking the secure local browser connection...</p>
+                <div class="status-pill summary-status" id="backendStatusPill">Loading...</div>
             </div>
         </div>
 
@@ -245,14 +233,10 @@
     <script>
         const { invoke } = window.__TAURI__.core;
         const shell = document.querySelector('.shell');
-        const statusPill = document.getElementById('statusPill');
         const title = document.getElementById('title');
         const lead = document.getElementById('lead');
-        const supporting = document.getElementById('supporting');
         const backendValue = document.getElementById('backendValue');
-        const backendNote = document.getElementById('backendNote');
-        const localConnectionValue = document.getElementById('localConnectionValue');
-        const localConnectionNote = document.getElementById('localConnectionNote');
+        const backendStatusPill = document.getElementById('backendStatusPill');
         const statusMessage = document.getElementById('statusMessage');
         const primaryActionBtn = document.getElementById('primaryActionBtn');
         const secondaryActionBtn = document.getElementById('secondaryActionBtn');
@@ -271,65 +255,51 @@
         const launcherCopy = {
             'first-run': {
                 tone: 'setup',
-                statusLabel: 'Set up Companion',
+                statusLabel: 'Not paired',
                 title: 'Nojoin Companion',
-                lead: 'Companion keeps this device connected to one Nojoin deployment for local browser controls and recording handoff.',
-                supporting: 'Start pairing now, or close this window and reopen it from the tray later.',
-                backendNote: 'Companion is installed but not connected yet.',
+                lead: 'This companion app connects to your browser to allow you to record your meetings without having a bot join and then it sends these recordings to your browser for processing. Start pairing now, or reopen this window later from the tray.',
                 secondaryAction: 'open-settings',
             },
             'unpaired': {
                 tone: 'setup',
                 statusLabel: 'Not paired',
                 title: 'Nojoin Companion',
-                lead: 'This device is ready, but it is not connected to a Nojoin deployment yet.',
-                supporting: 'Start pairing from here, or leave Companion idle and reopen it from the tray later.',
-                backendNote: 'Start pairing before browser-side local controls can connect.',
+                lead: 'This companion app connects to your browser to allow you to record your meetings without having a bot join and then it sends these recordings to your browser for processing. Start pairing from here, or reopen this window later from the tray.',
                 secondaryAction: 'open-settings',
             },
             'pairing-active': {
                 tone: 'informational',
                 statusLabel: 'Pairing code active',
                 title: 'Nojoin Companion',
-                lead: 'A pairing code is already active. Finish pairing in Nojoin with the current code.',
-                supporting: 'If this is replacing an older backend, the current backend stays active until the new pairing succeeds.',
-                backendNote: 'The active pairing code belongs to this device.',
+                lead: 'Finish pairing in Nojoin with the current code. If this is replacing an older backend, the current backend stays active until the new pairing succeeds.',
                 secondaryAction: 'open-settings',
             },
             'paired-healthy': {
                 tone: 'healthy',
                 statusLabel: 'Connected',
                 title: 'Nojoin Companion',
-                lead: 'Companion is connected and ready for local browser controls.',
-                supporting: 'Open Nojoin to return to the paired workspace, or use Settings for support and configuration.',
-                backendNote: 'This is the paired Nojoin deployment for this device.',
+                lead: 'Open Nojoin to return to the paired workspace, or use Settings for support and configuration.',
                 secondaryAction: 'open-settings',
             },
             'paired-disconnected': {
                 tone: 'informational',
                 statusLabel: 'Temporarily disconnected',
                 title: 'Nojoin Companion',
-                lead: 'The pairing is still valid. Companion will resync automatically when the backend connection returns.',
-                supporting: 'Open Settings if you need connection details or troubleshooting right now.',
-                backendNote: 'The saved pairing remains in place while reconnecting.',
+                lead: 'This device is still paired and will resync automatically when the backend connection returns. Open Settings if you need help right now.',
                 secondaryAction: 'open-nojoin',
             },
             'local-https-repairing': {
                 tone: 'warning',
                 statusLabel: 'Browser repair in progress',
                 title: 'Nojoin Companion',
-                lead: 'Companion is reconciling the secure local browser connection.',
-                supporting: 'Browser controls will refresh automatically when repair finishes.',
-                backendNote: 'The paired backend stays available while repair finishes.',
+                lead: 'Companion is reconciling the secure local browser connection. Browser controls will refresh automatically when repair finishes.',
                 secondaryAction: null,
             },
             'local-https-needs-repair': {
                 tone: 'critical',
                 statusLabel: 'Browser repair required',
                 title: 'Nojoin Companion',
-                lead: 'Open Settings to run the repair flow before using browser-side local controls again.',
-                supporting: 'Repair stays in Settings so this launcher remains a lightweight entry point.',
-                backendNote: 'Pairing information is still shown here, but repair execution stays in Settings.',
+                lead: 'Open Settings to repair the secure local browser connection before using browser-side local controls again.',
                 secondaryAction: 'open-settings',
             },
         };
@@ -357,29 +327,6 @@
             statusMessage.className = `status-message visible ${type}`;
         }
 
-        function getLocalConnectionSummary(state) {
-            switch (state.localHttpsStatus) {
-                case 'repairing':
-                    return {
-                        value: 'Browser repair in progress',
-                        note: 'Browser controls will refresh automatically when repair finishes.',
-                    };
-                case 'needs-repair':
-                    return {
-                        value: 'Browser repair required',
-                        note: 'Open Settings to run the repair flow.',
-                    };
-                case 'ready':
-                default:
-                    return {
-                        value: 'Ready',
-                        note: state.isPaired
-                            ? 'Secure local browser connections are ready on this device.'
-                            : 'The secure local browser connection is ready whenever you finish pairing.',
-                    };
-            }
-        }
-
         function setButtonState(button, actionKey) {
             if (!actionKey) {
                 button.hidden = true;
@@ -395,18 +342,14 @@
 
         function renderLauncherState(state) {
             const copy = launcherCopy[state.launcherMode] || launcherCopy['unpaired'];
-            const localConnection = getLocalConnectionSummary(state);
+            const backendDisplay = state.isPaired ? state.backendLabel : 'No backend connected';
 
             shell.dataset.tone = copy.tone;
             setStatusMessage('');
-            statusPill.textContent = copy.statusLabel;
             title.textContent = copy.title;
             lead.textContent = copy.lead;
-            supporting.textContent = copy.supporting;
-            backendValue.textContent = state.backendLabel;
-            backendNote.textContent = copy.backendNote;
-            localConnectionValue.textContent = localConnection.value;
-            localConnectionNote.textContent = localConnection.note;
+            backendValue.textContent = backendDisplay;
+            backendStatusPill.textContent = copy.statusLabel;
 
             setButtonState(primaryActionBtn, state.primaryAction);
             setButtonState(secondaryActionBtn, copy.secondaryAction);
@@ -419,14 +362,10 @@
 
         function renderUnavailableState(message) {
             shell.dataset.tone = 'critical';
-            statusPill.textContent = 'Launcher unavailable';
             title.textContent = 'Nojoin Companion';
             lead.textContent = 'Companion could not load the current launcher state.';
-            supporting.textContent = 'Open Settings from the tray if this problem keeps happening.';
             backendValue.textContent = 'Unavailable';
-            backendNote.textContent = 'Pairing details could not be loaded.';
-            localConnectionValue.textContent = 'Unavailable';
-            localConnectionNote.textContent = 'The secure local browser connection could not be checked.';
+            backendStatusPill.textContent = 'Launcher unavailable';
             setButtonState(primaryActionBtn, 'open-settings');
             setButtonState(secondaryActionBtn, null);
             primaryActionBtn.disabled = actionInFlight;
@@ -490,8 +429,12 @@
                 return;
             }
 
-            const width = Math.ceil(Math.max(360, shell.scrollWidth + 40));
-            const height = Math.ceil(Math.max(260, document.documentElement.scrollHeight + 24));
+            const shellRect = shell.getBoundingClientRect();
+            const bodyStyle = window.getComputedStyle(document.body);
+            const horizontalPadding = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+            const verticalPadding = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+            const width = Math.ceil(Math.max(360, shellRect.width + horizontalPadding));
+            const height = Math.ceil(Math.max(220, shellRect.height + verticalPadding));
 
             try {
                 await invoke('resize_current_window', { width, height });

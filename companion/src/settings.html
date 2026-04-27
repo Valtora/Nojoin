@@ -6,230 +6,576 @@
     <title>Settings</title>
     <style>
         :root {
-            color-scheme: light;
-            --bg: #eef2f7;
-            --panel: #ffffff;
-            --panel-border: #dbe3ee;
+            color-scheme: light dark;
+            --bg: #f8fafc;
             --text: #162033;
             --muted: #64748b;
+            --panel-border: #dbe3ee;
+            --surface: #ffffff;
+            --surface-soft: #f8fafc;
             --accent: #c2410c;
             --accent-strong: #9a3412;
-            --danger: #b91c1c;
-            --danger-soft: #fff1f2;
+            --accent-soft: #fff7ed;
             --success: #166534;
             --success-soft: #ecfdf5;
             --info: #1d4ed8;
             --info-soft: #eff6ff;
-            --shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+            --danger: #b91c1c;
+            --danger-soft: #fff1f2;
         }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f172a;
+                --text: #e2e8f0;
+                --muted: #94a3b8;
+                --panel-border: #263548;
+                --surface: #111c2d;
+                --surface-soft: #162234;
+                --accent: #ea580c;
+                --accent-strong: #fb923c;
+                --accent-soft: rgba(234, 88, 12, 0.18);
+                --success: #4ade80;
+                --success-soft: rgba(34, 197, 94, 0.18);
+                --info: #60a5fa;
+                --info-soft: rgba(59, 130, 246, 0.2);
+                --danger: #f87171;
+                --danger-soft: rgba(248, 113, 113, 0.18);
+            }
+        }
+
         body {
             margin: 0;
-            padding: 20px;
-            background:
-                radial-gradient(circle at top right, rgba(194, 65, 12, 0.14), transparent 42%),
-                linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+            padding: 18px 20px;
+            background: var(--bg);
             color: var(--text);
             font-family: "Segoe UI", "Inter", system-ui, sans-serif;
             box-sizing: border-box;
         }
+
         *, *::before, *::after {
             box-sizing: inherit;
         }
+
         .shell {
-            width: min(500px, 100%);
-            background: var(--panel);
-            border: 1px solid var(--panel-border);
-            border-radius: 18px;
-            box-shadow: var(--shadow);
-            padding: 22px;
+            width: min(520px, 100%);
+            padding: 0;
         }
+
+        .hero {
+            display: grid;
+            gap: 0;
+        }
+
         h1 {
             margin: 0;
-            font-size: 1.45rem;
+            font-size: 1.42rem;
             line-height: 1.1;
         }
-        .subtitle {
+
+        .status {
+            display: none;
+            margin-top: 14px;
+            padding: 11px 12px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.42;
+        }
+
+        .status.visible {
+            display: block;
+        }
+
+        .status.success {
+            background: var(--success-soft);
+            border-color: color-mix(in srgb, var(--success) 26%, transparent);
+            color: var(--success);
+        }
+
+        .status.info {
+            background: var(--info-soft);
+            border-color: color-mix(in srgb, var(--info) 26%, transparent);
+            color: var(--info);
+        }
+
+        .status.error {
+            background: var(--danger-soft);
+            border-color: color-mix(in srgb, var(--danger) 26%, transparent);
+            color: var(--danger);
+        }
+
+        .section {
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid var(--panel-border);
+        }
+
+        .section h2,
+        .advanced-summary-title {
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1.2;
+        }
+
+        .section-copy,
+        .row-note,
+        .section-note,
+        .advanced-copy {
             margin: 8px 0 0;
             color: var(--muted);
-            font-size: 0.94rem;
+            font-size: 0.89rem;
             line-height: 1.45;
         }
-        .grid {
+
+        .row {
             display: grid;
+            gap: 8px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .row:last-child {
+            border-bottom: none;
+        }
+
+        .row-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
             gap: 12px;
-            margin-top: 18px;
+            align-items: center;
         }
-        .card {
-            padding: 14px 16px;
-            border: 1px solid var(--panel-border);
-            border-radius: 14px;
-            background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.92));
-        }
-        .label {
-            font-size: 0.77rem;
-            font-weight: 700;
+
+        .row-label {
+            display: block;
             color: var(--muted);
-            text-transform: uppercase;
+            font-size: 0.75rem;
+            font-weight: 700;
             letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
-        .value {
+
+        .row-value,
+        .inline-value {
+            display: block;
             margin-top: 6px;
+            color: var(--text);
             font-size: 1rem;
-            font-weight: 600;
-            line-height: 1.4;
+            font-weight: 700;
+            line-height: 1.35;
             word-break: break-word;
         }
+
+        .inline-value {
+            margin-top: 0;
+            text-align: right;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .status-pill.setup {
+            background: var(--accent-soft);
+            border-color: color-mix(in srgb, var(--accent) 44%, var(--panel-border));
+            color: var(--accent-strong);
+        }
+
+        .status-pill.healthy {
+            background: var(--success-soft);
+            border-color: color-mix(in srgb, var(--success) 36%, var(--panel-border));
+            color: var(--success);
+        }
+
+        .status-pill.informational {
+            background: var(--info-soft);
+            border-color: color-mix(in srgb, var(--info) 36%, var(--panel-border));
+            color: var(--info);
+        }
+
+        .status-pill.warning {
+            background: var(--accent-soft);
+            border-color: color-mix(in srgb, var(--accent) 44%, var(--panel-border));
+            color: var(--accent-strong);
+        }
+
+        .status-pill.critical {
+            background: var(--danger-soft);
+            border-color: color-mix(in srgb, var(--danger) 36%, var(--panel-border));
+            color: var(--danger);
+        }
+
         .actions {
             display: grid;
             gap: 10px;
             margin-top: 16px;
         }
+
         button {
-            width: 100%;
             border: 1px solid transparent;
             border-radius: 12px;
             padding: 11px 14px;
             font: inherit;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
         }
+
         button.primary {
+            width: 100%;
             background: var(--accent);
-            color: white;
+            color: #ffffff;
         }
+
         button.primary:hover {
             background: var(--accent-strong);
         }
-        button.secondary {
-            background: #fff7ed;
-            border-color: #fdba74;
+
+        button.secondary,
+        button.utility,
+        button.support {
+            background: var(--surface);
+            border-color: var(--panel-border);
+            color: var(--text);
+        }
+
+        button.secondary,
+        button.support,
+        button.danger {
+            width: 100%;
+        }
+
+        button.secondary:hover,
+        button.utility:hover,
+        button.support:hover {
+            background: var(--surface-soft);
+        }
+
+        button.support {
+            border-color: color-mix(in srgb, var(--accent) 38%, var(--panel-border));
             color: var(--accent-strong);
+            background: var(--accent-soft);
         }
-        button.secondary:hover {
-            background: #ffedd5;
+
+        button.support:hover {
+            background: color-mix(in srgb, var(--accent-soft) 82%, var(--surface));
         }
-        button.trust {
-            margin-top: 12px;
-            background: #fff7ed;
-            border-color: #fdba74;
-            color: var(--accent-strong);
-        }
-        button.trust:hover {
-            background: #ffedd5;
-        }
+
         button.danger {
             background: var(--danger-soft);
-            border-color: #fecdd3;
+            border-color: color-mix(in srgb, var(--danger) 24%, var(--panel-border));
             color: var(--danger);
         }
+
         button.danger:hover {
-            background: #ffe4e6;
+            background: color-mix(in srgb, var(--danger-soft) 85%, var(--surface));
         }
+
         button[hidden] {
             display: none;
         }
-        button:disabled {
-            opacity: 0.6;
+
+        button:disabled,
+        input:disabled {
+            opacity: 0.68;
             cursor: wait;
         }
-        .status {
+
+        .toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            user-select: none;
+        }
+
+        .toggle input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .toggle-track {
+            position: relative;
+            width: 48px;
+            height: 28px;
+            border-radius: 999px;
+            background: #cbd5e1;
+            transition: background-color 120ms ease;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .toggle-track {
+                background: #334155;
+            }
+        }
+
+        .toggle-track::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.24);
+            transition: transform 120ms ease;
+        }
+
+        .toggle input:checked + .toggle-track {
+            background: var(--accent);
+        }
+
+        .toggle input:checked + .toggle-track::after {
+            transform: translateX(20px);
+        }
+
+        .toggle-label {
+            min-width: 22px;
+            color: var(--muted);
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .advanced-section summary {
+            display: grid;
+            gap: 6px;
+            list-style: none;
+            cursor: pointer;
+        }
+
+        .advanced-section summary::-webkit-details-marker {
             display: none;
-            margin-top: 14px;
-            padding: 11px 12px;
-            border-radius: 12px;
-            border: 1px solid transparent;
-            font-size: 0.92rem;
-            line-height: 1.4;
         }
-        .status.visible {
-            display: block;
+
+        .advanced-summary-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
-        .status.success {
-            background: var(--success-soft);
-            border-color: #bbf7d0;
-            color: var(--success);
-        }
-        .status.error {
-            background: var(--danger-soft);
-            border-color: #fecdd3;
-            color: var(--danger);
-        }
-        .status.info {
-            background: var(--info-soft);
-            border-color: #bfdbfe;
-            color: var(--info);
-        }
-        .note {
-            margin-top: 16px;
-            font-size: 0.89rem;
+
+        .summary-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
             color: var(--muted);
-            line-height: 1.45;
+            font-size: 0.9rem;
+            font-weight: 700;
         }
-        .card-note {
-            margin: 8px 0 0;
-            color: var(--muted);
-            font-size: 0.88rem;
-            line-height: 1.45;
+
+        .summary-toggle-track {
+            position: relative;
+            width: 48px;
+            height: 28px;
+            border-radius: 999px;
+            background: #cbd5e1;
+            transition: background-color 120ms ease;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .summary-toggle-track {
+                background: #334155;
+            }
+        }
+
+        .summary-toggle-track::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.24);
+            transition: transform 120ms ease;
+        }
+
+        .advanced-section[open] .summary-toggle-track {
+            background: var(--accent);
+        }
+
+        .advanced-section[open] .summary-toggle-track::after {
+            transform: translateX(20px);
+        }
+
+        .advanced-content {
+            margin-top: 12px;
+        }
+
+        @media (max-width: 520px) {
+            .row-header {
+                grid-template-columns: 1fr;
+            }
+
+            .toggle {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            button.utility {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <div class="shell">
-        <h1>Settings</h1>
-        <p class="subtitle">Manage this companion's backend connection and pairing state.</p>
-
-        <div class="grid">
-            <div class="card">
-                <div class="label">Current Backend</div>
-                <div class="value" id="backendValue">Loading...</div>
-            </div>
-            <div class="card">
-                <div class="label">Pairing State</div>
-                <div class="value" id="pairingStateValue">Loading...</div>
-            </div>
-            <div class="card">
-                <div class="label">Local HTTPS</div>
-                <div class="value" id="localHttpsValue">Loading...</div>
-                <p class="card-note" id="localHttpsNote">Loading local HTTPS status...</p>
-                <button id="repairLocalHttpsBtn" class="trust">Repair Local HTTPS</button>
-            </div>
-            <div class="card">
-                <div class="label">Firefox Support</div>
-                <div class="value">Enable Firefox local pairing</div>
-                <p class="card-note">Installs the Nojoin local HTTPS CA into the Windows machine trust store after your approval, so Firefox can trust the Companion local connection.</p>
-                <button id="enableFirefoxBtn" class="trust">Enable Firefox Support</button>
-            </div>
-        </div>
-
-        <div class="actions">
-            <button id="startPairingBtn" class="primary">Start Pairing</button>
-            <button id="cancelPairingBtn" class="secondary" hidden>Cancel Local Pairing Session</button>
-            <button id="disconnectBtn" class="danger" hidden>Disconnect Current Backend</button>
+        <div class="hero">
+            <h1>Companion App Settings</h1>
         </div>
 
         <div id="status" class="status"></div>
 
-        <p class="note" id="noteText">Loading current pairing state...</p>
+        <section class="section" id="pairingSection">
+            <h2>Pairing</h2>
+            <p class="section-copy">Use pairing here when you are intentionally connecting this device or replacing its current backend.</p>
+
+            <div class="row">
+                <div>
+                    <span class="row-label">Connection State</span>
+                    <div id="connectionStatePill" class="status-pill setup">Loading...</div>
+                </div>
+                <p class="row-note" id="connectionStateNote">Loading current connection state...</p>
+            </div>
+
+            <div class="actions">
+                <button id="startPairingBtn" class="primary" type="button">Start Pairing</button>
+                <button id="cancelPairingBtn" class="secondary" type="button" hidden>Cancel Pairing</button>
+            </div>
+
+            <p class="section-note" id="pairingActionNote">Loading pairing guidance...</p>
+        </section>
+
+        <section class="section" id="deviceSection">
+            <h2>Device</h2>
+
+            <div class="row">
+                <div class="row-header">
+                    <div>
+                        <span class="row-label">Run on Startup</span>
+                        <p class="row-note">Open Nojoin Companion in the background when you sign in to Windows.</p>
+                    </div>
+                    <label class="toggle" for="runOnStartupToggle">
+                        <input id="runOnStartupToggle" type="checkbox">
+                        <span class="toggle-track"></span>
+                        <span id="runOnStartupLabel" class="toggle-label">Off</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="row-header">
+                    <div>
+                        <span class="row-label">View Logs</span>
+                        <p class="row-note">Open the local folder used for Companion diagnostic logs.</p>
+                    </div>
+                    <button id="viewLogsBtn" class="utility" type="button">View Logs</button>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="row-header">
+                    <div>
+                        <span class="row-label">Check for Updates</span>
+                        <p class="row-note" id="checkUpdatesNote">Loading installed version...</p>
+                    </div>
+                    <button id="checkUpdatesBtn" class="utility" type="button">Check for Updates</button>
+                </div>
+            </div>
+
+        </section>
+
+        <details class="section advanced-section" id="advancedSection">
+            <summary>
+                <div class="advanced-summary-line">
+                    <h2 class="advanced-summary-title">Advanced</h2>
+                    <div class="summary-toggle" aria-hidden="true">
+                        <span class="summary-toggle-track"></span>
+                        <span id="advancedToggleLabel" class="toggle-label">Show</span>
+                    </div>
+                </div>
+                <p class="advanced-copy">Open Advanced for browser repair, Firefox support, and disconnect.</p>
+            </summary>
+
+            <div class="advanced-content">
+                <div class="row">
+                    <div>
+                        <span class="row-label">Local Browser Connection</span>
+                        <span class="row-value" id="localHttpsValue">Loading...</span>
+                        <p class="row-note" id="localHttpsNote">Loading local browser connection status...</p>
+                    </div>
+                    <button id="repairLocalHttpsBtn" class="support" type="button">Repair Local Browser Connection</button>
+                </div>
+
+                <div class="row">
+                    <div>
+                        <span class="row-label">Firefox Support</span>
+                        <span class="row-value" id="firefoxSupportValue">Loading...</span>
+                        <p class="row-note" id="firefoxSupportNote">Loading Firefox support guidance...</p>
+                    </div>
+                    <button id="enableFirefoxBtn" class="support" type="button">Enable Firefox Support</button>
+                </div>
+
+                <div class="row">
+                    <div>
+                        <span class="row-label">Disconnect Current Backend</span>
+                        <p class="row-note" id="disconnectNote">Loading disconnect guidance...</p>
+                    </div>
+                    <button id="disconnectBtn" class="danger" type="button">Disconnect Current Backend</button>
+                </div>
+            </div>
+        </details>
+
+        <section class="section" id="aboutSection">
+            <h2>About</h2>
+            <p class="section-copy" id="aboutNote">Loading companion details...</p>
+        </section>
     </div>
 
     <script>
         const { invoke } = window.__TAURI__.core;
 
-        const backendValue = document.getElementById('backendValue');
-        const pairingStateValue = document.getElementById('pairingStateValue');
+        const statusDiv = document.getElementById('status');
+        const connectionStatePill = document.getElementById('connectionStatePill');
+        const connectionStateNote = document.getElementById('connectionStateNote');
+        const pairingActionNote = document.getElementById('pairingActionNote');
         const startPairingBtn = document.getElementById('startPairingBtn');
         const cancelPairingBtn = document.getElementById('cancelPairingBtn');
-        const disconnectBtn = document.getElementById('disconnectBtn');
+        const runOnStartupToggle = document.getElementById('runOnStartupToggle');
+        const runOnStartupLabel = document.getElementById('runOnStartupLabel');
+        const viewLogsBtn = document.getElementById('viewLogsBtn');
+        const checkUpdatesBtn = document.getElementById('checkUpdatesBtn');
+        const checkUpdatesNote = document.getElementById('checkUpdatesNote');
+        const aboutNote = document.getElementById('aboutNote');
+        const advancedSection = document.getElementById('advancedSection');
+        const advancedToggleLabel = document.getElementById('advancedToggleLabel');
         const localHttpsValue = document.getElementById('localHttpsValue');
         const localHttpsNote = document.getElementById('localHttpsNote');
         const repairLocalHttpsBtn = document.getElementById('repairLocalHttpsBtn');
+        const firefoxSupportValue = document.getElementById('firefoxSupportValue');
+        const firefoxSupportNote = document.getElementById('firefoxSupportNote');
         const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
-        const statusDiv = document.getElementById('status');
-        const noteText = document.getElementById('noteText');
-        const cancelPairingIdleLabel = 'Cancel Local Pairing Session';
+        const disconnectNote = document.getElementById('disconnectNote');
+        const disconnectBtn = document.getElementById('disconnectBtn');
 
         let resizeTimer = null;
+        let advancedPinnedOpen = false;
+
+        function formatError(error) {
+            return typeof error === 'string' ? error : String(error);
+        }
 
         function scheduleResize() {
             window.clearTimeout(resizeTimer);
@@ -244,13 +590,13 @@
                 return;
             }
 
-            const width = Math.ceil(Math.max(380, shell.scrollWidth + 40));
-            const height = Math.ceil(Math.max(250, document.documentElement.scrollHeight + 24));
+            const width = Math.ceil(Math.max(400, shell.scrollWidth + 40));
+            const height = Math.ceil(Math.max(280, document.documentElement.scrollHeight + 24));
 
             try {
                 await invoke('resize_current_window', { width, height });
             } catch (_error) {
-                // Ignore resize failures. The window still remains usable.
+                return;
             }
         }
 
@@ -272,74 +618,166 @@
             button.textContent = busy ? busyLabel : idleLabel;
         }
 
-        function currentCancelPairingLabel() {
-            return cancelPairingBtn.dataset.idleLabel || cancelPairingIdleLabel;
+        function updateRunOnStartupLabel(enabled) {
+            runOnStartupLabel.textContent = enabled ? 'On' : 'Off';
+        }
+
+        function updateAdvancedToggleLabel() {
+            advancedToggleLabel.textContent = advancedSection.open ? 'Hide' : 'Show';
+        }
+
+        function backendDetail(view) {
+            if (!view.is_paired || !view.backend_label || view.backend_label === 'Not paired') {
+                return '';
+            }
+
+            return view.backend_label;
+        }
+
+        function describeConnectionState(view) {
+            const currentBackend = backendDetail(view);
+
+            switch (view.connectionState) {
+                case 'browser-repair-required':
+                    return {
+                        value: 'Browser repair required',
+                        tone: 'critical',
+                        note: 'Browser-side local controls are blocked until you repair the secure local browser connection from Advanced.',
+                        actionNote: 'Open Advanced and run Repair Local Browser Connection first.',
+                        disablePairing: true,
+                        openAdvanced: true,
+                    };
+                case 'browser-repair-in-progress':
+                    return {
+                        value: 'Browser repair in progress',
+                        tone: 'warning',
+                        note: 'Companion is rebuilding the secure local browser connection now. Browser controls will refresh automatically when repair finishes.',
+                        actionNote: 'Wait for repair to finish before starting a new pairing action.',
+                        disablePairing: true,
+                        openAdvanced: true,
+                    };
+                case 'pairing-code-active':
+                    return {
+                        value: 'Pairing code active',
+                        tone: 'informational',
+                        note: view.is_paired
+                            ? `${currentBackend ? `Current backend: ${currentBackend}. ` : ''}The current backend stays connected until the new pairing succeeds.`
+                            : 'Finish pairing in Nojoin with the current code.',
+                        actionNote: view.is_paired
+                            ? 'Cancel Pairing closes the current replacement code and keeps the existing backend unchanged.'
+                            : 'Cancel Pairing closes the current code so you can start again later.',
+                        disablePairing: false,
+                        openAdvanced: false,
+                    };
+                case 'temporarily-disconnected':
+                    return {
+                        value: 'Temporarily disconnected',
+                        tone: 'informational',
+                        note: currentBackend
+                            ? `This device is still paired with ${currentBackend} and should resync automatically when the backend connection returns.`
+                            : 'The saved pairing is still valid and should resync automatically when the backend connection returns.',
+                        actionNote: 'Generate New Pairing Code only if you are intentionally moving this device to a different backend.',
+                        disablePairing: false,
+                        openAdvanced: false,
+                    };
+                case 'connected':
+                    return {
+                        value: 'Connected',
+                        tone: 'healthy',
+                        note: currentBackend
+                            ? `This device is connected to ${currentBackend}.`
+                            : 'This device is connected and ready for browser-side local controls.',
+                        actionNote: 'Generate New Pairing Code only if you are intentionally replacing the current backend.',
+                        disablePairing: false,
+                        openAdvanced: false,
+                    };
+                case 'not-paired':
+                default:
+                    return {
+                        value: 'Not paired',
+                        tone: 'setup',
+                        note: 'This device is not connected to a Nojoin backend yet.',
+                        actionNote: 'Start Pairing to connect this Companion to one Nojoin deployment.',
+                        disablePairing: false,
+                        openAdvanced: false,
+                    };
+            }
         }
 
         function describeLocalHttps(view) {
-            const trustSuffix = view.local_https_current_user_trust_installed === true
-                ? ' Windows current-user trust is installed.'
-                : view.local_https_current_user_trust_installed === false
-                    ? ' Windows current-user trust is missing.'
-                    : '';
-
             if (view.localHttpsStatus === 'ready') {
                 return {
-                    value: view.local_https_listener_running ? 'Ready' : 'Ready, listener offline',
-                    note: `${view.local_https_message || 'Secure local browser connections are ready.'}${trustSuffix}`,
+                    value: 'Connected',
+                    note: 'Use repair only if the launcher or Nojoin says Browser repair required.',
                 };
             }
 
             if (view.localHttpsStatus === 'repairing') {
                 return {
-                    value: view.local_https_listener_running ? 'Repairing, listener active' : 'Repairing',
-                    note: `${view.local_https_message || 'Companion is reconciling secure local browser access.'}${trustSuffix}`,
+                    value: 'Browser repair in progress',
+                    note: 'Companion is rebuilding the secure local browser connection now. Browser controls will refresh automatically when repair finishes.',
                 };
             }
 
             return {
-                value: view.local_https_listener_running ? 'Needs Repair, listener active' : 'Needs Repair',
-                note: `${view.local_https_message || 'Companion local HTTPS needs repair before browser control can resume.'}${trustSuffix}`,
+                value: 'Browser repair required',
+                note: 'Browser-side local controls are blocked until you run Repair Local Browser Connection here.',
             };
         }
 
         function renderSettings(view) {
-            backendValue.textContent = view.backend_label;
+            const connection = describeConnectionState(view);
             const localHttps = describeLocalHttps(view);
+
+            connectionStatePill.textContent = connection.value;
+            connectionStatePill.className = `status-pill ${connection.tone}`;
+            connectionStateNote.textContent = connection.note;
+            pairingActionNote.textContent = connection.actionNote;
+
+            startPairingBtn.textContent = view.is_paired || view.is_pairing_active
+                ? 'Generate New Pairing Code'
+                : 'Start Pairing';
+            startPairingBtn.disabled = connection.disablePairing;
+
+            cancelPairingBtn.hidden = !view.is_pairing_active;
+            cancelPairingBtn.textContent = 'Cancel Pairing';
+            cancelPairingBtn.disabled = false;
+
             localHttpsValue.textContent = localHttps.value;
             localHttpsNote.textContent = localHttps.note;
-            startPairingBtn.hidden = false;
-            startPairingBtn.textContent = view.is_pairing_active
-                ? 'Generate New Pairing Code'
-                : view.is_paired
-                    ? 'Start Re-pairing'
-                    : 'Start Pairing';
-            cancelPairingBtn.hidden = !view.is_pairing_active;
-            disconnectBtn.hidden = !view.is_paired;
-            cancelPairingBtn.dataset.idleLabel = cancelPairingIdleLabel;
-            cancelPairingBtn.textContent = currentCancelPairingLabel();
+            repairLocalHttpsBtn.textContent = 'Repair Local Browser Connection';
+            repairLocalHttpsBtn.disabled = view.localHttpsStatus === 'repairing';
+
+            firefoxSupportValue.textContent = view.localHttpsStatus === 'ready'
+                ? 'Available when needed'
+                : view.localHttpsStatus === 'repairing'
+                    ? 'Wait for repair to finish'
+                    : 'Finish browser repair first';
+            firefoxSupportNote.textContent = view.localHttpsStatus === 'ready'
+                ? 'Enable this only if you plan to use Firefox on this device. Then restart Firefox and generate a fresh pairing code.'
+                : 'Finish browser repair before enabling Firefox support.';
+            enableFirefoxBtn.textContent = 'Enable Firefox Support';
             enableFirefoxBtn.disabled = view.localHttpsStatus !== 'ready';
 
-            if (view.localHttpsStatus === 'needs-repair') {
-                pairingStateValue.textContent = view.is_paired ? 'Connected, browser repair required' : 'Browser repair required';
-                noteText.textContent = 'Companion local HTTPS needs repair. Use Repair Local HTTPS here before browser controls can resume.';
-            } else if (view.localHttpsStatus === 'repairing') {
-                pairingStateValue.textContent = view.is_paired ? 'Connected, browser repair in progress' : 'Browser repair in progress';
-                noteText.textContent = 'Companion is repairing its secure local browser connection. Browser controls will refresh automatically when repair finishes.';
-            } else if (view.is_paired && view.is_pairing_active) {
-                pairingStateValue.textContent = 'Connected, replacement code active';
-                noteText.textContent = 'Complete pairing in Nojoin to replace the current backend. If you cancel now, the current backend stays active and unchanged.';
-            } else if (view.is_paired) {
-                pairingStateValue.textContent = 'Connected';
-                noteText.textContent = 'Start re-pairing here to switch this companion to a different Nojoin deployment. The current backend remains active until the new pairing succeeds.';
-            } else if (view.is_pairing_active) {
-                pairingStateValue.textContent = 'Pairing code active';
-                noteText.textContent = 'Finish pairing in Nojoin using the current code, or cancel this local pairing session here if you want to start over.';
-            } else {
-                pairingStateValue.textContent = 'Not paired';
-                noteText.textContent = 'Start pairing here to connect this companion to a Nojoin deployment.';
-            }
+            runOnStartupToggle.checked = view.run_on_startup_enabled;
+            runOnStartupToggle.disabled = false;
+            updateRunOnStartupLabel(view.run_on_startup_enabled);
 
+            checkUpdatesBtn.textContent = 'Check for Updates';
+            checkUpdatesNote.textContent = view.update_available && view.latest_version
+                ? `Current version ${view.app_version}. Version ${view.latest_version} is available.`
+                : `Current version ${view.app_version}.`;
+
+            aboutNote.textContent = `Nojoin Companion must be running on this device so Nojoin can access local browser controls and record meetings. Version ${view.app_version}.`;
+
+            disconnectNote.textContent = view.is_paired
+                ? 'Remove this device from its current backend. Pair again before browser-side controls work.'
+                : 'This device is already unpaired.';
+            disconnectBtn.textContent = 'Disconnect Current Backend';
+            disconnectBtn.disabled = !view.is_paired;
+
+            advancedSection.open = connection.openAdvanced || advancedPinnedOpen;
+            updateAdvancedToggleLabel();
             scheduleResize();
         }
 
@@ -347,94 +785,137 @@
             try {
                 const settings = await invoke('get_settings_state');
                 renderSettings(settings);
-            } catch (e) {
-                backendValue.textContent = 'Unavailable';
-                pairingStateValue.textContent = 'Unavailable';
-                setStatus('Failed to load settings: ' + e, 'error');
+            } catch (error) {
+                connectionStatePill.textContent = 'Unavailable';
+                connectionStatePill.className = 'status-pill critical';
+                connectionStateNote.textContent = 'The current Settings state could not be loaded.';
+                setStatus(`Failed to load settings: ${formatError(error)}`, 'error');
             }
         }
 
         startPairingBtn.addEventListener('click', async () => {
+            const idleLabel = startPairingBtn.textContent;
             try {
-                const idleLabel = startPairingBtn.textContent;
                 setButtonBusy(startPairingBtn, true, 'Opening Pairing...', idleLabel);
-
                 await invoke('start_pairing_mode');
-
                 setStatus(
-                    idleLabel === 'Start Re-pairing' || idleLabel === 'Generate New Pairing Code'
-                        ? 'Pairing window opened. Complete pairing in Nojoin to switch this companion to the selected backend. The current backend stays active until the new pairing succeeds.'
+                    idleLabel === 'Generate New Pairing Code'
+                        ? 'Pairing window opened. The current backend stays active until the new pairing succeeds.'
                         : 'Pairing window opened. Enter the displayed code in Nojoin to finish pairing.',
                     'success',
                 );
-                await loadSettings();
-            } catch (e) {
-                setStatus(String(e), 'error');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
             } finally {
+                setButtonBusy(disconnectBtn, false, 'Disconnecting...', idleLabel);
                 await loadSettings();
-                startPairingBtn.disabled = false;
             }
         });
 
         cancelPairingBtn.addEventListener('click', async () => {
+            const idleLabel = 'Cancel Pairing';
             try {
-                const idleLabel = currentCancelPairingLabel();
                 setButtonBusy(cancelPairingBtn, true, 'Cancelling...', idleLabel);
                 const message = await invoke('cancel_pairing_request');
                 setStatus(message, 'info');
-                await loadSettings();
-            } catch (e) {
-                setStatus(String(e), 'error');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
             } finally {
-                setButtonBusy(
-                    cancelPairingBtn,
-                    false,
-                    'Cancelling...',
-                    currentCancelPairingLabel(),
-                );
-            }
-        });
-
-        disconnectBtn.addEventListener('click', async () => {
-            try {
-                setButtonBusy(disconnectBtn, true, 'Disconnecting...', 'Disconnect Current Backend');
-                const message = await invoke('disconnect_backend');
-                setStatus(message, 'info');
-                await loadSettings();
-            } catch (e) {
-                setStatus(String(e), 'error');
-            } finally {
-                setButtonBusy(disconnectBtn, false, 'Disconnecting...', 'Disconnect Current Backend');
-            }
-        });
-
-        enableFirefoxBtn.addEventListener('click', async () => {
-            try {
-                setButtonBusy(enableFirefoxBtn, true, 'Opening Windows Approval...', 'Enable Firefox Support');
-                const message = await invoke('enable_firefox_support');
-                setStatus(message, 'success');
-            } catch (e) {
-                setStatus(String(e), 'error');
-            } finally {
-                setButtonBusy(enableFirefoxBtn, false, 'Opening Windows Approval...', 'Enable Firefox Support');
                 await loadSettings();
             }
         });
 
         repairLocalHttpsBtn.addEventListener('click', async () => {
+            const idleLabel = 'Repair Local Browser Connection';
             try {
-                setButtonBusy(repairLocalHttpsBtn, true, 'Repairing Local HTTPS...', 'Repair Local HTTPS');
+                setButtonBusy(repairLocalHttpsBtn, true, 'Repairing...', idleLabel);
                 const message = await invoke('repair_local_https');
                 setStatus(message, 'success');
-            } catch (e) {
-                setStatus(String(e), 'error');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
             } finally {
-                setButtonBusy(repairLocalHttpsBtn, false, 'Repairing Local HTTPS...', 'Repair Local HTTPS');
                 await loadSettings();
             }
         });
 
+        enableFirefoxBtn.addEventListener('click', async () => {
+            const idleLabel = 'Enable Firefox Support';
+            try {
+                setButtonBusy(enableFirefoxBtn, true, 'Opening Windows Approval...', idleLabel);
+                const message = await invoke('enable_firefox_support');
+                setStatus(message, 'success');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
+            } finally {
+                await loadSettings();
+            }
+        });
+
+        disconnectBtn.addEventListener('click', async () => {
+            const idleLabel = 'Disconnect Current Backend';
+            try {
+                setButtonBusy(disconnectBtn, true, 'Disconnecting...', idleLabel);
+                const message = await invoke('disconnect_backend');
+                setStatus(message, 'info');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
+            } finally {
+                await loadSettings();
+            }
+        });
+
+        runOnStartupToggle.addEventListener('change', async () => {
+            const enabled = runOnStartupToggle.checked;
+            runOnStartupToggle.disabled = true;
+            updateRunOnStartupLabel(enabled);
+
+            try {
+                const message = await invoke('set_run_on_startup', { enabled });
+                setStatus(message, 'success');
+            } catch (error) {
+                runOnStartupToggle.checked = !enabled;
+                updateRunOnStartupLabel(!enabled);
+                setStatus(formatError(error), 'error');
+            } finally {
+                await loadSettings();
+            }
+        });
+
+        viewLogsBtn.addEventListener('click', async () => {
+            const idleLabel = 'View Logs';
+            try {
+                setButtonBusy(viewLogsBtn, true, 'Opening Logs...', idleLabel);
+                const message = await invoke('view_logs');
+                setStatus(message, 'info');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
+            } finally {
+                setButtonBusy(viewLogsBtn, false, 'Opening Logs...', idleLabel);
+                scheduleResize();
+            }
+        });
+
+        checkUpdatesBtn.addEventListener('click', async () => {
+            const idleLabel = 'Check for Updates';
+            try {
+                setButtonBusy(checkUpdatesBtn, true, 'Checking...', idleLabel);
+                const message = await invoke('check_for_updates');
+                setStatus(message, 'info');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
+            } finally {
+                await loadSettings();
+            }
+        });
+
+        advancedSection.addEventListener('toggle', () => {
+            advancedPinnedOpen = advancedSection.open;
+            updateAdvancedToggleLabel();
+            scheduleResize();
+        });
+
         window.addEventListener('load', () => {
+            updateAdvancedToggleLabel();
             void loadSettings();
             window.requestAnimationFrame(() => {
                 window.requestAnimationFrame(() => {

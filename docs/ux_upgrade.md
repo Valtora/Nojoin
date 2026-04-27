@@ -405,23 +405,35 @@ Sub-tasks:
 
 ### Step 4. Reorganize native Settings into main path, troubleshooting, and advanced sections
 
-Status: Planned.
+Status: Implemented. Manual validation pending.
 
 This step gives low-frequency utilities and troubleshooting actions a clear home before the tray is simplified.
 
+Implementation notes:
+
+- Opening Settings now routes native window creation through the same main-thread lifecycle used by the pairing window, which resolves the launcher-triggered freeze observed during Step 4.1 investigation.
+- Native Settings now uses the launcher's divider-based native window style instead of web-style card stacks. This should be treated as the downstream native-surface rule for the rest of the UX upgrade.
+- Native Settings now keeps Pairing as the primary section, moves support and destructive flows behind a collapsed `Advanced` section, and keeps the frozen Step 1 CTA labels.
+- `Run on Startup`, `View Logs`, `Check for Updates`, and `About` are now available from Settings through native commands. Tray cleanup remains deferred to Step 5.
+- Native windows now follow the operating system light or dark appearance setting instead of forcing a light-only theme.
+
 #### Task 4.1. Establish the Settings information architecture
 
-Known issue to resolve in this task:
+Status: Implemented.
 
-- Opening Settings can currently freeze the native Companion UI immediately after the window appears while the background process stays alive. Current logs may show only the initial `Opening Settings from a native launcher action.` line, so this freeze needs to be fixed before the Settings reorganization work proceeds.
+Resolved blocker in this task:
+
+- Opening Settings no longer freezes the native Companion UI after the window appears. Settings window creation now uses the Companion's main-thread native window path instead of creating the webview directly from the launcher command handler.
 
 Sub-tasks:
 
-- Split the page into the main connection path, a secure-local troubleshooting path, and an advanced/destructive area.
-- Keep current backend summary and pairing actions in the main path.
+- Split the page into Pairing, device utilities, and a collapsed Advanced area for secure-local troubleshooting and destructive actions.
+- Keep pairing actions in the primary path and remove redundant connection/backend presentation.
 - Keep local HTTPS state visible without making certificate-repair actions look routine.
 
 #### Task 4.2. Rebuild the main path section
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -431,6 +443,8 @@ Sub-tasks:
 
 #### Task 4.3. Build the troubleshooting section
 
+Status: Implemented.
+
 Sub-tasks:
 
 - Group local HTTPS repair and Firefox support together as support flows rather than routine actions.
@@ -439,6 +453,8 @@ Sub-tasks:
 
 #### Task 4.4. Add a utility/support section for low-frequency native actions
 
+Status: Implemented.
+
 Sub-tasks:
 
 - Move `Run on Startup`, `View Logs`, `Check for Updates`, and `About` into Settings.
@@ -446,6 +462,8 @@ Sub-tasks:
 - Ensure these utilities are available before tray cleanup begins.
 
 #### Task 4.5. Build the advanced/destructive section
+
+Status: Implemented.
 
 Sub-tasks:
 

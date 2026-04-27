@@ -165,11 +165,28 @@ struct SettingsView {
     backend_label: String,
     is_paired: bool,
     is_pairing_active: bool,
+    #[serde(rename = "connectionState")]
+    connection_state: SettingsConnectionState,
     #[serde(rename = "localHttpsStatus")]
     local_https_status: LocalHttpsStatus,
     local_https_message: String,
     local_https_listener_running: bool,
     local_https_current_user_trust_installed: Option<bool>,
+    run_on_startup_enabled: bool,
+    app_version: String,
+    update_available: bool,
+    latest_version: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum SettingsConnectionState {
+    NotPaired,
+    PairingCodeActive,
+    Connected,
+    TemporarilyDisconnected,
+    BrowserRepairInProgress,
+    BrowserRepairRequired,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
@@ -265,6 +282,28 @@ fn launcher_primary_action(mode: LauncherMode) -> LauncherPrimaryAction {
             LauncherPrimaryAction::OpenSettings
         }
         LauncherMode::LocalHttpsNeedsRepair => LauncherPrimaryAction::OpenSettingsToRepair,
+    }
+}
+
+fn derive_settings_connection_state(
+    state: &Arc<AppState>,
+    local_https_status: LocalHttpsStatus,
+) -> SettingsConnectionState {
+    if local_https_status == LocalHttpsStatus::NeedsRepair {
+        SettingsConnectionState::BrowserRepairRequired
+    } else if local_https_status == LocalHttpsStatus::Repairing {
+        SettingsConnectionState::BrowserRepairInProgress
+    } else if state.is_pairing_active() {
+        SettingsConnectionState::PairingCodeActive
+    } else if !state.is_authenticated() {
+        SettingsConnectionState::NotPaired
+    } else {
+        let status = recover_mutex_guard(state.status.lock(), "status").clone();
+        if matches!(status, AppStatus::BackendOffline | AppStatus::Error(_)) {
+            SettingsConnectionState::TemporarilyDisconnected
+        } else {
+            SettingsConnectionState::Connected
+        }
     }
 }
 
@@ -773,6 +812,84 @@ fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     .map_err(|err| format!("Failed to open settings window: {}", err))
 }
 
+fn set_run_on_startup_enabled(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    should_run: bool,
+) -> Result<String, String> {
+    let autostart_manager = app.autolaunch();
+    let is_enabled = autostart_manager
+        .is_enabled()
+        .map_err(|err| format!("Failed to read run on startup preference: {}", err))?;
+
+    if is_enabled != should_run {
+        if should_run {
+            autostart_manager
+                .enable()
+                .map_err(|err| format!("Failed to enable run on startup: {}", err))?;
+        } else {
+            autostart_manager
+                .disable()
+                .map_err(|err| format!("Failed to disable run on startup: {}", err))?;
+        }
+    }
+
+    {
+        let item_guard = recover_mutex_guard(
+            state.tray_run_on_startup_item.lock(),
+            "tray_run_on_startup_item",
+        );
+        if let Some(item) = item_guard.as_ref() {
+            let _ = item.set_checked(should_run);
+        }
+    }
+
+    {
+        let mut config = recover_mutex_guard(state.config.lock(), "config");
+        config
+            .update_machine_local_and_save(MachineLocalUpdate {
+                run_on_startup: Some(Some(should_run)),
+                ..Default::default()
+            })
+            .map_err(|err| format!("Failed to save run on startup preference: {}", err))?;
+    }
+
+    refresh_tray_menu(app, state);
+
+    Ok(if should_run {
+        "Run on Startup is enabled. Nojoin Companion will open when you sign in to Windows."
+            .to_string()
+    } else {
+        "Run on Startup is disabled. Open Nojoin Companion manually whenever you need it."
+            .to_string()
+    })
+}
+
+fn open_logs_directory() -> Result<String, String> {
+    let log_path = get_log_path();
+    let log_dir = log_path
+        .parent()
+        .ok_or_else(|| "The Companion logs folder is unavailable.".to_string())?;
+    open::that(log_dir).map_err(|err| format!("Failed to open the logs folder: {}", err))?;
+    Ok("Opened the Companion logs folder.".to_string())
+}
+
+fn about_message(app: &tauri::AppHandle) -> String {
+    format!(
+        "Nojoin Companion must be running on this device so Nojoin can access local browser controls and record meetings.\n\nVersion {}",
+        app.package_info().version
+    )
+}
+
+fn show_about_notification(app: &tauri::AppHandle) -> String {
+    let message = about_message(app);
+    notifications::show_notification(app, "About Nojoin Companion", &message);
+    format!(
+        "Nojoin Companion version {} is installed on this device.",
+        app.package_info().version
+    )
+}
+
 #[tauri::command]
 fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
     let config = recover_mutex_guard(state.0.config.lock(), "config");
@@ -780,21 +897,27 @@ fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
 }
 
 #[tauri::command]
-fn get_settings_state(state: tauri::State<SharedAppState>) -> SettingsView {
+fn get_settings_state(app: tauri::AppHandle, state: tauri::State<SharedAppState>) -> SettingsView {
     let backend_label = {
         let config = recover_mutex_guard(state.0.config.lock(), "config");
         derive_backend_label(&config)
     };
     let local_https_health = state.0.local_https_health();
+    let latest_version = recover_mutex_guard(state.0.latest_version.lock(), "latest_version").clone();
 
     SettingsView {
         backend_label,
         is_paired: state.0.is_authenticated(),
         is_pairing_active: state.0.is_pairing_active(),
+        connection_state: derive_settings_connection_state(&state.0, local_https_health.status),
         local_https_status: local_https_health.status,
         local_https_message: local_https_health.detail_message,
         local_https_listener_running: local_https_health.listener_running,
         local_https_current_user_trust_installed: local_https_health.current_user_trust_installed,
+        run_on_startup_enabled: app.autolaunch().is_enabled().unwrap_or(false),
+        app_version: app.package_info().version.to_string(),
+        update_available: state.0.update_available.load(Ordering::SeqCst),
+        latest_version,
     }
 }
 
@@ -804,9 +927,19 @@ fn get_launcher_state(state: tauri::State<SharedAppState>) -> LauncherView {
 }
 
 #[tauri::command]
-fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+async fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
     info!("Opening Settings from a native launcher action.");
-    open_settings_window(&app)
+    let app_handle = app.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    app.run_on_main_thread(move || {
+        let result = open_settings_window(&app_handle);
+        let _ = tx.send(result);
+    })
+    .map_err(|err| format!("Failed to schedule settings window creation: {}", err))?;
+
+    rx.await
+        .map_err(|_| "Failed to receive settings window result.".to_string())?
 }
 
 #[tauri::command]
@@ -1043,17 +1176,84 @@ async fn repair_local_https(
 }
 
 #[tauri::command]
-fn resize_current_window(
+async fn resize_current_window(
     window: tauri::WebviewWindow,
     width: f64,
     height: f64,
 ) -> Result<(), String> {
     let clamped_width = width.clamp(360.0, 720.0);
     let clamped_height = height.clamp(220.0, 760.0);
+    let app_handle = window.app_handle().clone();
+    let resize_window = window.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
 
-    window
-        .set_size(LogicalSize::new(clamped_width, clamped_height))
-        .map_err(|err| format!("Failed to resize window: {}", err))
+    app_handle
+        .run_on_main_thread(move || {
+            let result = resize_window
+                .set_size(LogicalSize::new(clamped_width, clamped_height))
+                .map_err(|err| format!("Failed to resize window: {}", err));
+            let _ = tx.send(result);
+        })
+        .map_err(|err| format!("Failed to schedule window resize: {}", err))?;
+
+    rx.await
+        .map_err(|_| "Failed to receive window resize result.".to_string())?
+}
+
+#[tauri::command]
+fn set_run_on_startup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedAppState>,
+    enabled: bool,
+) -> Result<String, String> {
+    set_run_on_startup_enabled(&app, &state.0, enabled)
+}
+
+#[tauri::command]
+fn view_logs() -> Result<String, String> {
+    open_logs_directory()
+}
+
+enum UpdateCheckOutcome {
+    UpdateAvailable { version: String, url: String },
+    UpToDate,
+}
+
+async fn perform_update_check(app: &tauri::AppHandle) -> Result<UpdateCheckOutcome, String> {
+    let current_version = app.package_info().version.to_string();
+    let state_wrapper = app.state::<SharedAppState>();
+    let state = state_wrapper.0.clone();
+
+    match check_github_release(&current_version).await? {
+        Some((version, url)) => {
+            state.update_available.store(true, Ordering::SeqCst);
+            *recover_mutex_guard(state.latest_version.lock(), "latest_version") =
+                Some(version.clone());
+            *recover_mutex_guard(state.latest_update_url.lock(), "latest_update_url") =
+                Some(url.clone());
+            Ok(UpdateCheckOutcome::UpdateAvailable { version, url })
+        }
+        None => {
+            state.update_available.store(false, Ordering::SeqCst);
+            *recover_mutex_guard(state.latest_version.lock(), "latest_version") = None;
+            *recover_mutex_guard(state.latest_update_url.lock(), "latest_update_url") = None;
+            Ok(UpdateCheckOutcome::UpToDate)
+        }
+    }
+}
+
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<String, String> {
+    match perform_update_check(&app).await? {
+        UpdateCheckOutcome::UpdateAvailable { version, .. } => Ok(format!(
+            "Update available. Nojoin Companion version {} is ready to install from the latest release.",
+            version
+        )),
+        UpdateCheckOutcome::UpToDate => Ok(format!(
+            "No updates found. Nojoin Companion is already on version {}.",
+            app.package_info().version
+        )),
+    }
 }
 
 fn close_pairing_window(app: &tauri::AppHandle) {
@@ -1210,23 +1410,26 @@ async fn check_github_release(current_version: &str) -> Result<Option<(String, S
 }
 
 async fn check_and_prompt_update(app: &tauri::AppHandle, silent: bool) {
-    let current_version = app.package_info().version.to_string();
-
-    match check_github_release(&current_version).await {
-        Ok(Some((version, url))) => {
-            let state_wrapper = app.state::<SharedAppState>();
-            let state = &state_wrapper.0;
-
-            state.update_available.store(true, Ordering::SeqCst);
-            *state.latest_version.lock().unwrap() = Some(version.clone());
-            *state.latest_update_url.lock().unwrap() = Some(url.clone());
-
+    match perform_update_check(app).await {
+        Ok(UpdateCheckOutcome::UpdateAvailable { version, url }) => {
             #[cfg(windows)]
             {
                 win_notifications::show_update_notification(app.clone(), version, url);
             }
+
+            #[cfg(not(windows))]
+            {
+                notifications::show_notification(
+                    app,
+                    "Update Available",
+                    &format!(
+                        "Nojoin Companion version {} is available. Download it from {}.",
+                        version, url
+                    ),
+                );
+            }
         }
-        Ok(None) => {
+        Ok(UpdateCheckOutcome::UpToDate) => {
             if !silent {
                 notifications::show_notification(
                     app,
@@ -1959,6 +2162,9 @@ fn main() {
             enable_firefox_support,
             repair_local_https,
             resize_current_window,
+            set_run_on_startup,
+            view_logs,
+            check_for_updates,
             close_update_prompt
         ])
         .setup(move |app| {
@@ -2070,16 +2276,11 @@ fn main() {
                             }
                         }
                         "about" => {
-                             notifications::show_notification(
-                                 app,
-                                 "About Nojoin Companion",
-                                 &format!("This is the Nojoin Companion App that let's Nojoin listen in on your meetings.\n\nVersion {}", app.package_info().version)
-                             );
+                            let _ = show_about_notification(app);
                         }
                         "view_logs" => {
-                            let log_path = get_log_path();
-                            if let Some(log_dir) = log_path.parent() {
-                                let _ = open::that(log_dir);
+                            if let Err(message) = open_logs_directory() {
+                                notifications::show_notification(app, "Logs Error", &message);
                             }
                         }
                         "check_updates" => {
@@ -2089,38 +2290,16 @@ fn main() {
                             });
                         }
                         "run_on_startup" => {
-                            let autostart_manager = app.autolaunch();
                             let state_wrapper = app.state::<SharedAppState>();
-                            let state = &state_wrapper.0;
-                            let item_guard = state.tray_run_on_startup_item.lock().unwrap();
+                            let state = state_wrapper.0.clone();
+                            let should_run = !app.autolaunch().is_enabled().unwrap_or(false);
 
-                            if autostart_manager.is_enabled().unwrap_or(false) {
-                                if let Err(e) = autostart_manager.disable() {
-                                    error!("Failed to disable autostart: {}", e);
-                                } else {
-                                    if let Some(item) = item_guard.as_ref() {
-                                        let _ = item.set_checked(false);
-                                    }
-                                    let mut config = state.config.lock().unwrap();
-                                    let _ = config.update_machine_local_and_save(MachineLocalUpdate {
-                                        run_on_startup: Some(Some(false)),
-                                        ..Default::default()
-                                    });
-                                }
-                            } else {
-                                if let Err(e) = autostart_manager.enable() {
-                                    error!("Failed to enable autostart: {}", e);
-                                    notifications::show_notification(app, "Error", "Could not enable run on startup");
-                                } else {
-                                    if let Some(item) = item_guard.as_ref() {
-                                        let _ = item.set_checked(true);
-                                    }
-                                    let mut config = state.config.lock().unwrap();
-                                    let _ = config.update_machine_local_and_save(MachineLocalUpdate {
-                                        run_on_startup: Some(Some(true)),
-                                        ..Default::default()
-                                    });
-                                }
+                            if let Err(message) = set_run_on_startup_enabled(app, &state, should_run) {
+                                notifications::show_notification(
+                                    app,
+                                    "Run on Startup Error",
+                                    &message,
+                                );
                             }
                         }
                         _ => {}
