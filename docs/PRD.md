@@ -50,11 +50,11 @@ The primary user interface for interacting with the system.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
   - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
-  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and companion app setup.
+  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and where to manage Companion setup and recovery.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
   - **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
-- **Companion Status:** The frontend displays the current pairing and connection status. If the Companion is disconnected or unpaired, visual indicators and instructions are shown.
-- **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion is not paired or reachable. It links to the Windows installer from GitHub Releases.
+- **Companion Status:** The frontend displays the current pairing and connection state across Settings, dashboard capture controls, alerts, and live recording surfaces. The web UI confirms state and guides users back to native-owned actions such as repair, Firefox setup, and re-pairing instead of trying to execute those actions directly.
+- **Download Companion Button:** Companion installer entry points appear when the Companion is not paired or reachable and link to the Windows installer from GitHub Releases.
 
 ### 2.3 The Companion App (Tauri + Rust)
 
@@ -64,11 +64,15 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Framework:** Tauri v2.
 - **Language:** Rust (Backend) + HTML/JS (Frontend).
 - **Platforms:** Windows (macOS and Linux support is not currently available).
-- **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
+- **Role:** Acts as the native control surface for local capture, pairing, repair, browser support, and backend handoff. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 - **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
 - **Pairing Model:** Companion pairing is initiated manually by the user from the Companion app, which generates a short-lived pairing code. The user enters this code into the Web Client to authorize the Companion and establish a single-backend association. The backend issues a revocable companion credential plus local control secret, stores only the credential hash, and the browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
 - **Per-Recording Upload Tokens:** Each recording initialisation returns a short-lived upload token bound to that recording ID. Segment upload, client-status updates, finalisation, and discard all use that narrower token.
-- **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
+- **Launcher:** A compact first-run and steady-state native surface with one primary next action and a route into Nojoin or Settings.
+- **Settings:** The canonical native home for pairing, repair, Firefox support, updates, logs, and disconnect.
+- **Pairing Window:** The dedicated native surface for the current 8-character code, countdown, copy action, and `Cancel Pairing`.
+- **Tray:** An operational fallback surface for status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
+- **Support Model:** The browser can submit pairing codes and show coarse state, but native-only repair, Firefox setup, and disconnect actions stay inside the Companion app.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
 - **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
 - **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub matched to the server version.

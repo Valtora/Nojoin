@@ -204,19 +204,34 @@ If you are building signed updates locally, ensure `TAURI_PRIVATE_KEY` and `TAUR
 
 ### Testing and Switching Deployments
 
-Because the Companion uses a strict one-backend pairing model, you cannot remain simultaneously paired to both a local development backend (e.g. `https://localhost:14443`) and a production or staging backend. 
+Because the Companion uses a strict one-backend pairing model, you cannot remain simultaneously paired to both a local development backend (e.g. `https://localhost:14443`) and a production or staging backend.
+
+The end-user source of truth for this workflow is [COMPANION.md](COMPANION.md). Keep [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) concise and point into that guide rather than duplicating detailed browser, repair, or tray walkthroughs.
 
 If you are testing changes and need to switch your Companion between a production instance and your local development stack:
 
-1. Open the Companion app settings.
-2. Either select "Disconnect Current Backend" first, or immediately start a fresh pairing against the target backend.
+1. Open the Companion app Settings.
+2. Either select `Disconnect Current Backend` first, or choose `Generate New Pairing Code` and start pairing against the target backend.
 3. Enter the displayed code into the target frontend (either your local dev site or production site).
-4. The Companion will cleanly replace its previous trust state, clear any previous local secret bundle, and authenticate with the newly paired backend.
+4. The current backend stays active until the new pairing succeeds.
+5. After success, the Companion cleanly replaces its previous trust state, clears any previous local secret bundle, and authenticates with the newly paired backend.
 
 After upgrading across the companion credential-storage security change, expect an initial forced re-pair. Older plaintext pairing state is intentionally discarded.
 
+### Companion UX Validation Expectations
+
+When changes touch the launcher, Settings, tray, pairing window, or browser-side Companion support surfaces, manually validate at least the following flows:
+
+- Fresh Chromium path: install, `Start Pairing`, enter the code in Nojoin, return to `Connected`, and start a recording.
+- Firefox path: run `Enable Firefox Support`, enable Firefox enterprise roots, restart Firefox, and pair with a fresh code.
+- Repair path: `Browser repair required` routes to Settings, and only `Repair Local Browser Connection` performs the repair.
+- Quiet degraded states: `Temporarily disconnected` and `Browser repair in progress` remain informative but non-alarmist.
+- Replacement pairing: the previous backend remains active until the new pairing succeeds, and switching stays blocked while a recording or queued upload is still active.
+- Tray fallback: the top level remains limited to status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
+
 ## Related Docs
 
+- [COMPANION.md](COMPANION.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [AGENTS.md](AGENTS.md)

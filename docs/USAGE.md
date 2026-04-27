@@ -3,10 +3,11 @@
 This guide covers normal day-to-day use after Nojoin has already been installed.
 
 For deployment, administration, calendar provider setup, and backup operations, use the dedicated guides in the `docs` folder.
+For detailed Companion install, pairing, repair, re-pair, tray usage, and Firefox setup, use [COMPANION.md](COMPANION.md).
 
 ## First Run
 
-1. Install and run the Windows Companion app.
+1. If the Companion is not installed or paired yet, follow [COMPANION.md](COMPANION.md).
 2. Open the web app and confirm the Companion shows as connected.
 3. Use **Meet Now** from the dashboard to create a short test recording.
 4. Open the finished recording in the `/recordings` workspace.
@@ -14,14 +15,16 @@ For deployment, administration, calendar provider setup, and backup operations, 
 
 ## Companion Connectivity and Pairing
 
-The Companion connects to one Nojoin deployment at a time. It requires a manual pairing process to establish trust.
+The dedicated [COMPANION.md](COMPANION.md) guide is the canonical reference for Companion setup and recovery.
 
-- **First Pair:** Open the Companion app Settings and choose `Start Pairing`. A short-lived 8-character code will appear. Open the Nojoin web app and enter the current code to establish the connection.
-- **Switching Deployments (Re-pairing):** If you use multiple Nojoin instances (e.g., development and production), choose `Generate New Pairing Code` in Companion Settings before entering the new code into the target deployment's web app. The current backend stays active until the new pairing succeeds.
-- **Firefox Path:** If you plan to pair through Firefox, enable Firefox Support in Companion Settings first, restart Firefox, then generate a fresh pairing code before retrying the web flow.
-- A connected Companion means it is successfully paired and securely communicating with the Nojoin web origin.
-- Detailed service health, release information, and administrative diagnostics remain inside the authenticated web app.
-- If the Companion cannot connect, ensure it is paired to the correct instance, and verify the public HTTPS origin, reverse proxy routing, and certificate trust before troubleshooting user sessions.
+The short version:
+
+- The Companion pairs to one Nojoin deployment at a time.
+- Use `Start Pairing` for the first pair.
+- Use `Generate New Pairing Code` when the code expires or when you are replacing an existing backend pairing. The current backend stays active until the new pairing succeeds.
+- `Temporarily disconnected` means the pairing is still valid and should recover automatically.
+- `Browser repair required` and Firefox support both route back to the native Companion app rather than running in the browser.
+- Chrome and Edge are the default path. Firefox requires `Enable Firefox Support`, Firefox enterprise roots, a browser restart, and a fresh code.
 
 ## Tours and Onboarding
 
@@ -219,6 +222,7 @@ The Help area includes:
 
 ## Related Docs
 
+- [COMPANION.md](COMPANION.md)
 - [CALENDAR.md](CALENDAR.md)
 - [ADMIN.md](ADMIN.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)

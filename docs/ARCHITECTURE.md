@@ -10,7 +10,7 @@ Nojoin has three major parts:
 
 1. A Dockerised backend that stores data and runs processing workloads.
 2. A Next.js web client for capture control, review, and administration.
-3. A Windows Companion app that captures system and microphone audio locally.
+3. A Windows Companion app that captures audio locally and owns pairing, repair, and tray-side operational fallback.
 
 ## Core Components
 
@@ -36,12 +36,17 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
+- Browser-side Companion status, pairing code entry, and support routing.
+
+The web Companion page is a secondary support surface. It confirms state and routes native-only repair, Firefox setup, and destructive actions back to the Companion app.
 
 ### Companion App
 
 The Companion app is responsible for:
 
+- Presenting the native launcher, Settings window, pairing window, and tray fallback surfaces.
 - Capturing loopback system audio and microphone audio on Windows.
+- Owning pairing, repair, Firefox support, update, log, and disconnect actions.
 - Exposing local status and live metering to the web client.
 - Uploading recording segments to the backend.
 
@@ -56,6 +61,8 @@ The Companion app is responsible for:
 7. The web client shows a live capture or processing status workspace while the job runs.
 
 Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
+
+If browser-side local control degrades, the web client reports coarse state and routes the user back to Companion Settings for native-only repair or Firefox setup.
 
 ## Processing Pipeline
 
@@ -111,6 +118,7 @@ Nojoin follows a unified release model:
 
 ## Related Docs
 
+- [COMPANION.md](COMPANION.md)
 - [GETTING_STARTED.md](GETTING_STARTED.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [USAGE.md](USAGE.md)

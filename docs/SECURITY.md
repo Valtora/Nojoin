@@ -25,17 +25,22 @@ The Nojoin Companion app requires a strict manual pairing workflow.
 
 - The Companion exposes a short-lived local API only for authenticated requests.
 - Anonymous discovery of the Companion via the loopback interface is explicitly blocked. The frontend cannot silently detect if the Companion is running.
-- Pairing must be manually initiated by the user from within the Companion app, which generates a single-use, short-lived 8-character pairing code.
+- First-run orientation, pairing initiation, repair, Firefox support, low-frequency utilities, and disconnect remain native-owned. The browser can collect the current pairing code and show coarse state, but it cannot silently start pairing, execute repair, or disconnect the backend on its own.
+- Pairing must be manually initiated by the user from within the Companion app through `Start Pairing` or `Generate New Pairing Code`, which generates a single-use, short-lived 8-character pairing code.
+- Firefox support remains explicit opt-in. Users must run `Enable Firefox Support`, enable Firefox enterprise roots, restart Firefox, and use a fresh pairing code before Firefox-based local control will work reliably.
 - During pairing, the Companion captures and pins the first backend TLS certificate it sees for that backend target.
 - The backend returns a revocable companion credential and a short-lived local control secret during pairing. The backend stores only a hash of the companion credential.
 - On Windows, the Companion stores those secrets in a DPAPI-protected sidecar file rather than in `config.json`.
 - The browser never receives a reusable Companion bearer token. The Companion exchanges its stored credential for a short-lived backend access token when it needs to call the backend.
 - Re-pairing to a different Nojoin backend replaces the previous trust relationship atomically.
 - After pairing, all Companion-to-backend HTTPS traffic requires the pinned backend certificate. If the backend certificate changes, the Companion must be explicitly re-paired.
+- Browser repair remains a native-only action. Other surfaces may route the user to `Open Settings to Repair`, but the actual `Repair Local Browser Connection` action runs inside Companion Settings.
 - Explicitly disconnecting the current backend from Companion Settings clears the saved backend certificate pin and local secret bundle, then attempts a best-effort remote revoke before returning the app to a clean first-pair state.
 - All requests to the Companion's local API require a short-lived local control token and strict Host validation (e.g. `127.0.0.1` or `localhost`).
 
 Operators and users should be aware that switching between deployments requires an explicit re-pair. Legacy plaintext Companion trust state is intentionally dropped by the current security upgrade, so existing installations must pair again after updating.
+
+For end-user install, pairing, repair, and browser setup steps, see [COMPANION.md](COMPANION.md).
 
 ## Supported Versions
 
