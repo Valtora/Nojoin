@@ -552,7 +552,7 @@ Sub-tasks:
 - Review cancellation messaging.
 - Review whether any success-state confirmation should be shown before the window closes.
 
-### Step 7. Redesign the web Companion page as state cards with one primary CTA
+### Step 7. Redesign the Settings -> Companion App page as state cards with one primary CTA
 
 Status: Planned.
 
@@ -574,7 +574,7 @@ Sub-tasks:
 - Make install/download guidance concise and state-aware.
 - Avoid turning the default path into a browser-selection wizard.
 
-#### Task 7.3. Add a separate Firefox support card
+#### Task 7.3. Add detection logic to funnel users through Firefox's support card when user agent is Firefox 
 
 Sub-tasks:
 
