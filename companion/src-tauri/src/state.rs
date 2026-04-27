@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
-use tauri::menu::{CheckMenuItem, MenuItem};
+use tauri::menu::MenuItem;
 use tauri::tray::TrayIcon;
 use tauri::Wry;
 
@@ -230,7 +230,6 @@ pub struct AppState {
 
     // Tray Menu Items
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
-    pub tray_run_on_startup_item: Mutex<Option<CheckMenuItem<Wry>>>,
     pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
 
     // Manual pairing state
@@ -457,7 +456,6 @@ mod tests {
             latest_update_url: Mutex::new(None),
             local_https_health: Mutex::new(LocalHttpsHealth::default()),
             tray_status_item: Mutex::new(None),
-            tray_run_on_startup_item: Mutex::new(None),
             tray_icon: Mutex::new(None),
             pairing_session: Mutex::new(None),
         }

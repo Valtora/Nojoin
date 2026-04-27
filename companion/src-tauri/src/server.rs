@@ -2333,7 +2333,6 @@ mod tests {
             latest_update_url: Mutex::new(None),
             local_https_health: Mutex::new(LocalHttpsHealth::ready(true)),
             tray_status_item: Mutex::new(None),
-            tray_run_on_startup_item: Mutex::new(None),
             tray_icon: Mutex::new(None),
             pairing_session: Mutex::new(None),
         };

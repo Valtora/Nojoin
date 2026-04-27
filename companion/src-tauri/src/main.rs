@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     LogicalSize, Manager,
 };
@@ -475,86 +475,108 @@ fn open_paired_web_origin(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(target_url)
 }
 
-fn current_tray_status_text(state: &Arc<AppState>) -> String {
-    let status = state.status.lock().unwrap().clone();
-    if let AppStatus::Error(message) = &status {
-        let trimmed = message.trim();
-        return if trimmed.is_empty() {
-            "Status: Error".to_string()
-        } else {
-            format!("Status: {}", trimmed)
-        };
-    }
+fn tray_has_open_nojoin_target(state: &Arc<AppState>) -> bool {
+    let config = recover_mutex_guard(state.config.lock(), "config");
+    config.is_authenticated() && config.paired_web_origin().is_some()
+}
 
-    let local_https_health = state.local_https_health();
+fn current_tray_status_label(
+    status: &AppStatus,
+    local_https_status: LocalHttpsStatus,
+    is_authenticated: bool,
+    recovery_state: RecordingRecoveryState,
+) -> String {
     if !matches!(
         status,
         AppStatus::Recording | AppStatus::Paused | AppStatus::Uploading
     ) {
-        match local_https_health.status {
+        match local_https_status {
             LocalHttpsStatus::Repairing => {
-                return "Status: Repairing local HTTPS".to_string();
+                return "Browser repair in progress".to_string();
             }
             LocalHttpsStatus::NeedsRepair => {
-                return "Status: Local HTTPS needs repair".to_string();
+                return "Browser repair required".to_string();
             }
             LocalHttpsStatus::Ready => {}
         }
     }
 
-    if !state.is_authenticated() {
-        return "Status: Waiting for connection...".to_string();
+    if matches!(status, AppStatus::Error(_)) {
+        return "Error".to_string();
     }
 
-    let recovery_state = state.recording_recovery_state();
+    if !is_authenticated {
+        return "Not paired".to_string();
+    }
+
     match status {
-        AppStatus::Idle => "Status: Ready to Record".to_string(),
+        AppStatus::Idle => "Connected".to_string(),
         AppStatus::Recording => match recovery_state {
             RecordingRecoveryState::WaitingForReconnect => {
-                "Status: Recording while Nojoin is offline".to_string()
+                "Recording while temporarily disconnected".to_string()
             }
-            _ => "Status: Recording".to_string(),
+            _ => "Recording".to_string(),
         },
         AppStatus::Paused => match recovery_state {
-            RecordingRecoveryState::None => "Status: Recording Paused".to_string(),
+            RecordingRecoveryState::None => "Recording paused".to_string(),
             RecordingRecoveryState::WaitingForReconnect => {
-                "Status: Recording paused while Nojoin is offline".to_string()
+                "Recording paused while temporarily disconnected".to_string()
             }
             RecordingRecoveryState::StopRequested => {
-                "Status: Upload queued until Nojoin reconnects".to_string()
+                "Upload queued until reconnect".to_string()
             }
         },
         AppStatus::Uploading => match recovery_state {
             RecordingRecoveryState::StopRequested => {
-                "Status: Upload queued until Nojoin reconnects".to_string()
+                "Upload queued until reconnect".to_string()
             }
-            _ => "Status: Uploading Recording".to_string(),
+            _ => "Uploading recording".to_string(),
         },
-        AppStatus::BackendOffline => "Status: Nojoin Offline".to_string(),
-        AppStatus::Error(_) => "Status: Error".to_string(),
+        AppStatus::BackendOffline => "Temporarily disconnected".to_string(),
+        AppStatus::Error(_) => "Error".to_string(),
     }
+}
+
+fn current_tray_status_label_for_state(state: &Arc<AppState>) -> String {
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
+    let local_https_status = state.local_https_health().status;
+    current_tray_status_label(
+        &status,
+        local_https_status,
+        state.is_authenticated(),
+        state.recording_recovery_state(),
+    )
+}
+
+fn current_tray_status_text(state: &Arc<AppState>) -> String {
+    format!("Status: {}", current_tray_status_label_for_state(state))
+}
+
+fn current_tray_tooltip_text(state: &Arc<AppState>) -> String {
+    format!(
+        "Nojoin Companion: {}",
+        current_tray_status_label_for_state(state)
+    )
 }
 
 fn update_tray_status_ui(state: &Arc<AppState>) {
     let status_text = current_tray_status_text(state);
+    let tooltip_text = current_tray_tooltip_text(state);
 
     if let Some(item) = state.tray_status_item.lock().unwrap().as_ref() {
         let _ = item.set_text(&status_text);
     }
 
     if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
-        let _ = tray.set_tooltip(Some(&status_text));
+        let _ = tray.set_tooltip(Some(&tooltip_text));
     }
 }
 
-fn build_tray_menu(
-    app: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    is_autostart_enabled: bool,
-) -> tauri::Result<Menu<tauri::Wry>> {
+fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Result<Menu<tauri::Wry>> {
     let status = state.status.lock().unwrap().clone();
     let recovery_state = state.recording_recovery_state();
     let has_active_recording = state.current_recording_id.lock().unwrap().is_some();
+    let can_open_nojoin = tray_has_open_nojoin_target(state);
     let can_pause_recording = has_active_recording
         && matches!(status, AppStatus::Recording)
         && recovery_state == RecordingRecoveryState::None;
@@ -572,21 +594,11 @@ fn build_tray_menu(
         && recovery_state != RecordingRecoveryState::StopRequested;
 
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
-    let view_logs = MenuItem::with_id(app, "view_logs", "View Logs", true, None::<&str>)?;
-    let check_updates = MenuItem::with_id(
+    let open_nojoin = MenuItem::with_id(
         app,
-        "check_updates",
-        "Check for Updates",
-        true,
-        None::<&str>,
-    )?;
-    let run_on_startup = CheckMenuItem::with_id(
-        app,
-        "run_on_startup",
-        "Run on Startup",
-        true,
-        is_autostart_enabled,
+        "open_nojoin",
+        "Open Nojoin",
+        can_open_nojoin,
         None::<&str>,
     )?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
@@ -594,7 +606,7 @@ fn build_tray_menu(
         app,
         "status",
         &current_tray_status_text(state),
-        true,
+        false,
         None::<&str>,
     )?;
     let pause_recording = MenuItem::with_id(
@@ -620,28 +632,24 @@ fn build_tray_menu(
     )?;
 
     *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
-    *state.tray_run_on_startup_item.lock().unwrap() = Some(run_on_startup.clone());
 
-    let separator_one = PredefinedMenuItem::separator(app)?;
-    let separator_two = PredefinedMenuItem::separator(app)?;
-    let separator_three = PredefinedMenuItem::separator(app)?;
+    let separator_after_status = PredefinedMenuItem::separator(app)?;
+    let separator_after_controls = PredefinedMenuItem::separator(app)?;
+    let separator_before_quit = PredefinedMenuItem::separator(app)?;
 
     if has_active_recording && matches!(status, AppStatus::Recording | AppStatus::Paused) {
         Menu::with_items(
             app,
             &[
                 &status_item,
-                &separator_one,
+                &separator_after_status,
                 &pause_recording,
                 &resume_recording,
                 &stop_recording,
-                &separator_three,
+                &separator_after_controls,
+                &open_nojoin,
                 &settings,
-                &run_on_startup,
-                &check_updates,
-                &view_logs,
-                &about,
-                &separator_two,
+                &separator_before_quit,
                 &quit,
             ],
         )
@@ -650,13 +658,10 @@ fn build_tray_menu(
             app,
             &[
                 &status_item,
-                &separator_one,
+                &separator_after_status,
+                &open_nojoin,
                 &settings,
-                &run_on_startup,
-                &check_updates,
-                &view_logs,
-                &about,
-                &separator_two,
+                &separator_before_quit,
                 &quit,
             ],
         )
@@ -664,8 +669,7 @@ fn build_tray_menu(
 }
 
 pub fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
-    let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
-    match build_tray_menu(app, state, is_autostart_enabled) {
+    match build_tray_menu(app, state) {
         Ok(menu) => {
             if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
                 if let Err(err) = tray.set_menu(Some(menu)) {
@@ -835,16 +839,6 @@ fn set_run_on_startup_enabled(
     }
 
     {
-        let item_guard = recover_mutex_guard(
-            state.tray_run_on_startup_item.lock(),
-            "tray_run_on_startup_item",
-        );
-        if let Some(item) = item_guard.as_ref() {
-            let _ = item.set_checked(should_run);
-        }
-    }
-
-    {
         let mut config = recover_mutex_guard(state.config.lock(), "config");
         config
             .update_machine_local_and_save(MachineLocalUpdate {
@@ -872,22 +866,6 @@ fn open_logs_directory() -> Result<String, String> {
         .ok_or_else(|| "The Companion logs folder is unavailable.".to_string())?;
     open::that(log_dir).map_err(|err| format!("Failed to open the logs folder: {}", err))?;
     Ok("Opened the Companion logs folder.".to_string())
-}
-
-fn about_message(app: &tauri::AppHandle) -> String {
-    format!(
-        "Nojoin Companion must be running on this device so Nojoin can access local browser controls and record meetings.\n\nVersion {}",
-        app.package_info().version
-    )
-}
-
-fn show_about_notification(app: &tauri::AppHandle) -> String {
-    let message = about_message(app);
-    notifications::show_notification(app, "About Nojoin Companion", &message);
-    format!(
-        "Nojoin Companion version {} is installed on this device.",
-        app.package_info().version
-    )
 }
 
 #[tauri::command]
@@ -2069,6 +2047,110 @@ fn open_web_interface(app: &tauri::AppHandle) {
     }
 }
 
+fn handle_tray_double_click(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    if tray_has_open_nojoin_target(state) {
+        open_web_interface(app);
+        return;
+    }
+
+    if let Err(message) = focus_primary_native_surface_for_launch(
+        app,
+        state,
+        LauncherOpenReason::ExplicitLaunch,
+    ) {
+        notifications::show_notification(app, "Launcher Error", &message);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_status_uses_browser_repair_vocabulary() {
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Idle,
+                LocalHttpsStatus::Repairing,
+                true,
+                RecordingRecoveryState::None,
+            ),
+            "Browser repair in progress"
+        );
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Idle,
+                LocalHttpsStatus::NeedsRepair,
+                true,
+                RecordingRecoveryState::None,
+            ),
+            "Browser repair required"
+        );
+    }
+
+    #[test]
+    fn tray_status_uses_frozen_idle_and_disconnect_vocabulary() {
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Idle,
+                LocalHttpsStatus::Ready,
+                false,
+                RecordingRecoveryState::None,
+            ),
+            "Not paired"
+        );
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Idle,
+                LocalHttpsStatus::Ready,
+                true,
+                RecordingRecoveryState::None,
+            ),
+            "Connected"
+        );
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::BackendOffline,
+                LocalHttpsStatus::Ready,
+                true,
+                RecordingRecoveryState::None,
+            ),
+            "Temporarily disconnected"
+        );
+    }
+
+    #[test]
+    fn tray_status_preserves_recording_reconnect_wording() {
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Recording,
+                LocalHttpsStatus::Ready,
+                true,
+                RecordingRecoveryState::WaitingForReconnect,
+            ),
+            "Recording while temporarily disconnected"
+        );
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Paused,
+                LocalHttpsStatus::Ready,
+                true,
+                RecordingRecoveryState::WaitingForReconnect,
+            ),
+            "Recording paused while temporarily disconnected"
+        );
+        assert_eq!(
+            current_tray_status_label(
+                &AppStatus::Uploading,
+                LocalHttpsStatus::Ready,
+                true,
+                RecordingRecoveryState::StopRequested,
+            ),
+            "Upload queued until reconnect"
+        );
+    }
+}
+
 fn handle_process_mode() -> ProcessMode {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -2173,19 +2255,15 @@ fn main() {
             reconcile_backend_secret_state(&mut config);
 
             let autostart_manager = app.autolaunch();
-            let mut is_enabled = autostart_manager.is_enabled().unwrap_or(false);
+            let is_enabled = autostart_manager.is_enabled().unwrap_or(false);
             if let Some(should_run) = config.run_on_startup() {
                 if should_run && !is_enabled {
                     if let Err(e) = autostart_manager.enable() {
                         error!("Failed to enable autostart on load: {}", e);
-                    } else {
-                        is_enabled = true;
                     }
                 } else if !should_run && is_enabled {
                     if let Err(e) = autostart_manager.disable() {
                         error!("Failed to disable autostart on load: {}", e);
-                    } else {
-                        is_enabled = false;
                     }
                 }
             } else {
@@ -2216,7 +2294,6 @@ fn main() {
                 latest_update_url: Mutex::new(None),
                 local_https_health: Mutex::new(LocalHttpsHealth::default()),
                 tray_status_item: Mutex::new(None),
-                tray_run_on_startup_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
                 pairing_session: Mutex::new(None),
             });
@@ -2235,7 +2312,7 @@ fn main() {
             }
 
             let app_handle = app.handle();
-            let menu = build_tray_menu(&app_handle, &state, is_enabled)?;
+            let menu = build_tray_menu(&app_handle, &state)?;
 
             let tray = TrayIconBuilder::new()
                 .tooltip("Nojoin Companion")
@@ -2245,6 +2322,9 @@ fn main() {
                     match event.id.as_ref() {
                         "quit" => {
                             std::process::exit(0);
+                        }
+                        "open_nojoin" => {
+                            open_web_interface(app);
                         }
                         "settings" => {
                             if let Err(message) = open_settings_window(app) {
@@ -2275,39 +2355,13 @@ fn main() {
                                 refresh_tray_menu(app, &state);
                             }
                         }
-                        "about" => {
-                            let _ = show_about_notification(app);
-                        }
-                        "view_logs" => {
-                            if let Err(message) = open_logs_directory() {
-                                notifications::show_notification(app, "Logs Error", &message);
-                            }
-                        }
-                        "check_updates" => {
-                            let handle = app.clone();
-                            tauri::async_runtime::spawn(async move {
-                                check_and_prompt_update(&handle, false).await;
-                            });
-                        }
-                        "run_on_startup" => {
-                            let state_wrapper = app.state::<SharedAppState>();
-                            let state = state_wrapper.0.clone();
-                            let should_run = !app.autolaunch().is_enabled().unwrap_or(false);
-
-                            if let Err(message) = set_run_on_startup_enabled(app, &state, should_run) {
-                                notifications::show_notification(
-                                    app,
-                                    "Run on Startup Error",
-                                    &message,
-                                );
-                            }
-                        }
                         _ => {}
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
-                        open_web_interface(tray.app_handle());
+                        let state = tray.app_handle().state::<SharedAppState>().0.clone();
+                        handle_tray_double_click(tray.app_handle(), &state);
                     }
                 })
                 .build(app)?;

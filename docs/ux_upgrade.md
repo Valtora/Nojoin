@@ -473,9 +473,15 @@ Sub-tasks:
 
 ### Step 5. Simplify the tray menu into an operational fallback surface
 
-Status: Planned.
+Status: Complete.
 
 This step should not begin until Step 4 has already given the displaced tray items a new home.
+
+Implementation notes:
+
+- The tray top level now contains only the non-action status line, active recording controls when relevant, `Open Nojoin`, `Settings`, and `Quit`.
+- `Open Nojoin` stays disabled until the Companion has a real paired origin, and tray double-click now opens Nojoin only for paired deployments; otherwise it focuses the primary native surface.
+- Tray status text and tooltip copy now use the frozen Step 1 vocabulary for `Connected`, `Not paired`, `Temporarily disconnected`, `Browser repair in progress`, and `Browser repair required`, while preserving queued-upload and reconnect wording during recording recovery.
 
 #### Task 5.1. Reduce the top-level tray menu
 
@@ -524,7 +530,7 @@ Sub-tasks:
 - Add a short step sequence that explains what the user should do next in Nojoin.
 - Keep the layout compact and focused on the handoff rather than secondary configuration.
 
-#### Task 6.2. Clarify pairing variants
+#### Task 6.2. Clarify pairing variants in docs found in the /docs folder
 
 Sub-tasks:
 
