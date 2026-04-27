@@ -657,11 +657,7 @@ fn run_firefox_machine_root_installer(
     );
 
     let output = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-        ])
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass"])
         .arg("-File")
         .arg(&install_files.launcher_path)
         .output()
@@ -697,7 +693,8 @@ fn run_firefox_machine_root_installer(
         warn!("Firefox support setup stderr: {}", stderr);
     }
 
-    let install_log_summary = read_firefox_machine_root_install_log_summary(&install_files.log_path);
+    let install_log_summary =
+        read_firefox_machine_root_install_log_summary(&install_files.log_path);
     if let Some(summary) = install_log_summary.as_ref() {
         warn!(
             "Firefox support setup installer log tail from {}: {}",
@@ -723,14 +720,12 @@ fn run_firefox_machine_root_installer(
         let log_hint = install_log_summary
             .map(|summary| format!(" Last installer log lines: {}", summary))
             .unwrap_or_default();
-        return Err(
-            format!(
-                "Firefox support setup exited without stdout/stderr. Status: {}. Installer log: {}.{}",
-                status_summary,
-                install_files.log_path.display(),
-                log_hint
-            ),
-        );
+        return Err(format!(
+            "Firefox support setup exited without stdout/stderr. Status: {}. Installer log: {}.{}",
+            status_summary,
+            install_files.log_path.display(),
+            log_hint
+        ));
     }
 
     Err(format!(
@@ -997,7 +992,9 @@ enum StoredIdentityState {
     ),
 }
 
-fn load_public_identity(paths: &LocalHttpsPaths) -> Result<Option<PersistedLocalHttpsIdentity>, String> {
+fn load_public_identity(
+    paths: &LocalHttpsPaths,
+) -> Result<Option<PersistedLocalHttpsIdentity>, String> {
     if !paths.public_metadata_path.exists() {
         return Ok(None);
     }
@@ -1963,9 +1960,7 @@ fn remove_certificate_der_from_store(
 fn remove_crl_der_from_store(store: &CertStoreHandle, expected_der: &[u8]) -> Result<bool, String> {
     use std::ptr;
     use std::slice;
-    use windows_sys::Win32::Security::Cryptography::{
-        CertDeleteCRLFromStore, CertEnumCRLsInStore,
-    };
+    use windows_sys::Win32::Security::Cryptography::{CertDeleteCRLFromStore, CertEnumCRLsInStore};
 
     let mut previous = ptr::null();
     loop {
@@ -1974,9 +1969,8 @@ fn remove_crl_der_from_store(store: &CertStoreHandle, expected_der: &[u8]) -> Re
             return Ok(false);
         }
 
-        let crl_der = unsafe {
-            slice::from_raw_parts((*crl).pbCrlEncoded, (*crl).cbCrlEncoded as usize)
-        };
+        let crl_der =
+            unsafe { slice::from_raw_parts((*crl).pbCrlEncoded, (*crl).cbCrlEncoded as usize) };
         if crl_der == expected_der {
             let result = unsafe { CertDeleteCRLFromStore(crl) };
             if result == 0 {
@@ -2394,8 +2388,12 @@ mod tests {
         )
         .unwrap();
 
-        write_stored_identity(&paths, &generated.public_identity, &generated.private_material)
-            .unwrap();
+        write_stored_identity(
+            &paths,
+            &generated.public_identity,
+            &generated.private_material,
+        )
+        .unwrap();
         trust_store.trust(&generated.public_identity.ca.certificate_der);
         trust_store.install_crl(&revocation_list_der).unwrap();
 
@@ -2426,8 +2424,12 @@ mod tests {
         )
         .unwrap();
 
-        write_stored_identity(&paths, &generated.public_identity, &generated.private_material)
-            .unwrap();
+        write_stored_identity(
+            &paths,
+            &generated.public_identity,
+            &generated.private_material,
+        )
+        .unwrap();
         fs::remove_file(&paths.encrypted_private_material_path).unwrap();
         trust_store.trust(&generated.public_identity.ca.certificate_der);
         trust_store.install_crl(&revocation_list_der).unwrap();

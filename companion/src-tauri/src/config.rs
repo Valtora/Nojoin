@@ -142,6 +142,8 @@ pub struct MachineLocalSettings {
     pub min_meeting_length: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_on_startup: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launcher_intro_seen: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -170,6 +172,7 @@ pub struct MachineLocalUpdate {
     pub last_version: Option<Option<String>>,
     pub min_meeting_length: Option<Option<u32>>,
     pub run_on_startup: Option<Option<bool>>,
+    pub launcher_intro_seen: Option<Option<bool>>,
 }
 
 impl Default for MachineLocalSettings {
@@ -181,6 +184,7 @@ impl Default for MachineLocalSettings {
             last_version: None,
             min_meeting_length: None,
             run_on_startup: None,
+            launcher_intro_seen: None,
         }
     }
 }
@@ -200,9 +204,8 @@ impl BackendConnection {
             .as_deref()
             .and_then(canonicalize_origin);
         self.backend_pairing_id = normalize_optional_string(self.backend_pairing_id);
-        self.local_control_secret_version = self
-            .local_control_secret_version
-            .filter(|value| *value > 0);
+        self.local_control_secret_version =
+            self.local_control_secret_version.filter(|value| *value > 0);
         self
     }
 
@@ -215,12 +218,11 @@ impl BackendConnection {
     }
 
     pub fn has_complete_pairing_state(&self) -> bool {
-        self
-            .tls_fingerprint
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_some()
+        self.tls_fingerprint
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
             && self.paired_web_origin.is_some()
             && self
                 .backend_pairing_id
@@ -335,6 +337,10 @@ impl Config {
         self.machine_local.run_on_startup
     }
 
+    pub fn launcher_intro_seen(&self) -> Option<bool> {
+        self.machine_local.launcher_intro_seen
+    }
+
     pub fn last_version(&self) -> Option<&str> {
         self.machine_local.last_version.as_deref()
     }
@@ -398,6 +404,9 @@ impl Config {
         }
         if let Some(run_on_startup) = update.run_on_startup {
             self.machine_local.run_on_startup = run_on_startup;
+        }
+        if let Some(launcher_intro_seen) = update.launcher_intro_seen {
+            self.machine_local.launcher_intro_seen = launcher_intro_seen;
         }
     }
 
@@ -464,7 +473,7 @@ impl Config {
         let parsed_version = parsed.version.unwrap_or_default();
         let mut needs_save = parsed_version != CURRENT_CONFIG_VERSION;
 
-        let machine_local = parsed.machine_local.unwrap_or_else(|| {
+        let mut machine_local = parsed.machine_local.unwrap_or_else(|| {
             needs_save = true;
             MachineLocalSettings::default()
         });
@@ -484,6 +493,7 @@ impl Config {
                             "Clearing incomplete backend trust state during recovery. Start pairing again from Companion Settings."
                         );
                         needs_save = true;
+                        machine_local.launcher_intro_seen = None;
                         None
                     }
                 }
@@ -493,6 +503,7 @@ impl Config {
                         error
                     );
                     needs_save = true;
+                    machine_local.launcher_intro_seen = None;
                     None
                 }
             },
@@ -502,6 +513,7 @@ impl Config {
             info!("Upgrading from legacy config version {}. Dropping backend trust state to force a clean re-pair.", parsed_version);
             backend = None;
             needs_save = true;
+            machine_local.launcher_intro_seen = None;
         }
 
         let config = Config {
@@ -536,6 +548,7 @@ impl Config {
                 )),
                 min_meeting_length: optional_u32_field(object, "min_meeting_length"),
                 run_on_startup: optional_bool_field(object, "run_on_startup"),
+                launcher_intro_seen: optional_bool_field(object, "launcher_intro_seen"),
             },
             backend,
         })
@@ -566,6 +579,7 @@ impl Config {
                 )),
                 min_meeting_length: optional_u32_field(object, "min_meeting_length"),
                 run_on_startup: optional_bool_field(object, "run_on_startup"),
+                launcher_intro_seen: optional_bool_field(object, "launcher_intro_seen"),
             },
             backend,
         })
@@ -597,6 +611,7 @@ impl Config {
             || object.contains_key("last_version")
             || object.contains_key("min_meeting_length")
             || object.contains_key("run_on_startup")
+            || object.contains_key("launcher_intro_seen")
         {
             return Self::migrate_from_current_flat(&value).map(|config| (config, true));
         }
@@ -702,6 +717,7 @@ mod tests {
             last_version: Some(Some("1.2.3".to_string())),
             min_meeting_length: Some(Some(12)),
             run_on_startup: Some(Some(true)),
+            launcher_intro_seen: Some(Some(true)),
         });
         config.replace_backend(BackendConnection {
             api_protocol: "https".to_string(),
@@ -767,7 +783,8 @@ mod tests {
             "output_device_name": "Desk Speakers",
             "last_version": "0.8.1",
             "min_meeting_length": 8,
-            "run_on_startup": true
+            "run_on_startup": true,
+            "launcher_intro_seen": true
         }"#;
 
         let (config, needs_save) = Config::parse_or_migrate(content).unwrap();
@@ -780,6 +797,7 @@ mod tests {
         assert_eq!(config.last_version(), Some("0.8.1"));
         assert_eq!(config.min_meeting_length(), Some(8));
         assert_eq!(config.run_on_startup(), Some(true));
+        assert_eq!(config.launcher_intro_seen(), Some(true));
 
         // The backend trust block is explicitly dropped during migration now
         assert!(config.backend.is_none());
@@ -909,6 +927,7 @@ mod tests {
             last_version: Some(Some("0.8.2".to_string())),
             min_meeting_length: Some(Some(25)),
             run_on_startup: Some(Some(false)),
+            launcher_intro_seen: Some(Some(true)),
         });
         let machine_before = config.machine_local.clone();
 
@@ -934,7 +953,10 @@ mod tests {
 
         assert_eq!(config.machine_local, machine_before);
         assert_eq!(config.api_host(), "second.example.com");
-        assert_eq!(config.backend_pairing_id().as_deref(), Some("pairing-second"));
+        assert_eq!(
+            config.backend_pairing_id().as_deref(),
+            Some("pairing-second")
+        );
     }
 
     #[test]
@@ -969,7 +991,8 @@ mod tests {
         let content = r#"{
             "version": 3,
             "machine_local": {
-                "local_port": 12345
+                "local_port": 12345,
+                "launcher_intro_seen": true
             },
             "backend": {
                 "api_protocol": "https",
@@ -986,5 +1009,6 @@ mod tests {
         assert!(needs_save);
         assert!(config.backend.is_none());
         assert!(!config.is_authenticated());
+        assert_eq!(config.launcher_intro_seen(), None);
     }
 }

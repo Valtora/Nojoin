@@ -5,32 +5,110 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nojoin Companion</title>
     <style>
+        :root {
+            color-scheme: light;
+            --bg: #eef2f7;
+            --panel: #ffffff;
+            --panel-border: #dbe3ee;
+            --text: #162033;
+            --muted: #64748b;
+            --shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+        }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            justify_code: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
-            background-color: #f0f0f0;
-            color: #333;
-            text-align: center;
+            padding: 20px;
+            background:
+                radial-gradient(circle at top right, rgba(194, 65, 12, 0.14), transparent 42%),
+                linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+            color: var(--text);
+            font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+            box-sizing: border-box;
         }
-        .container {
-            padding: 2rem;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        *, *::before, *::after {
+            box-sizing: inherit;
         }
-        h1 { margin-bottom: 0.5rem; }
-        p { color: #666; }
+        .shell {
+            width: min(460px, 100%);
+            padding: 24px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.45rem;
+            line-height: 1.1;
+        }
+        .lead {
+            margin: 12px 0 0;
+            color: var(--muted);
+            font-size: 0.98rem;
+            line-height: 1.5;
+        }
+        .supporting {
+            margin: 10px 0 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="shell">
         <h1>Nojoin Companion</h1>
-        <p>The companion is running in the system tray.</p>
-        <p>You can close this window.</p>
+        <p class="lead">The companion is running in the system tray.</p>
+        <p class="supporting">You can close this window.</p>
     </div>
+
+    <script>
+        const { invoke } = window.__TAURI__.core;
+        let resizeTimer = null;
+
+        function scheduleResize() {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(() => {
+                void resizeToFit();
+            }, 20);
+        }
+
+        async function resizeToFit() {
+            const shell = document.querySelector('.shell');
+            if (!shell) {
+                return;
+            }
+
+            const width = Math.ceil(Math.max(360, shell.scrollWidth + 40));
+            const height = Math.ceil(Math.max(210, document.documentElement.scrollHeight + 24));
+
+            try {
+                await invoke('resize_current_window', { width, height });
+            } catch (_error) {
+                // Ignore resize failures. The launcher remains usable.
+            }
+        }
+
+        window.addEventListener('load', () => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                    void resizeToFit();
+                });
+            });
+        });
+
+        window.addEventListener('focus', () => {
+            scheduleResize();
+        });
+
+        if ('ResizeObserver' in window) {
+            const shell = document.querySelector('.shell');
+            if (shell) {
+                const resizeObserver = new ResizeObserver(() => {
+                    scheduleResize();
+                });
+                resizeObserver.observe(shell);
+            }
+        }
+    </script>
 </body>
 </html>

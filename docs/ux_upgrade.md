@@ -198,6 +198,12 @@ Ownership boundary summary:
 - The pairing window owns only the active code lifecycle and handoff into Nojoin.
 - The web Companion page is the secondary browser-side state surface. It confirms, warns, and guides, but it does not replace the native-first model.
 
+Native window sizing rule:
+
+- Every Companion-owned native webview window must size itself to its current content instead of opening on a fixed oversized canvas.
+- Launcher, Settings, pairing, and later native support windows must open at the smallest size that fully fits their current content and re-measure after state-driven content changes.
+- Manual freeform resizing is not part of the primary UX contract for these task-oriented windows.
+
 #### Task 1.3. Freeze terminology and CTA vocabulary
 
 Status: Complete.
@@ -284,11 +290,19 @@ Surface transition rules:
 
 ### Step 2. Add native launcher plumbing and state delivery
 
-Status: Planned.
+Status: Implemented. Manual validation pending.
 
 This step prepares the runtime contract required before the launcher UI can be rebuilt.
 
+Implementation notes:
+
+- The Companion now exposes a dedicated launcher state command instead of overloading the Settings state payload.
+- Manual startup, autostart, and repeated launches now route through explicit launcher or pairing focus rules, with autostart identified by a dedicated startup argument.
+- Native `Open Nojoin` now opens only a real paired web origin, and trust resets return the launcher to first-run onboarding mode.
+
 #### Task 2.1. Add a launcher-specific native view model
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -297,6 +311,8 @@ Sub-tasks:
 - Keep the launcher state aligned with the existing local HTTPS status model rather than inventing a parallel status taxonomy.
 
 #### Task 2.2. Implement launcher window lifecycle rules
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -307,6 +323,8 @@ Sub-tasks:
 
 #### Task 2.3. Implement launcher action plumbing
 
+Status: Implemented.
+
 Sub-tasks:
 
 - Wire direct launcher actions for `Start Pairing` / `Generate New Pairing Code`, `Open Nojoin`, and `Open Settings`.
@@ -314,6 +332,8 @@ Sub-tasks:
 - Ensure launcher actions reuse the existing pairing and web-launch logic instead of duplicating it.
 
 #### Task 2.4. Add runtime instrumentation and guardrails
+
+Status: Implemented.
 
 Sub-tasks:
 

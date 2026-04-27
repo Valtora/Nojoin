@@ -7,8 +7,8 @@ use crate::notifications;
 use crate::secret_store::{self, BackendSecretBundle};
 use crate::state::{
     pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, ActiveRecordingOwner,
-    AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession,
-    PairingValidationError, RecordingRecoveryState,
+    AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession, PairingValidationError,
+    RecordingRecoveryState,
 };
 use crate::uploader;
 use axum::debug_handler;
@@ -2263,6 +2263,7 @@ mod tests {
                 last_version: None,
                 min_meeting_length: None,
                 run_on_startup: None,
+                launcher_intro_seen: None,
             },
             backend: Some(BackendConnection {
                 api_protocol: "https".to_string(),

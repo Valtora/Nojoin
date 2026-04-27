@@ -123,7 +123,12 @@ pub async fn exchange_access_token_for_target(
     let payload = response
         .json::<CompanionAccessTokenResponse>()
         .await
-        .map_err(|error| format!("Failed to decode companion access token response: {}", error))?;
+        .map_err(|error| {
+            format!(
+                "Failed to decode companion access token response: {}",
+                error
+            )
+        })?;
     Ok(payload.access_token)
 }
 

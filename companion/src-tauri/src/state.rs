@@ -411,8 +411,7 @@ mod tests {
     use super::{
         canonicalize_pairing_code, pairing_block_message, pairing_code_fingerprint,
         pairing_code_log_label, AppState, AppStatus, AudioCommand, LocalHttpsHealth,
-        PairingSession, PairingValidationError, RecordingRecoveryState,
-        MAX_PAIRING_ATTEMPTS,
+        PairingSession, PairingValidationError, RecordingRecoveryState, MAX_PAIRING_ATTEMPTS,
     };
     use crate::config::Config;
     use crossbeam_channel::unbounded;

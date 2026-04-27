@@ -35,8 +35,7 @@ mod win_notifications;
 use config::{Config, MachineLocalUpdate};
 use state::{
     pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, AppState, AppStatus,
-    LocalHttpsHealth, LocalHttpsStatus, RecordingRecoveryState,
-    PAIRING_WINDOW_LIFETIME_SECS,
+    LocalHttpsHealth, LocalHttpsStatus, RecordingRecoveryState, PAIRING_WINDOW_LIFETIME_SECS,
 };
 use tauri_plugin_autostart::ManagerExt;
 
@@ -44,6 +43,29 @@ use tauri_plugin_autostart::ManagerExt;
 struct SharedAppState(Arc<AppState>);
 
 struct SharedLocalHttpsController(LocalHttpsControllerHandle);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LauncherOpenReason {
+    ManualStartup,
+    Autostart,
+    ExplicitLaunch,
+}
+
+impl LauncherOpenReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ManualStartup => "manual-startup",
+            Self::Autostart => "autostart",
+            Self::ExplicitLaunch => "explicit-launch",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessMode {
+    Normal { launched_from_autostart: bool },
+    UninstallCleanup,
+}
 
 #[derive(Clone)]
 struct LocalHttpsControllerHandle {
@@ -74,7 +96,9 @@ impl LocalHttpsControllerHandle {
                 allow_identity_reset,
                 response_tx,
             })
-            .map_err(|_| "Local HTTPS repair is unavailable because the controller is offline.".to_string())?;
+            .map_err(|_| {
+                "Local HTTPS repair is unavailable because the controller is offline.".to_string()
+            })?;
 
         response_rx
             .await
@@ -84,6 +108,8 @@ impl LocalHttpsControllerHandle {
 
 const PAIRING_WINDOW_LABEL: &str = "pairing";
 const SETTINGS_WINDOW_LABEL: &str = "settings";
+const MAIN_WINDOW_LABEL: &str = "main";
+const AUTOSTART_ARG: &str = "--autostart";
 const LOCAL_HTTPS_UNINSTALL_CLEANUP_ARG: &str = "--cleanup-local-https-on-uninstall";
 
 #[derive(serde::Serialize)]
@@ -133,6 +159,40 @@ struct SettingsView {
     local_https_current_user_trust_installed: Option<bool>,
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum LauncherMode {
+    FirstRun,
+    Unpaired,
+    PairingActive,
+    PairedHealthy,
+    PairedDisconnected,
+    LocalHttpsRepairing,
+    LocalHttpsNeedsRepair,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum LauncherPrimaryAction {
+    StartPairing,
+    OpenNojoin,
+    OpenSettings,
+    OpenSettingsToRepair,
+}
+
+#[derive(serde::Serialize)]
+struct LauncherView {
+    backend_label: String,
+    is_paired: bool,
+    is_pairing_active: bool,
+    #[serde(rename = "localHttpsStatus")]
+    local_https_status: LocalHttpsStatus,
+    #[serde(rename = "launcherMode")]
+    launcher_mode: LauncherMode,
+    #[serde(rename = "primaryAction")]
+    primary_action: LauncherPrimaryAction,
+}
+
 fn derive_backend_label(config: &Config) -> String {
     if !config.is_authenticated() {
         return "Not paired".to_string();
@@ -152,6 +212,217 @@ fn derive_backend_label(config: &Config) -> String {
     }
 }
 
+fn should_show_launcher_intro(config: &Config) -> bool {
+    !config.is_authenticated() && !config.launcher_intro_seen().unwrap_or(false)
+}
+
+fn derive_launcher_mode(
+    is_paired: bool,
+    is_pairing_active: bool,
+    local_https_status: LocalHttpsStatus,
+    status: &AppStatus,
+    show_intro: bool,
+) -> LauncherMode {
+    if local_https_status == LocalHttpsStatus::NeedsRepair {
+        LauncherMode::LocalHttpsNeedsRepair
+    } else if is_pairing_active {
+        LauncherMode::PairingActive
+    } else if !is_paired {
+        if show_intro {
+            LauncherMode::FirstRun
+        } else {
+            LauncherMode::Unpaired
+        }
+    } else if matches!(status, AppStatus::BackendOffline | AppStatus::Error(_)) {
+        LauncherMode::PairedDisconnected
+    } else if local_https_status == LocalHttpsStatus::Repairing {
+        LauncherMode::LocalHttpsRepairing
+    } else {
+        LauncherMode::PairedHealthy
+    }
+}
+
+fn launcher_primary_action(mode: LauncherMode) -> LauncherPrimaryAction {
+    match mode {
+        LauncherMode::FirstRun | LauncherMode::Unpaired => LauncherPrimaryAction::StartPairing,
+        LauncherMode::PairingActive | LauncherMode::PairedHealthy => {
+            LauncherPrimaryAction::OpenNojoin
+        }
+        LauncherMode::PairedDisconnected | LauncherMode::LocalHttpsRepairing => {
+            LauncherPrimaryAction::OpenSettings
+        }
+        LauncherMode::LocalHttpsNeedsRepair => LauncherPrimaryAction::OpenSettingsToRepair,
+    }
+}
+
+fn derive_launcher_view(state: &Arc<AppState>) -> LauncherView {
+    let (backend_label, show_intro) = {
+        let config = state.config.lock().unwrap();
+        (
+            derive_backend_label(&config),
+            should_show_launcher_intro(&config),
+        )
+    };
+    let local_https_status = state.local_https_health().status;
+    let status = state.status.lock().unwrap().clone();
+    let is_paired = state.is_authenticated();
+    let is_pairing_active = state.is_pairing_active();
+    let launcher_mode = derive_launcher_mode(
+        is_paired,
+        is_pairing_active,
+        local_https_status,
+        &status,
+        show_intro,
+    );
+
+    LauncherView {
+        backend_label,
+        is_paired,
+        is_pairing_active,
+        local_https_status,
+        launcher_mode,
+        primary_action: launcher_primary_action(launcher_mode),
+    }
+}
+
+fn focus_webview_window(window: &tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+fn configure_launcher_window(window: &tauri::WebviewWindow) {
+    let launcher_window = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = launcher_window.hide();
+        }
+    });
+}
+
+fn mark_launcher_intro_seen(state: &Arc<AppState>) -> Result<bool, String> {
+    let mut config = state.config.lock().unwrap();
+    if config.is_authenticated() || config.launcher_intro_seen() == Some(true) {
+        return Ok(false);
+    }
+
+    config
+        .update_machine_local_and_save(MachineLocalUpdate {
+            launcher_intro_seen: Some(Some(true)),
+            ..Default::default()
+        })
+        .map_err(|err| format!("Failed to persist launcher intro state: {}", err))?;
+
+    Ok(true)
+}
+
+fn open_launcher_window(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    reason: LauncherOpenReason,
+) -> Result<(), String> {
+    let launcher_view = derive_launcher_view(state);
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "Launcher window is unavailable.".to_string())?;
+
+    info!(
+        "Opening launcher window. reason={} mode={:?} primary_action={:?}",
+        reason.as_str(),
+        launcher_view.launcher_mode,
+        launcher_view.primary_action
+    );
+    focus_webview_window(&window);
+
+    if launcher_view.launcher_mode == LauncherMode::FirstRun {
+        match mark_launcher_intro_seen(state) {
+            Ok(true) => info!(
+                "Marked launcher intro as seen after opening the launcher. reason={}",
+                reason.as_str()
+            ),
+            Ok(false) => {}
+            Err(error) => warn!("{}", error),
+        }
+    }
+
+    Ok(())
+}
+
+fn focus_pairing_window(app: &tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(PAIRING_WINDOW_LABEL)
+        .ok_or_else(|| "The pairing window is no longer available.".to_string())?;
+    info!("Focusing the active pairing window for an explicit launch.");
+    focus_webview_window(&window);
+    Ok(())
+}
+
+fn focus_primary_native_surface_for_launch(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    reason: LauncherOpenReason,
+) -> Result<(), String> {
+    if state.is_pairing_active() {
+        return focus_pairing_window(app).or_else(|error| {
+            warn!(
+                "{} Falling back to the launcher window instead. reason={}",
+                error,
+                reason.as_str()
+            );
+            open_launcher_window(app, state, reason)
+        });
+    }
+
+    open_launcher_window(app, state, reason)
+}
+
+fn maybe_open_startup_surface(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    launched_from_autostart: bool,
+) -> Result<(), String> {
+    if launched_from_autostart {
+        if state.is_authenticated() {
+            info!(
+                "Autostart detected with an existing paired backend. Keeping the launcher hidden."
+            );
+            return Ok(());
+        }
+
+        info!("Autostart detected without an active pairing. Opening the launcher for onboarding.");
+        return open_launcher_window(app, state, LauncherOpenReason::Autostart);
+    }
+
+    info!("Manual startup detected. Opening the primary native surface.");
+    focus_primary_native_surface_for_launch(app, state, LauncherOpenReason::ManualStartup)
+}
+
+fn open_paired_web_origin(app: &tauri::AppHandle) -> Result<String, String> {
+    let target_url = {
+        let state_wrapper = app.state::<SharedAppState>();
+        let config = state_wrapper.0.config.lock().unwrap();
+        if !config.is_authenticated() {
+            return Err(
+                "No paired Nojoin deployment is available yet. Start pairing from Companion Settings first."
+                    .to_string(),
+            );
+        }
+
+        config.paired_web_origin().ok_or_else(|| {
+            "The paired Nojoin origin is unavailable. Open Companion Settings and pair again if needed."
+                .to_string()
+        })?
+    };
+
+    open::that(&target_url).map_err(|error| format!("Failed to open Nojoin: {}", error))?;
+    info!(
+        "Opened the paired Nojoin origin from a native surface. target_origin={}",
+        target_url
+    );
+
+    Ok(target_url)
+}
+
 fn current_tray_status_text(state: &Arc<AppState>) -> String {
     let status = state.status.lock().unwrap().clone();
     if let AppStatus::Error(message) = &status {
@@ -164,7 +435,10 @@ fn current_tray_status_text(state: &Arc<AppState>) -> String {
     }
 
     let local_https_health = state.local_https_health();
-    if !matches!(status, AppStatus::Recording | AppStatus::Paused | AppStatus::Uploading) {
+    if !matches!(
+        status,
+        AppStatus::Recording | AppStatus::Paused | AppStatus::Uploading
+    ) {
         match local_https_health.status {
             LocalHttpsStatus::Repairing => {
                 return "Status: Repairing local HTTPS".to_string();
@@ -507,9 +781,24 @@ fn get_settings_state(state: tauri::State<SharedAppState>) -> SettingsView {
         local_https_status: local_https_health.status,
         local_https_message: local_https_health.detail_message,
         local_https_listener_running: local_https_health.listener_running,
-        local_https_current_user_trust_installed: local_https_health
-            .current_user_trust_installed,
+        local_https_current_user_trust_installed: local_https_health.current_user_trust_installed,
     }
+}
+
+#[tauri::command]
+fn get_launcher_state(state: tauri::State<SharedAppState>) -> LauncherView {
+    derive_launcher_view(&state.0)
+}
+
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    info!("Opening Settings from a native launcher action.");
+    open_settings_window(&app)
+}
+
+#[tauri::command]
+fn open_nojoin(app: tauri::AppHandle) -> Result<String, String> {
+    open_paired_web_origin(&app)
 }
 
 #[tauri::command]
@@ -579,26 +868,45 @@ async fn disconnect_backend(
     close_pairing_window(&app);
     state.0.is_backend_connected.store(false, Ordering::SeqCst);
 
-    let (backend, secret_bundle, secret_cleanup_error) = {
+    let (backend, secret_bundle, secret_cleanup_error, launcher_intro_reset_error) = {
         let mut config = state.0.config.lock().unwrap();
         let backend = config.backend_connection();
         let secret_bundle = backend
             .as_ref()
             .and_then(|current| secret_store::load_backend_secret_bundle_for_backend(current).ok());
+        let mut launcher_intro_reset_error = None;
         if backend.is_some() {
             config
                 .clear_backend_and_save()
                 .map_err(|err| format!("Failed to save settings: {}", err))?;
+            launcher_intro_reset_error = config
+                .update_machine_local_and_save(MachineLocalUpdate {
+                    launcher_intro_seen: Some(Some(false)),
+                    ..Default::default()
+                })
+                .err();
         }
         let secret_cleanup_error = backend.as_ref().and_then(|current| {
             secret_store::delete_backend_secret_bundle_for_backend(current).err()
         });
-        (backend, secret_bundle, secret_cleanup_error)
+        (
+            backend,
+            secret_bundle,
+            secret_cleanup_error,
+            launcher_intro_reset_error,
+        )
     };
 
     if let Some(error) = secret_cleanup_error.as_ref() {
         warn!(
             "Failed to delete the local companion secret bundle during disconnect: {}",
+            error
+        );
+    }
+
+    if let Some(error) = launcher_intro_reset_error.as_ref() {
+        warn!(
+            "Failed to reset launcher intro state during disconnect: {}",
             error
         );
     }
@@ -713,7 +1021,9 @@ async fn repair_local_https(
     };
 
     if allow_identity_reset && !confirm_local_https_identity_replace(&app) {
-        return Err("Local HTTPS repair was canceled before replacing the current identity.".to_string());
+        return Err(
+            "Local HTTPS repair was canceled before replacing the current identity.".to_string(),
+        );
     }
 
     controller.0.repair_local_https(allow_identity_reset).await
@@ -948,6 +1258,14 @@ fn reconcile_backend_secret_state(config: &mut Config) {
                 "Failed to clear paired backend after companion secret bundle load failure: {}",
                 clear_error
             );
+        } else if let Err(reset_error) = config.update_machine_local_and_save(MachineLocalUpdate {
+            launcher_intro_seen: Some(Some(false)),
+            ..Default::default()
+        }) {
+            warn!(
+                "Failed to reset launcher intro state after clearing the paired backend: {}",
+                reset_error
+            );
         }
         if let Err(delete_error) = secret_store::delete_backend_secret_bundle_for_backend(&backend)
         {
@@ -1178,12 +1496,12 @@ fn run_local_https_reconcile(
                         time::OffsetDateTime::now_utc(),
                     ) {
                         Ok(replacement_result) => match replacement_result.state {
-                            local_https_identity::LocalHttpsReconcileState::Ready(ready_identity) => {
-                                LocalHttpsReconcileOutcome::Ready(LocalHttpsReadyState {
-                                    server_identity: ready_identity.server_identity,
-                                    changes: replacement_result.changes,
-                                })
-                            }
+                            local_https_identity::LocalHttpsReconcileState::Ready(
+                                ready_identity,
+                            ) => LocalHttpsReconcileOutcome::Ready(LocalHttpsReadyState {
+                                server_identity: ready_identity.server_identity,
+                                changes: replacement_result.changes,
+                            }),
                             local_https_identity::LocalHttpsReconcileState::RepairRequired(
                                 replacement_repair,
                             ) => {
@@ -1213,8 +1531,7 @@ fn run_local_https_reconcile(
                 } else {
                     error!(
                         "Local HTTPS requires repair: reason={:?} message={}",
-                        repair.reason,
-                        repair.message
+                        repair.reason, repair.message
                     );
                     let repair_reason = repair.reason.clone();
                     LocalHttpsReconcileOutcome::NeedsRepair {
@@ -1225,10 +1542,7 @@ fn run_local_https_reconcile(
             }
         },
         Err(error) => {
-            error!(
-                "Local HTTPS reconciliation failed unexpectedly: {}",
-                error
-            );
+            error!("Local HTTPS reconciliation failed unexpectedly: {}", error);
             LocalHttpsReconcileOutcome::NeedsRepair {
                 reason: None,
                 message: local_https_repair_message(None),
@@ -1379,10 +1693,9 @@ async fn run_local_https_controller(
 
                 match run_local_https_reconcile(&app, allow_identity_reset) {
                     LocalHttpsReconcileOutcome::Ready(ready_state) => {
-                        let listener_restarted =
-                            ready_state.changes.bootstrapped_identity
-                                || ready_state.changes.leaf_regenerated
-                                || server_task.is_none();
+                        let listener_restarted = ready_state.changes.bootstrapped_identity
+                            || ready_state.changes.leaf_regenerated
+                            || server_task.is_none();
 
                         if listener_restarted {
                             stop_local_https_server(
@@ -1508,7 +1821,9 @@ async fn run_local_https_controller(
 
     while let Some(command) = command_rx.recv().await {
         let LocalHttpsControllerCommand::Repair { response_tx, .. } = command;
-        let _ = response_tx.send(Err("Local HTTPS repair is only available on Windows.".to_string()));
+        let _ = response_tx.send(Err(
+            "Local HTTPS repair is only available on Windows.".to_string()
+        ));
     }
 }
 
@@ -1533,31 +1848,24 @@ fn setup_logging() -> Result<(), fern::InitError> {
 }
 
 fn open_web_interface(app: &tauri::AppHandle) {
-    let state_wrapper = app.state::<SharedAppState>();
-    let state = &state_wrapper.0;
-
-    let target_url = {
-        let config = state.config.lock().unwrap();
-        config.get_web_url()
-    };
-
-    if !target_url.is_empty() {
-        let _ = open::that(target_url);
-    } else {
-        notifications::show_notification(app, "Error", "Backend URL not found.");
+    if let Err(message) = open_paired_web_origin(app) {
+        notifications::show_notification(app, "Open Nojoin Unavailable", &message);
     }
 }
 
-fn handle_process_mode() -> bool {
-    let mut args = std::env::args();
-    let _ = args.next();
+fn handle_process_mode() -> ProcessMode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
-    match args.next().as_deref() {
-        Some(LOCAL_HTTPS_UNINSTALL_CLEANUP_ARG) => {
-            run_local_https_uninstall_cleanup();
-            true
-        }
-        _ => false,
+    if args
+        .iter()
+        .any(|arg| arg == LOCAL_HTTPS_UNINSTALL_CLEANUP_ARG)
+    {
+        run_local_https_uninstall_cleanup();
+        return ProcessMode::UninstallCleanup;
+    }
+
+    ProcessMode::Normal {
+        launched_from_autostart: args.iter().any(|arg| arg == AUTOSTART_ARG),
     }
 }
 
@@ -1601,9 +1909,12 @@ fn main() {
         eprintln!("Failed to initialize logging: {}", e);
     }
 
-    if handle_process_mode() {
-        return;
-    }
+    let launched_from_autostart = match handle_process_mode() {
+        ProcessMode::UninstallCleanup => return,
+        ProcessMode::Normal {
+            launched_from_autostart,
+        } => launched_from_autostart,
+    };
 
     info!("Starting Nojoin Companion (Tauri)...");
 
@@ -1612,12 +1923,23 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            notifications::show_notification(app, "Nojoin Companion", "An instance is already running.");
+            let state = app.state::<SharedAppState>().0.clone();
+            if let Err(message) =
+                focus_primary_native_surface_for_launch(app, &state, LauncherOpenReason::ExplicitLaunch)
+            {
+                notifications::show_notification(app, "Launcher Error", &message);
+            }
         }))
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_settings_state,
+            get_launcher_state,
+            open_settings,
+            open_nojoin,
             start_pairing_mode,
             cancel_pairing_request,
             disconnect_backend,
@@ -1626,7 +1948,7 @@ fn main() {
             resize_current_window,
             close_update_prompt
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
             reconcile_backend_secret_state(&mut config);
@@ -1687,6 +2009,11 @@ fn main() {
             app.manage(SharedLocalHttpsController(LocalHttpsControllerHandle {
                 command_tx: local_https_command_tx.clone(),
             }));
+
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                configure_launcher_window(&window);
+                let _ = window.hide();
+            }
 
             let app_handle = app.handle();
             let menu = build_tray_menu(&app_handle, &state, is_enabled)?;
@@ -1834,6 +2161,12 @@ fn main() {
             thread::spawn(move || {
                 audio::run_audio_loop(state_audio, audio_rx, app_handle_audio);
             });
+
+            if let Err(message) =
+                maybe_open_startup_surface(app.handle(), &state, launched_from_autostart)
+            {
+                notifications::show_notification(app.handle(), "Launcher Error", &message);
+            }
 
             let state_server = state.clone();
             let app_handle = app.handle().clone();
