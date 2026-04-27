@@ -2,7 +2,6 @@
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle,
   Copy,
   Download,
   Link2,
@@ -14,6 +13,7 @@ import { CompanionDevices } from "@/types";
 import {
   CompanionPairingError,
   type CompanionLocalHttpsStatus,
+  type CompanionRuntimeStatus,
   useServiceStatusStore,
 } from "@/lib/serviceStatusStore";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -55,14 +55,20 @@ type PairingAttemptState =
   | "blocked"
   | "unreachable";
 
-type PairingMode = "standard" | "firefox";
-
 type CalloutTone = "success" | "info" | "warning" | "error";
 
-interface CalloutState {
-  title: string;
+interface StatusCardState {
+  status: string;
   message: string;
   tone: CalloutTone;
+  primaryActionLabel: string;
+  primaryActionMessage: string;
+}
+
+interface PairingCardState {
+  title: string;
+  message: string;
+  helperText: string;
 }
 
 const CALLOUT_STYLES: Record<CalloutTone, string> = {
@@ -76,165 +82,249 @@ const CALLOUT_STYLES: Record<CalloutTone, string> = {
     "border-red-200 bg-red-50 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200",
 };
 
+const SURFACE_CARD_STYLES =
+  "rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950";
+
 const FIREFOX_ENTERPRISE_ROOTS_PREF = "security.enterprise_roots.enabled";
 
-const buildConnectionSummary = (
-  backendVersion: string | null,
-  companion: boolean,
-  companionAuthenticated: boolean,
-  companionLocalConnectionUnavailable: boolean,
-  localHttpsStatus: CompanionLocalHttpsStatus | null,
-  companionStatus: string,
-  companionVersion: string | null,
-): CalloutState => {
-  if (companionAuthenticated && backendVersion && companionVersion && backendVersion !== companionVersion) {
-    return {
-      title: "Version Mismatch",
-      message: `Your Companion version (${companionVersion}) does not match the Nojoin server version (${backendVersion}). A mandatory re-pair is required after updating the Companion app to match the server version.`,
-      tone: "error",
-    };
-  }
+const buildConnectionStateCard = ({
+  backendVersion,
+  companion,
+  companionAuthenticated,
+  companionLocalConnectionUnavailable,
+  localHttpsStatus,
+  companionStatus,
+  companionVersion,
+  showFirefoxSetupGuidance,
+  pairingAttemptState,
+  pairingError,
+}: {
+  backendVersion: string | null;
+  companion: boolean;
+  companionAuthenticated: boolean;
+  companionLocalConnectionUnavailable: boolean;
+  localHttpsStatus: CompanionLocalHttpsStatus | null;
+  companionStatus: CompanionRuntimeStatus;
+  companionVersion: string | null;
+  showFirefoxSetupGuidance: boolean;
+  pairingAttemptState: PairingAttemptState;
+  pairingError: string | null;
+}): StatusCardState => {
+  const versionMismatch =
+    companionAuthenticated &&
+    backendVersion &&
+    companionVersion &&
+    backendVersion !== companionVersion;
+  const pairingBlockedByUpload =
+    pairingError?.toLowerCase().includes("upload") ?? false;
 
   if (localHttpsStatus === "needs-repair") {
     return {
-      title: "Local HTTPS needs repair",
+      status: "Browser repair required",
       message:
-        "Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS. Browser recording controls stay disabled until repair finishes.",
+        "Local browser controls are blocked until the Companion repair flow finishes.",
       tone: "warning",
+      primaryActionLabel: "Open Settings to Repair",
+      primaryActionMessage:
+        "In the Companion app, open Settings and run the repair flow there before retrying pairing or local controls here.",
     };
   }
 
-  if (localHttpsStatus === "repairing") {
+  if (versionMismatch) {
     return {
-      title: "Repairing local HTTPS",
+      status: "Version mismatch",
       message:
-        "Companion is repairing its secure local connection. Browser status will refresh automatically when repair finishes.",
-      tone: "info",
+        "Nojoin and the Companion must be on compatible versions before local control will work again.",
+      tone: "error",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app to review update status. If the update clears trust state, generate a new pairing code after versions align.",
+    };
+  }
+
+  if (pairingAttemptState === "blocked") {
+    return pairingBlockedByUpload
+      ? {
+          status: "Backend switch blocked until upload finishes",
+          message:
+            "This machine cannot switch to this deployment until the current queued upload finishes.",
+          tone: "warning",
+          primaryActionLabel: "Open Settings",
+          primaryActionMessage:
+            "Use the Companion app to verify the active upload clears before you generate a new pairing code for this deployment.",
+        }
+      : {
+          status: "Backend switch blocked while recording",
+          message:
+            "This machine cannot switch to this deployment while a recording is still active.",
+          tone: "warning",
+          primaryActionLabel: "Open Settings",
+          primaryActionMessage:
+            "Use the Companion app to stop or finish the active recording before you generate a new pairing code for this deployment.",
+        };
+  }
+
+  if (showFirefoxSetupGuidance && !companionAuthenticated) {
+    return {
+      status: "Firefox setup incomplete",
+      message:
+        "Firefox pairing did not complete in this browser.",
+      tone: "warning",
+      primaryActionLabel: "Enable Firefox Support",
+      primaryActionMessage:
+        "In the Companion app, enable Firefox Support, turn on Firefox enterprise roots, restart Firefox, then generate a fresh pairing code.",
+    };
+  }
+
+  if (pairingAttemptState === "expired") {
+    return {
+      status: "Pairing expired",
+      message: "The last pairing code is no longer valid.",
+      tone: "warning",
+      primaryActionLabel: "Generate New Pairing Code",
+      primaryActionMessage:
+        "In the Companion app, open Settings and start a fresh pairing session. If this machine is replacing another backend, the current backend stays active until the new pairing succeeds.",
     };
   }
 
   if (!companionAuthenticated) {
     return {
-      title: "Not paired",
-      message:
-        "This Nojoin deployment does not have an active Companion pairing yet. Start pairing from Companion Settings, then enter the code below.",
+      status: "Not paired",
+      message: companionLocalConnectionUnavailable
+        ? "This deployment is not paired to a Companion yet, and the browser cannot reach the local app right now."
+        : "This deployment is not paired to a Companion yet.",
       tone: "info",
+      primaryActionLabel: "Start Pairing",
+      primaryActionMessage:
+        "In the Companion app, open Settings and start pairing before you enter the current 8-character code in this browser.",
     };
   }
 
   if (!companion) {
-    if (companionLocalConnectionUnavailable) {
-      return {
-        title: "Local connection unavailable",
-        message: COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-        tone: "warning",
-      };
-    }
-
     return {
-      title: "Temporarily disconnected",
+      status: "Temporarily disconnected",
+      message: companionLocalConnectionUnavailable
+        ? "The pairing is still valid, but this browser cannot reach the local Companion right now."
+        : "The pairing is still valid and should recover automatically when the Companion reconnects.",
+      tone: "info",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app only if the connection does not recover on its own after a short wait.",
+    };
+  }
+
+  if (localHttpsStatus === "repairing") {
+    return {
+      status: "Browser repair in progress",
       message:
-        "The Companion pairing is still valid. Recording timers, waveform state, and local controls will resync when the app reconnects.",
-      tone: "warning",
+        "The Companion is repairing its local browser connection. This page will refresh automatically when the repair finishes.",
+      tone: "info",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Wait for this state to clear first. If it lingers, reopen the Companion app and check the native troubleshooting surface.",
     };
   }
 
   if (companionStatus === "recording" || companionStatus === "paused") {
     return {
-      title: "Connected, recording active",
+      status: "Connected",
       message:
-        "This deployment is already connected to the Companion. Backend switching stays blocked while a recording is active.",
-      tone: "warning",
+        "This deployment is paired and a recording is active locally.",
+      tone: "success",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app for native support actions. Recording preferences and device selection stay below on this page.",
     };
   }
 
   if (companionStatus === "uploading") {
     return {
-      title: "Connected, upload in progress",
+      status: "Connected",
       message:
-        "This deployment is already connected to the Companion. Backend switching stays blocked until the current upload finishes.",
-      tone: "warning",
+        "This deployment is paired and the Companion is still uploading work.",
+      tone: "success",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app for native support actions. Recording preferences and device selection stay below on this page.",
     };
   }
 
   if (companionStatus === "backend-offline") {
     return {
-      title: "Connected, backend offline",
+      status: "Connected",
       message:
-        "The Companion pairing is intact, but Nojoin is offline right now. Existing uploads will resume after reconnect.",
+        "The Companion pairing is intact, but the backend is offline right now.",
       tone: "info",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app only if the backend comes back and local status still does not recover.",
     };
   }
 
   if (companionStatus === "error") {
     return {
-      title: "Companion needs attention",
+      status: "Connected",
       message:
-        "The Companion remains paired to this deployment, but it reported an error. Open Companion Settings for details.",
+        "The Companion is still paired to this deployment, but it reported a local problem.",
       tone: "warning",
+      primaryActionLabel: "Open Settings",
+      primaryActionMessage:
+        "Use the Companion app to review the local error before retrying browser-side controls or pairing work.",
     };
   }
 
   return {
-    title: "Connected",
+    status: "Connected",
     message:
-      "The Companion is paired to this Nojoin deployment and ready for local recording controls.",
+      "The Companion is paired to this deployment and ready for local recording controls.",
     tone: "success",
+    primaryActionLabel: "Open Settings",
+    primaryActionMessage:
+      "Use the Companion app for native support actions. Recording preferences and device selection stay below on this page.",
   };
 };
 
-const buildPairingSummary = (
-  pairingAttemptState: PairingAttemptState,
-  pairingHasPendingConflict: boolean,
-): CalloutState => {
+const buildPairingCardState = ({
+  pairingAttemptState,
+  isFirefoxBrowser,
+  showFirefoxSetupGuidance,
+}: {
+  pairingAttemptState: PairingAttemptState;
+  isFirefoxBrowser: boolean;
+  showFirefoxSetupGuidance: boolean;
+}): PairingCardState => {
+  if (showFirefoxSetupGuidance) {
+    return {
+      title: "Enter pairing code",
+      message:
+        "After completing the Firefox support steps, enter a fresh 8-character code from the Companion pairing window.",
+      helperText:
+        "Use a fresh code after completing the Firefox support steps.",
+    };
+  }
+
   if (pairingAttemptState === "expired") {
     return {
-      title: "Pairing expired",
+      title: "Enter pairing code",
       message:
-        "The last pairing code expired or the Companion pairing window closed. Generate a new code from Companion Settings and try again.",
-      tone: "warning",
-    };
-  }
-
-  if (pairingAttemptState === "failed") {
-    return {
-      title: pairingHasPendingConflict ? "Previous request still pending" : "Pairing failed",
-      message: pairingHasPendingConflict
-        ? "Cancel the previous pending request or enter the current Companion code before retrying."
-        : "The submitted pairing code was rejected. Verify the current code from Companion Settings and try again.",
-      tone: pairingHasPendingConflict ? "warning" : "error",
-    };
-  }
-
-  if (pairingAttemptState === "blocked") {
-    return {
-      title: "Pairing blocked",
-      message:
-        "The Companion is still recording or uploading on another deployment. Stop the active work there before switching this machine to a new backend.",
-      tone: "warning",
-    };
-  }
-
-  if (pairingAttemptState === "unreachable") {
-    return {
-      title: "Companion unreachable",
-      message:
-        "No local Companion response was received. Start the app, reopen pairing from Companion Settings, then retry.",
-      tone: "error",
+        "Enter a fresh 8-character code from the Companion pairing window.",
+      helperText: "Codes expire when the pairing window closes.",
     };
   }
 
   return {
-    title: "Pairing code required",
+    title: "Enter pairing code",
     message:
-      "Open Companion Settings, choose Start Pairing, and enter the current 8-character code below. Pairing codes expire quickly if the Companion window closes.",
-    tone: "info",
+      "Enter the current 8-character code from the Companion pairing window.",
+    helperText: isFirefoxBrowser
+      ? "Codes expire when the pairing window closes. If Firefox pairing fails, support steps will appear here."
+      : "Codes expire when the pairing window closes.",
   };
 };
 
 const resolvePairingFailure = (
   error: unknown,
-  pairingMode: PairingMode,
+  isFirefoxBrowser: boolean,
 ): {
   state: PairingAttemptState;
   message: string;
@@ -243,8 +333,8 @@ const resolvePairingFailure = (
   if (isCompanionLocalConnectionError(error)) {
     return {
       state: "unreachable",
-      message: pairingMode === "firefox"
-        ? "Firefox could not reach the local Companion. Enable Firefox Support in the Companion app settings, restart Firefox, then try again with a fresh code."
+      message: isFirefoxBrowser
+        ? "Firefox could not reach the local Companion. Enable Firefox Support in the Companion app, turn on Firefox enterprise roots, restart Firefox, then try again with a fresh code."
         : COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
       notificationType: "error",
     };
@@ -258,7 +348,7 @@ const resolvePairingFailure = (
       return {
         state: "expired",
         message:
-          "The pairing code expired. Generate a new code from Companion Settings and try again.",
+          "The pairing code expired. Generate a new code from the Companion app and try again.",
         notificationType: "warning",
       };
     }
@@ -280,7 +370,7 @@ const resolvePairingFailure = (
       return {
         state: "code-required",
         message:
-          "Companion pairing mode is not active. Open Companion Settings, choose Start Pairing, and enter the current code.",
+          "Companion pairing mode is not active. Open the Companion app, choose Start Pairing, and enter the current code.",
         notificationType: "info",
       };
     }
@@ -325,7 +415,7 @@ const resolvePairingFailure = (
       return {
         state: "failed",
         message:
-          "The pairing code was rejected. Verify the current code from Companion Settings and try again.",
+          "The pairing code was rejected. Verify the current code from the Companion app and try again.",
         notificationType: "error",
       };
     }
@@ -394,9 +484,9 @@ export default function CompanionAppSettings({
   const [companionReleases, setCompanionReleases] =
     useState<CompanionReleases | null>(null);
   const [pairingCode, setPairingCode] = useState("");
-  const [pairingMode, setPairingMode] = useState<PairingMode>("standard");
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingNotice, setPairingNotice] = useState<string | null>(null);
+  const [isFirefoxBrowser, setIsFirefoxBrowser] = useState(false);
   const [firefoxPreferenceCopied, setFirefoxPreferenceCopied] = useState(false);
   const [pairingAttemptState, setPairingAttemptState] =
     useState<PairingAttemptState>("idle");
@@ -413,7 +503,7 @@ export default function CompanionAppSettings({
 
   useEffect(() => {
     if (typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent)) {
-      setPairingMode("firefox");
+      setIsFirefoxBrowser(true);
     }
   }, []);
 
@@ -534,19 +624,40 @@ export default function CompanionAppSettings({
 
   const pairingHasPendingConflict =
     pairingError?.toLowerCase().includes("still pending") ?? false;
-  const connectionSummary = buildConnectionSummary(
+  const pairingCodeLength = pairingCode.replace(/[^A-Z0-9]/g, "").length;
+  const versionMismatch =
+    companionAuthenticated &&
+    backendVersion &&
+    companionVersion &&
+    backendVersion !== companionVersion;
+  const showFirefoxSetupGuidance =
+    isFirefoxBrowser &&
+    (pairingAttemptState === "failed" || pairingAttemptState === "unreachable");
+  const canShowPairingWorkflow =
+    !companionAuthenticated &&
+    companionLocalHttpsStatus !== "needs-repair" &&
+    companionLocalHttpsStatus !== "repairing" &&
+    !versionMismatch &&
+    pairingAttemptState !== "blocked";
+  const showFirefoxRecoveryCard =
+    showFirefoxSetupGuidance && canShowPairingWorkflow;
+  const connectionStateCard = buildConnectionStateCard({
     backendVersion,
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
+    localHttpsStatus: companionLocalHttpsStatus,
     companionStatus,
     companionVersion,
-  );
-  const pairingSummary = buildPairingSummary(
+    showFirefoxSetupGuidance,
     pairingAttemptState,
-    pairingHasPendingConflict,
-  );
+    pairingError,
+  });
+  const pairingCardState = buildPairingCardState({
+    pairingAttemptState,
+    isFirefoxBrowser,
+    showFirefoxSetupGuidance,
+  });
 
   const handleDownloadCompanion = () => {
     const platform = detectPlatform();
@@ -558,15 +669,6 @@ export default function CompanionAppSettings({
 
     const downloadUrl = getDownloadUrl();
     window.open(downloadUrl, "_blank");
-  };
-
-  const handlePairingModeChange = (mode: PairingMode) => {
-    setPairingMode(mode);
-    setPairingError(null);
-    setPairingNotice(null);
-    if (pairingAttemptState === "unreachable") {
-      setPairingAttemptState("idle");
-    }
   };
 
   const handleCopyFirefoxPreference = async () => {
@@ -589,7 +691,7 @@ export default function CompanionAppSettings({
   ) => {
     event?.preventDefault();
 
-    if (pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8) {
+    if (pairingCodeLength !== 8) {
       return;
     }
 
@@ -611,7 +713,7 @@ export default function CompanionAppSettings({
           "Companion paired successfully. Local recording controls are ready on this Nojoin deployment.",
       });
     } catch (error) {
-      const failure = resolvePairingFailure(error, pairingMode);
+      const failure = resolvePairingFailure(error, isFirefoxBrowser);
       setPairingAttemptState(failure.state);
       setPairingError(failure.message);
       addNotification({
@@ -670,6 +772,12 @@ export default function CompanionAppSettings({
     }
   };
 
+  const toolsMessage = !companion
+    ? "Install or relaunch the Windows Companion on this machine before pairing here."
+    : companionUpdateAvailable
+      ? "A Companion update is available for this machine. Use the native flow to finish installation."
+      : "Download the latest Windows installer for another machine, or use the native app to review local updates.";
+
   return (
     <div className="space-y-8">
       {showOverview && (
@@ -679,126 +787,83 @@ export default function CompanionAppSettings({
               Companion Connection
             </h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Manage manual pairing and confirm the current local connection state.
+              Confirm the current pairing state, follow the next native-owned step,
+              and finish browser-side pairing only when the state below allows it.
             </p>
           </div>
 
-          <div className={`rounded-xl border px-4 py-4 ${CALLOUT_STYLES[connectionSummary.tone]}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-              {connectionSummary.title}
+          <div
+            className={`rounded-2xl border px-5 py-5 ${CALLOUT_STYLES[connectionStateCard.tone]}`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-white/70 p-2 dark:bg-gray-950/40">
+                {connectionStateCard.status === "Connected" ? (
+                  <ShieldCheck className="h-4 w-4" />
+                ) : (
+                  <Link2 className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                  Connection state
+                </div>
+                <h4 className="mt-2 text-xl font-semibold">
+                  {connectionStateCard.status}
+                </h4>
+                <p className="mt-3 text-sm leading-6">
+                  {connectionStateCard.message}
+                </p>
+              </div>
             </div>
-            <p className="mt-2 text-sm leading-6">{connectionSummary.message}</p>
-            <div className="mt-3 flex flex-wrap gap-3 text-xs opacity-90">
-              <span>Companion version: {companionVersion || "Unavailable"}</span>
-              <span>Local port: {companionConfig?.local_port || 12345}</span>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-current/20 px-3 py-1">
+                Nojoin version: {backendVersion || "Unavailable"}
+              </span>
+              <span className="rounded-full border border-current/20 px-3 py-1">
+                Companion version: {companionVersion || "Unavailable"}
+              </span>
+              <span className="rounded-full border border-current/20 px-3 py-1">
+                Local port: {companionConfig?.local_port || 12345}
+              </span>
+            </div>
+
+            <div className="mt-5 border-t border-current/15 pt-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
+                Next step
+              </div>
+              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+                <p className="text-sm font-semibold">
+                  {connectionStateCard.primaryActionLabel}
+                </p>
+                <p className="text-sm leading-6 opacity-90">
+                  {connectionStateCard.primaryActionMessage}
+                </p>
+              </div>
             </div>
           </div>
 
-          {!companionAuthenticated && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          {canShowPairingWorkflow && (
+            <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
               <div className="flex items-start gap-3">
                 <div className="rounded-full bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-200">
                   <Link2 className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    Pair Companion
-                  </p>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                    Open the Nojoin Companion app, choose Start Pairing in Companion Settings, and enter the displayed 8-character code here.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Pairing mode
-                </p>
-                <div
-                  className="grid gap-2 sm:grid-cols-2"
-                  role="radiogroup"
-                  aria-label="Companion pairing mode"
-                >
-                  <button
-                    type="button"
-                    aria-pressed={pairingMode === "standard"}
-                    onClick={() => handlePairingModeChange("standard")}
-                    className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
-                      pairingMode === "standard"
-                        ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-100"
-                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:border-gray-600"
-                    }`}
-                  >
-                    <Link2 className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      <span className="block text-sm font-semibold">Standard</span>
-                      <span className="mt-1 block text-xs opacity-80">Chrome and Edge</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={pairingMode === "firefox"}
-                    onClick={() => handlePairingModeChange("firefox")}
-                    className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
-                      pairingMode === "firefox"
-                        ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-100"
-                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:border-gray-600"
-                    }`}
-                  >
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      <span className="block text-sm font-semibold">Firefox</span>
-                      <span className="mt-1 block text-xs opacity-80">Opt-in Windows root trust</span>
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {pairingMode === "firefox" && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      <p className="text-sm font-semibold">Firefox trust setup</p>
-                      <p className="mt-1 text-sm leading-6">
-                        Firefox needs an explicit Companion setting before it can trust the local HTTPS connection. Nojoin will not change this browser setting for you.
-                      </p>
-                    </div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    Pair in browser
                   </div>
-                  <ol className="mt-3 space-y-2 text-sm leading-6">
-                    <li>
-                      <span className="font-semibold">1.</span> In the Companion app, open Settings and select <span className="font-semibold">Enable Firefox Support</span>. Approve the Windows administrator prompt.
-                    </li>
-                    <li>
-                      <span className="font-semibold">2.</span> In Firefox, open <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">about:config</code> and search for <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">{FIREFOX_ENTERPRISE_ROOTS_PREF}</code>.
-                    </li>
-                    <li>
-                      <span className="font-semibold">3.</span> Confirm it is set to <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-950/60">true</code>, then restart Firefox.
-                    </li>
-                    <li>
-                      <span className="font-semibold">4.</span> Generate a fresh Companion pairing code and complete pairing below.
-                    </li>
-                  </ol>
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyFirefoxPreference()}
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white/70 px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-white dark:border-amber-500/30 dark:bg-gray-950/40 dark:text-amber-100 dark:hover:bg-gray-950/70"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    {firefoxPreferenceCopied ? "Copied" : "Copy setting name"}
-                  </button>
+                  <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                    {pairingCardState.title}
+                  </h4>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    {pairingCardState.message}
+                  </p>
                 </div>
-              )}
-
-              <div className={`mt-4 rounded-xl border px-4 py-3 ${CALLOUT_STYLES[pairingSummary.tone]}`}>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                  {pairingSummary.title}
-                </div>
-                <p className="mt-1 text-sm leading-6">{pairingSummary.message}</p>
               </div>
 
               <form
-                className="mt-4 space-y-3"
+                className="space-y-3"
                 onSubmit={(event) => void handlePairCompanion(event)}
               >
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -815,23 +880,22 @@ export default function CompanionAppSettings({
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.22em] text-gray-950 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {pairingMode === "firefox"
-                    ? "Use a fresh code after Companion Firefox Support is enabled and Firefox has restarted. Codes expire quickly if the Companion window closes."
-                    : "Pairing codes are short-lived and expire quickly if the Companion window closes."}
+                  {pairingCardState.helperText}
                 </p>
+
                 {pairingError && (
-                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                     {pairingError}
                   </div>
                 )}
 
                 {pairingNotice && (
-                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
                     {pairingNotice}
                   </div>
                 )}
 
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:justify-end">
                   {pairingHasPendingConflict && (
                     <button
                       type="button"
@@ -849,7 +913,7 @@ export default function CompanionAppSettings({
                     disabled={
                       isPairingCompanion ||
                       isCancellingPendingPairing ||
-                      pairingCode.replace(/[^A-Z0-9]/g, "").length !== 8
+                      pairingCodeLength !== 8
                     }
                     className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
                   >
@@ -859,6 +923,57 @@ export default function CompanionAppSettings({
               </form>
             </div>
           )}
+
+          {showFirefoxRecoveryCard && (
+            <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-amber-100 p-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200">
+                    Firefox recovery
+                  </div>
+                  <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                    Complete Firefox support, then retry
+                  </h4>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    Firefox pairing did not complete in this browser. Finish the
+                    Firefox support steps, restart Firefox, then retry with a fresh
+                    code.
+                  </p>
+                </div>
+              </div>
+
+              <ol className="space-y-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
+                <li>1. Enable Firefox Support in the native Companion app.</li>
+                <li>2. Turn on Firefox enterprise roots.</li>
+                <li>3. Restart Firefox.</li>
+                <li>4. Generate a fresh pairing code.</li>
+              </ol>
+
+              <p className="text-sm leading-6 text-gray-700 dark:text-gray-300">
+                In Firefox, open <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">about:config</span>,
+                search for <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">{FIREFOX_ENTERPRISE_ROOTS_PREF}</span>,
+                and make sure it is set to <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">true</span>
+                before restarting Firefox.
+              </p>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyFirefoxPreference()}
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-50 dark:border-amber-500/30 dark:bg-gray-950 dark:text-amber-100 dark:hover:bg-gray-900"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  {firefoxPreferenceCopied ? "Copied" : "Copy setting name"}
+                </button>
+                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300 sm:max-w-md sm:text-right">
+                  After restarting Firefox, generate a fresh pairing code and enter it here.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -866,37 +981,50 @@ export default function CompanionAppSettings({
         <section className="space-y-4">
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Companion Actions
+              Companion Tools
             </h3>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Download the installer, or trigger an in-app update when the local Companion reports one.
-            </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={handleDownloadCompanion}
-              className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
-            >
-              <Download className="h-4 w-4" />
-              Download Companion
-            </button>
-            {companion && companionUpdateAvailable && companionLocalHttpsStatus !== "needs-repair" && (
+          <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Companion tools
+              </div>
+              <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                Install or update Companion
+              </h4>
+              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {toolsMessage}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => void handleUpdateCompanion()}
-                disabled={isTriggeringUpdate}
-                className="inline-flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                onClick={handleDownloadCompanion}
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
               >
-                {isTriggeringUpdate ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-                Update Companion
+                <Download className="h-4 w-4" />
+                Download Companion
               </button>
-            )}
+              {companion &&
+                companionUpdateAvailable &&
+                companionLocalHttpsStatus !== "needs-repair" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleUpdateCompanion()}
+                    disabled={isTriggeringUpdate}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                  >
+                    {isTriggeringUpdate ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    Update Companion
+                  </button>
+                )}
+            </div>
           </div>
         </section>
       )}
@@ -908,7 +1036,8 @@ export default function CompanionAppSettings({
               Recording Preferences
             </h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Manage local device selection, minimum meeting length, and recording-time warning preferences for the Companion app.
+              Manage local device selection, minimum meeting length, and
+              recording-time warning preferences for the Companion app.
             </p>
           </div>
 
@@ -925,17 +1054,6 @@ export default function CompanionAppSettings({
             suppressNoMatch
           />
         </section>
-      )}
-
-      {!companionAuthenticated && pairingAttemptState === "blocked" && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              Companion pairing cannot switch backends while recording or upload work is still active on the current deployment.
-            </p>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -16,7 +16,9 @@ export const AUDIO_KEYWORDS = [
 export const COMPANION_KEYWORDS = [
   'companion', 'companion app', 'pair', 'pairing', 'pairing code',
   'manual pairing', 'connect', 'connection', 'disconnect', 'backend switch',
-  'switch backend', 'reconnect', 'download companion', 'installer', 'update companion',
+  'switch backend', 'reconnect', 'repair', 'repairing', 'version mismatch',
+  'temporarily disconnected', 'browser repair required', 'browser repair in progress',
+  'download companion', 'installer', 'update companion',
   'status', 'local recording', 'firefox', 'windows roots', 'enterprise roots',
   'certificate trust', 'security.enterprise_roots.enabled', ...AUDIO_KEYWORDS
 ];

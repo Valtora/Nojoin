@@ -554,9 +554,17 @@ Sub-tasks:
 
 ### Step 7. Redesign the Settings -> Companion App page as state cards with one primary CTA
 
-Status: Planned.
+Status: Complete.
 
 This step reshapes the secondary web surface after the native-first ownership model is already implemented.
+
+Implementation notes:
+
+- The web Companion page now resolves its top-level presentation through a single state-card view model that reuses the existing service and pairing state instead of stacking separate connection and pairing summaries.
+- Firefox browsers now stay on the standard unpaired flow until a Firefox pairing attempt fails, at which point the page routes the user into a dedicated support card with the prerequisite order: enable Firefox Support in the Companion, turn on Firefox enterprise roots, restart Firefox, then generate a fresh pairing code.
+- The default Chromium path is now the concise browser-side pairing path. The manual Standard versus Firefox toggle has been removed so the page no longer reads like a browser-selection wizard.
+- Connection management remains the primary section, while installer and update tools are separated into their own support section and recording preferences remain in a distinct lower section.
+- Shared browser-side copy now aligns with the frozen Step 1 state vocabulary for `Not paired`, `Temporarily disconnected`, `Browser repair in progress`, `Browser repair required`, `Version mismatch`, `Pairing expired`, and backend-switch blocked states.
 
 #### Task 7.1. Reframe the page into state cards
 
@@ -574,7 +582,7 @@ Sub-tasks:
 - Make install/download guidance concise and state-aware.
 - Avoid turning the default path into a browser-selection wizard.
 
-#### Task 7.3. Add detection logic to funnel users through Firefox's support card when user agent is Firefox 
+#### Task 7.3. Add detection logic to funnel users through Firefox's support card when user agent is Firefox
 
 Sub-tasks:
 
