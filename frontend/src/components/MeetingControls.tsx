@@ -5,6 +5,9 @@ import { Square, Pause, Mic, Circle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useServiceStatusStore } from '@/lib/serviceStatusStore';
 import {
+  getCompanionSteadyStateGuidance,
+} from '@/lib/companionSteadyState';
+import {
   COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
   companionLocalFetch,
   isCompanionLocalConnectionError,
@@ -24,17 +27,29 @@ const COMPANION_COMMAND_ACTIONS: Record<string, CompanionLocalAction> = {
   resume: 'recording:resume',
 };
 
+interface MeetingSurfaceState {
+  statusLabel: string;
+  message: string;
+  nextStepLabel?: string;
+  nextStepMessage?: string;
+  buttonLabel: string;
+  buttonMode: 'start' | 'open-support' | 'wait';
+  buttonDisabled: boolean;
+}
+
 export default function MeetingControls({
   onMeetingEnd,
   variant = "sidebar",
 }: MeetingControlsProps) {
   const {
     backend,
+    backendVersion,
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
     companionLocalHttpsStatus,
     companionStatus,
+    companionVersion,
     recordingDuration,
     checkCompanion,
     enableCompanionMonitoring,
@@ -46,11 +61,74 @@ export default function MeetingControls({
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const localHttpsNeedsRepair = companionLocalHttpsStatus === 'needs-repair';
-  const localHttpsRepairing = companionLocalHttpsStatus === 'repairing';
   const hasLiveRecording =
     companion &&
     (companionStatus === 'recording' || companionStatus === 'paused');
   const isCompanionUploading = companion && companionStatus === 'uploading';
+  const companionGuidance = getCompanionSteadyStateGuidance({
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    companionStatus,
+    backendVersion,
+    companionVersion,
+  });
+  const meetingSurfaceState: MeetingSurfaceState = !backend
+    ? {
+        statusLabel: 'Nojoin unavailable',
+        message: 'Nojoin is offline right now.',
+        nextStepLabel: 'Wait for Nojoin',
+        nextStepMessage:
+          'Wait for the backend to reconnect before starting another meeting.',
+        buttonLabel: 'Nojoin unavailable',
+        buttonMode: 'wait',
+        buttonDisabled: true,
+      }
+    : companionGuidance.key === 'browser-repair-required' ||
+        companionGuidance.key === 'version-mismatch' ||
+        companionGuidance.key === 'not-paired' ||
+        companionGuidance.key === 'temporarily-disconnected' ||
+        companionGuidance.key === 'browser-repair-in-progress' ||
+        companionGuidance.key === 'companion-needs-attention'
+      ? {
+          statusLabel: companionGuidance.statusLabel,
+          message: companionGuidance.summary,
+          nextStepLabel: companionGuidance.nextStepLabel,
+          nextStepMessage: companionGuidance.nextStepMessage,
+          buttonLabel: 'Open Companion support',
+          buttonMode: 'open-support',
+          buttonDisabled: false,
+        }
+      : isCompanionUploading
+        ? {
+            statusLabel: 'Connected',
+            message: 'The Companion is still uploading the previous meeting.',
+            nextStepLabel: 'Wait for upload',
+            nextStepMessage:
+              'Wait for the current upload to finish before starting another meeting.',
+            buttonLabel: 'Finishing upload...',
+            buttonMode: 'wait',
+            buttonDisabled: true,
+          }
+        : companionStatus === 'backend-offline'
+          ? {
+              statusLabel: 'Connected',
+              message: 'The Companion is paired, but Nojoin is offline right now.',
+              nextStepLabel: 'Wait for Nojoin',
+              nextStepMessage:
+                'Wait for the backend to reconnect before starting another meeting.',
+              buttonLabel: 'Nojoin unavailable',
+              buttonMode: 'wait',
+              buttonDisabled: true,
+            }
+          : {
+              statusLabel: 'Connected',
+              message: 'Ready to start a meeting.',
+              buttonLabel: 'Start Meeting',
+              buttonMode: 'start',
+              buttonDisabled: false,
+            };
 
   // Sync local timer with store duration
   useEffect(() => {
@@ -87,7 +165,9 @@ export default function MeetingControls({
   const sendCommand = async (command: string, body?: any) => {
     setError(null);
     if (localHttpsNeedsRepair) {
-      setError('Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS.');
+      setError(
+        'Browser repair required. Open Companion support, then follow Open Settings to Repair in the Companion app.',
+      );
       return null;
     }
 
@@ -153,12 +233,16 @@ export default function MeetingControls({
   };
 
   const handlePrimaryAction = () => {
-    if (!companionAuthenticated) {
+    setError(null);
+
+    if (meetingSurfaceState.buttonMode === 'open-support') {
       router.push('/settings?tab=companion');
       return;
     }
 
-    void handleStart();
+    if (meetingSurfaceState.buttonMode === 'start') {
+      void handleStart();
+    }
   };
 
   const handleStop = async () => {
@@ -173,36 +257,6 @@ export default function MeetingControls({
   const handleResume = () => sendCommand('resume');
 
   if (variant === "dashboard") {
-    const startDisabled =
-      companionAuthenticated && (!backend || !companion || isCompanionUploading || localHttpsNeedsRepair);
-    const statusText = !backend
-      ? 'Nojoin backend unavailable.'
-      : localHttpsNeedsRepair
-        ? 'Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS before starting another meeting.'
-      : localHttpsRepairing
-        ? 'Companion is repairing its local secure connection. Browser controls will return automatically when it finishes.'
-      : !companion && companionAuthenticated && companionLocalConnectionUnavailable
-        ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
-      : !companion && companionAuthenticated
-        ? 'Companion is temporarily disconnected. Existing pairing will resync automatically when it reconnects.'
-      : !companionAuthenticated
-        ? 'Companion is not paired with this Nojoin backend. Start pairing from Companion Settings first.'
-      : !companion
-        ? 'Open the Companion app to record audio.'
-      : companionStatus === 'uploading'
-        ? 'Companion is finishing the previous upload before another meeting can begin.'
-      : companionStatus === 'backend-offline'
-        ? 'Companion is paired, but Nojoin is offline. Recording can resume once the backend reconnects.'
-      : companionStatus === 'recording'
-        ? 'Meeting is recording.'
-        : companionStatus === 'paused'
-          ? 'Meeting is paused.'
-        : companionStatus === 'error'
-          ? 'Companion needs attention before it can start another meeting.'
-          : companionAuthenticated
-            ? 'Ready to start a meeting.'
-            : 'Open the Companion app and pair it before your first recording.';
-
     return (
       <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
         <div className="flex flex-col gap-5">
@@ -211,12 +265,26 @@ export default function MeetingControls({
               <Mic className="h-5 w-5" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Companion status
+              </p>
               <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
                 Meet Now
               </h2>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                {statusText}
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {meetingSurfaceState.statusLabel}
+                </span>{' '}
+                {meetingSurfaceState.message}
               </p>
+              {!hasLiveRecording && meetingSurfaceState.nextStepLabel && (
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-gray-900 dark:text-white">
+                    Next step:
+                  </span>{' '}
+                  {meetingSurfaceState.nextStepLabel}. {meetingSurfaceState.nextStepMessage}
+                </p>
+              )}
             </div>
           </div>
 
@@ -229,21 +297,11 @@ export default function MeetingControls({
           {!hasLiveRecording ? (
             <button
               onClick={handlePrimaryAction}
-              disabled={startDisabled}
+              disabled={meetingSurfaceState.buttonDisabled}
               className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
               <Mic className="w-4 h-4" />
-              {localHttpsNeedsRepair
-                ? 'Repair in Companion Settings'
-                : !companion && companionAuthenticated
-                ? companionLocalConnectionUnavailable
-                  ? 'Repair in Companion Settings'
-                  : 'Companion reconnecting...'
-                : isCompanionUploading
-                  ? 'Finishing upload...'
-                  : !companionAuthenticated
-                    ? 'Pair Companion in Settings'
-                    : 'Start Meeting'}
+              {meetingSurfaceState.buttonLabel}
             </button>
           ) : (
             <div className="space-y-3">
@@ -302,28 +360,37 @@ export default function MeetingControls({
     <div className="p-4 border-b border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
       <div className="w-full">
         {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
+
+        {!hasLiveRecording && (
+          <div className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900/50">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              Companion status
+            </p>
+            <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+              {meetingSurfaceState.statusLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+              {meetingSurfaceState.message}
+            </p>
+            {meetingSurfaceState.nextStepLabel && (
+              <p className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  Next step:
+                </span>{' '}
+                {meetingSurfaceState.nextStepLabel}. {meetingSurfaceState.nextStepMessage}
+              </p>
+            )}
+          </div>
+        )}
         
         {!hasLiveRecording ? (
           <button
             onClick={handlePrimaryAction}
-            disabled={
-              companionAuthenticated &&
-              (!backend || !companion || isCompanionUploading || localHttpsNeedsRepair)
-            }
+            disabled={meetingSurfaceState.buttonDisabled}
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
           >
             <Mic className="w-4 h-4" />
-            {localHttpsNeedsRepair
-              ? 'Repair in Companion Settings'
-              : !companion && companionAuthenticated
-              ? companionLocalConnectionUnavailable
-                ? 'Repair in Companion Settings'
-                : 'Companion reconnecting...'
-              : isCompanionUploading
-                ? 'Finishing upload...'
-                : !companionAuthenticated
-                  ? 'Pair Companion in Settings'
-                  : 'Start Meeting'}
+            {meetingSurfaceState.buttonLabel}
           </button>
         ) : (
           <div className="flex items-center gap-2 w-full">

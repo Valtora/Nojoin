@@ -3,18 +3,21 @@
 import { useEffect, useRef } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-import { COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE } from "@/lib/companionLocalApi";
+import { getCompanionSteadyStateGuidance } from "@/lib/companionSteadyState";
 
 export default function ServiceStatusAlerts() {
   const { addNotification, removeActiveNotification } = useNotificationStore();
   const {
     backend,
+    backendVersion,
     db,
     worker,
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
     companionLocalHttpsStatus,
+    companionStatus,
+    companionVersion,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
@@ -36,6 +39,15 @@ export default function ServiceStatusAlerts() {
 
   // Track startup grace period
   const isStartupRef = useRef(true);
+  const companionGuidance = getCompanionSteadyStateGuidance({
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    companionStatus,
+    backendVersion,
+    companionVersion,
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -104,6 +116,7 @@ export default function ServiceStatusAlerts() {
       stateKey: string,
       type: "error" | "warning" | "info",
       message: string,
+      persistent = false,
     ) => {
       if (companionNotificationState.current === stateKey) {
         return;
@@ -113,7 +126,7 @@ export default function ServiceStatusAlerts() {
       notificationIds.current.companion = addNotification({
         type,
         message,
-        persistent: true,
+        persistent,
       });
       companionNotificationState.current = stateKey;
     };
@@ -164,36 +177,39 @@ export default function ServiceStatusAlerts() {
       // Companion
       if (!companionMonitoringEnabled) {
         clearCompanionNotification();
-      } else if (companion && companionLocalHttpsStatus === "needs-repair") {
+      } else if (companionGuidance.key === "browser-repair-required") {
         showCompanionNotification(
-          "local-https-needs-repair",
+          "browser-repair-required",
           "warning",
-          "Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS. Local recording controls remain disabled until repair finishes.",
+          "Browser repair required. Open Companion support, then follow Open Settings to Repair in the Companion app.",
+          true,
         );
-      } else if (companionLocalHttpsStatus === "repairing") {
-        clearCompanionNotification();
-      } else if (!isStartupRef.current && !companion && companionFailCount > 2) {
-        if (companionAuthenticated) {
-          if (companionLocalConnectionUnavailable) {
-            showCompanionNotification(
-              "local-connection-unavailable",
-              "warning",
-              COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-            );
-          } else {
-            showCompanionNotification(
-              "paired-disconnected",
-              "warning",
-              "Companion temporarily disconnected. Existing pairing stays valid, and local recording state will resync when the app reconnects.",
-            );
-          }
-        } else {
-          showCompanionNotification(
-            "pairing-required",
-            "info",
-            "Companion pairing required. Start pairing from Companion Settings, then enter the code in Nojoin.",
-          );
-        }
+      } else if (companionGuidance.key === "version-mismatch") {
+        showCompanionNotification(
+          "version-mismatch",
+          "warning",
+          "Version mismatch. Open Companion support and align versions before local control will work again.",
+        );
+      } else if (companionGuidance.key === "browser-repair-in-progress") {
+        showCompanionNotification(
+          "browser-repair-in-progress",
+          "info",
+          "Browser repair in progress. Browser controls will refresh automatically when repair finishes.",
+        );
+      } else if (
+        !isStartupRef.current &&
+        companionGuidance.key === "temporarily-disconnected" &&
+        companionFailCount > 2
+      ) {
+        showCompanionNotification(
+          companionLocalConnectionUnavailable
+            ? "temporarily-disconnected-local-unavailable"
+            : "temporarily-disconnected",
+          "info",
+          companionLocalConnectionUnavailable
+            ? "Temporarily disconnected. This pairing stays valid while the browser reconnects to the local Companion."
+            : "Temporarily disconnected. Existing pairing stays valid and will resync automatically when the Companion reconnects.",
+        );
       } else {
         clearCompanionNotification();
       }
@@ -208,8 +224,12 @@ export default function ServiceStatusAlerts() {
     companionAuthenticated,
     companionLocalConnectionUnavailable,
     companionLocalHttpsStatus,
+    companionGuidance.key,
     companionMonitoringEnabled,
+    companionStatus,
+    companionVersion,
     backendFailCount,
+    backendVersion,
     companionFailCount,
     addNotification,
     removeActiveNotification,

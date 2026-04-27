@@ -608,9 +608,16 @@ Sub-tasks:
 
 ### Step 8. Align steady-state web surfaces with the new support model
 
-Status: Planned.
+Status: Complete.
 
 This step should begin only after the web Companion page contract and copy are stable.
+
+Implementation notes:
+
+- Meeting Controls now use a state-driven support model so unpaired, temporarily disconnected, browser-repair, and version-mismatch states expose a clear next step instead of relying on disabled buttons and ad hoc status strings.
+- The alert layer now treats `Browser repair required` as the only persistent Companion warning, while `Browser repair in progress`, `Version mismatch`, and `Temporarily disconnected` are reduced to transition-style informational or warning notices.
+- The live waveform now distinguishes Companion preview failure from ordinary quiet audio so fetch failures no longer collapse into silent bars and trigger the wrong quiet-audio hint.
+- Dashboard and Recordings tour copy now points users toward the Companion App settings page as the browser-side support surface for setup, reconnect, and repair guidance.
 
 #### Task 8.1. Update Meeting Controls guidance
 

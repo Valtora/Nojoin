@@ -76,6 +76,49 @@ interface AudioLevelsResponse {
   is_recording: boolean;
 }
 
+type WaveformUnavailableState =
+  | null
+  | "reconnecting"
+  | "repair-required"
+  | "repairing"
+  | "fetch-unavailable";
+
+const WAVEFORM_UNAVAILABLE_COPY: Record<
+  Exclude<WaveformUnavailableState, null>,
+  { title: string; message: string; tone: "info" | "warning" }
+> = {
+  reconnecting: {
+    title: "Live audio preview reconnecting",
+    message:
+      "The Companion is temporarily disconnected. This preview should return automatically when the local connection recovers.",
+    tone: "info",
+  },
+  "repair-required": {
+    title: "Live audio preview unavailable",
+    message:
+      "Browser repair is required before this preview can return. Open Companion support if it does not recover after repair.",
+    tone: "warning",
+  },
+  repairing: {
+    title: "Live audio preview paused",
+    message:
+      "Browser repair is in progress. This preview will return automatically when the repair finishes.",
+    tone: "info",
+  },
+  "fetch-unavailable": {
+    title: "Live audio preview temporarily unavailable",
+    message:
+      "The preview could not refresh from the Companion right now. That does not necessarily mean the meeting audio is silent.",
+    tone: "info",
+  },
+};
+
+const WAVEFORM_UNAVAILABLE_STYLES = {
+  info: "border-blue-200/80 bg-blue-50/80 text-blue-900 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100",
+  warning:
+    "border-amber-200/80 bg-amber-50/80 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100",
+};
+
 interface LiveAudioWaveformProps {
   recordingId: number;
   enabled: boolean;
@@ -119,8 +162,19 @@ export default function LiveAudioWaveform({
   paused = false,
 }: LiveAudioWaveformProps) {
   const companion = useServiceStatusStore((state) => state.companion);
+  const companionAuthenticated = useServiceStatusStore(
+    (state) => state.companionAuthenticated,
+  );
+  const companionLocalConnectionUnavailable = useServiceStatusStore(
+    (state) => state.companionLocalConnectionUnavailable,
+  );
+  const companionLocalHttpsStatus = useServiceStatusStore(
+    (state) => state.companionLocalHttpsStatus,
+  );
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
+  const [waveformUnavailableState, setWaveformUnavailableState] =
+    useState<WaveformUnavailableState>(null);
   const inputCalibrationHistoryRef = useRef<number[]>([]);
   const outputCalibrationHistoryRef = useRef<number[]>([]);
   const lastAudioActivityAtRef = useRef<number>(Date.now());
@@ -144,7 +198,44 @@ export default function LiveAudioWaveform({
       setShowQuietHint(false);
     };
 
-    if (!enabled || !companion) {
+    if (!enabled) {
+      setWaveformUnavailableState(null);
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (companionLocalHttpsStatus === "needs-repair") {
+      setWaveformUnavailableState("repair-required");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (companionLocalHttpsStatus === "repairing") {
+      setWaveformUnavailableState("repairing");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (companionAuthenticated && !companion) {
+      setWaveformUnavailableState("reconnecting");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (!companion) {
+      setWaveformUnavailableState(null);
       setAudioHistory(zeroHistory());
       inputCalibrationHistoryRef.current = [];
       outputCalibrationHistoryRef.current = [];
@@ -153,6 +244,7 @@ export default function LiveAudioWaveform({
     }
 
     resetActivityTracking();
+    setWaveformUnavailableState(null);
 
     let cancelled = false;
     let timeoutId: number | undefined;
@@ -183,6 +275,8 @@ export default function LiveAudioWaveform({
         if (cancelled) {
           return;
         }
+
+        setWaveformUnavailableState(null);
 
         const nextInputCalibrationHistory = [
           ...inputCalibrationHistoryRef.current,
@@ -233,6 +327,15 @@ export default function LiveAudioWaveform({
           return;
         }
 
+        setWaveformUnavailableState((currentState) =>
+          currentState === "repair-required" ||
+          currentState === "repairing" ||
+          currentState === "reconnecting"
+            ? currentState
+            : "fetch-unavailable",
+        );
+        setShowQuietHint(false);
+        lastAudioActivityAtRef.current = Date.now();
         setAudioHistory((history) => appendSample(history, 0));
       }
 
@@ -249,15 +352,38 @@ export default function LiveAudioWaveform({
         window.clearTimeout(timeoutId);
       }
     };
-  }, [companion, enabled, paused, recordingId]);
+  }, [
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    enabled,
+    paused,
+    recordingId,
+  ]);
 
   const showActivityHint = Boolean(
-    showQuietHint && !suppressQuietAudioWarnings && !dismissedForMeeting,
+    showQuietHint &&
+      !waveformUnavailableState &&
+      !suppressQuietAudioWarnings &&
+      !dismissedForMeeting,
   );
+  const waveformUnavailableCopy = waveformUnavailableState
+    ? WAVEFORM_UNAVAILABLE_COPY[waveformUnavailableState]
+    : null;
 
   return (
     <div className="space-y-3">
-      {showActivityHint ? (
+      {waveformUnavailableCopy ? (
+        <div
+          className={`rounded-3xl border px-4 py-3 shadow-sm ${WAVEFORM_UNAVAILABLE_STYLES[waveformUnavailableCopy.tone]}`}
+        >
+          <p className="text-sm font-medium">{waveformUnavailableCopy.title}</p>
+          <p className="mt-1 text-xs leading-5 opacity-90">
+            {waveformUnavailableCopy.message}
+          </p>
+        </div>
+      ) : showActivityHint ? (
         <div className="rounded-3xl border border-orange-200/80 bg-orange-50/80 px-4 py-3 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10">
           <p className="text-sm font-medium text-orange-950 dark:text-orange-100">
             {ACTIVITY_HINT_COPY.title}

@@ -22,7 +22,7 @@ export const dashboardSteps: DriveStep[] = [
     element: '#dashboard-meeting-controls',
     popover: {
       title: 'Meeting Controls',
-      description: 'Start, pause, and manage live capture from here once your Companion App is connected.',
+      description: 'Start, pause, and manage live capture from here once Companion shows Connected. If setup, reconnect, or repair is needed, open Settings and use the Companion App page.',
       side: 'left',
     }
   },
@@ -65,7 +65,7 @@ export const recordingsSteps: DriveStep[] = [
     element: '#recordings-landing-panel',
     popover: {
       title: 'Start Here',
-      description: 'When this workspace is empty, use the Start Meeting button to record a session or go to the Help page in Settings if you need guidance.',
+      description: 'When this workspace is empty, use Meet Now on the dashboard to record a session. If recording controls need setup or repair, open Settings and use the Companion App page.',
       side: 'left',
     }
   }

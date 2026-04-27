@@ -1,6 +1,6 @@
 export const COMPANION_URL = "https://127.0.0.1:12345";
 export const COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE =
-  "Companion local connection is unavailable. Open Companion Settings and use the repair or troubleshooting steps.";
+  "The browser cannot reach the local Companion right now. If the app is already running, wait a moment and try again. If it does not recover, open the Companion app and check Settings.";
 
 export type CompanionLocalAction =
   | "status:read"
