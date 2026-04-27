@@ -13,6 +13,7 @@ import {
 import { CompanionDevices } from "@/types";
 import {
   CompanionPairingError,
+  type CompanionLocalHttpsStatus,
   useServiceStatusStore,
 } from "@/lib/serviceStatusStore";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -82,6 +83,7 @@ const buildConnectionSummary = (
   companion: boolean,
   companionAuthenticated: boolean,
   companionLocalConnectionUnavailable: boolean,
+  localHttpsStatus: CompanionLocalHttpsStatus | null,
   companionStatus: string,
   companionVersion: string | null,
 ): CalloutState => {
@@ -90,6 +92,24 @@ const buildConnectionSummary = (
       title: "Version Mismatch",
       message: `Your Companion version (${companionVersion}) does not match the Nojoin server version (${backendVersion}). A mandatory re-pair is required after updating the Companion app to match the server version.`,
       tone: "error",
+    };
+  }
+
+  if (localHttpsStatus === "needs-repair") {
+    return {
+      title: "Local HTTPS needs repair",
+      message:
+        "Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS. Browser recording controls stay disabled until repair finishes.",
+      tone: "warning",
+    };
+  }
+
+  if (localHttpsStatus === "repairing") {
+    return {
+      title: "Repairing local HTTPS",
+      message:
+        "Companion is repairing its secure local connection. Browser status will refresh automatically when repair finishes.",
+      tone: "info",
     };
   }
 
@@ -361,6 +381,7 @@ export default function CompanionAppSettings({
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionStatus,
     companionVersion,
     companionUpdateAvailable,
@@ -518,6 +539,7 @@ export default function CompanionAppSettings({
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionStatus,
     companionVersion,
   );
@@ -860,7 +882,7 @@ export default function CompanionAppSettings({
               <Download className="h-4 w-4" />
               Download Companion
             </button>
-            {companion && companionUpdateAvailable && (
+            {companion && companionUpdateAvailable && companionLocalHttpsStatus !== "needs-repair" && (
               <button
                 type="button"
                 onClick={() => void handleUpdateCompanion()}

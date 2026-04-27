@@ -189,6 +189,12 @@
                 <div class="value" id="pairingStateValue">Loading...</div>
             </div>
             <div class="card">
+                <div class="label">Local HTTPS</div>
+                <div class="value" id="localHttpsValue">Loading...</div>
+                <p class="card-note" id="localHttpsNote">Loading local HTTPS status...</p>
+                <button id="repairLocalHttpsBtn" class="trust">Repair Local HTTPS</button>
+            </div>
+            <div class="card">
                 <div class="label">Firefox Support</div>
                 <div class="value">Enable Firefox local pairing</div>
                 <p class="card-note">Installs the Nojoin local HTTPS CA into the Windows machine trust store after your approval, so Firefox can trust the Companion local connection.</p>
@@ -215,6 +221,9 @@
         const startPairingBtn = document.getElementById('startPairingBtn');
         const cancelPairingBtn = document.getElementById('cancelPairingBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
+        const localHttpsValue = document.getElementById('localHttpsValue');
+        const localHttpsNote = document.getElementById('localHttpsNote');
+        const repairLocalHttpsBtn = document.getElementById('repairLocalHttpsBtn');
         const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
         const statusDiv = document.getElementById('status');
         const noteText = document.getElementById('noteText');
@@ -267,8 +276,38 @@
             return cancelPairingBtn.dataset.idleLabel || cancelPairingIdleLabel;
         }
 
+        function describeLocalHttps(view) {
+            const trustSuffix = view.local_https_current_user_trust_installed === true
+                ? ' Windows current-user trust is installed.'
+                : view.local_https_current_user_trust_installed === false
+                    ? ' Windows current-user trust is missing.'
+                    : '';
+
+            if (view.localHttpsStatus === 'ready') {
+                return {
+                    value: view.local_https_listener_running ? 'Ready' : 'Ready, listener offline',
+                    note: `${view.local_https_message || 'Secure local browser connections are ready.'}${trustSuffix}`,
+                };
+            }
+
+            if (view.localHttpsStatus === 'repairing') {
+                return {
+                    value: view.local_https_listener_running ? 'Repairing, listener active' : 'Repairing',
+                    note: `${view.local_https_message || 'Companion is reconciling secure local browser access.'}${trustSuffix}`,
+                };
+            }
+
+            return {
+                value: view.local_https_listener_running ? 'Needs Repair, listener active' : 'Needs Repair',
+                note: `${view.local_https_message || 'Companion local HTTPS needs repair before browser control can resume.'}${trustSuffix}`,
+            };
+        }
+
         function renderSettings(view) {
             backendValue.textContent = view.backend_label;
+            const localHttps = describeLocalHttps(view);
+            localHttpsValue.textContent = localHttps.value;
+            localHttpsNote.textContent = localHttps.note;
             startPairingBtn.hidden = false;
             startPairingBtn.textContent = view.is_pairing_active
                 ? 'Generate New Pairing Code'
@@ -279,8 +318,15 @@
             disconnectBtn.hidden = !view.is_paired;
             cancelPairingBtn.dataset.idleLabel = cancelPairingIdleLabel;
             cancelPairingBtn.textContent = currentCancelPairingLabel();
+            enableFirefoxBtn.disabled = view.localHttpsStatus !== 'ready';
 
-            if (view.is_paired && view.is_pairing_active) {
+            if (view.localHttpsStatus === 'needs-repair') {
+                pairingStateValue.textContent = view.is_paired ? 'Connected, browser repair required' : 'Browser repair required';
+                noteText.textContent = 'Companion local HTTPS needs repair. Use Repair Local HTTPS here before browser controls can resume.';
+            } else if (view.localHttpsStatus === 'repairing') {
+                pairingStateValue.textContent = view.is_paired ? 'Connected, browser repair in progress' : 'Browser repair in progress';
+                noteText.textContent = 'Companion is repairing its secure local browser connection. Browser controls will refresh automatically when repair finishes.';
+            } else if (view.is_paired && view.is_pairing_active) {
                 pairingStateValue.textContent = 'Connected, replacement code active';
                 noteText.textContent = 'Complete pairing in Nojoin to replace the current backend. If you cancel now, the current backend stays active and unchanged.';
             } else if (view.is_paired) {
@@ -371,6 +417,20 @@
                 setStatus(String(e), 'error');
             } finally {
                 setButtonBusy(enableFirefoxBtn, false, 'Opening Windows Approval...', 'Enable Firefox Support');
+                await loadSettings();
+            }
+        });
+
+        repairLocalHttpsBtn.addEventListener('click', async () => {
+            try {
+                setButtonBusy(repairLocalHttpsBtn, true, 'Repairing Local HTTPS...', 'Repair Local HTTPS');
+                const message = await invoke('repair_local_https');
+                setStatus(message, 'success');
+            } catch (e) {
+                setStatus(String(e), 'error');
+            } finally {
+                setButtonBusy(repairLocalHttpsBtn, false, 'Repairing Local HTTPS...', 'Repair Local HTTPS');
+                await loadSettings();
             }
         });
 

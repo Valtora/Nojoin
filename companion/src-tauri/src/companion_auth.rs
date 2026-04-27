@@ -1,3 +1,5 @@
+#![cfg_attr(not(any(windows, test)), allow(dead_code))]
+
 use crate::config::{BackendConnection, Config};
 use crate::secret_store::{self, BackendSecretBundle};
 use reqwest::Method;

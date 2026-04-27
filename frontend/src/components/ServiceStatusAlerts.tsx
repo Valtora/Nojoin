@@ -14,6 +14,7 @@ export default function ServiceStatusAlerts() {
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
@@ -163,6 +164,14 @@ export default function ServiceStatusAlerts() {
       // Companion
       if (!companionMonitoringEnabled) {
         clearCompanionNotification();
+      } else if (companion && companionLocalHttpsStatus === "needs-repair") {
+        showCompanionNotification(
+          "local-https-needs-repair",
+          "warning",
+          "Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS. Local recording controls remain disabled until repair finishes.",
+        );
+      } else if (companionLocalHttpsStatus === "repairing") {
+        clearCompanionNotification();
       } else if (!isStartupRef.current && !companion && companionFailCount > 2) {
         if (companionAuthenticated) {
           if (companionLocalConnectionUnavailable) {
@@ -198,6 +207,7 @@ export default function ServiceStatusAlerts() {
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,

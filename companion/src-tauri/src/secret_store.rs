@@ -1,3 +1,5 @@
+#![cfg_attr(not(any(windows, test)), allow(dead_code))]
+
 use crate::config::{BackendConnection, Config};
 use serde::{Deserialize, Serialize};
 use std::fs;

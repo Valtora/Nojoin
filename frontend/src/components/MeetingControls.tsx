@@ -33,6 +33,7 @@ export default function MeetingControls({
     companion,
     companionAuthenticated,
     companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionStatus,
     recordingDuration,
     checkCompanion,
@@ -44,6 +45,8 @@ export default function MeetingControls({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const localHttpsNeedsRepair = companionLocalHttpsStatus === 'needs-repair';
+  const localHttpsRepairing = companionLocalHttpsStatus === 'repairing';
   const hasLiveRecording =
     companion &&
     (companionStatus === 'recording' || companionStatus === 'paused');
@@ -83,6 +86,11 @@ export default function MeetingControls({
 
   const sendCommand = async (command: string, body?: any) => {
     setError(null);
+    if (localHttpsNeedsRepair) {
+      setError('Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS.');
+      return null;
+    }
+
     try {
       const action = COMPANION_COMMAND_ACTIONS[command];
       const res = await companionLocalFetch(
@@ -166,9 +174,13 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     const startDisabled =
-      companionAuthenticated && (!backend || !companion || isCompanionUploading);
+      companionAuthenticated && (!backend || !companion || isCompanionUploading || localHttpsNeedsRepair);
     const statusText = !backend
       ? 'Nojoin backend unavailable.'
+      : localHttpsNeedsRepair
+        ? 'Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS before starting another meeting.'
+      : localHttpsRepairing
+        ? 'Companion is repairing its local secure connection. Browser controls will return automatically when it finishes.'
       : !companion && companionAuthenticated && companionLocalConnectionUnavailable
         ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
       : !companion && companionAuthenticated
@@ -221,7 +233,9 @@ export default function MeetingControls({
               className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
               <Mic className="w-4 h-4" />
-              {!companion && companionAuthenticated
+              {localHttpsNeedsRepair
+                ? 'Repair in Companion Settings'
+                : !companion && companionAuthenticated
                 ? companionLocalConnectionUnavailable
                   ? 'Repair in Companion Settings'
                   : 'Companion reconnecting...'
@@ -258,6 +272,7 @@ export default function MeetingControls({
                 ) : (
                   <button
                     onClick={handleResume}
+                    disabled={localHttpsNeedsRepair}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
                     title="Resume Recording"
                   >
@@ -268,6 +283,7 @@ export default function MeetingControls({
 
                 <button
                   onClick={handleStop}
+                  disabled={localHttpsNeedsRepair}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700"
                   title="Stop Recording"
                 >
@@ -292,12 +308,14 @@ export default function MeetingControls({
             onClick={handlePrimaryAction}
             disabled={
               companionAuthenticated &&
-              (!backend || !companion || isCompanionUploading)
+              (!backend || !companion || isCompanionUploading || localHttpsNeedsRepair)
             }
             className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
           >
             <Mic className="w-4 h-4" />
-            {!companion && companionAuthenticated
+            {localHttpsNeedsRepair
+              ? 'Repair in Companion Settings'
+              : !companion && companionAuthenticated
               ? companionLocalConnectionUnavailable
                 ? 'Repair in Companion Settings'
                 : 'Companion reconnecting...'
@@ -322,6 +340,7 @@ export default function MeetingControls({
             {companionStatus === 'recording' ? (
               <button
                 onClick={handlePause}
+                disabled={localHttpsNeedsRepair}
                 className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 title="Pause Recording"
               >
@@ -330,6 +349,7 @@ export default function MeetingControls({
             ) : (
               <button
                 onClick={handleResume}
+                disabled={localHttpsNeedsRepair}
                 className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 title="Resume Recording"
               >
@@ -339,6 +359,7 @@ export default function MeetingControls({
             
             <button
               onClick={handleStop}
+              disabled={localHttpsNeedsRepair}
               className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
               title="Stop Recording"
             >

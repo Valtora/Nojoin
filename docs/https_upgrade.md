@@ -365,6 +365,10 @@ Sub-tasks:
 
 ### Step 4. Add Companion diagnostics and recovery flows
 
+Status: Complete.
+
+The Companion now tracks a dedicated local HTTPS health model, surfaces coarse browser-facing `localHttpsStatus` readiness through local `/status` and native settings, and provides a native Repair Local HTTPS action with explicit confirmation before CA replacement. The local HTTPS listener now runs under a repair-aware controller so successful repair can restart the secure listener without falling back to HTTP, while browser-facing surfaces treat `repairing` as a quiet transient state and `needs-repair` as a persistent repair-oriented override with disabled local controls and a slower retry cadence. For developer recovery, deleting the Companion app-data `local_https` directory forces a fresh local HTTPS bootstrap on next launch, and changing the bundle identity or app-data path has the same effect; rebuilds that keep the same bundle identity and app-data path reuse the existing local HTTPS identity.
+
 #### Task 4.1. Add Companion status signals for local HTTPS readiness
 
 Sub-tasks:
@@ -411,6 +415,10 @@ Sub-tasks:
 - Document how to force regeneration for local testing.
 
 ### Step 5. Handle installer, upgrade, and uninstall behavior
+
+Status: Complete.
+
+The Windows NSIS installer and uninstall flow are now aligned with the local HTTPS design. Normal upgrades preserve the Companion app-data area and therefore preserve the `local_https` identity unless the user explicitly removes app data. Trust bootstrap remains in the first-run application path rather than the installer, so startup reconciliation, upgrade, repair, and debug rebuilds continue to reuse the same runtime logic. The uninstall path now performs best-effort local HTTPS trust cleanup only when the user selects delete app data, removing the generated current-user CA and CRL before deleting the persisted local HTTPS files. Manual installer testing confirmed the expected upgrade, uninstall, and delete-app-data behavior.
 
 #### Task 5.1. Preserve the local HTTPS identity across upgrades
 
@@ -460,28 +468,6 @@ Sub-tasks:
 - Document the automatic one-time local trust bootstrap behavior and passive notification for normal users.
 - Document how the local HTTPS identity behaves across upgrades.
 - Document the expected local recovery steps for developers.
-
-#### Task 6.3. Add a manual verification matrix
-
-Sub-tasks:
-
-- Verify first-run pairing from an HTTPS-served Nojoin origin in Chromium-based browsers.
-- Verify Firefox pairing after the user explicitly enables Firefox Support in Companion Settings, confirms Firefox Windows root trust, restarts Firefox, and generates a fresh code.
-- Verify reconnection after Companion restart.
-- Verify recording start, pause, resume, and stop.
-- Verify waveform and settings behavior.
-- Verify update trigger behavior.
-- Verify re-pairing to another backend still works.
-- Verify that Chromium-based supported browsers do not require a manual browser security exception in the intended setup.
-
-#### Task 6.4. Add regression checks for deployment scenarios
-
-Sub-tasks:
-
-- Verify direct localhost Nojoin deployment.
-- Verify a reverse-proxy-backed homelab deployment.
-- Verify a public HTTPS origin behind a tunnel or reverse proxy.
-- Verify that backend certificate rotation behavior remains unchanged and still requires explicit re-pairing.
 
 ## Acceptance Criteria
 

@@ -158,6 +158,10 @@ pub trait LocalCaTrustStore {
 
     fn install_crl(&self, crl_der: &[u8]) -> Result<(), String>;
 
+    fn remove_ca(&self, ca_certificate_der: &[u8]) -> Result<bool, String>;
+
+    fn remove_crl(&self, crl_der: &[u8]) -> Result<bool, String>;
+
     fn ensure_ca_trusted(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
         if self.is_ca_trusted(ca_certificate_der)? {
             return Ok(false);
@@ -185,6 +189,154 @@ pub fn ensure_local_https_identity() -> Result<LocalHttpsReconcileResult, String
     ensure_local_https_identity_with(&paths, &SystemLocalCaTrustStore, OffsetDateTime::now_utc())
 }
 
+#[allow(dead_code)]
+pub fn replace_local_https_identity() -> Result<LocalHttpsReconcileResult, String> {
+    let paths = LocalHttpsPaths::current();
+    replace_local_https_identity_with(&paths, &SystemLocalCaTrustStore, OffsetDateTime::now_utc())
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LocalHttpsUninstallCleanupResult {
+    pub public_identity_found: bool,
+    pub revocation_list_found: bool,
+    pub ca_removed: bool,
+    pub crl_removed: bool,
+    pub issues: Vec<String>,
+}
+
+#[allow(dead_code)]
+pub fn cleanup_local_https_for_uninstall() -> LocalHttpsUninstallCleanupResult {
+    let paths = LocalHttpsPaths::current();
+    cleanup_local_https_for_uninstall_with(&paths, &SystemLocalCaTrustStore)
+}
+
+pub fn cleanup_local_https_for_uninstall_with<T: LocalCaTrustStore>(
+    paths: &LocalHttpsPaths,
+    trust_store: &T,
+) -> LocalHttpsUninstallCleanupResult {
+    let mut result = LocalHttpsUninstallCleanupResult::default();
+
+    match load_public_identity(paths) {
+        Ok(Some(public_identity)) => {
+            result.public_identity_found = true;
+            match trust_store.remove_ca(&public_identity.ca.certificate_der) {
+                Ok(removed) => result.ca_removed = removed,
+                Err(error) => result.issues.push(format!(
+                    "Failed to remove the local HTTPS CA from the current-user ROOT store: {}",
+                    error
+                )),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => result.issues.push(error),
+    }
+
+    match load_local_revocation_list_der(paths) {
+        Ok(Some(revocation_list_der)) => {
+            result.revocation_list_found = true;
+            match trust_store.remove_crl(&revocation_list_der) {
+                Ok(removed) => result.crl_removed = removed,
+                Err(error) => result.issues.push(format!(
+                    "Failed to remove the local HTTPS certificate revocation list from the current-user CA store: {}",
+                    error
+                )),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => result.issues.push(error),
+    }
+
+    result
+}
+
+pub fn replace_local_https_identity_with<T: LocalCaTrustStore>(
+    paths: &LocalHttpsPaths,
+    trust_store: &T,
+    now: OffsetDateTime,
+) -> Result<LocalHttpsReconcileResult, String> {
+    bootstrap_local_https_identity_with(paths, trust_store, now)
+}
+
+fn bootstrap_local_https_identity_with<T: LocalCaTrustStore>(
+    paths: &LocalHttpsPaths,
+    trust_store: &T,
+    now: OffsetDateTime,
+) -> Result<LocalHttpsReconcileResult, String> {
+    let generated = generate_full_identity(paths, now)?;
+    write_stored_identity(
+        paths,
+        &generated.public_identity,
+        &generated.private_material,
+    )?;
+    let revocation_list_der = write_local_revocation_list(
+        paths,
+        &generated.public_identity.ca,
+        &generated.private_material.ca,
+        now,
+    )?;
+
+    let trust_installed = match trust_store
+        .ensure_ca_trusted(&generated.public_identity.ca.certificate_der)
+    {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(LocalHttpsReconcileResult::repair(
+                LocalHttpsRepairReason::TrustStoreFailure,
+                format!(
+                    "Created a new local HTTPS identity, but could not install the CA in the current-user trust store: {}",
+                    error
+                ),
+                LocalHttpsReconcileChanges {
+                    bootstrapped_identity: true,
+                    leaf_regenerated: false,
+                    trust_installed: false,
+                },
+            ));
+        }
+    };
+
+    if let Err(error) = trust_store.install_crl(&revocation_list_der) {
+        return Ok(LocalHttpsReconcileResult::repair(
+            LocalHttpsRepairReason::TrustStoreFailure,
+            format!(
+                "Created a new local HTTPS identity, but could not publish the local certificate revocation list into the current-user CA store: {}",
+                error
+            ),
+            LocalHttpsReconcileChanges {
+                bootstrapped_identity: true,
+                leaf_regenerated: false,
+                trust_installed,
+            },
+        ));
+    }
+
+    let ready_identity = LocalHttpsReadyIdentity {
+        server_identity: build_server_identity(
+            &generated.public_identity.ca.certificate_der,
+            generated
+                .public_identity
+                .leaf
+                .as_ref()
+                .expect("leaf present after bootstrap"),
+            generated
+                .private_material
+                .leaf
+                .as_ref()
+                .expect("leaf private key present after bootstrap"),
+        ),
+        persisted_identity: generated.public_identity,
+    };
+
+    Ok(LocalHttpsReconcileResult::ready(
+        ready_identity,
+        LocalHttpsReconcileChanges {
+            bootstrapped_identity: true,
+            leaf_regenerated: false,
+            trust_installed,
+        },
+    ))
+}
+
 pub fn ensure_local_https_identity_with<T: LocalCaTrustStore>(
     paths: &LocalHttpsPaths,
     trust_store: &T,
@@ -194,79 +346,7 @@ pub fn ensure_local_https_identity_with<T: LocalCaTrustStore>(
 
     match stored_identity {
         StoredIdentityState::Missing => {
-            let generated = generate_full_identity(paths, now)?;
-            write_stored_identity(
-                paths,
-                &generated.public_identity,
-                &generated.private_material,
-            )?;
-            let revocation_list_der = write_local_revocation_list(
-                paths,
-                &generated.public_identity.ca,
-                &generated.private_material.ca,
-                now,
-            )?;
-
-            let trust_installed = match trust_store
-                .ensure_ca_trusted(&generated.public_identity.ca.certificate_der)
-            {
-                Ok(value) => value,
-                Err(error) => {
-                    return Ok(LocalHttpsReconcileResult::repair(
-                        LocalHttpsRepairReason::TrustStoreFailure,
-                        format!(
-                            "Created a new local HTTPS identity, but could not install the CA in the current-user trust store: {}",
-                            error
-                        ),
-                        LocalHttpsReconcileChanges {
-                            bootstrapped_identity: true,
-                            leaf_regenerated: false,
-                            trust_installed: false,
-                        },
-                    ));
-                }
-            };
-
-            if let Err(error) = trust_store.install_crl(&revocation_list_der) {
-                return Ok(LocalHttpsReconcileResult::repair(
-                    LocalHttpsRepairReason::TrustStoreFailure,
-                    format!(
-                        "Created a new local HTTPS identity, but could not publish the local certificate revocation list into the current-user CA store: {}",
-                        error
-                    ),
-                    LocalHttpsReconcileChanges {
-                        bootstrapped_identity: true,
-                        leaf_regenerated: false,
-                        trust_installed,
-                    },
-                ));
-            }
-
-            let ready_identity = LocalHttpsReadyIdentity {
-                server_identity: build_server_identity(
-                    &generated.public_identity.ca.certificate_der,
-                    generated
-                        .public_identity
-                        .leaf
-                        .as_ref()
-                        .expect("leaf present after bootstrap"),
-                    generated
-                        .private_material
-                        .leaf
-                        .as_ref()
-                        .expect("leaf private key present after bootstrap"),
-                ),
-                persisted_identity: generated.public_identity,
-            };
-
-            return Ok(LocalHttpsReconcileResult::ready(
-                ready_identity,
-                LocalHttpsReconcileChanges {
-                    bootstrapped_identity: true,
-                    leaf_regenerated: false,
-                    trust_installed,
-                },
-            ));
+            return bootstrap_local_https_identity_with(paths, trust_store, now);
         }
         StoredIdentityState::Partial => {
             return Ok(LocalHttpsReconcileResult::repair(
@@ -915,6 +995,47 @@ enum StoredIdentityState {
         PersistedLocalHttpsIdentity,
         PersistedLocalHttpsPrivateMaterial,
     ),
+}
+
+fn load_public_identity(paths: &LocalHttpsPaths) -> Result<Option<PersistedLocalHttpsIdentity>, String> {
+    if !paths.public_metadata_path.exists() {
+        return Ok(None);
+    }
+
+    let public_bytes = fs::read(&paths.public_metadata_path).map_err(|error| {
+        format!(
+            "Failed to read local HTTPS identity metadata {} during uninstall cleanup: {}",
+            paths.public_metadata_path.display(),
+            error
+        )
+    })?;
+
+    let public_identity = serde_json::from_slice::<PersistedLocalHttpsIdentity>(&public_bytes)
+        .map_err(|error| {
+            format!(
+                "Failed to parse local HTTPS identity metadata {} during uninstall cleanup: {}",
+                paths.public_metadata_path.display(),
+                error
+            )
+        })?;
+
+    Ok(Some(public_identity))
+}
+
+fn load_local_revocation_list_der(paths: &LocalHttpsPaths) -> Result<Option<Vec<u8>>, String> {
+    if !paths.revocation_list_path.exists() {
+        return Ok(None);
+    }
+
+    let revocation_list_der = fs::read(&paths.revocation_list_path).map_err(|error| {
+        format!(
+            "Failed to read local HTTPS certificate revocation list {} during uninstall cleanup: {}",
+            paths.revocation_list_path.display(),
+            error
+        )
+    })?;
+
+    Ok(Some(revocation_list_der))
 }
 
 fn load_stored_identity(paths: &LocalHttpsPaths) -> StoredIdentityState {
@@ -1670,6 +1791,16 @@ impl LocalCaTrustStore for SystemLocalCaTrustStore {
 
         Ok(())
     }
+
+    fn remove_ca(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
+        let store = open_current_user_root_store()?;
+        remove_certificate_der_from_store(&store, ca_certificate_der)
+    }
+
+    fn remove_crl(&self, crl_der: &[u8]) -> Result<bool, String> {
+        let store = open_current_user_ca_store()?;
+        remove_crl_der_from_store(&store, crl_der)
+    }
 }
 
 #[cfg(not(windows))]
@@ -1689,6 +1820,20 @@ impl LocalCaTrustStore for SystemLocalCaTrustStore {
     }
 
     fn install_crl(&self, _crl_der: &[u8]) -> Result<(), String> {
+        Err(
+            "Windows current-user trust-store integration is only implemented on Windows."
+                .to_string(),
+        )
+    }
+
+    fn remove_ca(&self, _ca_certificate_der: &[u8]) -> Result<bool, String> {
+        Err(
+            "Windows current-user trust-store integration is only implemented on Windows."
+                .to_string(),
+        )
+    }
+
+    fn remove_crl(&self, _crl_der: &[u8]) -> Result<bool, String> {
         Err(
             "Windows current-user trust-store integration is only implemented on Windows."
                 .to_string(),
@@ -1774,6 +1919,80 @@ fn cert_store_contains_der(store: &CertStoreHandle, expected_der: &[u8]) -> Resu
     }
 }
 
+#[cfg(windows)]
+fn remove_certificate_der_from_store(
+    store: &CertStoreHandle,
+    expected_der: &[u8],
+) -> Result<bool, String> {
+    use std::ptr;
+    use std::slice;
+    use windows_sys::Win32::Security::Cryptography::{
+        CertDeleteCertificateFromStore, CertEnumCertificatesInStore,
+    };
+
+    let mut previous = ptr::null();
+    loop {
+        let certificate = unsafe { CertEnumCertificatesInStore(store.0, previous) };
+        if certificate.is_null() {
+            return Ok(false);
+        }
+
+        let certificate_der = unsafe {
+            slice::from_raw_parts(
+                (*certificate).pbCertEncoded,
+                (*certificate).cbCertEncoded as usize,
+            )
+        };
+        if certificate_der == expected_der {
+            let result = unsafe { CertDeleteCertificateFromStore(certificate) };
+            if result == 0 {
+                return Err(format!(
+                    "Failed to remove the local HTTPS CA from the current-user ROOT store: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+
+            return Ok(true);
+        }
+
+        previous = certificate;
+    }
+}
+
+#[cfg(windows)]
+fn remove_crl_der_from_store(store: &CertStoreHandle, expected_der: &[u8]) -> Result<bool, String> {
+    use std::ptr;
+    use std::slice;
+    use windows_sys::Win32::Security::Cryptography::{
+        CertDeleteCRLFromStore, CertEnumCRLsInStore,
+    };
+
+    let mut previous = ptr::null();
+    loop {
+        let crl = unsafe { CertEnumCRLsInStore(store.0, previous) };
+        if crl.is_null() {
+            return Ok(false);
+        }
+
+        let crl_der = unsafe {
+            slice::from_raw_parts((*crl).pbCrlEncoded, (*crl).cbCrlEncoded as usize)
+        };
+        if crl_der == expected_der {
+            let result = unsafe { CertDeleteCRLFromStore(crl) };
+            if result == 0 {
+                return Err(format!(
+                    "Failed to remove the local HTTPS certificate revocation list from the current-user CA store: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+
+            return Ok(true);
+        }
+
+        previous = crl;
+    }
+}
+
 mod base64_bytes {
     use super::*;
 
@@ -1805,6 +2024,7 @@ mod tests {
     #[derive(Default)]
     struct FakeTrustStore {
         trusted_fingerprints: Mutex<BTreeSet<String>>,
+        installed_crl_fingerprints: Mutex<BTreeSet<String>>,
         install_calls: Mutex<u32>,
     }
 
@@ -1818,6 +2038,13 @@ mod tests {
 
         fn install_call_count(&self) -> u32 {
             *self.install_calls.lock().unwrap()
+        }
+
+        fn has_crl(&self, crl_der: &[u8]) -> bool {
+            self.installed_crl_fingerprints
+                .lock()
+                .unwrap()
+                .contains(&sha256_fingerprint(crl_der))
         }
     }
 
@@ -1839,8 +2066,28 @@ mod tests {
             Ok(())
         }
 
-        fn install_crl(&self, _crl_der: &[u8]) -> Result<(), String> {
+        fn install_crl(&self, crl_der: &[u8]) -> Result<(), String> {
+            self.installed_crl_fingerprints
+                .lock()
+                .unwrap()
+                .insert(sha256_fingerprint(crl_der));
             Ok(())
+        }
+
+        fn remove_ca(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
+            Ok(self
+                .trusted_fingerprints
+                .lock()
+                .unwrap()
+                .remove(&sha256_fingerprint(ca_certificate_der)))
+        }
+
+        fn remove_crl(&self, crl_der: &[u8]) -> Result<bool, String> {
+            Ok(self
+                .installed_crl_fingerprints
+                .lock()
+                .unwrap()
+                .remove(&sha256_fingerprint(crl_der)))
         }
     }
 
@@ -2131,6 +2378,67 @@ mod tests {
             }
             LocalHttpsReconcileState::Ready(_) => panic!("expected repair-required result"),
         }
+    }
+
+    #[test]
+    fn uninstall_cleanup_removes_current_user_ca_and_crl() {
+        let temp_dir = TestDir::new();
+        let paths = temp_dir.paths();
+        let trust_store = FakeTrustStore::default();
+        let generated = generate_full_identity(&paths, fixed_now()).unwrap();
+        let revocation_list_der = write_local_revocation_list(
+            &paths,
+            &generated.public_identity.ca,
+            &generated.private_material.ca,
+            fixed_now(),
+        )
+        .unwrap();
+
+        write_stored_identity(&paths, &generated.public_identity, &generated.private_material)
+            .unwrap();
+        trust_store.trust(&generated.public_identity.ca.certificate_der);
+        trust_store.install_crl(&revocation_list_der).unwrap();
+
+        let cleanup = cleanup_local_https_for_uninstall_with(&paths, &trust_store);
+
+        assert!(cleanup.public_identity_found);
+        assert!(cleanup.revocation_list_found);
+        assert!(cleanup.ca_removed);
+        assert!(cleanup.crl_removed);
+        assert!(cleanup.issues.is_empty());
+        assert!(!trust_store
+            .is_ca_trusted(&generated.public_identity.ca.certificate_der)
+            .unwrap());
+        assert!(!trust_store.has_crl(&revocation_list_der));
+    }
+
+    #[test]
+    fn uninstall_cleanup_uses_public_metadata_without_private_material() {
+        let temp_dir = TestDir::new();
+        let paths = temp_dir.paths();
+        let trust_store = FakeTrustStore::default();
+        let generated = generate_full_identity(&paths, fixed_now()).unwrap();
+        let revocation_list_der = write_local_revocation_list(
+            &paths,
+            &generated.public_identity.ca,
+            &generated.private_material.ca,
+            fixed_now(),
+        )
+        .unwrap();
+
+        write_stored_identity(&paths, &generated.public_identity, &generated.private_material)
+            .unwrap();
+        fs::remove_file(&paths.encrypted_private_material_path).unwrap();
+        trust_store.trust(&generated.public_identity.ca.certificate_der);
+        trust_store.install_crl(&revocation_list_der).unwrap();
+
+        let cleanup = cleanup_local_https_for_uninstall_with(&paths, &trust_store);
+
+        assert!(cleanup.public_identity_found);
+        assert!(cleanup.revocation_list_found);
+        assert!(cleanup.ca_removed);
+        assert!(cleanup.crl_removed);
+        assert!(cleanup.issues.is_empty());
     }
 
     fn fixed_now() -> OffsetDateTime {

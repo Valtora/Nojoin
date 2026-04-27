@@ -1,3 +1,5 @@
+#![cfg_attr(not(any(windows, test)), allow(dead_code, unused_imports))]
+
 use crate::companion_auth;
 use crate::config::{BackendConnection, Config, MachineLocalUpdate};
 use crate::local_https_identity::LocalHttpsServerIdentity;
@@ -5,8 +7,8 @@ use crate::notifications;
 use crate::secret_store::{self, BackendSecretBundle};
 use crate::state::{
     pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, ActiveRecordingOwner,
-    AppState, AppStatus, AudioCommand, PairingSession, PairingValidationError,
-    RecordingRecoveryState,
+    AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession,
+    PairingValidationError, RecordingRecoveryState,
 };
 use crate::uploader;
 use axum::debug_handler;
@@ -43,6 +45,7 @@ pub async fn start_server(
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
     server_identity: LocalHttpsServerIdentity,
+    shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let local_port = {
         let config = state.config.lock().unwrap();
@@ -65,7 +68,7 @@ pub async fn start_server(
             )
         })?;
 
-    serve_https_router(listener, app, server_identity).await
+    serve_https_router(listener, app, server_identity, shutdown_rx).await
 }
 
 fn build_local_api_router(context: ServerContext) -> Router {
@@ -143,6 +146,7 @@ async fn serve_https_router(
     listener: tokio::net::TcpListener,
     app: Router,
     server_identity: LocalHttpsServerIdentity,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let bound_addr = listener.local_addr().map_err(|error| {
         format!(
@@ -156,7 +160,24 @@ async fn serve_https_router(
     info!("Server running on https://{}", bound_addr);
 
     loop {
-        let (tcp_stream, remote_addr) = match listener.accept().await {
+        let accept_result = tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Stopping local HTTPS listener on request.");
+                        break;
+                    }
+                    Ok(()) => continue,
+                    Err(_) => {
+                        info!("Stopping local HTTPS listener because its shutdown channel closed.");
+                        break;
+                    }
+                }
+            }
+            accepted = listener.accept() => accepted,
+        };
+
+        let (tcp_stream, remote_addr) = match accept_result {
             Ok(connection) => connection,
             Err(error) => {
                 warn!("Failed to accept a local HTTPS connection: {}", error);
@@ -201,6 +222,8 @@ async fn serve_https_router(
             }
         });
     }
+
+    Ok(())
 }
 
 use std::time::SystemTime;
@@ -214,6 +237,8 @@ struct StatusResponse {
     api_host: String,
     update_available: bool,
     latest_version: Option<String>,
+    #[serde(rename = "localHttpsStatus")]
+    local_https_status: LocalHttpsStatus,
 }
 
 const LOCAL_CONTROL_TOKEN_TYPE: &str = "companion_local_control";
@@ -871,6 +896,7 @@ fn build_status_response(
         api_host,
         update_available,
         latest_version,
+        local_https_status: state.local_https_status(),
     })
 }
 
@@ -2119,6 +2145,7 @@ async fn trigger_update(
 mod tests {
     use super::*;
     use crate::local_https_identity;
+    use crate::state::LocalHttpsHealth;
     use axum::http::HeaderMap;
     use axum::response::IntoResponse;
     use axum::{extract::State, response::Json};
@@ -2145,6 +2172,8 @@ mod tests {
         status: AppStatus,
         authenticated: bool,
         api_host: String,
+        #[serde(rename = "localHttpsStatus")]
+        local_https_status: LocalHttpsStatus,
     }
 
     impl local_https_identity::LocalCaTrustStore for FakeTrustStore {
@@ -2166,6 +2195,18 @@ mod tests {
 
         fn install_crl(&self, _crl_der: &[u8]) -> Result<(), String> {
             Ok(())
+        }
+
+        fn remove_ca(&self, ca_certificate_der: &[u8]) -> Result<bool, String> {
+            Ok(self
+                .trusted_fingerprints
+                .lock()
+                .unwrap()
+                .remove(&fingerprint_for_test(ca_certificate_der)))
+        }
+
+        fn remove_crl(&self, _crl_der: &[u8]) -> Result<bool, String> {
+            Ok(false)
         }
     }
 
@@ -2289,6 +2330,7 @@ mod tests {
             update_available: AtomicBool::new(false),
             latest_version: Mutex::new(None),
             latest_update_url: Mutex::new(None),
+            local_https_health: Mutex::new(LocalHttpsHealth::ready(true)),
             tray_status_item: Mutex::new(None),
             tray_run_on_startup_item: Mutex::new(None),
             tray_icon: Mutex::new(None),
@@ -2383,13 +2425,16 @@ mod tests {
         server_identity: LocalHttpsServerIdentity,
     ) -> (
         std::net::SocketAddr,
+        tokio::sync::watch::Sender<bool>,
         tokio::task::JoinHandle<Result<(), String>>,
     ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let task =
-            tokio::spawn(async move { serve_https_router(listener, app, server_identity).await });
-        (addr, task)
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            serve_https_router(listener, app, server_identity, shutdown_rx).await
+        });
+        (addr, shutdown_tx, task)
     }
 
     fn set_test_local_port(state: &Arc<AppState>, port: u16) {
@@ -2620,13 +2665,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn status_response_surfaces_local_https_needs_repair() {
+        let (state, _audio_command_rx) = build_test_state();
+        state.set_local_https_health(LocalHttpsHealth::needs_repair(
+            "Companion local HTTPS needs repair.",
+            None,
+            Some(true),
+            true,
+        ));
+        let token = encode_token(
+            &build_claims(&state.config.lock().unwrap().backend_pairing_id().unwrap()),
+            "test-local-control-secret",
+        );
+        let headers = build_headers(
+            "127.0.0.1:12345",
+            "https://paired.example.com",
+            Some(format!("Bearer {}", token)),
+        );
+
+        let payload = build_status_response(&headers, &state).unwrap();
+
+        assert_eq!(payload.local_https_status, LocalHttpsStatus::NeedsRepair);
+    }
+
     #[tokio::test]
     async fn https_transport_serves_steady_state_status_route() {
         let (state, _audio_command_rx) = build_test_state();
         let ready_identity = build_test_https_identity();
         let ca_certificate_der = ready_identity.persisted_identity.ca.certificate_der.clone();
         let app = build_test_transport_router(state.clone());
-        let (addr, server_task) =
+        let (addr, _shutdown_tx, server_task) =
             start_test_https_server(app, ready_identity.server_identity).await;
         set_test_local_port(&state, addr.port());
 
@@ -2649,6 +2718,7 @@ mod tests {
         assert_eq!(payload.status, AppStatus::Idle);
         assert!(payload.authenticated);
         assert_eq!(payload.api_host, "localhost");
+        assert_eq!(payload.local_https_status, LocalHttpsStatus::Ready);
 
         server_task.abort();
     }
@@ -2661,7 +2731,7 @@ mod tests {
         let ready_identity = build_test_https_identity();
         let ca_certificate_der = ready_identity.persisted_identity.ca.certificate_der.clone();
         let app = build_test_transport_router(state.clone());
-        let (addr, server_task) =
+        let (addr, _shutdown_tx, server_task) =
             start_test_https_server(app, ready_identity.server_identity).await;
         set_test_local_port(&state, addr.port());
 
@@ -2742,7 +2812,7 @@ mod tests {
         let (state, _audio_command_rx) = build_test_state();
         let ready_identity = build_test_https_identity();
         let app = build_test_transport_router(state);
-        let (addr, server_task) =
+        let (addr, _shutdown_tx, server_task) =
             start_test_https_server(app, ready_identity.server_identity).await;
 
         let result = reqwest::Client::new()

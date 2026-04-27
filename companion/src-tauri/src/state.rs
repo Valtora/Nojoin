@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::local_https_identity::LocalHttpsRepairReason;
 use crossbeam_channel::Sender;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,66 @@ pub enum AppStatus {
     Uploading,
     BackendOffline,
     Error(String),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LocalHttpsStatus {
+    Ready,
+    Repairing,
+    NeedsRepair,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalHttpsHealth {
+    pub status: LocalHttpsStatus,
+    pub detail_message: String,
+    pub repair_reason: Option<LocalHttpsRepairReason>,
+    pub current_user_trust_installed: Option<bool>,
+    pub listener_running: bool,
+}
+
+impl Default for LocalHttpsHealth {
+    fn default() -> Self {
+        Self::repairing("Companion is reconciling its secure local connection.")
+    }
+}
+
+impl LocalHttpsHealth {
+    pub fn ready(listener_running: bool) -> Self {
+        Self {
+            status: LocalHttpsStatus::Ready,
+            detail_message: "Secure local browser connections are ready.".to_string(),
+            repair_reason: None,
+            current_user_trust_installed: Some(true),
+            listener_running,
+        }
+    }
+
+    pub fn repairing(message: impl Into<String>) -> Self {
+        Self {
+            status: LocalHttpsStatus::Repairing,
+            detail_message: message.into(),
+            repair_reason: None,
+            current_user_trust_installed: None,
+            listener_running: false,
+        }
+    }
+
+    pub fn needs_repair(
+        message: impl Into<String>,
+        repair_reason: Option<LocalHttpsRepairReason>,
+        current_user_trust_installed: Option<bool>,
+        listener_running: bool,
+    ) -> Self {
+        Self {
+            status: LocalHttpsStatus::NeedsRepair,
+            detail_message: message.into(),
+            repair_reason,
+            current_user_trust_installed,
+            listener_running,
+        }
+    }
 }
 
 pub fn pairing_block_message(status: &AppStatus) -> Option<&'static str> {
@@ -164,6 +225,7 @@ pub struct AppState {
     pub update_available: AtomicBool,
     pub latest_version: Mutex<Option<String>>,
     pub latest_update_url: Mutex<Option<String>>,
+    pub local_https_health: Mutex<LocalHttpsHealth>,
 
     // Tray Menu Items
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
@@ -321,6 +383,19 @@ impl AppState {
     pub fn clear_recording_recovery_state(&self) {
         self.set_recording_recovery_state(RecordingRecoveryState::None);
     }
+
+    pub fn local_https_health(&self) -> LocalHttpsHealth {
+        self.local_https_health.lock().unwrap().clone()
+    }
+
+    pub fn local_https_status(&self) -> LocalHttpsStatus {
+        self.local_https_health.lock().unwrap().status
+    }
+
+    pub fn set_local_https_health(&self, health: LocalHttpsHealth) {
+        let mut current_health = self.local_https_health.lock().unwrap();
+        *current_health = health;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -335,8 +410,9 @@ pub enum AudioCommand {
 mod tests {
     use super::{
         canonicalize_pairing_code, pairing_block_message, pairing_code_fingerprint,
-        pairing_code_log_label, AppState, AppStatus, AudioCommand, PairingSession,
-        PairingValidationError, RecordingRecoveryState, MAX_PAIRING_ATTEMPTS,
+        pairing_code_log_label, AppState, AppStatus, AudioCommand, LocalHttpsHealth,
+        PairingSession, PairingValidationError, RecordingRecoveryState,
+        MAX_PAIRING_ATTEMPTS,
     };
     use crate::config::Config;
     use crossbeam_channel::unbounded;
@@ -366,6 +442,7 @@ mod tests {
             update_available: AtomicBool::new(false),
             latest_version: Mutex::new(None),
             latest_update_url: Mutex::new(None),
+            local_https_health: Mutex::new(LocalHttpsHealth::default()),
             tray_status_item: Mutex::new(None),
             tray_run_on_startup_item: Mutex::new(None),
             tray_icon: Mutex::new(None),

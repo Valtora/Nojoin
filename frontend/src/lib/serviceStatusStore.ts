@@ -23,6 +23,7 @@ interface CompanionStatusResponse {
   api_host?: string;
   update_available?: boolean;
   latest_version?: string | null;
+  localHttpsStatus?: CompanionLocalHttpsStatus;
 }
 
 interface CompanionPairingPayload {
@@ -51,6 +52,11 @@ export type CompanionRuntimeStatus =
   | "backend-offline"
   | "error";
 
+export type CompanionLocalHttpsStatus =
+  | "ready"
+  | "repairing"
+  | "needs-repair";
+
 export class CompanionPairingError extends Error {
   status?: number;
   phase: "prepare" | "complete" | "cancel";
@@ -75,6 +81,7 @@ interface ServiceStatusState {
   companion: boolean;
   companionAuthenticated: boolean;
   companionLocalConnectionUnavailable: boolean;
+  companionLocalHttpsStatus: CompanionLocalHttpsStatus | null;
   companionMonitoringEnabled: boolean;
 
   // Companion details
@@ -103,6 +110,8 @@ interface ServiceStatusState {
 
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
 const COMPANION_DISCONNECTED_RECHECK_INTERVAL = 1500;
+const COMPANION_REPAIRING_RECHECK_INTERVAL = 1500;
+const COMPANION_NEEDS_REPAIR_RECHECK_INTERVAL = 60000;
 const NORMAL_INTERVAL = 10000;
 const getCompanionApiBase = () =>
   process.env.NEXT_PUBLIC_API_URL
@@ -150,6 +159,20 @@ const readCompanionStatus = (
   }
 
   return { status, duration };
+};
+
+const readCompanionLocalHttpsStatus = (
+  payload: CompanionStatusResponse,
+): CompanionLocalHttpsStatus => {
+  if (payload.localHttpsStatus === "repairing") {
+    return "repairing";
+  }
+
+  if (payload.localHttpsStatus === "needs-repair") {
+    return "needs-repair";
+  }
+
+  return "ready";
 };
 
 const cancelPendingCompanionPairingRequest = async (apiBase: string) => {
@@ -218,6 +241,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       companion: false,
       companionAuthenticated: false,
       companionLocalConnectionUnavailable: false,
+      companionLocalHttpsStatus: null,
       companionStatus: "idle",
       companionVersion: state.companionVersion,
       companionUpdateAvailable: false,
@@ -283,7 +307,11 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     const companionState = get();
     const failCount = get().companionFailCount;
     const delay =
-      companionState.companionAuthenticated && !companionState.companion
+      companionState.companionLocalHttpsStatus === "needs-repair"
+        ? COMPANION_NEEDS_REPAIR_RECHECK_INTERVAL
+        : companionState.companionLocalHttpsStatus === "repairing"
+        ? COMPANION_REPAIRING_RECHECK_INTERVAL
+        : companionState.companionAuthenticated && !companionState.companion
         ? COMPANION_DISCONNECTED_RECHECK_INTERVAL
         : failCount === 0
         ? NORMAL_INTERVAL
@@ -303,6 +331,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     companion: false,
     companionAuthenticated: false,
     companionLocalConnectionUnavailable: false,
+    companionLocalHttpsStatus: null,
     companionMonitoringEnabled: false,
     companionStatus: "idle",
     companionVersion: null,
@@ -399,11 +428,13 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         if (res.ok) {
           const data: CompanionStatusResponse = await res.json();
           const { status, duration } = readCompanionStatus(data);
+          const localHttpsStatus = readCompanionLocalHttpsStatus(data);
 
           set({
             companion: true,
             companionAuthenticated: data.authenticated === true,
             companionLocalConnectionUnavailable: false,
+            companionLocalHttpsStatus: localHttpsStatus,
             companionStatus: status,
             companionVersion: data.version || null,
             companionUpdateAvailable: data.update_available || false,
@@ -420,6 +451,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
               companion: false,
               companionAuthenticated: state.companionAuthenticated,
               companionLocalConnectionUnavailable: false,
+              companionLocalHttpsStatus: null,
               companionUpdateAvailable: false,
               companionFailCount: state.companionFailCount + 1,
             }));
@@ -437,6 +469,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companionAuthenticated: state.companionAuthenticated,
             companionLocalConnectionUnavailable:
               error instanceof CompanionLocalConnectionError,
+            companionLocalHttpsStatus: null,
             companionUpdateAvailable: false,
             companionFailCount: state.companionFailCount + 1,
           }));
@@ -563,6 +596,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companion: true,
             companionAuthenticated: true,
             companionLocalConnectionUnavailable: false,
+            companionLocalHttpsStatus: null,
             companionMonitoringEnabled: true,
             companionFailCount: 0,
           });

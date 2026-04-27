@@ -1,3 +1,5 @@
+#![cfg_attr(not(any(windows, test)), allow(dead_code))]
+
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{
     verify_tls12_signature as verify_tls12_handshake_signature,
