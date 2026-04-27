@@ -1,12 +1,13 @@
 use crate::config::Config;
 use crate::local_https_identity::LocalHttpsRepairReason;
 use crossbeam_channel::Sender;
+use log::error;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 use tauri::menu::{CheckMenuItem, MenuItem};
 use tauri::tray::TrayIcon;
@@ -236,6 +237,19 @@ pub struct AppState {
     pub pairing_session: Mutex<Option<PairingSession>>,
 }
 
+fn recover_mutex_guard<'a, T>(
+    lock_result: Result<MutexGuard<'a, T>, PoisonError<MutexGuard<'a, T>>>,
+    label: &str,
+) -> MutexGuard<'a, T> {
+    match lock_result {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            error!("Recovering from poisoned {} mutex.", label);
+            poisoned.into_inner()
+        }
+    }
+}
+
 impl AppState {
     pub fn record_input_level(&self, level: f32) {
         // Convert 0.0-1.0 to 0-100
@@ -268,24 +282,24 @@ impl AppState {
 
     /// Check if the companion has a valid API token configured
     pub fn is_authenticated(&self) -> bool {
-        let config = self.config.lock().unwrap();
+        let config = recover_mutex_guard(self.config.lock(), "config");
         config.is_authenticated()
     }
 
     pub fn begin_pairing_session(&self) -> PairingSession {
         let session = PairingSession::new();
-        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         *pairing_session = Some(session.clone());
         session
     }
 
     pub fn clear_pairing_session(&self) {
-        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         *pairing_session = None;
     }
 
     pub fn current_pairing_session(&self) -> Option<PairingSession> {
-        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
 
         if pairing_session
             .as_ref()
@@ -299,7 +313,7 @@ impl AppState {
     }
 
     pub fn pairing_session_snapshot(&self) -> Option<PairingSession> {
-        self.pairing_session.lock().unwrap().clone()
+        recover_mutex_guard(self.pairing_session.lock(), "pairing_session").clone()
     }
 
     pub fn is_pairing_active(&self) -> bool {
@@ -385,15 +399,15 @@ impl AppState {
     }
 
     pub fn local_https_health(&self) -> LocalHttpsHealth {
-        self.local_https_health.lock().unwrap().clone()
+        recover_mutex_guard(self.local_https_health.lock(), "local_https_health").clone()
     }
 
     pub fn local_https_status(&self) -> LocalHttpsStatus {
-        self.local_https_health.lock().unwrap().status
+        recover_mutex_guard(self.local_https_health.lock(), "local_https_health").status
     }
 
     pub fn set_local_https_health(&self, health: LocalHttpsHealth) {
-        let mut current_health = self.local_https_health.lock().unwrap();
+        let mut current_health = recover_mutex_guard(self.local_https_health.lock(), "local_https_health");
         *current_health = health;
     }
 }

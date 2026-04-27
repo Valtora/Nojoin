@@ -7,7 +7,7 @@ use log::{error, info, warn};
 use reqwest;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 use tauri::{
@@ -43,6 +43,19 @@ use tauri_plugin_autostart::ManagerExt;
 struct SharedAppState(Arc<AppState>);
 
 struct SharedLocalHttpsController(LocalHttpsControllerHandle);
+
+fn recover_mutex_guard<'a, T>(
+    lock_result: Result<MutexGuard<'a, T>, PoisonError<MutexGuard<'a, T>>>,
+    label: &str,
+) -> MutexGuard<'a, T> {
+    match lock_result {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            error!("Recovering from poisoned {} mutex.", label);
+            poisoned.into_inner()
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LauncherOpenReason {
@@ -257,14 +270,14 @@ fn launcher_primary_action(mode: LauncherMode) -> LauncherPrimaryAction {
 
 fn derive_launcher_view(state: &Arc<AppState>) -> LauncherView {
     let (backend_label, show_intro) = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         (
             derive_backend_label(&config),
             should_show_launcher_intro(&config),
         )
     };
     let local_https_status = state.local_https_health().status;
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let is_paired = state.is_authenticated();
     let is_pairing_active = state.is_pairing_active();
     let launcher_mode = derive_launcher_mode(
@@ -762,14 +775,14 @@ fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn get_config(state: tauri::State<SharedAppState>) -> ConfigView {
-    let config = state.0.config.lock().unwrap();
+    let config = recover_mutex_guard(state.0.config.lock(), "config");
     ConfigView::from(&*config)
 }
 
 #[tauri::command]
 fn get_settings_state(state: tauri::State<SharedAppState>) -> SettingsView {
     let backend_label = {
-        let config = state.0.config.lock().unwrap();
+        let config = recover_mutex_guard(state.0.config.lock(), "config");
         derive_backend_label(&config)
     };
     let local_https_health = state.0.local_https_health();
@@ -869,7 +882,7 @@ async fn disconnect_backend(
     state.0.is_backend_connected.store(false, Ordering::SeqCst);
 
     let (backend, secret_bundle, secret_cleanup_error, launcher_intro_reset_error) = {
-        let mut config = state.0.config.lock().unwrap();
+        let mut config = recover_mutex_guard(state.0.config.lock(), "config");
         let backend = config.backend_connection();
         let secret_bundle = backend
             .as_ref()
