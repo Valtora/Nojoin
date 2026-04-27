@@ -1,17 +1,17 @@
 # Companion UX Upgrade Plan
 
-This document captures the UX polish pass that follows the local HTTPS remediation in [https_upgrade.md](https_upgrade.md). The transport and security work in that plan is effectively complete. This plan does not reopen the HTTPS architecture. It focuses on making install, first launch, browser choice, pairing, repair, and steady-state operation clearer and lower-friction.
+This document captures the UX polish pass that follows the completed local HTTPS remediation work. The transport and security work is effectively complete and is treated here as a fixed input. This plan does not reopen the HTTPS architecture. It focuses on making install, first launch, browser choice, pairing, repair, and steady-state operation clearer and lower-friction.
 
 ## Review Outcome
 
-- Step 6 in [https_upgrade.md](https_upgrade.md) should remain documentation and verification focused.
+- The completed local HTTPS remediation should remain documentation and verification focused.
 - The local HTTPS architecture is already fixed and should be treated as a UX constraint, not an open design area.
 - The main UX problems are fragmented guidance, inconsistent state presentation, weak install-to-pair handoff, and too much cross-referencing between native windows, browser settings, alerts, and docs.
 - The current implementation already has the necessary primitives for a strong UX pass: coarse local HTTPS states, explicit repair actions, Firefox support actions, pairing-window lifecycle handling, dashboard disabled states, and browser-side pairing/error messaging.
 
 ## Inputs Reviewed
 
-- [https_upgrade.md](https_upgrade.md)
+- The completed local HTTPS remediation work and its resulting product constraints
 - [GETTING_STARTED.md](GETTING_STARTED.md)
 - [USAGE.md](USAGE.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)
@@ -132,43 +132,155 @@ This document captures the UX polish pass that follows the local HTTPS remediati
 
 ### Step 1. Define the cross-surface UX contract
 
-Status: Planned.
+Status: Complete.
 
-This step creates the shared artifacts that every later implementation step depends on.
+This step is complete. The contract below is the canonical downstream input for Steps 2 through 10. Later steps must reuse these state names, CTA labels, ownership boundaries, and handoff rules unless this step is explicitly revised first.
+
+Step 1 exit gate: manual review and sign-off are required before Step 2 begins.
 
 #### Task 1.1. Build the canonical Companion state matrix
 
-Sub-tasks:
+Status: Complete.
 
-- List every meaningful user-visible Companion state across native and web surfaces.
-- Cover first run, unpaired, pairing active, paired and healthy, paired and disconnected, local HTTPS repairing, local HTTPS needs repair, version mismatch, recording/upload switch blocks, and Firefox prerequisite states.
-- For each state, define the primary CTA, secondary CTA, blocked actions, fallback guidance, and supporting notification copy.
+Contract notes:
+
+- `First run` is an onboarding presentation variant of `Not paired`. It is only used until the user has seen the initial orientation once after install or trust reset.
+- `Temporarily disconnected` means pairing is still valid and should recover automatically. It must not be described as unpaired.
+- `localHttpsStatus` remains an implementation field. User-facing copy must use `Browser repair in progress` and `Browser repair required`.
+- `Version mismatch` means local control is blocked until Nojoin and the Companion are brought back onto a compatible build pair.
+- `Backend switch blocked` is shown only when the user explicitly tries to replace an existing pairing.
+
+| State | Primary surfaces | User-facing status | Primary CTA | Secondary CTA | Blocked actions | Fallback guidance | Notification intent |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| First run | Launcher | Welcome. Companion is installed but not connected yet. | `Start Pairing` | `Open Settings` | `Open Nojoin` as a healthy-state shortcut; browser-side recording controls; backend-switch actions | If pairing will happen later, the user can close the launcher and reopen from the tray. The next open uses the standard unpaired state. | None on explicit launch; one-time informational reminder only on first autostart. |
+| Unpaired | Launcher, web Companion page | `Not paired` | `Start Pairing` | `Open Settings` | Local recording controls; replacement-pair flows; recovery messaging that assumes an active backend | Leave Companion idle and start pairing later from the launcher or Settings. | One reminder on autostart until first successful pair; no repeated toast loop during active use. |
+| Pairing active | Pairing window, web Companion page | `Pairing code active` | `Open Nojoin` | `Cancel Pairing` | Submitting an expired code; disconnect or repair work from the pairing window; opening a second local pairing session | If this is replacement pairing, keep stating that the current backend stays active until the new pairing succeeds. | Informational notice when the code is opened; warning only if the code expires or is cancelled. |
+| Paired and healthy | Launcher, tray, web Companion page | `Connected` | `Open Nojoin` | `Open Settings` | Launcher-side repair, Firefox support, disconnect, and low-frequency utility actions | Route configuration, support, and destructive work into Settings and keep the launcher compact. | No proactive notification; tray/status text only. |
+| Paired and disconnected | Launcher, web Companion page, Meeting controls | `Temporarily disconnected` | `Open Settings` | `Open Nojoin` | New local-control actions that require a live Companion response; backend switching until state is clear | Tell the user the pairing is still valid and will resync automatically; do not escalate to repair first. | Single informational notification on state transition only; no persistent warning while reconnecting. |
+| Local HTTPS repairing | Launcher, web Companion page, alerts | `Browser repair in progress` | `Open Settings` | None | Re-triggering repair from other surfaces; browser-side local control until repair completes | Wait for automatic refresh and keep the state quiet unless it exceeds normal repair time. | One informational transition notice; suppress repetitive alerts. |
+| Local HTTPS needs repair | Launcher, web Companion page, Meeting controls | `Browser repair required` | `Open Settings to Repair` | `Open Settings` | Browser-side local control; pairing completion from the web app; launcher happy-path actions other than routing to Settings | Open Settings, run the repair flow there, then retry the original task after status returns to `Connected`. | Persistent warning until resolved; repeat only on state re-entry or explicit retry. |
+| Version mismatch | Launcher, Settings, web Companion page | `Version mismatch` | `Open Settings` | `Open Nojoin` | Local recording controls; pairing completion if compatibility checks fail; backend switching until versions align | Update the older side first. If the upgrade clears trust state, generate a new pairing code after updating. | Warning on detection and after blocked local-control attempts; never on every poll cycle. |
+| Backend switch blocked by recording | Settings, web Companion page | `Backend switch blocked while recording` | `Open Nojoin` | `Open Settings` | `Generate New Pairing Code` for replacement pairing; `Disconnect Current Backend` as a shortcut around the block | Stop or finish the active recording before switching this machine to a different backend. | Immediate warning only when the blocked switch is attempted. |
+| Backend switch blocked by upload | Settings, web Companion page | `Backend switch blocked until upload finishes` | `Open Nojoin` | `Open Settings` | `Generate New Pairing Code` for replacement pairing; `Disconnect Current Backend` as a shortcut around the block | Wait for the queued upload to finish, then retry. Keep the current backend attached until upload clears. | Immediate warning only when the blocked switch is attempted. |
+| Firefox prerequisite incomplete | Settings, web Companion page | `Firefox setup incomplete` | `Enable Firefox Support` | `Open Settings` | Firefox-based pairing confirmation and Firefox local control; the default Chromium path remains available | Enable Firefox Support in Settings, turn on Firefox enterprise roots, restart Firefox, then generate a fresh pairing code. | Contextual warning inside the Firefox branch only; never a global tray or launcher alarm. |
+| Pairing expired | Pairing window, web Companion page | `Pairing expired` | `Generate New Pairing Code` | `Open Settings` | Submitting the expired code; resuming the expired local pairing session | Start a fresh code from Settings. If this was replacement pairing, the current backend stays connected. | One warning on expiry; no repeated reminders after dismissal. |
+
+State precedence for any surface that can see multiple conditions at once:
+
+1. `Browser repair required`
+2. `Version mismatch`
+3. `Backend switch blocked` states
+4. `Firefox setup incomplete` on the Firefox branch only
+5. `Pairing code active`
+6. `Pairing expired`
+7. `First run` / `Not paired`
+8. `Temporarily disconnected`
+9. `Browser repair in progress`
+10. `Connected`
 
 #### Task 1.2. Freeze surface ownership boundaries
 
-Sub-tasks:
+Status: Complete.
 
-- Document that the launcher owns native-first orientation and the single primary next action.
-- Document that Settings owns configuration, troubleshooting, Firefox support, utility actions, and destructive actions.
-- Document that the tray owns fast operational fallback only.
-- Document that the web Companion page is a secondary state-driven surface rather than the canonical first-run owner.
+| Surface | Owns | Must not own | Required handoff output |
+| --- | --- | --- | --- |
+| Launcher | Native-first orientation, one primary next action, compact backend summary, blocking-state visibility on explicit launch | Direct repair execution, Firefox branching, low-frequency utilities, destructive actions, long-form setup copy | `Start Pairing` / `Generate New Pairing Code` open the pairing window; `Open Settings` routes to Settings; `Open Nojoin` routes to the paired public origin |
+| Settings | Configuration, troubleshooting, Firefox support, utility actions, destructive actions, detailed pairing and repair context | First-run wizard ownership, tray-like operational density, browser-side verification, duplicated launcher summary copy | Pairing actions open the pairing window; repair and Firefox actions stay native; disconnect returns the app to an unpaired state |
+| Tray | Fast operational fallback, glanceable status, active recording controls, `Open Nojoin`, `Settings`, `Quit` | Onboarding, browser selection, Firefox instructions, repair execution, utilities at top level, destructive actions | Recording controls act immediately; `Open Nojoin` and `Settings` route to their owning surfaces |
+| Pairing window | Current pairing code, countdown, cancel action, concise next-step guidance, replacement-pair continuity note | Browser-specific branching, repair, settings utilities, destructive actions, long-form troubleshooting | Successful pairing hands control to Nojoin and closes the window; cancel or expiry returns control to the initiating native surface |
+| Web Companion page | Browser-side state card, pairing code entry, Firefox support card, steady-state verification, degraded web guidance | Canonical first-run ownership, native repair execution, native pairing initiation, destructive native actions | When a native-only action is required, the page instructs the user with frozen CTA labels and routes them back to the owning native surface |
+
+Ownership boundary summary:
+
+- The launcher is the canonical owner of first-run orientation and the single primary next action.
+- Settings is the canonical owner of all support, configuration, utility, Firefox, and destructive work.
+- The tray is an operational fallback surface, not a second settings page.
+- The pairing window owns only the active code lifecycle and handoff into Nojoin.
+- The web Companion page is the secondary browser-side state surface. It confirms, warns, and guides, but it does not replace the native-first model.
 
 #### Task 1.3. Freeze terminology and CTA vocabulary
 
-Sub-tasks:
+Status: Complete.
 
-- Normalize phrases such as `Start Pairing`, `Generate New Pairing Code`, `Open Nojoin`, `Open Settings to Repair`, `Enable Firefox Support`, and `Disconnect Current Backend`.
-- Normalize how `repairing`, `needs-repair`, `temporarily disconnected`, `not paired`, and `version mismatch` are described.
-- Define which messages are instructional, which are status summaries, and which are warnings.
+Action labels that downstream implementation must use exactly:
+
+| Use exactly | Use when | Retire or avoid |
+| --- | --- | --- |
+| `Start Pairing` | The Companion has no active backend pairing and no current local code | `Pair with Nojoin`, `Connect Companion`, `Begin Pairing` |
+| `Generate New Pairing Code` | The user needs a fresh code after expiry or while replacing an existing backend | `Start Re-pairing`, `New Pairing`, `Regenerate Code` |
+| `Open Nojoin` | Native surfaces send the user back to the web app | `Open Browser`, `Return to Website`, `Open Dashboard` |
+| `Open Settings` | Any surface routes the user into native configuration or support | `Preferences`, `Companion Options`, `Manage Companion` |
+| `Open Settings to Repair` | A non-Settings surface detects repair-required state and must route the user to the native repair flow | `Repair Now`, `Fix HTTPS Here`, `Resolve Certificate Error` |
+| `Repair Local Browser Connection` | Settings executes the actual repair flow | `Repair Local HTTPS` in end-user copy outside implementation detail |
+| `Enable Firefox Support` | Settings runs the privileged Firefox prerequisite action | `Trust Firefox`, `Enable Local Firefox Pairing`, `Fix Firefox Certificate` |
+| `Disconnect Current Backend` | Settings exposes the destructive unpair and revoke action | `Unpair Companion`, `Remove Connection`, `Reset Pairing` |
+| `Cancel Pairing` | The user cancels the active local pairing session | `Cancel Local Pairing Session` |
+
+Status labels that downstream implementation must keep consistent:
+
+| Condition | Status label | Required helper language |
+| --- | --- | --- |
+| First run | `Set up Companion` | Explain that Companion is installed but not connected yet. |
+| Unpaired | `Not paired` | Tell the user to start pairing from the Companion first. |
+| Pairing active | `Pairing code active` | Tell the user to finish pairing in Nojoin with the current code. |
+| Replacement pairing active | `Pairing code active` | Add that the current backend stays active until the new pairing succeeds. |
+| Paired and healthy | `Connected` | Keep helper copy short and non-operational. |
+| Paired and disconnected | `Temporarily disconnected` | Say the pairing remains valid and will resync automatically. |
+| Local HTTPS repairing | `Browser repair in progress` | Say browser controls will refresh automatically when repair finishes. |
+| Local HTTPS needs repair | `Browser repair required` | Send the user to Settings; do not explain certificate internals. |
+| Version mismatch | `Version mismatch` | Say versions must be aligned before local control will work again. |
+| Backend switch blocked by recording | `Backend switch blocked while recording` | Name the recording as the reason and tell the user to stop or finish it first. |
+| Backend switch blocked by upload | `Backend switch blocked until upload finishes` | Name the queued upload as the reason and tell the user to wait. |
+| Firefox prerequisite incomplete | `Firefox setup incomplete` | Name the sequence: enable support, restart Firefox, generate a fresh code. |
+| Pairing expired | `Pairing expired` | Tell the user to generate a new code from the Companion. |
+
+Message class rules:
+
+- Status summaries are short labels only. They must not expose implementation terms such as `needs-repair`, `repairing`, `localHttpsStatus`, `TOFU`, or certificate-store names.
+- Instructional helper lines tell the user exactly one next step or one automatic recovery expectation.
+- Warnings are reserved for blocked actions, repair-required states, version mismatch, and expiry. Each warning must name both the blocking reason and the recovery path.
+- `Temporarily disconnected` and `Browser repair in progress` are informational states, not warning states, unless they exceed expected recovery time.
 
 #### Task 1.4. Freeze the implementation handoff rules
 
-Sub-tasks:
+Status: Complete.
 
-- Define explicit-launch behavior versus autostart behavior.
-- Define which launcher actions are direct and which always route into Settings.
-- Define which tray items remain top-level and which must move elsewhere.
-- Define how the launcher, Settings, pairing window, and web page hand off control between one another.
+Launch rules:
+
+- If a local pairing session is already active, an explicit app launch focuses the pairing window instead of opening a second launcher instance.
+- Otherwise, an explicit app launch opens or focuses the launcher.
+- An explicit `Settings` action from the tray or launcher always focuses Settings directly.
+
+Autostart rules:
+
+- `Connected`, `Temporarily disconnected`, and `Browser repair in progress` autostart quietly to the tray.
+- `First run` and `Not paired` may auto-open the launcher once after background startup completes.
+- Autostart never opens the pairing window or Settings on its own.
+- `Browser repair required` and `Version mismatch` on autostart use tray and notification guidance only until the user explicitly opens a surface.
+
+Launcher direct-action rules:
+
+- The launcher may directly trigger only `Start Pairing`, `Generate New Pairing Code`, `Open Nojoin`, and `Open Settings`.
+- `Open Settings to Repair` is a routing label, not a repair action. It must focus Settings and land the user in the troubleshooting section.
+- The launcher must never directly execute `Repair Local Browser Connection`, `Enable Firefox Support`, `Disconnect Current Backend`, `Run on Startup`, `View Logs`, `Check for Updates`, or `About`.
+
+Tray top-level rules:
+
+- The tray top level always contains a non-action status line, active recording controls when relevant, `Open Nojoin`, `Settings`, and `Quit`.
+- `Run on Startup`, `View Logs`, `Check for Updates`, `About`, `Enable Firefox Support`, `Repair Local Browser Connection`, and `Disconnect Current Backend` move out of the tray top level and into Settings.
+- The tray never owns first-run explanation, browser branching, or repair guidance.
+
+Surface transition rules:
+
+- Launcher to pairing window: `Start Pairing` and `Generate New Pairing Code` open or focus the pairing window.
+- Launcher to Settings: `Open Settings` and `Open Settings to Repair` always hand off to Settings rather than opening a parallel troubleshooting surface.
+- Launcher to web: `Open Nojoin` opens the last paired public origin. If there is no paired backend, the launcher stays responsible for orientation instead of guessing a target URL.
+- Settings to pairing window: pairing actions open or focus the pairing window. Settings remains the canonical restart surface after cancel or expiry.
+- Pairing window to web: Nojoin is the completion surface. The pairing window never owns browser choice or Firefox branching.
+- Pairing success: successful web completion closes the pairing window. If the user was replacing a backend, the new backend becomes active atomically only after that success.
+- Pairing cancel or expiry: the pairing window closes and returns the user to the initiating native surface with either `Not paired` or `Connected` plus no active code, depending on whether a prior backend still exists.
+- Web to native: the web Companion page may instruct `Open Settings`, `Open Settings to Repair`, `Enable Firefox Support`, or `Generate New Pairing Code`, but it must never directly execute repair, Firefox enablement, or disconnect.
+- Repair-required handoff: only Settings may execute `Repair Local Browser Connection`. Every other surface may only route the user into Settings.
 
 ### Step 2. Add native launcher plumbing and state delivery
 
