@@ -958,29 +958,28 @@ async fn cancel_pairing_request(
         config.backend_connection()
     };
     if !had_local_pairing {
-        return Ok("No local pairing session is currently active.".to_string());
+        return Ok("No pairing code is currently active.".to_string());
     }
+
+    let had_existing_backend = backend.is_some();
 
     let backend_cleanup = match backend {
         Some(backend) => match companion_auth::cancel_pending_pairing_for_backend(&backend).await {
             Ok(0) => None,
             Ok(count) => Some(format!(
-                "Cleared {} pending backend pairing request{} for the current backend.",
+                "Cleared {} pending backend pairing request{}.",
                 count,
                 if count == 1 { "" } else { "s" }
             )),
-            Err(err) => Some(format!(
-                "The local pairing session was cancelled, but backend cleanup could not be confirmed: {}.",
-                err
-            )),
+            Err(err) => Some(format!("Backend cleanup could not be confirmed: {}.", err)),
         },
         None => None,
     };
 
-    Ok(match backend_cleanup {
-        Some(message) => format!("Cancelled the active local pairing session. {}", message),
-        None => "Cancelled the active local pairing session.".to_string(),
-    })
+    Ok(pairing_cancellation_result_message(
+        had_existing_backend,
+        backend_cleanup,
+    ))
 }
 
 #[tauri::command]
@@ -1234,6 +1233,41 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+fn pairing_window_mode_query_value(was_previously_paired: bool) -> &'static str {
+    if was_previously_paired {
+        "replacement"
+    } else {
+        "first"
+    }
+}
+
+fn pairing_expired_notification_message(was_previously_paired: bool) -> &'static str {
+    if was_previously_paired {
+        "Pairing expired. The current backend stays connected. Open Companion Settings and choose Generate New Pairing Code if you still want to switch this device to a different Nojoin deployment."
+    } else {
+        "Pairing expired. Open Companion Settings and choose Start Pairing if you still want to connect this device."
+    }
+}
+
+fn pairing_cancellation_result_message(
+    had_existing_backend: bool,
+    backend_cleanup: Option<String>,
+) -> String {
+    let mut message = if had_existing_backend {
+        "Cancel Pairing closed the current code. The current backend stays connected."
+            .to_string()
+    } else {
+        "Cancel Pairing closed the current code.".to_string()
+    };
+
+    if let Some(detail) = backend_cleanup {
+        message.push(' ');
+        message.push_str(&detail);
+    }
+
+    message
+}
+
 fn close_pairing_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(PAIRING_WINDOW_LABEL) {
         let _ = window.close();
@@ -1267,9 +1301,10 @@ fn start_pairing_mode_internal(
         was_previously_paired
     );
     let window_url = format!(
-        "pairing.html?code={}&expires_in={}",
+        "pairing.html?code={}&expires_in={}&mode={}",
         session.display_code,
-        session.remaining_seconds()
+        session.remaining_seconds(),
+        pairing_window_mode_query_value(was_previously_paired)
     );
 
     let window = tauri::WebviewWindowBuilder::new(
@@ -1277,9 +1312,9 @@ fn start_pairing_mode_internal(
         PAIRING_WINDOW_LABEL,
         tauri::WebviewUrl::App(window_url.into()),
     )
-    .title("Pair Nojoin Companion")
-    .inner_size(480.0, 340.0)
-    .min_inner_size(360.0, 240.0)
+    .title("Pairing code active")
+    .inner_size(520.0, 420.0)
+    .min_inner_size(400.0, 300.0)
     .always_on_top(true)
     .resizable(false)
     .center()
@@ -1332,11 +1367,7 @@ fn start_pairing_mode_internal(
             notifications::show_notification(
                 &app_on_expiry,
                 "Pairing Expired",
-                if was_previously_paired {
-                    "The replacement pairing code expired. The current backend stays connected. Start re-pairing again if you still want to switch backends."
-                } else {
-                    "The pairing code expired. Start pairing again from Companion Settings if needed."
-                },
+                pairing_expired_notification_message(was_previously_paired),
             );
         }
     });
@@ -2147,6 +2178,35 @@ mod tests {
                 RecordingRecoveryState::StopRequested,
             ),
             "Upload queued until reconnect"
+        );
+    }
+
+    #[test]
+    fn pairing_window_mode_query_value_matches_variant() {
+        assert_eq!(pairing_window_mode_query_value(false), "first");
+        assert_eq!(pairing_window_mode_query_value(true), "replacement");
+    }
+
+    #[test]
+    fn pairing_expired_messages_match_restart_surface() {
+        let first_pair_message = pairing_expired_notification_message(false);
+        assert!(first_pair_message.contains("Start Pairing"));
+        assert!(!first_pair_message.contains("Generate New Pairing Code"));
+
+        let replacement_message = pairing_expired_notification_message(true);
+        assert!(replacement_message.contains("Generate New Pairing Code"));
+        assert!(replacement_message.contains("current backend stays connected"));
+    }
+
+    #[test]
+    fn pairing_cancellation_message_mentions_backend_continuity_when_needed() {
+        assert_eq!(
+            pairing_cancellation_result_message(false, None),
+            "Cancel Pairing closed the current code."
+        );
+        assert_eq!(
+            pairing_cancellation_result_message(true, None),
+            "Cancel Pairing closed the current code. The current backend stays connected."
         );
     }
 }

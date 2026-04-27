@@ -88,7 +88,7 @@ Use **Settings > Updates** to see:
 ### Companion Pairing and Security Resets
 
 - The Companion app forms a strict 1-to-1 association with a single backend.
-- Users must manually re-pair the Companion from its settings if they switch to a different Nojoin deployment, or if the backend's identity/URL changes.
+- Users must manually re-pair the Companion from its settings by choosing `Generate New Pairing Code` if they switch to a different Nojoin deployment, or if the backend's identity or URL changes.
 - The Companion pins the backend TLS certificate it first sees during pairing. Replacing or rotating that backend certificate requires an explicit re-pair.
 - Companion secrets are no longer stored in plaintext config. On Windows, they are moved into a DPAPI-protected secret bundle tied to the active pairing.
 - Using Disconnect Current Backend in Companion Settings clears the saved backend certificate trust and local secret bundle, then attempts a best-effort remote revoke. Users can still switch backends even if the old backend is offline.

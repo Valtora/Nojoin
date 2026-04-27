@@ -67,9 +67,12 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 1. Download the latest Windows Companion build from the GitHub Releases page.
 2. Run the installer or portable build.
-3. Open the Companion app settings and select "Pair with Nojoin" to generate a pairing code.
-4. Open the Nojoin web app, follow the Companion pairing flow, and enter the pairing code to establish the connection.
-5. Confirm the app shows as paired and connected before starting a live recording.
+3. Open the Companion app Settings and choose `Start Pairing`. A short-lived 8-character code will appear.
+4. Open the Nojoin web app, follow the Companion pairing flow, and enter the current code to establish the connection.
+5. If this device is already paired to a different backend later, choose `Generate New Pairing Code` instead. The current backend stays active until the new pairing succeeds.
+6. Confirm the app shows as paired and connected before starting a live recording.
+
+If you plan to pair through Firefox on this device, enable `Firefox Support` in Companion Settings first, restart Firefox, then generate a fresh pairing code.
 
 The web app can also surface Companion download links from the Updates page and when the Companion is not paired or reachable.
 

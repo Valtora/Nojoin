@@ -227,7 +227,7 @@ const buildPairingSummary = (
   return {
     title: "Pairing code required",
     message:
-      "Open Companion Settings, choose Pair with Nojoin, and enter the current 8-character code below. Pairing codes expire quickly if the Companion window closes.",
+      "Open Companion Settings, choose Start Pairing, and enter the current 8-character code below. Pairing codes expire quickly if the Companion window closes.",
     tone: "info",
   };
 };
@@ -280,7 +280,7 @@ const resolvePairingFailure = (
       return {
         state: "code-required",
         message:
-          "Companion pairing mode is not active. Open Pair with Nojoin in Companion Settings and enter the current code.",
+          "Companion pairing mode is not active. Open Companion Settings, choose Start Pairing, and enter the current code.",
         notificationType: "info",
       };
     }
@@ -705,7 +705,7 @@ export default function CompanionAppSettings({
                     Pair Companion
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                    Open the Nojoin Companion app, choose Pair with Nojoin in Companion Settings, and enter the displayed 8-character code here.
+                    Open the Nojoin Companion app, choose Start Pairing in Companion Settings, and enter the displayed 8-character code here.
                   </p>
                 </div>
               </div>

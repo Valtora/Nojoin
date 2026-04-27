@@ -518,9 +518,15 @@ Sub-tasks:
 
 ### Step 6. Polish the pairing window and pairing lifecycle messaging
 
-Status: Planned.
+Status: Complete.
 
 This step completes the native-first onboarding flow after launcher, Settings, and tray boundaries are stable.
+
+Implementation notes:
+
+- The pairing window now uses the same compact native layout pattern as the launcher and Settings, while keeping the large code display, copy action, countdown, and `Cancel Pairing` action.
+- The window now differentiates first pairing from replacement pairing and explicitly states when the current backend stays active until the new pairing succeeds.
+- Expiry and cancellation copy now route users back to Companion Settings with the correct restart action for the current variant, and successful pairing still closes the window immediately while native notifications carry the confirmation.
 
 #### Task 6.1. Redesign the pairing window content
 
