@@ -1,0 +1,693 @@
+# Companion UX Upgrade Plan
+
+This document captures the UX polish pass that follows the local HTTPS remediation in [https_upgrade.md](https_upgrade.md). The transport and security work in that plan is effectively complete. This plan does not reopen the HTTPS architecture. It focuses on making install, first launch, browser choice, pairing, repair, and steady-state operation clearer and lower-friction.
+
+## Review Outcome
+
+- Step 6 in [https_upgrade.md](https_upgrade.md) should remain documentation and verification focused.
+- The local HTTPS architecture is already fixed and should be treated as a UX constraint, not an open design area.
+- The main UX problems are fragmented guidance, inconsistent state presentation, weak install-to-pair handoff, and too much cross-referencing between native windows, browser settings, alerts, and docs.
+- The current implementation already has the necessary primitives for a strong UX pass: coarse local HTTPS states, explicit repair actions, Firefox support actions, pairing-window lifecycle handling, dashboard disabled states, and browser-side pairing/error messaging.
+
+## Inputs Reviewed
+
+- [https_upgrade.md](https_upgrade.md)
+- [GETTING_STARTED.md](GETTING_STARTED.md)
+- [USAGE.md](USAGE.md)
+- [DEVELOPMENT.md](DEVELOPMENT.md)
+- [SECURITY.md](SECURITY.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [PRD.md](PRD.md)
+- [ADMIN.md](ADMIN.md)
+- companion/src/index.html
+- companion/src/settings.html
+- companion/src/pairing.html
+- companion/src-tauri/src/main.rs
+- frontend/src/components/settings/CompanionAppSettings.tsx
+- frontend/src/components/settings/AudioSettings.tsx
+- frontend/src/components/settings/SettingsPage.tsx
+- frontend/src/components/MeetingControls.tsx
+- frontend/src/components/LiveAudioWaveform.tsx
+- frontend/src/components/ServiceStatusAlerts.tsx
+- frontend/src/lib/serviceStatusStore.ts
+- frontend/src/lib/companionLocalApi.ts
+- frontend/src/lib/platform.ts
+- frontend/src/lib/tour-config.ts
+
+## Locked UX Constraints
+
+- The Companion local API remains HTTPS-only on `https://127.0.0.1:12345`.
+- There is no insecure HTTP fallback.
+- Pairing remains manual and user-initiated from the Companion app.
+- The browser must not silently detect an unpaired Companion through anonymous localhost probing.
+- Firefox support remains explicit opt-in and requires both a Companion-side action and Firefox-side enterprise roots configuration.
+- Nojoin and the Companion must not silently modify browser preferences or other browser configuration.
+- Browser repair remains instruction-only. Repair is triggered from the Companion UI, not from the web app.
+- Browser-facing local HTTPS state remains coarse and limited to `ready`, `repairing`, and `needs-repair`.
+- Technical certificate-state detail should remain primarily in logs rather than becoming end-user UI terminology.
+
+## Current-State Findings
+
+### 1. Install-to-pair handoff is weak
+
+- [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) describe the broad flow, but they do not prepare the user for the local trust bootstrap, supported browser expectations, or what happens after first launch.
+- The web app exposes download links, but the install story is still spread across Updates, Settings, tours, and docs rather than one canonical path.
+
+### 2. The native Companion landing window is too passive
+
+- companion/src/index.html currently acts like a placeholder splash that says the app is running in the tray.
+- That window does not help a first-time user choose the next step, understand pairing state, or recover from repair-required states.
+
+### 3. Native Settings has the right controls but weak hierarchy
+
+- companion/src/settings.html correctly surfaces pairing, repair, Firefox support, and disconnect actions.
+- Those actions currently carry similar visual weight even though they represent very different risk and urgency levels.
+- The page communicates state accurately, but it still reads like a status panel rather than a guided task flow.
+
+### 4. The pairing flow is still cross-app and cognitively expensive
+
+- companion/src/pairing.html has a good code display, copy action, and expiry countdown.
+- The user still has to mentally stitch together which app to use next, whether the current backend stays active during re-pairing, and what differs for Firefox.
+
+### 5. The tray context menu is too busy for its role
+
+- The Companion tray menu currently mixes status, recording controls, settings, run-on-startup, updates, logs, about, and quit in one flat list.
+- During recording it becomes even denser because pause, resume, and stop controls are inserted above the same utility actions.
+- That makes the context menu feel more like a command dump than a fast, glanceable control surface for the few tasks users actually need from the tray.
+
+### 6. The web Companion settings page is accurate but text-heavy
+
+- frontend/src/components/settings/CompanionAppSettings.tsx contains most of the needed logic.
+- The current page mixes download, browser selection, pairing, version mismatch, repair, and audio preferences in one long form.
+- The result is functionally correct but still heavier than it should be for first-time users.
+
+### 7. Steady-state surfaces disable correctly but do not always guide recovery well
+
+- frontend/src/components/MeetingControls.tsx and frontend/src/components/ServiceStatusAlerts.tsx disable or warn in the right conditions.
+- The next step is not always obvious from the action surface itself, especially for repair-required, disconnected, or first-pair cases.
+- frontend/src/components/LiveAudioWaveform.tsx quietly drops to zeroed samples on local fetch failure, which is technically safe but not especially communicative.
+
+### 8. Documentation and tours lag the implemented security model
+
+- [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) do not yet teach the local HTTPS bootstrap, repair flow, or Firefox path at the level users need.
+- [PRD.md](PRD.md) still describes the Companion UI too narrowly as a minimalist tray menu, while the product now depends on richer Settings and repair interactions.
+- The current tours mention Companion setup at a high level but do not explain browser-specific setup or repair-oriented recovery.
+
+## UX Objectives
+
+- Make the first successful Chromium-based install and pair path obvious without sending the user to internal design docs.
+- Make the Firefox path explicit before the user fails, not after.
+- Ensure every major state has one primary next action.
+- Keep terminology consistent across native windows, browser UI, notifications, and docs.
+- Reduce how often users must infer whether they need install, pair, re-pair, reconnect, update, or repair.
+- Preserve the fail-closed local HTTPS model without exposing unnecessary certificate jargon.
+- Keep advanced detail available for operators and developers without making first-run UX feel operationally dense.
+
+## Non-Goals
+
+- Replacing the browser-to-Companion control path with a backend relay.
+- Changing the local HTTPS trust model, validity windows, or repair authority boundaries.
+- Reopening the `/pair/complete` contract or local control token model.
+- Adding silent browser reconfiguration, insecure fallback transport, or browser-launched native repair.
+- Expanding Companion support beyond Windows as part of this pass.
+
+## Waterfall Development Rules
+
+- Each step below is sequential. Do not start a later step until the current step is implemented, reviewed, and manually validated.
+- If a later step uncovers a missing prerequisite, pull that work back into the earliest unfinished step instead of jumping ahead and leaving dependency holes.
+- Native utility destinations must exist before tray items are removed.
+- The native ownership model must be stable before the web Companion page is restructured around it.
+- Documentation should be finalized only after the implemented UI, copy, and validation behavior stop moving.
+
+## Dependency Tree
+
+- Step 1 unlocks every later step because it defines the copy, state, ownership, and CTA contract.
+- Step 2 unlocks Step 3 because the launcher UI needs its runtime state and action plumbing first.
+- Step 4 must land before Step 5 because tray utilities are being moved into Settings.
+- Steps 3 through 6 complete the native-first experience before Step 7 reshapes the secondary web surface around that model.
+- Step 7 must land before Step 8 because the steady-state web surfaces should reuse the final card structure, copy, and support boundaries.
+- Step 9 validates the integrated experience before Step 10 freezes the user-facing documentation.
+
+## Waterfall Implementation Plan
+
+### Step 1. Define the cross-surface UX contract
+
+Status: Planned.
+
+This step creates the shared artifacts that every later implementation step depends on.
+
+#### Task 1.1. Build the canonical Companion state matrix
+
+Sub-tasks:
+
+- List every meaningful user-visible Companion state across native and web surfaces.
+- Cover first run, unpaired, pairing active, paired and healthy, paired and disconnected, local HTTPS repairing, local HTTPS needs repair, version mismatch, recording/upload switch blocks, and Firefox prerequisite states.
+- For each state, define the primary CTA, secondary CTA, blocked actions, fallback guidance, and supporting notification copy.
+
+#### Task 1.2. Freeze surface ownership boundaries
+
+Sub-tasks:
+
+- Document that the launcher owns native-first orientation and the single primary next action.
+- Document that Settings owns configuration, troubleshooting, Firefox support, utility actions, and destructive actions.
+- Document that the tray owns fast operational fallback only.
+- Document that the web Companion page is a secondary state-driven surface rather than the canonical first-run owner.
+
+#### Task 1.3. Freeze terminology and CTA vocabulary
+
+Sub-tasks:
+
+- Normalize phrases such as `Start Pairing`, `Generate New Pairing Code`, `Open Nojoin`, `Open Settings to Repair`, `Enable Firefox Support`, and `Disconnect Current Backend`.
+- Normalize how `repairing`, `needs-repair`, `temporarily disconnected`, `not paired`, and `version mismatch` are described.
+- Define which messages are instructional, which are status summaries, and which are warnings.
+
+#### Task 1.4. Freeze the implementation handoff rules
+
+Sub-tasks:
+
+- Define explicit-launch behavior versus autostart behavior.
+- Define which launcher actions are direct and which always route into Settings.
+- Define which tray items remain top-level and which must move elsewhere.
+- Define how the launcher, Settings, pairing window, and web page hand off control between one another.
+
+### Step 2. Add native launcher plumbing and state delivery
+
+Status: Planned.
+
+This step prepares the runtime contract required before the launcher UI can be rebuilt.
+
+#### Task 2.1. Add a launcher-specific native view model
+
+Sub-tasks:
+
+- Decide whether to extend the existing settings-state command or add a dedicated launcher-state command.
+- Expose only the state needed by the launcher: backend summary, pairing state, local HTTPS state, and launcher CTA mode.
+- Keep the launcher state aligned with the existing local HTTPS status model rather than inventing a parallel status taxonomy.
+
+#### Task 2.2. Implement launcher window lifecycle rules
+
+Sub-tasks:
+
+- Implement explicit-launch behavior for first-run and user-opened sessions.
+- Implement the autostart exception rule for machines that start with no active pairing.
+- Preserve quiet background autostart when the Companion is already paired and healthy.
+- Define single-instance focus behavior so repeated launches bring the correct native window forward.
+
+#### Task 2.3. Implement launcher action plumbing
+
+Sub-tasks:
+
+- Wire direct launcher actions for `Start Pairing` / `Generate New Pairing Code`, `Open Nojoin`, and `Open Settings`.
+- Wire the repair-state launcher CTA so it opens Settings rather than calling repair directly.
+- Ensure launcher actions reuse the existing pairing and web-launch logic instead of duplicating it.
+
+#### Task 2.4. Add runtime instrumentation and guardrails
+
+Sub-tasks:
+
+- Log launcher auto-open decisions and major action transitions for debugging.
+- Ensure launcher-triggered actions still respect existing pairing blocks and secure-local-health rules.
+- Verify that launcher behavior does not regress tray-only operation.
+
+### Step 3. Build the lightweight native launcher UI
+
+Status: Planned.
+
+This step replaces the placeholder native home window once the launcher state and actions exist.
+
+#### Task 3.1. Replace the placeholder launcher layout
+
+Sub-tasks:
+
+- Replace the passive splash content in companion/src/index.html.
+- Add a compact state-driven layout with a title, short explanation, current backend summary, and local browser-connection summary.
+- Keep the window small enough to feel tray-appropriate rather than app-dashboard-like.
+
+#### Task 3.2. Implement first-run and unpaired launcher states
+
+Sub-tasks:
+
+- Add a short first-run explanation for what the Companion does and why pairing is required.
+- Present `Start Pairing` as the primary CTA.
+- Ensure the launcher explains the next step without immediately skipping into the pairing window.
+
+#### Task 3.3. Implement healthy paired launcher state
+
+Sub-tasks:
+
+- Show the paired backend summary.
+- Present `Open Nojoin` as the primary CTA.
+- Keep `Open Settings` available as the secondary CTA.
+
+#### Task 3.4. Implement degraded launcher states
+
+Sub-tasks:
+
+- Add a prominent `Open Settings to Repair` CTA when local HTTPS needs repair.
+- Add copy for temporarily disconnected and replacement-pairing states.
+- Ensure the launcher remains browser-agnostic and does not grow Firefox-specific branching logic.
+
+#### Task 3.5. Polish launcher behavior
+
+Sub-tasks:
+
+- Tune window sizing, focus behavior, and dismissal behavior.
+- Ensure copy length fits the compact native surface.
+- Verify the launcher remains useful without becoming a second Settings page.
+
+### Step 4. Reorganize native Settings into main path, troubleshooting, and advanced sections
+
+Status: Planned.
+
+This step gives low-frequency utilities and troubleshooting actions a clear home before the tray is simplified.
+
+#### Task 4.1. Establish the Settings information architecture
+
+Sub-tasks:
+
+- Split the page into the main connection path, a secure-local troubleshooting path, and an advanced/destructive area.
+- Keep current backend summary and pairing actions in the main path.
+- Keep local HTTPS state visible without making certificate-repair actions look routine.
+
+#### Task 4.2. Rebuild the main path section
+
+Sub-tasks:
+
+- Promote the current backend summary and connection state.
+- Keep start pairing and re-pair actions visually primary.
+- Clarify replacement-pair messaging so the current backend continuity is explicit.
+
+#### Task 4.3. Build the troubleshooting section
+
+Sub-tasks:
+
+- Group local HTTPS repair and Firefox support together as support flows rather than routine actions.
+- Make repair guidance action-oriented and consistent with launcher and web copy.
+- Keep destructive actions out of this section.
+
+#### Task 4.4. Add a utility/support section for low-frequency native actions
+
+Sub-tasks:
+
+- Move `Run on Startup`, `View Logs`, `Check for Updates`, and `About` into Settings.
+- Expose any new native commands needed so the Settings page can trigger those actions directly.
+- Ensure these utilities are available before tray cleanup begins.
+
+#### Task 4.5. Build the advanced/destructive section
+
+Sub-tasks:
+
+- Move `Disconnect Current Backend` into an explicit advanced/destructive area.
+- Add clearer cautionary copy and post-action expectations.
+- Keep disconnect behavior visually and semantically separate from pairing and repair.
+
+### Step 5. Simplify the tray menu into an operational fallback surface
+
+Status: Planned.
+
+This step should not begin until Step 4 has already given the displaced tray items a new home.
+
+#### Task 5.1. Reduce the top-level tray menu
+
+Sub-tasks:
+
+- Keep the current status item.
+- Keep active recording controls when relevant.
+- Add or preserve `Open Nojoin`, `Settings`, and `Quit`.
+- Remove low-frequency utility items from the primary tray surface.
+
+#### Task 5.2. Preserve recording and offline-recovery usability
+
+Sub-tasks:
+
+- Keep pause, resume, and stop actions easy to scan during active capture.
+- Preserve special wording for queued-upload and reconnect states.
+- Ensure invalid actions remain disabled rather than ambiguous.
+
+#### Task 5.3. Align tray interaction behavior
+
+Sub-tasks:
+
+- Review double-click behavior against the new menu contract.
+- Align tooltip/status text with the final native copy vocabulary.
+- Ensure tray affordances remain coherent with launcher and Settings behavior.
+
+#### Task 5.4. Regress tray-only workflows
+
+Sub-tasks:
+
+- Validate tray behavior during normal paired idle use.
+- Validate tray behavior during active recording.
+- Validate tray behavior during offline recovery and queued uploads.
+
+### Step 6. Polish the pairing window and pairing lifecycle messaging
+
+Status: Planned.
+
+This step completes the native-first onboarding flow after launcher, Settings, and tray boundaries are stable.
+
+#### Task 6.1. Redesign the pairing window content
+
+Sub-tasks:
+
+- Keep the large code display, copy affordance, countdown, and cancel action.
+- Add a short step sequence that explains what the user should do next in Nojoin.
+- Keep the layout compact and focused on the handoff rather than secondary configuration.
+
+#### Task 6.2. Clarify pairing variants
+
+Sub-tasks:
+
+- Differentiate first pairing from replacement pairing.
+- Make it explicit when the current backend stays active until replacement pairing succeeds.
+- Keep Firefox-specific guidance lightweight in the pairing window because full browser branching stays elsewhere.
+
+#### Task 6.3. Improve pairing lifecycle outcomes
+
+Sub-tasks:
+
+- Review expiry messaging.
+- Review cancellation messaging.
+- Review whether any success-state confirmation should be shown before the window closes.
+
+### Step 7. Redesign the web Companion page as state cards with one primary CTA
+
+Status: Planned.
+
+This step reshapes the secondary web surface after the native-first ownership model is already implemented.
+
+#### Task 7.1. Reframe the page into state cards
+
+Sub-tasks:
+
+- Replace the long-form mixed layout with state-driven cards.
+- Ensure each state exposes one primary next action.
+- Keep the page useful for first pairing, reconnect, repair, version mismatch, and steady-state verification.
+
+#### Task 7.2. Establish the default Chromium path
+
+Sub-tasks:
+
+- Keep Chromium-based browsers as the default pairing path.
+- Make install/download guidance concise and state-aware.
+- Avoid turning the default path into a browser-selection wizard.
+
+#### Task 7.3. Add a separate Firefox support card
+
+Sub-tasks:
+
+- Promote Firefox support into its own browser-specific support card.
+- Keep the prerequisite sequence explicit: native enablement, Firefox setting, restart, then fresh pairing code.
+- Avoid burying Firefox prerequisites inside the main pairing card.
+
+#### Task 7.4. Separate connection state from recording preferences
+
+Sub-tasks:
+
+- Keep audio devices and other recording preferences distinct from install/pair/repair states.
+- Ensure the page still reads as a connection-management surface first.
+- Keep search and settings-navigation behavior intact after the layout changes.
+
+#### Task 7.5. Normalize shared web copy
+
+Sub-tasks:
+
+- Replace duplicated local HTTPS and pairing error strings with shared, state-matrix-driven phrasing.
+- Align state-card copy with native launcher, Settings, tray, and notifications.
+- Keep the page concise even when multiple conditions such as version mismatch and repair requirements are present.
+
+### Step 8. Align steady-state web surfaces with the new support model
+
+Status: Planned.
+
+This step should begin only after the web Companion page contract and copy are stable.
+
+#### Task 8.1. Update Meeting Controls guidance
+
+Sub-tasks:
+
+- Make repair-required, disconnected, and unpaired states clearer.
+- Ensure the primary next step is obvious from the disabled action surface.
+- Keep the happy path lightweight once the Companion is healthy.
+
+#### Task 8.2. Improve alert-layer behavior
+
+Sub-tasks:
+
+- Review persistent alerts versus page-level state cards.
+- Remove redundant messaging where the same issue is already explained elsewhere.
+- Keep `repairing` quiet and transient.
+
+#### Task 8.3. Add a clearer degraded waveform state
+
+Sub-tasks:
+
+- Distinguish fetch failure from ordinary silence in the live waveform surface.
+- Keep the behavior non-alarmist during transient issues.
+- Ensure the waveform does not become the primary place where users learn about repair.
+
+#### Task 8.4. Update tours and ancillary entry points
+
+Sub-tasks:
+
+- Refresh tour copy so it reflects the final Companion ownership model.
+- Revisit download and Companion-status prompts outside Settings.
+- Ensure ancillary entry points send users into the correct canonical surfaces.
+
+### Step 9. Run the integrated validation pass and polish regressions
+
+Status: Planned.
+
+This step validates the assembled native and web experience before documentation is frozen.
+
+#### Task 9.1. Execute the global validation matrix
+
+Sub-tasks:
+
+- Validate fresh Chromium install and pairing.
+- Validate Firefox prerequisite flow and fresh-code pairing.
+- Validate repair-required and repairing states.
+- Validate replacement pairing, blocked backend switching, version mismatch, disconnected recovery, and tray recording fallback.
+
+#### Task 9.2. Fix cross-surface regressions
+
+Sub-tasks:
+
+- Fix copy mismatches between native and web surfaces.
+- Fix broken handoffs between launcher, Settings, pairing window, tray, and web UI.
+- Fix any menu, focus, or notification regressions found during manual testing.
+
+#### Task 9.3. Freeze the post-implementation UX contract
+
+Sub-tasks:
+
+- Confirm that no missing dependency work remains hidden in later documentation tasks.
+- Confirm that the validation matrix still matches the implemented surfaces.
+- Confirm that the final copy pack is stable enough to document.
+
+### Step 10. Publish the dedicated Companion guide and update supporting docs
+
+Status: Planned.
+
+This step lands after the UI contract is stable so the docs can serve as a durable reference rather than a moving target.
+
+#### Task 10.1. Create the dedicated end-user Companion guide
+
+Sub-tasks:
+
+- Add a dedicated Companion guide in the docs folder as the canonical user reference.
+- Cover install, first launch, pairing, reconnect, re-pair, repair, tray usage, Chromium support, and Firefox support.
+- Keep the guide user-facing rather than implementation-spec oriented.
+
+#### Task 10.2. Update high-level onboarding docs
+
+Sub-tasks:
+
+- Shorten [GETTING_STARTED.md](GETTING_STARTED.md) so it points users into the dedicated Companion guide for detailed native setup.
+- Update [USAGE.md](USAGE.md) so it references the guide for pairing, reconnect, repair, and browser support.
+- Keep the general docs concise and non-duplicative.
+
+#### Task 10.3. Update operator and developer docs
+
+Sub-tasks:
+
+- Update [DEVELOPMENT.md](DEVELOPMENT.md) for the new native UX, browser guidance, and validation expectations.
+- Update [SECURITY.md](SECURITY.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [PRD.md](PRD.md) so the product description matches the implemented launcher, Settings, tray, and repair model.
+- Ensure the docs describe the native-first ownership model accurately.
+
+#### Task 10.4. Finalize verification guidance
+
+Sub-tasks:
+
+- Capture the final manual validation guidance that should accompany this UX upgrade.
+- Ensure the dedicated Companion guide and supporting docs all reference the same support boundaries and browser expectations.
+- Close the planning loop by keeping this document as the umbrella plan and decision record.
+
+## Validation Matrix
+
+- Fresh Windows install with Chrome or Edge: install, trust bootstrap, pair, and start a recording without needing extra troubleshooting.
+- Fresh Windows install with Firefox: user finds the Firefox branch before failure, completes the explicit trust steps, restarts Firefox, and pairs successfully with a fresh code.
+- Existing paired user with `localHttpsStatus=needs-repair`: native and web surfaces point to the same repair action and recover cleanly.
+- Existing paired user with `localHttpsStatus=repairing`: the UI behaves as a quiet transient state without persistent alarm fatigue.
+- Re-pair to a different backend while currently paired: user understands that the old backend stays active until the new pairing succeeds.
+- Re-pair blocked by active recording or upload: both native and web surfaces explain why switching is blocked.
+- Version mismatch after update: the user is told to update or re-pair with the least ambiguity possible.
+- Companion temporarily disconnected but still paired: browser controls communicate that pairing is still valid and will resync automatically.
+- Tray-menu usage during active recording or offline recovery: pause, stop, and recovery actions stay easy to find without burying them under low-frequency utility items.
+
+## Expected Touch Points
+
+- companion/src/index.html
+- companion/src/settings.html
+- companion/src/pairing.html
+- companion/src-tauri/src/main.rs
+- companion/src-tauri/tauri.conf.json
+- frontend/src/components/settings/CompanionAppSettings.tsx
+- frontend/src/components/settings/AudioSettings.tsx
+- frontend/src/components/settings/SettingsPage.tsx
+- frontend/src/components/MeetingControls.tsx
+- frontend/src/components/LiveAudioWaveform.tsx
+- frontend/src/components/ServiceStatusAlerts.tsx
+- frontend/src/lib/serviceStatusStore.ts
+- frontend/src/lib/companionLocalApi.ts
+- frontend/src/lib/platform.ts
+- frontend/src/lib/tour-config.ts
+- docs/GETTING_STARTED.md
+- docs/COMPANION.md
+- docs/USAGE.md
+- docs/DEVELOPMENT.md
+- docs/SECURITY.md
+- docs/ARCHITECTURE.md
+- docs/PRD.md
+
+## Waterfall Planning Decisions
+
+### Decision 1. Canonical first-run owner
+
+Status: Confirmed.
+
+- Question: Which surface should own the first successful install and pair journey: the native Companion home window or the web Companion settings page?
+- Decision: Native-first.
+- Recommendation: Make the native Companion home window the primary first-run owner, and keep the web Companion page as the secondary confirmation, browser-branch, and recovery surface.
+- Rationale: The local HTTPS bootstrap, repair authority, Firefox support action, and pairing initiation all originate in the Companion. Making the native surface primary reduces context switching before the browser has a dependable local control path and gives the waterfall plan a clear first implementation target.
+
+### Decision 2. Native home window scope
+
+Status: Confirmed.
+
+- Question: Should the native home window become a full first-run wizard, or a lightweight task-oriented launcher that hands off detailed controls to Settings and the pairing window?
+- Decision: Lightweight launcher.
+- Recommendation: Keep the native home window lightweight and task-oriented. It should show state, one primary next action, and a small amount of first-run explanation, but it should not become a multi-step wizard or duplicate the full Settings surface.
+- Rationale: The current code already has a dedicated Settings window, a dedicated pairing window, and tray entry points. A lightweight launcher preserves clear ownership boundaries, lowers implementation risk, and still satisfies the native-first decision without creating a second full configuration surface to maintain.
+
+### Decision 3. Launcher auto-open policy
+
+Status: Confirmed.
+
+- Question: When should the lightweight launcher open automatically?
+- Decision: Open it on explicit user launches, and also allow autostart to open it only when the machine starts with no active pairing state.
+- Recommendation: Open it automatically on first explicit user launch and on later explicit launches when the Companion still needs blocking user action. Keep autostart quiet in normal paired states, but allow autostart to surface the launcher when the machine starts and the Companion still has no pairing.
+- Rationale: The app remains tray-oriented during normal background use, but an unpaired autostart is effectively a broken setup state rather than ordinary background operation. This rule keeps normal autostart quiet without hiding the initial setup requirement indefinitely.
+
+### Decision 4. Launcher action authority
+
+Status: Confirmed.
+
+- Question: Should the lightweight launcher directly trigger the high-frequency primary actions, or should it only route users into Settings?
+- Decision: Direct primary actions from the launcher.
+- Recommendation: Let the launcher directly trigger the primary happy-path action for the current state, but keep secondary and advanced actions in Settings.
+- Rationale: If the launcher is native-first, forcing every user into Settings for the main next step weakens that choice. Directly triggering the single primary action keeps the launcher useful, while Settings still owns the broader configuration, recovery detail, and lower-frequency controls.
+
+### Decision 5. Browser-branch ownership
+
+Status: Confirmed.
+
+- Question: Should the native launcher own browser-specific branching, especially the Firefox setup path, or should it stay browser-agnostic and defer that branch to Settings and the web UI?
+- Decision: Browser-agnostic launcher.
+- Recommendation: Keep the launcher browser-agnostic. Let it expose the generic primary action for the current state, and defer Firefox-specific branching, copy, and prerequisite handling to Settings and the web Companion page.
+- Rationale: The current codebase only detects Firefox on the web side, while the native side exposes the privileged Firefox support action but has no browser context of its own. Pushing browser-specific branching into the launcher would either duplicate browser detection logic or add a new manual branch selector to the launcher, both of which would make the lightweight launcher heavier than intended.
+
+### Decision 6. Launcher direct-action allowlist
+
+Status: Confirmed.
+
+- Question: Which direct actions should the lightweight launcher be allowed to trigger itself?
+- Decision: Use a tight allowlist, but remove `Repair Local HTTPS` from direct launcher actions. The launcher may directly trigger `Start Pairing` or `Generate New Pairing Code`, `Open Nojoin`, and `Open Settings`. Configuration and troubleshooting actions, including `Repair Local HTTPS`, stay in Settings.
+- Recommendation: Keep the launcher focused on forward progress and low-risk actions. Use direct launcher actions only for the main happy-path transition into pairing or web use. Route repair, Firefox support, disconnect, updates, logs, and autostart controls into Settings or the tray menu.
+- Rationale: This preserves the launcher as a lightweight entry surface rather than a troubleshooting console. Pairing and web launch are simple, high-frequency actions. Repair is still important, but it belongs beside the richer context already present in Settings.
+
+### Decision 7. Repair-required launcher behavior
+
+Status: Confirmed.
+
+- Question: When local HTTPS is in `needs-repair`, should the launcher expose a prominent `Open Settings to Repair` action, or should it demote the issue to passive status text and leave discovery to the tray and notifications?
+- Decision: Expose a prominent repair-oriented CTA in the launcher, but make that CTA open Settings rather than triggering repair directly.
+- Recommendation: Expose a prominent repair-oriented CTA in the launcher, but make that CTA open Settings rather than triggering repair directly.
+- Rationale: You already chose native-first and removed direct repair from the launcher. That means the launcher still needs to act as the primary discovery surface for blocked secure-local states, otherwise users are forced back into tray hunting and alert interpretation.
+
+### Decision 8. Healthy paired launcher behavior
+
+Status: Confirmed.
+
+- Question: When the Companion is already paired and healthy, what should the launcher primarily do on an explicit user launch?
+- Decision: Show a compact healthy-state launcher with backend summary and a primary `Open Nojoin` CTA, plus a secondary `Open Settings` CTA.
+- Recommendation: Show a compact healthy-state launcher with backend summary and a primary `Open Nojoin` CTA, plus a secondary `Open Settings` CTA.
+- Rationale: The launcher should still justify opening, but it should not become another dashboard. In the healthy paired state, the user’s most likely intent is to get back to Nojoin quickly. A compact summary plus `Open Nojoin` keeps the launcher useful without adding unnecessary friction.
+
+### Decision 9. Unpaired launcher behavior
+
+Status: Confirmed.
+
+- Question: When the Companion is unpaired but local HTTPS is healthy, should the launcher primarily start pairing immediately, or should it present a short explanation screen first and make pairing the next click?
+- Decision: Present a short explanation screen with a primary `Start Pairing` CTA rather than immediately opening the pairing window on launcher open.
+- Recommendation: Present a short explanation screen with a primary `Start Pairing` CTA rather than immediately opening the pairing window on launcher open.
+- Rationale: Pairing is the primary next step, but opening the pairing window immediately would make the launcher feel skipped and remove the native-first onboarding context you chose earlier. A short explanation plus one clear CTA preserves user orientation without adding a real extra step.
+
+### Decision 10. Tray menu top-level contract
+
+Status: Confirmed.
+
+- Question: Should the tray context menu top level be reduced to only operational items such as current status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`, with low-frequency utilities removed from the primary surface?
+- Decision: Yes. Reduce the top-level tray menu to status, active recording controls when relevant, `Open Nojoin`, `Settings`, and `Quit`. Move low-frequency utilities such as `Run on Startup`, `View Logs`, `About`, and manual update checks into Settings rather than leaving them in the primary tray surface.
+- Recommendation: Yes. Reduce the top-level tray menu to status, active recording controls when relevant, `Open Nojoin`, `Settings`, and `Quit`. Move low-frequency utilities such as `Run on Startup`, `View Logs`, `About`, and manual update checks into Settings rather than leaving them in the primary tray surface.
+- Rationale: You have already made the launcher and Settings the main native UX surfaces. That means the tray should become a fast operational fallback, especially during recording and offline recovery, not a secondary control panel with mixed-frequency items.
+
+### Decision 11. Settings information architecture
+
+Status: Confirmed.
+
+- Question: Should the native Settings page separate the main happy path from troubleshooting and destructive actions by using explicit sections such as `Connection`, `Secure Local Browser Connection`, and `Advanced / Troubleshooting`?
+- Decision: Yes. Keep pairing and current-state summary in the main path, keep local HTTPS state visible but route repair and Firefox support into a clearly marked troubleshooting section, and place `Disconnect Current Backend` in an explicit advanced/destructive section.
+- Recommendation: Yes. Keep pairing and current-state summary in the main path, keep local HTTPS state visible but route repair and Firefox support into a clearly marked troubleshooting section, and place `Disconnect Current Backend` in an explicit advanced/destructive section.
+- Rationale: The launcher and tray are now intentionally lightweight. That makes Settings the place where users should resolve edge cases safely. If troubleshooting and destructive actions remain visually co-equal with pairing and healthy-state actions, the UI will continue to feel dense and unfocused.
+
+### Decision 12. Web Companion page interaction model
+
+Status: Confirmed.
+
+- Question: Should the web `Settings -> Companion App` page use a strict stepper-like progression, or should it use state cards with one primary CTA that adapts to the current Companion state?
+- Decision: Use state cards with one primary CTA rather than a strict stepper.
+- Recommendation: Use state cards with one primary CTA rather than a strict stepper.
+- Rationale: The web Companion page is no longer the canonical first-run owner. It needs to work for first pairing, reconnect, repair, Firefox guidance, updates, and steady-state verification. Those are not a single linear journey, so a stepper would add rigidity and feel wrong once the user returns to the page outside the happy path.
+
+### Decision 13. Firefox web-flow presentation
+
+Status: Confirmed.
+
+- Question: In the web Companion page, should Firefox stay as a secondary branch inside the main pairing card, or should it be promoted into a clearly separate browser-specific support card?
+- Decision: Promote Firefox into a clearly separate support card, while keeping Chromium-based browsers as the default pairing path.
+- Recommendation: Promote Firefox into a clearly separate support card, while keeping Chromium-based browsers as the default pairing path.
+- Rationale: Firefox is not just another pairing mode toggle. It has a materially different prerequisite path involving native support enablement, Firefox configuration, restart, and a fresh pairing code. Keeping it inside the same main pairing card risks burying those requirements and making the default path feel heavier for the majority case.
+
+### Decision 14. End-user documentation shape
+
+Status: Confirmed.
+
+- Question: Should Companion onboarding, pairing, repair, and browser-support guidance live in a dedicated end-user Companion guide, or should it be absorbed into [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md)?
+- Decision: Create a dedicated Companion guide, then keep [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) concise and link into it.
+- Recommendation: Create a dedicated Companion guide, then keep [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) concise and link into it.
+- Rationale: The Companion now has enough state-specific behavior, launcher logic, repair flows, browser branching, and tray fallback behavior that scattering this guidance across general docs will increase duplication and drift. A dedicated guide gives users one canonical reference while the broader docs stay focused.
+
+## Open Questions For Review
+
+None for this pass. The current decision set is now complete enough to translate into an ordered waterfall implementation plan.
