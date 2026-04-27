@@ -7,19 +7,26 @@
     <style>
         :root {
             color-scheme: light;
-            --bg: #eef2f7;
-            --panel: #ffffff;
             --panel-border: #dbe3ee;
             --text: #162033;
             --muted: #64748b;
+            --accent: #c2410c;
+            --accent-strong: #9a3412;
+            --accent-soft: #fff7ed;
+            --success: #166534;
+            --success-soft: #ecfdf5;
+            --info: #1d4ed8;
+            --info-soft: #eff6ff;
+            --warning: #b45309;
+            --warning-soft: #fff7ed;
+            --danger: #b91c1c;
+            --danger-soft: #fff1f2;
             --shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
         }
         body {
             margin: 0;
-            padding: 20px;
-            background:
-                radial-gradient(circle at top right, rgba(194, 65, 12, 0.14), transparent 42%),
-                linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+            padding: 18px 20px;
+            background: #f8fafc;
             color: var(--text);
             font-family: "Segoe UI", "Inter", system-ui, sans-serif;
             box-sizing: border-box;
@@ -29,41 +36,447 @@
         }
         .shell {
             width: min(460px, 100%);
-            padding: 24px;
-            background: var(--panel);
-            border: 1px solid var(--panel-border);
-            border-radius: 18px;
-            box-shadow: var(--shadow);
+            padding: 0;
+        }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: #f8fafc;
+            color: var(--muted);
+            font-size: 0.77rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .brand::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+        }
+        .hero {
+            margin-top: 16px;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            padding: 6px 12px;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            line-height: 1;
         }
         h1 {
-            margin: 0;
-            font-size: 1.45rem;
+            margin: 14px 0 0;
+            font-size: 1.42rem;
             line-height: 1.1;
         }
         .lead {
             margin: 12px 0 0;
-            color: var(--muted);
-            font-size: 0.98rem;
+            color: var(--text);
+            font-size: 0.97rem;
             line-height: 1.5;
         }
         .supporting {
             margin: 10px 0 0;
             color: var(--muted);
-            font-size: 0.92rem;
+            font-size: 0.9rem;
             line-height: 1.45;
+        }
+        .summary-grid {
+            display: grid;
+            gap: 0;
+            margin-top: 18px;
+            border-top: 1px solid var(--panel-border);
+        }
+        .summary-card {
+            padding: 14px 0;
+            border-bottom: 1px solid var(--panel-border);
+            background: transparent;
+        }
+        .summary-label {
+            display: block;
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .summary-value {
+            display: block;
+            margin-top: 6px;
+            color: var(--text);
+            font-size: 0.98rem;
+            font-weight: 700;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .summary-note {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.42;
+        }
+        .status-message {
+            display: none;
+            margin-top: 14px;
+            padding: 11px 12px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.42;
+        }
+        .status-message.visible {
+            display: block;
+        }
+        .status-message.error {
+            background: var(--danger-soft);
+            border-color: #fecdd3;
+            color: var(--danger);
+        }
+        .status-message.info {
+            background: var(--info-soft);
+            border-color: #bfdbfe;
+            color: var(--info);
+        }
+        .actions {
+            display: grid;
+            gap: 10px;
+            margin-top: 18px;
+            padding-top: 2px;
+        }
+        button {
+            width: 100%;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 11px 14px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+        }
+        button.primary {
+            background: var(--accent);
+            color: white;
+        }
+        button.primary:hover {
+            background: var(--accent-strong);
+        }
+        button.secondary {
+            background: #ffffff;
+            border-color: var(--panel-border);
+            color: var(--text);
+        }
+        button.secondary:hover {
+            background: #f8fafc;
+        }
+        button[hidden] {
+            display: none;
+        }
+        button:disabled {
+            opacity: 0.68;
+            cursor: wait;
+        }
+        .shell[data-tone="setup"] .status-pill {
+            background: var(--accent-soft);
+            border-color: #fdba74;
+            color: var(--accent-strong);
+        }
+        .shell[data-tone="healthy"] .status-pill {
+            background: var(--success-soft);
+            border-color: #bbf7d0;
+            color: var(--success);
+        }
+        .shell[data-tone="informational"] .status-pill {
+            background: var(--info-soft);
+            border-color: #bfdbfe;
+            color: var(--info);
+        }
+        .shell[data-tone="warning"] .status-pill {
+            background: var(--warning-soft);
+            border-color: #fdba74;
+            color: var(--warning);
+        }
+        .shell[data-tone="critical"] .status-pill {
+            background: var(--danger-soft);
+            border-color: #fecdd3;
+            color: var(--danger);
         }
     </style>
 </head>
 <body>
-    <div class="shell">
-        <h1>Nojoin Companion</h1>
-        <p class="lead">The companion is running in the system tray.</p>
-        <p class="supporting">You can close this window.</p>
+    <div class="shell" data-tone="setup">
+        <div class="brand">Nojoin Companion</div>
+
+        <div class="hero">
+            <div class="status-pill" id="statusPill">Loading launcher state...</div>
+            <h1 id="title">Nojoin Companion</h1>
+            <p class="lead" id="lead">Loading current launcher state...</p>
+            <p class="supporting" id="supporting">Checking the current backend and local browser connection.</p>
+        </div>
+
+        <div class="summary-grid">
+            <div class="summary-card">
+                <span class="summary-label">Current Backend</span>
+                <span class="summary-value" id="backendValue">Loading...</span>
+                <p class="summary-note" id="backendNote">Checking pairing state...</p>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Local Browser Connection</span>
+                <span class="summary-value" id="localConnectionValue">Loading...</span>
+                <p class="summary-note" id="localConnectionNote">Checking the secure local browser connection...</p>
+            </div>
+        </div>
+
+        <div id="statusMessage" class="status-message" aria-live="polite"></div>
+
+        <div class="actions">
+            <button id="primaryActionBtn" class="primary" type="button">Loading...</button>
+            <button id="secondaryActionBtn" class="secondary" type="button" hidden></button>
+        </div>
     </div>
 
     <script>
         const { invoke } = window.__TAURI__.core;
+        const shell = document.querySelector('.shell');
+        const statusPill = document.getElementById('statusPill');
+        const title = document.getElementById('title');
+        const lead = document.getElementById('lead');
+        const supporting = document.getElementById('supporting');
+        const backendValue = document.getElementById('backendValue');
+        const backendNote = document.getElementById('backendNote');
+        const localConnectionValue = document.getElementById('localConnectionValue');
+        const localConnectionNote = document.getElementById('localConnectionNote');
+        const statusMessage = document.getElementById('statusMessage');
+        const primaryActionBtn = document.getElementById('primaryActionBtn');
+        const secondaryActionBtn = document.getElementById('secondaryActionBtn');
+
         let resizeTimer = null;
+        let refreshTimer = null;
+        let actionInFlight = false;
+
+        const actionLabels = {
+            'start-pairing': 'Start Pairing',
+            'open-nojoin': 'Open Nojoin',
+            'open-settings': 'Open Settings',
+            'open-settings-to-repair': 'Open Settings to Repair',
+        };
+
+        const launcherCopy = {
+            'first-run': {
+                tone: 'setup',
+                statusLabel: 'Set up Companion',
+                title: 'Nojoin Companion',
+                lead: 'Companion keeps this device connected to one Nojoin deployment for local browser controls and recording handoff.',
+                supporting: 'Start pairing now, or close this window and reopen it from the tray later.',
+                backendNote: 'Companion is installed but not connected yet.',
+                secondaryAction: 'open-settings',
+            },
+            'unpaired': {
+                tone: 'setup',
+                statusLabel: 'Not paired',
+                title: 'Nojoin Companion',
+                lead: 'This device is ready, but it is not connected to a Nojoin deployment yet.',
+                supporting: 'Start pairing from here, or leave Companion idle and reopen it from the tray later.',
+                backendNote: 'Start pairing before browser-side local controls can connect.',
+                secondaryAction: 'open-settings',
+            },
+            'pairing-active': {
+                tone: 'informational',
+                statusLabel: 'Pairing code active',
+                title: 'Nojoin Companion',
+                lead: 'A pairing code is already active. Finish pairing in Nojoin with the current code.',
+                supporting: 'If this is replacing an older backend, the current backend stays active until the new pairing succeeds.',
+                backendNote: 'The active pairing code belongs to this device.',
+                secondaryAction: 'open-settings',
+            },
+            'paired-healthy': {
+                tone: 'healthy',
+                statusLabel: 'Connected',
+                title: 'Nojoin Companion',
+                lead: 'Companion is connected and ready for local browser controls.',
+                supporting: 'Open Nojoin to return to the paired workspace, or use Settings for support and configuration.',
+                backendNote: 'This is the paired Nojoin deployment for this device.',
+                secondaryAction: 'open-settings',
+            },
+            'paired-disconnected': {
+                tone: 'informational',
+                statusLabel: 'Temporarily disconnected',
+                title: 'Nojoin Companion',
+                lead: 'The pairing is still valid. Companion will resync automatically when the backend connection returns.',
+                supporting: 'Open Settings if you need connection details or troubleshooting right now.',
+                backendNote: 'The saved pairing remains in place while reconnecting.',
+                secondaryAction: 'open-nojoin',
+            },
+            'local-https-repairing': {
+                tone: 'warning',
+                statusLabel: 'Browser repair in progress',
+                title: 'Nojoin Companion',
+                lead: 'Companion is reconciling the secure local browser connection.',
+                supporting: 'Browser controls will refresh automatically when repair finishes.',
+                backendNote: 'The paired backend stays available while repair finishes.',
+                secondaryAction: null,
+            },
+            'local-https-needs-repair': {
+                tone: 'critical',
+                statusLabel: 'Browser repair required',
+                title: 'Nojoin Companion',
+                lead: 'Open Settings to run the repair flow before using browser-side local controls again.',
+                supporting: 'Repair stays in Settings so this launcher remains a lightweight entry point.',
+                backendNote: 'Pairing information is still shown here, but repair execution stays in Settings.',
+                secondaryAction: 'open-settings',
+            },
+        };
+
+        function formatError(error) {
+            if (typeof error === 'string') {
+                return error;
+            }
+
+            if (error && typeof error.message === 'string') {
+                return error.message;
+            }
+
+            return 'The launcher action could not be completed.';
+        }
+
+        function setStatusMessage(message, type = 'info') {
+            if (!message) {
+                statusMessage.textContent = '';
+                statusMessage.className = 'status-message';
+                return;
+            }
+
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message visible ${type}`;
+        }
+
+        function getLocalConnectionSummary(state) {
+            switch (state.localHttpsStatus) {
+                case 'repairing':
+                    return {
+                        value: 'Browser repair in progress',
+                        note: 'Browser controls will refresh automatically when repair finishes.',
+                    };
+                case 'needs-repair':
+                    return {
+                        value: 'Browser repair required',
+                        note: 'Open Settings to run the repair flow.',
+                    };
+                case 'ready':
+                default:
+                    return {
+                        value: 'Ready',
+                        note: state.isPaired
+                            ? 'Secure local browser connections are ready on this device.'
+                            : 'The secure local browser connection is ready whenever you finish pairing.',
+                    };
+            }
+        }
+
+        function setButtonState(button, actionKey) {
+            if (!actionKey) {
+                button.hidden = true;
+                button.textContent = '';
+                button.dataset.action = '';
+                return;
+            }
+
+            button.hidden = false;
+            button.textContent = actionLabels[actionKey];
+            button.dataset.action = actionKey;
+        }
+
+        function renderLauncherState(state) {
+            const copy = launcherCopy[state.launcherMode] || launcherCopy['unpaired'];
+            const localConnection = getLocalConnectionSummary(state);
+
+            shell.dataset.tone = copy.tone;
+            setStatusMessage('');
+            statusPill.textContent = copy.statusLabel;
+            title.textContent = copy.title;
+            lead.textContent = copy.lead;
+            supporting.textContent = copy.supporting;
+            backendValue.textContent = state.backendLabel;
+            backendNote.textContent = copy.backendNote;
+            localConnectionValue.textContent = localConnection.value;
+            localConnectionNote.textContent = localConnection.note;
+
+            setButtonState(primaryActionBtn, state.primaryAction);
+            setButtonState(secondaryActionBtn, copy.secondaryAction);
+
+            primaryActionBtn.disabled = actionInFlight;
+            secondaryActionBtn.disabled = actionInFlight;
+
+            scheduleResize();
+        }
+
+        function renderUnavailableState(message) {
+            shell.dataset.tone = 'critical';
+            statusPill.textContent = 'Launcher unavailable';
+            title.textContent = 'Nojoin Companion';
+            lead.textContent = 'Companion could not load the current launcher state.';
+            supporting.textContent = 'Open Settings from the tray if this problem keeps happening.';
+            backendValue.textContent = 'Unavailable';
+            backendNote.textContent = 'Pairing details could not be loaded.';
+            localConnectionValue.textContent = 'Unavailable';
+            localConnectionNote.textContent = 'The secure local browser connection could not be checked.';
+            setButtonState(primaryActionBtn, 'open-settings');
+            setButtonState(secondaryActionBtn, null);
+            primaryActionBtn.disabled = actionInFlight;
+            setStatusMessage(message, 'error');
+            scheduleResize();
+        }
+
+        async function loadLauncherState() {
+            try {
+                const state = await invoke('get_launcher_state');
+                renderLauncherState({
+                    backendLabel: state.backend_label,
+                    isPaired: state.is_paired,
+                    localHttpsStatus: state.localHttpsStatus,
+                    launcherMode: state.launcherMode,
+                    primaryAction: state.primaryAction,
+                });
+            } catch (error) {
+                renderUnavailableState(formatError(error));
+            }
+        }
+
+        async function runAction(actionKey) {
+            if (!actionKey || actionInFlight) {
+                return;
+            }
+
+            actionInFlight = true;
+            primaryActionBtn.disabled = true;
+            secondaryActionBtn.disabled = true;
+            setStatusMessage('');
+
+            try {
+                if (actionKey === 'start-pairing') {
+                    await invoke('start_pairing_mode');
+                    await loadLauncherState();
+                } else if (actionKey === 'open-nojoin') {
+                    await invoke('open_nojoin');
+                } else if (actionKey === 'open-settings' || actionKey === 'open-settings-to-repair') {
+                    await invoke('open_settings');
+                }
+            } catch (error) {
+                setStatusMessage(formatError(error), 'error');
+            } finally {
+                actionInFlight = false;
+                primaryActionBtn.disabled = false;
+                secondaryActionBtn.disabled = false;
+                scheduleResize();
+            }
+        }
 
         function scheduleResize() {
             window.clearTimeout(resizeTimer);
@@ -73,13 +486,12 @@
         }
 
         async function resizeToFit() {
-            const shell = document.querySelector('.shell');
             if (!shell) {
                 return;
             }
 
             const width = Math.ceil(Math.max(360, shell.scrollWidth + 40));
-            const height = Math.ceil(Math.max(210, document.documentElement.scrollHeight + 24));
+            const height = Math.ceil(Math.max(260, document.documentElement.scrollHeight + 24));
 
             try {
                 await invoke('resize_current_window', { width, height });
@@ -88,7 +500,27 @@
             }
         }
 
+        function startRefreshLoop() {
+            window.clearInterval(refreshTimer);
+            refreshTimer = window.setInterval(() => {
+                if (!document.hidden && !actionInFlight) {
+                    void loadLauncherState();
+                }
+            }, 4000);
+        }
+
+        primaryActionBtn.addEventListener('click', () => {
+            void runAction(primaryActionBtn.dataset.action);
+        });
+
+        secondaryActionBtn.addEventListener('click', () => {
+            void runAction(secondaryActionBtn.dataset.action);
+        });
+
         window.addEventListener('load', () => {
+            void loadLauncherState();
+            startRefreshLoop();
+
             window.requestAnimationFrame(() => {
                 window.requestAnimationFrame(() => {
                     void resizeToFit();
@@ -97,17 +529,24 @@
         });
 
         window.addEventListener('focus', () => {
+            if (!actionInFlight) {
+                void loadLauncherState();
+            }
             scheduleResize();
         });
 
-        if ('ResizeObserver' in window) {
-            const shell = document.querySelector('.shell');
-            if (shell) {
-                const resizeObserver = new ResizeObserver(() => {
-                    scheduleResize();
-                });
-                resizeObserver.observe(shell);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && !actionInFlight) {
+                void loadLauncherState();
+                scheduleResize();
             }
+        });
+
+        if ('ResizeObserver' in window && shell) {
+            const resizeObserver = new ResizeObserver(() => {
+                scheduleResize();
+            });
+            resizeObserver.observe(shell);
         }
     </script>
 </body>
