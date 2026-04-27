@@ -343,11 +343,19 @@ Sub-tasks:
 
 ### Step 3. Build the lightweight native launcher UI
 
-Status: Planned.
+Status: Implemented. Manual validation pending.
 
 This step replaces the placeholder native home window once the launcher state and actions exist.
 
+Implementation notes:
+
+- companion/src/index.html now renders the launcher directly from `get_launcher_state()` and routes every CTA through the existing native launcher commands.
+- The launcher remains compact while covering first-run, unpaired, healthy paired, disconnected, repair-in-progress, and repair-required states without adding browser-specific branching.
+- The existing content-fit sizing rule remains in place and re-measures after state refreshes, action outcomes, and other content changes.
+
 #### Task 3.1. Replace the placeholder launcher layout
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -357,6 +365,8 @@ Sub-tasks:
 
 #### Task 3.2. Implement first-run and unpaired launcher states
 
+Status: Implemented.
+
 Sub-tasks:
 
 - Add a short first-run explanation for what the Companion does and why pairing is required.
@@ -364,6 +374,8 @@ Sub-tasks:
 - Ensure the launcher explains the next step without immediately skipping into the pairing window.
 
 #### Task 3.3. Implement healthy paired launcher state
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -373,6 +385,8 @@ Sub-tasks:
 
 #### Task 3.4. Implement degraded launcher states
 
+Status: Implemented.
+
 Sub-tasks:
 
 - Add a prominent `Open Settings to Repair` CTA when local HTTPS needs repair.
@@ -380,6 +394,8 @@ Sub-tasks:
 - Ensure the launcher remains browser-agnostic and does not grow Firefox-specific branching logic.
 
 #### Task 3.5. Polish launcher behavior
+
+Status: Implemented.
 
 Sub-tasks:
 
@@ -394,6 +410,10 @@ Status: Planned.
 This step gives low-frequency utilities and troubleshooting actions a clear home before the tray is simplified.
 
 #### Task 4.1. Establish the Settings information architecture
+
+Known issue to resolve in this task:
+
+- Opening Settings can currently freeze the native Companion UI immediately after the window appears while the background process stays alive. Current logs may show only the initial `Opening Settings from a native launcher action.` line, so this freeze needs to be fixed before the Settings reorganization work proceeds.
 
 Sub-tasks:
 
