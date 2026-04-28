@@ -92,6 +92,7 @@ Notes:
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Security Policy](docs/SECURITY.md)
 - [Legal Disclaimer](docs/LEGAL.md)
+- [Screenshots](docs/SCREENSHOTS.md)
 
 ## Project Status
 
