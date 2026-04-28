@@ -111,8 +111,9 @@ class TestRecording(TestBase, table=True):
     __tablename__ = "backup_test_recordings"
 
     name: str
-    meeting_uid: Optional[str] = None
-    audio_path: str
+    meeting_uid: Optional[str] = Field(default=None, sa_column=Column(Text, unique=True, nullable=True))
+    public_id: Optional[str] = Field(default=None, sa_column=Column(Text, unique=True, nullable=True))
+    audio_path: str = Field(sa_column=Column(Text, unique=True, nullable=False))
     proxy_path: Optional[str] = None
     file_size_bytes: Optional[int] = None
     status: str = "PROCESSED"
@@ -319,6 +320,7 @@ async def seed_source_data(
     session_maker: sessionmaker,
     *,
     recording_meeting_uid: Optional[str] = None,
+    recording_public_id: Optional[str] = None,
     recording_audio_path: str = "data/recordings/quarterly-planning.wav",
     recording_proxy_path: Optional[str] = "data/recordings/quarterly-planning.mp3",
 ) -> None:
@@ -366,6 +368,7 @@ async def seed_source_data(
                 id=40,
                 name="Quarterly planning",
                 meeting_uid=recording_meeting_uid,
+                public_id=recording_public_id,
                 audio_path=recording_audio_path,
                 proxy_path=recording_proxy_path,
                 file_size_bytes=1024,
@@ -453,6 +456,7 @@ async def seed_existing_target_recording(
     session_maker: sessionmaker,
     *,
     meeting_uid: Optional[str] = None,
+    public_id: Optional[str] = None,
     audio_path: str = "data/recordings/quarterly-planning.wav",
     proxy_path: Optional[str] = None,
     name: str = "Existing quarterly planning",
@@ -472,6 +476,7 @@ async def seed_existing_target_recording(
                 id=102,
                 name=name,
                 meeting_uid=meeting_uid,
+                public_id=public_id,
                 audio_path=audio_path,
                 proxy_path=proxy_path,
                 file_size_bytes=2048,
@@ -945,4 +950,136 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     assert restored_recording.proxy_path is None
     assert restored_recording.audio_path.endswith("imported-meeting.opus")
 
+    await target_context.async_engine.dispose()
+
+@pytest.mark.anyio
+async def test_safe_merge_skips_existing_recording_matched_by_public_id_when_meeting_uid_differs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-source",
+        recording_public_id="public-shared",
+        recording_audio_path="data/recordings/source-quarterly.wav",
+    )
+    zip_path = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-target-different",
+        public_id="public-shared",
+        audio_path="data/recordings/target-quarterly.wav",
+        name="Existing target meeting",
+    )
+
+    job_id = "safe-merge-public-id-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+
+    with Session(target_context.sync_engine) as session:
+        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+
+    assert len(restored_recordings) == 1
+    assert restored_recordings[0].name == "Existing target meeting"
+    assert restored_recordings[0].public_id == "public-shared"
+    assert restored_recordings[0].meeting_uid == "meeting-uid-target-different"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-incoming",
+        recording_public_id="public-incoming",
+        recording_audio_path="data/recordings/shared-name.wav",
+    )
+    zip_path = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    # Target holds a recording whose meeting_uid and public_id differ but whose audio file
+    # would collide with the runtime path derived from the incoming backup.
+    target_runtime_path = str(target_context.path_manager.recordings_directory / "shared-name.opus")
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-target",
+        public_id="public-target",
+        audio_path=target_runtime_path,
+        name="Unrelated target meeting",
+    )
+
+    job_id = "audio-path-collision-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
+
+    assert len(restored_recordings) == 2
+    inserted = next(row for row in restored_recordings if row.meeting_uid == "meeting-uid-incoming")
+    # Suffixed with the incoming meeting_uid to dodge the unique-constraint.
+    assert inserted.audio_path != target_runtime_path
+    assert "meeting-uid-incoming" in inserted.audio_path
+    assert inserted.audio_path.endswith(".opus")
+
+    await source_context.async_engine.dispose()
     await target_context.async_engine.dispose()

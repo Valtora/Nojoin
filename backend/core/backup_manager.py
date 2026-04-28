@@ -7,6 +7,7 @@ import subprocess
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Type, Tuple
+from uuid import uuid4
 from sqlmodel import select, SQLModel, delete, Session
 from sqlalchemy import text
 from backend.core.db import async_session_maker, sync_engine
@@ -295,13 +296,54 @@ class BackupManager:
         return normalized or None
 
     @staticmethod
+    def _normalise_public_id(public_id: Any) -> str | None:
+        if public_id is None:
+            return None
+
+        normalized = str(public_id).strip().lower()
+        return normalized or None
+
+    @staticmethod
+    def _get_recording_match_keys(
+        audio_path: str | None,
+        meeting_uid: Any = None,
+        public_id: Any = None,
+    ) -> set[str]:
+        """
+        Returns every identifier key under which two recordings should be considered the same.
+        Prefers durable identifiers (meeting_uid, public_id) and falls back to the legacy audio-path
+        stem for backups created before those columns existed.
+        """
+        keys: set[str] = set()
+        normalized_uid = BackupManager._normalise_meeting_uid(meeting_uid)
+        if normalized_uid:
+            keys.add(f"meeting_uid:{normalized_uid}")
+        normalized_pid = BackupManager._normalise_public_id(public_id)
+        if normalized_pid:
+            keys.add(f"public_id:{normalized_pid}")
+        if not keys:
+            legacy_identity = BackupManager._get_recording_identity(audio_path)
+            if legacy_identity:
+                keys.add(f"audio_path:{legacy_identity}")
+        return keys
+
+    @staticmethod
     def _get_recording_match_key(
         audio_path: str | None,
         meeting_uid: Any = None,
+        public_id: Any = None,
     ) -> str | None:
+        """
+        Returns the single highest-priority match key. Retained for callers that only need a
+        primary identifier; prefer ``_get_recording_match_keys`` when comparing two records.
+        """
         normalized_uid = BackupManager._normalise_meeting_uid(meeting_uid)
         if normalized_uid:
             return f"meeting_uid:{normalized_uid}"
+
+        normalized_pid = BackupManager._normalise_public_id(public_id)
+        if normalized_pid:
+            return f"public_id:{normalized_pid}"
 
         legacy_identity = BackupManager._get_recording_identity(audio_path)
         if legacy_identity:
@@ -602,11 +644,14 @@ class BackupManager:
         # Map: table_name -> { old_id: new_id }
         id_map: Dict[str, Dict[int, int]] = {name: {} for name, _ in MODELS}
         
-        # Map: preferred meeting identity key -> new_id.
+        # Map: identifier key (meeting_uid:/public_id:/audio_path:) -> new_id.
+        # Each restored recording contributes every key it owns so subsequent backup rows that
+        # share any identifier collapse onto the same new id.
         restored_recording_keys: Dict[str, int] = {}
 
-        # Map: preferred meeting identity key -> existing recording.
+        # Map: identifier key -> existing recording in the target database.
         existing_recordings_by_identity: Dict[str, Recording] = {}
+        existing_recordings_loaded = False
 
         # Set of skipped recording IDs (old_id) - used to skip children
         skipped_recording_ids = set()
@@ -709,17 +754,17 @@ class BackupManager:
                 if "recordings.json" in zipf.namelist():
                     try:
                         rec_data = json.loads(zipf.read("recordings.json"))
-                        recording_keys = {
-                            BackupManager._get_recording_match_key(
-                                item.get("audio_path"),
-                                item.get("meeting_uid"),
+                        backup_recording_keys: set[str] = set()
+                        for item in rec_data:
+                            backup_recording_keys.update(
+                                BackupManager._get_recording_match_keys(
+                                    item.get("audio_path"),
+                                    item.get("meeting_uid"),
+                                    item.get("public_id"),
+                                )
                             )
-                            for item in rec_data
-                            if item.get("audio_path")
-                        }
-                        recording_keys.discard(None)
-                        
-                        if recording_keys:
+
+                        if backup_recording_keys:
                             from backend.core.db import sync_engine
                             from sqlmodel import Session
                             with Session(sync_engine) as session:
@@ -727,13 +772,14 @@ class BackupManager:
                                 existing_ids = [
                                     row.id
                                     for row in existing_rows
-                                    if BackupManager._get_recording_match_key(
+                                    if BackupManager._get_recording_match_keys(
                                         row.audio_path,
                                         getattr(row, "meeting_uid", None),
+                                        getattr(row, "public_id", None),
                                     )
-                                    in recording_keys
+                                    & backup_recording_keys
                                 ]
-                                
+
                                 if existing_ids:
                                     logger.info(f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings.")
                                     # Specific delete to trigger cascades if needed (though delete from recordings usually cascades)
@@ -794,52 +840,82 @@ class BackupManager:
                                     id_map["users"][old_id] = existing_user.id
                                 continue # Skip inserting this user
                             
-                        # Special handling for Recordings: Resolve by audio_path
+                        # Special handling for Recordings: Resolve by durable identifiers
                         elif table_name == "recordings":
                             audio_path = item_data.get("audio_path")
                             meeting_uid = item_data.get("meeting_uid")
-                            recording_key = BackupManager._get_recording_match_key(
+                            public_id = item_data.get("public_id")
+                            backup_keys = BackupManager._get_recording_match_keys(
                                 audio_path,
                                 meeting_uid,
+                                public_id,
                             )
 
-                            if not existing_recordings_by_identity:
+                            if not existing_recordings_loaded:
                                 existing_rows = session.exec(select(Recording)).all()
-                                existing_recordings_by_identity = {
-                                    identity: row
-                                    for row in existing_rows
-                                    if (
-                                        identity := BackupManager._get_recording_match_key(
-                                            row.audio_path,
-                                            getattr(row, "meeting_uid", None),
-                                        )
-                                    )
-                                }
+                                for row in existing_rows:
+                                    for key in BackupManager._get_recording_match_keys(
+                                        row.audio_path,
+                                        getattr(row, "meeting_uid", None),
+                                        getattr(row, "public_id", None),
+                                    ):
+                                        existing_recordings_by_identity[key] = row
+                                existing_recordings_loaded = True
 
-                            if not recording_key:
-                                logger.warning("Skipping recording restore because audio_path is missing or invalid")
-                                continue
-                            
-                            # DUPLICATE IN BACKUP CHECK:
-                            # If we already restored this meeting in this session, map to that ID and SKIP.
-                            if recording_key in restored_recording_keys:
+                            if not backup_keys:
                                 logger.warning(
-                                    f"Duplicate recording in backup JSON: {audio_path}. Linking old_id {old_id} to existing new_id {restored_recording_keys[recording_key]}"
+                                    "Skipping recording restore because no usable identity "
+                                    "(meeting_uid, public_id, or audio_path) was found."
+                                )
+                                continue
+
+                            # DUPLICATE IN BACKUP CHECK:
+                            # If we already restored a recording in this session that shares ANY
+                            # identifier with this row, link old_id to that new_id and skip.
+                            duplicate_match_id = next(
+                                (
+                                    restored_recording_keys[key]
+                                    for key in backup_keys
+                                    if key in restored_recording_keys
+                                ),
+                                None,
+                            )
+                            if duplicate_match_id is not None:
+                                logger.warning(
+                                    f"Duplicate recording in backup JSON (audio_path={audio_path}, "
+                                    f"meeting_uid={meeting_uid}, public_id={public_id}). "
+                                    f"Linking old_id {old_id} to existing new_id {duplicate_match_id}"
                                 )
                                 if old_id is not None:
-                                    id_map["recordings"][old_id] = restored_recording_keys[recording_key]
-                                continue # Skip insert
+                                    id_map["recordings"][old_id] = duplicate_match_id
+                                continue
 
-                            existing_rec = existing_recordings_by_identity.get(recording_key)
-                            
+                            existing_rec = next(
+                                (
+                                    existing_recordings_by_identity[key]
+                                    for key in backup_keys
+                                    if key in existing_recordings_by_identity
+                                ),
+                                None,
+                            )
+
                             if existing_rec:
                                 # Conflict detected. If overwrite_existing is True, this record should have been
                                 # removed during pre-flight cleanup, suggesting a potential race condition.
-                                
+
                                 if overwrite_existing:
                                     # Fallback: Delete row
                                     # NOTE: Pre-flight should have caught this. If we are here, it's a straggler or race condition.
-                                    logger.warning(f"Fallback delete triggered for audio_path={audio_path}. Deleting ID {existing_rec.id}.")
+                                    logger.warning(
+                                        f"Fallback delete triggered for recording match (audio_path={audio_path}, "
+                                        f"meeting_uid={meeting_uid}, public_id={public_id}). Deleting ID {existing_rec.id}."
+                                    )
+                                    # Drop every cached key pointing at the deleted row so a later
+                                    # backup row that shares some other identifier does not re-match it.
+                                    for stale_key in [
+                                        k for k, v in existing_recordings_by_identity.items() if v is existing_rec
+                                    ]:
+                                        existing_recordings_by_identity.pop(stale_key, None)
                                     session.delete(existing_rec)
                                     session.flush()
                                 else:
@@ -848,8 +924,16 @@ class BackupManager:
                                     if old_id is not None:
                                         id_map["recordings"][old_id] = existing_rec.id
                                         skipped_recording_ids.add(old_id)
-                                        # Tracks as restored/processed so subsequent duplicates map to it.
-                                        restored_recording_keys[recording_key] = existing_rec.id
+                                        # Tracks as restored/processed so subsequent duplicates map to it,
+                                        # registering every identity the existing row owns.
+                                        for existing_key in BackupManager._get_recording_match_keys(
+                                            existing_rec.audio_path,
+                                            getattr(existing_rec, "meeting_uid", None),
+                                            getattr(existing_rec, "public_id", None),
+                                        ):
+                                            restored_recording_keys[existing_key] = existing_rec.id
+                                        for backup_key in backup_keys:
+                                            restored_recording_keys[backup_key] = existing_rec.id
                                     continue
 
                             normalized_meeting_uid = BackupManager._normalise_meeting_uid(meeting_uid)
@@ -858,13 +942,81 @@ class BackupManager:
                             else:
                                 item_data.pop("meeting_uid", None)
 
+                            normalized_public_id = BackupManager._normalise_public_id(public_id)
+                            if normalized_public_id:
+                                item_data["public_id"] = normalized_public_id
+                            else:
+                                item_data.pop("public_id", None)
+
                             # Backups do not preserve proxy files; regenerate them after restore.
                             item_data["proxy_path"] = None
 
-                            item_data["audio_path"] = BackupManager._build_runtime_recording_audio_path(
-                                audio_path,
-                                recordings_dir,
-                            ) or audio_path
+                            runtime_audio_path = (
+                                BackupManager._build_runtime_recording_audio_path(
+                                    audio_path,
+                                    recordings_dir,
+                                )
+                                or audio_path
+                            )
+                            item_data["audio_path"] = runtime_audio_path
+
+                            # Proactive collision handling for unique columns.
+                            # If a stale row in the target shares ``public_id`` (without sharing
+                            # any identity we could match), regenerate ours rather than aborting
+                            # the restore on a unique-constraint violation.
+                            if (
+                                hasattr(model_cls, "public_id")
+                                and item_data.get("public_id")
+                            ):
+                                conflicting_pid_row = session.exec(
+                                    select(model_cls).where(
+                                        model_cls.public_id == item_data["public_id"]
+                                    )
+                                ).first()
+                                if conflicting_pid_row is not None:
+                                    new_pid = str(uuid4())
+                                    logger.warning(
+                                        f"public_id collision for restored recording "
+                                        f"(value={item_data['public_id']!r}); regenerating to {new_pid}."
+                                    )
+                                    item_data["public_id"] = new_pid
+
+                            # Same defensive treatment for audio_path. We also rename the
+                            # extracted file on disk so the row keeps pointing at real audio.
+                            if item_data.get("audio_path"):
+                                conflicting_path_row = session.exec(
+                                    select(model_cls).where(
+                                        model_cls.audio_path == item_data["audio_path"]
+                                    )
+                                ).first()
+                                if conflicting_path_row is not None:
+                                    original_path = item_data["audio_path"]
+                                    stem, ext = os.path.splitext(original_path)
+                                    suffix = (
+                                        item_data.get("meeting_uid")
+                                        or item_data.get("public_id")
+                                        or str(uuid4())
+                                    )
+                                    new_path = f"{stem}__{suffix}{ext}"
+                                    logger.warning(
+                                        f"audio_path collision for restored recording "
+                                        f"({original_path}); renaming to {new_path}."
+                                    )
+                                    try:
+                                        original_abs = os.path.abspath(original_path)
+                                        new_abs = os.path.abspath(new_path)
+                                        if (
+                                            os.path.exists(original_abs)
+                                            and not os.path.exists(new_abs)
+                                        ):
+                                            os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+                                            os.rename(original_abs, new_abs)
+                                    except OSError as rename_err:
+                                        logger.error(
+                                            f"Failed to rename colliding restored audio file "
+                                            f"{original_path} -> {new_path}: {rename_err}"
+                                        )
+                                    item_data["audio_path"] = new_path
                         
                         else:
                             # Child Records: Skip if parent recording was skipped
@@ -1362,10 +1514,20 @@ class BackupManager:
                             if item_data.get("user_id") in id_map["users"]:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                     
-                        # Create instance
+                        # Create instance inside a savepoint so an integrity error on a single
+                        # row (e.g. unforeseen unique-constraint collision) is logged and the
+                        # row is skipped, rather than rolling back the whole restore.
                         instance = model_cls.model_validate(item_data)
-                        session.add(instance)
-                        session.flush() # To get the new ID
+                        try:
+                            with session.begin_nested():
+                                session.add(instance)
+                                session.flush()  # To get the new ID
+                        except Exception as insert_err:
+                            logger.error(
+                                f"Failed to insert restored {table_name} row "
+                                f"(old_id={old_id}): {insert_err}. Skipping."
+                            )
+                            continue
                         
                         if old_id is not None:
                             id_map[table_name][old_id] = instance.id
@@ -1378,15 +1540,15 @@ class BackupManager:
                                 (instance.id, old_recording_speaker_merge_id)
                             )
                         
-                        # Track restored audio paths for duplicate detection
+                        # Track restored recording identities for duplicate detection.
                         if table_name == "recordings" and hasattr(instance, "audio_path") and instance.audio_path:
-                            recording_key = BackupManager._get_recording_match_key(
+                            for instance_key in BackupManager._get_recording_match_keys(
                                 instance.audio_path,
                                 getattr(instance, "meeting_uid", None),
-                            )
-                            if recording_key:
-                                restored_recording_keys[recording_key] = instance.id
-                                existing_recordings_by_identity[recording_key] = instance
+                                getattr(instance, "public_id", None),
+                            ):
+                                restored_recording_keys[instance_key] = instance.id
+                                existing_recordings_by_identity[instance_key] = instance
                             if os.path.exists(instance.audio_path):
                                 recordings_requiring_proxy.add(instance.id)
                         

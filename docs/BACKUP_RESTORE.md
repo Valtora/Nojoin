@@ -72,6 +72,30 @@ If audio is included, Nojoin compresses it to Opus to reduce archive size.
 - Calendar connections, selections, and cached events can be restored so the dashboard calendar comes back intact.
 - Redacted AI keys must still be re-entered afterwards.
 
+## Recording Identity and Matching
+
+Each recording carries two stable, server-generated identifiers in addition to its internal numeric id:
+
+- `meeting_uid`: durable cross-system identifier for the meeting.
+- `public_id`: identifier exposed in URLs and used by the companion upload-token flow.
+
+Both are preserved in the backup archive and re-applied on restore so that:
+
+- Companion pairings, document links, and external references that target a recording's `public_id` keep working after a restore.
+- Subsequent backups taken from the same source remain mergeable into the same target without producing duplicate recording rows.
+
+When restoring, conflicting recordings are detected by matching **any** of `meeting_uid`, `public_id`, or (for legacy backups created before these columns existed) the audio file's stem. The Skip and Overwrite conflict modes apply to the whole matched recording, so you do not need to deduplicate manually.
+
+If a target installation already holds a row with the same `public_id` or `audio_path` as an inbound recording but no matching `meeting_uid` (an unusual edge case caused, for example, by hand-edited archives), the restore regenerates the conflicting field on the inbound row and renames the extracted audio file rather than aborting the import.
+
+## Playback Proxies
+
+Playback proxy files are not included in backups; they are regenerated asynchronously after restore. Newly restored recordings may briefly show as still processing until their proxy is rebuilt.
+
+## Cross-System Restores
+
+Restoring a backup onto a different installation preserves the original `public_id` of each recording. Companion devices that were paired to the source installation still address recordings by the same `public_id`, but the JWT and pairing records they hold are tied to the source installation and must be re-issued from the new system.
+
 ## Recommendations
 
 - Create backups before upgrades.
