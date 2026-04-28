@@ -174,8 +174,11 @@ export default function UsersTab() {
       setEditModalOpen(false);
       setEditingUser(null);
       await fetchUsers();
-    } catch {
-      addNotification({ message: "Failed to update user", type: "error" });
+    } catch (err: any) {
+      addNotification({
+        message: err.response?.data?.detail || "Failed to update user",
+        type: "error",
+      });
     }
   };
 
@@ -239,6 +242,7 @@ export default function UsersTab() {
                 setNewUser((prev) => ({ ...prev, password: e.target.value }))
               }
               autoComplete="new-password"
+              minLength={8}
               className="bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white"
               required
             />
@@ -413,6 +417,7 @@ export default function UsersTab() {
                   }
                   placeholder="Enter new password"
                   autoComplete="new-password"
+                  minLength={8}
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>

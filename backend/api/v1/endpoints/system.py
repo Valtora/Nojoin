@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocke
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from celery.result import AsyncResult
 
 from backend.api.deps import (
@@ -19,7 +19,7 @@ from backend.api.deps import (
     get_current_active_superuser,
     get_current_active_superuser_ws
 )
-from backend.core.security import get_password_hash
+from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, validate_password_policy
 from backend.models.user import User
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
@@ -245,7 +245,7 @@ async def websocket_logs(
 
 class SetupRequest(BaseModel):
     username: str
-    password: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     llm_provider: str = "gemini"
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -254,6 +254,11 @@ class SetupRequest(BaseModel):
     hf_token: Optional[str] = None
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)
 
 
 @router.get("/health")
@@ -344,7 +349,7 @@ async def setup_system(
 
     user = User(
         username=setup_in.username,
-        hashed_password=get_password_hash(setup_in.password),
+        hashed_password=hash_user_password(setup_in.password),
         is_superuser=True,
         force_password_change=False, # First user sets their own password, so no need to force change
         role="owner",

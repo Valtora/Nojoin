@@ -9,7 +9,7 @@ import logging
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
 from backend.api.error_handling import sanitized_http_exception
-from backend.core.security import get_password_hash, verify_password
+from backend.core.security import hash_user_password, verify_password
 from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole, UserList
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
@@ -87,7 +87,7 @@ async def register_user(
     
     user = User(
         username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
+        hashed_password=hash_user_password(user_in.password),
         role=invitation.role,
         invitation_id=invitation.id,
         is_superuser=False,
@@ -182,7 +182,7 @@ async def create_user(
     
     user = User(
         username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
+        hashed_password=hash_user_password(user_in.password),
         is_superuser=is_superuser,
         role=role,
         force_password_change=True, # Force password change for new users created by admin
@@ -356,7 +356,7 @@ async def update_password_me(
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
     
-    current_user.hashed_password = get_password_hash(body.new_password)
+    current_user.hashed_password = hash_user_password(body.new_password)
     current_user.force_password_change = False
     db.add(current_user)
     await db.commit()
@@ -392,7 +392,7 @@ async def update_user(
         user.username = user_in.username
 
     if user_in.password:
-        user.hashed_password = get_password_hash(user_in.password)
+        user.hashed_password = hash_user_password(user_in.password)
         user.force_password_change = True # Force change if admin resets it
         
     if user_in.is_active is not None:

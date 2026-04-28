@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Add backend-side password policy enforcement.
-  - Current state: user creation, registration, first-run setup, and password change flows accept arbitrary password strings at the API model and endpoint level.
-  - Files to review: [backend/models/user.py](../backend/models/user.py), [backend/api/v1/endpoints/users.py](../backend/api/v1/endpoints/users.py), [backend/api/v1/endpoints/system.py](../backend/api/v1/endpoints/system.py)
-  - Target outcome: minimum length and any other password rules should be enforced server-side, not only in selective frontend forms.
-
 - [ ] Remove raw exception details from authenticated setup validation responses.
   - Current state: public first-run validation paths are sanitized, but authenticated admin validation can still return raw exception text for LLM, Hugging Face, and model-listing failures.
   - Files to review: [backend/api/v1/endpoints/setup.py](../backend/api/v1/endpoints/setup.py)

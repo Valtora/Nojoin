@@ -158,6 +158,7 @@ function RegisterForm() {
                 aria-describedby={error ? 'register-error' : undefined}
                 aria-invalid={Boolean(error)}
                 required
+                minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Password"
                 value={formData.password}
@@ -180,6 +181,7 @@ function RegisterForm() {
                 aria-describedby={error ? 'register-error' : undefined}
                 aria-invalid={Boolean(error)}
                 required
+                minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Confirm Password"
                 value={formData.confirmPassword}

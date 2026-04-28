@@ -14,6 +14,8 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 logger = logging.getLogger(__name__)
 
+MIN_PASSWORD_LENGTH = 8
+
 
 from backend.utils.path_manager import path_manager
 
@@ -204,6 +206,20 @@ def create_local_control_token(
         "secret_version": secret_version,
     }
     return jwt.encode(payload, secret_key, algorithm=ALGORITHM)
+
+
+def validate_password_policy(password: str) -> str:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Password must be at least {MIN_PASSWORD_LENGTH} characters long."
+        )
+    if password.isspace():
+        raise ValueError("Password cannot be all whitespace.")
+    return password
+
+
+def hash_user_password(password: str) -> str:
+    return get_password_hash(validate_password_policy(password))
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

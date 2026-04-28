@@ -28,6 +28,12 @@ Users who register through an invite choose their own password during sign-up an
 
 ## Manual User Provisioning and Password Rotation
 
+New and rotated passwords are enforced server-side.
+
+- Passwords must be at least 8 characters long.
+- Passwords made entirely of whitespace are rejected.
+- Existing password hashes are grandfathered until the next password change or admin reset.
+
 When an Admin or Owner creates a user manually:
 
 - The user receives a temporary password.
