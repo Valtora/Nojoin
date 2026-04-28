@@ -21,7 +21,7 @@ import {
   getUserMe,
   getTags,
 } from "@/lib/api";
-import { ChatMessage, Tag } from "@/types";
+import { ChatMessage, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -34,7 +34,12 @@ export default function ChatPanel({
   onNotesUpdate?: () => void;
 }) {
   const params = useParams();
-  const recordingId = params?.id ? parseInt(params.id as string) : null;
+  const recordingId: RecordingId | null =
+    typeof params?.id === "string"
+      ? params.id
+      : Array.isArray(params?.id)
+        ? params.id[0] ?? null
+        : null;
   const [provider, setProvider] = useState<string>("AI");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");

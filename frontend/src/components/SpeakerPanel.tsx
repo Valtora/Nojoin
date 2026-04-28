@@ -2,6 +2,7 @@
 
 import {
   RecordingSpeaker,
+  RecordingId,
   TranscriptSegment,
   VoiceprintExtractResult,
   BatchVoiceprintResponse,
@@ -50,7 +51,7 @@ interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
   segments: TranscriptSegment[];
   onPlaySegment: (time: number, end?: number) => void;
-  recordingId: number;
+  recordingId: RecordingId;
   speakerColors: Record<string, string>; // Now stores color keys, not full classes
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   currentTime: number;

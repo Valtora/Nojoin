@@ -13,7 +13,7 @@ struct RecordingUploadTokenResponse {
     upload_token: String,
 }
 
-async fn refresh_recording_upload_token(recording_id: i64, config: &Config) -> Result<String> {
+async fn refresh_recording_upload_token(recording_id: &str, config: &Config) -> Result<String> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
     let access_token = crate::companion_auth::exchange_access_token_for_config(config)
         .await
@@ -42,7 +42,7 @@ async fn refresh_recording_upload_token(recording_id: i64, config: &Config) -> R
 }
 
 pub async fn upload_segment(
-    recording_id: i64,
+    recording_id: &str,
     sequence: i32,
     file_path: &Path,
     config: &Config,
@@ -144,7 +144,7 @@ pub async fn upload_segment(
 }
 
 pub async fn finalize_recording(
-    recording_id: i64,
+    recording_id: &str,
     config: &Config,
     api_token: &str,
 ) -> Result<Option<String>> {
@@ -224,7 +224,7 @@ pub async fn finalize_recording(
 }
 
 pub async fn update_client_status(
-    recording_id: i64,
+    recording_id: &str,
     status: &str,
     config: &Config,
     api_token: &str,
@@ -269,7 +269,7 @@ pub async fn update_client_status(
 }
 
 pub async fn update_status_with_progress(
-    recording_id: i64,
+    recording_id: &str,
     status: &str,
     progress: i32,
     config: &Config,
@@ -316,7 +316,7 @@ pub async fn update_status_with_progress(
 }
 
 pub async fn discard_recording(
-    recording_id: i64,
+    recording_id: &str,
     config: &Config,
     api_token: &str,
 ) -> Result<Option<String>> {

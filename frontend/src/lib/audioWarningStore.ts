@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { RecordingId } from "@/types";
 
 interface AudioWarningState {
   suppressQuietAudioWarnings: boolean;
-  dismissedMeetingRecordingIds: number[];
-  dismissForMeeting: (recordingId: number) => void;
+  dismissedMeetingRecordingIds: RecordingId[];
+  dismissForMeeting: (recordingId: RecordingId) => void;
   suppressWarnings: () => void;
   resetWarnings: () => void;
 }

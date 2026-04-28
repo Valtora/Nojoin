@@ -110,7 +110,7 @@ from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
 from backend.core.db import async_session_maker
 from backend.seed_demo import seed_demo_data
-from backend.services.recording_identity_service import ensure_recording_meeting_uids
+from backend.services.recording_identity_service import ensure_recording_meeting_uids, ensure_recording_public_ids
 from backend.utils.config_manager import (
     get_cors_origin_list,
     get_trusted_host_list,
@@ -156,6 +156,17 @@ async def ensure_recording_meeting_uids_on_startup() -> None:
         )
 
 
+async def ensure_recording_public_ids_on_startup() -> None:
+    async with async_session_maker() as session:
+        repaired_count = await ensure_recording_public_ids(session)
+
+    if repaired_count:
+        logger.warning(
+            "Backfilled public_id for %s existing recording(s) during startup.",
+            repaired_count,
+        )
+
+
 def run_migrations():
     if should_skip_startup_migrations():
         logger.info("Skipping app-startup migrations because they already ran before process start.")
@@ -167,6 +178,7 @@ def run_migrations():
 async def lifespan(app: FastAPI):
     run_migrations()
     await ensure_owner_exists()
+    await ensure_recording_public_ids_on_startup()
     await ensure_recording_meeting_uids_on_startup()
     # Seed demo data for the initial user if needed
     try:

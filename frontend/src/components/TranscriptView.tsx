@@ -4,6 +4,7 @@ import {
   TranscriptSegment,
   RecordingSpeaker,
   GlobalSpeaker,
+  RecordingId,
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useRef, useEffect, useState } from "react";
@@ -25,7 +26,7 @@ import Fuse from "fuse.js";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 interface TranscriptViewProps {
-  recordingId: number;
+  recordingId: RecordingId;
   segments: TranscriptSegment[];
   currentTime: number;
   onPlaySegment: (start: number, end: number) => void;

@@ -92,15 +92,15 @@ def test_enforce_password_change_policy_allows_profile_and_password_routes():
 def test_validate_companion_recording_claim_ignores_non_companion_tokens():
     deps._validate_companion_recording_claim(
         {"token_type": "session"},
-        42,
+        "42",
     )
 
 
 def test_validate_companion_recording_claim_rejects_mismatched_recording_id():
     with pytest.raises(HTTPException) as exc_info:
         deps._validate_companion_recording_claim(
-            {"token_type": "companion", "recording_id": 7},
-            42,
+            {"token_type": "companion", "recording_public_id": "7"},
+            "42",
         )
 
     assert exc_info.value.status_code == 403
@@ -109,6 +109,6 @@ def test_validate_companion_recording_claim_rejects_mismatched_recording_id():
 
 def test_validate_companion_recording_claim_accepts_matching_recording_id():
     deps._validate_companion_recording_claim(
-        {"token_type": "companion", "recording_id": "42"},
-        42,
+        {"token_type": "companion", "recording_public_id": "42"},
+        "42",
     )

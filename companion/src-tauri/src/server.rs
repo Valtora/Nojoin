@@ -654,21 +654,25 @@ fn ensure_same_recording_owner(
 
 #[derive(Clone)]
 pub struct RecordingStatusUpdate {
-    recording_id: i64,
+    recording_id: String,
     status: &'static str,
     config: Config,
     token: Option<String>,
     state: Arc<AppState>,
 }
 
-fn active_recording_id(state: &Arc<AppState>) -> Result<i64, String> {
-    (*state.current_recording_id.lock().unwrap())
+fn active_recording_id(state: &Arc<AppState>) -> Result<String, String> {
+    state
+        .current_recording_id
+        .lock()
+        .unwrap()
+        .clone()
         .ok_or_else(|| "No active recording is currently running.".to_string())
 }
 
 fn build_recording_status_update(
     state: &Arc<AppState>,
-    recording_id: i64,
+    recording_id: String,
     status: &'static str,
 ) -> RecordingStatusUpdate {
     RecordingStatusUpdate {
@@ -684,7 +688,7 @@ pub fn spawn_recording_status_update(update: RecordingStatusUpdate) {
     tauri::async_runtime::spawn(async move {
         if let Some(token) = update.token {
             match uploader::update_client_status(
-                update.recording_id,
+                &update.recording_id,
                 update.status,
                 &update.config,
                 &token,
@@ -1711,7 +1715,7 @@ struct StartRequest {
 
 #[derive(serde::Serialize)]
 struct StartResponse {
-    id: i64,
+    id: String,
     message: String,
 }
 
@@ -1736,7 +1740,7 @@ async fn start_recording(
             return Ok((
                 StatusCode::CONFLICT,
                 Json(StartResponse {
-                    id: 0,
+                    id: String::new(),
                     message: "Recording is already active or busy.".to_string(),
                 }),
             ));
@@ -1776,7 +1780,8 @@ async fn start_recording(
     match res {
         Ok(response) => {
             if let Ok(json) = response.json::<serde_json::Value>().await {
-                if let Some(id) = json.get("id").and_then(|v| v.as_i64()) {
+                if let Some(id) = json.get("id").and_then(|v| v.as_str()) {
+                    let id = id.to_string();
                     let recording_name = json
                         .get("name")
                         .and_then(|v| v.as_str())
@@ -1791,14 +1796,14 @@ async fn start_recording(
                         return Ok((
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(StartResponse {
-                                id: 0,
+                                id: String::new(),
                                 message: "Recording upload token missing".to_string(),
                             }),
                         ));
                     }
 
                     // Start Audio Thread
-                    *state.current_recording_id.lock().unwrap() = Some(id);
+                    *state.current_recording_id.lock().unwrap() = Some(id.clone());
                     *state.current_recording_token.lock().unwrap() = upload_token;
                     state.set_current_recording_owner(ActiveRecordingOwner {
                         user_id: guard.claims.user_id,
@@ -1812,7 +1817,7 @@ async fn start_recording(
 
                     state
                         .audio_command_tx
-                        .send(AudioCommand::Start(id))
+                        .send(AudioCommand::Start(id.clone()))
                         .unwrap();
 
                     {
@@ -1846,7 +1851,7 @@ async fn start_recording(
     Ok((
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(StartResponse {
-            id: 0,
+            id: String::new(),
             message: "Failed to start recording".to_string(),
         }),
     ))
@@ -2609,7 +2614,7 @@ mod tests {
     #[test]
     fn backend_disconnect_marks_recording_for_reconnect_without_pausing() {
         let (state, audio_command_rx) = build_test_state();
-        *state.current_recording_id.lock().unwrap() = Some(42);
+        *state.current_recording_id.lock().unwrap() = Some("42".to_string());
         *state.current_recording_token.lock().unwrap() = Some("upload-token".to_string());
         *state.status.lock().unwrap() = AppStatus::Recording;
         *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
@@ -2628,7 +2633,7 @@ mod tests {
     #[test]
     fn offline_stop_enters_uploading_and_marks_upload_queue() {
         let (state, audio_command_rx) = build_test_state();
-        *state.current_recording_id.lock().unwrap() = Some(77);
+        *state.current_recording_id.lock().unwrap() = Some("77".to_string());
         *state.current_recording_token.lock().unwrap() = Some("upload-token".to_string());
         *state.status.lock().unwrap() = AppStatus::Recording;
         state.set_recording_recovery_state(RecordingRecoveryState::WaitingForReconnect);
@@ -2644,14 +2649,14 @@ mod tests {
             audio_command_rx.recv().unwrap(),
             AudioCommand::Stop
         ));
-        assert_eq!(update.recording_id, 77);
+        assert_eq!(update.recording_id, "77");
         assert_eq!(update.status, "UPLOADING");
     }
 
     #[test]
     fn reconnect_clears_recovery_marker_without_stopping_recording() {
         let (state, _audio_command_rx) = build_test_state();
-        *state.current_recording_id.lock().unwrap() = Some(88);
+        *state.current_recording_id.lock().unwrap() = Some("88".to_string());
         *state.status.lock().unwrap() = AppStatus::Recording;
         state.set_recording_recovery_state(RecordingRecoveryState::WaitingForReconnect);
 

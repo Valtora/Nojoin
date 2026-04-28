@@ -535,7 +535,7 @@ async def get_demo_recording(
     recording = result.scalar_one_or_none()
     
     if recording:
-        return {"id": recording.id}
+        return {"id": recording.public_id}
     return {"id": None}
 
 @router.get("/companion-releases")

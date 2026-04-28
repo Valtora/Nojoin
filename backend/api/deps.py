@@ -155,15 +155,11 @@ def enforce_password_change_policy(user: User, *, path: str, method: str) -> Non
     )
 
 
-def _validate_companion_recording_claim(payload: dict[str, Any], recording_id: int) -> None:
+def _validate_companion_recording_claim(payload: dict[str, Any], recording_id: str) -> None:
     if payload.get("token_type") != COMPANION_TOKEN_TYPE:
         return
 
-    raw_recording_id = payload.get("recording_id")
-    try:
-        token_recording_id = int(raw_recording_id)
-    except (TypeError, ValueError):
-        token_recording_id = None
+    token_recording_id = payload.get("recording_public_id")
 
     if token_recording_id != recording_id:
         raise HTTPException(
@@ -293,7 +289,7 @@ async def get_current_recording_client_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(reusable_oauth2),
-    recording_id: Optional[int] = None,
+    recording_id: Optional[str] = None,
 ) -> User:
     actual_token, used_cookie_auth = _resolve_request_token(request, token)
 

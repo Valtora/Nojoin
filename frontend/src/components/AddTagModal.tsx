@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Tag } from "@/types";
+import { RecordingId, Tag } from "@/types";
 import { X, Check, MoreVertical } from "lucide-react";
 import {
   getTags,
@@ -18,7 +18,7 @@ import ContextMenu from "./ContextMenu";
 interface AddTagModalProps {
   isOpen: boolean;
   onClose: () => void;
-  recordingId: number;
+  recordingId: RecordingId;
   currentTags: Tag[];
   onTagsUpdated?: () => void;
 }

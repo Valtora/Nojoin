@@ -49,6 +49,8 @@ export interface BaseDBModel {
   updated_at: string;
 }
 
+export type RecordingId = string;
+
 export interface PeopleTag {
   id: number;
   name: string;
@@ -75,7 +77,7 @@ export interface GlobalSpeaker extends BaseDBModel {
 }
 
 export interface RecordingSpeaker extends BaseDBModel {
-  recording_id: number;
+  recording_id: RecordingId;
   global_speaker_id?: number;
   diarization_label: string;
   local_name?: string; // Name local to this recording only
@@ -106,7 +108,7 @@ export interface TranscriptSegment {
 }
 
 export interface Transcript extends BaseDBModel {
-  recording_id: number;
+  recording_id: RecordingId;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
@@ -129,7 +131,8 @@ export interface UserTask extends BaseDBModel {
   completed_at?: string | null;
 }
 
-export interface Recording extends BaseDBModel {
+export interface Recording extends Omit<BaseDBModel, "id"> {
+  id: RecordingId;
   name: string;
   meeting_uid: string;
   audio_path: string;
@@ -296,7 +299,7 @@ export interface CalendarDashboardSummary {
 }
 
 export interface ChatMessage extends BaseDBModel {
-  recording_id: number;
+  recording_id: RecordingId;
   user_id: number;
   role: "user" | "assistant";
   content: string;
@@ -424,7 +427,7 @@ export interface VersionInfo {
 }
 
 export interface SpeakerSegment {
-  recording_id: number;
+  recording_id: RecordingId;
   recording_name: string | null;
   recording_date: string | null;
   start: number;
@@ -433,7 +436,7 @@ export interface SpeakerSegment {
 }
 
 export interface SegmentSelection {
-  recording_id: number;
+  recording_id: RecordingId;
   start: number;
   end: number;
 }

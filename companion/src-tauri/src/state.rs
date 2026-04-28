@@ -207,7 +207,7 @@ pub enum RecordingRecoveryState {
 
 pub struct AppState {
     pub status: Mutex<AppStatus>,
-    pub current_recording_id: Mutex<Option<i64>>,
+    pub current_recording_id: Mutex<Option<String>>,
     pub current_recording_token: Mutex<Option<String>>,
     pub current_recording_owner: Mutex<Option<ActiveRecordingOwner>>,
     pub recording_recovery_state: Mutex<RecordingRecoveryState>,
@@ -413,7 +413,7 @@ impl AppState {
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
-    Start(i64), // recording_id
+    Start(String),
     Pause,
     Resume,
     Stop,

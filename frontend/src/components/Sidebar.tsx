@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Recording, RecordingStatus, Tag } from "@/types";
+import { Recording, RecordingId, RecordingStatus, Tag } from "@/types";
 
 import {
   Loader2,
@@ -104,9 +104,9 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { addNotification } = useNotificationStore();
-  const prevRecordingsRef = useRef<Map<number, RecordingStatus>>(new Map());
-  const prevNotesStatusRef = useRef<Map<number, string>>(new Map());
-  const prevTranscriptStatusRef = useRef<Map<number, string>>(new Map());
+  const prevRecordingsRef = useRef<Map<RecordingId, RecordingStatus>>(new Map());
+  const prevNotesStatusRef = useRef<Map<RecordingId, string>>(new Map());
+  const prevTranscriptStatusRef = useRef<Map<RecordingId, string>>(new Map());
   const {
     currentView,
     selectedTagIds,
@@ -131,7 +131,7 @@ export default function Sidebar() {
     y: number;
     recording: Recording;
   } | null>(null);
-  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renamingId, setRenamingId] = useState<RecordingId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoModalRecording, setInfoModalRecording] =
@@ -394,7 +394,7 @@ export default function Sidebar() {
     setContextMenu({ x: e.clientX, y: e.clientY, recording });
   };
 
-  const handleArchive = async (id: number) => {
+  const handleArchive = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await archiveRecording(id);
@@ -404,7 +404,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await restoreRecording(id);
@@ -414,7 +414,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleSoftDelete = async (id: number) => {
+  const handleSoftDelete = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await softDeleteRecording(id);
@@ -427,7 +427,7 @@ export default function Sidebar() {
     }
   };
 
-  const handlePermanentDelete = async (id: number) => {
+  const handlePermanentDelete = async (id: RecordingId) => {
     setConfirmModal({
       isOpen: true,
       title: "Permanently Delete Recording",
@@ -449,13 +449,13 @@ export default function Sidebar() {
     });
   };
 
-  const handleRenameStart = (id: number, currentName: string) => {
+  const handleRenameStart = (id: RecordingId, currentName: string) => {
     setRenamingId(id);
     setRenameValue(currentName);
     setContextMenu(null);
   };
 
-  const handleRenameSubmit = async (id: number) => {
+  const handleRenameSubmit = async (id: RecordingId) => {
     if (!renameValue.trim()) return;
 
     setRecordings((prev) =>
@@ -478,7 +478,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleRetry = async (id: number) => {
+  const handleRetry = async (id: RecordingId) => {
     try {
       await retryProcessing(id);
       addNotification({
@@ -505,7 +505,7 @@ export default function Sidebar() {
     });
   };
 
-  const handleInferSpeakers = async (id: number) => {
+  const handleInferSpeakers = async (id: RecordingId) => {
     try {
       await inferSpeakers(id);
       addNotification({
@@ -524,7 +524,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleCancel = async (id: number) => {
+  const handleCancel = async (id: RecordingId) => {
     try {
       await cancelProcessing(id);
       addNotification({

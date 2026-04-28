@@ -33,6 +33,12 @@ from docx.oxml.ns import qn
 from backend.api.deps import get_db, get_current_user
 from backend.api.error_handling import sanitized_http_exception
 from backend.models.recording import Recording
+from backend.models.recording_public import (
+    ChatMessagePublicRead,
+    TranscriptPublicRead,
+    serialize_chat_message,
+    serialize_transcript,
+)
 from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.user import User
@@ -44,6 +50,7 @@ from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
 from backend.processing.text_embedding import get_text_embedding_service
+from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
@@ -54,6 +61,24 @@ from sqlalchemy import func
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _get_owned_recording(
+    db: AsyncSession,
+    recording_public_id: str,
+    user_id: int,
+    *,
+    options: tuple | None = None,
+) -> Recording:
+    recording = await get_recording_by_public_id(
+        db,
+        recording_public_id,
+        user_id=user_id,
+        options=options,
+    )
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return recording
 
 
 # --- Pydantic Models ---
@@ -417,7 +442,7 @@ def _generate_docx_export(recording: Recording, transcript: Transcript, include_
 
 @router.get("/{recording_id}/export")
 async def export_content(
-    recording_id: int,
+    recording_id: str,
     content_type: Literal["transcript", "notes", "both"] = Query(default="transcript"),
     export_format: Literal["txt", "pdf", "docx"] = Query(default="txt"),
     db: AsyncSession = Depends(get_db),
@@ -431,21 +456,23 @@ async def export_content(
     logger.info(f"Received export request: recording_id={recording_id}, content_type={content_type}, format={export_format}, user={current_user.id}")
     
     # 1. Fetch Recording with Speakers (for name resolution)
-    stmt = select(Recording).where(Recording.id == recording_id).where(Recording.user_id == current_user.id).options(
-        selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
+    recording = await _get_owned_recording(
+        db,
+        recording_id,
+        current_user.id,
+        options=(
+            selectinload(Recording.speakers).options(
+                selectinload(RecordingSpeaker.global_speaker)
+            ),
+        ),
     )
-    result = await db.execute(stmt)
-    recording = result.scalar_one_or_none()
-    
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
 
     # Exclude soft-merged speakers from export output
     if recording.speakers:
         recording.speakers = [s for s in recording.speakers if not s.merged_into_id]
 
     # 2. Fetch Transcript
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -525,7 +552,7 @@ async def export_content(
 
 @router.put("/{recording_id}/segments/{segment_index}")
 async def update_segment_speaker(
-    recording_id: int,
+    recording_id: str,
     segment_index: int,
     update: TranscriptSegmentSpeakerUpdate,
     db: AsyncSession = Depends(get_db),
@@ -536,15 +563,10 @@ async def update_segment_speaker(
     Also updates the speaker embedding associations using the audio from this segment.
     """
     # 1. Fetch Recording and Transcript
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
-    
-    if recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     # Fetch transcript with segments
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -571,7 +593,7 @@ async def update_segment_speaker(
     # Fetch all recording speakers for name comparison
     stmt = (
         select(RecordingSpeaker)
-        .where(RecordingSpeaker.recording_id == recording_id)
+        .where(RecordingSpeaker.recording_id == recording.id)
         .options(selectinload(RecordingSpeaker.global_speaker))
     )
     result = await db.execute(stmt)
@@ -677,7 +699,7 @@ async def update_segment_speaker(
             else:
                 target_label = f"MANUAL_{uuid.uuid4().hex[:8]}"
                 target_recording_speaker = RecordingSpeaker(
-                    recording_id=recording_id,
+                    recording_id=recording.id,
                     diarization_label=target_label,
                     global_speaker_id=global_speaker.id,
                     name=None,
@@ -713,7 +735,7 @@ async def update_segment_speaker(
     if target_label is None:
         target_label = f"MANUAL_{uuid.uuid4().hex[:8]}"
         target_recording_speaker = RecordingSpeaker(
-            recording_id=recording_id,
+            recording_id=recording.id,
             diarization_label=target_label,
             local_name=new_speaker_name,
             name=None,
@@ -739,7 +761,7 @@ async def update_segment_speaker(
         if not is_used:
             # Delete the RecordingSpeaker entry
             stmt = select(RecordingSpeaker).where(
-                RecordingSpeaker.recording_id == recording_id,
+                RecordingSpeaker.recording_id == recording.id,
                 RecordingSpeaker.diarization_label == old_label
             )
             result = await db.execute(stmt)
@@ -763,7 +785,7 @@ async def update_segment_speaker(
                 celery_app.send_task(
                     "backend.worker.tasks.update_speaker_embedding_task",
                     args=[
-                        recording_id,
+                        recording.id,
                         start,
                         end,
                         target_speaker_id,
@@ -774,9 +796,9 @@ async def update_segment_speaker(
     
     return {"status": "success", "speaker": target_label}
 
-@router.put("/{recording_id}/segments/{segment_index}/text", response_model=Transcript)
+@router.put("/{recording_id}/segments/{segment_index}/text", response_model=TranscriptPublicRead)
 async def update_transcript_segment_text(
-    recording_id: int,
+    recording_id: str,
     segment_index: int,
     update: TranscriptSegmentTextUpdate,
     db: AsyncSession = Depends(get_db),
@@ -786,12 +808,10 @@ async def update_transcript_segment_text(
     Update the text content of a specific transcript segment.
     """
     # 0. Check Ownership
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 1. Fetch Transcript
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -813,11 +833,11 @@ async def update_transcript_segment_text(
     await db.commit()
     await db.refresh(transcript)
     
-    return transcript
+    return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
-@router.post("/{recording_id}/replace", response_model=Transcript)
+@router.post("/{recording_id}/replace", response_model=TranscriptPublicRead)
 async def find_and_replace(
-    recording_id: int,
+    recording_id: str,
     replace_request: FindReplaceRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -827,12 +847,10 @@ async def find_and_replace(
     This ensures consistency between the diarized transcript and generated notes.
     """
     # 0. Check Ownership
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 1. Fetch Transcript
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -854,11 +872,11 @@ async def find_and_replace(
     await db.commit()
     await db.refresh(transcript)
         
-    return transcript
+    return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
-@router.put("/{recording_id}/segments", response_model=Transcript)
+@router.put("/{recording_id}/segments", response_model=TranscriptPublicRead)
 async def update_transcript_segments(
-    recording_id: int,
+    recording_id: str,
     update: TranscriptSegmentsUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -868,12 +886,10 @@ async def update_transcript_segments(
     Useful for Undo/Redo operations involving multiple segments.
     """
     # 0. Check Ownership
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 1. Fetch Transcript
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -892,25 +908,23 @@ async def update_transcript_segments(
     await db.commit()
     await db.refresh(transcript)
     
-    return transcript
+    return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
 
 # --- Notes Endpoints ---
 
 @router.get("/{recording_id}/notes")
 async def get_notes(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get the meeting notes for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -922,18 +936,16 @@ async def get_notes(
 
 @router.get("/{recording_id}/user-notes")
 async def get_user_notes(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get the user-authored processing notes for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -942,7 +954,7 @@ async def get_user_notes(
 
 @router.put("/{recording_id}/user-notes")
 async def update_user_notes(
-    recording_id: int,
+    recording_id: str,
     update: UserNotesUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -950,16 +962,14 @@ async def update_user_notes(
     """
     Update the user-authored processing notes for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
     if not transcript:
-        transcript = Transcript(recording_id=recording_id)
+        transcript = Transcript(recording_id=recording.id)
 
     transcript.user_notes = update.user_notes.strip() or None
     db.add(transcript)
@@ -970,7 +980,7 @@ async def update_user_notes(
 
 @router.put("/{recording_id}/notes")
 async def update_notes(
-    recording_id: int,
+    recording_id: str,
     update: NotesUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -978,11 +988,9 @@ async def update_notes(
     """
     Update the meeting notes for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -998,7 +1006,7 @@ async def update_notes(
 
 @router.post("/{recording_id}/notes/generate")
 async def generate_notes(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1006,17 +1014,19 @@ async def generate_notes(
     Generate meeting notes using the configured LLM provider.
     """
     # 1. Fetch Recording with Speakers
-    stmt = select(Recording).where(Recording.id == recording_id).where(Recording.user_id == current_user.id).options(
-        selectinload(Recording.speakers).options(selectinload(RecordingSpeaker.global_speaker))
+    recording = await _get_owned_recording(
+        db,
+        recording_id,
+        current_user.id,
+        options=(
+            selectinload(Recording.speakers).options(
+                selectinload(RecordingSpeaker.global_speaker)
+            ),
+        ),
     )
-    result = await db.execute(stmt)
-    recording = result.scalar_one_or_none()
-    
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
     
     # 2. Fetch Transcript
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -1050,48 +1060,47 @@ async def generate_notes(
     db.add(transcript)
     await db.commit()
     
-    generate_notes_task.delay(recording_id)
+    generate_notes_task.delay(recording.id)
     
     return {"status": "success", "message": "Note generation started"}
 
 
 # --- Chat Endpoints ---
 
-@router.get("/{recording_id}/chat")
+@router.get("/{recording_id}/chat", response_model=List[ChatMessagePublicRead])
 async def get_chat_history(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get the chat history for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     # Fetch chat messages
-    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording_id).order_by(ChatMessage.created_at)
+    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording.id).order_by(ChatMessage.created_at)
     result = await db.execute(stmt)
     messages = result.scalars().all()
     
-    return messages
+    return [
+        serialize_chat_message(message, recording_public_id=recording.public_id)
+        for message in messages
+    ]
 
 @router.delete("/{recording_id}/chat")
 async def clear_chat_history(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Clear the chat history for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     # Delete all chat messages for this recording
-    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording_id)
+    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording.id)
     result = await db.execute(stmt)
     messages = result.scalars().all()
     
@@ -1103,7 +1112,7 @@ async def clear_chat_history(
 
 @router.post("/{recording_id}/chat")
 async def chat_with_meeting(
-    recording_id: int,
+    recording_id: str,
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -1112,11 +1121,9 @@ async def chat_with_meeting(
     Chat with the meeting transcript using LLM (Streaming).
     """
     # 1. Check Ownership & Fetch Data
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript_obj = result.scalar_one_or_none()
     
@@ -1127,7 +1134,7 @@ async def chat_with_meeting(
     
     # 2. Get Chat History
     # Retrieve full history; truncation is deferred to the LLM backend if required.
-    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording_id).order_by(ChatMessage.created_at)
+    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording.id).order_by(ChatMessage.created_at)
     result = await db.execute(stmt)
     db_messages = result.scalars().all()
     
@@ -1145,7 +1152,7 @@ async def chat_with_meeting(
         })
     
     user_msg = ChatMessage(
-        recording_id=recording_id,
+        recording_id=recording.id,
         user_id=current_user.id,
         role="user",
         content=request.message
@@ -1171,10 +1178,10 @@ async def chat_with_meeting(
         if request.tag_ids:
             # Identify relevant recordings from tags
             subquery = select(RecordingTag.recording_id).where(RecordingTag.tag_id.in_(request.tag_ids))
-            condition = (ContextChunk.recording_id.in_(subquery)) | (ContextChunk.recording_id == recording_id)
+            condition = (ContextChunk.recording_id.in_(subquery)) | (ContextChunk.recording_id == recording.id)
         else:
             # Only search current recording
-            condition = (ContextChunk.recording_id == recording_id)
+            condition = (ContextChunk.recording_id == recording.id)
         
         # 3. Vector Search
         stmt = select(ContextChunk).where(
@@ -1267,7 +1274,7 @@ async def chat_with_meeting(
                 meeting_notes=meeting_notes,
                 diarized_transcript=None, # Will be fetched inside using recording_id
                 conversation_history=formatted_history,
-                recording_id=recording_id
+                recording_id=recording.id
             )
             
             # Iterate over the generator response asynchronously using threadpool
@@ -1301,7 +1308,7 @@ async def chat_with_meeting(
         try:
             async with async_session_maker() as session:
                 assistant_msg = ChatMessage(
-                    recording_id=recording_id,
+                    recording_id=recording.id,
                     user_id=current_user.id,
                     role="assistant",
                     content=full_response

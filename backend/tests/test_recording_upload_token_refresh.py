@@ -23,6 +23,7 @@ CREATE TABLE recordings (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     name VARCHAR(255) NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
     meeting_uid VARCHAR(36) NOT NULL,
     audio_path VARCHAR(1024) NOT NULL,
     proxy_path VARCHAR(1024),
@@ -55,6 +56,7 @@ async def insert_recording(
     session_maker: sessionmaker,
     *,
     recording_id: int,
+    public_id: str,
     user_id: int,
     status: str,
 ) -> None:
@@ -67,6 +69,7 @@ async def insert_recording(
                     created_at,
                     updated_at,
                     name,
+                    public_id,
                     meeting_uid,
                     audio_path,
                     proxy_path,
@@ -88,6 +91,7 @@ async def insert_recording(
                     :created_at,
                     :updated_at,
                     :name,
+                    :public_id,
                     :meeting_uid,
                     :audio_path,
                     :proxy_path,
@@ -112,6 +116,7 @@ async def insert_recording(
                 "created_at": TEST_TIMESTAMP,
                 "updated_at": TEST_TIMESTAMP,
                 "name": f"Recording {recording_id}",
+                "public_id": public_id,
                 "meeting_uid": f"meeting-{recording_id}",
                 "audio_path": f"data/recordings/{recording_id}.wav",
                 "proxy_path": None,
@@ -179,18 +184,20 @@ async def test_refresh_upload_token_reissues_scoped_companion_token(
     client: AsyncClient,
     test_session_maker: sessionmaker,
 ) -> None:
+    public_id = "cfd87c80-3f97-4b69-a1dc-8f87cc6d1179"
     await insert_recording(
         test_session_maker,
         recording_id=2026042216115799,
+        public_id=public_id,
         user_id=1,
         status="UPLOADING",
     )
 
-    response = await client.post("/api/v1/recordings/2026042216115799/upload-token")
+    response = await client.post(f"/api/v1/recordings/{public_id}/upload-token")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["recording_id"] == 2026042216115799
+    assert payload["recording_id"] == public_id
 
     decoded = jwt.decode(
         payload["upload_token"],
@@ -199,7 +206,7 @@ async def test_refresh_upload_token_reissues_scoped_companion_token(
     )
     assert decoded["token_type"] == security.COMPANION_TOKEN_TYPE
     assert decoded["sub"] == "alice"
-    assert decoded["recording_id"] == 2026042216115799
+    assert decoded["recording_public_id"] == public_id
     assert security.COMPANION_RECORDING_SCOPE in decoded["scopes"]
 
 
@@ -208,14 +215,16 @@ async def test_refresh_upload_token_rejects_completed_recordings(
     client: AsyncClient,
     test_session_maker: sessionmaker,
 ) -> None:
+    public_id = "50759737-14df-4475-8bc7-68bb6c3df0e8"
     await insert_recording(
         test_session_maker,
         recording_id=2026042217000001,
+        public_id=public_id,
         user_id=1,
         status="QUEUED",
     )
 
-    response = await client.post("/api/v1/recordings/2026042217000001/upload-token")
+    response = await client.post(f"/api/v1/recordings/{public_id}/upload-token")
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Recording is no longer accepting companion uploads"

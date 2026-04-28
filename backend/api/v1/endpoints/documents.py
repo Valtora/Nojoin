@@ -10,38 +10,45 @@ from uuid import uuid4
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_db, get_current_user
 from backend.models.recording import Recording
+from backend.models.recording_public import DocumentPublicRead, serialize_document
 from backend.models.document import Document, DocumentStatus
 from backend.models.user import User
+from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.worker.tasks import process_document_task
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_id: int) -> Recording:
+    recording = await get_recording_by_public_id(db, recording_public_id, user_id=user_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return recording
+
 # Configuration for documents storage
 DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "data/documents")
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
-@router.get("/recordings/{recording_id}/documents", response_model=List[Document])
+@router.get("/recordings/{recording_id}/documents", response_model=List[DocumentPublicRead])
 async def list_documents(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     List all documents associated with a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Document).where(Document.recording_id == recording_id)
+    stmt = select(Document).where(Document.recording_id == recording.id)
     result = await db.execute(stmt)
     documents = result.scalars().all()
-    return documents
+    return [serialize_document(document, recording_public_id=recording.public_id) for document in documents]
 
-@router.post("/recordings/{recording_id}/documents", response_model=Document)
+@router.post("/recordings/{recording_id}/documents", response_model=DocumentPublicRead)
 async def upload_document(
-    recording_id: int,
+    recording_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -49,9 +56,7 @@ async def upload_document(
     """
     Upload a document (PDF, TXT, MD) to be included in the context.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # Validate file type
     allowed_types = ["application/pdf", "text/plain", "text/markdown"]
@@ -73,13 +78,13 @@ async def upload_document(
             logger=logger,
             status_code=500,
             client_message="Failed to save the uploaded document.",
-            log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording_id}.",
+            log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording.public_id}.",
             exc=e,
         )
 
     # Create Document entry
     document = Document(
-        recording_id=recording_id,
+        recording_id=recording.id,
         title=file.filename,
         file_path=file_path,
         file_type=file.content_type or "application/octet-stream",
@@ -92,7 +97,7 @@ async def upload_document(
     # Trigger processing task
     process_document_task.delay(document.id)
 
-    return document
+    return serialize_document(document, recording_public_id=recording.public_id)
 
 @router.delete("/documents/{document_id}")
 async def delete_document(

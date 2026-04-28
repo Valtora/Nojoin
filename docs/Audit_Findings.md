@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Replace timestamp-derived recording IDs with opaque identifiers.
-  - Current state: recording IDs are derived from timestamps and remain enumerable.
-  - Files to review: [backend/api/v1/endpoints/recordings.py](../backend/api/v1/endpoints/recordings.py)
-  - Target outcome: recording identifiers should not leak creation timing or be guessable by sequence.
-
 - [ ] Tighten the frontend Content Security Policy to remove inline script allowance.
   - Current state: the CSP still includes `script-src 'self' 'unsafe-inline'`.
   - Files to review: [frontend/next.config.ts](../frontend/next.config.ts)

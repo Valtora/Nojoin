@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { RecordingId } from "@/types";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { companionLocalFetch } from "@/lib/companionLocalApi";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
@@ -120,7 +121,7 @@ const WAVEFORM_UNAVAILABLE_STYLES = {
 };
 
 interface LiveAudioWaveformProps {
-  recordingId: number;
+  recordingId: RecordingId;
   enabled: boolean;
   paused?: boolean;
 }

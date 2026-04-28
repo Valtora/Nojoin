@@ -136,7 +136,7 @@ fn join_recording_thread(
 fn handle_terminal_recording_failure(state: &Arc<AppState>, app_handle: &AppHandle, reason: &str) {
     warn!("Recording cannot be finalized safely: {}", reason);
 
-    let recording_id = *state.current_recording_id.lock().unwrap();
+    let recording_id = state.current_recording_id.lock().unwrap().clone();
     let recording_token = state.current_recording_token.lock().unwrap().clone();
     let config = state.config.lock().unwrap().clone();
 
@@ -144,7 +144,7 @@ fn handle_terminal_recording_failure(state: &Arc<AppState>, app_handle: &AppHand
         thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
-                if let Err(error) = uploader::discard_recording(recording_id, &config, &recording_token).await {
+                if let Err(error) = uploader::discard_recording(&recording_id, &config, &recording_token).await {
                     warn!(
                         "Best-effort discard failed for recording {} after terminal upload failure: {}",
                         recording_id,
@@ -249,7 +249,7 @@ pub fn run_audio_loop(
                 recording_handle = Some(start_segment(id, 1, state.clone(), is_recording.clone()));
             }
             AudioCommand::Resume => {
-                let id = *state.current_recording_id.lock().unwrap();
+                let id = state.current_recording_id.lock().unwrap().clone();
                 let seq = *state.current_sequence.lock().unwrap();
                 if let Some(rec_id) = id {
                     recording_handle = Some(start_segment(
@@ -293,7 +293,7 @@ pub fn run_audio_loop(
                 }
 
                 // Trigger finalize
-                let id = *state.current_recording_id.lock().unwrap();
+                let id = state.current_recording_id.lock().unwrap().clone();
                 let config = state.config.lock().unwrap().clone();
 
                 // Calculate duration
@@ -335,7 +335,7 @@ pub fn run_audio_loop(
 
                             if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
                                 info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
-                                match uploader::discard_recording(rec_id, &config, &recording_token).await {
+                                match uploader::discard_recording(&rec_id, &config, &recording_token).await {
                                     Ok(refreshed_token) => {
                                         if let Some(new_token) = refreshed_token {
                                             *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
@@ -350,7 +350,7 @@ pub fn run_audio_loop(
                                     Err(e) => {
                                         eprintln!("Failed to delete short recording: {}", e);
                                         // Attempts finalization if delete fails.
-                                        match uploader::finalize_recording(rec_id, &config, &recording_token).await {
+                                        match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
                                             Ok(refreshed_token) => {
                                                 if let Some(new_token) = refreshed_token {
                                                     *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
@@ -363,7 +363,7 @@ pub fn run_audio_loop(
                                 }
                             } else {
                                 // Sleep unnecessary; upload verified complete.
-                                match uploader::finalize_recording(rec_id, &config, &recording_token).await {
+                                match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
                                     Ok(refreshed_token) => {
                                         if let Some(new_token) = refreshed_token {
                                             *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
@@ -386,7 +386,7 @@ pub fn run_audio_loop(
 }
 
 fn start_segment(
-    recording_id: i64,
+    recording_id: String,
     sequence: i32,
     state: Arc<AppState>,
     is_recording: Arc<AtomicBool>,
@@ -673,7 +673,7 @@ fn start_segment(
 
 // Helper function for the mixing loop to avoid code duplication
 fn run_mixing_loop(
-    recording_id: i64,
+    recording_id: String,
     mut current_sequence: i32,
     spec: hound::WavSpec,
     mic_rx: crossbeam_channel::Receiver<Vec<f32>>,
@@ -753,6 +753,7 @@ fn run_mixing_loop(
         let config = state.config.lock().unwrap().clone();
         let recording_token = state.current_recording_token.lock().unwrap().clone();
         let tx = upload_outcome_tx.clone();
+        let recording_id_for_upload = recording_id.clone();
 
         let handle = rt.spawn(async move {
             let Some(recording_token) = recording_token else {
@@ -771,7 +772,7 @@ fn run_mixing_loop(
             }
 
             match uploader::upload_segment(
-                recording_id,
+                &recording_id_for_upload,
                 seq,
                 &path_clone,
                 &config,
@@ -833,7 +834,7 @@ fn run_mixing_loop(
         // Set initial status
         if should_report_uploading {
             uploader::update_status_with_progress(
-                recording_id,
+                &recording_id,
                 "UPLOADING",
                 0,
                 &config,
@@ -863,7 +864,7 @@ fn run_mixing_loop(
 
                     if should_report_uploading {
                         uploader::update_status_with_progress(
-                            recording_id,
+                            &recording_id,
                             "UPLOADING",
                             progress,
                             &config,
