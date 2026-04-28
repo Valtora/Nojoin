@@ -88,6 +88,16 @@ def test_hash_user_password_hashes_valid_passwords() -> None:
     assert verify_password("validpass", hashed_password)
 
 
+def test_verify_password_accepts_existing_argon2id_hashes() -> None:
+    existing_hash = (
+        "$argon2id$v=19$m=65536,t=3,p=4$JGSMsTaGkPIeQ0jpnfOecw$"
+        "cfvQa00hyJkmz8cPb4xgl6pi+jHPxUeqG0YijjkFfrY"
+    )
+
+    assert verify_password("validpass", existing_hash)
+    assert not verify_password("wrongpass", existing_hash)
+
+
 def test_user_create_rejects_all_whitespace_passwords() -> None:
     with pytest.raises(ValidationError) as exc_info:
         UserCreate(

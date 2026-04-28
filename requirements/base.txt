@@ -3,7 +3,7 @@ psycopg2-binary
 asyncpg
 python-dotenv
 python-jose[cryptography]
-passlib[argon2]
+argon2-cffi
 python-multipart
 aiofiles
 requests

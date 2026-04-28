@@ -1,23 +1,23 @@
-from datetime import datetime, timedelta
 import hashlib
 import logging
-from typing import Any, Optional, Union
-from jose import jwt
-from passlib.context import CryptContext
 import os
 import secrets
+from datetime import timedelta
 from pathlib import Path
+from typing import Any, Optional, Union
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from jose import jwt
+
+from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
 
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+password_hasher = PasswordHasher()
 
 logger = logging.getLogger(__name__)
 
 MIN_PASSWORD_LENGTH = 8
-
-
-from backend.utils.path_manager import path_manager
 
 
 SESSION_TOKEN_TYPE = "session"
@@ -222,7 +222,10 @@ def hash_user_password(password: str) -> str:
     return get_password_hash(validate_password_policy(password))
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return password_hasher.verify(hashed_password, plain_password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return password_hasher.hash(password)
