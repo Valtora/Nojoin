@@ -30,6 +30,12 @@ class _WritableSession:
     async def commit(self):
         return None
 
+    async def execute(self, *args, **kwargs):
+        return None
+
+    async def refresh(self, value):
+        return None
+
 
 async def _override_get_db() -> AsyncGenerator[_WritableSession, None]:
     yield _WritableSession()
@@ -295,6 +301,7 @@ async def test_update_password_me_accepts_grandfathered_short_current_passwords(
         is_superuser=False,
         force_password_change=True,
         hashed_password=get_password_hash("short"),
+        token_version=0,
     )
 
     app.dependency_overrides[get_db] = override_get_db

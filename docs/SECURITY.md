@@ -28,6 +28,29 @@ Nojoin's normal browser session uses a Secure HttpOnly cookie, but state-changin
 - Explicit bearer-token API clients are not subject to that browser-origin check.
 - The session cookie remains `SameSite=Lax` to preserve expected top-level redirect flows such as OAuth callbacks, so unsafe GET-style side effects should continue to be avoided.
 
+## Standard JWT Containment
+
+Standard browser session and explicit API JWTs (token types `session` and `api`) support active invalidation in addition to natural expiry.
+
+- Every issued session/API JWT carries a unique `jti` (token id), an `iat` (issued-at) timestamp, and a `tv` claim that mirrors the user's current `token_version`.
+- Verification rejects a token whose `tv` no longer matches the user record. Bumping `token_version` therefore acts as an immediate kill-switch for every previously issued session and API token belonging to that user.
+- `token_version` is bumped automatically when the user changes their own password, when an admin resets the password, and when an account is deactivated.
+- Admins and Owners may also call `POST /api/v1/users/{user_id}/sessions/revoke-all` to forcibly invalidate every session for another user. Users themselves may call `POST /api/v1/users/me/sessions/revoke-all` to sign out of all other devices.
+- Calling `POST /api/v1/login/logout` records the cookie token's `jti` in a server-side denylist (`revoked_jwts`), so the captured JWT stops verifying immediately even if a copy was made outside the browser cookie.
+- The denylist also supports targeted revocation of an individual `jti`. Expired entries are pruned opportunistically.
+- Companion JWTs are not in scope for this mechanism. They are already revocable through the Companion pairing record and per-pairing `secret_version` documented above.
+
+## JWT Signing Key Rotation
+
+JWT signing material is stored as a small keyring rather than a single static value.
+
+- The keyring is persisted to `<user_data>/.secret_keys.json` and contains an `active` key id (`kid`) plus any prior keys that are still trusted.
+- Every issued JWT carries a `kid` header. Verification picks the matching key from the keyring; if the `kid` is not known the token is rejected.
+- Operators with shell access can rotate the key by calling `backend.core.security.rotate_signing_key()`. Rotation generates a fresh `kid`, makes it active, and (by default) keeps the previous key in the ring so currently outstanding tokens keep verifying until their natural expiry.
+- After enough time has passed for outstanding tokens to expire, `prune_signing_keys()` removes retired keys from the keyring. Any token still signed by a removed key fails verification immediately, providing a hard cut-over.
+- Setting the `SECRET_KEY` environment variable overrides the keyring with a single static key (intended for advanced deployments and tests). In that mode the rotation API is disabled.
+- Existing single-key installs are migrated automatically: the legacy `<user_data>/.secret_key` file is loaded into the keyring as `kid="legacy"` on first startup and the legacy file is renamed.
+
 ## Companion Pairing and Local API Security
 
 The Nojoin Companion app requires a strict manual pairing workflow.

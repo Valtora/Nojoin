@@ -210,11 +210,7 @@ async def test_first_pair_persists_secret_and_activates_on_validate(
     assert body["token_type"] == "bearer"
     assert body["expires_in"] == security.COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS
 
-    decoded = jwt.decode(
-        body["access_token"],
-        security.SECRET_KEY,
-        algorithms=[security.ALGORITHM],
-    )
+    decoded = security.decode_access_token(body["access_token"])
     assert decoded["token_type"] == security.COMPANION_TOKEN_TYPE
     assert decoded["sub"] == "alice"
     assert decoded[security.COMPANION_PAIRING_ID_CLAIM] == payload["backend_pairing_id"]

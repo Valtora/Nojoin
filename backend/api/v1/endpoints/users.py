@@ -13,6 +13,7 @@ from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPass
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
+from backend.services.jwt_revocation_service import bump_user_token_version
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts
 from backend.utils.time import utc_now
@@ -346,6 +347,7 @@ async def update_password_me(
     current_user.hashed_password = hash_user_password(body.new_password)
     current_user.force_password_change = False
     db.add(current_user)
+    await bump_user_token_version(db, current_user, commit=False)
     await db.commit()
     return {"message": "Password updated successfully"}
 
@@ -378,11 +380,15 @@ async def update_user(
             )
         user.username = user_in.username
 
+    bump_required = False
     if user_in.password:
         user.hashed_password = hash_user_password(user_in.password)
         user.force_password_change = True # Force change if admin resets it
+        bump_required = True
         
     if user_in.is_active is not None:
+        if user.is_active and not user_in.is_active:
+            bump_required = True
         user.is_active = user_in.is_active
     if user_in.is_superuser is not None:
         user.is_superuser = user_in.is_superuser
@@ -396,7 +402,65 @@ async def update_user(
         user.role = user_in.role
 
     db.add(user)
+    if bump_required:
+        await bump_user_token_version(db, user, commit=False)
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.post("/me/sessions/revoke-all")
+async def revoke_my_sessions(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Invalidate every existing session and API token for the current user.
+
+    The next request from any other browser, device, or API client will be
+    rejected with 401 and the user will need to sign in again. The current
+    request itself completes normally; the new ``token_version`` will only
+    apply to subsequently presented tokens.
+    """
+    new_version = await bump_user_token_version(db, current_user)
+    return {
+        "revoked": True,
+        "token_version": new_version,
+    }
+
+
+@router.post("/{user_id}/sessions/revoke-all")
+async def revoke_user_sessions(
+    *,
+    db: AsyncSession = Depends(get_db),
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Admin/Owner action to invalidate every session and API token for a target
+    user. Useful when an account is suspected of being compromised.
+    """
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner can revoke owner sessions",
+        )
+
+    new_version = await bump_user_token_version(db, target)
+    return {
+        "revoked": True,
+        "user_id": target.id,
+        "token_version": new_version,
+    }
 

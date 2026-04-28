@@ -3,23 +3,23 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jose import JWTError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.core.db import get_session
 from backend.core.security import (
-    ALGORITHM,
     API_ACCESS_SCOPE,
     API_TOKEN_TYPE,
     COMPANION_BOOTSTRAP_SCOPE,
     COMPANION_RECORDING_SCOPE,
     COMPANION_TOKEN_TYPE,
-    SECRET_KEY,
     SESSION_TOKEN_TYPE,
     WEB_SESSION_SCOPE,
+    decode_access_token,
 )
+from backend.models.revoked_jwt import RevokedJwt
 from backend.models.user import User
 from backend.utils.config_manager import LOCAL_WEB_ORIGINS, get_trusted_web_origin
 
@@ -29,6 +29,7 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 STANDARD_USER_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE}
+REVOCABLE_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE}
 STANDARD_USER_SCOPE_REQUIREMENTS = {
     SESSION_TOKEN_TYPE: {WEB_SESSION_SCOPE},
     API_TOKEN_TYPE: {API_ACCESS_SCOPE},
@@ -176,7 +177,7 @@ async def get_authenticated_token_details(
     required_scopes_by_type: Optional[dict[str, set[str]]] = None,
 ) -> tuple[User, dict[str, Any]]:
     try:
-        payload = jwt.decode(actual_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(actual_token)
         token_data = payload.get("sub")
         token_type = payload.get("token_type")
 
@@ -213,6 +214,25 @@ async def get_authenticated_token_details(
         )
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+
+    if token_type in REVOCABLE_TOKEN_TYPES:
+        token_version = payload.get("tv")
+        if not isinstance(token_version, int) or token_version != user.token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has been invalidated. Please sign in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        jti = payload.get("jti")
+        if isinstance(jti, str) and jti:
+            revoked = await db.execute(select(RevokedJwt).where(RevokedJwt.jti == jti))
+            if revoked.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
     return user, payload
 

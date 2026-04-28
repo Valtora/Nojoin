@@ -4,11 +4,6 @@ This document captures the security audit items that remain open, plus findings 
 
 ## Partially Closed To-Dos
 
-- [ ] Add token invalidation or rotation controls for standard browser and API JWTs.
-  - Current state: the Companion flow improved substantially and now uses revocable pairing credentials plus encrypted local-control secrets, but standard session and API JWTs still rely on one persistent signing key and expire naturally rather than being actively revoked.
-  - Files to review: [backend/core/security.py](../backend/core/security.py), [backend/api/v1/endpoints/login.py](../backend/api/v1/endpoints/login.py)
-  - Target outcome: support explicit invalidation, key rotation, or another containment mechanism for leaked standard JWTs.
-
 - [ ] Revisit throttling for the newer Companion auth endpoints.
   - Current state: the old unlimited long-lived companion token flow has been replaced, but the current Companion pairing, local-control token issuance, and credential exchange endpoints do not appear to be rate-limited.
   - Files to review: [backend/api/v1/endpoints/login.py](../backend/api/v1/endpoints/login.py)

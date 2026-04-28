@@ -141,6 +141,7 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
             force_password_change=False,
             is_superuser=True,
             is_active=True,
+            token_version=0,
         )
 
     monkeypatch.setattr(login, "enforce_rate_limit", _allow_request)

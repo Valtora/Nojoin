@@ -32,6 +32,7 @@ from backend.services.companion_pairing_service import (
     prepare_companion_pairing,
     revoke_companion_pairings,
 )
+from backend.services.jwt_revocation_service import revoke_jwt_by_payload
 from backend.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
@@ -211,6 +212,7 @@ async def login_access_token(
         token_type=security.API_TOKEN_TYPE,
         scopes=[security.API_ACCESS_SCOPE],
         expires_delta=access_token_expires,
+        token_version=user.token_version,
     )
 
     return {
@@ -249,6 +251,7 @@ async def login_session(
         token_type=security.SESSION_TOKEN_TYPE,
         scopes=[security.WEB_SESSION_SCOPE],
         expires_delta=session_expires,
+        token_version=user.token_version,
     )
 
     response.set_cookie(
@@ -264,11 +267,39 @@ async def login_session(
     return _build_login_metadata(user)
 
 @router.post("/login/logout")
-async def logout_user(request: Request, response: Response) -> Any:
+async def logout_user(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
     """
     Endpoint to clear the HttpOnly access token on logout.
+
+    The captured JWT itself is added to the revocation denylist so that any
+    copy outside the browser cookie also stops verifying immediately.
     """
     enforce_trusted_browser_origin(request)
+
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        try:
+            payload = security.decode_access_token(cookie_token)
+        except Exception:
+            payload = None
+        if payload and payload.get("token_type") == security.SESSION_TOKEN_TYPE:
+            username = payload.get("sub")
+            if isinstance(username, str) and username:
+                user_result = await db.execute(
+                    select(User).where(User.username == username)
+                )
+                user = user_result.scalar_one_or_none()
+                if user is not None:
+                    await revoke_jwt_by_payload(
+                        db,
+                        payload,
+                        user,
+                        reason="logout",
+                    )
 
     response.delete_cookie(
         key="access_token",

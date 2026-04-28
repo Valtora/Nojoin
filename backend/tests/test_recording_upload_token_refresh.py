@@ -199,11 +199,7 @@ async def test_refresh_upload_token_reissues_scoped_companion_token(
     payload = response.json()
     assert payload["recording_id"] == public_id
 
-    decoded = jwt.decode(
-        payload["upload_token"],
-        security.SECRET_KEY,
-        algorithms=[security.ALGORITHM],
-    )
+    decoded = security.decode_access_token(payload["upload_token"])
     assert decoded["token_type"] == security.COMPANION_TOKEN_TYPE
     assert decoded["sub"] == "alice"
     assert decoded["recording_public_id"] == public_id

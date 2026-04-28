@@ -24,6 +24,7 @@ class User(BaseDBModel, table=True):
     is_superuser: bool = Field(default=False)
     force_password_change: bool = Field(default=False)
     role: str = Field(default=UserRole.USER)
+    token_version: int = Field(default=0, nullable=False)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
     has_seen_demo_recording: bool = Field(default=False)
     
