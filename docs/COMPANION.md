@@ -40,6 +40,8 @@ The browser can confirm state and guide you back to the right native action, but
 3. Launch the Companion.
 4. On first run, the launcher opens with the next step. If the app is already paired and healthy, it may stay in the tray until you open it.
 
+When the Companion is auto-launched at Windows sign-in (the `Run on Startup` setting), it always stays in the system tray and never opens a window in the foreground, regardless of pairing state. If the machine is not yet paired, a one-time tray notification reminds you that the Companion is running; right-click the tray icon and choose `Settings` or `Open Companion` to finish setup.
+
 If an update clears old trust state, expect to pair again after updating.
 
 ## First Pair On Chrome Or Edge

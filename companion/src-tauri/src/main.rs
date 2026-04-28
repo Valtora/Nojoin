@@ -61,7 +61,6 @@ fn recover_mutex_guard<'a, T>(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LauncherOpenReason {
     ManualStartup,
-    Autostart,
     ExplicitLaunch,
 }
 
@@ -69,7 +68,6 @@ impl LauncherOpenReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::ManualStartup => "manual-startup",
-            Self::Autostart => "autostart",
             Self::ExplicitLaunch => "explicit-launch",
         }
     }
@@ -442,8 +440,15 @@ fn maybe_open_startup_surface(
             return Ok(());
         }
 
-        info!("Autostart detected without an active pairing. Opening the launcher for onboarding.");
-        return open_launcher_window(app, state, LauncherOpenReason::Autostart);
+        info!(
+            "Autostart detected without an active pairing. Staying in the tray and surfacing onboarding via tray notification."
+        );
+        notifications::show_notification(
+            app,
+            "Nojoin Companion",
+            "Running in the system tray. Open from the tray to finish setup.",
+        );
+        return Ok(());
     }
 
     info!("Manual startup detected. Opening the primary native surface.");
