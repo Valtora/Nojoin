@@ -8,6 +8,7 @@ import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
+import LiveMeetingControls from "./LiveMeetingControls";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 
 function formatClock(seconds: number) {
@@ -163,11 +164,19 @@ export default function RecordingStatusDisplay({
 
             <div className="mt-6 space-y-4">
               {isActiveRecording ? (
-                <LiveAudioWaveform
-                  recordingId={recording.id}
-                  enabled
-                  paused={isPaused}
-                />
+                <>
+                  <LiveAudioWaveform
+                    recordingId={recording.id}
+                    enabled
+                    paused={isPaused}
+                  />
+                  <LiveMeetingControls
+                    size="full"
+                    onMeetingEnd={() => {
+                      window.dispatchEvent(new Event("recording-updated"));
+                    }}
+                  />
+                </>
               ) : (
                 <>
                   {progressValue !== null ? (
