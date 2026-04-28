@@ -15,6 +15,7 @@ from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import (
     STANDARD_USER_SCOPE_REQUIREMENTS,
     STANDARD_USER_TOKEN_TYPES,
+    enforce_trusted_browser_origin,
     enforce_password_change_policy,
     get_authenticated_user_from_token,
     get_db,
@@ -188,6 +189,8 @@ async def check_setup_permission(db: AsyncSession, request: Request):
             token = auth_token.strip()
     if not token:
         token = request.cookies.get("access_token")
+        if token:
+            enforce_trusted_browser_origin(request)
 
     if not token:
         raise HTTPException(status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL)

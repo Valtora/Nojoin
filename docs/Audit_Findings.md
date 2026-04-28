@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Introduce CSRF protection or tighten the current browser-session model further.
-  - Current state: the session cookie remains `SameSite=Lax`, and normal browser authentication still accepts the cookie directly with no separate CSRF token mechanism.
-  - Files to review: [backend/api/v1/endpoints/login.py](../backend/api/v1/endpoints/login.py), [backend/api/deps.py](../backend/api/deps.py)
-  - Target outcome: state-changing browser requests should not rely only on `SameSite` plus CORS for cross-site request protection.
-
 - [ ] Clean up temporary Companion WAV segment files after successful upload or terminal failure.
   - Current state: recording segments are written to the temp recordings directory and uploaded, but the file cleanup path is missing.
   - Files to review: [companion/src-tauri/src/audio.rs](../companion/src-tauri/src/audio.rs)

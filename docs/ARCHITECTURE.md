@@ -92,7 +92,7 @@ Manual user notes can be captured during recording or processing and are fed int
 
 Nojoin uses different auth shapes for different clients:
 
-- **Browser traffic**: Secure HttpOnly session cookies.
+- **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
 - **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a revocable companion credential plus local control secret.
 - **Companion backend access**: Short-lived companion access tokens exchanged on demand by the Companion.

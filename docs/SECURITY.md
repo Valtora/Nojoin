@@ -19,6 +19,15 @@ Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first succes
 
 Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record `Authorization` headers or setup request bodies.
 
+## Browser Session Request Protection
+
+Nojoin's normal browser session uses a Secure HttpOnly cookie, but state-changing browser requests are not trusted solely because that cookie is present.
+
+- Cookie-authenticated browser requests using unsafe methods must come from the trusted Nojoin web origin.
+- The backend validates the standard `Origin` header, or falls back to `Referer` when needed, for those cookie-authenticated unsafe requests.
+- Explicit bearer-token API clients are not subject to that browser-origin check.
+- The session cookie remains `SameSite=Lax` to preserve expected top-level redirect flows such as OAuth callbacks, so unsafe GET-style side effects should continue to be avoided.
+
 ## Companion Pairing and Local API Security
 
 The Nojoin Companion app requires a strict manual pairing workflow.

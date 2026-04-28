@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import (
+    enforce_trusted_browser_origin,
     get_db,
     get_current_pairing_management_user,
     get_current_user,
@@ -230,6 +231,8 @@ async def login_session(
     """
     Browser session login. Sets a secure HttpOnly cookie and returns UI metadata only.
     """
+    enforce_trusted_browser_origin(request)
+
     await enforce_rate_limit(
         request,
         namespace="login",
@@ -261,10 +264,12 @@ async def login_session(
     return _build_login_metadata(user)
 
 @router.post("/login/logout")
-async def logout_user(response: Response) -> Any:
+async def logout_user(request: Request, response: Response) -> Any:
     """
     Endpoint to clear the HttpOnly access token on logout.
     """
+    enforce_trusted_browser_origin(request)
+
     response.delete_cookie(
         key="access_token",
         httponly=True,

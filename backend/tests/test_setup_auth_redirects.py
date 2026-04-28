@@ -129,6 +129,7 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
 
 @pytest.mark.anyio
 async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://localhost:14443")
     app = _build_app(initialized=True)
 
     async def _allow_request(*args, **kwargs):
@@ -161,8 +162,12 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
             await client.post(
                 "/api/v1/login/session",
                 data={"username": "owner", "password": "password123"},
+                headers={"Origin": "https://localhost:14443"},
             ),
-            await client.post("/api/v1/login/logout"),
+            await client.post(
+                "/api/v1/login/logout",
+                headers={"Origin": "https://localhost:14443"},
+            ),
         ]
 
     for response in responses:
