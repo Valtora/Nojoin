@@ -2,19 +2,6 @@
 
 This document captures the security audit items that remain open, plus findings that are only partially closed and still need follow-up work.
 
-Status basis:
-
-- Verified against the current codebase on 28 April 2026.
-- This list excludes findings that appear closed in the current implementation.
-- Items are written as implementation to-dos rather than as historical findings.
-
-## Open To-Dos
-
-- [ ] Tighten the frontend Content Security Policy to remove inline script allowance.
-  - Current state: the CSP still includes `script-src 'self' 'unsafe-inline'`.
-  - Files to review: [frontend/next.config.ts](../frontend/next.config.ts)
-  - Target outcome: migrate to a nonce-based or otherwise non-inline script policy.
-
 ## Partially Closed To-Dos
 
 - [ ] Add token invalidation or rotation controls for standard browser and API JWTs.
