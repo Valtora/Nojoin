@@ -4,7 +4,6 @@ from sqlmodel import select
 from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-import os
 import logging
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
@@ -15,6 +14,7 @@ from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
 from backend.utils.rate_limit import enforce_rate_limit
+from backend.utils.recording_storage import delete_recording_artifacts
 from backend.utils.time import utc_now
 
 router = APIRouter()
@@ -234,26 +234,13 @@ async def delete_user(
     recordings_result = await db.execute(select(Recording).where(Recording.user_id == user_id))
     recordings = recordings_result.scalars().all()
 
-    recordings_dir = os.getenv("RECORDINGS_DIR", "data/recordings")
-    abs_recordings_dir = os.path.abspath(recordings_dir)
-
-    def is_safe_path(target_path: str | None) -> bool:
-        if not target_path:
-            return False
-        abs_target = os.path.abspath(target_path)
-        return os.path.commonpath([abs_recordings_dir, abs_target]) == abs_recordings_dir
-
     for recording in recordings:
-        if is_safe_path(recording.audio_path) and os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
-        if is_safe_path(recording.proxy_path) and os.path.exists(recording.proxy_path):
-            try:
-                os.remove(recording.proxy_path)
-            except OSError:
-                pass
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+            proxy_path=recording.proxy_path,
+            logger=logger,
+        )
         
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")

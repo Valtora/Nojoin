@@ -1,6 +1,5 @@
 import os
 import logging
-import shutil
 from typing import List, Optional, Any
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
@@ -29,18 +28,15 @@ from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.processing_eta import estimate_processing_eta
+from backend.utils.recording_storage import (
+    delete_recording_artifacts,
+    move_recording_upload_to_failed,
+    recording_upload_temp_dir,
+    recordings_root_dir,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Configuration for recordings storage
-# In production docker, this should be mapped to a volume
-RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "data/recordings")
-os.makedirs(RECORDINGS_DIR, exist_ok=True)
-TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
-os.makedirs(TEMP_DIR, exist_ok=True)
-FAILED_DIR = os.path.join(RECORDINGS_DIR, "failed")
-os.makedirs(FAILED_DIR, exist_ok=True)
 
 
 def get_initial_proxy_path(file_path: str) -> Optional[str]:
@@ -227,12 +223,12 @@ async def batch_permanently_delete_recordings(
     recordings = result.scalars().all()
     
     for recording in recordings:
-        # Delete file from disk
-        if recording.audio_path and os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+            proxy_path=recording.proxy_path,
+            logger=logger,
+        )
         await db.delete(recording)
             
     await db.commit()
@@ -249,7 +245,7 @@ async def init_upload(
     """
     # Create a placeholder file path (will be used after finalization)
     unique_filename = f"{uuid4()}.wav"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     if not name:
         name = generate_default_meeting_name()
@@ -267,8 +263,7 @@ async def init_upload(
     await db.refresh(recording)
     
 
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_upload_temp_dir(recording.id, create=True)
 
     upload_token = security.create_access_token(
         current_user.username,
@@ -302,12 +297,10 @@ async def upload_segment(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
     
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
-        os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
     filename = os.path.basename(f"{int(sequence)}.wav")
-    segment_path = os.path.join(recording_temp_dir, filename)
+    segment_path = recording_temp_dir / filename
     
     try:
         async with aiofiles.open(segment_path, 'wb') as out_file:
@@ -373,8 +366,8 @@ async def finalize_upload(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
         
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
+    if not recording_temp_dir.exists():
         raise HTTPException(status_code=400, detail="No segments found for this recording")
         
     # List all segments and sort by sequence
@@ -383,7 +376,7 @@ async def finalize_upload(
         if filename.endswith(".wav"):
             try:
                 seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, os.path.join(recording_temp_dir, filename)))
+                segments.append((seq, str(recording_temp_dir / filename)))
             except ValueError:
                 continue
                 
@@ -398,27 +391,28 @@ async def finalize_upload(
         concatenate_wavs(segment_paths, recording.audio_path)
         
         # Cleanup temp dir
-        shutil.rmtree(recording_temp_dir)
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=None,
+            proxy_path=None,
+            logger=logger,
+        )
         
         # Set duration
         recording.duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
-        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
-            if os.path.exists(recording_temp_dir):
-                shutil.move(recording_temp_dir, failed_path)
-                logger.info(f"Moved failed segments to {failed_path}")
+            move_recording_upload_to_failed(recording.id, logger=logger)
         except Exception as move_error:
             logger.error(f"Failed to move segments to failed dir: {move_error}")
             
-
-        if os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-                logger.info(f"Removed partial recording file: {recording.audio_path}")
-            except Exception as cleanup_error:
-                logger.error(f"Failed to remove partial recording file: {cleanup_error}")
+        delete_recording_artifacts(
+            recording_id=None,
+            audio_path=recording.audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
             
         raise sanitized_http_exception(
             logger=logger,
@@ -476,7 +470,7 @@ async def import_audio(
     
     # Generate a unique filename to prevent collisions
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Save the file
     try:
@@ -570,7 +564,7 @@ async def init_chunked_import(
     
     # Generate a unique filename
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Determine recording name
     if name:
@@ -600,8 +594,7 @@ async def init_chunked_import(
     await db.refresh(recording)
     
 
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_upload_temp_dir(recording.id, create=True)
     
     return recording
 
@@ -624,12 +617,10 @@ async def upload_chunked_segment(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
     
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
-        os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
     filename = os.path.basename(f"{int(sequence)}.part")
-    segment_path = os.path.join(recording_temp_dir, filename)
+    segment_path = recording_temp_dir / filename
     
     try:
         async with aiofiles.open(segment_path, 'wb') as out_file:
@@ -663,8 +654,8 @@ async def finalize_chunked_import(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
         
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
+    if not recording_temp_dir.exists():
         raise HTTPException(status_code=400, detail="No segments found for this recording")
         
     # List all segments and sort by sequence
@@ -673,7 +664,7 @@ async def finalize_chunked_import(
         if filename.endswith(".part"):
             try:
                 seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, os.path.join(recording_temp_dir, filename)))
+                segments.append((seq, str(recording_temp_dir / filename)))
             except ValueError:
                 continue
                 
@@ -688,7 +679,12 @@ async def finalize_chunked_import(
         concatenate_binary_files(segment_paths, recording.audio_path)
         
         # Cleanup temp dir
-        shutil.rmtree(recording_temp_dir)
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=None,
+            proxy_path=None,
+            logger=logger,
+        )
         
         # Get file stats
         file_stats = os.stat(recording.audio_path)
@@ -701,20 +697,18 @@ async def finalize_chunked_import(
             logger.warning(f"Failed to get duration: {e}")
         
     except Exception as e:
-        # Move failed segments to failed directory
-        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
-            if os.path.exists(recording_temp_dir):
-                shutil.move(recording_temp_dir, failed_path)
-        except Exception:
-            pass
-            
-        if os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except Exception:
-                pass
-            
+            move_recording_upload_to_failed(recording.id, logger=logger)
+        except Exception as move_error:
+            logger.error(f"Failed to move failed chunked upload to failed dir: {move_error}")
+
+        delete_recording_artifacts(
+            recording_id=None,
+            audio_path=recording.audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
+
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -765,7 +759,7 @@ async def upload_recording(
         )
 
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Save the file
     try:
@@ -1074,16 +1068,12 @@ async def delete_recording(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Recording not found")
     
-    # Delete file from disk
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass # Log error but continue to delete DB entry
-
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if os.path.exists(recording_temp_dir):
-        shutil.rmtree(recording_temp_dir, ignore_errors=True)
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
             
     await db.delete(recording)
     await db.commit()
@@ -1110,15 +1100,12 @@ async def discard_companion_upload(
             detail="Only in-flight companion uploads can be discarded",
         )
 
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass
-
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if os.path.exists(recording_temp_dir):
-        shutil.rmtree(recording_temp_dir, ignore_errors=True)
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
 
     await db.delete(recording)
     await db.commit()
@@ -1396,12 +1383,12 @@ async def permanently_delete_recording(
         except Exception:
             pass  # Task might not exist or already finished
 
-    # Delete file from disk
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass  # Log error but continue to delete DB entry
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
             
     await db.delete(recording)
     await db.commit()

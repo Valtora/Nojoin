@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Clean up temporary Companion WAV segment files after successful upload or terminal failure.
-  - Current state: recording segments are written to the temp recordings directory and uploaded, but the file cleanup path is missing.
-  - Files to review: [companion/src-tauri/src/audio.rs](../companion/src-tauri/src/audio.rs)
-  - Target outcome: temp storage should not accumulate stale segment files across normal use.
-
 - [ ] Replace timestamp-derived recording IDs with opaque identifiers.
   - Current state: recording IDs are derived from timestamps and remain enumerable.
   - Files to review: [backend/api/v1/endpoints/recordings.py](../backend/api/v1/endpoints/recordings.py)
