@@ -171,7 +171,7 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+      <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
         <div className="flex flex-col gap-5">
           <div className="mt-2 flex items-start gap-3">
             <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
@@ -211,7 +211,7 @@ export default function MeetingControls({
   }
 
   return (
-    <div className="border-b border-gray-300 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
+    <div className="border-b border-orange-100/80 bg-transparent p-4 dark:border-gray-800/80">
       <div className="w-full">
         {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
 

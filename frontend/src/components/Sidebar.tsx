@@ -699,7 +699,7 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 flex flex-col h-100dvh relative transition-opacity ${
+      className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-100dvh relative transition-opacity ${
         isRecordingView ? "hidden md:flex" : "w-full md:flex"
       }`}
       style={window.innerWidth >= 768 ? { width: `${recordingsSidebarWidth}px` } : {}}
@@ -712,7 +712,7 @@ export default function Sidebar() {
       )}
 
       {/* Header */}
-      <div className="p-4 pl-14 md:pl-4 border-b border-gray-300 dark:border-gray-800">
+      <div className="p-4 pl-14 md:pl-4 border-b border-orange-100/80 dark:border-gray-800/80">
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs text-gray-500">

@@ -81,7 +81,7 @@ function NavItem({
         ${
           isActive
             ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-            : "text-gray-700 dark:text-gray-300 hover:bg-orange-200 hover:text-orange-800 dark:hover:bg-gray-800"
+            : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
         }
         ${collapsed ? "justify-center" : ""}
       `}
@@ -712,7 +712,7 @@ export default function MainNav() {
 
       <aside
         id="main-nav"
-        className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
+        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
           isMobileNavOpen ? "translate-x-0 fixed left-0 top-0 w-64 shadow-2xl" : "-translate-x-full fixed left-0 top-0 w-64 md:relative md:w-auto md:translate-x-0 md:shadow-none"
         }`}
         style={window.innerWidth < 768 ? {} : {
@@ -720,7 +720,7 @@ export default function MainNav() {
         }}
       >
         {/* Header with collapse toggle */}
-        <div className="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-800">
+        <div className="p-3 flex items-center justify-between border-b border-orange-100/80 dark:border-gray-800/80">
           {!collapsed && (
             <div className="flex-1 text-center flex items-center justify-center gap-2">
               <Image
@@ -739,7 +739,7 @@ export default function MainNav() {
             {/* Close button for mobile */}
             <button
               onClick={() => setMobileNavOpen(false)}
-              className="md:hidden p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              className="md:hidden p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title="Close Menu"
             >
               <X className="w-5 h-5 text-gray-500" />
@@ -747,7 +747,7 @@ export default function MainNav() {
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleNavCollapse}
-              className="hidden md:block p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              className="hidden md:block p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title={collapsed ? "Expand" : "Collapse"}
             >
               {collapsed ? (
