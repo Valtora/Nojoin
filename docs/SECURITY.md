@@ -69,6 +69,10 @@ The Nojoin Companion app requires a strict manual pairing workflow.
 - Browser repair remains a native-only action. Other surfaces may route the user to `Open Settings to Repair`, but the actual `Repair Local Browser Connection` action runs inside Companion Settings.
 - Explicitly disconnecting the current backend from Companion Settings clears the saved backend certificate pin and local secret bundle, then attempts a best-effort remote revoke before returning the app to a clean first-pair state.
 - All requests to the Companion's local API require a short-lived local control token and strict Host validation (e.g. `127.0.0.1` or `localhost`).
+- Outbound Companion-to-backend HTTPS calls are constrained against server-side request forgery (SSRF):
+  - The pairing payload's `api_protocol://api_host:api_port` must equal the browser `Origin` header on the `/pair/complete` request, which is the operator-configured `WEB_APP_URL`. This is a strict allowlist of one backend per pairing.
+  - The protocol must be `https`. The host is rejected if it is empty, longer than 253 characters, contains embedded credentials, paths, queries, fragments, or whitespace, or if `reqwest::Url::parse` fails to round-trip it.
+  - Each outbound request resolves the target host once via the system resolver and pins the resulting socket addresses into the `reqwest` client through `resolve_to_addrs`. This closes the DNS-rebinding window between validation and connection.
 
 Operators and users should be aware that switching between deployments requires an explicit re-pair. Legacy plaintext Companion trust state is intentionally dropped by the current security upgrade, so existing installations must pair again after updating.
 

@@ -21,6 +21,7 @@ use semver::Version;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod audio;
+mod backend_url;
 mod companion_auth;
 mod config;
 mod local_https_identity;

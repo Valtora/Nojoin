@@ -1050,16 +1050,12 @@ async fn capture_pairing_tls_fingerprint(
     payload: &PairingCompleteRequest,
 ) -> Result<String, String> {
     let (protocol, host, port) = pairing_backend_details(payload)?;
-    if !protocol.eq_ignore_ascii_case("https") {
-        return Err("Pairing requires an HTTPS backend target.".to_string());
-    }
+    let target = crate::backend_url::validate_backend_target(protocol, host, port)?;
 
-    let fingerprint = crate::tls::capture_tls_fingerprint(host, port).await?;
+    let fingerprint = crate::tls::capture_tls_fingerprint(&target.host, target.port).await?;
     info!(
-        "Captured pairing TLS fingerprint for {}://{}:{} (peer_cert={})",
-        protocol,
-        host,
-        port,
+        "Captured pairing TLS fingerprint for {} (peer_cert={})",
+        target.origin(),
         short_fingerprint_label(&fingerprint)
     );
 
@@ -1180,6 +1176,13 @@ async fn complete_pairing(
         sec_fetch_site_header
     );
     let session_summary = summarize_pairing_session(state.pairing_session_snapshot().as_ref());
+    // SAFETY: `request_summary` and `session_summary` only contain header
+    // presence booleans, length-truncated non-secret browser headers, and
+    // pairing-code values that are already passed through
+    // `pairing_code_log_label` / `pairing_code_fingerprint` redactors. No raw
+    // secret material reaches the log sink. CodeQL `rust/cleartext-logging`
+    // dataflow follows the `.map(...)` chains conservatively; suppression is
+    // covered by a regression test asserting raw secrets never appear here.
     info!(
         "Received pairing completion request: {}; {}",
         request_summary, session_summary
@@ -1257,6 +1260,48 @@ async fn complete_pairing(
                 success: false,
                 message: "Pairing code, companion credential, local control secret, protocol, host, port, and pairing metadata are required."
                     .to_string(),
+            }),
+        );
+    }
+
+    // Strict allowlist: the payload-supplied backend target must equal the
+    // browser Origin (which is the operator's WEB_APP_URL). This pins the
+    // Companion to a single backend per pairing and blocks any attempt to
+    // pivot the outbound HTTPS calls below at an unrelated host.
+    let validated_target = match crate::backend_url::validate_backend_target(
+        payload.api_protocol.as_deref().unwrap_or_default(),
+        payload.api_host.as_deref().unwrap_or_default(),
+        payload.api_port.unwrap_or_default(),
+    ) {
+        Ok(target) => target,
+        Err(err) => {
+            warn!(
+                "Rejected pairing completion because backend target failed validation: {}; {}",
+                err, request_summary
+            );
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(PairingCompleteResponse {
+                    success: false,
+                    message: "Pairing payload contains an invalid backend target.".to_string(),
+                }),
+            );
+        }
+    };
+    if let Err(err) =
+        crate::backend_url::enforce_origin_matches_target(&validated_target, &origin)
+    {
+        warn!(
+            "Rejected pairing completion because backend target did not match browser origin: {}; {}",
+            err, request_summary
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            Json(PairingCompleteResponse {
+                success: false,
+                message:
+                    "Pairing backend target must match the Nojoin web origin (WEB_APP_URL)."
+                        .to_string(),
             }),
         );
     }
@@ -2397,11 +2442,11 @@ mod tests {
 
         match result.state {
             local_https_identity::LocalHttpsReconcileState::Ready(ready_identity) => ready_identity,
-            local_https_identity::LocalHttpsReconcileState::RepairRequired(repair) => {
-                panic!(
-                    "expected a ready HTTPS identity, got repair-required: {}",
-                    repair.message
-                )
+            local_https_identity::LocalHttpsReconcileState::RepairRequired(_) => {
+                // Intentionally a static message: certificate-parameter content from
+                // the repair record is sensitive (CWE-312/532) and must never be
+                // emitted, even from test builds.
+                panic!("expected a ready HTTPS identity, got repair-required state")
             }
         }
     }
@@ -2451,6 +2496,48 @@ mod tests {
             .add_root_certificate(Certificate::from_der(ca_certificate_der).unwrap())
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn pairing_request_summary_never_emits_raw_secrets() {
+        // Regression coverage for CodeQL alert #23 (rust/cleartext-logging).
+        // The log statements in `complete_pairing` rely on `summarize_pairing_request`
+        // and `read_optional_log_header` only emitting redacted values. Any change
+        // that surfaces a raw secret here must trip this test.
+        let payload = PairingCompleteRequest {
+            pairing_code: "ABCDWXYZ".to_string(),
+            companion_credential_secret:
+                "credential-secret-must-never-appear-in-log".to_string(),
+            api_host: Some("nojoin.example.com".to_string()),
+            api_port: Some(14443),
+            api_protocol: Some("https".to_string()),
+            tls_fingerprint: Some(
+                "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF"
+                    .to_string(),
+            ),
+            local_control_secret: Some("local-control-secret-must-never-appear".to_string()),
+            backend_pairing_id: Some("pairing-id-1234567890ABCDEF".to_string()),
+            local_control_secret_version: Some(7),
+        };
+
+        let summary = summarize_pairing_request(
+            &payload,
+            Some("https://nojoin.example.com:14443"),
+            Some("nojoin.example.com:14443"),
+        );
+
+        for forbidden in [
+            payload.companion_credential_secret.as_str(),
+            payload.local_control_secret.as_deref().unwrap(),
+            payload.tls_fingerprint.as_deref().unwrap(),
+        ] {
+            assert!(
+                !summary.contains(forbidden),
+                "summarize_pairing_request leaked a raw secret: {} in {}",
+                forbidden,
+                summary
+            );
+        }
     }
 
     #[test]

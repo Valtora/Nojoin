@@ -1,5 +1,6 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code))]
 
+use crate::backend_url::{build_pinned_client, validate_backend_target};
 use crate::config::{BackendConnection, Config};
 use crate::log_redact::sanitize_for_log;
 use crate::secret_store::{self, BackendSecretBundle};
@@ -74,10 +75,11 @@ pub async fn exchange_access_token_for_target(
     companion_credential_secret: &str,
     tls_fingerprint: Option<String>,
 ) -> Result<String, String> {
-    let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let url = format!("{}/api/v1/login/companion-token/exchange", backend_target);
+    let target = validate_backend_target(protocol, host, port)?;
+    let backend_target = target.origin();
+    let url = target.build_url("/api/v1/login/companion-token/exchange")?;
     let started_at = Instant::now();
-    let client = crate::tls::create_client(tls_fingerprint).map_err(|error| error.to_string())?;
+    let client = build_pinned_client(&target, tls_fingerprint).await?;
 
     let response = match tokio::time::timeout(
         Duration::from_secs(COMPANION_NETWORK_TIMEOUT_SECS),
@@ -152,10 +154,12 @@ async fn send_pairing_management_request_for_target(
         tls_fingerprint.clone(),
     )
     .await?;
-    let backend_target = format!("{}://{}:{}", protocol, host, port);
-    let url = format!("{}{}", format!("{}/api/v1", backend_target), path);
+    let target = validate_backend_target(protocol, host, port)?;
+    let backend_target = target.origin();
+    let scoped_path = format!("/api/v1{}", path);
+    let url = target.build_url(&scoped_path)?;
     let started_at = Instant::now();
-    let client = crate::tls::create_client(tls_fingerprint).map_err(|error| error.to_string())?;
+    let client = build_pinned_client(&target, tls_fingerprint).await?;
 
     let response = match tokio::time::timeout(
         Duration::from_secs(COMPANION_NETWORK_TIMEOUT_SECS),
