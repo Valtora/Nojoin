@@ -34,7 +34,7 @@ fern = "0.7"
 directories = "5.0"
 open = "5.0"
 rand = "0.8"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 rcgen = { version = "0.14.7", features = ["x509-parser"] }
 time = "0.3"
 tauri-plugin-autostart = { version = "2" }
