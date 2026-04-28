@@ -40,6 +40,35 @@ router = APIRouter()
 LOGIN_RATE_LIMIT = 10
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 
+# Companion credential exchange is a public endpoint that accepts a
+# pairing_session_id + companion_credential_secret. We rate-limit it twice:
+#   * per (IP, pairing_session_id) to bound brute force against a single
+#     credential secret;
+#   * per IP to bound an attacker rotating fabricated session ids.
+COMPANION_EXCHANGE_PER_SESSION_RATE_LIMIT = 10
+COMPANION_EXCHANGE_PER_SESSION_WINDOW_SECONDS = 10 * 60
+COMPANION_EXCHANGE_PER_IP_RATE_LIMIT = 30
+COMPANION_EXCHANGE_PER_IP_WINDOW_SECONDS = 10 * 60
+
+# Local-control token minting is authenticated and origin-pinned but still
+# protected against runaway clients or compromised paired-origin scripts.
+COMPANION_LOCAL_TOKEN_RATE_LIMIT = 60
+COMPANION_LOCAL_TOKEN_WINDOW_SECONDS = 60
+
+# Pairing preparation drives the pairing state machine; throttle per user.
+COMPANION_PAIRING_PREPARE_RATE_LIMIT = 20
+COMPANION_PAIRING_PREPARE_WINDOW_SECONDS = 10 * 60
+
+# Pairing mutation endpoints (revoke / disconnect / cancel-pending) share a
+# single bucket so that an attacker cannot fan out across them.
+COMPANION_PAIRING_MUTATION_RATE_LIMIT = 30
+COMPANION_PAIRING_MUTATION_WINDOW_SECONDS = 10 * 60
+
+# Companion SSE connection setup. Bounds reconnect storms; established streams
+# are unaffected once the handshake passes.
+COMPANION_EVENTS_CONNECT_RATE_LIMIT = 30
+COMPANION_EVENTS_CONNECT_WINDOW_SECONDS = 60
+
 
 class CompanionPairingPrepareRequest(BaseModel):
     pairing_code: str
@@ -129,6 +158,15 @@ async def _issue_companion_local_control_token(
     db: AsyncSession,
     current_user: User,
 ) -> CompanionLocalControlTokenResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-local-token",
+        limit=COMPANION_LOCAL_TOKEN_RATE_LIMIT,
+        window_seconds=COMPANION_LOCAL_TOKEN_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many local control token requests. Please try again later.",
+    )
+
     try:
         pairing_auth = await get_active_companion_pairing_auth(
             db,
@@ -356,6 +394,15 @@ async def prepare_companion_pairing_payload(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CompanionPairingPrepareResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-prepare",
+        limit=COMPANION_PAIRING_PREPARE_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_PREPARE_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion pairing attempts. Please try again later.",
+    )
+
     pairing_code = payload.pairing_code.strip().upper()
     if not pairing_code:
         raise HTTPException(
@@ -382,9 +429,19 @@ async def prepare_companion_pairing_payload(
     response_model=CompanionPairingRevokeResponse,
 )
 async def revoke_companion_pairing(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_pairing_management_user),
 ) -> CompanionPairingRevokeResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-mutation",
+        limit=COMPANION_PAIRING_MUTATION_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_MUTATION_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion pairing changes. Please try again later.",
+    )
+
     revoked_count = await revoke_companion_pairings(
         db,
         current_user=current_user,
@@ -400,9 +457,19 @@ async def revoke_companion_pairing(
     response_model=CompanionPairingDisconnectResponse,
 )
 async def disconnect_companion_pairing(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_pairing_management_user),
 ) -> CompanionPairingDisconnectResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-mutation",
+        limit=COMPANION_PAIRING_MUTATION_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_MUTATION_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion pairing changes. Please try again later.",
+    )
+
     revoked_count = await revoke_companion_pairings(
         db,
         current_user=current_user,
@@ -420,9 +487,19 @@ async def disconnect_companion_pairing(
     response_model=CompanionPairingCancelResponse,
 )
 async def cancel_pending_companion_pairing(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_pairing_management_user),
 ) -> CompanionPairingCancelResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-mutation",
+        limit=COMPANION_PAIRING_MUTATION_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_MUTATION_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion pairing changes. Please try again later.",
+    )
+
     cancelled_count = await cancel_pending_companion_pairings(
         db,
         current_user=current_user,
@@ -438,6 +515,15 @@ async def stream_companion_events(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-events-connect",
+        limit=COMPANION_EVENTS_CONNECT_RATE_LIMIT,
+        window_seconds=COMPANION_EVENTS_CONNECT_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion event stream reconnects. Please try again later.",
+    )
+
     async def event_generator():
         queue = await companion_frontend_events.subscribe(current_user.id)
         try:
@@ -473,6 +559,7 @@ async def stream_companion_events(
 )
 async def exchange_companion_token(
     payload: CompanionCredentialExchangeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> CompanionAccessTokenResponse:
     pairing_session_id = payload.pairing_session_id.strip()
@@ -483,6 +570,24 @@ async def exchange_companion_token(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Pairing session id and companion credential secret are required.",
         )
+
+    # IP-only bucket bounds attackers rotating fabricated session ids.
+    await enforce_rate_limit(
+        request,
+        namespace="companion-exchange-ip",
+        limit=COMPANION_EXCHANGE_PER_IP_RATE_LIMIT,
+        window_seconds=COMPANION_EXCHANGE_PER_IP_WINDOW_SECONDS,
+        detail="Too many companion token exchange requests. Please try again later.",
+    )
+    # Per-session bucket bounds brute force against a single credential secret.
+    await enforce_rate_limit(
+        request,
+        namespace="companion-exchange-session",
+        limit=COMPANION_EXCHANGE_PER_SESSION_RATE_LIMIT,
+        window_seconds=COMPANION_EXCHANGE_PER_SESSION_WINDOW_SECONDS,
+        discriminator=pairing_session_id,
+        detail="Too many companion token exchange requests. Please try again later.",
+    )
 
     try:
         exchange_result = await exchange_companion_credential(
