@@ -2,7 +2,7 @@
 <div align="center">
     <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
-           <strong>A self-hosted meeting intelligence platform</strong>
+           <strong>Self-hosted Meeting Transcription and Notes</strong>
             </p>
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
@@ -19,7 +19,7 @@
 
 ## What Is Nojoin?
 
-Nojoin is a self-hosted meeting intelligence platform.
+Nojoin is a self-hosted meeting transcription and notes solution.
 
 It captures audio through a local Windows Companion app, processes recordings on your own server, and gives you transcripts, speaker separation, meeting notes, search, meeting chat, and a web-based dashboard for day-to-day work.
 
@@ -27,8 +27,9 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 ## Why Nojoin?
 
-- Self-hosted and privacy-first.
-- No meeting bot joins your calls.
+- It is free, self-hosted, and open-source.
+- No meeting bot awkwardly joins your calls.
+- Works across any meeting platform, Google Meet, Microsoft Teams, Zoom, Webex, and more. If you can hear it, Nojoin can capture it.
 - Local Whisper transcription and Pyannote diarisation on your own infrastructure.
 - Optional cloud LLMs, or fully local AI with Ollama.
 - Web dashboard with recordings, calendar context, and a Task List.
@@ -72,7 +73,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 Notes:
 
 - An NVIDIA GPU is strongly recommended for faster processing.
-- CPU-only mode is supported.
+- CPU-only mode is supported but it is much slower.
 - The Companion app currently supports Windows only.
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
 - For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
