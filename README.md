@@ -2,7 +2,7 @@
 <div align="center">
     <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
-           <strong>Self-hosted Meeting Transcription and Notes</strong>
+           <strong>Self-Hosted Meeting Transcription and Notes</strong>
             </p>
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
@@ -11,9 +11,11 @@
     </p>
 </div>
 
-<img width="2548" height="1231" alt="Nojoin screenshot" src="https://github.com/user-attachments/assets/7a0039de-321b-46a3-8d8f-95ebf6b3f1c4" />
+<img width="1638" height="1237" alt="dark" src="https://github.com/user-attachments/assets/b7fd2d7a-a67a-4394-bcb3-fd63afb928dc" />
 
-<img width="2545" height="1235" alt="sc-dark" src="https://github.com/user-attachments/assets/c5c3e33a-ac36-405e-bf36-64d104a0346e" />
+---
+
+<img width="1638" height="1237" alt="light" src="https://github.com/user-attachments/assets/ffdd8c20-5a0f-4f30-8cb7-57291883498e" />
 
 ---
 
