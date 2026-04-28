@@ -1,11 +1,9 @@
 import type { NextConfig } from "next";
 
+// Note: Content-Security-Policy is emitted per-request by proxy.ts so
+// it can include a fresh nonce on every response. All other security
+// headers are static and applied here.
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value:
-      "default-src 'self'; base-uri 'self'; connect-src 'self' http: https: ws: wss:; font-src 'self' data: http: https:; frame-ancestors 'none'; form-action 'self'; img-src 'self' blob: data: http: https:; media-src 'self' blob: data: http: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-  },
   {
     key: "Referrer-Policy",
     value: "strict-origin-when-cross-origin",

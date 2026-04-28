@@ -8,6 +8,7 @@ import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
+import LiveMeetingControls from "./LiveMeetingControls";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 
 function formatClock(seconds: number) {
@@ -43,18 +44,16 @@ function formatEta(seconds: number) {
 }
 
 function LiveRecordingTimer() {
-  const { companionStatus, recordingDuration } = useServiceStatusStore();
+  const { companion, companionStatus, recordingDuration } = useServiceStatusStore();
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (recordingDuration > 0) {
-      setElapsedTime(recordingDuration);
-    }
+    setElapsedTime(recordingDuration);
   }, [recordingDuration]);
 
   useEffect(() => {
-    if (companionStatus === "recording") {
+    if (companion && companionStatus === "recording") {
       timerRef.current = setInterval(() => {
         setElapsedTime((current) => current + 1);
       }, 1000);
@@ -68,7 +67,7 @@ function LiveRecordingTimer() {
         clearInterval(timerRef.current);
       }
     };
-  }, [companionStatus]);
+  }, [companion, companionStatus]);
 
   return (
     <div className="text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">
@@ -108,7 +107,7 @@ export default function RecordingStatusDisplay({
         : "Processing recording";
 
   const subheading = isActiveRecording
-    ? "Live waveform monitoring stays visible while the companion is capturing audio."
+    ? "Live audio waveform and timer are shown while your meeting is being recorded."
     : recording.processing_step ||
       (recording.status === RecordingStatus.QUEUED
         ? "Waiting for a worker to begin processing."
@@ -165,7 +164,19 @@ export default function RecordingStatusDisplay({
 
             <div className="mt-6 space-y-4">
               {isActiveRecording ? (
-                <LiveAudioWaveform enabled paused={isPaused} />
+                <>
+                  <LiveAudioWaveform
+                    recordingId={recording.id}
+                    enabled
+                    paused={isPaused}
+                  />
+                  <LiveMeetingControls
+                    size="full"
+                    onMeetingEnd={() => {
+                      window.dispatchEvent(new Event("recording-updated"));
+                    }}
+                  />
+                </>
               ) : (
                 <>
                   {progressValue !== null ? (

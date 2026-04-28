@@ -12,6 +12,7 @@ from backend.main import create_app
 
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
+SECURE_TEST_BASE_URL = "https://test"
 
 
 class _FakeResult:
@@ -96,7 +97,7 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
 
     headers = _bootstrap_auth_headers()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         responses = [
             await client.get("/api/v1/setup/initial-config", headers=headers),
             await client.post(
@@ -128,6 +129,7 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
 
 @pytest.mark.anyio
 async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://localhost:14443")
     app = _build_app(initialized=True)
 
     async def _allow_request(*args, **kwargs):
@@ -139,6 +141,7 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
             force_password_change=False,
             is_superuser=True,
             is_active=True,
+            token_version=0,
         )
 
     monkeypatch.setattr(login, "enforce_rate_limit", _allow_request)
@@ -151,7 +154,7 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
         force_password_change=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         responses = [
             await client.post(
                 "/api/v1/login/access-token",
@@ -160,9 +163,12 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
             await client.post(
                 "/api/v1/login/session",
                 data={"username": "owner", "password": "password123"},
+                headers={"Origin": "https://localhost:14443"},
             ),
-            await client.post("/api/v1/login/logout"),
-            await client.get("/api/v1/login/companion-token"),
+            await client.post(
+                "/api/v1/login/logout",
+                headers={"Origin": "https://localhost:14443"},
+            ),
         ]
 
     for response in responses:

@@ -12,6 +12,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.models.revoked_jwt import RevokedJwt
 from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
 from backend.models.document import Document

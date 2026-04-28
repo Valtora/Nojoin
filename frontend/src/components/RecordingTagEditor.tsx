@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Tag } from '@/types';
+import { RecordingId, Tag } from '@/types';
 import { X, Plus } from 'lucide-react';
 import { removeTagFromRecording } from '@/lib/api';
 import { getColorByKey } from '@/lib/constants';
 import AddTagModal from './AddTagModal';
 
 interface RecordingTagEditorProps {
-  recordingId: number;
+  recordingId: RecordingId;
   tags: Tag[];
   onTagsUpdated?: () => void;
 }

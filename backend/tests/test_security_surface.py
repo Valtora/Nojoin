@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from collections import Counter
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from backend.main import create_app
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
 LEGACY_FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password"
+SECURE_TEST_BASE_URL = "https://test"
 
 
 class _FakeResult:
@@ -73,12 +75,26 @@ def _bootstrap_auth_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str
     }
 
 
+def _authenticated_setup_headers(token: str = "authenticated-setup-token") -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _authenticated_setup_user(*args, **kwargs):
+    return SimpleNamespace(
+        id=1,
+        role="owner",
+        is_superuser=False,
+        force_password_change=False,
+        settings={},
+    )
+
+
 @pytest.mark.anyio
 async def test_system_status_requires_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/v1/system/status")
 
     assert response.status_code == 401
@@ -89,7 +105,7 @@ async def test_system_status_returns_initialized_flag_for_authenticated_user() -
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/v1/system/status")
 
     assert response.status_code == 200
@@ -100,7 +116,7 @@ async def test_system_status_returns_initialized_flag_for_authenticated_user() -
 async def test_public_health_is_minimal() -> None:
     app, _ = _build_app(initialized=True)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/health")
 
     assert response.status_code == 200
@@ -132,7 +148,7 @@ async def test_public_invitation_validation_is_minimal(monkeypatch) -> None:
     monkeypatch.setattr(invitations, "enforce_rate_limit", _allow_request)
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/v1/invitations/validate/invite123")
 
     assert response.status_code == 200
@@ -150,7 +166,7 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
 
     monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _BrokenBackend())
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/setup/validate-llm",
             json={"provider": "openai", "api_key": "test-key"},
@@ -161,6 +177,99 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
     assert response.json() == {
         "detail": "Unable to validate the AI provider configuration.",
     }
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_validation_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "secret provider failure with /tmp/cache details"
+
+    class _BrokenBackend:
+        def validate_api_key(self):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _BrokenBackend())
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/validate-llm",
+                json={"provider": "openai", "api_key": "test-key"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_hf_validation_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "hf validation failed for account secret-user@example.com"
+
+    class _BrokenHFClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup.httpx, "AsyncClient", _BrokenHFClient)
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/validate-hf",
+                json={"token": "hf_test_token"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_HF_VALIDATION_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_model_listing_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "model listing failure exposed internal provider state"
+
+    class _BrokenBackend:
+        def list_models(self):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _BrokenBackend())
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/list-models",
+                json={"provider": "openai", "api_key": "test-key"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_MODEL_LIST_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
 
 
 @pytest.mark.anyio
@@ -187,7 +296,7 @@ async def test_setup_hf_validation_does_not_disclose_account_identity(monkeypatc
 
     monkeypatch.setattr(setup.httpx, "AsyncClient", _FakeHFClient)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/setup/validate-hf",
             json={"token": "hf_test_token"},
@@ -207,7 +316,7 @@ async def test_first_run_setup_rejects_missing_bootstrap_password(monkeypatch) -
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
     monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/system/setup",
             json={"username": "owner", "password": "password123"},
@@ -225,7 +334,7 @@ async def test_first_run_setup_rejects_legacy_bootstrap_header(monkeypatch) -> N
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
     monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/system/setup",
             headers={LEGACY_FIRST_RUN_PASSWORD_HEADER: BOOTSTRAP_PASSWORD},
@@ -244,7 +353,7 @@ async def test_first_run_setup_rejects_when_server_password_is_unset(monkeypatch
     monkeypatch.delenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, raising=False)
     monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/system/setup",
             headers=_bootstrap_auth_headers(),
@@ -270,7 +379,7 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
 
     monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/system/setup",
             headers=_bootstrap_auth_headers(),
@@ -291,7 +400,7 @@ async def test_initialised_setup_helpers_do_not_disclose_state_without_auth(monk
     app, _ = _build_app(initialized=True)
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get(
             "/api/v1/setup/initial-config",
             headers=_bootstrap_auth_headers(),
@@ -309,7 +418,7 @@ async def test_initialised_setup_post_does_not_disclose_state(monkeypatch) -> No
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
     monkeypatch.setattr(system, "seed_demo_data", lambda *args, **kwargs: None)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
             "/api/v1/system/setup",
             headers=_bootstrap_auth_headers(),
@@ -331,7 +440,7 @@ async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-value")
     monkeypatch.setenv("HF_TOKEN", "hf_super_secret_value")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get(
             "/api/v1/setup/initial-config",
             headers=_bootstrap_auth_headers(),
@@ -350,7 +459,7 @@ async def test_detailed_system_health_requires_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/v1/system/health")
 
     assert response.status_code == 401
@@ -373,7 +482,7 @@ async def test_detailed_system_health_returns_component_status_for_authenticated
 
     monkeypatch.setattr(system, "get_system_health_status", fake_health_status)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.get("/api/v1/system/health")
 
     assert response.status_code == 200
@@ -401,7 +510,7 @@ async def test_task_status_hides_internal_failure_details() -> None:
     system.AsyncResult = lambda task_id: _FailedTaskResult()
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
             response = await client.get("/api/v1/system/tasks/test-task")
     finally:
         system.AsyncResult = original_async_result
@@ -414,7 +523,7 @@ async def test_task_status_hides_internal_failure_details() -> None:
 async def test_cors_preflight_uses_explicit_allowlists() -> None:
     app, _ = _build_app(initialized=True)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.options(
             "/api/health",
             headers={
@@ -438,7 +547,7 @@ async def test_operational_system_endpoints_require_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         status = await client.get("/api/v1/system/status")
         download_progress = await client.get("/api/v1/system/download-progress")
         models_status = await client.get("/api/v1/system/models/status")
@@ -455,7 +564,7 @@ async def test_openapi_and_docs_require_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         openapi_response = await client.get("/api/v1/openapi.json")
         docs_response = await client.get("/api/v1/docs")
         redoc_response = await client.get("/api/v1/redoc")
@@ -470,7 +579,7 @@ async def test_openapi_and_docs_are_available_to_authenticated_users() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         openapi_response = await client.get("/api/v1/openapi.json")
         docs_response = await client.get("/api/v1/docs")
         redoc_response = await client.get("/api/v1/redoc")
@@ -502,3 +611,110 @@ def test_http_routes_do_not_register_duplicate_path_method_pairs() -> None:
     ]
 
     assert duplicates == []
+
+
+@pytest.mark.anyio
+async def test_safe_http_requests_redirect_to_canonical_https_origin(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://nojoin.example.com",
+    ) as client:
+        response = await client.get("/api/health?probe=1")
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://nojoin.example.com/api/health?probe=1"
+
+
+@pytest.mark.anyio
+async def test_unsafe_http_requests_are_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://nojoin.example.com",
+    ) as client:
+        response = await client.post("/api/health")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Plain HTTP requests are not allowed. Use HTTPS."}
+
+
+@pytest.mark.anyio
+async def test_forwarded_https_proxy_requests_are_accepted(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://nojoin.example.com",
+    ) as client:
+        response = await client.get(
+            "/api/health",
+            headers={
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": "nojoin.example.com",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.anyio
+async def test_forwarded_https_proxy_requests_accept_host_headers_with_ports(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://localhost:14443")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://localhost:14443",
+    ) as client:
+        response = await client.get(
+            "/api/health",
+            headers={
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": "localhost:14443",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.anyio
+async def test_untrusted_hosts_are_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="https://unexpected.example.com",
+    ) as client:
+        response = await client.get("/api/health")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_cors_preflight_allows_configured_web_app_url(monkeypatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://nojoin.example.com")
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url=SECURE_TEST_BASE_URL,
+    ) as client:
+        response = await client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://nojoin.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://nojoin.example.com"

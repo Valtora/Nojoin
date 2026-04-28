@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocke
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from celery.result import AsyncResult
 
 from backend.api.deps import (
@@ -19,7 +19,7 @@ from backend.api.deps import (
     get_current_active_superuser,
     get_current_active_superuser_ws
 )
-from backend.core.security import get_password_hash
+from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, validate_password_policy
 from backend.models.user import User
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
@@ -40,6 +40,75 @@ from backend.api.v1.endpoints.setup import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def resolve_tls_fingerprint() -> str | None:
+    import hashlib
+    import os
+    import socket
+    import ssl
+    from urllib.parse import urlparse
+
+    def format_fingerprint(certificate_bytes: bytes) -> str:
+        fingerprint = hashlib.sha256(certificate_bytes).hexdigest().upper()
+        return ":".join(
+            fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2)
+        )
+
+    trusted_origin = get_trusted_web_origin()
+    parsed_origin = urlparse(trusted_origin)
+    hostname = parsed_origin.hostname
+    port = parsed_origin.port or 443
+
+    if parsed_origin.scheme != "https":
+        logger.info("Trusted web origin is not HTTPS; skipping TLS fingerprint lookup.")
+        return None
+
+    if hostname and hostname not in ["127.0.0.1", "localhost", "backend", "api", "::1"]:
+        try:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+
+            with socket.create_connection((hostname, port), timeout=3.0) as sock:
+                with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+                    cert_der = ssock.getpeercert(binary_form=True)
+                    if cert_der:
+                        formatted_fp = format_fingerprint(cert_der)
+                        logger.info("Retrieved TLS fingerprint from trusted HTTPS origin.")
+                        return formatted_fp
+        except Exception:
+            logger.warning("Dynamic TLS certificate retrieval failed; falling back to local certificate.")
+
+    cert_paths = [
+        "/etc/nginx/certs/cert.crt",
+        "/app/nginx/certs/cert.crt",
+        "/app/nginx/cert.crt",
+        "nginx/cert.crt",
+    ]
+
+    cert_path = None
+    for path in cert_paths:
+        if os.path.exists(path):
+            cert_path = path
+            break
+
+    if not cert_path:
+        logger.error("No local certificate file found for fallback.")
+        return None
+
+    try:
+        with open(cert_path, "r", encoding="utf-8") as f:
+            pem_data = f.read()
+
+        der_data = ssl.PEM_cert_to_DER_cert(pem_data)
+        formatted_fp = format_fingerprint(der_data)
+        logger.info("Retrieved TLS fingerprint from local certificate fallback.")
+        return formatted_fp
+    except Exception:
+        logger.error("Unable to resolve TLS fingerprint from local certificate fallback.")
+        return None
 
 # Initialize Docker client
 client: DockerClient | None = None
@@ -176,7 +245,7 @@ async def websocket_logs(
 
 class SetupRequest(BaseModel):
     username: str
-    password: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     llm_provider: str = "gemini"
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -185,6 +254,11 @@ class SetupRequest(BaseModel):
     hf_token: Optional[str] = None
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)
 
 
 @router.get("/health")
@@ -275,7 +349,7 @@ async def setup_system(
 
     user = User(
         username=setup_in.username,
-        hashed_password=get_password_hash(setup_in.password),
+        hashed_password=hash_user_password(setup_in.password),
         is_superuser=True,
         force_password_change=False, # First user sets their own password, so no need to force change
         role="owner",
@@ -461,7 +535,7 @@ async def get_demo_recording(
     recording = result.scalar_one_or_none()
     
     if recording:
-        return {"id": recording.id}
+        return {"id": recording.public_id}
     return {"id": None}
 
 @router.get("/companion-releases")
@@ -505,72 +579,5 @@ async def get_tls_fingerprint(
     Attempts to fetch the certificate dynamically from the public-facing hostname.
     Falls back to hashing the local self-signed certificate.
     """
-    import ssl
-    import hashlib
-    import os
-    import socket
-    from urllib.parse import urlparse
-
-    def format_fingerprint(certificate_bytes: bytes) -> str:
-        fingerprint = hashlib.sha256(certificate_bytes).hexdigest().upper()
-        return ":".join(
-            fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2)
-        )
-
-    trusted_origin = get_trusted_web_origin()
-    parsed_origin = urlparse(trusted_origin)
-    hostname = parsed_origin.hostname
-    port = parsed_origin.port or 443
-
-    if parsed_origin.scheme != "https":
-        logger.info("Trusted web origin is not HTTPS; skipping TLS fingerprint lookup.")
-        return {"fingerprint": None}
-
-    # Only attempt network fetch if we have a trusted non-local hostname.
-    if hostname and hostname not in ["127.0.0.1", "localhost", "backend", "api", "::1"]:
-        try:
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            
-            with socket.create_connection((hostname, port), timeout=3.0) as sock:
-                with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                    cert_der = ssock.getpeercert(binary_form=True)
-                    if cert_der:
-                        formatted_fp = format_fingerprint(cert_der)
-                        logger.info("Retrieved TLS fingerprint from trusted HTTPS origin.")
-                        return {"fingerprint": formatted_fp}
-        except Exception:
-            logger.warning("Dynamic TLS certificate retrieval failed; falling back to local certificate.")
-
-    # Fallback logic: read local cert
-    cert_paths = [
-        "/etc/nginx/certs/cert.crt",
-        "/app/nginx/certs/cert.crt",
-        "/app/nginx/cert.crt",
-        "nginx/cert.crt"
-    ]
-    
-    cert_path = None
-    for path in cert_paths:
-        if os.path.exists(path):
-            cert_path = path
-            break
-            
-    if not cert_path:
-         logger.error("No local certificate file found for fallback.")
-         return {"fingerprint": None}
-         
-    try:
-        with open(cert_path, "r", encoding="utf-8") as f:
-            pem_data = f.read()
-            
-        der_data = ssl.PEM_cert_to_DER_cert(pem_data)
-        formatted_fp = format_fingerprint(der_data)
-        logger.info("Retrieved TLS fingerprint from local certificate fallback.")
-        return {"fingerprint": formatted_fp}
-    except Exception:
-        logger.error("Unable to resolve TLS fingerprint from local certificate fallback.")
-        return {"fingerprint": None}
+    return {"fingerprint": resolve_tls_fingerprint()}
 

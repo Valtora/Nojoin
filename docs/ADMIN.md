@@ -28,6 +28,12 @@ Users who register through an invite choose their own password during sign-up an
 
 ## Manual User Provisioning and Password Rotation
 
+New and rotated passwords are enforced server-side.
+
+- Passwords must be at least 8 characters long.
+- Passwords made entirely of whitespace are rejected.
+- Existing password hashes are grandfathered until the next password change or admin reset.
+
 When an Admin or Owner creates a user manually:
 
 - The user receives a temporary password.
@@ -73,7 +79,7 @@ Use **Settings > System** for operational controls such as:
 
 Use **Settings > Updates** to see:
 
-- The running version.
+- The installed server version from the current API build.
 - The latest stable published release.
 - Release history and release notes.
 - Companion installer links.
@@ -82,8 +88,17 @@ Use **Settings > Updates** to see:
 
 - Back up the installation before upgrading.
 - Keep server and Companion versions aligned, especially around auth and upload flow changes.
-- For remote deployments, configure a trusted public origin with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
+- For remote deployments, configure a trusted public origin with `WEB_APP_URL`.
 - Treat backup archives as sensitive material.
+
+### Companion Pairing and Security Resets
+
+- The Companion app forms a strict 1-to-1 association with a single backend.
+- Users must manually re-pair the Companion from its settings by choosing `Generate New Pairing Code` if they switch to a different Nojoin deployment, or if the backend's identity or URL changes.
+- The Companion pins the backend TLS certificate it first sees during pairing. Replacing or rotating that backend certificate requires an explicit re-pair.
+- Companion secrets are no longer stored in plaintext config. On Windows, they are moved into a DPAPI-protected secret bundle tied to the active pairing.
+- Using Disconnect Current Backend in Companion Settings clears the saved backend certificate trust and local secret bundle, then attempts a best-effort remote revoke. Users can still switch backends even if the old backend is offline.
+- Major security upgrades to the Companion will drop legacy trust state. After such upgrades, users will be required to perform a clean first-pair workflow before they can record.
 
 ## Related Docs
 

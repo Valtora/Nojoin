@@ -10,10 +10,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from backend.api.error_handling import sanitized_http_exception
 from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import (
     STANDARD_USER_SCOPE_REQUIREMENTS,
     STANDARD_USER_TOKEN_TYPES,
+    enforce_trusted_browser_origin,
     enforce_password_change_policy,
     get_authenticated_user_from_token,
     get_db,
@@ -36,6 +38,21 @@ FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL = "First-run setup access denied."
 PUBLIC_LLM_VALIDATION_ERROR_DETAIL = "Unable to validate the AI provider configuration."
 PUBLIC_HF_VALIDATION_ERROR_DETAIL = "Unable to validate the Hugging Face token."
 PUBLIC_MODEL_LIST_ERROR_DETAIL = "Unable to list AI provider models."
+
+
+def _raise_setup_validation_error(
+    *,
+    client_detail: str,
+    log_message: str,
+    exc: Exception,
+) -> None:
+    raise sanitized_http_exception(
+        logger=logger,
+        status_code=400,
+        client_message=client_detail,
+        log_message=log_message,
+        exc=exc,
+    )
 
 def validate_api_url_for_ssrf(url: Optional[str]):
     if not url:
@@ -172,6 +189,8 @@ async def check_setup_permission(db: AsyncSession, request: Request):
             token = auth_token.strip()
     if not token:
         token = request.cookies.get("access_token")
+        if token:
+            enforce_trusted_browser_origin(request)
 
     if not token:
         raise HTTPException(status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL)
@@ -270,12 +289,18 @@ async def validate_llm(
             logger.warning("Public setup LLM validation failed for provider %s.", request.provider)
             raise HTTPException(status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL)
         raise
-    except Exception as e:
-        if is_public_request:
-            logger.warning("Public setup LLM validation failed for provider %s.", request.provider)
-            raise HTTPException(status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL)
-        logger.error(f"Validation failed for {request.provider}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        _raise_setup_validation_error(
+            client_detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
+            log_message=(
+                "Public setup LLM validation failed for provider "
+                f"'{request.provider}'."
+                if is_public_request
+                else "Authenticated setup LLM validation failed for provider "
+                f"'{request.provider}'."
+            ),
+            exc=exc,
+        )
 
 @router.post("/validate-hf")
 async def validate_hf(
@@ -310,12 +335,16 @@ async def validate_hf(
             logger.warning("Public setup Hugging Face validation failed.")
             raise HTTPException(status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL)
         raise
-    except Exception as e:
-        if is_public_request:
-            logger.warning("Public setup Hugging Face validation failed.")
-            raise HTTPException(status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL)
-        logger.error(f"HF Validation failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid Hugging Face token: {str(e)}")
+    except Exception as exc:
+        _raise_setup_validation_error(
+            client_detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL,
+            log_message=(
+                "Public setup Hugging Face validation failed."
+                if is_public_request
+                else "Authenticated setup Hugging Face validation failed."
+            ),
+            exc=exc,
+        )
 
 @router.post("/list-models")
 async def list_models(
@@ -353,9 +382,15 @@ async def list_models(
             logger.warning("Public setup model listing failed for provider %s.", request.provider)
             raise HTTPException(status_code=400, detail=PUBLIC_MODEL_LIST_ERROR_DETAIL)
         raise
-    except Exception as e:
-        if is_public_request:
-            logger.warning("Public setup model listing failed for provider %s.", request.provider)
-            raise HTTPException(status_code=400, detail=PUBLIC_MODEL_LIST_ERROR_DETAIL)
-        logger.error(f"Failed to list models for {request.provider}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        _raise_setup_validation_error(
+            client_detail=PUBLIC_MODEL_LIST_ERROR_DETAIL,
+            log_message=(
+                "Public setup model listing failed for provider "
+                f"'{request.provider}'."
+                if is_public_request
+                else "Authenticated setup model listing failed for provider "
+                f"'{request.provider}'."
+            ),
+            exc=exc,
+        )

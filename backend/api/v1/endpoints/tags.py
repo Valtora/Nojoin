@@ -10,11 +10,22 @@ from backend.api.deps import get_db, get_current_user
 from backend.models.tag import Tag, TagCreate, TagRead, TagUpdate, RecordingTag
 from backend.models.recording import Recording
 from backend.models.user import User
+from backend.services.recording_identity_service import (
+    get_recording_by_public_id,
+    get_recordings_by_public_ids,
+)
 
 router = APIRouter()
 
+
+async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_id: int) -> Recording:
+    recording = await get_recording_by_public_id(db, recording_public_id, user_id=user_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return recording
+
 class BatchTagOperation(BaseModel):
-    recording_ids: List[int]
+    recording_ids: List[str]
     tag_name: str
 
 @router.get("", response_model=List[TagRead])
@@ -105,7 +116,7 @@ async def update_tag(
 
 @router.post("/recordings/{recording_id}", response_model=TagRead)
 async def add_tag_to_recording(
-    recording_id: int,
+    recording_id: str,
     tag_in: TagCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -114,9 +125,7 @@ async def add_tag_to_recording(
     Add a tag to a recording. Creates the tag if it doesn't exist.
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 2. Find or Create Tag
     statement = select(Tag).where(Tag.name == tag_in.name, Tag.user_id == current_user.id)
@@ -132,14 +141,14 @@ async def add_tag_to_recording(
     # 3. Check if association exists
     # Use first() instead of scalar_one_or_none() to be robust against existing duplicates
     stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording_id,
+        RecordingTag.recording_id == recording.id,
         RecordingTag.tag_id == tag.id
     )
     result = await db.execute(stmt)
     existing_link = result.scalars().first()
     
     if not existing_link:
-        link = RecordingTag(recording_id=recording_id, tag_id=tag.id)
+        link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
         db.add(link)
         try:
             await db.commit()
@@ -153,7 +162,7 @@ async def add_tag_to_recording(
 
 @router.delete("/recordings/{recording_id}/{tag_name}")
 async def remove_tag_from_recording(
-    recording_id: int,
+    recording_id: str,
     tag_name: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -162,9 +171,7 @@ async def remove_tag_from_recording(
     Remove a tag from a recording.
     """
     # Verify recording ownership
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 1. Find Tag
     statement = select(Tag).where(Tag.name == tag_name, Tag.user_id == current_user.id)
@@ -176,7 +183,7 @@ async def remove_tag_from_recording(
         
     # 2. Find Association
     stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording_id,
+        RecordingTag.recording_id == recording.id,
         RecordingTag.tag_id == tag.id
     )
     result = await db.execute(stmt)
@@ -234,22 +241,27 @@ async def batch_add_tag(
     # This is a bit complex in SQLModel/SQLAlchemy async, so we'll iterate for simplicity 
     # given the likely scale (batch size usually < 100)
     
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
+    recordings_by_public_id = {recording.public_id: recording for recording in recordings}
+
     count = 0
-    for recording_id in batch.recording_ids:
-        # Check if recording exists and belongs to user
-        rec_stmt = select(Recording).where(Recording.id == recording_id, Recording.user_id == current_user.id)
-        rec_result = await db.execute(rec_stmt)
-        if not rec_result.scalar_one_or_none():
+    for recording_public_id in batch.recording_ids:
+        recording = recordings_by_public_id.get(recording_public_id)
+        if recording is None:
             continue
 
         # Check if link exists
         link_stmt = select(RecordingTag).where(
-            RecordingTag.recording_id == recording_id,
+            RecordingTag.recording_id == recording.id,
             RecordingTag.tag_id == tag.id
         )
         link_result = await db.execute(link_stmt)
         if not link_result.scalars().first():
-            link = RecordingTag(recording_id=recording_id, tag_id=tag.id)
+            link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
             db.add(link)
             count += 1
             
@@ -277,13 +289,20 @@ async def batch_remove_tag(
     
     if not tag:
         return {"ok": True, "count": 0} # Tag doesn't exist, so nothing to remove
+
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
+    recording_db_ids = [recording.id for recording in recordings]
+    if not recording_db_ids:
+        return {"ok": True, "count": 0}
         
     # 2. Remove links
-    # Ensure we only remove from recordings owned by the user
-    stmt = select(RecordingTag).join(Recording).where(
-        RecordingTag.recording_id.in_(batch.recording_ids),
+    stmt = select(RecordingTag).where(
+        RecordingTag.recording_id.in_(recording_db_ids),
         RecordingTag.tag_id == tag.id,
-        Recording.user_id == current_user.id
     )
     result = await db.execute(stmt)
     links = result.scalars().all()

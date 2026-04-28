@@ -667,6 +667,14 @@ FunctionEnd
 Section Uninstall
   !insertmacro CheckIfAppIsRunning
 
+  ; Best-effort cleanup of local HTTPS trust before deleting app data.
+  ${If} $DeleteAppDataCheckboxState == 1
+    IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 +4
+      ClearErrors
+      ExecWait '$"$INSTDIR\${MAINBINARYNAME}.exe$" --cleanup-local-https-on-uninstall' $0
+      ; Ignore the exit code so uninstall still succeeds if trust cleanup fails.
+  ${EndIf}
+
   ; Delete the app directory and its content from disk
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"

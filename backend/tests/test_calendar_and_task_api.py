@@ -17,6 +17,7 @@ from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.core.encryption import encrypt_secret
 from backend.models.user import User
+from backend.utils.config_manager import config_manager
 
 TEST_TIMESTAMP = datetime(2026, 4, 12, 10, 0, 0)
 SCHEMA_STATEMENTS = [
@@ -374,7 +375,6 @@ async def seed_calendar_source(
 async def api_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     for env_key in (
         "WEB_APP_URL",
-        "ALLOWED_ORIGINS",
         "GOOGLE_OAUTH_CLIENT_ID",
         "GOOGLE_OAUTH_CLIENT_SECRET",
         "MICROSOFT_OAUTH_CLIENT_ID",
@@ -504,14 +504,16 @@ async def test_admin_provider_status_uses_explicit_web_app_url_for_redirect_uri(
 
 
 @pytest.mark.anyio
-async def test_admin_provider_status_falls_back_to_allowed_origins_for_redirect_uri(
+async def test_admin_provider_status_uses_configured_web_app_url_when_env_is_unset(
     client: AsyncClient,
     override_current_admin_user,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(
-        "ALLOWED_ORIGINS",
-        "https://nojoin.example.com,https://localhost:14443",
+    monkeypatch.delenv("WEB_APP_URL", raising=False)
+    monkeypatch.setitem(
+        config_manager.config,
+        "web_app_url",
+        "https://config.nojoin.example.com",
     )
     override_current_admin_user(1)
 
@@ -523,7 +525,7 @@ async def test_admin_provider_status_falls_back_to_allowed_origins_for_redirect_
     )
     assert (
         microsoft_provider["redirect_uri"]
-        == "https://nojoin.example.com/api/v1/calendar/oauth/microsoft/callback"
+        == "https://config.nojoin.example.com/api/v1/calendar/oauth/microsoft/callback"
     )
 
 

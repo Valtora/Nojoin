@@ -34,10 +34,24 @@ class ClientStatus(str, Enum):
 def generate_meeting_uid() -> str:
     return str(uuid4())
 
+
+def generate_public_id() -> str:
+    return str(uuid4())
+
 class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
+    public_id: str = Field(
+        default_factory=generate_public_id,
+        sa_column=Column(
+            String(36),
+            unique=True,
+            index=True,
+            nullable=False,
+            default=generate_public_id,
+        ),
+    )
     meeting_uid: str = Field(
         default_factory=generate_meeting_uid,
         sa_column=Column(
@@ -127,6 +141,11 @@ class RecordingUpdate(SQLModel):
 
 
 class RecordingInitResponse(SQLModel):
-    id: int
+    id: str
     name: str
+    upload_token: str
+
+
+class RecordingUploadTokenResponse(SQLModel):
+    recording_id: str
     upload_token: str

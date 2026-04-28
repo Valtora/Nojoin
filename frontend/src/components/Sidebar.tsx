@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Recording, RecordingStatus, Tag } from "@/types";
+import { Recording, RecordingId, RecordingStatus, Tag } from "@/types";
 
 import {
   Loader2,
@@ -104,9 +104,9 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { addNotification } = useNotificationStore();
-  const prevRecordingsRef = useRef<Map<number, RecordingStatus>>(new Map());
-  const prevNotesStatusRef = useRef<Map<number, string>>(new Map());
-  const prevTranscriptStatusRef = useRef<Map<number, string>>(new Map());
+  const prevRecordingsRef = useRef<Map<RecordingId, RecordingStatus>>(new Map());
+  const prevNotesStatusRef = useRef<Map<RecordingId, string>>(new Map());
+  const prevTranscriptStatusRef = useRef<Map<RecordingId, string>>(new Map());
   const {
     currentView,
     selectedTagIds,
@@ -131,7 +131,7 @@ export default function Sidebar() {
     y: number;
     recording: Recording;
   } | null>(null);
-  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renamingId, setRenamingId] = useState<RecordingId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoModalRecording, setInfoModalRecording] =
@@ -336,7 +336,12 @@ export default function Sidebar() {
   }, [currentView, clearSelection]);
 
   useEffect(() => {
-    if (!mounted || pathname !== "/recordings" || filteredRecordings.length === 0) {
+    if (
+      !mounted ||
+      currentView !== "recordings" ||
+      pathname !== "/recordings" ||
+      filteredRecordings.length === 0
+    ) {
       return;
     }
 
@@ -348,7 +353,7 @@ export default function Sidebar() {
     );
 
     router.replace(`/recordings/${latestRecording.id}`);
-  }, [filteredRecordings, mounted, pathname, router]);
+  }, [currentView, filteredRecordings, mounted, pathname, router]);
 
   // Handle resizing
   useEffect(() => {
@@ -389,7 +394,7 @@ export default function Sidebar() {
     setContextMenu({ x: e.clientX, y: e.clientY, recording });
   };
 
-  const handleArchive = async (id: number) => {
+  const handleArchive = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await archiveRecording(id);
@@ -399,7 +404,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await restoreRecording(id);
@@ -409,7 +414,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleSoftDelete = async (id: number) => {
+  const handleSoftDelete = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await softDeleteRecording(id);
@@ -422,7 +427,7 @@ export default function Sidebar() {
     }
   };
 
-  const handlePermanentDelete = async (id: number) => {
+  const handlePermanentDelete = async (id: RecordingId) => {
     setConfirmModal({
       isOpen: true,
       title: "Permanently Delete Recording",
@@ -444,13 +449,13 @@ export default function Sidebar() {
     });
   };
 
-  const handleRenameStart = (id: number, currentName: string) => {
+  const handleRenameStart = (id: RecordingId, currentName: string) => {
     setRenamingId(id);
     setRenameValue(currentName);
     setContextMenu(null);
   };
 
-  const handleRenameSubmit = async (id: number) => {
+  const handleRenameSubmit = async (id: RecordingId) => {
     if (!renameValue.trim()) return;
 
     setRecordings((prev) =>
@@ -473,7 +478,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleRetry = async (id: number) => {
+  const handleRetry = async (id: RecordingId) => {
     try {
       await retryProcessing(id);
       addNotification({
@@ -500,7 +505,7 @@ export default function Sidebar() {
     });
   };
 
-  const handleInferSpeakers = async (id: number) => {
+  const handleInferSpeakers = async (id: RecordingId) => {
     try {
       await inferSpeakers(id);
       addNotification({
@@ -519,7 +524,7 @@ export default function Sidebar() {
     }
   };
 
-  const handleCancel = async (id: number) => {
+  const handleCancel = async (id: RecordingId) => {
     try {
       await cancelProcessing(id);
       addNotification({
@@ -694,7 +699,7 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 flex flex-col h-100dvh relative transition-opacity ${
+      className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-100dvh relative transition-opacity ${
         isRecordingView ? "hidden md:flex" : "w-full md:flex"
       }`}
       style={window.innerWidth >= 768 ? { width: `${recordingsSidebarWidth}px` } : {}}
@@ -707,7 +712,7 @@ export default function Sidebar() {
       )}
 
       {/* Header */}
-      <div className="p-4 pl-14 md:pl-4 border-b border-gray-300 dark:border-gray-800">
+      <div className="p-4 pl-14 md:pl-4 border-b border-orange-100/80 dark:border-gray-800/80">
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs text-gray-500">

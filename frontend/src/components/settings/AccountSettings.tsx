@@ -88,11 +88,23 @@ export default function AccountSettings({
           <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           Profile Information
         </h3>
-        <form onSubmit={handleProfileUpdate} className="space-y-4 max-w-md">
+        <form
+          id="account-profile-form"
+          name="account-profile-form"
+          onSubmit={handleProfileUpdate}
+          className="space-y-4 max-w-md"
+          autoComplete="on"
+        >
           <div>
-            <label className="block text-sm font-medium contrast-muted mb-1">Username</label>
+            <label htmlFor="account-username" className="block text-sm font-medium contrast-muted mb-1">Username</label>
             <input
+              id="account-username"
+              name="account-username"
               type="text"
+              autoComplete="section-account-profile username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
@@ -121,11 +133,20 @@ export default function AccountSettings({
             You must choose a new password before continuing to the rest of the application.
           </p>
         )}
-        <form onSubmit={handlePasswordUpdate} className="space-y-4 max-w-md">
+        <form
+          id="account-password-form"
+          name="account-password-form"
+          onSubmit={handlePasswordUpdate}
+          className="space-y-4 max-w-md"
+          autoComplete="on"
+        >
           <div>
-            <label className="block text-sm font-medium contrast-muted mb-1">Current Password</label>
+            <label htmlFor="account-current-password" className="block text-sm font-medium contrast-muted mb-1">Current Password</label>
             <input
+              id="account-current-password"
+              name="account-current-password"
               type="password"
+              autoComplete="section-account-password current-password"
               value={passwordData.current_password}
               onChange={(e) => setPasswordData({...passwordData, current_password: e.target.value})}
               className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
@@ -133,9 +154,12 @@ export default function AccountSettings({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium contrast-muted mb-1">New Password</label>
+            <label htmlFor="account-new-password" className="block text-sm font-medium contrast-muted mb-1">New Password</label>
             <input
+              id="account-new-password"
+              name="account-new-password"
               type="password"
+              autoComplete="section-account-password new-password"
               value={passwordData.new_password}
               onChange={(e) => setPasswordData({...passwordData, new_password: e.target.value})}
               className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
@@ -144,9 +168,12 @@ export default function AccountSettings({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium contrast-muted mb-1">Confirm New Password</label>
+            <label htmlFor="account-confirm-password" className="block text-sm font-medium contrast-muted mb-1">Confirm New Password</label>
             <input
+              id="account-confirm-password"
+              name="account-confirm-password"
               type="password"
+              autoComplete="section-account-password new-password"
               value={passwordData.confirm_password}
               onChange={(e) => setPasswordData({...passwordData, confirm_password: e.target.value})}
               className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"

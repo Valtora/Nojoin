@@ -7,6 +7,7 @@ import {
   CalendarProviderConfigUpdate,
   CalendarProviderStatus,
   Recording,
+  RecordingId,
   GlobalSpeaker,
   Settings,
   Tag,
@@ -33,6 +34,43 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   : "https://localhost:14443/api/v1";
 const FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap";
 const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings?tab=account&forcePasswordChange=1";
+
+type ValidationErrorItem = {
+  loc?: unknown;
+  msg?: unknown;
+};
+
+const formatValidationDetail = (detail: unknown): string | unknown => {
+  if (!Array.isArray(detail)) {
+    return detail;
+  }
+
+  const messages = detail
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const { loc, msg } = item as ValidationErrorItem;
+      if (typeof msg !== "string") {
+        return null;
+      }
+
+      if (!Array.isArray(loc) || typeof loc[loc.length - 1] !== "string") {
+        return msg;
+      }
+
+      const fieldName = String(loc[loc.length - 1]).replace(/_/g, " ");
+      return `${fieldName}: ${msg}`;
+    })
+    .filter((message): message is string => Boolean(message));
+
+  if (messages.length === 0) {
+    return detail;
+  }
+
+  return messages.join(" ");
+};
 
 const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
   if (!bootstrapPassword) {
@@ -62,6 +100,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.data) {
+      error.response.data.detail = formatValidationDetail(
+        error.response.data.detail,
+      );
+    }
+
     if (error.response && error.response.status === 401) {
       if (
         typeof window !== "undefined" &&
@@ -132,11 +176,6 @@ export const getCurrentUser = async (): Promise<User> => {
   return response.data;
 };
 
-export const getCompanionToken = async (): Promise<string> => {
-  const response = await api.get<{ token: string }>("/login/companion-token");
-  return response.data.token;
-};
-
 export interface RecordingFilters {
   q?: string;
   start_date?: string;
@@ -178,7 +217,7 @@ export const getRecordings = async (
   return response.data;
 };
 
-export const getRecording = async (id: number): Promise<Recording> => {
+export const getRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.get<Recording>(`/recordings/${id}`);
   return response.data;
 };
@@ -212,29 +251,29 @@ export const deleteUserTask = async (taskId: number): Promise<void> => {
   await api.delete(`/tasks/${taskId}`);
 };
 
-export const deleteRecording = async (id: number): Promise<void> => {
+export const deleteRecording = async (id: RecordingId): Promise<void> => {
   await api.delete(`/recordings/${id}`);
 };
 
 export const renameRecording = async (
-  id: number,
+  id: RecordingId,
   name: string,
 ): Promise<Recording> => {
   const response = await api.patch<Recording>(`/recordings/${id}`, { name });
   return response.data;
 };
 
-export const retryProcessing = async (id: number): Promise<Recording> => {
+export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/retry`);
   return response.data;
 };
 
-export const cancelProcessing = async (id: number): Promise<Recording> => {
+export const cancelProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/cancel`);
   return response.data;
 };
 
-export const getRecordingStreamUrl = (id: number): string => {
+export const getRecordingStreamUrl = (id: RecordingId): string => {
   return `${API_BASE_URL}/recordings/${id}/stream`;
 };
 
@@ -297,7 +336,7 @@ export const deleteGlobalSpeaker = async (id: number): Promise<void> => {
 };
 
 export const updateSpeaker = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
   newName: string,
 ): Promise<void> => {
@@ -308,7 +347,7 @@ export const updateSpeaker = async (
 };
 
 export const updateSpeakerColor = async (
-  recordingId: number,
+  recordingId: RecordingId,
   label: string,
   color: string,
 ): Promise<void> => {
@@ -321,7 +360,7 @@ export const updateSpeakerColor = async (
 };
 
 export const updateTranscriptSegmentSpeaker = async (
-  recordingId: number,
+  recordingId: RecordingId,
   segmentIndex: number,
   assignment: TranscriptSpeakerAssignment,
 ): Promise<void> => {
@@ -356,14 +395,14 @@ export const updateTag = async (
 };
 
 export const addTagToRecording = async (
-  recordingId: number,
+  recordingId: RecordingId,
   tagName: string,
 ): Promise<void> => {
   await api.post(`/tags/recordings/${recordingId}`, { name: tagName });
 };
 
 export const removeTagFromRecording = async (
-  recordingId: number,
+  recordingId: RecordingId,
   tagName: string,
 ): Promise<void> => {
   await api.delete(`/tags/recordings/${recordingId}/${tagName}`);
@@ -405,22 +444,22 @@ export const deletePeopleTag = async (id: number): Promise<void> => {
 };
 
 // Archive & Delete Management
-export const archiveRecording = async (id: number): Promise<Recording> => {
+export const archiveRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/archive`);
   return response.data;
 };
 
-export const restoreRecording = async (id: number): Promise<Recording> => {
+export const restoreRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/restore`);
   return response.data;
 };
 
-export const softDeleteRecording = async (id: number): Promise<Recording> => {
+export const softDeleteRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/soft-delete`);
   return response.data;
 };
 
-export const permanentlyDeleteRecording = async (id: number): Promise<void> => {
+export const permanentlyDeleteRecording = async (id: RecordingId): Promise<void> => {
   await api.delete(`/recordings/${id}/permanent`);
 };
 
@@ -563,7 +602,7 @@ export const removeSpellcheckIgnoredWord = async (word: string): Promise<void> =
 
 // Transcript Text
 export const updateTranscriptSegmentText = async (
-  recordingId: number,
+  recordingId: RecordingId,
   segmentIndex: number,
   text: string,
 ): Promise<void> => {
@@ -573,7 +612,7 @@ export const updateTranscriptSegmentText = async (
 };
 
 export const findAndReplace = async (
-  recordingId: number,
+  recordingId: RecordingId,
   find: string,
   replace: string,
   options: { caseSensitive?: boolean; useRegex?: boolean } = {},
@@ -590,7 +629,7 @@ export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 export type ExportFormat = "txt" | "pdf" | "docx";
 
 export const exportAudio = async (
-  recordingId: number,
+  recordingId: RecordingId,
   recordingName: string,
 ): Promise<void> => {
   try {
@@ -618,7 +657,7 @@ export const exportAudio = async (
 };
 
 export const exportContent = async (
-  recordingId: number,
+  recordingId: RecordingId,
   contentType: ExportContentType = "transcript",
   format: ExportFormat = "txt",
 ): Promise<void> => {
@@ -667,13 +706,13 @@ export const exportContent = async (
 };
 
 // Keep for backward compatibility
-export const exportTranscript = async (recordingId: number): Promise<void> => {
+export const exportTranscript = async (recordingId: RecordingId): Promise<void> => {
   return exportContent(recordingId, "transcript");
 };
 
 // Meeting Notes API
 export const getNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<{ notes: string | null }> => {
   const response = await api.get<{ notes: string | null }>(
     `/transcripts/${recordingId}/notes`,
@@ -682,7 +721,7 @@ export const getNotes = async (
 };
 
 export const updateNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
   notes: string,
 ): Promise<{ notes: string; status: string }> => {
   const response = await api.put<{ notes: string; status: string }>(
@@ -693,7 +732,7 @@ export const updateNotes = async (
 };
 
 export const getUserNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<{ user_notes: string | null }> => {
   const response = await api.get<{ user_notes: string | null }>(
     `/transcripts/${recordingId}/user-notes`,
@@ -702,7 +741,7 @@ export const getUserNotes = async (
 };
 
 export const updateUserNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
   userNotes: string,
 ): Promise<{ user_notes: string | null; status: string }> => {
   const response = await api.put<{ user_notes: string | null; status: string }>(
@@ -713,7 +752,7 @@ export const updateUserNotes = async (
 };
 
 export const generateNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<{ notes: string; status: string }> => {
   const response = await api.post<{ notes: string; status: string }>(
     `/transcripts/${recordingId}/notes/generate`,
@@ -722,7 +761,7 @@ export const generateNotes = async (
 };
 
 export const findAndReplaceNotes = async (
-  recordingId: number,
+  recordingId: RecordingId,
   find: string,
   replace: string,
   options: { caseSensitive?: boolean; useRegex?: boolean } = {},
@@ -737,7 +776,7 @@ export const findAndReplaceNotes = async (
 };
 
 export const mergeRecordingSpeakers = async (
-  recordingId: number,
+  recordingId: RecordingId,
   targetSpeakerLabel: string,
   sourceSpeakerLabel: string,
 ): Promise<Recording> => {
@@ -752,7 +791,7 @@ export const mergeRecordingSpeakers = async (
 };
 
 export const deleteRecordingSpeaker = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
 ): Promise<void> => {
   await api.delete(
@@ -761,7 +800,7 @@ export const deleteRecordingSpeaker = async (
 };
 
 export const promoteToGlobalSpeaker = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
 ): Promise<RecordingSpeaker> => {
   const response = await api.post<RecordingSpeaker>(
@@ -771,7 +810,7 @@ export const promoteToGlobalSpeaker = async (
 };
 
 export const updateTranscriptSegments = async (
-  recordingId: number,
+  recordingId: RecordingId,
   segments: TranscriptSegment[],
 ): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments`, { segments });
@@ -861,7 +900,7 @@ export const getSupportedAudioFormats = (): string[] => {
 
 // Voiceprint Management
 export const extractVoiceprint = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
 ): Promise<VoiceprintExtractResult> => {
   const response = await api.post<VoiceprintExtractResult>(
@@ -877,7 +916,7 @@ export type VoiceprintAction =
   | "force_link";
 
 export const applyVoiceprintAction = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
   action: VoiceprintAction,
   options?: { globalSpeakerId?: number; newSpeakerName?: string },
@@ -894,7 +933,7 @@ export const applyVoiceprintAction = async (
 };
 
 export const deleteVoiceprint = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
 ): Promise<void> => {
   await api.delete(
@@ -903,7 +942,7 @@ export const deleteVoiceprint = async (
 };
 
 export const extractAllVoiceprints = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<BatchVoiceprintResponse> => {
   const response = await api.post<BatchVoiceprintResponse>(
     `/speakers/recordings/${recordingId}/voiceprints/extract-all`,
@@ -912,35 +951,35 @@ export const extractAllVoiceprints = async (
 };
 
 // Batch Operations
-export const batchArchiveRecordings = async (ids: number[]): Promise<void> => {
+export const batchArchiveRecordings = async (ids: RecordingId[]): Promise<void> => {
   await api.post("/recordings/batch/archive", { recording_ids: ids });
 };
 
-export const batchRestoreRecordings = async (ids: number[]): Promise<void> => {
+export const batchRestoreRecordings = async (ids: RecordingId[]): Promise<void> => {
   await api.post("/recordings/batch/restore", { recording_ids: ids });
 };
 
 export const batchSoftDeleteRecordings = async (
-  ids: number[],
+  ids: RecordingId[],
 ): Promise<void> => {
   await api.post("/recordings/batch/soft-delete", { recording_ids: ids });
 };
 
 export const batchPermanentlyDeleteRecordings = async (
-  ids: number[],
+  ids: RecordingId[],
 ): Promise<void> => {
   await api.post("/recordings/batch/permanent", { recording_ids: ids });
 };
 
 export const batchAddTagToRecordings = async (
-  ids: number[],
+  ids: RecordingId[],
   tagName: string,
 ): Promise<void> => {
   await api.post("/tags/batch/add", { recording_ids: ids, tag_name: tagName });
 };
 
 export const batchRemoveTagFromRecordings = async (
-  ids: number[],
+  ids: RecordingId[],
   tagName: string,
 ): Promise<void> => {
   await api.post("/tags/batch/remove", {
@@ -993,14 +1032,14 @@ export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null 
 };
 
 export const getRecordingInfo = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<{ original: any; proxy: any }> => {
   const response = await api.get(`/recordings/${recordingId}/info`);
   return response.data;
 };
 
-export const getDemoRecording = async (): Promise<{ id: number | null }> => {
-  const response = await api.get<{ id: number | null }>(
+export const getDemoRecording = async (): Promise<{ id: RecordingId | null }> => {
+  const response = await api.get<{ id: RecordingId | null }>(
     "/system/demo-recording",
   );
   return response.data;
@@ -1226,7 +1265,7 @@ export const getDownloadProgress = async (): Promise<DownloadProgress> => {
 
 export interface Document {
   id: number;
-  recording_id: number;
+  recording_id: RecordingId;
   title: string;
   file_path: string;
   file_type: string;
@@ -1236,7 +1275,7 @@ export interface Document {
 }
 
 export const getDocuments = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<Document[]> => {
   const response = await api.get<Document[]>(
     `/recordings/${recordingId}/documents`,
@@ -1245,7 +1284,7 @@ export const getDocuments = async (
 };
 
 export const uploadDocument = async (
-  recordingId: number,
+  recordingId: RecordingId,
   file: File,
 ): Promise<Document> => {
   const formData = new FormData();
@@ -1268,7 +1307,7 @@ export const deleteDocument = async (documentId: number): Promise<void> => {
 
 // Chat API
 export const getChatHistory = async (
-  recordingId: number,
+  recordingId: RecordingId,
 ): Promise<ChatMessage[]> => {
   const response = await api.get<ChatMessage[]>(
     `/transcripts/${recordingId}/chat`,
@@ -1276,12 +1315,12 @@ export const getChatHistory = async (
   return response.data;
 };
 
-export const clearChatHistory = async (recordingId: number): Promise<void> => {
+export const clearChatHistory = async (recordingId: RecordingId): Promise<void> => {
   await api.delete(`/transcripts/${recordingId}/chat`);
 };
 
 export const streamChatMessage = (
-  recordingId: number,
+  recordingId: RecordingId,
   message: string,
   onToken: (token: string) => void,
   onComplete: () => void,
@@ -1365,7 +1404,7 @@ export const streamChatMessage = (
 };
 
 // Infer Speakers
-export const inferSpeakers = async (recordingId: number): Promise<void> => {
+export const inferSpeakers = async (recordingId: RecordingId): Promise<void> => {
   await api.post(`/recordings/${recordingId}/infer-speakers`);
 };
 
@@ -1684,7 +1723,7 @@ export const splitSpeaker = async (
 };
 
 export const splitLocalSpeaker = async (
-  recordingId: number,
+  recordingId: RecordingId,
   diarizationLabel: string,
   newSpeakerName: string,
   segments: SegmentSelection[],

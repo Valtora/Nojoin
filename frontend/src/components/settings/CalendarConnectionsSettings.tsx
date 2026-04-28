@@ -14,7 +14,7 @@ import {
 import {
   disconnectCalendarConnection,
   getCalendarOverview,
-  getCalendarAuthorisationStartUrl,
+  startCalendarAuthorisation,
   syncCalendarConnection,
   updateCalendarColor,
   updateCalendarSelection,
@@ -162,7 +162,18 @@ export default function CalendarConnectionsSettings() {
 
   const handleConnect = async (provider: CalendarProvider) => {
     setBusyKey(`connect:${provider}`);
-    window.location.assign(getCalendarAuthorisationStartUrl(provider));
+    try {
+      const { authorisation_url } = await startCalendarAuthorisation(provider);
+      window.location.assign(authorisation_url);
+    } catch (error: any) {
+      addNotification({
+        type: "error",
+        message:
+          error.response?.data?.detail ||
+          `Failed to start ${CONNECT_LABELS[provider] || "calendar"} sign-in`,
+      });
+      setBusyKey(null);
+    }
   };
 
   const handleToggleCalendar = async (

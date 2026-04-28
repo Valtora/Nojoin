@@ -12,7 +12,7 @@ import {
   UserPlus,
   Volume2,
 } from "lucide-react";
-import { GlobalSpeaker, SpeakerSegment } from "@/types";
+import { GlobalSpeaker, RecordingId, SpeakerSegment } from "@/types";
 import {
   getSpeakerSegments,
   splitSpeaker,
@@ -25,7 +25,7 @@ interface SplitPersonModalProps {
   onClose: () => void;
   speaker: GlobalSpeaker | null;
   localSpeaker?: {
-    recordingId: number;
+    recordingId: RecordingId;
     label: string;
     name: string;
   } | null;

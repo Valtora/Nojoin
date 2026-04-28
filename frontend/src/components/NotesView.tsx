@@ -27,9 +27,10 @@ import Fuse from "fuse.js";
 import { spellCheckService } from "@/lib/spellCheckService";
 import { getSpellCheckErrorAtPos } from "@/lib/SpellCheckExtension";
 import { getSettings } from "@/lib/api";
+import type { RecordingId } from "@/types";
 
 interface NotesViewProps {
-  recordingId: number;
+  recordingId: RecordingId;
   notes: string | null;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: () => Promise<void>;

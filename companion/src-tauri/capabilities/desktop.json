@@ -13,6 +13,7 @@
   "permissions": [
     "shell:default",
     "notification:default",
+    "dialog:allow-message",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled"

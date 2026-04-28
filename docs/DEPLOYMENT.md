@@ -36,7 +36,7 @@ The repository does not ship a separate Docker Compose development override.
 
 3. Set `FIRST_RUN_PASSWORD` in `.env`.
 4. Set `DATA_ENCRYPTION_KEY` in `.env` before first production use.
-5. Adjust `WEB_APP_URL` and `ALLOWED_ORIGINS` if the deployment is not local-only.
+5. Adjust `WEB_APP_URL` if the deployment is not local-only.
 6. Review `docker-compose.yml` and apply any private or machine-specific changes.
 7. Start the stack:
 
@@ -105,8 +105,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 
 ### Change for Remote or Reverse-Proxy Deployments
 
-- `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, and other public URLs.
-- `ALLOWED_ORIGINS`: Comma-separated list of trusted browser origins allowed to call the API.
+- `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, other public URLs, and the backend CORS allowlist.
 
 ### Common Optional Values
 
@@ -154,8 +153,8 @@ On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_P
 If you expose Nojoin beyond localhost:
 
 - Set `WEB_APP_URL` to the exact browser origin users will visit.
-- Include that same origin in `ALLOWED_ORIGINS`.
 - Keep the browser origin, reverse proxy origin, and OAuth callback origin aligned.
+- The backend automatically includes `WEB_APP_URL` in its browser CORS allowlist.
 
 For publicly reachable deployments, use a VPN or a secure reverse proxy rather than exposing the service casually.
 For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment secret and avoid logging request headers that could capture it during the setup flow.
@@ -167,7 +166,8 @@ When fronting Nojoin with Nginx, Caddy, Traefik, or another reverse proxy:
 1. Proxy to the HTTPS endpoint, not the plain HTTP port.
 2. By default that means the host-facing port `14443`.
 3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.
-4. Keep `WEB_APP_URL` and `ALLOWED_ORIGINS` aligned with the public origin.
+4. Keep `WEB_APP_URL` aligned with the public origin.
+5. If you replace or rotate the public TLS certificate presented to the Companion, users must re-pair the Companion so it can pin the new certificate.
 
 ### Caddy Example
 
@@ -191,7 +191,14 @@ location / {
 }
 ```
 
-## Migrations
+## Upgrading and Migration
+
+- Keep server and Companion app versions aligned.
+- When performing major upgrades, check release notes for breaking changes.
+- **Companion Security Upgrade**: Upgrading to a version that implements the strict one-backend manual pairing model will automatically clear out any legacy connection state in the Companion app. You will need to perform a clean first-pair workflow (Settings > Start Pairing) to continue using the Companion.
+- **Companion TOFU TLS Pinning**: The Companion now pins the backend certificate it first sees during pairing. Disconnecting the current backend from Companion Settings clears that saved trust and leaves the app ready for a clean new pairing.
+
+## Database Migrations
 
 Useful Alembic commands:
 
@@ -220,7 +227,7 @@ docker compose up -d
 
 Use this only if your local `docker-compose.yml` includes custom build directives.
 
-Nojoin also exposes installed and latest published version information in **Settings > Updates**.
+Nojoin also exposes installed and latest published version information in **Settings > Updates**. The installed version is read from build metadata embedded into the API image, with local source builds falling back to `docs/VERSION`.
 
 ## Release Model
 
@@ -228,6 +235,7 @@ Nojoin uses a unified lock-step release model:
 
 - A `vX.Y.Z` tag drives the published release.
 - Docker images are published to GHCR.
+- The API image embeds the resolved server version during the build, so the installed version shown in Settings does not depend on Docker daemon inspection at runtime.
 - Windows Companion binaries are published alongside the server release.
 - The application surfaces release metadata primarily from GitHub Releases.
 

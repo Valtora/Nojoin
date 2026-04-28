@@ -3,6 +3,7 @@
 This guide is the shortest path from a fresh checkout to a working Nojoin installation and your first processed meeting.
 
 For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYMENT.md) after this guide.
+For detailed Companion install, pairing, repair, re-pair, tray, and browser guidance, continue to [COMPANION.md](COMPANION.md).
 
 ## Before You Begin
 
@@ -63,14 +64,17 @@ During setup you will usually want to provide:
 
 You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 
-## 4. Install and Connect the Companion App
+## 4. Install and Pair the Companion App
 
 1. Download the latest Windows Companion build from the GitHub Releases page.
-2. Run the installer or portable build.
-3. Open Nojoin and use the Companion connection flow.
-4. Confirm the app shows as connected before starting a live recording.
+2. Run the installer or portable build, then launch the Companion.
+3. On the first native screen, choose `Start Pairing`.
+4. In Nojoin, open `Settings -> Companion App` and enter the current 8-character code.
+5. Confirm the Companion shows `Connected` before starting a live recording.
 
-The web app can also surface Companion download links from the Updates page and when the Companion is unreachable.
+If this machine is already paired to a different backend later, choose `Generate New Pairing Code` instead. The current backend stays active until the new pairing succeeds.
+
+Chrome and Edge are the default path. If you plan to use Firefox on this device, or if you need repair, reconnect, tray guidance, or troubleshooting, use [COMPANION.md](COMPANION.md).
 
 ## 5. Make Your First Recording
 
@@ -82,6 +86,7 @@ The web app can also surface Companion download links from the Updates page and 
 
 ## 6. Recommended Next Steps
 
+- Read [COMPANION.md](COMPANION.md) for the full Companion install, repair, re-pair, tray, and Firefox guide.
 - Read [USAGE.md](USAGE.md) for the dashboard, recordings workspace, notes, search, and speaker workflows.
 - Read [CALENDAR.md](CALENDAR.md) if you want Google or Outlook calendar integration.
 - Read [ADMIN.md](ADMIN.md) if you will manage users, invitations, or system settings.

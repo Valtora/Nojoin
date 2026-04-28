@@ -4,12 +4,13 @@ import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { uploadDocument } from '@/lib/api';
+import type { RecordingId } from '@/types';
 
 interface DocumentUploadModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: () => void;
-    recordingId: number;
+    recordingId: RecordingId;
 }
 
 type UploadState = 'idle' | 'uploading' | 'success' | 'error';

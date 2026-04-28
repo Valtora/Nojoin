@@ -10,12 +10,22 @@ from backend.api.deps import get_db, get_current_user
 from backend.models.people_tag_schemas import PeopleTagRead
 from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, GlobalSpeakerUpdate, GlobalSpeakerWithCount, RecordingSpeaker, GlobalSpeakerCreate
 from backend.models.recording import Recording
+from backend.models.recording_public import (
+    RecordingPublicRead,
+    RecordingSpeakerPublicRead,
+    serialize_recording,
+    serialize_recording_speaker,
+)
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.embedding import (
     merge_embeddings, find_matching_global_speaker, cosine_similarity,
     SCAN_MATCH_THRESHOLD, MARGIN_OF_VICTORY,
     UI_SHOW_MATCH_THRESHOLD, UI_STRONG_MATCH_THRESHOLD,
+)
+from backend.services.recording_identity_service import (
+    get_recording_by_public_id,
+    get_recordings_by_public_ids,
 )
 from backend.utils.config_manager import config_manager
 from backend.celery_app import celery_app
@@ -27,6 +37,24 @@ import numpy as np
 import os
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_id: int) -> Recording:
+    recording = await get_recording_by_public_id(db, recording_public_id, user_id=user_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return recording
+
+
+def _serialize_recording_speakers(
+    speakers: list[RecordingSpeaker],
+    *,
+    recording_public_id: str,
+) -> list[RecordingSpeakerPublicRead]:
+    return [
+        serialize_recording_speaker(speaker, recording_public_id=recording_public_id)
+        for speaker in speakers
+    ]
 
 class SpeakerUpdate(BaseModel):
     diarization_label: str
@@ -48,7 +76,7 @@ class VoiceprintAction(BaseModel):
     new_speaker_name: Optional[str] = None  # Required for "create_new"
 
 class SpeakerSegment(BaseModel):
-    recording_id: int
+    recording_id: str
     recording_name: Optional[str] = None
     recording_date: Optional[str] = None
     start: float
@@ -56,7 +84,7 @@ class SpeakerSegment(BaseModel):
     text: str
 
 class SegmentSelection(BaseModel):
-    recording_id: int
+    recording_id: str
     start: float
     end: float
 
@@ -196,9 +224,9 @@ async def create_global_speaker(
         
     return speaker
 
-@router.put("/recordings/{recording_id}", response_model=List[RecordingSpeaker])
+@router.put("/recordings/{recording_id}", response_model=List[RecordingSpeakerPublicRead])
 async def update_recording_speaker(
-    recording_id: int,
+    recording_id: str,
     update: SpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -213,8 +241,8 @@ async def update_recording_speaker(
     logger.info(f"Updating speaker for recording {recording_id}: {update}")
     
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    if not recording:
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
@@ -225,7 +253,7 @@ async def update_recording_speaker(
         
     # 3. Update RecordingSpeakers
     stmt = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == update.diarization_label
     )
     result = await db.execute(stmt)
@@ -267,7 +295,7 @@ async def update_recording_speaker(
         db.add(rs)
 
     # 4. Transcript Repair: Ensure segments use diarization_label
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -293,11 +321,14 @@ async def update_recording_speaker(
     await db.commit()
     
     # Return updated list
-    return recording_speakers
+    return _serialize_recording_speakers(
+        recording_speakers,
+        recording_public_id=recording.public_id,
+    )
 
-@router.post("/recordings/{recording_id}/speakers/{diarization_label}/promote", response_model=RecordingSpeaker)
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/promote", response_model=RecordingSpeakerPublicRead)
 async def promote_speaker_to_global(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -311,12 +342,10 @@ async def promote_speaker_to_global(
     """
     # 1. Find the recording speaker
     # Ensure recording belongs to user
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(statement)
@@ -374,7 +403,10 @@ async def promote_speaker_to_global(
     await db.commit()
     await db.refresh(recording_speaker)
     
-    return recording_speaker
+    return serialize_recording_speaker(
+        recording_speaker,
+        recording_public_id=recording.public_id,
+    )
 
 async def _merge_local_speakers(
     db: AsyncSession,
@@ -652,7 +684,7 @@ async def get_speaker_segments(
                  if duration > 10.0: continue
                  
                  rec_segments.append(SpeakerSegment(
-                     recording_id=rec.id,
+                     recording_id=rec.public_id,
                      recording_name=rec.name,
                      recording_date=rec.created_at.isoformat() if rec.created_at else None,
                      start=seg["start"],
@@ -694,14 +726,22 @@ async def recalibrate_voiceprint(
     recording_segments = defaultdict(list)
     for s in segments:
         recording_segments[s.recording_id].append((s.start, s.end))
+
+    recordings = await get_recordings_by_public_ids(
+        db,
+        list(recording_segments.keys()),
+        user_id=current_user.id,
+    )
+    recordings_by_public_id = {recording.public_id: recording for recording in recordings}
         
     all_embeddings = []
     device_str = config_manager.get("processing_device", "cpu")
     
     # 3. Extract embeddings
-    for rec_id, segs in recording_segments.items():
-        rec = await db.get(Recording, rec_id)
-        if not rec or rec.user_id != current_user.id: continue
+    for recording_public_id, segs in recording_segments.items():
+        rec = recordings_by_public_id.get(recording_public_id)
+        if rec is None:
+            continue
         
         # Call Celery task synchronously
         # Try to get token from user settings, then config
@@ -710,7 +750,9 @@ async def recalibrate_voiceprint(
         
         target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
         if not target_audio:
-            logger.warning(f"Skipping recalibration segments for recording {rec_id}: no audio file available")
+            logger.warning(
+                f"Skipping recalibration segments for recording {recording_public_id}: no audio file available"
+            )
             continue
 
         task = celery_app.send_task(
@@ -722,7 +764,9 @@ async def recalibrate_voiceprint(
             if emb:
                 all_embeddings.append(emb)
         except Exception as e:
-            logger.error(f"Failed to extract embedding for recalibration (Rec {rec_id}): {e}")
+            logger.error(
+                f"Failed to extract embedding for recalibration (Rec {recording_public_id}): {e}"
+            )
             
     if not all_embeddings:
         raise HTTPException(status_code=500, detail="Failed to extract embeddings from selected segments")
@@ -806,6 +850,13 @@ async def split_speaker(
     for s in request.segments:
         recording_segments[s.recording_id].append(s)
 
+    recordings = await get_recordings_by_public_ids(
+        db,
+        list(recording_segments.keys()),
+        user_id=current_user.id,
+    )
+    recordings_by_public_id = {recording.public_id: recording for recording in recordings}
+
     # 3. Process each affected recording
     import time
     timestamp_suffix = int(time.time())
@@ -816,9 +867,11 @@ async def split_speaker(
     
     new_speaker_embeddings = []
     
-    for rec_id, segments in recording_segments.items():
-        rec = await db.get(Recording, rec_id)
-        if not rec or rec.user_id != current_user.id: continue
+    for recording_public_id, segments in recording_segments.items():
+        rec = recordings_by_public_id.get(recording_public_id)
+        if rec is None:
+            continue
+        rec_id = rec.id
         
         # Generate a unique label to separate split segments in the transcript
         split_label = f"SPLIT_{timestamp_suffix}_{new_speaker.id}"
@@ -917,9 +970,11 @@ async def split_speaker(
     
     original_speaker_embeddings = []
     
-    for rec_id in recording_segments.keys():
-        rec = await db.get(Recording, rec_id)
-        if not rec: continue
+    for recording_public_id in recording_segments.keys():
+        rec = recordings_by_public_id.get(recording_public_id)
+        if rec is None:
+            continue
+        rec_id = rec.id
         
         stmt = select(Transcript).where(Transcript.recording_id == rec_id)
         result = await db.execute(stmt)
@@ -967,9 +1022,9 @@ async def split_speaker(
     
     return new_speaker
 
-@router.post("/recordings/{recording_id}/merge", response_model=Recording)
+@router.post("/recordings/{recording_id}/merge", response_model=RecordingPublicRead)
 async def merge_recording_speakers(
-    recording_id: int,
+    recording_id: str,
     merge_data: MergeRequestLabels,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -980,9 +1035,7 @@ async def merge_recording_speakers(
     The source_speaker_label will be removed from the recording's speaker list.
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 2. Validate that source and target are different
     if merge_data.source_speaker_label == merge_data.target_speaker_label:
@@ -991,14 +1044,14 @@ async def merge_recording_speakers(
     # 3. Find the source and target speaker entries (validation only here, logic in helper)
     # Verifies existence of both entries to raise proper HTTP errors before calling the helper.
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == merge_data.source_speaker_label
     )
     result = await db.execute(statement)
     source_speaker = result.scalar_one_or_none()
 
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == merge_data.target_speaker_label
     )
     result = await db.execute(statement)
@@ -1013,7 +1066,7 @@ async def merge_recording_speakers(
     # 4. Perform Merge
     await _merge_local_speakers(
         db, 
-        recording_id, 
+        recording.id,
         merge_data.source_speaker_label, 
         merge_data.target_speaker_label
     )
@@ -1024,13 +1077,14 @@ async def merge_recording_speakers(
     
     # 6. Refresh recording
     await db.refresh(recording)
-    return recording
+    return serialize_recording(recording)
 
 @router.delete("/recordings/{recording_id}/speakers/{diarization_label}")
 async def delete_recording_speaker(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Remove a speaker from a recording.
@@ -1040,12 +1094,10 @@ async def delete_recording_speaker(
     - If linked to a Global Speaker, only removes the association (does NOT delete the global speaker)
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 2. Update Transcript Segments
-    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    statement = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
 
@@ -1064,7 +1116,7 @@ async def delete_recording_speaker(
 
     # 3. Delete RecordingSpeaker entry
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(statement)
@@ -1085,9 +1137,10 @@ async def delete_recording_speaker(
 
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/extract")
 async def extract_voiceprint(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Extract a voiceprint (embedding) for a specific speaker in a recording.
@@ -1102,13 +1155,11 @@ async def extract_voiceprint(
         - all_speakers: List of all GlobalSpeakers for force-link option
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     # 2. Find the RecordingSpeaker
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(statement)
@@ -1118,7 +1169,7 @@ async def extract_voiceprint(
         raise HTTPException(status_code=404, detail="Speaker not found in recording")
     
     # 3. Get transcript segments for this speaker
-    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    statement = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
     
@@ -1208,10 +1259,11 @@ async def extract_voiceprint(
 
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply")
 async def apply_voiceprint_action(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
     action: VoiceprintAction,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Apply a voiceprint action after extraction.
@@ -1223,12 +1275,10 @@ async def apply_voiceprint_action(
         - "force_link": Force link to a GlobalSpeaker (user override, trains the embedding)
     """
     # 1. Verify recording and speaker exist
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(statement)
@@ -1325,16 +1375,19 @@ async def apply_voiceprint_action(
 
 @router.delete("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint")
 async def delete_voiceprint(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete the voiceprint (embedding) from a RecordingSpeaker.
     Does NOT affect the linked GlobalSpeaker's embedding.
     """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(statement)
@@ -1352,21 +1405,20 @@ async def delete_voiceprint(
 
 @router.post("/recordings/{recording_id}/voiceprints/extract-all")
 async def extract_all_voiceprints(
-    recording_id: int,
-    db: AsyncSession = Depends(get_db)
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Extract voiceprints for all speakers in a recording that don't have one.
     Returns extraction results for each speaker, to be processed by the client.
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     # 2. Get all speakers without voiceprints
     statement = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id
+        RecordingSpeaker.recording_id == recording.id
     )
     result = await db.execute(statement)
     all_speakers = result.scalars().all()
@@ -1381,7 +1433,7 @@ async def extract_all_voiceprints(
         }
     
     # 3. Get transcript
-    statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    statement = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
     
@@ -1489,10 +1541,11 @@ class SpeakerColorUpdate(BaseModel):
 
 @router.put("/recordings/{recording_id}/speakers/{label}/color", response_model=dict)
 async def update_speaker_color(
-    recording_id: int,
+    recording_id: str,
     label: str,
     update: SpeakerColorUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update the color for a speaker.
@@ -1500,13 +1553,11 @@ async def update_speaker_color(
     Otherwise, updates the Recording Speaker's color.
     """
     # 1. Verify recording exists
-    recording = await db.get(Recording, recording_id)
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # 2. Find the RecordingSpeaker
     stmt = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == label
     )
     result = await db.execute(stmt)
@@ -1615,9 +1666,9 @@ async def scan_for_matches(
         "recordings_updated": len(recordings_updated)
     }
 
-@router.post("/recordings/{recording_id}/speakers/{diarization_label}/split", response_model=List[RecordingSpeaker])
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/split", response_model=List[RecordingSpeakerPublicRead])
 async def split_local_speaker(
-    recording_id: int,
+    recording_id: str,
     diarization_label: str,
     request: SpeakerSplitRequest,
     db: AsyncSession = Depends(get_db),
@@ -1628,12 +1679,10 @@ async def split_local_speaker(
     Moves selected segments to a NEW or EXISTING speaker label (local name).
     """
     # 1. Verify Recording and Speaker
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     stmt = select(RecordingSpeaker).where(
-        RecordingSpeaker.recording_id == recording_id,
+        RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == diarization_label
     )
     result = await db.execute(stmt)
@@ -1647,7 +1696,7 @@ async def split_local_speaker(
     # 2. Determine Target Speaker (New Name)
     target_label = None
     
-    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
     result = await db.execute(stmt)
     all_rec_speakers = result.scalars().all()
     
@@ -1662,7 +1711,7 @@ async def split_local_speaker(
         import uuid
         target_label = f"SPLIT_{uuid.uuid4().hex[:8]}"
         new_rs = RecordingSpeaker(
-            recording_id=recording_id,
+            recording_id=recording.id,
             diarization_label=target_label,
             local_name=request.new_speaker_name,
         )
@@ -1670,7 +1719,7 @@ async def split_local_speaker(
         await db.flush()
     
     # 3. Update Transcript Segments
-    stmt = select(Transcript).where(Transcript.recording_id == recording_id)
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
@@ -1686,7 +1735,7 @@ async def split_local_speaker(
             seg_copy = dict(segment)
             matches = False
             for r_id, start, end in segments_to_move:
-                if r_id == recording_id and abs(segment["start"] - start) < 0.01 and abs(segment["end"] - end) < 0.01:
+                if r_id == recording.public_id and abs(segment["start"] - start) < 0.01 and abs(segment["end"] - end) < 0.01:
                     matches = True
                     break
             
@@ -1703,6 +1752,9 @@ async def split_local_speaker(
             
     await db.commit()
     
-    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return _serialize_recording_speakers(
+        result.scalars().all(),
+        recording_public_id=recording.public_id,
+    )

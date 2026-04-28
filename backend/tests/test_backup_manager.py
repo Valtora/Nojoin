@@ -15,6 +15,7 @@ from sqlmodel import Field, SQLModel, Session, select
 
 import backend.core.backup_manager as backup_manager_module
 import backend.core.db as db_module
+import backend.utils.version as version_utils
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.context_chunk import ContextChunk  # noqa: F401
 from backend.models.document import Document  # noqa: F401
@@ -290,6 +291,7 @@ def build_test_context(root: Path) -> TestContext:
 
 def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) -> None:
     monkeypatch.setattr(backup_manager_module, "PathManager", lambda: context.path_manager)
+    monkeypatch.setattr(version_utils, "PathManager", lambda: context.path_manager)
     monkeypatch.setattr(backup_manager_module, "async_session_maker", context.async_session_maker)
     monkeypatch.setattr(backup_manager_module, "sync_engine", context.sync_engine)
     monkeypatch.setattr(backup_manager_module, "MODELS", TEST_MODELS)
@@ -309,6 +311,7 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_manager_module, "Transcript", TestTranscript)
     monkeypatch.setattr(backup_manager_module, "ChatMessage", TestChatMessage)
     monkeypatch.setattr(db_module, "sync_engine", context.sync_engine)
+    version_utils.reset_installed_version_cache()
     BackupManager.restore_jobs.clear()
 
 
@@ -511,6 +514,7 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         users = json.loads(archive.read("users.json"))
 
     assert backup_info["contains_restorable_calendar_credentials"] is True
+    assert backup_info["version"] == "0.6.0"
 
     google_provider = next(item for item in provider_configs if item["provider"] == "google")
     microsoft_provider = next(item for item in provider_configs if item["provider"] == "microsoft")

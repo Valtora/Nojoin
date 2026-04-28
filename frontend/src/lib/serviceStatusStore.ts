@@ -1,4 +1,10 @@
 import { create } from "zustand";
+import {
+  CompanionLocalConnectionError,
+  CompanionLocalRequestError,
+  companionLocalFetch,
+  COMPANION_URL,
+} from "@/lib/companionLocalApi";
 
 interface DetailedHealthStatus {
   status: string;
@@ -9,12 +15,6 @@ interface DetailedHealthStatus {
   };
 }
 
-interface AudioLevels {
-  input_level: number;
-  output_level: number;
-  is_recording: boolean;
-}
-
 interface CompanionStatusResponse {
   status: string | { [key: string]: unknown };
   duration_seconds?: number;
@@ -23,27 +23,73 @@ interface CompanionStatusResponse {
   api_host?: string;
   update_available?: boolean;
   latest_version?: string | null;
+  localHttpsStatus?: CompanionLocalHttpsStatus;
+}
+
+interface CompanionPairingPayload {
+  pairing_code: string;
+  companion_credential_secret: string;
+  api_protocol: string;
+  api_host: string;
+  api_port: number;
+  tls_fingerprint?: string | null;
+  local_control_secret: string;
+  local_control_secret_version: number;
+  backend_pairing_id: string;
+}
+
+interface CompanionPairingErrorResponse {
+  detail?: string;
+  message?: string;
+  error?: string;
+}
+
+export type CompanionRuntimeStatus =
+  | "idle"
+  | "recording"
+  | "paused"
+  | "uploading"
+  | "backend-offline"
+  | "error";
+
+export type CompanionLocalHttpsStatus =
+  | "ready"
+  | "repairing"
+  | "needs-repair";
+
+export class CompanionPairingError extends Error {
+  status?: number;
+  phase: "prepare" | "complete" | "cancel";
+
+  constructor(
+    message: string,
+    status: number | undefined,
+    phase: "prepare" | "complete" | "cancel",
+  ) {
+    super(message);
+    this.name = "CompanionPairingError";
+    this.status = status;
+    this.phase = phase;
+  }
 }
 
 interface ServiceStatusState {
   backend: boolean;
   db: boolean;
   worker: boolean;
+  backendVersion: string | null;
   companion: boolean;
   companionAuthenticated: boolean;
+  companionLocalConnectionUnavailable: boolean;
+  companionLocalHttpsStatus: CompanionLocalHttpsStatus | null;
+  companionMonitoringEnabled: boolean;
 
   // Companion details
-  companionStatus: "idle" | "recording" | "paused" | "error";
+  companionStatus: CompanionRuntimeStatus;
   companionVersion: string | null;
   companionUpdateAvailable: boolean;
   companionLatestVersion: string | null;
   recordingDuration: number;
-
-  // Audio levels
-  audioLevels: {
-    input: number;
-    output: number;
-  };
 
   // Polling state
   isPolling: boolean;
@@ -53,21 +99,192 @@ interface ServiceStatusState {
   // Actions
   checkBackend: () => Promise<void>;
   checkCompanion: () => Promise<void>;
-  checkAudioLevels: () => Promise<void>;
-  authorizeCompanion: () => Promise<boolean>;
+  handleCompanionPairingEnded: () => void;
+  enableCompanionMonitoring: () => void;
+  pairCompanion: (pairingCode: string) => Promise<boolean>;
+  cancelPendingCompanionPairing: () => Promise<boolean>;
   triggerCompanionUpdate: () => Promise<boolean>;
   startPolling: () => void;
   stopPolling: () => void;
 }
 
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
+const COMPANION_DISCONNECTED_RECHECK_INTERVAL = 1500;
+const COMPANION_REPAIRING_RECHECK_INTERVAL = 1500;
+const COMPANION_NEEDS_REPAIR_RECHECK_INTERVAL = 60000;
 const NORMAL_INTERVAL = 10000;
-const COMPANION_URL = "http://127.0.0.1:12345";
+const getCompanionApiBase = () =>
+  process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
+    : "https://localhost:14443/api/v1";
+const getCompanionEventsUrl = () =>
+  process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/v1/login/companion-events`
+    : "/api/v1/login/companion-events";
+
+const readPairingError = (
+  payload: CompanionPairingPayload | CompanionPairingErrorResponse | null,
+  fallback: string,
+) => {
+  const pairingError = payload as CompanionPairingErrorResponse | null;
+  return (
+    pairingError?.detail || pairingError?.message || pairingError?.error || fallback
+  );
+};
+
+const readCompanionStatus = (
+  payload: CompanionStatusResponse,
+): { status: CompanionRuntimeStatus; duration: number } => {
+  let status: CompanionRuntimeStatus = "idle";
+  let duration = 0;
+
+  if (typeof payload === "object" && payload.status) {
+    let rawStatus = "";
+    if (typeof payload.status === "string") {
+      rawStatus = payload.status.toLowerCase();
+    } else if (typeof payload.status === "object") {
+      rawStatus = Object.keys(payload.status)[0]?.toLowerCase() || "";
+    }
+
+    if (rawStatus === "idle") status = "idle";
+    else if (rawStatus === "recording") status = "recording";
+    else if (rawStatus === "paused") status = "paused";
+    else if (rawStatus === "uploading") status = "uploading";
+    else if (rawStatus === "backendoffline") status = "backend-offline";
+    else if (rawStatus === "error") status = "error";
+
+    if (typeof payload.duration_seconds === "number") {
+      duration = payload.duration_seconds;
+    }
+  }
+
+  return { status, duration };
+};
+
+const readCompanionLocalHttpsStatus = (
+  payload: CompanionStatusResponse,
+): CompanionLocalHttpsStatus => {
+  if (payload.localHttpsStatus === "repairing") {
+    return "repairing";
+  }
+
+  if (payload.localHttpsStatus === "needs-repair") {
+    return "needs-repair";
+  }
+
+  return "ready";
+};
+
+const cancelPendingCompanionPairingRequest = async (apiBase: string) => {
+  const response = await fetch(`${apiBase}/login/companion-pairing/pending`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const responseBody = (await response.json().catch(
+    () => null,
+  )) as CompanionPairingErrorResponse | null;
+
+  if (!response.ok) {
+    throw new CompanionPairingError(
+      readPairingError(
+        responseBody,
+        `Failed to cancel pending companion pairing: ${response.status}`,
+      ),
+      response.status,
+      "cancel",
+    );
+  }
+
+  return true;
+};
+
+const bestEffortCancelPendingCompanionPairing = async (apiBase: string) => {
+  try {
+    await cancelPendingCompanionPairingRequest(apiBase);
+  } catch (error) {
+    console.error("Failed to cancel pending companion pairing:", error);
+  }
+};
+
+const frontendPairingRuntimeId =
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `pair-runtime-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`;
+
+let frontendPairingRequestSequence = 0;
+
+const nextFrontendPairingRequestId = () => {
+  frontendPairingRequestSequence += 1;
+  return `${frontendPairingRuntimeId}:${frontendPairingRequestSequence}:${Date.now().toString(36)}`;
+};
+
+const isPairingAlreadyInProgressError = (error: unknown) =>
+  error instanceof CompanionPairingError &&
+  error.phase === "complete" &&
+  error.status === 409 &&
+  error.message.toLowerCase().includes("already in progress");
+
+const isPendingPairingPrepareConflict = (error: unknown) =>
+  error instanceof CompanionPairingError &&
+  error.phase === "prepare" &&
+  error.status === 409 &&
+  error.message.toLowerCase().includes("still pending");
 
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   let backendTimer: NodeJS.Timeout | null = null;
   let companionTimer: NodeJS.Timeout | null = null;
-  let audioTimer: NodeJS.Timeout | null = null;
+  let companionEventSource: EventSource | null = null;
+  let pairingRequestPromise: Promise<boolean> | null = null;
+
+  const handleCompanionPairingEndedState = () => {
+    set((state) => ({
+      companion: false,
+      companionAuthenticated: false,
+      companionLocalConnectionUnavailable: false,
+      companionLocalHttpsStatus: null,
+      companionStatus: "idle",
+      companionVersion: state.companionVersion,
+      companionUpdateAvailable: false,
+      companionLatestVersion: null,
+      recordingDuration: 0,
+      companionFailCount: 0,
+    }));
+  };
+
+  const closeCompanionEvents = () => {
+    if (!companionEventSource) {
+      return;
+    }
+
+    companionEventSource.close();
+    companionEventSource = null;
+  };
+
+  const openCompanionEvents = () => {
+    if (typeof window === "undefined" || companionEventSource) {
+      return;
+    }
+
+    const eventSource = new EventSource(getCompanionEventsUrl(), {
+      withCredentials: true,
+    });
+
+    eventSource.addEventListener("companion-explicit-disconnect", () => {
+      handleCompanionPairingEndedState();
+      scheduleNextCompanion();
+    });
+
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        if (companionEventSource === eventSource) {
+          companionEventSource = null;
+        }
+        eventSource.close();
+      }
+    };
+
+    companionEventSource = eventSource;
+  };
 
   const scheduleNextBackend = () => {
     if (!get().isPolling) return;
@@ -87,9 +304,16 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
   const scheduleNextCompanion = () => {
     if (!get().isPolling) return;
 
+    const companionState = get();
     const failCount = get().companionFailCount;
     const delay =
-      failCount === 0
+      companionState.companionLocalHttpsStatus === "needs-repair"
+        ? COMPANION_NEEDS_REPAIR_RECHECK_INTERVAL
+        : companionState.companionLocalHttpsStatus === "repairing"
+        ? COMPANION_REPAIRING_RECHECK_INTERVAL
+        : companionState.companionAuthenticated && !companionState.companion
+        ? COMPANION_DISCONNECTED_RECHECK_INTERVAL
+        : failCount === 0
         ? NORMAL_INTERVAL
         : BACKOFF_DELAYS[Math.min(failCount - 1, BACKOFF_DELAYS.length - 1)];
 
@@ -99,38 +323,21 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     }, delay);
   };
 
-  const scheduleNextAudio = () => {
-    if (!get().isPolling) return;
-
-    const { companion, companionStatus } = get();
-    let delay = 2000;
-
-    if (!companion) {
-      delay = 10000;
-    } else if (companionStatus !== "recording") {
-      delay = 5000;
-    } else {
-      delay = 1000;
-    }
-
-    if (audioTimer) clearTimeout(audioTimer);
-    audioTimer = setTimeout(() => {
-      get().checkAudioLevels();
-    }, delay);
-  };
-
   return {
     backend: true,
     db: true,
     worker: true,
-    companion: true,
+    backendVersion: null,
+    companion: false,
     companionAuthenticated: false,
+    companionLocalConnectionUnavailable: false,
+    companionLocalHttpsStatus: null,
+    companionMonitoringEnabled: false,
     companionStatus: "idle",
     companionVersion: null,
     companionUpdateAvailable: false,
     companionLatestVersion: null,
     recordingDuration: 0,
-    audioLevels: { input: 0, output: 0 },
     isPolling: false,
     backendFailCount: 0,
     companionFailCount: 0,
@@ -156,6 +363,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             backend: true,
             db: data.components.db === "connected",
             worker: data.components.worker === "active",
+            backendVersion: data.version,
             backendFailCount: 0,
           });
           scheduleNextBackend();
@@ -207,53 +415,26 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-        const res = await fetch(`${COMPANION_URL}/status`, {
-          signal: controller.signal,
-          method: "GET",
-        });
+        const res = await companionLocalFetch(
+          "/status",
+          {
+            signal: controller.signal,
+            method: "GET",
+          },
+          "status:read",
+        );
         clearTimeout(timeoutId);
 
         if (res.ok) {
           const data: CompanionStatusResponse = await res.json();
-          let status: "idle" | "recording" | "paused" | "error" = "idle";
-          let duration = 0;
-
-          if (typeof data === "object" && data.status) {
-            let s = "";
-            if (typeof data.status === "string") {
-              s = data.status.toLowerCase();
-            } else if (typeof data.status === "object") {
-              s = Object.keys(data.status)[0].toLowerCase();
-            }
-
-            if (s === "idle") status = "idle";
-            else if (s === "recording") status = "recording";
-            else if (s === "paused") status = "paused";
-
-            if (typeof data.duration_seconds === "number") {
-              duration = data.duration_seconds;
-            }
-          }
-
-          // Check if re-authorization is needed due to host mismatch
-          let isAuthenticated = data.authenticated === true;
-          if (isAuthenticated && data.api_host) {
-            const currentHost = window.location.hostname;
-            const isLocal = (h: string) =>
-              h === "localhost" || h === "127.0.0.1";
-
-            // Companion expected local if current is local.
-            // If current is remote, companion must match remote
-            if (isLocal(currentHost)) {
-              if (!isLocal(data.api_host)) isAuthenticated = false;
-            } else {
-              if (data.api_host !== currentHost) isAuthenticated = false;
-            }
-          }
+          const { status, duration } = readCompanionStatus(data);
+          const localHttpsStatus = readCompanionLocalHttpsStatus(data);
 
           set({
             companion: true,
-            companionAuthenticated: isAuthenticated,
+            companionAuthenticated: data.authenticated === true,
+            companionLocalConnectionUnavailable: false,
+            companionLocalHttpsStatus: localHttpsStatus,
             companionStatus: status,
             companionVersion: data.version || null,
             companionUpdateAvailable: data.update_available || false,
@@ -262,128 +443,193 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             companionFailCount: 0,
           });
         } else {
+          const clearAuthentication = res.status === 403 || res.status === 409;
+          if (clearAuthentication) {
+            handleCompanionPairingEndedState();
+          } else {
+            set((state) => ({
+              companion: false,
+              companionAuthenticated: state.companionAuthenticated,
+              companionLocalConnectionUnavailable: false,
+              companionLocalHttpsStatus: null,
+              companionUpdateAvailable: false,
+              companionFailCount: state.companionFailCount + 1,
+            }));
+          }
+        }
+      } catch (error) {
+        const clearAuthentication =
+          error instanceof CompanionLocalRequestError &&
+          (error.status === 403 || error.status === 409);
+        if (clearAuthentication) {
+          handleCompanionPairingEndedState();
+        } else {
           set((state) => ({
             companion: false,
-            companionAuthenticated: false,
+            companionAuthenticated: state.companionAuthenticated,
+            companionLocalConnectionUnavailable:
+              error instanceof CompanionLocalConnectionError,
+            companionLocalHttpsStatus: null,
             companionUpdateAvailable: false,
             companionFailCount: state.companionFailCount + 1,
           }));
         }
-      } catch {
-        set((state) => ({
-          companion: false,
-          companionAuthenticated: false,
-          companionUpdateAvailable: false,
-          companionFailCount: state.companionFailCount + 1,
-        }));
       }
       scheduleNextCompanion();
     },
 
-    checkAudioLevels: async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-        const res = await fetch(`${COMPANION_URL}/levels`, {
-          signal: controller.signal,
-          method: "GET",
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data: AudioLevels = await res.json();
-          set({
-            audioLevels: {
-              input: data.input_level,
-              output: data.output_level,
-            },
-          });
-        }
-      } catch {
-        // Ignore audio level errors, handled by companion check
-      }
-      scheduleNextAudio();
+    handleCompanionPairingEnded: () => {
+      handleCompanionPairingEndedState();
     },
 
-    authorizeCompanion: async (): Promise<boolean> => {
-      try {
-        // Fetch a companion-specific JWT from the backend using cookie auth.
-        // Uses fetch directly to avoid the axios 401 interceptor redirecting to /login.
-        const apiBase = process.env.NEXT_PUBLIC_API_URL
-          ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
-          : "https://localhost:14443/api/v1";
-        const tokenRes = await fetch(`${apiBase}/login/companion-token`, {
-          credentials: "include",
-        });
-        if (!tokenRes.ok) {
-          throw new Error(`Failed to fetch companion token: ${tokenRes.status}`);
-        }
-        const { token } = await tokenRes.json();
-
-        // Fetch the TLS fingerprint
-        const fpRes = await fetch(`${apiBase}/system/fingerprint`, {
-          credentials: "include",
-        });
-        let tls_fingerprint = null;
-        if (fpRes.ok) {
-           const fpData = await fpRes.json();
-           tls_fingerprint = fpData.fingerprint;
-        }
-
-        // Get current protocol, host and port to configure the companion app
-        const api_protocol = window.location.protocol.replace(':', '');
-        const api_host = window.location.hostname;
-        let api_port = parseInt(
-          window.location.port ||
-            (window.location.protocol === "https:" ? "443" : "80"),
-        );
-
-        // Special handling for local development:
-        // If accessing via localhost:3000 (Next.js dev server), point Companion to the standard Backend port (14443)
-        // because the Companion requires HTTPS and the Backend is likely running in Docker on 14443.
-        if (
-          (api_host === "localhost" || api_host === "127.0.0.1") &&
-          api_port === 3000
-        ) {
-          api_port = 14443;
-        }
-
-        const res = await fetch(`${COMPANION_URL}/auth`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            token,
-            api_protocol,
-            api_host,
-            api_port,
-            tls_fingerprint,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            set({ companionAuthenticated: true });
-            // Trigger a status check to update state
-            get().checkCompanion();
-            return true;
-          } else {
-             throw new Error(data.message || "Pairing was denied or failed");
-          }
-        }
-        throw new Error(`Companion app returned ${res.status}`);
-      } catch (e: any) {
-        console.error("Failed to authorize companion:", e);
-        throw e; // Rethrow so the UI can catch and display it
+    enableCompanionMonitoring: () => {
+      if (get().companionMonitoringEnabled) {
+        return;
       }
+
+      set({ companionMonitoringEnabled: true });
+      if (get().isPolling) {
+        void get().checkCompanion();
+      }
+    },
+
+    pairCompanion: async (pairingCode: string): Promise<boolean> => {
+      const trimmedCode = pairingCode.trim().toUpperCase();
+      if (!trimmedCode) {
+        throw new Error("Pairing code is required.");
+      }
+
+      if (pairingRequestPromise) {
+        return pairingRequestPromise;
+      }
+
+      pairingRequestPromise = (async () => {
+        const apiBase = getCompanionApiBase();
+        let pairingPrepared = false;
+        const frontendPairingRequestId = nextFrontendPairingRequestId();
+
+        const preparePairing = async () => {
+          const pairingRes = await fetch(`${apiBase}/login/companion-pairing`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pairing_code: trimmedCode }),
+          });
+          const pairingPayload = (await pairingRes.json().catch(
+            () => null,
+          )) as CompanionPairingPayload | null;
+
+          if (!pairingRes.ok) {
+            throw new CompanionPairingError(
+              readPairingError(
+                pairingPayload,
+                `Failed to prepare companion pairing: ${pairingRes.status}`,
+              ),
+              pairingRes.status,
+              "prepare",
+            );
+          }
+
+          return pairingPayload;
+        };
+
+        try {
+          let pairingPayload: CompanionPairingPayload | null;
+
+          try {
+            pairingPayload = await preparePairing();
+          } catch (error) {
+            if (!isPendingPairingPrepareConflict(error)) {
+              throw error;
+            }
+
+            console.info(
+              "Cancelling stale pending companion pairing before retrying with the current code",
+              {
+                frontendPairingRuntimeId,
+                frontendPairingRequestId,
+                pairingCode: trimmedCode,
+              },
+            );
+            await cancelPendingCompanionPairingRequest(apiBase);
+            pairingPayload = await preparePairing();
+          }
+
+          pairingPrepared = true;
+
+          console.info("Submitting companion pairing completion request", {
+            frontendPairingRuntimeId,
+            frontendPairingRequestId,
+            backendPairingId: pairingPayload?.backend_pairing_id,
+          });
+
+          const res = await fetch(`${COMPANION_URL}/pair/complete`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Nojoin-Frontend-Runtime": frontendPairingRuntimeId,
+              "X-Nojoin-Frontend-Pair-Request": frontendPairingRequestId,
+              "X-Nojoin-Frontend-Source": "settings-companion",
+            },
+            body: JSON.stringify(pairingPayload),
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+            throw new CompanionPairingError(
+              data?.message || `Companion app returned ${res.status}`,
+              res.status,
+              "complete",
+            );
+          }
+
+          if (!data?.success) {
+            throw new CompanionPairingError(
+              data?.message || "Pairing failed.",
+              res.status,
+              "complete",
+            );
+          }
+
+          set({
+            companion: true,
+            companionAuthenticated: true,
+            companionLocalConnectionUnavailable: false,
+            companionLocalHttpsStatus: null,
+            companionMonitoringEnabled: true,
+            companionFailCount: 0,
+          });
+          await get().checkCompanion();
+          return true;
+        } catch (error: unknown) {
+          if (pairingPrepared && !isPairingAlreadyInProgressError(error)) {
+            await bestEffortCancelPendingCompanionPairing(apiBase);
+          }
+          console.error("Failed to pair companion:", error);
+          throw error;
+        } finally {
+          pairingRequestPromise = null;
+        }
+      })();
+
+      return pairingRequestPromise;
+    },
+
+    cancelPendingCompanionPairing: async (): Promise<boolean> => {
+      const apiBase = getCompanionApiBase();
+      return cancelPendingCompanionPairingRequest(apiBase);
     },
 
     triggerCompanionUpdate: async (): Promise<boolean> => {
       try {
-        const res = await fetch(`${COMPANION_URL}/update`, {
-          method: "POST",
-        });
+        const res = await companionLocalFetch(
+          "/update",
+          {
+            method: "POST",
+          },
+          "update:trigger",
+        );
         if (res.ok) {
           return true;
         }
@@ -397,16 +643,16 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     startPolling: () => {
       if (get().isPolling) return;
       set({ isPolling: true });
-      get().checkBackend();
-      get().checkCompanion();
-      get().checkAudioLevels();
+      openCompanionEvents();
+      void get().checkBackend();
+      void get().checkCompanion();
     },
 
     stopPolling: () => {
       set({ isPolling: false });
       if (backendTimer) clearTimeout(backendTimer);
       if (companionTimer) clearTimeout(companionTimer);
-      if (audioTimer) clearTimeout(audioTimer);
+      closeCompanionEvents();
     },
   };
 });

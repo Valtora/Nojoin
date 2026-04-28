@@ -3,22 +3,28 @@
 This guide covers normal day-to-day use after Nojoin has already been installed.
 
 For deployment, administration, calendar provider setup, and backup operations, use the dedicated guides in the `docs` folder.
+For detailed Companion install, pairing, repair, re-pair, tray usage, and Firefox setup, use [COMPANION.md](COMPANION.md).
 
 ## First Run
 
-1. Install and run the Windows Companion app.
+1. If the Companion is not installed or paired yet, follow [COMPANION.md](COMPANION.md).
 2. Open the web app and confirm the Companion shows as connected.
 3. Use **Meet Now** from the dashboard to create a short test recording.
 4. Open the finished recording in the `/recordings` workspace.
 5. Wait for processing to complete so the transcript and notes appear.
 
-## Companion Connectivity
+## Companion Connectivity and Pairing
 
-The Companion only performs a shallow backend reachability check.
+The dedicated [COMPANION.md](COMPANION.md) guide is the canonical reference for Companion setup and recovery.
 
-- A connected Companion means the Nojoin web origin answered the minimal health check.
-- Detailed service health, release information, and administrative diagnostics remain inside the authenticated web app.
-- If the Companion cannot connect, verify the public HTTPS origin, reverse proxy routing, and certificate trust before troubleshooting user sessions.
+The short version:
+
+- The Companion pairs to one Nojoin deployment at a time.
+- Use `Start Pairing` for the first pair.
+- Use `Generate New Pairing Code` when the code expires or when you are replacing an existing backend pairing. The current backend stays active until the new pairing succeeds.
+- `Temporarily disconnected` means the pairing is still valid and should recover automatically.
+- `Browser repair required` and Firefox support both route back to the native Companion app rather than running in the browser.
+- Chrome and Edge are the default path. Firefox requires `Enable Firefox Support`, Firefox enterprise roots, a browser restart, and a fresh code.
 
 ## Tours and Onboarding
 
@@ -43,6 +49,7 @@ It brings together:
 
 - Switch between month and agenda views.
 - Use `Today` to jump back to the current date context.
+- In month view, selecting a day opens a day agenda, and selecting today shows a live now marker against timed events.
 - When calendars are connected, per-calendar colours help distinguish event sources.
 - Event times render in your configured Nojoin timezone.
 - If no calendar is connected, the dashboard shows an empty state instead of fake data.
@@ -68,9 +75,11 @@ When a meeting is actively recording, the recording page becomes a live capture 
 
 You can monitor:
 
-- Live system-audio and microphone levels.
+- A unified live audio activity waveform.
 - Recording state and duration.
 - A persistent notes panel for user-authored context.
+
+If live audio stays quiet for a while, Nojoin may show a low-key inline reminder near the waveform instead of a persistent fault-style warning. `Dismiss` hides that reminder for the rest of the current meeting, `Don't show again` suppresses it until you re-enable it, and `Settings > Audio & Recording > Audio Warnings` lets you reset the warning state later.
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 
@@ -198,7 +207,7 @@ The General settings page lets each user choose the IANA timezone used for dashb
 
 The Updates page shows:
 
-- The running version.
+- The installed server version from the current API build.
 - The latest stable published release.
 - Release history and release notes.
 - Companion installer links.
@@ -213,6 +222,7 @@ The Help area includes:
 
 ## Related Docs
 
+- [COMPANION.md](COMPANION.md)
 - [CALENDAR.md](CALENDAR.md)
 - [ADMIN.md](ADMIN.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)

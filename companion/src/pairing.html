@@ -3,119 +3,491 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pairing Request</title>
+    <title>Pairing code active</title>
     <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f8fafc;
+        --text: #162033;
+        --muted: #475569;
+        --surface: #ffffff;
+        --surface-soft: #f1f5f9;
+        --panel-border: #cbd5e1;
+        --accent: #c2410c;
+        --accent-strong: #9a3412;
+        --accent-soft: #fff7ed;
+        --info: #1d4ed8;
+        --info-soft: #eff6ff;
+        --success: #166534;
+        --danger: #b91c1c;
+        --code-surface: #111827;
+        --code-text: #ffffff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f172a;
+          --text: #e2e8f0;
+          --muted: #cbd5e1;
+          --surface: #111c2d;
+          --surface-soft: #1b283c;
+          --panel-border: #334155;
+          --accent: #ea580c;
+          --accent-strong: #fb923c;
+          --accent-soft: rgba(234, 88, 12, 0.18);
+          --info: #60a5fa;
+          --info-soft: rgba(59, 130, 246, 0.2);
+          --success: #4ade80;
+          --danger: #f87171;
+          --code-surface: #020617;
+          --code-text: #e2e8f0;
+        }
+      }
+
       body {
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-          Arial, sans-serif;
-        padding: 20px;
-        background-color: #f3f4f6;
-        color: #1f2937;
-        text-align: center;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        height: 100vh;
         margin: 0;
+        padding: 18px 20px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", "Inter", system-ui, sans-serif;
         box-sizing: border-box;
       }
-      .container {
-        background: white;
-        padding: 25px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: inherit;
       }
-      h2 {
-        margin-top: 0;
-        font-size: 1.25rem;
-      }
-      p {
-        margin: 15px 0;
-        font-size: 0.95rem;
-        color: #4b5563;
-      }
-      .origin {
-        font-weight: bold;
-        color: #111827;
-        word-break: break-all;
-        background: #f9fafb;
-        padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #e5e7eb;
-        margin: 10px 0;
-      }
-      .actions {
-        display: flex;
-        gap: 10px;
-        margin-top: 20px;
-      }
+
       button {
-        flex: 1;
-        padding: 10px 15px;
-        border: none;
-        border-radius: 4px;
+        font: inherit;
+      }
+
+      .shell {
+        width: min(520px, 100%);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 6px 12px;
+        border: 1px solid color-mix(in srgb, var(--info) 36%, var(--panel-border));
+        border-radius: 999px;
+        background: var(--info-soft);
+        color: var(--info);
+        font-size: 0.86rem;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      h1 {
+        margin: 12px 0 0;
+        font-size: 1.42rem;
+        line-height: 1.1;
+      }
+
+      .lead {
+        margin: 14px 0 0;
+        color: var(--text);
+        font-size: 0.97rem;
+        line-height: 1.5;
+      }
+
+      .section {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--panel-border);
+      }
+
+      .section-label {
+        display: block;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .section-note {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 0.89rem;
+        line-height: 1.45;
+      }
+
+      .code-panel {
+        position: relative;
+        margin-top: 12px;
+      }
+
+      .code {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 90px;
+        padding: 22px 72px;
+        border-radius: 12px;
+        background: var(--code-surface);
+        color: var(--code-text);
+        font-size: 1.9rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        line-height: 1;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .copy-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        transform: translateY(-50%);
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 1px solid rgba(203, 213, 225, 0.24);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
         cursor: pointer;
-        font-weight: 500;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease,
+          opacity 120ms ease;
+      }
+
+      .copy-button:hover {
+        background: rgba(255, 255, 255, 0.16);
+        border-color: rgba(226, 232, 240, 0.4);
+      }
+
+      .copy-button:active {
+        background: rgba(255, 255, 255, 0.24);
+      }
+
+      .copy-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .copy-button.copied {
+        border-color: rgba(249, 115, 22, 0.45);
+        background: rgba(249, 115, 22, 0.16);
+        color: #fdba74;
+      }
+
+      .copy-button svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+      }
+
+      .copy-status {
+        min-height: 1.25rem;
+        margin-top: 10px;
+        color: var(--success);
+        font-size: 0.88rem;
+        font-weight: 600;
+      }
+
+      .copy-status.error {
+        color: var(--danger);
+      }
+
+      .countdown {
+        margin-top: 4px;
+        color: var(--accent);
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      .countdown.expired {
+        color: var(--danger);
+      }
+
+      .step-list {
+        display: grid;
+        gap: 10px;
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: pairing-steps;
+      }
+
+      .step-list li {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        color: var(--text);
+        font-size: 0.94rem;
+        line-height: 1.45;
+      }
+
+      .step-list li::before {
+        counter-increment: pairing-steps;
+        content: counter(pairing-steps);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .continuity-note {
+        margin: 14px 0 0;
+        padding: 11px 12px;
+        border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--panel-border));
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        line-height: 1.42;
+      }
+
+      .continuity-note[hidden] {
+        display: none;
+      }
+
+      .actions {
+        margin-top: 18px;
+        padding-top: 2px;
+      }
+
+      .cancel-button {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1px solid var(--panel-border);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text);
         font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease,
+          opacity 120ms ease;
       }
-      .btn-allow {
-        background-color: #f97316;
-        color: white;
+
+      .cancel-button:hover {
+        background: var(--surface-soft);
       }
-      .btn-allow:hover {
-        background-color: #ea580c;
-      }
-      .btn-deny {
-        background-color: #e5e7eb;
-        color: #374151;
-      }
-      .btn-deny:hover {
-        background-color: #d1d5db;
+
+      .cancel-button:disabled {
+        opacity: 0.68;
+        cursor: wait;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h2>Connection Request</h2>
-      <p>
-        A Nojoin server is trying to connect to this Companion App to record
-        audio.
-      </p>
-      <div class="origin" id="originDisplay">Loading...</div>
-      <p>Do you want to allow this connection?</p>
+    <div class="shell" id="shell" data-mode="first">
+      <div class="hero">
+        <div class="status-pill">Pairing code active</div>
+        <h1 id="title">Finish pairing in Nojoin</h1>
+        <p class="lead" id="lead">Loading current pairing guidance...</p>
+      </div>
+
+      <div class="section">
+        <span class="section-label">Current code</span>
+        <div class="code-panel">
+          <div class="code" id="pairingCode">--------</div>
+          <button class="copy-button" id="copyButton" type="button" aria-label="Copy pairing code">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 9.75A2.25 2.25 0 0 1 11.25 7.5h6A2.25 2.25 0 0 1 19.5 9.75v8.25A2.25 2.25 0 0 1 17.25 20.25h-6A2.25 2.25 0 0 1 9 18V9.75Z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>
+              <path d="M14.25 7.5V6A2.25 2.25 0 0 0 12 3.75H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="copy-status" id="copyStatus" aria-live="polite"></div>
+        <div class="countdown" id="countdown">Code expires soon</div>
+        <p class="section-note">This code is single-use and only works while this window stays open.</p>
+      </div>
+
+      <div class="section">
+        <span class="section-label">Next steps</span>
+        <ol class="step-list" id="stepList"></ol>
+        <p class="continuity-note" id="continuityNote" hidden></p>
+      </div>
+
       <div class="actions">
-        <button class="btn-deny" id="denyBtn">Deny</button>
-        <button class="btn-allow" id="allowBtn">Allow</button>
+        <button class="cancel-button" id="cancelButton" type="button">Cancel Pairing</button>
       </div>
     </div>
 
     <script>
       const { invoke } = window.__TAURI__.core;
-
-      // Extract origin from query parameters
       const urlParams = new URLSearchParams(window.location.search);
-      const origin = urlParams.get("origin") || "Unknown Origin";
+      const displayCode = urlParams.get("code") || "--------";
+      const expiresIn = Number(urlParams.get("expires_in") || "300");
+      const pairingMode = urlParams.get("mode") === "replacement" ? "replacement" : "first";
+      const pairingCopy = {
+        first: {
+          title: "Finish pairing in Nojoin",
+          lead: "Use this code in Nojoin to connect this Companion to one deployment.",
+          steps: [
+            "Open the Nojoin web app you want to connect to this device.",
+            "Open the Companion pairing screen there and enter this 8-character code.",
+            "Keep this window open until Nojoin confirms the connection.",
+          ],
+          continuityNote: "",
+          expiredText:
+            "Pairing expired. Open Companion Settings and choose Start Pairing.",
+        },
+        replacement: {
+          title: "Finish pairing in Nojoin",
+          lead: "Use this code in the target Nojoin deployment to switch this Companion to a different backend.",
+          steps: [
+            "Open the target Nojoin deployment you want this device to use.",
+            "Open the Companion pairing screen there and enter this 8-character code.",
+            "Keep this window open until Nojoin confirms the new connection.",
+          ],
+          continuityNote:
+            "Current backend stays active until the new pairing succeeds.",
+          expiredText:
+            "Pairing expired. Open Companion Settings and choose Generate New Pairing Code.",
+        },
+      };
+      const currentCopy = pairingCopy[pairingMode];
+      const shell = document.getElementById("shell");
+      const titleEl = document.getElementById("title");
+      const leadEl = document.getElementById("lead");
+      const stepListEl = document.getElementById("stepList");
+      const continuityNoteEl = document.getElementById("continuityNote");
+      const pairingCodeEl = document.getElementById("pairingCode");
+      const copyButton = document.getElementById("copyButton");
+      const cancelButton = document.getElementById("cancelButton");
+      const copyStatusEl = document.getElementById("copyStatus");
+      const countdownEl = document.getElementById("countdown");
+      let copyStatusResetTimer = null;
 
-      document.getElementById("originDisplay").textContent = origin;
+      document.title = "Pairing code active";
+      shell.dataset.mode = pairingMode;
+      titleEl.textContent = currentCopy.title;
+      leadEl.textContent = currentCopy.lead;
+      pairingCodeEl.textContent = displayCode;
 
-      async function resolvePairing(allowed) {
+      stepListEl.replaceChildren(
+        ...currentCopy.steps.map((step) => {
+          const item = document.createElement("li");
+          item.textContent = step;
+          return item;
+        }),
+      );
+
+      if (currentCopy.continuityNote) {
+        continuityNoteEl.hidden = false;
+        continuityNoteEl.textContent = currentCopy.continuityNote;
+      }
+
+      let remainingSeconds = Number.isFinite(expiresIn) ? expiresIn : 300;
+
+      function renderCountdown() {
+        if (remainingSeconds <= 0) {
+          countdownEl.textContent = currentCopy.expiredText;
+          countdownEl.classList.add("expired");
+          copyButton.disabled = true;
+          cancelButton.disabled = true;
+          void resizeToFit();
+          return;
+        }
+
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        countdownEl.textContent = `Code expires in ${minutes}:${String(seconds).padStart(2, "0")}`;
+      }
+
+      function setCopyStatus(message, isError = false) {
+        copyStatusEl.textContent = message;
+        copyStatusEl.classList.toggle("error", isError);
+        void resizeToFit();
+      }
+
+      async function copyPairingCode() {
         try {
-          // Disable buttons to prevent double-click
-          document.getElementById("allowBtn").disabled = true;
-          document.getElementById("denyBtn").disabled = true;
-          await invoke("resolve_pairing", { allowed });
-        } catch (e) {
-          console.error("Failed to resolve pairing:", e);
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(displayCode);
+          } else {
+            const helperInput = document.createElement("textarea");
+            helperInput.value = displayCode;
+            helperInput.setAttribute("readonly", "");
+            helperInput.style.position = "absolute";
+            helperInput.style.left = "-9999px";
+            document.body.appendChild(helperInput);
+            helperInput.select();
+            document.execCommand("copy");
+            document.body.removeChild(helperInput);
+          }
+
+          window.clearTimeout(copyStatusResetTimer);
+          copyButton.classList.add("copied");
+          setCopyStatus("Pairing code copied to clipboard.");
+          copyStatusResetTimer = window.setTimeout(() => {
+            copyButton.classList.remove("copied");
+            setCopyStatus("");
+          }, 1800);
+        } catch (_error) {
+          setCopyStatus(
+            "Unable to copy automatically. Select the code and copy it manually.",
+            true,
+          );
         }
       }
 
-      document
-        .getElementById("allowBtn")
-        .addEventListener("click", () => resolvePairing(true));
-      document
-        .getElementById("denyBtn")
-        .addEventListener("click", () => resolvePairing(false));
+      async function cancelPairing() {
+        cancelButton.disabled = true;
+        cancelButton.textContent = "Cancelling...";
+
+        try {
+          await invoke("cancel_pairing_request");
+        } catch (error) {
+          cancelButton.disabled = false;
+          cancelButton.textContent = "Cancel Pairing";
+          setCopyStatus(`Failed to cancel pairing: ${error}`, true);
+        }
+      }
+
+      async function resizeToFit() {
+        const width = Math.ceil(Math.max(400, shell.scrollWidth + 20));
+        const height = Math.ceil(
+          Math.max(300, document.documentElement.scrollHeight + 20),
+        );
+
+        try {
+          await invoke("resize_current_window", { width, height });
+        } catch (_error) {
+          // Ignore resize failures.
+        }
+      }
+
+      renderCountdown();
+      copyButton.addEventListener("click", () => {
+        void copyPairingCode();
+      });
+      cancelButton.addEventListener("click", () => {
+        void cancelPairing();
+      });
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          void resizeToFit();
+        });
+      });
+      window.setInterval(() => {
+        remainingSeconds -= 1;
+        renderCountdown();
+      }, 1000);
     </script>
   </body>
 </html>

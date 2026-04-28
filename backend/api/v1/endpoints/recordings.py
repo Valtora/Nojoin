@@ -1,6 +1,5 @@
 import os
 import logging
-import shutil
 from typing import List, Optional, Any
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
@@ -11,11 +10,11 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
+from backend.api.deps import get_current_companion_bootstrap_user, get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
 from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
-from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingRead, RecordingUpdate
-from backend.models.user import User
+from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingUpdate, RecordingUploadTokenResponse
+from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
@@ -29,18 +28,38 @@ from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.processing_eta import estimate_processing_eta
+from backend.utils.recording_storage import (
+    delete_recording_artifacts,
+    move_recording_upload_to_failed,
+    recording_upload_temp_dir,
+    recordings_root_dir,
+)
+from backend.services.recording_identity_service import get_recording_by_public_id, get_recordings_by_public_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Configuration for recordings storage
-# In production docker, this should be mapped to a volume
-RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "data/recordings")
-os.makedirs(RECORDINGS_DIR, exist_ok=True)
-TEMP_DIR = os.path.join(RECORDINGS_DIR, "temp")
-os.makedirs(TEMP_DIR, exist_ok=True)
-FAILED_DIR = os.path.join(RECORDINGS_DIR, "failed")
-os.makedirs(FAILED_DIR, exist_ok=True)
+
+def _recording_has_proxy(recording: Recording) -> bool:
+    return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
+
+
+async def _get_owned_recording(
+    db: AsyncSession,
+    recording_public_id: str,
+    user_id: int,
+    *,
+    options: tuple | None = None,
+) -> Recording:
+    recording = await get_recording_by_public_id(
+        db,
+        recording_public_id,
+        user_id=user_id,
+        options=options,
+    )
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return recording
 
 
 def get_initial_proxy_path(file_path: str) -> Optional[str]:
@@ -124,21 +143,10 @@ def generate_default_meeting_name() -> str:
 
     return f"{day_name} {day_num}{suffix} {short_month}, {time_of_day} Meeting"
 
-def generate_timestamp_id() -> int:
-    """
-    Generates a unique ID based on the current timestamp with centisecond precision (10ms).
-    Format: YYYYMMDDHHMMSSmm (16 digits)
-    This ensures the ID fits within JavaScript's Number.MAX_SAFE_INTEGER (2^53 - 1).
-    """
-    now = datetime.now()
-    # mm is microseconds // 10000 (0-99)
-    timestamp_str = now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 10000:02d}"
-    return int(timestamp_str)
-
 from pydantic import BaseModel
 
 class BatchRecordingIds(BaseModel):
-    recording_ids: List[int]
+    recording_ids: List[str]
 
 @router.post("/batch/archive")
 async def batch_archive_recordings(
@@ -149,9 +157,11 @@ async def batch_archive_recordings(
     """
     Archive multiple recordings.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
     
     logger.info(f"Batch archive request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
 
@@ -172,9 +182,11 @@ async def batch_restore_recordings(
     """
     Restore multiple recordings from archive or trash.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
 
     logger.info(f"Batch restore request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
     
@@ -199,9 +211,11 @@ async def batch_soft_delete_recordings(
     """
     Soft-delete multiple recordings.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
 
     logger.info(f"Batch soft-delete request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings.")
     
@@ -222,17 +236,19 @@ async def batch_permanently_delete_recordings(
     """
     Permanently delete multiple recordings and their files.
     """
-    stmt = select(Recording).where(Recording.id.in_(batch.recording_ids), Recording.user_id == current_user.id)
-    result = await db.execute(stmt)
-    recordings = result.scalars().all()
+    recordings = await get_recordings_by_public_ids(
+        db,
+        batch.recording_ids,
+        user_id=current_user.id,
+    )
     
     for recording in recordings:
-        # Delete file from disk
-        if recording.audio_path and os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+            proxy_path=recording.proxy_path,
+            logger=logger,
+        )
         await db.delete(recording)
             
     await db.commit()
@@ -249,13 +265,12 @@ async def init_upload(
     """
     # Create a placeholder file path (will be used after finalization)
     unique_filename = f"{uuid4()}.wav"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     if not name:
         name = generate_default_meeting_name()
     
     recording = Recording(
-        id=generate_timestamp_id(),
         name=name,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
@@ -267,26 +282,25 @@ async def init_upload(
     await db.refresh(recording)
     
 
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_upload_temp_dir(recording.id, create=True)
 
     upload_token = security.create_access_token(
         current_user.username,
         token_type=security.COMPANION_TOKEN_TYPE,
         scopes=[security.COMPANION_RECORDING_SCOPE],
         expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
-        extra_claims={"recording_id": recording.id},
+        extra_claims={"recording_public_id": recording.public_id},
     )
 
     return RecordingInitResponse(
-        id=recording.id,
+        id=recording.public_id,
         name=recording.name,
         upload_token=upload_token,
     )
 
 @router.post("/{recording_id}/segment")
 async def upload_segment(
-    recording_id: int,
+    recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -295,19 +309,15 @@ async def upload_segment(
     """
     Upload a segment for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
     
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
-        os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
     filename = os.path.basename(f"{int(sequence)}.wav")
-    segment_path = os.path.join(recording_temp_dir, filename)
+    segment_path = recording_temp_dir / filename
     
     try:
         async with aiofiles.open(segment_path, 'wb') as out_file:
@@ -324,24 +334,53 @@ async def upload_segment(
         
     return {"status": "received", "segment": sequence}
 
-@router.post("/{recording_id}/finalize", response_model=Recording)
+
+@router.post("/{recording_id}/upload-token", response_model=RecordingUploadTokenResponse)
+async def refresh_upload_token(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_companion_bootstrap_user),
+):
+    """
+    Re-issue a companion upload token for an existing in-flight recording.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording is no longer accepting companion uploads",
+        )
+
+    upload_token = security.create_access_token(
+        current_user.username,
+        token_type=security.COMPANION_TOKEN_TYPE,
+        scopes=[security.COMPANION_RECORDING_SCOPE],
+        expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
+        extra_claims={"recording_public_id": recording.public_id},
+    )
+
+    return RecordingUploadTokenResponse(
+        recording_id=recording.public_id,
+        upload_token=upload_token,
+    )
+
+@router.post("/{recording_id}/finalize", response_model=RecordingPublicRead)
 async def finalize_upload(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Finalize the upload, concatenate segments, and trigger processing.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
         
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
+    if not recording_temp_dir.exists():
         raise HTTPException(status_code=400, detail="No segments found for this recording")
         
     # List all segments and sort by sequence
@@ -350,7 +389,7 @@ async def finalize_upload(
         if filename.endswith(".wav"):
             try:
                 seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, os.path.join(recording_temp_dir, filename)))
+                segments.append((seq, str(recording_temp_dir / filename)))
             except ValueError:
                 continue
                 
@@ -365,27 +404,28 @@ async def finalize_upload(
         concatenate_wavs(segment_paths, recording.audio_path)
         
         # Cleanup temp dir
-        shutil.rmtree(recording_temp_dir)
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=None,
+            proxy_path=None,
+            logger=logger,
+        )
         
         # Set duration
         recording.duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
-        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
-            if os.path.exists(recording_temp_dir):
-                shutil.move(recording_temp_dir, failed_path)
-                logger.info(f"Moved failed segments to {failed_path}")
+            move_recording_upload_to_failed(recording.id, logger=logger)
         except Exception as move_error:
             logger.error(f"Failed to move segments to failed dir: {move_error}")
             
-
-        if os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-                logger.info(f"Removed partial recording file: {recording.audio_path}")
-            except Exception as cleanup_error:
-                logger.error(f"Failed to remove partial recording file: {cleanup_error}")
+        delete_recording_artifacts(
+            recording_id=None,
+            audio_path=recording.audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
             
         raise sanitized_http_exception(
             logger=logger,
@@ -415,13 +455,13 @@ async def finalize_upload(
 
     generate_proxy_task.delay(recording.id)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 # Supported audio formats for import
 SUPPORTED_AUDIO_FORMATS = {'.wav', '.mp3', '.m4a', '.aac', '.webm', '.ogg', '.flac', '.mp4', '.wma', '.opus'}
 
 
-@router.post("/import", response_model=Recording)
+@router.post("/import", response_model=RecordingPublicRead)
 async def import_audio(
     file: UploadFile = File(...),
     name: Optional[str] = Query(None, description="Custom name for the recording"),
@@ -443,7 +483,7 @@ async def import_audio(
     
     # Generate a unique filename to prevent collisions
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Save the file
     try:
@@ -482,7 +522,6 @@ async def import_audio(
             recording_name = generate_default_meeting_name()
 
     recording = Recording(
-        id=generate_timestamp_id(),
         name=recording_name,
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
@@ -513,10 +552,10 @@ async def import_audio(
     if not recording.proxy_path:
         generate_proxy_task.delay(recording.id)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
-@router.post("/import/chunked/init", response_model=Recording)
+@router.post("/import/chunked/init", response_model=RecordingPublicRead)
 async def init_chunked_import(
     filename: str = Query(..., description="Original filename with extension"),
     name: Optional[str] = Query(None, description="Custom name for the recording"),
@@ -537,7 +576,7 @@ async def init_chunked_import(
     
     # Generate a unique filename
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Determine recording name
     if name:
@@ -548,7 +587,6 @@ async def init_chunked_import(
             recording_name = generate_default_meeting_name()
 
     recording = Recording(
-        id=generate_timestamp_id(),
         name=recording_name,
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
@@ -567,15 +605,14 @@ async def init_chunked_import(
     await db.refresh(recording)
     
 
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_upload_temp_dir(recording.id, create=True)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
 @router.post("/import/chunked/segment")
 async def upload_chunked_segment(
-    recording_id: int,
+    recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -584,19 +621,15 @@ async def upload_chunked_segment(
     """
     Upload a binary segment for a chunked import.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
     
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
-        os.makedirs(recording_temp_dir, exist_ok=True)
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
     filename = os.path.basename(f"{int(sequence)}.part")
-    segment_path = os.path.join(recording_temp_dir, filename)
+    segment_path = recording_temp_dir / filename
     
     try:
         async with aiofiles.open(segment_path, 'wb') as out_file:
@@ -614,24 +647,22 @@ async def upload_chunked_segment(
     return {"status": "received", "segment": sequence}
 
 
-@router.post("/import/chunked/finalize", response_model=Recording)
+@router.post("/import/chunked/finalize", response_model=RecordingPublicRead)
 async def finalize_chunked_import(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Finalize a chunked import, reassemble the file, and trigger processing.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
         
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if not os.path.exists(recording_temp_dir):
+    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
+    if not recording_temp_dir.exists():
         raise HTTPException(status_code=400, detail="No segments found for this recording")
         
     # List all segments and sort by sequence
@@ -640,7 +671,7 @@ async def finalize_chunked_import(
         if filename.endswith(".part"):
             try:
                 seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, os.path.join(recording_temp_dir, filename)))
+                segments.append((seq, str(recording_temp_dir / filename)))
             except ValueError:
                 continue
                 
@@ -655,7 +686,12 @@ async def finalize_chunked_import(
         concatenate_binary_files(segment_paths, recording.audio_path)
         
         # Cleanup temp dir
-        shutil.rmtree(recording_temp_dir)
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=None,
+            proxy_path=None,
+            logger=logger,
+        )
         
         # Get file stats
         file_stats = os.stat(recording.audio_path)
@@ -668,20 +704,18 @@ async def finalize_chunked_import(
             logger.warning(f"Failed to get duration: {e}")
         
     except Exception as e:
-        # Move failed segments to failed directory
-        failed_path = os.path.join(FAILED_DIR, f"{recording.id}_failed_{int(datetime.now().timestamp())}")
         try:
-            if os.path.exists(recording_temp_dir):
-                shutil.move(recording_temp_dir, failed_path)
-        except Exception:
-            pass
-            
-        if os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except Exception:
-                pass
-            
+            move_recording_upload_to_failed(recording.id, logger=logger)
+        except Exception as move_error:
+            logger.error(f"Failed to move failed chunked upload to failed dir: {move_error}")
+
+        delete_recording_artifacts(
+            recording_id=None,
+            audio_path=recording.audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
+
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -707,10 +741,10 @@ async def finalize_chunked_import(
     if not recording.proxy_path:
         generate_proxy_task.delay(recording.id)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
-@router.post("/upload", response_model=Recording)
+@router.post("/upload", response_model=RecordingPublicRead)
 async def upload_recording(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -732,7 +766,7 @@ async def upload_recording(
         )
 
     unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(RECORDINGS_DIR, unique_filename)
+    file_path = str(recordings_root_dir() / unique_filename)
     
     # Save the file
     try:
@@ -762,7 +796,6 @@ async def upload_recording(
         name = generate_default_meeting_name()
 
     recording = Recording(
-        id=generate_timestamp_id(),
         name=name,
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
@@ -786,7 +819,7 @@ async def upload_recording(
     if not recording.proxy_path:
         generate_proxy_task.delay(recording.id)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 from sqlalchemy.orm import selectinload
 from sqlmodel import select, or_, col, distinct
@@ -794,7 +827,7 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag, Tag
 
-@router.get("", response_model=List[Recording])
+@router.get("", response_model=List[RecordingPublicRead])
 async def list_recordings_root(
     skip: int = 0,
     limit: int = 100,
@@ -820,7 +853,7 @@ async def list_recordings_root(
         db=db, current_user=current_user
     )
 
-@router.get("/", response_model=List[Recording])
+@router.get("/", response_model=List[RecordingPublicRead])
 async def list_recordings(
     skip: int = 0,
     limit: int = 100,
@@ -886,15 +919,18 @@ async def list_recordings(
     
     result = await db.execute(query)
     recordings = result.scalars().all()
-    return recordings
+    return [
+        serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+        for recording in recordings
+    ]
 
 from sqlalchemy.orm import selectinload
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag
 
-@router.get("/{recording_id}", response_model=RecordingRead)
+@router.get("/{recording_id}", response_model=RecordingPublicRead)
 async def get_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -903,7 +939,7 @@ async def get_recording(
     """
     statement = (
         select(Recording)
-        .where(Recording.id == recording_id)
+        .where(Recording.public_id == recording_id)
         .where(Recording.user_id == current_user.id)
         .options(
             selectinload(Recording.transcript),
@@ -919,12 +955,9 @@ async def get_recording(
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
         
-    # Transform tags for response model
-    recording_dict = recording.model_dump()
-    recording_dict['has_proxy'] = bool(recording.proxy_path and os.path.exists(recording.proxy_path))
-    recording_dict['processing_eta_seconds'] = None
-    recording_dict['processing_eta_learning'] = False
-    recording_dict['processing_eta_sample_size'] = 0
+    processing_eta_seconds = None
+    processing_eta_learning = False
+    processing_eta_sample_size = 0
 
     if (
         recording.status == RecordingStatus.PROCESSING
@@ -954,41 +987,31 @@ async def get_recording(
             recording.processing_started_at,
             now=utc_now(),
         )
-        recording_dict['processing_eta_seconds'] = eta_estimate.eta_seconds
-        recording_dict['processing_eta_learning'] = eta_estimate.learning
-        recording_dict['processing_eta_sample_size'] = eta_estimate.sample_size
-    
-    # Manually populate relationships
-    if recording.transcript:
-        recording_dict['transcript'] = recording.transcript
-        
-    if recording.speakers:
-        recording_dict['speakers'] = [
-            speaker for speaker in recording.speakers if not speaker.merged_into_id
-        ]
-    else:
-        recording_dict['speakers'] = []
-        
-    if recording.tags:
-        # Extract the actual Tag object from RecordingTag association
-        recording_dict['tags'] = [rt.tag for rt in recording.tags]
-    else:
-        recording_dict['tags'] = []
-        
-    return recording_dict
+        processing_eta_seconds = eta_estimate.eta_seconds
+        processing_eta_learning = eta_estimate.learning
+        processing_eta_sample_size = eta_estimate.sample_size
+
+    return serialize_recording(
+        recording,
+        has_proxy=_recording_has_proxy(recording),
+        processing_eta_seconds=processing_eta_seconds,
+        processing_eta_learning=processing_eta_learning,
+        processing_eta_sample_size=processing_eta_sample_size,
+        include_transcript=True,
+        include_speakers=True,
+        include_tags=True,
+    )
 
 @router.get("/{recording_id}/info")
 async def get_recording_info(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     Get detailed technical info about the recording audio file.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     from backend.processing.audio_preprocessing import analyze_audio_file
     
@@ -1005,9 +1028,9 @@ async def get_recording_info(
         
     return info
 
-@router.patch("/{recording_id}", response_model=Recording)
+@router.patch("/{recording_id}", response_model=RecordingPublicRead)
 async def update_recording(
-    recording_id: int,
+    recording_id: str,
     recording_update: RecordingUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -1015,9 +1038,7 @@ async def update_recording(
     """
     Update a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording_update.name is not None:
         recording.name = recording_update.name
@@ -1026,31 +1047,25 @@ async def update_recording(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 @router.delete("/{recording_id}")
 async def delete_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Delete a recording and its associated file.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
-    # Delete file from disk
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass # Log error but continue to delete DB entry
-
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if os.path.exists(recording_temp_dir):
-        shutil.rmtree(recording_temp_dir, ignore_errors=True)
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
             
     await db.delete(recording)
     await db.commit()
@@ -1060,16 +1075,14 @@ async def delete_recording(
 
 @router.post("/{recording_id}/discard")
 async def discard_companion_upload(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user)
 ):
     """
     Discard an in-flight companion recording before it is finalised.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(
@@ -1077,15 +1090,12 @@ async def discard_companion_upload(
             detail="Only in-flight companion uploads can be discarded",
         )
 
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass
-
-    recording_temp_dir = os.path.join(TEMP_DIR, str(recording.id))
-    if os.path.exists(recording_temp_dir):
-        shutil.rmtree(recording_temp_dir, ignore_errors=True)
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
 
     await db.delete(recording)
     await db.commit()
@@ -1094,7 +1104,7 @@ async def discard_companion_upload(
 
 @router.get("/{recording_id}/stream")
 async def stream_recording(
-    recording_id: int,
+    recording_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_stream)
@@ -1103,9 +1113,7 @@ async def stream_recording(
     Stream the audio file for a recording.
     Supports range requests and limits chunk size to avoid Cloudflare 100MB limit.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     # Only serve the proxy MP3. Raw audio formats (WAV, etc.) cannot be
     # chunked via 206 because subsequent chunks lack the header needed
@@ -1214,9 +1222,9 @@ async def stream_recording(
         media_type=media_type
     )
 
-@router.post("/{recording_id}/retry", response_model=Recording)
+@router.post("/{recording_id}/retry", response_model=RecordingPublicRead)
 async def retry_processing(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1226,9 +1234,7 @@ async def retry_processing(
     Preserves recording metadata, tags, and uploaded documents, but clears the
     transcript, speakers, notes, chat history, and derived transcript or note context.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if recording.is_deleted:
         raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
@@ -1263,21 +1269,19 @@ async def retry_processing(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
-@router.post("/{recording_id}/archive", response_model=Recording)
+@router.post("/{recording_id}/archive", response_model=RecordingPublicRead)
 async def archive_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Archive a recording. Archived recordings are hidden from the main list.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     if recording.is_deleted:
         raise HTTPException(status_code=400, detail="Cannot archive a deleted recording")
@@ -1287,21 +1291,19 @@ async def archive_recording(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
-@router.post("/{recording_id}/restore", response_model=Recording)
+@router.post("/{recording_id}/restore", response_model=RecordingPublicRead)
 async def restore_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Restore an archived or soft-deleted recording back to the main list.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     recording.is_archived = False
     if recording.is_deleted:
@@ -1316,12 +1318,12 @@ async def restore_recording(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
-@router.post("/{recording_id}/soft-delete", response_model=Recording)
+@router.post("/{recording_id}/soft-delete", response_model=RecordingPublicRead)
 async def soft_delete_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1329,9 +1331,7 @@ async def soft_delete_recording(
     Soft-delete a recording. It moves to the trash/deleted view.
     The recording can be restored or permanently deleted later.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     recording.is_deleted = True
     # Preserve is_archived state so the recording can be restored to its prior view.
@@ -1339,12 +1339,12 @@ async def soft_delete_recording(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
 @router.delete("/{recording_id}/permanent")
 async def permanently_delete_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1352,9 +1352,7 @@ async def permanently_delete_recording(
     Permanently delete a recording and its associated file.
     This action cannot be undone.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     # Cancel any running task
     if recording.celery_task_id:
@@ -1363,12 +1361,12 @@ async def permanently_delete_recording(
         except Exception:
             pass  # Task might not exist or already finished
 
-    # Delete file from disk
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        try:
-            os.remove(recording.audio_path)
-        except OSError:
-            pass  # Log error but continue to delete DB entry
+    delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=recording.proxy_path,
+        logger=logger,
+    )
             
     await db.delete(recording)
     await db.commit()
@@ -1377,9 +1375,9 @@ async def permanently_delete_recording(
 
 
 
-@router.put("/{recording_id}/client_status", response_model=Recording)
+@router.put("/{recording_id}/client_status", response_model=RecordingPublicRead)
 async def update_client_status(
-    recording_id: int,
+    recording_id: str,
     status: ClientStatus = Query(..., description="Current status of the client"),
     upload_progress: Optional[int] = Query(None, description="Upload progress percentage (0-100)"),
     db: AsyncSession = Depends(get_db),
@@ -1388,9 +1386,7 @@ async def update_client_status(
     """
     Update the client status (e.g. RECORDING, PAUSED) for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     
     recording.client_status = status
     if upload_progress is not None:
@@ -1398,11 +1394,11 @@ async def update_client_status(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 @router.post("/{recording_id}/infer-speakers")
 async def infer_speakers_for_recording(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1410,9 +1406,7 @@ async def infer_speakers_for_recording(
     Re-run speaker inference on an already processed meeting.
     Triggers a background Celery task.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     # Update status to PROCESSING so UI shows spinner
     recording.status = RecordingStatus.PROCESSING
@@ -1429,18 +1423,16 @@ async def infer_speakers_for_recording(
     
     return {"status": "queued", "message": "Speaker inference started in background."}
 
-@router.post("/{recording_id}/cancel", response_model=Recording)
+@router.post("/{recording_id}/cancel", response_model=RecordingPublicRead)
 async def cancel_processing(
-    recording_id: int,
+    recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Cancel the processing task for a recording.
     """
-    recording = await db.get(Recording, recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Recording not found")
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
         
     if recording.status not in [RecordingStatus.PROCESSING, RecordingStatus.QUEUED, RecordingStatus.UPLOADING]:
         raise HTTPException(status_code=400, detail="Recording is not being processed")
@@ -1462,4 +1454,4 @@ async def cancel_processing(
     await db.commit()
     await db.refresh(recording)
     
-    return recording
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))

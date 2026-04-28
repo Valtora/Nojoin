@@ -19,9 +19,6 @@ import {
   X,
   Bell,
   LogOut,
-  Download,
-  Link2,
-  RefreshCw,
   ChevronsDown,
   ChevronsUp,
 } from "lucide-react";
@@ -38,14 +35,11 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigationStore, ViewType } from "@/lib/store";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import {
   getTags,
   updateTag,
   deleteTag,
   createTag,
-  getCompanionReleases,
-  CompanionReleases,
   logout
 } from "@/lib/api";
 import { Tag } from "@/types";
@@ -56,7 +50,6 @@ import ImportAudioModal from "./ImportAudioModal";
 import ConfirmationModal from "./ConfirmationModal";
 import CreateTagModal from "./CreateTagModal";
 import NotificationHistoryModal from "./NotificationHistoryModal";
-import { getDownloadUrl, detectPlatform } from "@/lib/platform";
 import ContextMenu from "./ContextMenu";
 
 interface NavItemProps {
@@ -88,7 +81,7 @@ function NavItem({
         ${
           isActive
             ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-            : "text-gray-700 dark:text-gray-300 hover:bg-orange-200 hover:text-orange-800 dark:hover:bg-gray-800"
+            : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
         }
         ${collapsed ? "justify-center" : ""}
       `}
@@ -309,13 +302,6 @@ export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
   const {
-    companion,
-    companionAuthenticated,
-    authorizeCompanion,
-    companionUpdateAvailable,
-    triggerCompanionUpdate,
-  } = useServiceStatusStore();
-  const {
     currentView,
     setCurrentView,
     selectedTagIds,
@@ -330,25 +316,10 @@ export default function MainNav() {
     isMobileNavOpen,
     setMobileNavOpen,
   } = useNavigationStore();
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [companionReleases, setCompanionReleases] =
-    useState<CompanionReleases | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const MIN_WIDTH = 224;
   const MAX_WIDTH = 400;
   const COLLAPSED_WIDTH = 64;
-
-  useEffect(() => {
-    const fetchReleases = async () => {
-      try {
-        const releases = await getCompanionReleases();
-        setCompanionReleases(releases);
-      } catch (error) {
-        console.error("Failed to fetch companion releases:", error);
-      }
-    };
-    void fetchReleases();
-  }, []);
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -376,9 +347,6 @@ export default function MainNav() {
     return () => window.removeEventListener("click", handleClick);
   }, []);
 
-  const handleUpdateCompanion = async () => {
-    await triggerCompanionUpdate();
-  };
   const [newTagName, setNewTagName] = useState("");
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -614,47 +582,8 @@ export default function MainNav() {
     window.dispatchEvent(new CustomEvent("recording-updated"));
   };
 
-  const handleDownloadCompanion = () => {
-    const platform = detectPlatform();
-
-    if (platform === "windows" && companionReleases?.windows_url) {
-      window.open(companionReleases.windows_url, "_blank");
-      return;
-    }
-
-    const downloadUrl = getDownloadUrl();
-    window.open(downloadUrl, "_blank");
-  };
-
-  const [authError, setAuthError] = useState<string | null>(null);
-
-  const handleAuthorizeCompanion = async () => {
-    setIsAuthorizing(true);
-    setAuthError(null);
-    try {
-      await authorizeCompanion();
-    } catch (e: any) {
-      if (e instanceof TypeError && e.message === "Failed to fetch") {
-        setAuthError("Companion App is offline or not installed.");
-      } else {
-        setAuthError(e.message || "Failed to connect to Companion App.");
-      }
-    } finally {
-      setIsAuthorizing(false);
-    }
-  };
-
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? isNavCollapsed : false;
-
-  // Determine which buttons to show
-  // If not running, show Download. But ALWAYS show Connect if not authenticated. 
-  // This allows un-paired deployments to initiate pairing even though the Companion 
-  // silently drops un-authorized polling requests for privacy.
-  const showDownloadButton = mounted && !companion;
-  const showAuthorizeButton = mounted && !companionAuthenticated;
-  const showUpdateCompanionButton =
-    mounted && companion && companionUpdateAvailable;
   const isDashboardRoute = pathname === "/";
   const isRecordingsRoute =
     pathname === "/recordings" || pathname.startsWith("/recordings/");
@@ -783,7 +712,7 @@ export default function MainNav() {
 
       <aside
         id="main-nav"
-        className={`shrink-0 border-r border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
+        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
           isMobileNavOpen ? "translate-x-0 fixed left-0 top-0 w-64 shadow-2xl" : "-translate-x-full fixed left-0 top-0 w-64 md:relative md:w-auto md:translate-x-0 md:shadow-none"
         }`}
         style={window.innerWidth < 768 ? {} : {
@@ -791,7 +720,7 @@ export default function MainNav() {
         }}
       >
         {/* Header with collapse toggle */}
-        <div className="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-800">
+        <div className="p-3 flex items-center justify-between border-b border-orange-100/80 dark:border-gray-800/80">
           {!collapsed && (
             <div className="flex-1 text-center flex items-center justify-center gap-2">
               <Image
@@ -810,7 +739,7 @@ export default function MainNav() {
             {/* Close button for mobile */}
             <button
               onClick={() => setMobileNavOpen(false)}
-              className="md:hidden p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              className="md:hidden p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title="Close Menu"
             >
               <X className="w-5 h-5 text-gray-500" />
@@ -818,7 +747,7 @@ export default function MainNav() {
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleNavCollapse}
-              className="hidden md:block p-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+              className="hidden md:block p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title={collapsed ? "Expand" : "Collapse"}
             >
               {collapsed ? (
@@ -1078,75 +1007,6 @@ export default function MainNav() {
 
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
-          {/* Download Companion Button - Only shown when companion is not reachable */}
-          {showDownloadButton && (
-            <button
-              id="nav-download-companion"
-              onClick={handleDownloadCompanion}
-              title={collapsed ? "Download Companion" : undefined}
-              className={`
-                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                bg-orange-600 hover:bg-orange-700 text-white font-medium
-                ${collapsed ? "justify-center" : ""}
-              `}
-            >
-              <Download className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <span className="text-sm truncate">Download Companion</span>
-              )}
-            </button>
-          )}
-
-          {/* Authorize Companion Button - Only shown when companion is reachable but not authenticated */}
-          {showAuthorizeButton && (
-            <div className="flex flex-col gap-1 w-full">
-              <button
-                id="nav-connect-companion"
-                onClick={handleAuthorizeCompanion}
-                disabled={isAuthorizing}
-                title={collapsed ? "Connect to Companion" : undefined}
-                className={`
-                  w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                  bg-orange-600 hover:bg-orange-700 text-white font-medium
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  ${collapsed ? "justify-center" : ""}
-                `}
-              >
-                <Link2
-                  className={`w-5 h-5 shrink-0 ${isAuthorizing ? "animate-pulse" : ""}`}
-                />
-                {!collapsed && (
-                  <span className="text-sm truncate">
-                    {isAuthorizing ? "Connecting..." : "Connect to Companion"}
-                  </span>
-                )}
-              </button>
-              {authError && !collapsed && (
-                <div className="text-xs text-red-500 font-medium px-1 text-center">
-                  {authError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Update Companion Button */}
-          {showUpdateCompanionButton && (
-            <button
-              onClick={handleUpdateCompanion}
-              title={collapsed ? "Update Companion App" : undefined}
-              className={`
-                w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-                bg-blue-600 hover:bg-blue-700 text-white font-medium
-                ${collapsed ? "justify-center" : ""}
-              `}
-            >
-              <RefreshCw className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <span className="text-sm truncate">Update Companion App</span>
-              )}
-            </button>
-          )}
-
           <NavItem
             id="nav-people"
             icon={<Users className="w-5 h-5" />}

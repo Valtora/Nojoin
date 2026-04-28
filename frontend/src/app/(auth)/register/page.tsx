@@ -109,16 +109,32 @@ function RegisterForm() {
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form
+          id="register-form"
+          name="register-form"
+          method="post"
+          className="mt-8 space-y-6"
+          onSubmit={handleSubmit}
+          autoComplete="on"
+        >
           <div className="space-y-4">
             <div className="relative">
+              <label htmlFor="register-username" className="sr-only">
+                Username
+              </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <User className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
-                id="username"
-                name="username"
+                id="register-username"
+                name="register-username"
                 type="text"
+                autoComplete="section-register username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={error ? 'register-error' : undefined}
+                aria-invalid={Boolean(error)}
                 required
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Username"
@@ -128,15 +144,21 @@ function RegisterForm() {
             </div>
             
             <div className="relative">
+              <label htmlFor="register-new-password" className="sr-only">
+                Password
+              </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
-                id="password"
-                name="password"
+                id="register-new-password"
+                name="register-new-password"
                 type="password"
-                autoComplete="new-password"
+                autoComplete="section-register new-password"
+                aria-describedby={error ? 'register-error' : undefined}
+                aria-invalid={Boolean(error)}
                 required
+                minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Password"
                 value={formData.password}
@@ -145,15 +167,21 @@ function RegisterForm() {
             </div>
 
             <div className="relative">
+              <label htmlFor="register-confirm-password" className="sr-only">
+                Confirm password
+              </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </div>
               <input
-                id="confirm-password"
-                name="confirmPassword"
+                id="register-confirm-password"
+                name="register-confirm-password"
                 type="password"
-                autoComplete="new-password"
+                autoComplete="section-register new-password"
+                aria-describedby={error ? 'register-error' : undefined}
+                aria-invalid={Boolean(error)}
                 required
+                minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                 placeholder="Confirm Password"
                 value={formData.confirmPassword}
@@ -174,8 +202,11 @@ function RegisterForm() {
                 </label>
                 <input
                   id="invite-code"
-                  name="inviteCode"
+                  name="register-invite-code"
                   type="text"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   className="appearance-none block w-full px-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
                   placeholder="Enter your invite code"
@@ -186,7 +217,12 @@ function RegisterForm() {
           )}
 
           {error && (
-            <div className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40">
+            <div
+              id="register-error"
+              role="alert"
+              aria-live="polite"
+              className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40"
+            >
               {error}
             </div>
           )}

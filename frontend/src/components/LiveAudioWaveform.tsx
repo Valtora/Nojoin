@@ -1,13 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { RecordingId } from "@/types";
+import { useAudioWarningStore } from "@/lib/audioWarningStore";
+import { companionLocalFetch } from "@/lib/companionLocalApi";
+import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
-const COMPANION_URL = "http://127.0.0.1:12345";
 const HISTORY_LENGTH = 48;
 const POLL_INTERVAL_MS = 180;
 const CALIBRATION_WINDOW = 72;
 const MIN_REFERENCE_RANGE = 2.5;
 const NOISE_GATE_FLOOR = 0.35;
+const ACTIVITY_LEVEL_THRESHOLD = 6;
+const QUIET_HINT_DELAY_MS = 20000;
+const ACTIVITY_HINT_COPY = {
+  title: "Audio has been quiet for a bit",
+  message:
+    "That can be normal during a quiet stretch. If the meeting should be active, check the companion audio device settings.",
+};
+
+const AUDIO_BAR_CLASS_NAME =
+  "bg-gradient-to-t from-orange-600 via-orange-500 to-amber-300";
+
+function combineAudioLevel(inputLevel: number, outputLevel: number) {
+  return Math.max(inputLevel, outputLevel);
+};
 
 function quantile(values: number[], percentile: number) {
   if (values.length === 0) {
@@ -60,7 +77,51 @@ interface AudioLevelsResponse {
   is_recording: boolean;
 }
 
+type WaveformUnavailableState =
+  | null
+  | "reconnecting"
+  | "repair-required"
+  | "repairing"
+  | "fetch-unavailable";
+
+const WAVEFORM_UNAVAILABLE_COPY: Record<
+  Exclude<WaveformUnavailableState, null>,
+  { title: string; message: string; tone: "info" | "warning" }
+> = {
+  reconnecting: {
+    title: "Live audio preview reconnecting",
+    message:
+      "The Companion is temporarily disconnected. This preview should return automatically when the local connection recovers.",
+    tone: "info",
+  },
+  "repair-required": {
+    title: "Live audio preview unavailable",
+    message:
+      "Browser repair is required before this preview can return. Open Companion support if it does not recover after repair.",
+    tone: "warning",
+  },
+  repairing: {
+    title: "Live audio preview paused",
+    message:
+      "Browser repair is in progress. This preview will return automatically when the repair finishes.",
+    tone: "info",
+  },
+  "fetch-unavailable": {
+    title: "Live audio preview temporarily unavailable",
+    message:
+      "The preview could not refresh from the Companion right now. That does not necessarily mean the meeting audio is silent.",
+    tone: "info",
+  },
+};
+
+const WAVEFORM_UNAVAILABLE_STYLES = {
+  info: "border-blue-200/80 bg-blue-50/80 text-blue-900 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100",
+  warning:
+    "border-amber-200/80 bg-amber-50/80 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100",
+};
+
 interface LiveAudioWaveformProps {
+  recordingId: RecordingId;
   enabled: boolean;
   paused?: boolean;
 }
@@ -68,36 +129,28 @@ interface LiveAudioWaveformProps {
 const zeroHistory = () => Array.from({ length: HISTORY_LENGTH }, () => 0);
 
 function WaveformTrack({
-  label,
-  value,
   history,
   barClassName,
 }: {
-  label: string;
-  value: number;
   history: number[];
   barClassName: string;
 }) {
   return (
     <div className="rounded-3xl border border-white/60 bg-white/75 p-4 shadow-lg shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/60 dark:shadow-black/20">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-          {label}
-        </span>
-        <span className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
-          {value}%
-        </span>
-      </div>
       <div className="flex h-24 items-end gap-1 overflow-hidden rounded-2xl bg-gradient-to-b from-orange-100/80 via-white to-white px-2 py-3 dark:from-orange-500/10 dark:via-gray-950 dark:to-gray-950">
         {history.map((sample, index) => (
           <div
-            key={`${label}-${index}`}
-            className={`flex-1 rounded-full transition-[height,opacity] duration-150 ${barClassName}`}
-            style={{
-              height: `${Math.max(6, sample)}%`,
-              opacity: 0.35 + (sample / 140),
-            }}
-          />
+            key={`audio-bar-${index}`}
+            className="flex h-full flex-1 items-end justify-center"
+          >
+            <div
+              className={`h-full min-w-[2px] w-[58%] rounded-full transition-[height,opacity] duration-150 ${barClassName}`}
+              style={{
+                height: `${Math.max(6, sample)}%`,
+                opacity: 0.35 + (sample / 140),
+              }}
+            />
+          </div>
         ))}
       </div>
     </div>
@@ -105,26 +158,94 @@ function WaveformTrack({
 }
 
 export default function LiveAudioWaveform({
+  recordingId,
   enabled,
   paused = false,
 }: LiveAudioWaveformProps) {
-  const [inputHistory, setInputHistory] = useState<number[]>(zeroHistory);
-  const [outputHistory, setOutputHistory] = useState<number[]>(zeroHistory);
-  const [inputLevel, setInputLevel] = useState(0);
-  const [outputLevel, setOutputLevel] = useState(0);
+  const companion = useServiceStatusStore((state) => state.companion);
+  const companionAuthenticated = useServiceStatusStore(
+    (state) => state.companionAuthenticated,
+  );
+  const companionLocalConnectionUnavailable = useServiceStatusStore(
+    (state) => state.companionLocalConnectionUnavailable,
+  );
+  const companionLocalHttpsStatus = useServiceStatusStore(
+    (state) => state.companionLocalHttpsStatus,
+  );
+  const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
+  const [showQuietHint, setShowQuietHint] = useState(false);
+  const [waveformUnavailableState, setWaveformUnavailableState] =
+    useState<WaveformUnavailableState>(null);
   const inputCalibrationHistoryRef = useRef<number[]>([]);
   const outputCalibrationHistoryRef = useRef<number[]>([]);
+  const lastAudioActivityAtRef = useRef<number>(Date.now());
+  const suppressQuietAudioWarnings = useAudioWarningStore(
+    (state) => state.suppressQuietAudioWarnings,
+  );
+  const dismissedForMeeting = useAudioWarningStore((state) =>
+    state.dismissedMeetingRecordingIds.includes(recordingId),
+  );
+  const dismissForMeeting = useAudioWarningStore(
+    (state) => state.dismissForMeeting,
+  );
+  const suppressWarnings = useAudioWarningStore(
+    (state) => state.suppressWarnings,
+  );
 
   useEffect(() => {
+    const resetActivityTracking = () => {
+      const now = Date.now();
+      lastAudioActivityAtRef.current = now;
+      setShowQuietHint(false);
+    };
+
     if (!enabled) {
-      setInputHistory(zeroHistory());
-      setOutputHistory(zeroHistory());
-      setInputLevel(0);
-      setOutputLevel(0);
+      setWaveformUnavailableState(null);
+      setAudioHistory(zeroHistory());
       inputCalibrationHistoryRef.current = [];
       outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
       return;
     }
+
+    if (companionLocalHttpsStatus === "needs-repair") {
+      setWaveformUnavailableState("repair-required");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (companionLocalHttpsStatus === "repairing") {
+      setWaveformUnavailableState("repairing");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (companionAuthenticated && !companion) {
+      setWaveformUnavailableState("reconnecting");
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    if (!companion) {
+      setWaveformUnavailableState(null);
+      setAudioHistory(zeroHistory());
+      inputCalibrationHistoryRef.current = [];
+      outputCalibrationHistoryRef.current = [];
+      resetActivityTracking();
+      return;
+    }
+
+    resetActivityTracking();
+    setWaveformUnavailableState(null);
 
     let cancelled = false;
     let timeoutId: number | undefined;
@@ -135,10 +256,14 @@ export default function LiveAudioWaveform({
 
     const pollLevels = async () => {
       try {
-        const response = await fetch(`${COMPANION_URL}/levels/live`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
+        const response = await companionLocalFetch(
+          "/levels/live",
+          {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          },
+          "waveform:read",
+        );
 
         if (!response.ok) {
           throw new Error(`Companion returned ${response.status}`);
@@ -152,6 +277,8 @@ export default function LiveAudioWaveform({
           return;
         }
 
+        setWaveformUnavailableState(null);
+
         const nextInputCalibrationHistory = [
           ...inputCalibrationHistoryRef.current,
           rawInputLevel,
@@ -161,16 +288,6 @@ export default function LiveAudioWaveform({
           rawInputLevel,
           nextInputCalibrationHistory,
         );
-        setInputLevel((previousLevel) =>
-          smoothLevel(previousLevel, calibratedInputLevel),
-        );
-        setInputHistory((displayHistory) => {
-          const smoothedLevel = smoothLevel(
-            displayHistory[displayHistory.length - 1] || 0,
-            calibratedInputLevel,
-          );
-          return appendSample(displayHistory, smoothedLevel);
-        });
 
         const nextOutputCalibrationHistory = [
           ...outputCalibrationHistoryRef.current,
@@ -181,13 +298,28 @@ export default function LiveAudioWaveform({
           rawOutputLevel,
           nextOutputCalibrationHistory,
         );
-        setOutputLevel((previousLevel) =>
-          smoothLevel(previousLevel, calibratedOutputLevel),
+
+        const combinedLevel = combineAudioLevel(
+          calibratedInputLevel,
+          calibratedOutputLevel,
         );
-        setOutputHistory((displayHistory) => {
+        const now = Date.now();
+
+        if (!paused) {
+          if (combinedLevel > ACTIVITY_LEVEL_THRESHOLD) {
+            lastAudioActivityAtRef.current = now;
+          }
+
+          setShowQuietHint(
+            now - lastAudioActivityAtRef.current >= QUIET_HINT_DELAY_MS,
+          );
+        } else {
+          resetActivityTracking();
+        }
+        setAudioHistory((displayHistory) => {
           const smoothedLevel = smoothLevel(
             displayHistory[displayHistory.length - 1] || 0,
-            calibratedOutputLevel,
+            combinedLevel,
           );
           return appendSample(displayHistory, smoothedLevel);
         });
@@ -196,10 +328,16 @@ export default function LiveAudioWaveform({
           return;
         }
 
-        setInputLevel(0);
-        setOutputLevel(0);
-        setInputHistory((history) => appendSample(history, 0));
-        setOutputHistory((history) => appendSample(history, 0));
+        setWaveformUnavailableState((currentState) =>
+          currentState === "repair-required" ||
+          currentState === "repairing" ||
+          currentState === "reconnecting"
+            ? currentState
+            : "fetch-unavailable",
+        );
+        setShowQuietHint(false);
+        lastAudioActivityAtRef.current = Date.now();
+        setAudioHistory((history) => appendSample(history, 0));
       }
 
       if (!cancelled) {
@@ -215,28 +353,70 @@ export default function LiveAudioWaveform({
         window.clearTimeout(timeoutId);
       }
     };
-  }, [enabled]);
+  }, [
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    enabled,
+    paused,
+    recordingId,
+  ]);
+
+  const showActivityHint = Boolean(
+    showQuietHint &&
+      !waveformUnavailableState &&
+      !suppressQuietAudioWarnings &&
+      !dismissedForMeeting,
+  );
+  const waveformUnavailableCopy = waveformUnavailableState
+    ? WAVEFORM_UNAVAILABLE_COPY[waveformUnavailableState]
+    : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
-        <span>Live Audio Levels</span>
-        <span>{paused ? "Paused" : "Monitoring"}</span>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <WaveformTrack
-          label="System Audio"
-          value={outputLevel}
-          history={outputHistory}
-          barClassName="bg-gradient-to-t from-orange-600 via-orange-500 to-amber-300"
-        />
-        <WaveformTrack
-          label="Microphone"
-          value={inputLevel}
-          history={inputHistory}
-          barClassName="bg-gradient-to-t from-rose-600 via-orange-500 to-orange-200"
-        />
-      </div>
+      {waveformUnavailableCopy ? (
+        <div
+          className={`rounded-3xl border px-4 py-3 shadow-sm ${WAVEFORM_UNAVAILABLE_STYLES[waveformUnavailableCopy.tone]}`}
+        >
+          <p className="text-sm font-medium">{waveformUnavailableCopy.title}</p>
+          <p className="mt-1 text-xs leading-5 opacity-90">
+            {waveformUnavailableCopy.message}
+          </p>
+        </div>
+      ) : showActivityHint ? (
+        <div className="rounded-3xl border border-orange-200/80 bg-orange-50/80 px-4 py-3 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10">
+          <p className="text-sm font-medium text-orange-950 dark:text-orange-100">
+            {ACTIVITY_HINT_COPY.title}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-orange-800 dark:text-orange-100/80">
+            {ACTIVITY_HINT_COPY.message}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => dismissForMeeting(recordingId)}
+              className="rounded-full border border-orange-300/90 bg-white/85 px-3 py-1.5 text-xs font-medium text-orange-900 transition-colors hover:bg-white dark:border-orange-400/25 dark:bg-gray-950/40 dark:text-orange-100 dark:hover:bg-gray-950/70"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                dismissForMeeting(recordingId);
+                suppressWarnings();
+              }}
+              className="rounded-full border border-orange-300/70 px-3 py-1.5 text-xs font-medium text-orange-800 transition-colors hover:bg-orange-100/80 dark:border-orange-400/20 dark:text-orange-100 dark:hover:bg-orange-500/10"
+            >
+              Don&apos;t show again
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <WaveformTrack
+        history={audioHistory}
+        barClassName={AUDIO_BAR_CLASS_NAME}
+      />
     </div>
   );
 }

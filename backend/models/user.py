@@ -2,7 +2,9 @@ from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
+from pydantic import field_validator
 from backend.models.base import BaseDBModel
+from backend.core.security import MIN_PASSWORD_LENGTH, validate_password_policy
 from enum import Enum
 from datetime import datetime
 
@@ -22,6 +24,7 @@ class User(BaseDBModel, table=True):
     is_superuser: bool = Field(default=False)
     force_password_change: bool = Field(default=False)
     role: str = Field(default=UserRole.USER)
+    token_version: int = Field(default=0, nullable=False)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
     has_seen_demo_recording: bool = Field(default=False)
     
@@ -39,10 +42,15 @@ class User(BaseDBModel, table=True):
 
 class UserCreate(SQLModel):
     username: str
-    password: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     is_superuser: bool = False
     role: str = UserRole.USER
     invite_code: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)
 
 class UserRead(SQLModel):
     id: int
@@ -60,11 +68,23 @@ class UserList(SQLModel):
 
 class UserUpdate(SQLModel):
     username: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     role: Optional[str] = None
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return validate_password_policy(value)
+
 class UserPasswordUpdate(SQLModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password_policy(value)

@@ -21,7 +21,6 @@ Users do not enter OAuth client IDs, client secrets, or tenant IDs themselves.
 
 - Use a stable HTTPS browser origin whenever possible.
 - Set `WEB_APP_URL` to the exact public browser origin used to access Nojoin.
-- Include that same origin in `ALLOWED_ORIGINS`.
 - Set a stable `DATA_ENCRYPTION_KEY` before storing provider secrets or connecting user calendars.
 - If you deploy behind a reverse proxy, make sure the browser origin and provider callback origin are identical.
 
@@ -64,6 +63,7 @@ When calendar sync is configured:
 
 - The dashboard month view shows dots on days with synced events.
 - The agenda view focuses on future events rather than historical clutter.
+- Selecting a day in month view opens a day agenda, and selecting today shows a live now marker against timed events.
 - The `Today` action jumps back to the current month and date context.
 - Per-calendar colours can be used so different sources remain visually distinct.
 - Event times render in the user's configured Nojoin timezone.
@@ -149,7 +149,6 @@ After setup:
 ### Redirect Origin Is Wrong
 
 - Confirm `WEB_APP_URL` matches the exact browser origin users open.
-- Confirm `ALLOWED_ORIGINS` includes that same origin.
 - Confirm the provider registration uses the same callback origin.
 
 ### `AADSTS50194` with Microsoft

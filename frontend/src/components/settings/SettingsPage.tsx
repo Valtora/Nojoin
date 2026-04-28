@@ -15,18 +15,24 @@ import {
   Save,
   Loader2,
   Settings as SettingsIcon,
-  Mic,
+  Link2,
   ArrowUpCircle,
   Search,
   User,
   Shield,
   PlayCircle,
 } from "lucide-react";
+import {
+  CompanionLocalRequestError,
+  type CompanionLocalAction,
+  companionLocalFetch,
+} from "@/lib/companionLocalApi";
+import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import { getMatchScore } from "@/lib/searchUtils";
 import { TAB_KEYWORDS } from "./keywords";
 import VersionTag from "./VersionTag";
 import GeneralSettings from "./GeneralSettings";
-import AudioSettings from "./AudioSettings";
+import CompanionAppSettings from "./CompanionAppSettings";
 import AccountSettings from "./AccountSettings";
 import AdminSettings from "./AdminSettings";
 import HelpSettings from "./HelpSettings";
@@ -34,7 +40,13 @@ import UpdatesSettings from "./UpdatesSettings";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { isValidTimeZone, setCachedUserTimeZone } from "@/lib/timezone";
 
-type Tab = "general" | "audio" | "updates" | "help" | "account" | "admin";
+type Tab =
+  | "general"
+  | "companion"
+  | "updates"
+  | "help"
+  | "account"
+  | "admin";
 
 interface CompanionConfig {
   api_port: number;
@@ -42,10 +54,16 @@ interface CompanionConfig {
   min_meeting_length?: number;
 }
 
-const COMPANION_URL = "http://127.0.0.1:12345";
+const COMPANION_CONFIG_READ_ACTIONS: CompanionLocalAction[] = [
+  "settings:read",
+  "devices:read",
+];
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
+  const handleCompanionPairingEnded = useServiceStatusStore(
+    (state) => state.handleCompanionPairingEnded,
+  );
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings>({});
   const [companionConfig, setCompanionConfig] =
@@ -68,28 +86,91 @@ export default function SettingsPage() {
   const { addNotification } = useNotificationStore();
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshCompanionConfigRequestRef = useRef<Promise<boolean> | null>(
+    null,
+  );
   const isFirstLoad = useRef(true);
   const lastSavedState = useRef<string>("");
 
   const refreshCompanionConfig = useCallback(async () => {
-    try {
-      const res = await fetch(`${COMPANION_URL}/config`);
-      if (res.ok) {
-        const companionData: CompanionConfig = await res.json();
-        setCompanionConfig(companionData);
-      }
+    const companionAuthenticated =
+      useServiceStatusStore.getState().companionAuthenticated;
 
-      const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-      if (devicesRes.ok) {
-        const devicesData: CompanionDevices = await devicesRes.json();
-        setCompanionDevices(devicesData);
-      }
-      return true;
-    } catch (e) {
-      console.error("Failed to refresh companion config", e);
+    if (!companionAuthenticated) {
+      setCompanionConfig(null);
+      setCompanionDevices(null);
+      setSelectedInputDevice(null);
+      setSelectedOutputDevice(null);
       return false;
     }
-  }, []);
+
+    if (refreshCompanionConfigRequestRef.current) {
+      return refreshCompanionConfigRequestRef.current;
+    }
+
+    const request = (async () => {
+      try {
+        const res = await companionLocalFetch(
+          "/config",
+          { method: "GET" },
+          COMPANION_CONFIG_READ_ACTIONS,
+        );
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 409) {
+            handleCompanionPairingEnded();
+          }
+          setCompanionConfig(null);
+          setCompanionDevices(null);
+          setSelectedInputDevice(null);
+          setSelectedOutputDevice(null);
+          return false;
+        }
+
+        const companionData: CompanionConfig = await res.json();
+        setCompanionConfig(companionData);
+
+        const devicesRes = await companionLocalFetch(
+          "/devices",
+          { method: "GET" },
+          COMPANION_CONFIG_READ_ACTIONS,
+        );
+        if (!devicesRes.ok) {
+          if (devicesRes.status === 403 || devicesRes.status === 409) {
+            handleCompanionPairingEnded();
+          }
+          setCompanionDevices(null);
+          setSelectedInputDevice(null);
+          setSelectedOutputDevice(null);
+          return false;
+        }
+
+        const devicesData: CompanionDevices = await devicesRes.json();
+        setCompanionDevices(devicesData);
+        setSelectedInputDevice(devicesData.selected_input);
+        setSelectedOutputDevice(devicesData.selected_output);
+        return true;
+      } catch (e) {
+        console.error("Failed to refresh companion config", e);
+        if (
+          e instanceof CompanionLocalRequestError &&
+          (e.status === 403 || e.status === 409)
+        ) {
+          handleCompanionPairingEnded();
+        }
+        setCompanionConfig(null);
+        setCompanionDevices(null);
+        setSelectedInputDevice(null);
+        setSelectedOutputDevice(null);
+        return false;
+      }
+    })();
+
+    refreshCompanionConfigRequestRef.current = request.finally(() => {
+      refreshCompanionConfigRequestRef.current = null;
+    });
+
+    return refreshCompanionConfigRequestRef.current;
+  }, [handleCompanionPairingEnded]);
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
@@ -97,7 +178,7 @@ export default function SettingsPage() {
 
     const matches: Record<Tab, number> = {
       general: getMatchScore(searchQuery, TAB_KEYWORDS.general),
-      audio: getMatchScore(searchQuery, TAB_KEYWORDS.audio),
+      companion: getMatchScore(searchQuery, TAB_KEYWORDS.companion),
       updates: getMatchScore(searchQuery, TAB_KEYWORDS.updates),
       help: getMatchScore(searchQuery, ["help", "tour", "demo", "tutorial"]),
       account: getMatchScore(searchQuery, TAB_KEYWORDS.account),
@@ -149,9 +230,14 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
+    if (requestedTab === "audio") {
+      setActiveTab("companion");
+      return;
+    }
+
     if (
       requestedTab === "general" ||
-      requestedTab === "audio" ||
+      requestedTab === "companion" ||
       requestedTab === "updates" ||
       requestedTab === "help" ||
       requestedTab === "account" ||
@@ -169,9 +255,8 @@ export default function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       let currentSettings = {};
-      let currentCompanionConfig: CompanionConfig | null = null;
-      let currentInputDevice: string | null = null;
-      let currentOutputDevice: string | null = null;
+      const currentInputDevice: string | null = null;
+      const currentOutputDevice: string | null = null;
 
       try {
         const userData = await getUserMe();
@@ -205,29 +290,6 @@ export default function SettingsPage() {
         currentSettings = safeSettings;
         setForcePasswordChange(false);
 
-        // Try to load companion config (always at localhost:12345)
-        try {
-          const res = await fetch(`${COMPANION_URL}/config`);
-          if (res.ok) {
-            const companionData: CompanionConfig = await res.json();
-            setCompanionConfig(companionData);
-            currentCompanionConfig = companionData;
-          }
-
-          // Fetch available devices
-          const devicesRes = await fetch(`${COMPANION_URL}/devices`);
-          if (devicesRes.ok) {
-            const devicesData: CompanionDevices = await devicesRes.json();
-            setCompanionDevices(devicesData);
-            setSelectedInputDevice(devicesData.selected_input);
-            setSelectedOutputDevice(devicesData.selected_output);
-            currentInputDevice = devicesData.selected_input;
-            currentOutputDevice = devicesData.selected_output;
-          }
-        } catch (e) {
-          console.error("Failed to load companion config/devices", e);
-          setCompanionDevices(null);
-        }
       } catch (e) {
         console.error("Failed to load settings", e);
       }
@@ -235,8 +297,8 @@ export default function SettingsPage() {
       // Update last saved state to prevent auto-save on load
       lastSavedState.current = JSON.stringify({
         settings: currentSettings,
-        companionApiPort: currentCompanionConfig?.api_port,
-        companionMinLength: currentCompanionConfig?.min_meeting_length,
+        companionApiPort: undefined,
+        companionMinLength: undefined,
         selectedInputDevice: currentInputDevice,
         selectedOutputDevice: currentOutputDevice,
       });
@@ -305,26 +367,34 @@ export default function SettingsPage() {
 
       // Save companion config (api_port) if available
       if (companionConfig) {
-        await fetch(`${COMPANION_URL}/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_port: companionConfig.api_port,
-            min_meeting_length: companionConfig.min_meeting_length,
-          }),
-        });
+        await companionLocalFetch(
+          "/config",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              api_port: companionConfig.api_port,
+              min_meeting_length: companionConfig.min_meeting_length,
+            }),
+          },
+          "settings:write",
+        );
       }
 
       // Save device selections if companion is connected
       if (companionDevices) {
-        await fetch(`${COMPANION_URL}/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input_device_name: selectedInputDevice,
-            output_device_name: selectedOutputDevice,
-          }),
-        });
+        await companionLocalFetch(
+          "/config",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input_device_name: selectedInputDevice,
+              output_device_name: selectedOutputDevice,
+            }),
+          },
+          "settings:write",
+        );
       }
 
       // Update last saved state
@@ -407,7 +477,7 @@ export default function SettingsPage() {
 
     const baseTabs = [
       { id: "general", label: "General", icon: SettingsIcon },
-      { id: "audio", label: "Audio & Recording", icon: Mic },
+      { id: "companion", label: "Companion App", icon: Link2 },
       { id: "updates", label: "Updates", icon: ArrowUpCircle },
       { id: "help", label: "Help", icon: PlayCircle },
       { id: "account", label: "Account", icon: User },
@@ -536,10 +606,8 @@ export default function SettingsPage() {
                   searchQuery={searchQuery}
                 />
               )}
-              {activeTab === "audio" && (
-                <AudioSettings
-                  settings={settings}
-                  onUpdateSettings={setSettings}
+              {activeTab === "companion" && (
+                <CompanionAppSettings
                   companionConfig={companionConfig}
                   onUpdateCompanionConfig={(config) =>
                     setCompanionConfig((prev) =>

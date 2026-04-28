@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { RecordingId } from "@/types";
 
 export type ViewType = "recordings" | "archived" | "deleted";
 export type ActivePanel = "transcript" | "notes" | "documents";
@@ -33,11 +34,11 @@ interface NavigationState {
 
   // Selection State
   selectionMode: boolean;
-  selectedRecordingIds: number[];
+  selectedRecordingIds: RecordingId[];
   setSelectionMode: (enabled: boolean) => void;
   toggleSelectionMode: () => void;
-  toggleRecordingSelection: (id: number) => void;
-  selectAllRecordings: (ids: number[]) => void;
+  toggleRecordingSelection: (id: RecordingId) => void;
+  selectAllRecordings: (ids: RecordingId[]) => void;
   clearSelection: () => void;
 
   // Tour State

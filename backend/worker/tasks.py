@@ -28,6 +28,7 @@ from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
+from backend.utils.recording_storage import cleanup_stale_recording_artifacts
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
 from backend.processing.text_embedding import get_text_embedding_service
@@ -1358,47 +1359,8 @@ def cleanup_temp_recordings():
     """
     logger.info("Starting cleanup of temp recordings...")
     
-    # Define paths (matching api/v1/endpoints/recordings.py)
-    recordings_dir = os.getenv("RECORDINGS_DIR", "data/recordings")
-    temp_dir = os.path.join(recordings_dir, "temp")
-    failed_dir = os.path.join(recordings_dir, "failed")
-    
-    # 24 hours ago
-    cutoff_time = time.time() - (24 * 60 * 60)
-    
-    cleaned_count = 0
-    
-    # Clean temp dir
-    if os.path.exists(temp_dir):
-        for item in os.listdir(temp_dir):
-            item_path = os.path.join(temp_dir, item)
-            try:
-                # Check modification time
-                if os.path.getmtime(item_path) < cutoff_time:
-                    if os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                    else:
-                        os.remove(item_path)
-                    cleaned_count += 1
-                    logger.info(f"Cleaned up old temp item: {item}")
-            except Exception as e:
-                logger.error(f"Error cleaning temp item {item}: {e}")
+    cleaned_count = cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
 
-    # Clean failed dir
-    if os.path.exists(failed_dir):
-        for item in os.listdir(failed_dir):
-            item_path = os.path.join(failed_dir, item)
-            try:
-                if os.path.getmtime(item_path) < cutoff_time:
-                    if os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                    else:
-                        os.remove(item_path)
-                    cleaned_count += 1
-                    logger.info(f"Cleaned up old failed item: {item}")
-            except Exception as e:
-                logger.error(f"Error cleaning failed item {item}: {e}")
-                
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
 
 @celery_app.task(base=DatabaseTask, bind=True)

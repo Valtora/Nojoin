@@ -9,13 +9,14 @@ import {
   Loader2,
   File,
 } from "lucide-react";
+import type { RecordingId } from "@/types";
 import { Document, getDocuments, deleteDocument } from "@/lib/api";
 import DocumentUploadModal from "./DocumentUploadModal";
 import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "./ConfirmationModal";
 
 interface DocumentsViewProps {
-  recordingId: number;
+  recordingId: RecordingId;
 }
 
 export default function DocumentsView({ recordingId }: DocumentsViewProps) {

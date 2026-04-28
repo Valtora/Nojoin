@@ -3,29 +3,29 @@
 import { useEffect, useRef } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-
-// Silence threshold (0-100 scale).
-const SILENCE_THRESHOLD = 2;
-// Number of consecutive checks before showing warning
-const SILENCE_CHECK_COUNT = 3;
+import { getCompanionSteadyStateGuidance } from "@/lib/companionSteadyState";
 
 export default function ServiceStatusAlerts() {
   const { addNotification, removeActiveNotification } = useNotificationStore();
   const {
     backend,
+    backendVersion,
     db,
     worker,
     companion,
-    audioLevels,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionStatus,
+    companionVersion,
+    companionMonitoringEnabled,
     backendFailCount,
     companionFailCount,
+    checkBackend,
+    checkCompanion,
     startPolling,
     stopPolling,
   } = useServiceStatusStore();
-
-  // Track consecutive silence counts
-  const silenceCountRef = useRef({ input: 0, output: 0 });
 
   // Track active notification IDs
   const notificationIds = useRef<{ [key: string]: string | null }>({
@@ -33,11 +33,21 @@ export default function ServiceStatusAlerts() {
     db: null,
     worker: null,
     companion: null,
-    audio: null,
   });
+  const companionNotificationState = useRef<string | null>(null);
+  const previousCompanionAuthenticated = useRef(false);
 
   // Track startup grace period
   const isStartupRef = useRef(true);
+  const companionGuidance = getCompanionSteadyStateGuidance({
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    companionStatus,
+    backendVersion,
+    companionVersion,
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -52,8 +62,75 @@ export default function ServiceStatusAlerts() {
     return () => stopPolling();
   }, [startPolling, stopPolling]);
 
+  useEffect(() => {
+    const refreshStatuses = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void checkBackend();
+      void checkCompanion();
+    };
+
+    window.addEventListener("focus", refreshStatuses);
+    document.addEventListener("visibilitychange", refreshStatuses);
+
+    return () => {
+      window.removeEventListener("focus", refreshStatuses);
+      document.removeEventListener("visibilitychange", refreshStatuses);
+    };
+  }, [checkBackend, checkCompanion]);
+
+  useEffect(() => {
+    if (
+      !isStartupRef.current &&
+      companionMonitoringEnabled &&
+      previousCompanionAuthenticated.current &&
+      !companionAuthenticated
+    ) {
+      addNotification({
+        type: "info",
+        message:
+          "Companion pairing ended for this Nojoin backend. Start pairing again from Companion Settings if you still need local recording controls.",
+      });
+    }
+
+    previousCompanionAuthenticated.current = companionAuthenticated;
+  }, [
+    addNotification,
+    companionAuthenticated,
+    companionMonitoringEnabled,
+  ]);
+
   // Monitor Service Status
   useEffect(() => {
+    const clearCompanionNotification = () => {
+      if (notificationIds.current.companion) {
+        removeActiveNotification(notificationIds.current.companion);
+        notificationIds.current.companion = null;
+      }
+      companionNotificationState.current = null;
+    };
+
+    const showCompanionNotification = (
+      stateKey: string,
+      type: "error" | "warning" | "info",
+      message: string,
+      persistent = false,
+    ) => {
+      if (companionNotificationState.current === stateKey) {
+        return;
+      }
+
+      clearCompanionNotification();
+      notificationIds.current.companion = addNotification({
+        type,
+        message,
+        persistent,
+      });
+      companionNotificationState.current = stateKey;
+    };
+
     const updateNotifications = () => {
       // Backend
       if (!backend && !notificationIds.current.backend) {
@@ -98,19 +175,43 @@ export default function ServiceStatusAlerts() {
       }
 
       // Companion
-      if (!companion && !notificationIds.current.companion) {
-        // Displays error only after the startup grace period with > 2 consecutive failures.
-        if (!isStartupRef.current && companionFailCount > 2) {
-          notificationIds.current.companion = addNotification({
-            type: "error",
-            message:
-              "Companion App Disconnected: Start the app to record audio.",
-            persistent: true,
-          });
-        }
-      } else if (companion && notificationIds.current.companion) {
-        removeActiveNotification(notificationIds.current.companion);
-        notificationIds.current.companion = null;
+      if (!companionMonitoringEnabled) {
+        clearCompanionNotification();
+      } else if (companionGuidance.key === "browser-repair-required") {
+        showCompanionNotification(
+          "browser-repair-required",
+          "warning",
+          "Browser repair required. Open Companion support, then follow Open Settings to Repair in the Companion app.",
+          true,
+        );
+      } else if (companionGuidance.key === "version-mismatch") {
+        showCompanionNotification(
+          "version-mismatch",
+          "warning",
+          "Version mismatch. Open Companion support and align versions before local control will work again.",
+        );
+      } else if (companionGuidance.key === "browser-repair-in-progress") {
+        showCompanionNotification(
+          "browser-repair-in-progress",
+          "info",
+          "Browser repair in progress. Browser controls will refresh automatically when repair finishes.",
+        );
+      } else if (
+        !isStartupRef.current &&
+        companionGuidance.key === "temporarily-disconnected" &&
+        companionFailCount > 2
+      ) {
+        showCompanionNotification(
+          companionLocalConnectionUnavailable
+            ? "temporarily-disconnected-local-unavailable"
+            : "temporarily-disconnected",
+          "info",
+          companionLocalConnectionUnavailable
+            ? "Temporarily disconnected. This pairing stays valid while the browser reconnects to the local Companion."
+            : "Temporarily disconnected. Existing pairing stays valid and will resync automatically when the Companion reconnects.",
+        );
+      } else {
+        clearCompanionNotification();
       }
     };
 
@@ -120,57 +221,19 @@ export default function ServiceStatusAlerts() {
     db,
     worker,
     companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    companionGuidance.key,
+    companionMonitoringEnabled,
+    companionStatus,
+    companionVersion,
     backendFailCount,
+    backendVersion,
     companionFailCount,
     addNotification,
     removeActiveNotification,
   ]);
-
-  // Monitor Audio Levels
-  useEffect(() => {
-    const checkAudioSilence = () => {
-      if (companionStatus === "recording") {
-        if (audioLevels.input < SILENCE_THRESHOLD) {
-          silenceCountRef.current.input++;
-        } else {
-          silenceCountRef.current.input = 0;
-        }
-
-        if (audioLevels.output < SILENCE_THRESHOLD) {
-          silenceCountRef.current.output++;
-        } else {
-          silenceCountRef.current.output = 0;
-        }
-
-        const isInputSilent =
-          silenceCountRef.current.input >= SILENCE_CHECK_COUNT;
-        const isOutputSilent =
-          silenceCountRef.current.output >= SILENCE_CHECK_COUNT;
-
-        const newWarnings = { noAudio: isInputSilent && isOutputSilent };
-
-        if (newWarnings.noAudio && !notificationIds.current.audio) {
-          notificationIds.current.audio = addNotification({
-            type: "warning",
-            message:
-              "No Audio Detected: No sound detected from microphone or system.",
-            persistent: true,
-          });
-        } else if (!newWarnings.noAudio && notificationIds.current.audio) {
-          removeActiveNotification(notificationIds.current.audio);
-          notificationIds.current.audio = null;
-        }
-      } else {
-        silenceCountRef.current = { input: 0, output: 0 };
-        if (notificationIds.current.audio) {
-          removeActiveNotification(notificationIds.current.audio);
-          notificationIds.current.audio = null;
-        }
-      }
-    };
-
-    checkAudioSilence();
-  }, [audioLevels, companionStatus, addNotification, removeActiveNotification]);
 
   return null;
 }

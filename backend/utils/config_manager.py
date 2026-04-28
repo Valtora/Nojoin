@@ -15,6 +15,26 @@ CONFIG_FILENAME = 'config.json'
 CONFIG_PATH = str(path_manager.config_path)
 WEB_APP_URL_ENV_KEY = "WEB_APP_URL"
 
+LOCAL_WEB_ORIGINS = (
+    "http://localhost:14141",
+    "http://localhost:3000",
+    "http://127.0.0.1:14141",
+    "https://localhost",
+    "https://localhost:14141",
+    "https://localhost:14443",
+)
+
+TRUSTED_LOCAL_HOSTS = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+)
+
+TRUSTED_TEST_HOSTS = (
+    "test",
+    "testserver",
+)
+
 # Keys that should NEVER be written to config.json
 SENSITIVE_KEYS = {
     "gemini_api_key",
@@ -406,40 +426,42 @@ def _is_local_hostname(hostname: str | None) -> bool:
     return hostname.lower() in {"localhost", "127.0.0.1", "::1"}
 
 
-def get_allowed_origin_list() -> list[str]:
-    origins = []
-    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(","):
-        normalised = _normalise_origin(origin)
-        if normalised and normalised not in origins:
-            origins.append(normalised)
-    return origins
-
-
-def get_configured_web_origin() -> str | None:
+def get_configured_web_origin() -> str:
     env_origin = _normalise_origin(os.environ.get(WEB_APP_URL_ENV_KEY))
     if env_origin:
         return env_origin
 
-    return _normalise_origin(
+    configured_origin = _normalise_origin(
         config_manager.get("web_app_url", DEFAULT_SYSTEM_CONFIG["web_app_url"])
     )
-
-
-def get_trusted_web_origin() -> str:
-    configured_origin = get_configured_web_origin()
-    if configured_origin:
-        configured_host = urlparse(configured_origin).hostname
-        if os.environ.get(WEB_APP_URL_ENV_KEY):
-            return configured_origin
-        if configured_host and not _is_local_hostname(configured_host):
-            return configured_origin
-
-    for origin in get_allowed_origin_list():
-        candidate_host = urlparse(origin).hostname
-        if candidate_host and not _is_local_hostname(candidate_host):
-            return origin
-
     if configured_origin:
         return configured_origin
 
     return DEFAULT_SYSTEM_CONFIG["web_app_url"]
+
+
+def get_cors_origin_list() -> list[str]:
+    origins: list[str] = []
+
+    for origin in LOCAL_WEB_ORIGINS:
+        normalised = _normalise_origin(origin)
+        if normalised and normalised not in origins:
+            origins.append(normalised)
+
+    configured_origin = get_configured_web_origin()
+    if configured_origin not in origins:
+        origins.append(configured_origin)
+
+    return origins
+
+
+def get_trusted_host_list() -> list[str]:
+    hosts = list(TRUSTED_LOCAL_HOSTS + TRUSTED_TEST_HOSTS)
+    configured_host = urlparse(get_configured_web_origin()).hostname
+    if configured_host and configured_host not in hosts:
+        hosts.append(configured_host)
+    return hosts
+
+
+def get_trusted_web_origin() -> str:
+    return get_configured_web_origin()

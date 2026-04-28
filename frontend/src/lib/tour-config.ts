@@ -22,7 +22,7 @@ export const dashboardSteps: DriveStep[] = [
     element: '#dashboard-meeting-controls',
     popover: {
       title: 'Meeting Controls',
-      description: 'Start, pause, and manage live capture from here once your Companion App is connected.',
+      description: 'Start, pause, and manage live capture from here. The button label tells you what to do next: Start Meeting when ready, or Open Companion Settings if setup, reconnect, or repair is needed.',
       side: 'left',
     }
   },
@@ -46,7 +46,7 @@ export const dashboardSteps: DriveStep[] = [
     element: '#nav-recordings',
     popover: {
       title: 'Recordings Are Next',
-      description: 'Open Recordings when you want to inspect meetings, open the demo session, and start the next walkthrough.',
+      description: 'Open Recordings when you want to inspect saved meetings, open transcripts, and work through prior sessions.',
       side: 'right',
     }
   },
@@ -64,17 +64,9 @@ export const recordingsSteps: DriveStep[] = [
   {
     element: '#recordings-landing-panel',
     popover: {
-      title: 'Browse Or Jump Straight In',
-      description: 'Use the recordings list in the sidebar at any time, or open the guided demo meeting from this landing page.',
+      title: 'Start Here',
+      description: 'When this workspace is empty, use Meet Now on the dashboard to record a session. If the button reads Open Companion Settings, follow it to resolve setup or repair.',
       side: 'left',
-    }
-  },
-  {
-    element: '#recordings-demo-cta',
-    popover: {
-      title: 'Open The Demo Meeting',
-      description: 'This opens the seeded Welcome to Nojoin meeting so the transcript walkthrough can start from a real example.',
-      side: 'bottom',
     }
   }
 ];

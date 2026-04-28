@@ -1,14 +1,31 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { Square, Pause, Mic, Circle } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useServiceStatusStore } from '@/lib/serviceStatusStore';
-import { getCompanionToken } from '@/lib/api';
+import { useState } from "react";
+import { Mic } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { getCompanionSteadyStateGuidance } from "@/lib/companionSteadyState";
+import {
+  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
+  companionLocalFetch,
+  isCompanionLocalConnectionError,
+  readCompanionLocalError,
+} from "@/lib/companionLocalApi";
+
+import LiveMeetingControls from "./LiveMeetingControls";
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
   variant?: "sidebar" | "dashboard";
+}
+
+type ButtonMode = "start" | "open-settings" | "wait";
+
+interface MeetingSurfaceState {
+  buttonLabel: string;
+  buttonMode: ButtonMode;
+  buttonDisabled: boolean;
+  buttonTooltip: string;
 }
 
 export default function MeetingControls({
@@ -16,82 +33,117 @@ export default function MeetingControls({
   variant = "sidebar",
 }: MeetingControlsProps) {
   const {
+    backend,
+    backendVersion,
     companion,
     companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
     companionStatus,
-    recordingDuration,
+    companionVersion,
     checkCompanion,
+    enableCompanionMonitoring,
   } = useServiceStatusStore();
-  
-  // Local state for smooth timer, synced with store
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const localHttpsNeedsRepair = companionLocalHttpsStatus === "needs-repair";
+  const hasLiveRecording =
+    companion &&
+    (companionStatus === "recording" || companionStatus === "paused");
+  const isCompanionUploading = companion && companionStatus === "uploading";
+  const companionGuidance = getCompanionSteadyStateGuidance({
+    companion,
+    companionAuthenticated,
+    companionLocalConnectionUnavailable,
+    companionLocalHttpsStatus,
+    companionStatus,
+    backendVersion,
+    companionVersion,
+  });
 
-  // Sync local timer with store duration
-  useEffect(() => {
-    if (recordingDuration > 0) {
-      setElapsedTime(recordingDuration);
-    }
-  }, [recordingDuration]);
-
-  // Timer logic
-  useEffect(() => {
-    if (companionStatus === 'recording') {
-      timerRef.current = setInterval(() => {
-        setElapsedTime(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+  const meetingSurfaceState: MeetingSurfaceState = !backend
+    ? {
+        buttonLabel: "Nojoin unavailable",
+        buttonMode: "wait",
+        buttonDisabled: true,
+        buttonTooltip:
+          "The Nojoin backend is offline. Wait for it to reconnect before starting a meeting.",
       }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [companionStatus]);
-
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) {
-        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const sendCommand = async (command: string, body?: any) => {
-    setError(null);
-    try {
-      const res = await fetch(`http://127.0.0.1:12345/${command}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      
-      if (!res.ok) {
-        if (res.status === 500) {
-           setError('Failed to reach Backend API from Companion App.');
-        } else {
-           setError(`Companion App error: ${res.statusText}`);
+    : companionGuidance.key === "browser-repair-required" ||
+        companionGuidance.key === "version-mismatch" ||
+        companionGuidance.key === "not-paired" ||
+        companionGuidance.key === "temporarily-disconnected" ||
+        companionGuidance.key === "browser-repair-in-progress" ||
+        companionGuidance.key === "companion-needs-attention"
+      ? {
+          buttonLabel: "Open Companion Settings",
+          buttonMode: "open-settings",
+          buttonDisabled: false,
+          buttonTooltip: `${companionGuidance.statusLabel}. ${companionGuidance.summary}`,
         }
+      : isCompanionUploading
+        ? {
+            buttonLabel: "Finishing upload...",
+            buttonMode: "wait",
+            buttonDisabled: true,
+            buttonTooltip:
+              "The Companion is still uploading the previous meeting. Wait for it to finish.",
+          }
+        : companionStatus === "backend-offline"
+          ? {
+              buttonLabel: "Nojoin unavailable",
+              buttonMode: "wait",
+              buttonDisabled: true,
+              buttonTooltip:
+                "The Companion is paired but the Nojoin backend is offline.",
+            }
+          : {
+              buttonLabel: "Start Meeting",
+              buttonMode: "start",
+              buttonDisabled: false,
+              buttonTooltip: "Start a new meeting recording.",
+            };
+
+  const sendStart = async () => {
+    setError(null);
+    if (localHttpsNeedsRepair) {
+      setError(
+        "Browser repair required. Open Companion Settings, then follow the repair steps in the Companion app.",
+      );
+      return null;
+    }
+
+    try {
+      const res = await companionLocalFetch(
+        "/start",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "" }),
+        },
+        "recording:start",
+      );
+
+      if (!res.ok) {
+        const errorMessage = await readCompanionLocalError(
+          res,
+          `Companion App error: ${res.status}`,
+        );
+        setError(errorMessage || "Failed to reach Backend API from Companion App.");
         return null;
       }
-      
-      // Trigger immediate check to update status
-      // Small delay to allow companion to process
-      setTimeout(() => checkCompanion(), 500);
 
+      enableCompanionMonitoring();
+      setTimeout(() => checkCompanion(), 500);
       return await res.json();
-      
-    } catch (err: any) {
-      if (err instanceof TypeError && err.message === "Failed to fetch") {
-        setError('Companion App is offline or unreachable.');
+    } catch (err: unknown) {
+      if (isCompanionLocalConnectionError(err)) {
+        setError(COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE);
+      } else if (err instanceof Error && err.message) {
+        setError(err.message);
       } else {
-        setError('Failed to connect to Companion App.');
+        setError("Failed to connect to Companion App.");
       }
       console.error(err);
       return null;
@@ -99,41 +151,27 @@ export default function MeetingControls({
   };
 
   const handleStart = async () => {
-    const name = "";
-    const token = await getCompanionToken();
-    const response = await sendCommand('start', { name, token });
+    const response = await sendStart();
     if (response && response.id) {
-        router.push(`/recordings/${response.id}`);
-        if (onMeetingEnd) onMeetingEnd(); // Refresh list to show new meeting
+      router.push(`/recordings/${response.id}`);
+      if (onMeetingEnd) onMeetingEnd();
     }
   };
 
-  const handleStop = async () => {
-    const token = await getCompanionToken();
-    await sendCommand('stop', { token });
-    setElapsedTime(0);
-    if (onMeetingEnd) {
-        // Small delay to allow backend to receive the final chunk
-        setTimeout(onMeetingEnd, 1000);
+  const handlePrimaryAction = () => {
+    setError(null);
+    if (meetingSurfaceState.buttonMode === "open-settings") {
+      router.push("/settings?tab=companion");
+      return;
+    }
+    if (meetingSurfaceState.buttonMode === "start") {
+      void handleStart();
     }
   };
-  const handlePause = () => sendCommand('pause');
-  const handleResume = () => sendCommand('resume');
 
   if (variant === "dashboard") {
-    const startDisabled = !companion || !companionAuthenticated;
-    const statusText = !companion
-      ? 'Companion app offline.'
-      : !companionAuthenticated
-        ? 'Connect companion app before starting.'
-        : companionStatus === 'recording'
-          ? 'Meeting is recording.'
-          : companionStatus === 'paused'
-            ? 'Meeting is paused.'
-            : 'Ready to start a meeting.';
-
     return (
-      <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+      <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
         <div className="flex flex-col gap-5">
           <div className="mt-2 flex items-start gap-3">
             <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
@@ -143,9 +181,6 @@ export default function MeetingControls({
               <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
                 Meet Now
               </h2>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                {statusText}
-              </p>
             </div>
           </div>
 
@@ -155,60 +190,20 @@ export default function MeetingControls({
             </div>
           )}
 
-          {companionStatus === 'idle' ? (
+          {!hasLiveRecording ? (
             <button
-              onClick={handleStart}
-              disabled={startDisabled}
+              type="button"
+              onClick={handlePrimaryAction}
+              disabled={meetingSurfaceState.buttonDisabled}
+              title={meetingSurfaceState.buttonTooltip}
+              aria-label={meetingSurfaceState.buttonLabel}
               className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
-              <Mic className="w-4 h-4" />
-              Start Meeting
+              <Mic className="h-4 w-4" />
+              {meetingSurfaceState.buttonLabel}
             </button>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-red-100 bg-red-50 px-4 py-4 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                <div className="flex items-center gap-3">
-                  <div className={`h-2.5 w-2.5 rounded-full bg-red-500 ${companionStatus === 'recording' ? 'animate-pulse' : ''}`} />
-                  <span className="text-sm font-semibold uppercase tracking-[0.16em]">
-                    {companionStatus === 'recording' ? 'Recording' : 'Paused'}
-                  </span>
-                </div>
-                <span className="font-mono text-3xl font-semibold text-gray-950 dark:text-white">
-                  {formatTime(elapsedTime)}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                {companionStatus === 'recording' ? (
-                  <button
-                    onClick={handlePause}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
-                    title="Pause Recording"
-                  >
-                    <Pause className="w-4 h-4" />
-                    Pause
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleResume}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
-                    title="Resume Recording"
-                  >
-                    <Circle className="w-4 h-4 fill-red-500" />
-                    Resume
-                  </button>
-                )}
-
-                <button
-                  onClick={handleStop}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700"
-                  title="Stop Recording"
-                >
-                  <Square className="w-4 h-4 fill-current" />
-                  Stop
-                </button>
-              </div>
-            </div>
+            <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
           )}
         </div>
       </div>
@@ -216,56 +211,24 @@ export default function MeetingControls({
   }
 
   return (
-    <div className="p-4 border-b border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
+    <div className="border-b border-orange-100/80 bg-transparent p-4 dark:border-gray-800/80">
       <div className="w-full">
-        {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
-        
-        {companionStatus === 'idle' ? (
+        {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
+
+        {!hasLiveRecording ? (
           <button
-            onClick={handleStart}
-            className="flex items-center justify-center gap-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
+            type="button"
+            onClick={handlePrimaryAction}
+            disabled={meetingSurfaceState.buttonDisabled}
+            title={meetingSurfaceState.buttonTooltip}
+            aria-label={meetingSurfaceState.buttonLabel}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-orange-600 px-4 py-2 font-medium text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
           >
-            <Mic className="w-4 h-4" />
-            Start Meeting
+            <Mic className="h-4 w-4" />
+            {meetingSurfaceState.buttonLabel}
           </button>
         ) : (
-          <div className="flex items-center gap-2 w-full">
-            <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg border border-red-100 dark:border-red-900/30">
-              <div className={`w-2 h-2 rounded-full bg-red-500 ${companionStatus === 'recording' ? 'animate-pulse' : ''}`} />
-              <span className="text-sm font-medium">
-                {companionStatus === 'recording' ? 'Recording' : 'Paused'}
-              </span>
-              <span className="ml-auto font-mono text-sm">
-                {formatTime(elapsedTime)}
-              </span>
-            </div>
-            
-            {companionStatus === 'recording' ? (
-              <button
-                onClick={handlePause}
-                className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                title="Pause Recording"
-              >
-                <Pause className="w-5 h-5" />
-              </button>
-            ) : (
-              <button
-                onClick={handleResume}
-                className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                title="Resume Recording"
-              >
-                <Circle className="w-5 h-5 fill-red-500" />
-              </button>
-            )}
-            
-            <button
-              onClick={handleStop}
-              className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-              title="Stop Recording"
-            >
-              <Square className="w-5 h-5 fill-current" />
-            </button>
-          </div>
+          <LiveMeetingControls size="compact" onMeetingEnd={onMeetingEnd} />
         )}
       </div>
     </div>

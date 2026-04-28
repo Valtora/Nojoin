@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Fingerprint, Link, Plus, HardDrive, AlertCircle, Check, Loader2 } from 'lucide-react';
-import { VoiceprintExtractResult, VoiceprintMatchInfo, BatchVoiceprintResult } from '@/types';
+import { RecordingId, VoiceprintExtractResult, VoiceprintMatchInfo, BatchVoiceprintResult } from '@/types';
 import { applyVoiceprintAction, VoiceprintAction } from '@/lib/api';
 
 interface VoiceprintModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
-  recordingId: number;
+  recordingId: RecordingId;
   
   // Single speaker mode
   extractResult?: VoiceprintExtractResult;

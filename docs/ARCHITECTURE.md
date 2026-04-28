@@ -10,7 +10,7 @@ Nojoin has three major parts:
 
 1. A Dockerised backend that stores data and runs processing workloads.
 2. A Next.js web client for capture control, review, and administration.
-3. A Windows Companion app that captures system and microphone audio locally.
+3. A Windows Companion app that captures audio locally and owns pairing, repair, and tray-side operational fallback.
 
 ## Core Components
 
@@ -36,23 +36,33 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
+- Browser-side Companion status, pairing code entry, and support routing.
+
+The web Companion page is a secondary support surface. It confirms state and routes native-only repair, Firefox setup, and destructive actions back to the Companion app.
 
 ### Companion App
 
 The Companion app is responsible for:
 
+- Presenting the native launcher, Settings window, pairing window, and tray fallback surfaces.
 - Capturing loopback system audio and microphone audio on Windows.
+- Owning pairing, repair, Firefox support, update, log, and disconnect actions.
 - Exposing local status and live metering to the web client.
 - Uploading recording segments to the backend.
 
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The web app authorises the Companion with a bootstrap token for pairing and recording initialisation.
-3. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
-4. The Companion uploads audio segments using that recording-scoped token.
-5. Finalisation queues the recording for backend processing.
-6. The web client shows a live capture or processing status workspace while the job runs.
+2. The user manually pairs the Companion app to one Nojoin backend at a time using a short-lived pairing code. During that flow, the Companion captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata in `config.json`.
+3. When the Companion needs backend access, it exchanges the stored companion credential for a short-lived companion access token.
+4. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
+5. The Companion uploads audio segments using that recording-scoped token.
+6. Finalisation queues the recording for backend processing.
+7. The web client shows a live capture or processing status workspace while the job runs.
+
+Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
+
+If browser-side local control degrades, the web client reports coarse state and routes the user back to Companion Settings for native-only repair or Firefox setup.
 
 ## Processing Pipeline
 
@@ -82,9 +92,10 @@ Manual user notes can be captured during recording or processing and are fed int
 
 Nojoin uses different auth shapes for different clients:
 
-- **Browser traffic**: Secure HttpOnly session cookies.
+- **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **Companion pairing**: A bootstrap token.
+- **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a revocable companion credential plus local control secret.
+- **Companion backend access**: Short-lived companion access tokens exchanged on demand by the Companion.
 - **Companion upload operations**: Short-lived per-recording tokens.
 
 Forced password rotation is enforced server-side. Flagged users can only reach their self-profile, password update flow, and logout until the rotation is complete.
@@ -107,6 +118,7 @@ Nojoin follows a unified release model:
 
 ## Related Docs
 
+- [COMPANION.md](COMPANION.md)
 - [GETTING_STARTED.md](GETTING_STARTED.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [USAGE.md](USAGE.md)

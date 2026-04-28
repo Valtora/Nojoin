@@ -149,7 +149,7 @@ export default function RecordingPage({ params }: PageProps) {
     try {
       const { id } = await params;
       const [recData, gsData] = await Promise.all([
-        getRecording(parseInt(id)),
+        getRecording(id),
         getGlobalSpeakers(),
       ]);
       setRecording(recData);
@@ -195,7 +195,7 @@ export default function RecordingPage({ params }: PageProps) {
     const interval = setInterval(async () => {
       try {
         const { id } = await params;
-        const data = await getRecording(parseInt(id));
+        const data = await getRecording(id);
 
         if (
           data.status !== recording.status ||

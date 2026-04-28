@@ -45,16 +45,16 @@ The primary user interface for interacting with the system.
   - **Task Capture:** The Task List is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on tasks, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
-  - **Waveform Monitoring:** While the Companion is recording, the page shows live system-audio and microphone level bars sourced from the local Companion service.
+  - **Waveform Monitoring:** While the Companion is recording, the page shows a unified live audio activity waveform sourced from the local Companion service.
   - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
   - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
-  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and companion app setup.
+  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and where to manage Companion setup and recovery.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
   - **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
-- **Companion Status:** A visual indicator (warning bubble) is displayed when the Companion App is not detected.
-- **Download Companion Button:** An orange "Download Companion" button appears in the navigation when the Companion App is unreachable. It links to the Windows installer from GitHub Releases.
+- **Companion Status:** The frontend displays the current pairing and connection state across Settings, dashboard capture controls, alerts, and live recording surfaces. The web UI confirms state and guides users back to native-owned actions such as repair, Firefox setup, and re-pairing instead of trying to execute those actions directly.
+- **Download Companion Button:** Companion installer entry points appear when the Companion is not paired or reachable and link to the Windows installer from GitHub Releases.
 
 ### 2.3 The Companion App (Tauri + Rust)
 
@@ -64,11 +64,15 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Framework:** Tauri v2.
 - **Language:** Rust (Backend) + HTML/JS (Frontend).
 - **Platforms:** Windows (macOS and Linux support is not currently available).
-- **Role:** Acts as a local server. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
+- **Role:** Acts as the native control surface for local capture, pairing, repair, browser support, and backend handoff. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 - **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
-- **Pairing Model:** The Web Client authorises the Companion using a dedicated bootstrap token for pairing and recording initialisation. The browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
+- **Pairing Model:** Companion pairing is initiated manually by the user from the Companion app, which generates a short-lived pairing code. The user enters this code into the Web Client to authorize the Companion and establish a single-backend association. The backend issues a revocable companion credential plus local control secret, stores only the credential hash, and the browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
 - **Per-Recording Upload Tokens:** Each recording initialisation returns a short-lived upload token bound to that recording ID. Segment upload, client-status updates, finalisation, and discard all use that narrower token.
-- **UI:** Minimalist system tray menu for status indication, updates, help, and exit. Managed via Tauri.
+- **Launcher:** A compact first-run and steady-state native surface with one primary next action and a route into Nojoin or Settings.
+- **Settings:** The canonical native home for pairing, repair, Firefox support, updates, logs, and disconnect.
+- **Pairing Window:** The dedicated native surface for the current 8-character code, countdown, copy action, and `Cancel Pairing`.
+- **Tray:** An operational fallback surface for status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
+- **Support Model:** The browser can submit pairing codes and show coarse state, but native-only repair, Firefox setup, and disconnect actions stay inside the Companion app.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
 - **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
 - **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub matched to the server version.
@@ -80,7 +84,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 - **Authentication:** JWT-based authentication is used for API access.
 - **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
-- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing receives a bootstrap token, and each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
+- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing requires a short-lived pairing code submitted manually, followed by a revocable companion credential that the Companion exchanges for short-lived backend access tokens. Each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
 - **Password Rotation Enforcement:** Users created manually by an Admin or Owner, and users whose password is reset by a superuser, must change their password before they can access other authenticated features. While the flag is set, only the self-profile, self-password update, and logout routes remain available.
 - **JWT Secret Key:** A secure JWT signing key is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts without requiring manual configuration.
 - **Authorization:** Role-based access control (Owner/Admin/User), privilege guardrails around Owner and superuser creation, and strict ownership checks ensure users can only access their own data.
@@ -89,10 +93,11 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.
 - **Companion IPC Security:** Strict Origin validation to prevent Cross-Site Request Forgery (CSRF) and unauthorized local scripts from interfacing with the local Companion server.
-- **Trusted Public Origin:** Invitation links and TLS fingerprint resolution use the configured public web origin and allowed-origin fallback, rather than trusting request Host headers.
+- **Companion TOFU TLS Pinning:** During manual pairing, the Companion captures and pins the backend TLS certificate it first sees. Subsequent Companion traffic requires that pinned certificate until the user explicitly disconnects or re-pairs.
+- **Trusted Public Origin:** Invitation links and Companion pairing API targeting use the configured public web origin rather than trusting request Host headers.
 - **CORS & Remote Access:**
-  - **CORS:** Restricted to allowed origins. Configurable via the `ALLOWED_ORIGINS` environment variable to support LAN and remote access.
-  - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS`.
+  - **CORS:** Restricted to local development origins plus the configured `WEB_APP_URL` public origin.
+  - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `WEB_APP_URL`.
 
 ### 2.5 User Management & Invitations
 
@@ -143,7 +148,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 The system provides the following core capabilities:
 
 - **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
-  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows calibrated live level bars for both channels.
+  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows a calibrated live audio activity waveform derived from both capture channels.
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
@@ -172,7 +177,7 @@ The system provides the following core capabilities:
   - **Task Flow:** Tasks are created inline in the dashboard Task List. Users can rename an existing task by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active tasks show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.
   - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
-- **Updates & Releases:** Built-in Settings page for installed version visibility, release history, release notes, and companion installer links sourced from GitHub Releases.
+- **Updates & Releases:** Built-in Settings page for installed version visibility from the current API build, release history, release notes, and companion installer links sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records, Task List items, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 
 ### 3.1 Processing Lifecycle Details

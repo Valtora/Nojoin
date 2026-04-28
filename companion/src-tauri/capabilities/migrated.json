@@ -12,6 +12,7 @@
     "shell:allow-execute",
     "shell:allow-open",
     "notification:default",
+    "dialog:allow-message",
     "shell:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

@@ -8,6 +8,7 @@ use cpal::Device;
 use crossbeam_channel::Receiver;
 use hound;
 use log::{info, warn};
+use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -16,12 +17,160 @@ use std::thread;
 use tauri::AppHandle;
 use tokio::sync::mpsc;
 
+async fn wait_for_backend_reconnect(state: &Arc<AppState>, reason: &str) {
+    let mut logged_wait = false;
+
+    while !state.is_backend_connected.load(Ordering::SeqCst) {
+        if !logged_wait {
+            info!(
+                "Backend unavailable; waiting to {} once Nojoin reconnects.",
+                reason
+            );
+            logged_wait = true;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+}
+
+#[derive(Debug, Default)]
+struct SegmentThreadOutcome {
+    failed_upload_segments: Vec<i32>,
+}
+
+impl SegmentThreadOutcome {
+    fn upload_failure_reason(&self) -> Option<String> {
+        if self.failed_upload_segments.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "segments {} failed to upload after repeated retries",
+                self.failed_upload_segments
+                    .iter()
+                    .map(|segment| segment.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        }
+    }
+}
+
+#[derive(Debug)]
+enum SegmentUploadOutcome {
+    Uploaded,
+    Failed(i32),
+}
+
+fn prune_empty_parent_directories(start_dir: &Path) {
+    let mut current = Some(start_dir);
+
+    while let Some(dir) = current {
+        let is_empty = match std::fs::read_dir(dir) {
+            Ok(mut entries) => entries.next().is_none(),
+            Err(error) => {
+                warn!("Failed to inspect temp directory {:?}: {}", dir, error);
+                return;
+            }
+        };
+
+        if !is_empty {
+            return;
+        }
+
+        match std::fs::remove_dir(dir) {
+            Ok(()) => current = dir.parent(),
+            Err(error) => {
+                warn!("Failed to remove empty temp directory {:?}: {}", dir, error);
+                return;
+            }
+        }
+    }
+}
+
+fn cleanup_segment_file(path: &Path, reason: &str) {
+    match std::fs::remove_file(path) {
+        Ok(()) => info!("Removed temp segment file {:?} after {}.", path, reason),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            warn!(
+                "Failed to remove temp segment file {:?} after {}: {}",
+                path,
+                reason,
+                error
+            );
+            return;
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        prune_empty_parent_directories(parent);
+    }
+}
+
+fn reset_recording_state(state: &Arc<AppState>) {
+    *state.status.lock().unwrap() = AppStatus::Idle;
+    *state.current_recording_id.lock().unwrap() = None;
+    *state.current_recording_token.lock().unwrap() = None;
+    *state.current_recording_owner.lock().unwrap() = None;
+    state.clear_recording_recovery_state();
+    *state.current_sequence.lock().unwrap() = 1;
+    *state.accumulated_duration.lock().unwrap() = std::time::Duration::new(0, 0);
+    *state.recording_start_time.lock().unwrap() = None;
+}
+
+fn join_recording_thread(
+    recording_handle: &mut Option<std::thread::JoinHandle<anyhow::Result<SegmentThreadOutcome>>>,
+) -> anyhow::Result<Option<SegmentThreadOutcome>> {
+    let Some(handle) = recording_handle.take() else {
+        return Ok(None);
+    };
+
+    match handle.join() {
+        Ok(result) => result.map(Some),
+        Err(_) => Err(anyhow::anyhow!(
+            "Recording thread panicked while closing the current segment"
+        )),
+    }
+}
+
+fn handle_terminal_recording_failure(state: &Arc<AppState>, app_handle: &AppHandle, reason: &str) {
+    warn!("Recording cannot be finalized safely: {}", reason);
+
+    let recording_id = state.current_recording_id.lock().unwrap().clone();
+    let recording_token = state.current_recording_token.lock().unwrap().clone();
+    let config = state.config.lock().unwrap().clone();
+
+    if let (Some(recording_id), Some(recording_token)) = (recording_id, recording_token) {
+        thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                if let Err(error) = uploader::discard_recording(&recording_id, &config, &recording_token).await {
+                    warn!(
+                        "Best-effort discard failed for recording {} after terminal upload failure: {}",
+                        recording_id,
+                        error
+                    );
+                }
+            });
+        });
+    } else {
+        warn!("Missing recording identity while handling terminal recording failure.");
+    }
+
+    notifications::show_notification(
+        app_handle,
+        "Recording Upload Failed",
+        "A recording segment could not be uploaded after repeated retries. The in-flight recording was discarded.",
+    );
+    reset_recording_state(state);
+}
+
 fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
-    if let Some(ref name) = config.input_device_name {
+    if let Some(name) = config.input_device_name() {
         if let Ok(devices) = host.input_devices() {
             for device in devices {
                 if let Ok(device_name) = device.name() {
-                    if &device_name == name {
+                    if device_name == name {
                         info!("Using configured input device: {}", device_name);
                         return Some(device);
                     }
@@ -37,11 +186,11 @@ fn find_input_device(host: &cpal::Host, config: &Config) -> Option<Device> {
 }
 
 fn find_output_device(host: &cpal::Host, config: &Config) -> Option<Device> {
-    if let Some(ref name) = config.output_device_name {
+    if let Some(name) = config.output_device_name() {
         if let Ok(devices) = host.output_devices() {
             for device in devices {
                 if let Ok(device_name) = device.name() {
-                    if &device_name == name {
+                    if device_name == name {
                         info!("Using configured output device: {}", device_name);
                         return Some(device);
                     }
@@ -86,7 +235,9 @@ pub fn run_audio_loop(
     let is_recording = Arc::new(AtomicBool::new(false));
 
     // Tracks recording thread handle to await uploads.
-    let mut recording_handle: Option<std::thread::JoinHandle<()>> = None;
+    let mut recording_handle: Option<
+        std::thread::JoinHandle<anyhow::Result<SegmentThreadOutcome>>,
+    > = None;
 
     // Re-acquires default device in thread.
 
@@ -98,7 +249,7 @@ pub fn run_audio_loop(
                 recording_handle = Some(start_segment(id, 1, state.clone(), is_recording.clone()));
             }
             AudioCommand::Resume => {
-                let id = *state.current_recording_id.lock().unwrap();
+                let id = state.current_recording_id.lock().unwrap().clone();
                 let seq = *state.current_sequence.lock().unwrap();
                 if let Some(rec_id) = id {
                     recording_handle = Some(start_segment(
@@ -112,19 +263,37 @@ pub fn run_audio_loop(
             AudioCommand::Pause => {
                 is_recording.store(false, Ordering::SeqCst);
                 // Wait for the current segment to finish uploading
-                if let Some(handle) = recording_handle.take() {
-                    let _ = handle.join();
+                match join_recording_thread(&mut recording_handle) {
+                    Ok(Some(outcome)) => {
+                        if let Some(reason) = outcome.upload_failure_reason() {
+                            handle_terminal_recording_failure(&state, &app_handle, &reason);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        handle_terminal_recording_failure(&state, &app_handle, &error.to_string());
+                    }
                 }
             }
             AudioCommand::Stop => {
                 is_recording.store(false, Ordering::SeqCst);
                 // Wait for the current segment to finish uploading
-                if let Some(handle) = recording_handle.take() {
-                    let _ = handle.join();
+                match join_recording_thread(&mut recording_handle) {
+                    Ok(Some(outcome)) => {
+                        if let Some(reason) = outcome.upload_failure_reason() {
+                            handle_terminal_recording_failure(&state, &app_handle, &reason);
+                            continue;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        handle_terminal_recording_failure(&state, &app_handle, &error.to_string());
+                        continue;
+                    }
                 }
 
                 // Trigger finalize
-                let id = *state.current_recording_id.lock().unwrap();
+                let id = state.current_recording_id.lock().unwrap().clone();
                 let config = state.config.lock().unwrap().clone();
 
                 // Calculate duration
@@ -150,19 +319,27 @@ pub fn run_audio_loop(
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
                             // Check minimum length
-                            let min_minutes = config.min_meeting_length.unwrap_or(0);
+                            let min_minutes = config.min_meeting_length().unwrap_or(0);
                             let duration_secs = duration.as_secs();
                             let recording_token = state_finalize.current_recording_token.lock().unwrap().clone();
 
                             let Some(recording_token) = recording_token else {
                                 eprintln!("Missing recording upload token for recording {}", rec_id);
+                                reset_recording_state(&state_finalize);
                                 return;
                             };
 
+                            if !state_finalize.is_backend_connected.load(Ordering::SeqCst) {
+                                wait_for_backend_reconnect(&state_finalize, "finalize the saved recording").await;
+                            }
+
                             if min_minutes > 0 && duration_secs < (min_minutes as u64 * 60) {
                                 info!("Recording too short ({}s < {}m). Discarding.", duration_secs, min_minutes);
-                                match uploader::discard_recording(rec_id, &config, &recording_token).await {
-                                    Ok(_) => {
+                                match uploader::discard_recording(&rec_id, &config, &recording_token).await {
+                                    Ok(refreshed_token) => {
+                                        if let Some(new_token) = refreshed_token {
+                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                        }
                                         info!("Deleted short recording.");
                                         notifications::show_notification(
                                             &app_handle_finalize,
@@ -173,44 +350,35 @@ pub fn run_audio_loop(
                                     Err(e) => {
                                         eprintln!("Failed to delete short recording: {}", e);
                                         // Attempts finalization if delete fails.
-                                        match uploader::finalize_recording(rec_id, &config, &recording_token).await {
-                                            Ok(_) => println!("Recording finalized (after delete failed)"),
+                                        match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
+                                            Ok(refreshed_token) => {
+                                                if let Some(new_token) = refreshed_token {
+                                                    *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                                }
+                                                println!("Recording finalized (after delete failed)")
+                                            }
                                             Err(e) => eprintln!("Failed to finalize: {}", e),
                                         }
                                     },
                                 }
                             } else {
                                 // Sleep unnecessary; upload verified complete.
-                                match uploader::finalize_recording(rec_id, &config, &recording_token).await {
-                                    Ok(_) => println!("Recording finalized"),
+                                match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
+                                    Ok(refreshed_token) => {
+                                        if let Some(new_token) = refreshed_token {
+                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                        }
+                                        println!("Recording finalized")
+                                    }
                                     Err(e) => eprintln!("Failed to finalize: {}", e),
                                 }
                             }
 
-                            // Cleanup State
-                            {
-                                let mut status = state_finalize.status.lock().unwrap();
-                                *status = AppStatus::Idle;
-
-                                let mut id = state_finalize.current_recording_id.lock().unwrap();
-                                *id = None;
-
-                                let mut token = state_finalize.current_recording_token.lock().unwrap();
-                                *token = None;
-
-                                let mut seq = state_finalize.current_sequence.lock().unwrap();
-                                *seq = 1;
-
-                                // Reset duration
-                                *state_finalize.accumulated_duration.lock().unwrap() = std::time::Duration::new(0, 0);
-                                *state_finalize.recording_start_time.lock().unwrap() = None;
-                            }
+                            reset_recording_state(&state_finalize);
                         });
                     });
                 } else {
-                    // If no ID, just reset status
-                    let mut status = state.status.lock().unwrap();
-                    *status = AppStatus::Idle;
+                    reset_recording_state(&state);
                 }
             }
         }
@@ -218,16 +386,16 @@ pub fn run_audio_loop(
 }
 
 fn start_segment(
-    recording_id: i64,
+    recording_id: String,
     sequence: i32,
     state: Arc<AppState>,
     is_recording: Arc<AtomicBool>,
-) -> std::thread::JoinHandle<()> {
+) -> std::thread::JoinHandle<anyhow::Result<SegmentThreadOutcome>> {
     is_recording.store(true, Ordering::SeqCst);
     let config = state.config.lock().unwrap().clone();
 
     thread::spawn(move || {
-        let run = || -> anyhow::Result<()> {
+        let run = || -> anyhow::Result<SegmentThreadOutcome> {
             const MAX_SEGMENT_DURATION_SECS: u64 = 5 * 60;
             let temp_dir = std::env::temp_dir().join("Nojoin").join("recordings");
             if let Err(e) = std::fs::create_dir_all(&temp_dir) {
@@ -464,7 +632,7 @@ fn start_segment(
                     .map_err(|e| anyhow::anyhow!("Failed to play mic stream: {}", e))?;
 
                 // 5. Mixing Loop with automatic segmentation
-                run_mixing_loop(
+                return run_mixing_loop(
                     recording_id,
                     sequence,
                     spec,
@@ -474,10 +642,10 @@ fn start_segment(
                     state.clone(),
                     MAX_SEGMENT_DURATION_SECS,
                     temp_dir,
-                )?;
+                );
             } else {
                 // Virtual mic mode
-                run_mixing_loop(
+                return run_mixing_loop(
                     recording_id,
                     sequence,
                     spec,
@@ -487,24 +655,25 @@ fn start_segment(
                     state.clone(),
                     MAX_SEGMENT_DURATION_SECS,
                     temp_dir,
-                )?;
+                );
             }
-
-            Ok(())
         };
 
-        if let Err(e) = run() {
-            log::error!("Recording thread error: {}", e);
-            // Update status to Error
-            let mut status = state.status.lock().unwrap();
-            *status = AppStatus::Error(e.to_string());
+        match run() {
+            Ok(outcome) => Ok(outcome),
+            Err(e) => {
+                log::error!("Recording thread error: {}", e);
+                let mut status = state.status.lock().unwrap();
+                *status = AppStatus::Error(e.to_string());
+                Err(e)
+            }
         }
     })
 }
 
 // Helper function for the mixing loop to avoid code duplication
 fn run_mixing_loop(
-    recording_id: i64,
+    recording_id: String,
     mut current_sequence: i32,
     spec: hound::WavSpec,
     mic_rx: crossbeam_channel::Receiver<Vec<f32>>,
@@ -513,11 +682,11 @@ fn run_mixing_loop(
     state: Arc<AppState>,
     max_duration: u64,
     temp_dir: std::path::PathBuf,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SegmentThreadOutcome> {
     let mut sys_buffer: Vec<f32> = Vec::new();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut upload_handles = Vec::new();
-    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
+    let (upload_outcome_tx, mut upload_outcome_rx) = mpsc::unbounded_channel();
 
     while is_recording.load(Ordering::SeqCst) {
         let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
@@ -578,25 +747,53 @@ fn run_mixing_loop(
         info!("Segment {} recorded: {:?}", current_sequence, path);
 
         // Upload segment in background
-        let _state_upload = state.clone();
+        let state_upload = state.clone();
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = state.config.lock().unwrap().clone();
         let recording_token = state.current_recording_token.lock().unwrap().clone();
-        let tx = progress_tx.clone();
+        let tx = upload_outcome_tx.clone();
+        let recording_id_for_upload = recording_id.clone();
 
         let handle = rt.spawn(async move {
             let Some(recording_token) = recording_token else {
                 log::error!("Missing recording upload token for segment {}", seq);
+                cleanup_segment_file(&path_clone, "missing upload token");
+                tx.send(SegmentUploadOutcome::Failed(seq)).ok();
                 return;
             };
 
-            match uploader::upload_segment(recording_id, seq, &path_clone, &config, &recording_token).await {
-                Ok(_) => {
+            if !state_upload.is_backend_connected.load(Ordering::SeqCst) {
+                wait_for_backend_reconnect(
+                    &state_upload,
+                    &format!("upload queued segment {}", seq),
+                )
+                .await;
+            }
+
+            match uploader::upload_segment(
+                &recording_id_for_upload,
+                seq,
+                &path_clone,
+                &config,
+                &recording_token,
+            )
+            .await
+            {
+                Ok(refreshed_token) => {
+                    if let Some(new_token) = refreshed_token {
+                        *state_upload.current_recording_token.lock().unwrap() =
+                            Some(new_token.clone());
+                    }
                     info!("Segment {} uploaded successfully", seq);
-                    tx.send(seq).ok();
+                    cleanup_segment_file(&path_clone, "successful upload");
+                    tx.send(SegmentUploadOutcome::Uploaded).ok();
                 }
-                Err(e) => log::error!("Failed to upload segment {}: {}", seq, e),
+                Err(e) => {
+                    log::error!("Failed to upload segment {}: {}", seq, e);
+                    cleanup_segment_file(&path_clone, "terminal upload failure");
+                    tx.send(SegmentUploadOutcome::Failed(seq)).ok();
+                }
             }
         });
         upload_handles.push(handle);
@@ -607,9 +804,9 @@ fn run_mixing_loop(
 
     // Wait for all uploads to complete
     info!("Waiting for pending uploads to complete...");
-    drop(progress_tx); // Close the channel so rx finishes when all tasks are done
+    drop(upload_outcome_tx);
 
-    let total_segments = current_sequence;
+    let total_segments = current_sequence.saturating_sub(1);
     let config = state.config.lock().unwrap().clone();
     let recording_token = state.current_recording_token.lock().unwrap().clone();
 
@@ -620,33 +817,73 @@ fn run_mixing_loop(
         matches!(*status, AppStatus::Uploading)
     };
 
-    rt.block_on(async {
-        let Some(recording_token) = recording_token.as_deref() else {
-            log::error!("Missing recording upload token while reporting upload progress for {}", recording_id);
-            return;
+    let thread_outcome = rt.block_on(async {
+        let Some(recording_token) = recording_token else {
+            log::error!(
+                "Missing recording upload token while reporting upload progress for {}",
+                recording_id
+            );
+            return SegmentThreadOutcome::default();
         };
+        let mut recording_token = recording_token;
+
+        if should_report_uploading && !state.is_backend_connected.load(Ordering::SeqCst) {
+            wait_for_backend_reconnect(&state, "resume queued upload progress").await;
+        }
 
         // Set initial status
         if should_report_uploading {
-            uploader::update_status_with_progress(recording_id, "UPLOADING", 0, &config, recording_token)
-                .await
-                .ok();
+            uploader::update_status_with_progress(
+                &recording_id,
+                "UPLOADING",
+                0,
+                &config,
+                &recording_token,
+            )
+            .await
+            .map(|refreshed_token| {
+                if let Some(new_token) = refreshed_token {
+                    *state.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                    recording_token = new_token;
+                }
+            })
+            .ok();
         }
 
         let mut completed_count = 0;
-        while let Some(_) = progress_rx.recv().await {
-            completed_count += 1;
-            // Scale upload progress to 0-20% of total progress
-            let progress = if total_segments > 0 {
-                ((completed_count as f32 / total_segments as f32) * 20.0) as i32
-            } else {
-                20
-            };
+        let mut failed_segments = Vec::new();
+        while let Some(outcome) = upload_outcome_rx.recv().await {
+            match outcome {
+                SegmentUploadOutcome::Uploaded => {
+                    completed_count += 1;
+                    let progress = if total_segments > 0 {
+                        ((completed_count as f32 / total_segments as f32) * 20.0) as i32
+                    } else {
+                        20
+                    };
 
-            if should_report_uploading {
-                uploader::update_status_with_progress(recording_id, "UPLOADING", progress, &config, recording_token)
-                    .await
-                    .ok();
+                    if should_report_uploading {
+                        uploader::update_status_with_progress(
+                            &recording_id,
+                            "UPLOADING",
+                            progress,
+                            &config,
+                            &recording_token,
+                        )
+                        .await
+                        .map(|refreshed_token| {
+                            if let Some(new_token) = refreshed_token {
+                                *state.current_recording_token.lock().unwrap() =
+                                    Some(new_token.clone());
+                                recording_token = new_token;
+                            }
+                        })
+                        .ok();
+                    }
+                }
+                SegmentUploadOutcome::Failed(sequence) => {
+                    failed_segments.push(sequence);
+                }
             }
         }
 
@@ -655,8 +892,53 @@ fn run_mixing_loop(
                 log::error!("Upload task join error: {}", e);
             }
         }
+
+        SegmentThreadOutcome {
+            failed_upload_segments: failed_segments,
+        }
     });
     info!("All uploads completed.");
 
-    Ok(())
+    Ok(thread_outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cleanup_segment_file, SegmentThreadOutcome};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("nojoin-audio-test-{}", unique))
+    }
+
+    #[test]
+    fn cleanup_segment_file_removes_file_and_empty_parent_directories() {
+        let recordings_dir = unique_test_dir().join("Nojoin").join("recordings");
+        fs::create_dir_all(&recordings_dir).unwrap();
+        let segment_path = recordings_dir.join("temp_1_1.wav");
+        fs::write(&segment_path, b"segment-bytes").unwrap();
+
+        cleanup_segment_file(&segment_path, "test cleanup");
+
+        assert!(!segment_path.exists());
+        assert!(!recordings_dir.exists());
+        assert!(!recordings_dir.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn segment_thread_outcome_reports_failed_upload_segments() {
+        let outcome = SegmentThreadOutcome {
+            failed_upload_segments: vec![2, 4, 7],
+        };
+
+        assert_eq!(
+            outcome.upload_failure_reason().as_deref(),
+            Some("segments 2, 4, 7 failed to upload after repeated retries")
+        );
+    }
 }

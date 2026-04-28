@@ -40,7 +40,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **API Layer**: All API calls MUST go through `src/lib/api.ts`.
   - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
   - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Companion pairing uses `/api/v1/login/companion-token`, which returns a bootstrap token for pairing and recording initialisation.
+  - Companion pairing uses a manual code-based flow, establishing a single-backend association and receiving a revocable companion credential plus local control secret. The browser never receives a reusable Companion bearer token.
   - `/api/v1/recordings/init` returns a short-lived upload token bound to the newly created recording. The Companion must use that token for segment uploads, client-status updates, finalisation, and discard flows.
   - `force_password_change` is enforced server-side. Flagged users may only fetch `/api/v1/users/me`, update `/api/v1/users/me/password`, or log out until they rotate their password.
   - Never put bearer tokens into URL query strings or other browser-visible locations.
@@ -68,9 +68,10 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - `local_port`: Local server port (default: 12345).
   - `api_token`: JWT token obtained via web-based authorization.
 - **Authorization**:
-  - The web app sends the bootstrap Companion token and current host/port to the `/auth` endpoint.
-  - Each `/recordings/init` response then provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
-  - The app automatically updates the configuration and connects.
+  - The Companion app initiates pairing manually, displaying a single-use code.
+  - The web app sends the code and bootstrap Companion token to the Companion's pairing endpoint.
+  - The Companion local API has two classes of routes: the short-lived pairing route, and the authenticated steady-state routes that require a short-lived local control token and strict Host validation. Anonymous detection is explicitly blocked.
+  - Each `/recordings/init` response provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
   - Manual configuration is available via System Tray > Settings.
 - **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.
 
@@ -82,7 +83,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Operator deployment**: copy the compose and env templates to local files, then run `docker compose up -d`
   - **CPU**: `docker compose up -d` after removing the `deploy` section from `docker-compose.yml`
   - **Local source development**: use the host and local-compose workflows described in `docs/DEVELOPMENT.md`
-  - **Remote Access**: Ensure `.env` is configured with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
+  - **Remote Access**: Ensure `.env` is configured with the correct `WEB_APP_URL`.
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
@@ -112,18 +113,17 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
    - Push the tag: `git push origin v0.6.0`
 
 3. **CI/CD Pipeline** (`.github/workflows/release.yml`):
-   - **Trigger**: The push of the `v*` tag automatically triggers the pipeline.
-   - **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`.
-   - **Step 2: Companion Build**:
-     - **Auto-Sync**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.**
-     - **Build**: Compiles the Windows installer (`.exe`) and Portable build.
-     - **Release**: Uploads these artifacts to the GitHub Release created by the tag.
+  **Trigger**: The push of the `v*` tag automatically triggers the pipeline.
+
+  **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`. The API image also embeds the resolved server version for runtime display in Settings.
+
+  **Step 2: Companion Build**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.** It then compiles the Windows installer (`.exe`) and Portable build, and uploads those artifacts to the GitHub Release created by the tag.
 
 **Important**:
 
 - **Versioning**: Strict Semantic Versioning (`vX.Y.Z`).
-- **Source of Truth**: The Git Tag is the single source of truth. `docs/VERSION` is set from the tag during CI/CD. The companion app files are transiently updated during the build process.
-  - **Version Detection**: The API resolves the running version from the Docker image's `org.opencontainers.image.version` label (set by CI/CD), falling back to `docs/VERSION`. User-facing release metadata is resolved from GitHub Releases first, with GHCR tags and the GitHub raw `docs/VERSION` file only used as version fallbacks if release metadata is unavailable.
+- **Source of Truth**: The Git Tag is the single source of truth for published releases. Local source builds use `docs/VERSION`. The API image embeds the resolved server version at build time, and the companion app files are transiently updated during the build process.
+  - **Version Detection**: The API resolves the running version from build metadata embedded into the image (`NOJOIN_SERVER_VERSION` and `/app/.build-version`), falling back to bundled or local `docs/VERSION` in development and test contexts. User-facing release metadata is resolved from GitHub Releases first, with GHCR tags and the GitHub raw `docs/VERSION` file only used as version fallbacks if release metadata is unavailable.
 - **Platform**: Only Windows builds are currently supported for the Companion App.
 
 ## Code Style & Conventions

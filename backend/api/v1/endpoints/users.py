@@ -4,17 +4,18 @@ from sqlmodel import select
 from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-import os
 import logging
 
 from backend.api.deps import get_db, get_current_active_superuser, get_current_user
 from backend.api.error_handling import sanitized_http_exception
-from backend.core.security import get_password_hash, verify_password
+from backend.core.security import hash_user_password, verify_password
 from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole, UserList
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
+from backend.services.jwt_revocation_service import bump_user_token_version
 from backend.utils.rate_limit import enforce_rate_limit
+from backend.utils.recording_storage import delete_recording_artifacts
 from backend.utils.time import utc_now
 
 router = APIRouter()
@@ -87,7 +88,7 @@ async def register_user(
     
     user = User(
         username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
+        hashed_password=hash_user_password(user_in.password),
         role=invitation.role,
         invitation_id=invitation.id,
         is_superuser=False,
@@ -182,7 +183,7 @@ async def create_user(
     
     user = User(
         username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
+        hashed_password=hash_user_password(user_in.password),
         is_superuser=is_superuser,
         role=role,
         force_password_change=True, # Force password change for new users created by admin
@@ -234,26 +235,13 @@ async def delete_user(
     recordings_result = await db.execute(select(Recording).where(Recording.user_id == user_id))
     recordings = recordings_result.scalars().all()
 
-    recordings_dir = os.getenv("RECORDINGS_DIR", "data/recordings")
-    abs_recordings_dir = os.path.abspath(recordings_dir)
-
-    def is_safe_path(target_path: str | None) -> bool:
-        if not target_path:
-            return False
-        abs_target = os.path.abspath(target_path)
-        return os.path.commonpath([abs_recordings_dir, abs_target]) == abs_recordings_dir
-
     for recording in recordings:
-        if is_safe_path(recording.audio_path) and os.path.exists(recording.audio_path):
-            try:
-                os.remove(recording.audio_path)
-            except OSError:
-                pass
-        if is_safe_path(recording.proxy_path) and os.path.exists(recording.proxy_path):
-            try:
-                os.remove(recording.proxy_path)
-            except OSError:
-                pass
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+            proxy_path=recording.proxy_path,
+            logger=logger,
+        )
         
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
@@ -356,9 +344,10 @@ async def update_password_me(
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
     
-    current_user.hashed_password = get_password_hash(body.new_password)
+    current_user.hashed_password = hash_user_password(body.new_password)
     current_user.force_password_change = False
     db.add(current_user)
+    await bump_user_token_version(db, current_user, commit=False)
     await db.commit()
     return {"message": "Password updated successfully"}
 
@@ -391,11 +380,15 @@ async def update_user(
             )
         user.username = user_in.username
 
+    bump_required = False
     if user_in.password:
-        user.hashed_password = get_password_hash(user_in.password)
+        user.hashed_password = hash_user_password(user_in.password)
         user.force_password_change = True # Force change if admin resets it
+        bump_required = True
         
     if user_in.is_active is not None:
+        if user.is_active and not user_in.is_active:
+            bump_required = True
         user.is_active = user_in.is_active
     if user_in.is_superuser is not None:
         user.is_superuser = user_in.is_superuser
@@ -409,7 +402,65 @@ async def update_user(
         user.role = user_in.role
 
     db.add(user)
+    if bump_required:
+        await bump_user_token_version(db, user, commit=False)
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.post("/me/sessions/revoke-all")
+async def revoke_my_sessions(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Invalidate every existing session and API token for the current user.
+
+    The next request from any other browser, device, or API client will be
+    rejected with 401 and the user will need to sign in again. The current
+    request itself completes normally; the new ``token_version`` will only
+    apply to subsequently presented tokens.
+    """
+    new_version = await bump_user_token_version(db, current_user)
+    return {
+        "revoked": True,
+        "token_version": new_version,
+    }
+
+
+@router.post("/{user_id}/sessions/revoke-all")
+async def revoke_user_sessions(
+    *,
+    db: AsyncSession = Depends(get_db),
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Admin/Owner action to invalidate every session and API token for a target
+    user. Useful when an account is suspected of being compromised.
+    """
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner can revoke owner sessions",
+        )
+
+    new_version = await bump_user_token_version(db, target)
+    return {
+        "revoked": True,
+        "user_id": target.id,
+        "token_version": new_version,
+    }
 
