@@ -83,7 +83,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Operator deployment**: copy the compose and env templates to local files, then run `docker compose up -d`
   - **CPU**: `docker compose up -d` after removing the `deploy` section from `docker-compose.yml`
   - **Local source development**: use the host and local-compose workflows described in `docs/DEVELOPMENT.md`
-  - **Remote Access**: Ensure `.env` is configured with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
+  - **Remote Access**: Ensure `.env` is configured with the correct `WEB_APP_URL`.
 - **Migrations**:
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`

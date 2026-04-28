@@ -12,6 +12,7 @@ from backend.main import create_app
 
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
+SECURE_TEST_BASE_URL = "https://test"
 
 
 class _FakeResult:
@@ -96,7 +97,7 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
 
     headers = _bootstrap_auth_headers()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         responses = [
             await client.get("/api/v1/setup/initial-config", headers=headers),
             await client.post(
@@ -151,7 +152,7 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
         force_password_change=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         responses = [
             await client.post(
                 "/api/v1/login/access-token",

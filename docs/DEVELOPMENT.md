@@ -339,7 +339,6 @@ services:
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
       NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS: ${NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}

@@ -82,7 +82,7 @@ Use **Settings > Updates** to see:
 
 - Back up the installation before upgrading.
 - Keep server and Companion versions aligned, especially around auth and upload flow changes.
-- For remote deployments, configure a trusted public origin with `WEB_APP_URL` and matching `ALLOWED_ORIGINS`.
+- For remote deployments, configure a trusted public origin with `WEB_APP_URL`.
 - Treat backup archives as sensitive material.
 
 ### Companion Pairing and Security Resets

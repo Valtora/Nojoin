@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Add app-layer HTTPS hardening to the backend in addition to reverse-proxy expectations.
-  - Current state: the FastAPI app only adds CORS middleware and does not register HTTPS redirect or trusted-host middleware.
-  - Files to review: [backend/main.py](../backend/main.py)
-  - Target outcome: direct app exposure should fail closed or redirect safely instead of relying entirely on external proxy configuration.
-
 - [ ] Add backend-side password policy enforcement.
   - Current state: user creation, registration, first-run setup, and password change flows accept arbitrary password strings at the API model and endpoint level.
   - Files to review: [backend/models/user.py](../backend/models/user.py), [backend/api/v1/endpoints/users.py](../backend/api/v1/endpoints/users.py), [backend/api/v1/endpoints/system.py](../backend/api/v1/endpoints/system.py)
