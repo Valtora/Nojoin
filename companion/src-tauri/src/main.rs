@@ -24,6 +24,7 @@ mod audio;
 mod companion_auth;
 mod config;
 mod local_https_identity;
+mod log_redact;
 mod notifications;
 mod secret_store;
 mod server;
@@ -2052,8 +2053,89 @@ async fn run_local_https_controller(
     }
 }
 
+/// Maximum size of the active log file before it is rotated, in bytes.
+const LOG_ROTATE_MAX_BYTES: u64 = 5 * 1024 * 1024;
+/// Number of rotated backups to retain alongside the active log file.
+const LOG_ROTATE_BACKUPS: u32 = 5;
+
+fn rotated_log_path(log_path: &std::path::Path, index: u32) -> PathBuf {
+    let mut name = log_path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_else(|| std::ffi::OsString::from("nojoin-companion.log"));
+    name.push(format!(".{}", index));
+    log_path.with_file_name(name)
+}
+
+/// Apply per-user file permissions on Unix. No-op on Windows where the
+/// per-user `%APPDATA%` ACL already restricts access.
+fn enforce_log_file_permissions(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mut perms = meta.permissions();
+            if perms.mode() & 0o777 != 0o600 {
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+}
+
+fn rotate_logs_if_needed(log_path: &std::path::Path) {
+    let size = std::fs::metadata(log_path).map(|m| m.len()).unwrap_or(0);
+    if size < LOG_ROTATE_MAX_BYTES {
+        return;
+    }
+    let oldest = rotated_log_path(log_path, LOG_ROTATE_BACKUPS);
+    let _ = std::fs::remove_file(&oldest);
+    for i in (1..LOG_ROTATE_BACKUPS).rev() {
+        let from = rotated_log_path(log_path, i);
+        let to = rotated_log_path(log_path, i + 1);
+        if from.exists() {
+            let _ = std::fs::rename(&from, &to);
+            enforce_log_file_permissions(&to);
+        }
+    }
+    let first = rotated_log_path(log_path, 1);
+    let _ = std::fs::rename(log_path, &first);
+    enforce_log_file_permissions(&first);
+}
+
+fn open_log_file(log_path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let file = opts.open(log_path)?;
+    enforce_log_file_permissions(log_path);
+    Ok(file)
+}
+
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.to_string();
+        error!(
+            "Panic in nojoin-companion: {}",
+            crate::log_redact::sanitize_for_log(&payload)
+        );
+        default_hook(info);
+    }));
+}
+
 fn setup_logging() -> Result<(), fern::InitError> {
     let log_path = get_log_path();
+    rotate_logs_if_needed(&log_path);
+    let file = open_log_file(&log_path)?;
 
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -2065,10 +2147,27 @@ fn setup_logging() -> Result<(), fern::InitError> {
                 message
             ))
         })
+        // Strict hardcoded level. Even if a future caller re-enables debug
+        // logging, the noisy network crates below cannot dump request bodies.
         .level(log::LevelFilter::Info)
-        .chain(fern::log_file(&log_path)?)
+        .filter(|metadata| {
+            let target = metadata.target();
+            let noisy = target.starts_with("reqwest")
+                || target.starts_with("hyper")
+                || target.starts_with("h2")
+                || target.starts_with("rustls")
+                || target.starts_with("tokio_rustls")
+                || target.starts_with("tower")
+                || target.starts_with("axum");
+            if noisy && metadata.level() > log::Level::Warn {
+                return false;
+            }
+            true
+        })
+        .chain(file)
         .apply()?;
 
+    install_panic_hook();
     Ok(())
 }
 

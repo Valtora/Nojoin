@@ -111,6 +111,14 @@ Do not expect the web app to run repair for you. The web side can only tell you 
 - Double-click opens Nojoin when the Companion is paired. If it is not paired, double-click focuses the native onboarding surface instead.
 - Low-frequency actions such as updates, logs, run-on-startup, Firefox support, repair, and disconnect live in `Settings`, not in the tray menu.
 
+## Logs
+
+- The Companion writes to `nojoin-companion.log` inside the per-user app data directory (`%APPDATA%\Nojoin\` on Windows, `~/.local/share/nojoin/` on Linux, `~/Library/Application Support/nojoin/` on macOS).
+- The active log is rotated when it exceeds 5 MiB. The five most recent rotations are kept as `nojoin-companion.log.1` through `nojoin-companion.log.5`; older rotations are deleted automatically.
+- On Unix the log files are created with mode `0600` and re-tightened on every startup. On Windows the per-user `%APPDATA%` ACL is relied on. Do not relax these permissions; the file may contain operational metadata for paired backends.
+- The log level is fixed at `info`. Network-stack targets (`reqwest`, `hyper`, `h2`, `rustls`, `tokio_rustls`, `tower`, `axum`) are filtered to `warn` and above so request bodies and headers cannot leak even if a future contributor enables verbose logging.
+- Bearer tokens, JWT-shaped strings, JSON values for known sensitive keys, and long opaque base64url runs are redacted before any HTTP error body or panic message is written. Treat the redacted file as the canonical artefact to share when reporting issues.
+
 ## Quick Troubleshooting
 
 - The code expired: choose `Generate New Pairing Code` and use the new code immediately.

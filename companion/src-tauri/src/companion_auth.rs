@@ -1,6 +1,7 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code))]
 
 use crate::config::{BackendConnection, Config};
+use crate::log_redact::sanitize_for_log;
 use crate::secret_store::{self, BackendSecretBundle};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -116,7 +117,7 @@ pub async fn exchange_access_token_for_target(
             backend_target,
             started_at.elapsed().as_millis(),
             status,
-            body
+            sanitize_for_log(&body)
         ));
     }
 
@@ -197,7 +198,7 @@ async fn send_pairing_management_request_for_target(
             path,
             started_at.elapsed().as_millis(),
             status,
-            body
+            sanitize_for_log(&body)
         ));
     }
 
