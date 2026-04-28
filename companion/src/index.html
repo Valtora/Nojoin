@@ -9,10 +9,10 @@
             color-scheme: light dark;
             --bg: #f8fafc;
             --surface: #ffffff;
-            --surface-soft: #f8fafc;
-            --panel-border: #dbe3ee;
+            --surface-soft: #f1f5f9;
+            --panel-border: #cbd5e1;
             --text: #162033;
-            --muted: #64748b;
+            --muted: #475569;
             --accent: #c2410c;
             --accent-strong: #9a3412;
             --accent-soft: #fff7ed;
@@ -31,10 +31,10 @@
             :root {
                 --bg: #0f172a;
                 --surface: #111c2d;
-                --surface-soft: #162234;
-                --panel-border: #263548;
+                --surface-soft: #1b283c;
+                --panel-border: #334155;
                 --text: #e2e8f0;
-                --muted: #94a3b8;
+                --muted: #cbd5e1;
                 --accent: #ea580c;
                 --accent-strong: #fb923c;
                 --accent-soft: rgba(234, 88, 12, 0.18);
@@ -134,12 +134,12 @@
         }
         .status-message.error {
             background: var(--danger-soft);
-            border-color: #fecdd3;
+            border-color: color-mix(in srgb, var(--danger) 38%, transparent);
             color: var(--danger);
         }
         .status-message.info {
             background: var(--info-soft);
-            border-color: #bfdbfe;
+            border-color: color-mix(in srgb, var(--info) 38%, transparent);
             color: var(--info);
         }
         .actions {
@@ -182,22 +182,22 @@
         }
         .shell[data-tone="setup"] .status-pill {
             background: var(--accent-soft);
-            border-color: #fdba74;
+            border-color: color-mix(in srgb, var(--accent-strong) 40%, transparent);
             color: var(--accent-strong);
         }
         .shell[data-tone="healthy"] .status-pill {
             background: var(--success-soft);
-            border-color: #bbf7d0;
+            border-color: color-mix(in srgb, var(--success) 40%, transparent);
             color: var(--success);
         }
         .shell[data-tone="informational"] .status-pill {
             background: var(--info-soft);
-            border-color: #bfdbfe;
+            border-color: color-mix(in srgb, var(--info) 40%, transparent);
             color: var(--info);
         }
         .shell[data-tone="warning"] .status-pill {
             background: var(--warning-soft);
-            border-color: #fdba74;
+            border-color: color-mix(in srgb, var(--warning) 40%, transparent);
             color: var(--warning);
         }
         .shell[data-tone="critical"] .status-pill {

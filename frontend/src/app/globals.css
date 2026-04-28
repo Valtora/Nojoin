@@ -10,9 +10,9 @@
   --foreground: #171717;
   --contrast-muted: #374151;
   --contrast-helper: #4b5563;
-  --contrast-icon-muted: #6b7280;
-  --contrast-border: #d1d5db;
-  --contrast-border-strong: #9ca3af;
+  --contrast-icon-muted: #52525b;
+  --contrast-border: #cbd5e1;
+  --contrast-border-strong: #94a3b8;
   --settings-tab-active-bg: #ffedd5;
   --settings-tab-active-border: #fdba74;
   --settings-tab-active-text: #9a3412;
@@ -25,7 +25,7 @@
   --foreground: #ededed;
   --contrast-muted: #e5e7eb;
   --contrast-helper: #d1d5db;
-  --contrast-icon-muted: #9ca3af;
+  --contrast-icon-muted: #a1a1aa;
   --contrast-border: #4b5563;
   --contrast-border-strong: #6b7280;
   --settings-tab-active-bg: rgba(249, 115, 22, 0.18);

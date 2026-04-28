@@ -541,7 +541,7 @@ export default function DashboardTasksPanel() {
   };
 
   return (
-    <div className="rounded-[2rem] border border-gray-200 bg-white/90 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-gray-700/80 dark:bg-gray-950/62 dark:shadow-black/20">
+    <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
       <div className="space-y-2">
         <div className="mt-2 flex items-start gap-3">
           <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">

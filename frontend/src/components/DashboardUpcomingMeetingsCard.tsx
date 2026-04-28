@@ -658,7 +658,7 @@ function DayTimelineAllDayChip({
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/85 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-gray-900/75">
+    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700/70 dark:bg-gray-800/80">
       <span
         className={`absolute inset-y-0 left-0 w-1.5 ${calendarColour.className}`}
         style={calendarColour.style}
@@ -730,10 +730,10 @@ function DayTimelineEventCard({
   const dotSizeClass = layout === "timeline"
     ? getTimelineDotSizeClass(visualHeight)
     : "h-2.5 w-2.5";
-  const cardClasses = `relative h-full overflow-hidden rounded-[5px] border bg-white/95 shadow-sm dark:bg-gray-950/90 ${
+  const cardClasses = `relative h-full overflow-hidden rounded-[5px] border bg-white shadow-sm dark:bg-gray-900/95 ${
     isLive
       ? "border-orange-300 shadow-orange-600/15 dark:border-orange-400/40"
-      : "border-white/70 dark:border-white/10"
+      : "border-gray-200 dark:border-gray-700/70"
   } ${
     isPast ? "opacity-70" : ""
   } ${
@@ -827,7 +827,7 @@ function AgendaEventCard({
   } = getAgendaEventPresentation(event);
 
   return (
-    <div className="rounded-xl border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/80">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
         <span>{formatAgendaDate(event, timeZone)}</span>
         <span>•</span>
@@ -1097,7 +1097,7 @@ export default function DashboardUpcomingMeetingsCard() {
   };
 
   return (
-    <div className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+    <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
       <div className="mt-2 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
@@ -1134,7 +1134,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-[1.75rem] border border-white/70 bg-white/75 p-4 shadow-inner shadow-orange-950/5 dark:border-white/10 dark:bg-gray-900/60">
+      <div className="mt-6 rounded-[1.75rem] border border-gray-200 bg-white p-4 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -1226,7 +1226,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
 
         {viewMode === "month" ? (
-          <div className="mt-5 rounded-[1.5rem] border border-white/70 bg-white/70 p-4 dark:border-white/10 dark:bg-gray-900/60">
+          <div className="mt-5 rounded-[1.5rem] border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/70">
             <div className="grid grid-cols-7 gap-2 text-center">
               {WEEK_DAYS.map((day) => (
                 <div
@@ -1406,7 +1406,7 @@ export default function DashboardUpcomingMeetingsCard() {
                           </div>
 
                           <div
-                            className="relative overflow-hidden rounded-[1.5rem] border border-white/70 bg-white/80 px-2 dark:border-white/10 dark:bg-gray-900/70"
+                            className="relative overflow-hidden rounded-[1.5rem] border border-gray-200 bg-white px-2 dark:border-gray-700/70 dark:bg-gray-800/80"
                             style={{ height: `${selectedDayTimeline.height}px` }}
                           >
                             {Array.from(
