@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from collections import Counter
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -72,6 +73,20 @@ def _bootstrap_auth_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str
     return {
         "Authorization": f"{setup.FIRST_RUN_PASSWORD_AUTH_SCHEME} {password}",
     }
+
+
+def _authenticated_setup_headers(token: str = "authenticated-setup-token") -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _authenticated_setup_user(*args, **kwargs):
+    return SimpleNamespace(
+        id=1,
+        role="owner",
+        is_superuser=False,
+        force_password_change=False,
+        settings={},
+    )
 
 
 @pytest.mark.anyio
@@ -162,6 +177,99 @@ async def test_setup_validation_hides_provider_errors_when_public(monkeypatch) -
     assert response.json() == {
         "detail": "Unable to validate the AI provider configuration.",
     }
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_validation_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "secret provider failure with /tmp/cache details"
+
+    class _BrokenBackend:
+        def validate_api_key(self):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _BrokenBackend())
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/validate-llm",
+                json={"provider": "openai", "api_key": "test-key"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_hf_validation_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "hf validation failed for account secret-user@example.com"
+
+    class _BrokenHFClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup.httpx, "AsyncClient", _BrokenHFClient)
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/validate-hf",
+                json={"token": "hf_test_token"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_HF_VALIDATION_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
+
+
+@pytest.mark.anyio
+async def test_authenticated_setup_model_listing_hides_provider_errors(monkeypatch, caplog) -> None:
+    app, _ = _build_app(initialized=True)
+    secret_detail = "model listing failure exposed internal provider state"
+
+    class _BrokenBackend:
+        def list_models(self):
+            raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(setup, "get_authenticated_user_from_token", _authenticated_setup_user)
+    monkeypatch.setattr(setup, "enforce_password_change_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _BrokenBackend())
+
+    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+            response = await client.post(
+                "/api/v1/setup/list-models",
+                json={"provider": "openai", "api_key": "test-key"},
+                headers=_authenticated_setup_headers(),
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": setup.PUBLIC_MODEL_LIST_ERROR_DETAIL,
+    }
+    assert secret_detail not in response.text
+    assert secret_detail in caplog.text
 
 
 @pytest.mark.anyio

@@ -10,11 +10,6 @@ Status basis:
 
 ## Open To-Dos
 
-- [ ] Remove raw exception details from authenticated setup validation responses.
-  - Current state: public first-run validation paths are sanitized, but authenticated admin validation can still return raw exception text for LLM, Hugging Face, and model-listing failures.
-  - Files to review: [backend/api/v1/endpoints/setup.py](../backend/api/v1/endpoints/setup.py)
-  - Target outcome: clients should receive stable, non-sensitive error messages while detailed failures stay in server logs.
-
 - [ ] Introduce CSRF protection or tighten the current browser-session model further.
   - Current state: the session cookie remains `SameSite=Lax`, and normal browser authentication still accepts the cookie directly with no separate CSRF token mechanism.
   - Files to review: [backend/api/v1/endpoints/login.py](../backend/api/v1/endpoints/login.py), [backend/api/deps.py](../backend/api/deps.py)
