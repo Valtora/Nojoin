@@ -8,11 +8,12 @@
       :root {
         color-scheme: light dark;
         --bg: #f8fafc;
+        --bg-gradient: radial-gradient(circle at top left, rgba(251, 146, 60, 0.20), transparent 45%), linear-gradient(180deg, #fff7ed 0%, #fffbf5 100%);
         --text: #162033;
         --muted: #475569;
         --surface: #ffffff;
         --surface-soft: #f1f5f9;
-        --panel-border: #cbd5e1;
+        --panel-border: #fed7aa;
         --accent: #c2410c;
         --accent-strong: #9a3412;
         --accent-soft: #fff7ed;
@@ -27,6 +28,7 @@
       @media (prefers-color-scheme: dark) {
         :root {
           --bg: #0f172a;
+          --bg-gradient: radial-gradient(circle at top left, rgba(251, 146, 60, 0.14), transparent 45%), linear-gradient(180deg, #0b1220 0%, #0a0f1c 100%);
           --text: #e2e8f0;
           --muted: #cbd5e1;
           --surface: #111c2d;
@@ -47,7 +49,7 @@
       body {
         margin: 0;
         padding: 18px 20px;
-        background: var(--bg);
+        background: var(--bg-gradient), var(--bg);
         color: var(--text);
         font-family: "Segoe UI", "Inter", system-ui, sans-serif;
         box-sizing: border-box;
