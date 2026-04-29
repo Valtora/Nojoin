@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::notifications;
-use crate::state::{AppState, AppStatus, AudioCommand};
+use crate::state::{recover_mutex_guard, AppState, AppStatus, AudioCommand};
 use crate::uploader;
 use anyhow;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -108,14 +108,14 @@ fn cleanup_segment_file(path: &Path, reason: &str) {
 }
 
 fn reset_recording_state(state: &Arc<AppState>) {
-    *state.status.lock().unwrap() = AppStatus::Idle;
-    *state.current_recording_id.lock().unwrap() = None;
-    *state.current_recording_token.lock().unwrap() = None;
-    *state.current_recording_owner.lock().unwrap() = None;
+    *recover_mutex_guard(state.status.lock(), "status") = AppStatus::Idle;
+    *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
+    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
+    *recover_mutex_guard(state.current_recording_owner.lock(), "current_recording_owner") = None;
     state.clear_recording_recovery_state();
-    *state.current_sequence.lock().unwrap() = 1;
-    *state.accumulated_duration.lock().unwrap() = std::time::Duration::new(0, 0);
-    *state.recording_start_time.lock().unwrap() = None;
+    *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
+    *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration") = std::time::Duration::new(0, 0);
+    *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = None;
 }
 
 fn join_recording_thread(
@@ -136,9 +136,9 @@ fn join_recording_thread(
 fn handle_terminal_recording_failure(state: &Arc<AppState>, app_handle: &AppHandle, reason: &str) {
     warn!("Recording cannot be finalized safely: {}", reason);
 
-    let recording_id = state.current_recording_id.lock().unwrap().clone();
-    let recording_token = state.current_recording_token.lock().unwrap().clone();
-    let config = state.config.lock().unwrap().clone();
+    let recording_id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+    let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
+    let config = recover_mutex_guard(state.config.lock(), "config").clone();
 
     if let (Some(recording_id), Some(recording_token)) = (recording_id, recording_token) {
         thread::spawn(move || {
@@ -249,8 +249,8 @@ pub fn run_audio_loop(
                 recording_handle = Some(start_segment(id, 1, state.clone(), is_recording.clone()));
             }
             AudioCommand::Resume => {
-                let id = state.current_recording_id.lock().unwrap().clone();
-                let seq = *state.current_sequence.lock().unwrap();
+                let id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+                let seq = *recover_mutex_guard(state.current_sequence.lock(), "current_sequence");
                 if let Some(rec_id) = id {
                     recording_handle = Some(start_segment(
                         rec_id,
@@ -293,13 +293,13 @@ pub fn run_audio_loop(
                 }
 
                 // Trigger finalize
-                let id = state.current_recording_id.lock().unwrap().clone();
-                let config = state.config.lock().unwrap().clone();
+                let id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+                let config = recover_mutex_guard(state.config.lock(), "config").clone();
 
                 // Calculate duration
                 let duration = {
-                    let acc = *state.accumulated_duration.lock().unwrap();
-                    let start = *state.recording_start_time.lock().unwrap();
+                    let acc = *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
+                    let start = *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
                     if let Some(s) = start {
                         if let Ok(elapsed) = s.elapsed() {
                             acc + elapsed
@@ -321,7 +321,7 @@ pub fn run_audio_loop(
                             // Check minimum length
                             let min_minutes = config.min_meeting_length().unwrap_or(0);
                             let duration_secs = duration.as_secs();
-                            let recording_token = state_finalize.current_recording_token.lock().unwrap().clone();
+                            let recording_token = recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token").clone();
 
                             let Some(recording_token) = recording_token else {
                                 eprintln!("Missing recording upload token for recording {}", rec_id);
@@ -338,7 +338,7 @@ pub fn run_audio_loop(
                                 match uploader::discard_recording(&rec_id, &config, &recording_token).await {
                                     Ok(refreshed_token) => {
                                         if let Some(new_token) = refreshed_token {
-                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                            *recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                                         }
                                         info!("Deleted short recording.");
                                         notifications::show_notification(
@@ -353,7 +353,7 @@ pub fn run_audio_loop(
                                         match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
                                             Ok(refreshed_token) => {
                                                 if let Some(new_token) = refreshed_token {
-                                                    *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                                    *recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                                                 }
                                                 println!("Recording finalized (after delete failed)")
                                             }
@@ -366,7 +366,7 @@ pub fn run_audio_loop(
                                 match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
                                     Ok(refreshed_token) => {
                                         if let Some(new_token) = refreshed_token {
-                                            *state_finalize.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                                            *recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                                         }
                                         println!("Recording finalized")
                                     }
@@ -392,7 +392,7 @@ fn start_segment(
     is_recording: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<anyhow::Result<SegmentThreadOutcome>> {
     is_recording.store(true, Ordering::SeqCst);
-    let config = state.config.lock().unwrap().clone();
+    let config = recover_mutex_guard(state.config.lock(), "config").clone();
 
     thread::spawn(move || {
         let run = || -> anyhow::Result<SegmentThreadOutcome> {
@@ -663,7 +663,7 @@ fn start_segment(
             Ok(outcome) => Ok(outcome),
             Err(e) => {
                 log::error!("Recording thread error: {}", e);
-                let mut status = state.status.lock().unwrap();
+                let mut status = recover_mutex_guard(state.status.lock(), "status");
                 *status = AppStatus::Error(e.to_string());
                 Err(e)
             }
@@ -750,8 +750,8 @@ fn run_mixing_loop(
         let state_upload = state.clone();
         let path_clone = path.clone();
         let seq = current_sequence;
-        let config = state.config.lock().unwrap().clone();
-        let recording_token = state.current_recording_token.lock().unwrap().clone();
+        let config = recover_mutex_guard(state.config.lock(), "config").clone();
+        let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
         let tx = upload_outcome_tx.clone();
         let recording_id_for_upload = recording_id.clone();
 
@@ -782,7 +782,7 @@ fn run_mixing_loop(
             {
                 Ok(refreshed_token) => {
                     if let Some(new_token) = refreshed_token {
-                        *state_upload.current_recording_token.lock().unwrap() =
+                        *recover_mutex_guard(state_upload.current_recording_token.lock(), "current_recording_token") =
                             Some(new_token.clone());
                     }
                     info!("Segment {} uploaded successfully", seq);
@@ -799,7 +799,7 @@ fn run_mixing_loop(
         upload_handles.push(handle);
 
         current_sequence += 1;
-        *state.current_sequence.lock().unwrap() = current_sequence;
+        *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = current_sequence;
     }
 
     // Wait for all uploads to complete
@@ -807,13 +807,13 @@ fn run_mixing_loop(
     drop(upload_outcome_tx);
 
     let total_segments = current_sequence.saturating_sub(1);
-    let config = state.config.lock().unwrap().clone();
-    let recording_token = state.current_recording_token.lock().unwrap().clone();
+    let config = recover_mutex_guard(state.config.lock(), "config").clone();
+    let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
 
     // Check if we should report "UPLOADING" status
     // We only want to do this if we are STOPPING/UPLOADING, not if we are PAUSED.
     let should_report_uploading = {
-        let status = state.status.lock().unwrap();
+        let status = recover_mutex_guard(state.status.lock(), "status");
         matches!(*status, AppStatus::Uploading)
     };
 
@@ -843,7 +843,7 @@ fn run_mixing_loop(
             .await
             .map(|refreshed_token| {
                 if let Some(new_token) = refreshed_token {
-                    *state.current_recording_token.lock().unwrap() = Some(new_token.clone());
+                    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                     recording_token = new_token;
                 }
             })
@@ -873,7 +873,7 @@ fn run_mixing_loop(
                         .await
                         .map(|refreshed_token| {
                             if let Some(new_token) = refreshed_token {
-                                *state.current_recording_token.lock().unwrap() =
+                                *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") =
                                     Some(new_token.clone());
                                 recording_token = new_token;
                             }

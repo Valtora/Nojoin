@@ -6,9 +6,9 @@ use crate::local_https_identity::LocalHttpsServerIdentity;
 use crate::notifications;
 use crate::secret_store::{self, BackendSecretBundle};
 use crate::state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, ActiveRecordingOwner,
-    AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession, PairingValidationError,
-    RecordingRecoveryState,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, recover_mutex_guard,
+    ActiveRecordingOwner, AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession,
+    PairingValidationError, RecordingRecoveryState,
 };
 use crate::uploader;
 use axum::debug_handler;
@@ -48,7 +48,7 @@ pub async fn start_server(
     shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let local_port = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         config.local_port()
     };
 
@@ -94,7 +94,7 @@ fn build_cors_layer(state: Arc<AppState>) -> CorsLayer {
         .allow_origin(tower_http::cors::AllowOrigin::predicate(
             move |origin: &axum::http::HeaderValue, request_parts: &axum::http::request::Parts| {
                 if let Ok(origin_str) = origin.to_str() {
-                    let config = state.config.lock().unwrap();
+                    let config = recover_mutex_guard(state.config.lock(), "config");
                     if canonicalize_loopback_host(
                         request_parts.headers.get("host"),
                         config.local_port(),
@@ -678,8 +678,8 @@ fn build_recording_status_update(
     RecordingStatusUpdate {
         recording_id,
         status,
-        config: state.config.lock().unwrap().clone(),
-        token: state.current_recording_token.lock().unwrap().clone(),
+        config: recover_mutex_guard(state.config.lock(), "config").clone(),
+        token: recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone(),
         state: state.clone(),
     }
 }
@@ -696,7 +696,7 @@ pub fn spawn_recording_status_update(update: RecordingStatusUpdate) {
             .await
             {
                 Ok(Some(new_token)) => {
-                    *update.state.current_recording_token.lock().unwrap() = Some(new_token);
+                    *recover_mutex_guard(update.state.current_recording_token.lock(), "current_recording_token") = Some(new_token);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -719,7 +719,7 @@ pub fn pause_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatusU
     let recording_id = active_recording_id(state)?;
 
     {
-        let mut status = state.status.lock().unwrap();
+        let mut status = recover_mutex_guard(state.status.lock(), "status");
         if *status != AppStatus::Recording {
             return Err(match *status {
                 AppStatus::Paused => "Recording is already paused.".to_string(),
@@ -729,10 +729,10 @@ pub fn pause_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatusU
 
         *status = AppStatus::Paused;
 
-        let mut start_time = state.recording_start_time.lock().unwrap();
+        let mut start_time = recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
         if let Some(started_at) = *start_time {
             if let Ok(elapsed) = started_at.elapsed() {
-                let mut accumulated = state.accumulated_duration.lock().unwrap();
+                let mut accumulated = recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
                 *accumulated += elapsed;
             }
         }
@@ -756,7 +756,7 @@ pub fn resume_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatus
     }
 
     {
-        let mut status = state.status.lock().unwrap();
+        let mut status = recover_mutex_guard(state.status.lock(), "status");
         if *status != AppStatus::Paused {
             return Err(match *status {
                 AppStatus::Recording => "Recording is already running.".to_string(),
@@ -765,9 +765,9 @@ pub fn resume_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatus
         }
 
         *status = AppStatus::Recording;
-        let mut sequence = state.current_sequence.lock().unwrap();
+        let mut sequence = recover_mutex_guard(state.current_sequence.lock(), "current_sequence");
         *sequence += 1;
-        *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
+        *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = Some(SystemTime::now());
     }
 
     state
@@ -790,7 +790,7 @@ pub fn stop_recording_locally(
     let recording_id = active_recording_id(state)?;
 
     {
-        let mut status = state.status.lock().unwrap();
+        let mut status = recover_mutex_guard(state.status.lock(), "status");
         if *status != AppStatus::Recording && *status != AppStatus::Paused {
             return Err("No active recording is currently running.".to_string());
         }
@@ -816,11 +816,11 @@ pub fn stop_recording_locally(
 }
 
 pub fn mark_recording_waiting_for_reconnect(state: &Arc<AppState>) -> Result<bool, String> {
-    if state.current_recording_id.lock().unwrap().is_none() {
+    if recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_none() {
         return Err("No active recording is currently running.".to_string());
     }
 
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let next_recovery_state = match status {
         AppStatus::Recording | AppStatus::Paused => RecordingRecoveryState::WaitingForReconnect,
         AppStatus::Uploading => RecordingRecoveryState::StopRequested,
@@ -856,20 +856,20 @@ fn build_status_response(
     state: &Arc<AppState>,
 ) -> LocalApiResult<StatusResponse> {
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(headers, &config, LOCAL_CONTROL_STATUS_READ_ACTION)?;
     }
 
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let (authenticated, api_host) = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         (config.is_authenticated(), config.api_host())
     };
 
     let duration = {
-        let acc = *state.accumulated_duration.lock().unwrap();
-        let start = *state.recording_start_time.lock().unwrap();
+        let acc = *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
+        let start = *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
 
         match status {
             AppStatus::Recording => {
@@ -890,7 +890,7 @@ fn build_status_response(
     let update_available = state
         .update_available
         .load(std::sync::atomic::Ordering::Relaxed);
-    let latest_version = state.latest_version.lock().unwrap().clone();
+    let latest_version = recover_mutex_guard(state.latest_version.lock(), "latest_version").clone();
 
     Ok(StatusResponse {
         status,
@@ -1189,7 +1189,7 @@ async fn complete_pairing(
     );
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         if ensure_loopback_request(&headers, &config).is_err() {
             warn!(
                 "Rejected pairing completion because request was not loopback-safe: {}",
@@ -1307,7 +1307,7 @@ async fn complete_pairing(
     }
 
     {
-        let status = state.status.lock().unwrap().clone();
+        let status = recover_mutex_guard(state.status.lock(), "status").clone();
         if let Some(message) = pairing_block_message(&status) {
             warn!(
                 "Rejected pairing completion because companion state blocked pairing: status={:?}; {}",
@@ -1506,7 +1506,7 @@ async fn complete_pairing(
     };
 
     let previous_backend = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         config.backend_connection()
     };
     let previous_secret_bundle = previous_backend
@@ -1545,7 +1545,7 @@ async fn complete_pairing(
     }
 
     let save_result = {
-        let mut config = state.config.lock().unwrap();
+        let mut config = recover_mutex_guard(state.config.lock(), "config");
         config.replace_backend_and_save(backend.clone())
     };
 
@@ -1593,11 +1593,11 @@ async fn complete_pairing(
         let _ = window.close();
     }
 
-    *state.current_recording_id.lock().unwrap() = None;
-    *state.current_recording_token.lock().unwrap() = None;
+    *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
+    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
     state.clear_current_recording_owner();
     state.clear_recording_recovery_state();
-    *state.current_sequence.lock().unwrap() = 1;
+    *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
 
     if should_revoke_previous_backend {
         if let Some(previous_backend) = previous_backend.as_ref() {
@@ -1688,7 +1688,7 @@ async fn deprecated_authorize(
     State(context): State<ServerContext>,
 ) -> LocalApiResult<(StatusCode, Json<PairingCompleteResponse>)> {
     {
-        let config = context.state.config.lock().unwrap();
+        let config = recover_mutex_guard(context.state.config.lock(), "config");
         let _host = ensure_loopback_request(&headers, &config)?;
     }
 
@@ -1716,12 +1716,12 @@ async fn get_audio_levels(
     let state = &context.state;
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(&headers, &config, LOCAL_CONTROL_WAVEFORM_READ_ACTION)?;
     }
 
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let is_recording = matches!(status, AppStatus::Recording);
 
     Ok(Json(AudioLevelsResponse {
@@ -1738,12 +1738,12 @@ async fn get_live_audio_levels(
     let state = &context.state;
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(&headers, &config, LOCAL_CONTROL_WAVEFORM_READ_ACTION)?;
     }
 
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let is_recording = matches!(status, AppStatus::Recording | AppStatus::Paused);
 
     Ok(Json(AudioLevelsResponse {
@@ -1774,13 +1774,13 @@ async fn start_recording(
     info!("Received start_recording request for '{}'", payload.name);
 
     let guard = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_START_ACTION)?
     };
 
     // Check status (and drop lock immediately)
     {
-        let status = state.status.lock().unwrap();
+        let status = recover_mutex_guard(state.status.lock(), "status");
         if *status != AppStatus::Idle && *status != AppStatus::BackendOffline {
             return Ok((
                 StatusCode::CONFLICT,
@@ -1794,7 +1794,7 @@ async fn start_recording(
 
     // Call backend to create recording
     let fingerprint = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         config.tls_fingerprint()
     };
     let client = crate::tls::create_client(fingerprint).map_err(|err| {
@@ -1804,7 +1804,7 @@ async fn start_recording(
         )
     })?;
 
-    let config_snapshot = { state.config.lock().unwrap().clone() };
+    let config_snapshot = { recover_mutex_guard(state.config.lock(), "config").clone() };
     let token = companion_auth::exchange_access_token_for_config(&config_snapshot)
         .await
         .map_err(|error| {
@@ -1848,17 +1848,17 @@ async fn start_recording(
                     }
 
                     // Start Audio Thread
-                    *state.current_recording_id.lock().unwrap() = Some(id.clone());
-                    *state.current_recording_token.lock().unwrap() = upload_token;
+                    *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = Some(id.clone());
+                    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = upload_token;
                     state.set_current_recording_owner(ActiveRecordingOwner {
                         user_id: guard.claims.user_id,
                         username: guard.claims.username.clone(),
                         companion_pairing_id: guard.claims.companion_pairing_id.clone(),
                     });
                     state.clear_recording_recovery_state();
-                    *state.current_sequence.lock().unwrap() = 1;
-                    *state.recording_start_time.lock().unwrap() = Some(SystemTime::now());
-                    *state.accumulated_duration.lock().unwrap() = Duration::new(0, 0);
+                    *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
+                    *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = Some(SystemTime::now());
+                    *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration") = Duration::new(0, 0);
 
                     state
                         .audio_command_tx
@@ -1866,7 +1866,7 @@ async fn start_recording(
                         .unwrap();
 
                     {
-                        let mut status = state.status.lock().unwrap();
+                        let mut status = recover_mutex_guard(state.status.lock(), "status");
                         *status = AppStatus::Recording;
                     }
 
@@ -1910,11 +1910,11 @@ async fn stop_recording(
     info!("Received stop_recording request");
 
     let guard = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_STOP_ACTION)?
     };
 
-    if state.current_recording_id.lock().unwrap().is_none() {
+    if recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_none() {
         return Err(LocalGuardRejection::conflict(
             "recording_not_active",
             "No active recording is currently running.",
@@ -1945,11 +1945,11 @@ async fn pause_recording(
     info!("Received pause_recording request");
 
     let guard = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_PAUSE_ACTION)?
     };
 
-    if state.current_recording_id.lock().unwrap().is_none() {
+    if recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_none() {
         return Err(LocalGuardRejection::conflict(
             "recording_not_active",
             "No active recording is currently running.",
@@ -1976,11 +1976,11 @@ async fn resume_recording(
     info!("Received resume_recording request");
 
     let guard = {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         guard_steady_state_request(&headers, &config, LOCAL_CONTROL_RECORDING_RESUME_ACTION)?
     };
 
-    if state.current_recording_id.lock().unwrap().is_none() {
+    if recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_none() {
         return Err(LocalGuardRejection::conflict(
             "recording_not_active",
             "No active recording is currently running.",
@@ -2017,7 +2017,7 @@ async fn get_config(
     let state = &context.state;
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(&headers, &config, LOCAL_CONTROL_SETTINGS_READ_ACTION)?;
 
@@ -2050,7 +2050,7 @@ async fn get_devices(
     let state = &context.state;
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(&headers, &config, LOCAL_CONTROL_DEVICES_READ_ACTION)?;
     }
@@ -2088,7 +2088,7 @@ async fn get_devices(
         })
         .unwrap_or_default();
 
-    let config = state.config.lock().unwrap();
+    let config = recover_mutex_guard(state.config.lock(), "config");
 
     Ok(Json(DevicesResponse {
         input_devices,
@@ -2112,7 +2112,7 @@ async fn update_config(
     Json(payload): Json<ConfigUpdate>,
 ) -> LocalApiResult<Json<ConfigResponse>> {
     let state = &context.state;
-    let mut config = state.config.lock().unwrap();
+    let mut config = recover_mutex_guard(state.config.lock(), "config");
 
     let _guard =
         guard_steady_state_request(&headers, &config, LOCAL_CONTROL_SETTINGS_WRITE_ACTION)?;
@@ -2173,12 +2173,12 @@ async fn trigger_update(
     let state = &context.state;
 
     {
-        let config = state.config.lock().unwrap();
+        let config = recover_mutex_guard(state.config.lock(), "config");
         let _guard =
             guard_steady_state_request(&headers, &config, LOCAL_CONTROL_UPDATE_TRIGGER_ACTION)?;
     }
 
-    let url = state.latest_update_url.lock().unwrap().clone();
+    let url = recover_mutex_guard(state.latest_update_url.lock(), "latest_update_url").clone();
 
     if let Some(target_url) = url {
         if let Err(e) = open::that(target_url) {
@@ -2538,6 +2538,55 @@ mod tests {
                 summary
             );
         }
+    }
+
+    #[test]
+    fn cors_predicate_recovers_from_poisoned_config_mutex() {
+        // Regression coverage for the panic cascade observed at
+        // server.rs:97 where the CORS predicate unwrapped a poisoned
+        // `state.config` lock and dropped every concurrent inbound
+        // pairing/control request, including the `/pair/complete`
+        // success response. After the recover_mutex_guard rollout,
+        // the predicate must continue to return correct allow/deny
+        // decisions even after the mutex has been poisoned by an
+        // unrelated panic.
+        let (state, _audio_rx) = build_test_state();
+
+        // Intentionally panic while holding the config guard to
+        // poison the mutex, mirroring the runtime failure mode.
+        let poison_state = state.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = poison_state.config.lock().unwrap();
+            panic!("simulated panic while holding state.config lock");
+        }));
+        assert!(
+            state.config.is_poisoned(),
+            "expected the simulated panic to poison state.config"
+        );
+
+        // The recovery helper must yield the same configuration that
+        // would have been observed pre-poison.
+        let recovered = recover_mutex_guard(state.config.lock(), "config");
+        let paired_origin = recovered.paired_web_origin();
+        assert_eq!(
+            paired_origin.as_deref(),
+            Some("https://paired.example.com"),
+            "recovered config should preserve the paired web origin"
+        );
+
+        // The CORS predicate's downstream check must stay correct.
+        assert!(is_allowed_origin_value(
+            "https://paired.example.com",
+            &recovered
+        ));
+        assert!(!is_allowed_origin_value(
+            "https://attacker.example.com",
+            &recovered
+        ));
+        // Loopback canonicalization (the other half of the predicate)
+        // must also remain functional after recovery.
+        let host_header = HeaderValue::from_static("127.0.0.1:12345");
+        assert!(canonicalize_loopback_host(Some(&host_header), recovered.local_port()).is_some());
     }
 
     #[test]

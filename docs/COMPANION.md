@@ -129,6 +129,7 @@ Do not expect the web app to run repair for you. The web side can only tell you 
 - The web app says `Browser repair required`: open the Companion and run `Repair Local Browser Connection` from `Settings`.
 - You are switching to a different backend: do not expect the old pairing to disappear until the new pairing succeeds.
 - A recording or upload is still in progress: finish or wait before trying to replace the backend pairing.
+- The log shows `Recovering from poisoned <name> mutex.`: the Companion intentionally recovers from internal panics rather than tearing down the loopback HTTPS listener mid-pairing. Pairing and local control continue to work; share the surrounding log lines (rotated files included) when reporting the issue so the originating panic can be traced.
 
 ## Related Docs
 

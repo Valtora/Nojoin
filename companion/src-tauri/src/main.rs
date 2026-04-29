@@ -7,7 +7,7 @@ use log::{error, info, warn};
 use reqwest;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{
@@ -36,8 +36,9 @@ mod win_notifications;
 
 use config::{Config, MachineLocalUpdate};
 use state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, AppState, AppStatus,
-    LocalHttpsHealth, LocalHttpsStatus, RecordingRecoveryState, PAIRING_WINDOW_LIFETIME_SECS,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, recover_mutex_guard,
+    AppState, AppStatus, LocalHttpsHealth, LocalHttpsStatus, RecordingRecoveryState,
+    PAIRING_WINDOW_LIFETIME_SECS,
 };
 use tauri_plugin_autostart::ManagerExt;
 
@@ -45,19 +46,6 @@ use tauri_plugin_autostart::ManagerExt;
 struct SharedAppState(Arc<AppState>);
 
 struct SharedLocalHttpsController(LocalHttpsControllerHandle);
-
-fn recover_mutex_guard<'a, T>(
-    lock_result: Result<MutexGuard<'a, T>, PoisonError<MutexGuard<'a, T>>>,
-    label: &str,
-) -> MutexGuard<'a, T> {
-    match lock_result {
-        Ok(guard) => guard,
-        Err(poisoned) => {
-            error!("Recovering from poisoned {} mutex.", label);
-            poisoned.into_inner()
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LauncherOpenReason {
@@ -353,7 +341,7 @@ fn configure_launcher_window(window: &tauri::WebviewWindow) {
 }
 
 fn mark_launcher_intro_seen(state: &Arc<AppState>) -> Result<bool, String> {
-    let mut config = state.config.lock().unwrap();
+    let mut config = recover_mutex_guard(state.config.lock(), "config");
     if config.is_authenticated() || config.launcher_intro_seen() == Some(true) {
         return Ok(false);
     }
@@ -570,19 +558,19 @@ fn update_tray_status_ui(state: &Arc<AppState>) {
     let status_text = current_tray_status_text(state);
     let tooltip_text = current_tray_tooltip_text(state);
 
-    if let Some(item) = state.tray_status_item.lock().unwrap().as_ref() {
+    if let Some(item) = recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item").as_ref() {
         let _ = item.set_text(&status_text);
     }
 
-    if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
+    if let Some(tray) = recover_mutex_guard(state.tray_icon.lock(), "tray_icon").as_ref() {
         let _ = tray.set_tooltip(Some(&tooltip_text));
     }
 }
 
 fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Result<Menu<tauri::Wry>> {
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let recovery_state = state.recording_recovery_state();
-    let has_active_recording = state.current_recording_id.lock().unwrap().is_some();
+    let has_active_recording = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_some();
     let can_open_nojoin = tray_has_open_nojoin_target(state);
     let can_pause_recording = has_active_recording
         && matches!(status, AppStatus::Recording)
@@ -638,7 +626,7 @@ fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Resu
         None::<&str>,
     )?;
 
-    *state.tray_status_item.lock().unwrap() = Some(status_item.clone());
+    *recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item") = Some(status_item.clone());
 
     let separator_after_status = PredefinedMenuItem::separator(app)?;
     let separator_after_controls = PredefinedMenuItem::separator(app)?;
@@ -678,7 +666,7 @@ fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Resu
 pub fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
     match build_tray_menu(app, state) {
         Ok(menu) => {
-            if let Some(tray) = state.tray_icon.lock().unwrap().as_ref() {
+            if let Some(tray) = recover_mutex_guard(state.tray_icon.lock(), "tray_icon").as_ref() {
                 if let Err(err) = tray.set_menu(Some(menu)) {
                     error!("Failed to refresh tray menu: {}", err);
                 }
@@ -690,7 +678,7 @@ pub fn refresh_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
 }
 
 fn handle_backend_disconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     match status {
         AppStatus::Recording | AppStatus::Paused | AppStatus::Uploading => {
             let previous_recovery_state = state.recording_recovery_state();
@@ -710,7 +698,7 @@ fn handle_backend_disconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
             }
         }
         AppStatus::Idle => {
-            let mut status = state.status.lock().unwrap();
+            let mut status = recover_mutex_guard(state.status.lock(), "status");
             *status = AppStatus::BackendOffline;
         }
         _ => {}
@@ -720,7 +708,7 @@ fn handle_backend_disconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
 }
 
 fn handle_backend_reconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
-    let status = state.status.lock().unwrap().clone();
+    let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let previous_recovery_state = server::restore_recording_after_reconnect(state);
     match previous_recovery_state {
         RecordingRecoveryState::WaitingForReconnect => {
@@ -739,7 +727,7 @@ fn handle_backend_reconnect(app: &tauri::AppHandle, state: &Arc<AppState>) {
             );
         }
         RecordingRecoveryState::None => {
-            let mut status = state.status.lock().unwrap();
+            let mut status = recover_mutex_guard(state.status.lock(), "status");
             if *status == AppStatus::BackendOffline {
                 *status = AppStatus::Idle;
             }
@@ -1286,7 +1274,7 @@ fn start_pairing_mode_internal(
     state: &Arc<AppState>,
 ) -> Result<String, String> {
     {
-        let status = state.status.lock().unwrap().clone();
+        let status = recover_mutex_guard(state.status.lock(), "status").clone();
         if let AppStatus::Error(message) = &status {
             return Err(message.clone());
         }

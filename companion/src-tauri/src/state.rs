@@ -236,7 +236,13 @@ pub struct AppState {
     pub pairing_session: Mutex<Option<PairingSession>>,
 }
 
-fn recover_mutex_guard<'a, T>(
+/// Returns the inner guard whether the mutex was healthy or poisoned. We log
+/// the recovery and continue; the only mutated values shared across these
+/// locks are simple owned values that remain self-consistent under partial
+/// updates, so it is safer for the Companion to keep serving local API
+/// requests than to let panics cascade through the CORS predicate and tear
+/// down the loopback HTTPS listener mid-pairing.
+pub(crate) fn recover_mutex_guard<'a, T>(
     lock_result: Result<MutexGuard<'a, T>, PoisonError<MutexGuard<'a, T>>>,
     label: &str,
 ) -> MutexGuard<'a, T> {
@@ -323,7 +329,7 @@ impl AppState {
         &self,
         submitted_code: &str,
     ) -> Result<(), PairingValidationError> {
-        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         let session = match pairing_session.as_mut() {
             Some(session) => session,
             None => return Err(PairingValidationError::NotActive),
@@ -353,7 +359,7 @@ impl AppState {
     }
 
     pub fn release_pairing_completion(&self) {
-        let mut pairing_session = self.pairing_session.lock().unwrap();
+        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         let Some(session) = pairing_session.as_mut() else {
             return;
         };
@@ -371,25 +377,25 @@ impl AppState {
     }
 
     pub fn set_current_recording_owner(&self, owner: ActiveRecordingOwner) {
-        let mut current_owner = self.current_recording_owner.lock().unwrap();
+        let mut current_owner = recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner");
         *current_owner = Some(owner);
     }
 
     pub fn current_recording_owner(&self) -> Option<ActiveRecordingOwner> {
-        self.current_recording_owner.lock().unwrap().clone()
+        recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner").clone()
     }
 
     pub fn clear_current_recording_owner(&self) {
-        let mut current_owner = self.current_recording_owner.lock().unwrap();
+        let mut current_owner = recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner");
         *current_owner = None;
     }
 
     pub fn recording_recovery_state(&self) -> RecordingRecoveryState {
-        *self.recording_recovery_state.lock().unwrap()
+        *recover_mutex_guard(self.recording_recovery_state.lock(), "recording_recovery_state")
     }
 
     pub fn set_recording_recovery_state(&self, recovery_state: RecordingRecoveryState) {
-        let mut current_state = self.recording_recovery_state.lock().unwrap();
+        let mut current_state = recover_mutex_guard(self.recording_recovery_state.lock(), "recording_recovery_state");
         *current_state = recovery_state;
     }
 
