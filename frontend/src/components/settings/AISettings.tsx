@@ -58,6 +58,7 @@ const WHISPER_MODELS = [
 interface AISettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
+  onPersist?: (newSettings: Settings) => Promise<void>;
   searchQuery?: string;
   isAdmin?: boolean;
 }
@@ -65,6 +66,7 @@ interface AISettingsProps {
 export default function AISettings({
   settings,
   onUpdate,
+  onPersist,
   searchQuery = "",
   isAdmin = false,
 }: AISettingsProps) {
@@ -176,9 +178,13 @@ export default function AISettings({
           setAvailableModels(modelsRes.models);
         }
       }
+      if (onPersist && provider !== "hf") {
+        await onPersist(settings);
+      }
+
       setValidationMsg({
         type: "success",
-        msg: res.message || "Validation successful",
+        msg: `${res.message || "Validation successful"}${onPersist && provider !== "hf" ? " Settings saved." : ""}`,
         provider,
       });
     } catch (e: any) {
@@ -475,42 +481,6 @@ export default function AISettings({
                     </option>
                   ))}
                 </select>
-
-                {/* Model Recommendations */}
-                {settings.llm_provider === "gemini" && (
-                  <div className="mt-2 text-xs contrast-helper">
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      Recommended:
-                    </span>
-                    <span className="ml-1">
-                      <strong>gemini-flash-latest</strong> (Fast) or{" "}
-                      <strong>gemini-pro-latest</strong> (Complex)
-                    </span>
-                  </div>
-                )}
-                {settings.llm_provider === "openai" && (
-                  <div className="mt-2 text-xs contrast-helper">
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      Recommended:
-                    </span>
-                    <span className="ml-1">
-                      <strong>GPT-5 mini</strong> (Fast) or{" "}
-                      <strong>GPT-5.1</strong> (Complex)
-                    </span>
-                  </div>
-                )}
-                {settings.llm_provider === "anthropic" && (
-                  <div className="mt-2 text-xs contrast-helper">
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      Recommended:
-                    </span>
-                    <span className="ml-1">
-                      <strong>Claude Haiku</strong> (Fast) or{" "}
-                      <strong>Claude Sonnet</strong> (Balanced) or{" "}
-                      <strong>Claude Opus</strong> (Complex)
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
 

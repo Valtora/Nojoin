@@ -427,6 +427,51 @@ export default function SettingsPage() {
     forcePasswordChange,
   ]);
 
+  const persistSettingsNow = useCallback(
+    async (nextSettings: Settings) => {
+      if (forcePasswordChange) {
+        return;
+      }
+
+      const error = validateSettings(nextSettings, companionConfig);
+      if (error) {
+        addNotification({ type: "error", message: error });
+        throw new Error(error);
+      }
+
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+
+      setSaving(true);
+      try {
+        await updateSettings(nextSettings);
+        setCachedUserTimeZone(nextSettings.timezone);
+        lastSavedState.current = JSON.stringify({
+          settings: nextSettings,
+          companionApiPort: companionConfig?.api_port,
+          companionMinLength: companionConfig?.min_meeting_length,
+          selectedInputDevice,
+          selectedOutputDevice,
+        });
+      } catch (e) {
+        console.error("Failed to save settings", e);
+        addNotification({ type: "error", message: "Failed to save settings" });
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      addNotification,
+      companionConfig,
+      forcePasswordChange,
+      selectedInputDevice,
+      selectedOutputDevice,
+    ],
+  );
+
   useEffect(() => {
     if (loading || forcePasswordChange) return;
 
@@ -636,6 +681,7 @@ export default function SettingsPage() {
                 <AdminSettings
                   settings={settings}
                   onUpdateSettings={setSettings}
+                  onPersistSettings={persistSettingsNow}
                   isAdmin={isAdmin}
                   searchQuery={searchQuery}
                 />

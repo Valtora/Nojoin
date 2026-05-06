@@ -753,8 +753,18 @@ export const updateUserNotes = async (
 
 export const generateNotes = async (
   recordingId: RecordingId,
-): Promise<{ notes: string; status: string }> => {
-  const response = await api.post<{ notes: string; status: string }>(
+): Promise<{
+  status: string;
+  notes_status?: string;
+  error_message?: string | null;
+  message?: string;
+}> => {
+  const response = await api.post<{
+    status: string;
+    notes_status?: string;
+    error_message?: string | null;
+    message?: string;
+  }>(
     `/transcripts/${recordingId}/notes/generate`,
   );
   return response.data;

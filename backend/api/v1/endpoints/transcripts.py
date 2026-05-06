@@ -51,6 +51,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
 from backend.processing.text_embedding import get_text_embedding_service
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
@@ -1032,37 +1033,35 @@ async def generate_notes(
     
     if not transcript or not transcript.segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
-    
-    from backend.utils.config_manager import async_get_system_api_keys
-    system_keys = await async_get_system_api_keys(db)
-    
-    # Get system defaults from Owner
-    res = await db.execute(select(User).where(User.role == "owner"))
-    owner = res.scalar_one_or_none()
-    owner_settings = getattr(owner, "settings", {}) if owner else {}
-    
-    user_settings = current_user.settings or {}
-    provider = user_settings.get("llm_provider") or owner_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
-    
-    api_key = system_keys.get(f"{provider}_api_key")
-    if not api_key:
-        api_key = user_settings.get(f"{provider}_api_key")
-        
-    model = user_settings.get(f"{provider}_model") or owner_settings.get(f"{provider}_model") or config_manager.get(f"{provider}_model")
-    
-    if not api_key and provider != "ollama":
-        raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
+
+    if transcript.notes_status == "generating":
+        raise HTTPException(status_code=409, detail="Meeting notes are already generating.")
+
+    llm_config = await resolve_llm_config_async(db, current_user.settings or {})
+    missing_llm_config = llm_config.missing_configuration_message()
+    if missing_llm_config:
+        transcript.notes_status = "error"
+        transcript.error_message = missing_llm_config
+        db.add(transcript)
+        await db.commit()
+        raise HTTPException(status_code=400, detail=f"{missing_llm_config}. Please configure AI settings.")
     
     # 4. Call Worker Task
     from backend.worker.tasks import generate_notes_task
     
     transcript.notes_status = "generating"
+    transcript.error_message = None
     db.add(transcript)
     await db.commit()
     
     generate_notes_task.delay(recording.id)
     
-    return {"status": "success", "message": "Note generation started"}
+    return {
+        "status": "success",
+        "notes_status": transcript.notes_status,
+        "error_message": transcript.error_message,
+        "message": "Note generation started",
+    }
 
 
 # --- Chat Endpoints ---

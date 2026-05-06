@@ -26,7 +26,8 @@ from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADN
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
-from backend.utils.config_manager import config_manager, is_llm_available
+from backend.utils.config_manager import config_manager
+from backend.utils.llm_config import ResolvedLLMConfig, resolve_llm_config
 from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
 from backend.utils.recording_storage import cleanup_stale_recording_artifacts
 from backend.utils.status_manager import update_recording_status
@@ -66,6 +67,47 @@ def _can_delete_source_audio(recording: Recording) -> bool:
         return False
 
     return not _paths_point_to_same_media(recording.audio_path, recording.proxy_path)
+
+
+def _format_notes_generation_error(error: Exception | str) -> str:
+    message = str(error).strip() or "Meeting notes could not be generated."
+    if len(message) > 500:
+        message = f"{message[:497]}..."
+    return message
+
+
+def _mark_notes_generation_error(
+    session,
+    recording: Recording | None,
+    transcript: Transcript | None,
+    error: Exception | str,
+) -> None:
+    if not transcript:
+        return
+
+    transcript.notes_status = "error"
+    transcript.error_message = _format_notes_generation_error(error)
+    session.add(transcript)
+
+    if recording:
+        recording.processing_step = "Error generating notes"
+        session.add(recording)
+
+    session.commit()
+
+    if recording:
+        update_recording_status(session, recording.id)
+
+
+def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
+    from backend.processing.llm_services import get_llm_backend
+
+    return get_llm_backend(
+        llm_config.provider,
+        api_key=llm_config.api_key,
+        model=llm_config.model,
+        api_url=llm_config.api_url,
+    )
 
 class DatabaseTask(Task):
     _session = None
@@ -118,28 +160,8 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             user_settings = user.settings
             logger.info(f"Loaded settings for user {user.username}: {list(user_settings.keys())}")
             
-    system_config = config_manager.get_all()
-    from backend.utils.config_manager import get_system_api_keys
-    system_keys = get_system_api_keys(session)
-    system_config.update(system_keys)
-    
-    # Extract owner's global LLM config if we need it
-    from sqlmodel import select
-    res = session.execute(select(User).where(User.role == "owner"))
-    owner = res.scalar_one_or_none()
-    owner_settings = getattr(owner, "settings", {}) if owner else {}
-    system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
-    for sys_field in system_fields:
-        if owner_settings and owner_settings.get(sys_field):
-            system_config[sys_field] = owner_settings[sys_field]
-    
-    merged_config = system_config.copy()
-    merged_config.update({k: v for k, v in user_settings.items() if v is not None})
-    
-    # Enforce system keys globally for all users
-    for sk, val in system_keys.items():
-        if val:
-            merged_config[sk] = val
+    llm_config = resolve_llm_config(session, user_settings)
+    merged_config = llm_config.merged_config
     
     # Platform/Device detection for UX
     import torch
@@ -695,13 +717,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 session.add(recording)
                 session.commit()
 
-                provider = merged_config.get("llm_provider", "gemini")
-                api_key = merged_config.get(f"{provider}_api_key")
-                model = merged_config.get(f"{provider}_model")
+                missing_llm_config = llm_config.missing_configuration_message()
                 prefer_short_titles = merged_config.get("prefer_short_titles", True)
 
-                if api_key:
-                    llm = get_llm_backend(provider, api_key=api_key, model=model)
+                if not missing_llm_config:
+                    llm = _llm_backend_from_config(llm_config)
                     
                     # Construct prompt based on preference
                     if prefer_short_titles:
@@ -721,7 +741,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     session.commit()
                     logger.info(f"Inferred title for recording {recording_id}: {title}")
                 else:
-                    logger.warning(f"Skipping title inference: No API key for {provider}")
+                    logger.warning("Skipping title inference: %s", missing_llm_config)
 
             except Exception as e:
                 logger.error(f"Failed to infer meeting title: {e}")
@@ -737,18 +757,17 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 session.add(recording)
                 session.commit()
                 
-                provider = merged_config.get("llm_provider", "gemini")
-                api_key = merged_config.get(f"{provider}_api_key")
-                model = merged_config.get(f"{provider}_model")
+                missing_llm_config = llm_config.missing_configuration_message()
                 
-                if api_key:
+                if not missing_llm_config:
                     session.refresh(transcript)
                     transcript.notes_status = "generating"
+                    transcript.error_message = None
                     session.add(transcript)
                     session.commit()
                     update_recording_status(session, recording.id)
                     
-                    llm = get_llm_backend(provider, api_key=api_key, model=model)
+                    llm = _llm_backend_from_config(llm_config)
                     # Passes an empty mapping because names are already resolved in transcript_text.
                     # Use a generous timeout (300s) for meeting notes generation as it can be slow
                     notes = llm.generate_meeting_notes(
@@ -759,19 +778,18 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     )
                     transcript.notes = notes
                     transcript.notes_status = "completed"
+                    transcript.error_message = None
                     session.add(transcript)
                     session.commit()
                     update_recording_status(session, recording.id)
                     logger.info(f"Generated meeting notes for recording {recording_id}")
                 else:
-                    logger.warning(f"Skipping note generation: No API key for {provider}")
-                    transcript.notes_status = "error" # Or pending?
-                    session.add(transcript)
+                    logger.warning("Skipping note generation: %s", missing_llm_config)
+                    _mark_notes_generation_error(session, recording, transcript, missing_llm_config)
 
             except Exception as e:
                 logger.error(f"Failed to generate meeting notes: {e}")
-                transcript.notes_status = "error"
-                session.add(transcript)
+                _mark_notes_generation_error(session, recording, transcript, e)
                 # Don't fail the whole process
 
         # Update Recording Status
@@ -1076,10 +1094,9 @@ def generate_notes_task(self, recording_id: int):
     """
     Generate meeting notes for a recording.
     """
-    from backend.processing.llm_services import get_llm_backend
-    
     session = self.session
     recording = None
+    transcript = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
@@ -1093,6 +1110,7 @@ def generate_notes_task(self, recording_id: int):
 
         # Update status
         transcript.notes_status = "generating"
+        transcript.error_message = None
         recording.processing_step = "Generating meeting notes..."
         recording.processing_progress = 97
         session.add(transcript)
@@ -1106,47 +1124,16 @@ def generate_notes_task(self, recording_id: int):
             user = session.get(User, recording.user_id)
             if user and user.settings:
                 user_settings = user.settings
-        
-        system_config = config_manager.get_all()
-        from backend.utils.config_manager import get_system_api_keys
-        system_keys = get_system_api_keys(session)
-        system_config.update(system_keys)
-        
-        # Extract owner's global LLM config if we need it
-        from sqlmodel import select
-        res = session.execute(select(User).where(User.role == "owner"))
-        owner = res.scalar_one_or_none()
-        owner_settings = getattr(owner, "settings", {}) if owner else {}
-        system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
-        for sys_field in system_fields:
-            if owner_settings and owner_settings.get(sys_field):
-                system_config[sys_field] = owner_settings[sys_field]
-        
-        merged_config = system_config.copy()
-        merged_config.update({k: v for k, v in user_settings.items() if v is not None})
-        for sk, val in system_keys.items():
-            if val:
-                merged_config[sk] = val
 
-        provider = merged_config.get("llm_provider", "gemini")
-        api_key = merged_config.get(f"{provider}_api_key")
-        # Fix: Use provider-specific model key (e.g. gemini_model) instead of generic llm_model
-        model = merged_config.get(f"{provider}_model")
-
-        if not api_key and provider != "ollama":
-            logger.warning(f"No API key configured for {provider}. Cannot generate notes.")
-            transcript.notes_status = "error"
-            transcript.error_message = f"No API key configured for {provider}"
-            session.add(transcript)
-            session.commit()
+        llm_config = resolve_llm_config(session, user_settings)
+        missing_llm_config = llm_config.missing_configuration_message()
+        if missing_llm_config:
+            logger.warning("Cannot generate notes: %s", missing_llm_config)
+            _mark_notes_generation_error(session, recording, transcript, missing_llm_config)
             return
-            
-        if not model:
-            logger.warning(f"No model selected for {provider}. Cannot generate notes.")
-            transcript.notes_status = "error"
-            transcript.error_message = f"No model selected for {provider}"
-            session.add(transcript)
-            session.commit()
+
+        if not transcript.segments:
+            _mark_notes_generation_error(session, recording, transcript, "Transcript is empty")
             return
 
         # Build Speaker Map and Transcript Text
@@ -1155,17 +1142,20 @@ def generate_notes_task(self, recording_id: int):
         transcript_text = format_segments_for_llm(transcript.segments, speaker_map)
 
         # Call LLM Service
-        llm = get_llm_backend(provider, api_key=api_key, model=model)
+        llm = _llm_backend_from_config(llm_config)
         notes = llm.generate_meeting_notes(
             transcript_text,
             speaker_map,
+            timeout=300,
             user_notes=transcript.user_notes,
         )
 
         # Save Notes
         transcript.notes = notes
         transcript.notes_status = "completed"
+        transcript.error_message = None
         recording.processing_step = "Completed"
+        recording.processing_progress = 100
         session.add(transcript)
         session.add(recording)
         session.commit()
@@ -1219,19 +1209,10 @@ def generate_notes_task(self, recording_id: int):
 
     except Exception as e:
         logger.error(f"Failed to generate meeting notes: {e}", exc_info=True)
-        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
-        if transcript:
-            transcript.notes_status = "error"
-            transcript.error_message = str(e)
-            session.add(transcript)
-        
-        if recording:
-            recording.processing_step = "Error generating notes"
-            session.add(recording)
-            
-        session.commit()
-        if recording:
-            update_recording_status(session, recording_id)
+        session.rollback()
+        if transcript is None:
+            transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+        _mark_notes_generation_error(session, recording, transcript, e)
 
 @celery_app.task(base=DatabaseTask, bind=True)
 def infer_speakers_task(self, recording_id: int):

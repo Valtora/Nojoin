@@ -18,6 +18,7 @@ import {
   ListOrdered,
   Link as LinkIcon,
   Settings,
+  AlertCircle,
 } from "lucide-react";
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
@@ -64,6 +65,7 @@ export default function NotesView({
   const displayNotes = notes
     ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim()
     : null;
+  const generateNotesLabel = displayNotes ? "Regenerate Notes" : "Generate Notes";
 
   // Editing State
   const [localNotes, setLocalNotes] = useState(displayNotes || "");
@@ -450,24 +452,20 @@ export default function NotesView({
           </div>
 
           <div className="flex items-center gap-1">
-            {(!notes || isGenerating) && (
-              <>
-                <button
-                  onClick={onGenerateNotes}
-                  disabled={isGenerating}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Generate Notes with AI"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" />
-                  )}
-                  {isGenerating ? "Generating..." : "Generate Notes"}
-                </button>
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
-              </>
-            )}
+            <button
+              onClick={onGenerateNotes}
+              disabled={isGenerating}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Generate Notes with AI"
+            >
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {isGenerating ? "Generating..." : generateNotesLabel}
+            </button>
+            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
             <button
               onClick={onUndo}
               disabled={!canUndo}
@@ -520,6 +518,16 @@ export default function NotesView({
             </button>
           </div>
         </div>
+
+        {errorMessage && (
+          <div className="mx-6 mb-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Generation Failed</p>
+              <p>{errorMessage}</p>
+            </div>
+          </div>
+        )}
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
@@ -684,12 +692,6 @@ export default function NotesView({
               Click &quot;Generate Notes&quot; to create AI-powered meeting
               notes from the transcript.
             </p>
-            {errorMessage && (
-              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md text-sm max-w-md">
-                <p className="font-semibold">Generation Failed</p>
-                <p>{errorMessage}</p>
-              </div>
-            )}
             <button
               onClick={onGenerateNotes}
               disabled={isGenerating}
@@ -700,7 +702,7 @@ export default function NotesView({
               ) : (
                 <Sparkles className="w-4 h-4" />
               )}
-              {isGenerating ? "Generating..." : "Generate Notes"}
+              {isGenerating ? "Generating..." : generateNotesLabel}
             </button>
           </div>
         )}

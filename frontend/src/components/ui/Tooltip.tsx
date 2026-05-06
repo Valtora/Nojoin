@@ -28,7 +28,7 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
       {isVisible && (
         <div
           role="tooltip"
-          className={`pointer-events-none absolute z-50 max-w-sm rounded bg-gray-800 px-3 py-2 text-xs text-white shadow-lg whitespace-normal break-all ${positionClasses[position]}`}
+          className={`pointer-events-none absolute z-50 w-max max-w-xs rounded bg-gray-800 px-3 py-2 text-left text-xs leading-relaxed text-white shadow-lg whitespace-normal break-words ${positionClasses[position]}`}
         >
           {content}
           <div className={`absolute w-2 h-2 bg-gray-800 transform rotate-45 

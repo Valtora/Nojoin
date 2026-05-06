@@ -666,6 +666,13 @@ export default function RecordingPage({ params }: PageProps) {
       setActivePanel("notes"); // Switch to notes panel after generation
     } catch (e: any) {
       console.error("Failed to generate notes:", e);
+      try {
+        const updated = await getRecording(recording.id);
+        setRecording(updated);
+        setActivePanel("notes");
+      } catch (refreshError) {
+        console.error("Failed to refresh recording after notes error:", refreshError);
+      }
       alert(
         e.response?.data?.detail ||
           "Failed to generate notes. Please check your LLM settings.",
@@ -951,6 +958,12 @@ export default function RecordingPage({ params }: PageProps) {
               isGenerating={
                 isGeneratingNotes ||
                 recording.transcript?.notes_status === "generating"
+              }
+              errorMessage={
+                recording.transcript?.notes_status === "error"
+                  ? recording.transcript?.error_message ||
+                    "Meeting notes could not be generated. Check your AI settings and try again."
+                  : null
               }
               onExport={() => setShowExportModal(true)}
             />

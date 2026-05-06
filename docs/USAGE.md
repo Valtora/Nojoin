@@ -166,6 +166,10 @@ Nojoin can generate:
 
 Manual user notes are also used as supporting context for inference and final note generation, and the final notes explicitly label user-authored items.
 
+Use **Generate Notes** or **Regenerate Notes** from the notes panel to rebuild only the meeting notes from the current saved transcript and speaker labels. This uses the currently saved AI provider, API key, model, and Ollama URL settings. If the provider configuration is incomplete or the provider rejects the request, the recording remains available and the notes panel reports the failure.
+
+Use **Retry Processing** only when you want to rebuild the full meeting artefacts from the original audio, including transcription, diarisation, speaker resolution, title inference, and notes.
+
 ### Meeting Chat
 
 The chat feature lets you ask questions about a single recording and its associated uploaded documents.

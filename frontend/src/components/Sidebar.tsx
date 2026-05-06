@@ -205,6 +205,18 @@ export default function Sidebar() {
             message: `Meeting notes generated for "${rec.name}"`,
           });
         }
+        if (
+          prevNotesStatus &&
+          prevNotesStatus !== "error" &&
+          currentNotesStatus === "error"
+        ) {
+          addNotification({
+            type: "error",
+            message: rec.transcript.error_message
+              ? `Meeting notes failed for "${rec.name}": ${rec.transcript.error_message}`
+              : `Meeting notes failed for "${rec.name}"`,
+          });
+        }
         prevNotesStatusRef.current.set(rec.id, currentNotesStatus || "pending");
 
         // Check Transcript Status (Specific)

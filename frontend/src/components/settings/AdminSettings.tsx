@@ -12,6 +12,7 @@ import { fuzzyMatch } from "@/lib/searchUtils";
 interface AdminSettingsProps {
   settings: Settings;
   onUpdateSettings: (newSettings: Settings) => void;
+  onPersistSettings?: (newSettings: Settings) => Promise<void>;
   isAdmin: boolean;
   searchQuery?: string;
 }
@@ -19,6 +20,7 @@ interface AdminSettingsProps {
 export default function AdminSettings({
   settings,
   onUpdateSettings,
+  onPersistSettings,
   isAdmin,
   searchQuery = "",
 }: AdminSettingsProps) {
@@ -112,6 +114,7 @@ export default function AdminSettings({
           <AISettings
             settings={settings}
             onUpdate={(newSettings) => onUpdateSettings(newSettings)}
+            onPersist={onPersistSettings}
             isAdmin={isAdmin}
             searchQuery={searchQuery}
           />
