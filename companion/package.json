@@ -9,11 +9,11 @@
   },
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "@tauri-apps/api": "~2.10.1",
+    "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-shell": "^2.3.3"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "~2.10.1"
+    "@tauri-apps/cli": "~2.11.1"
   }
 }
