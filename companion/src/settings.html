@@ -452,6 +452,16 @@
                 <p class="row-note" id="connectionStateNote">Loading current connection state...</p>
             </div>
 
+            <div class="row">
+                <div class="row-header">
+                    <div>
+                        <span class="row-label">Firefox Support</span>
+                        <p class="row-note">Only required for Firefox on Windows. Installs the Nojoin local HTTPS CA and revocation list into the Windows machine trust stores so Firefox can trust the local Companion connection when enterprise roots are enabled.</p>
+                    </div>
+                    <button id="enableFirefoxBtn" class="support" type="button">Enable Firefox Support</button>
+                </div>
+            </div>
+
             <div class="actions">
                 <button id="startPairingBtn" class="primary" type="button">Open Nojoin</button>
             </div>
@@ -545,6 +555,7 @@
         const advancedToggleLabel = document.getElementById('advancedToggleLabel');
         const disconnectNote = document.getElementById('disconnectNote');
         const disconnectBtn = document.getElementById('disconnectBtn');
+        const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
 
         let resizeTimer = null;
         let advancedPinnedOpen = false;
@@ -791,6 +802,20 @@
                 setStatus(formatError(error), 'error');
             } finally {
                 await loadSettings();
+            }
+        });
+
+        enableFirefoxBtn.addEventListener('click', async () => {
+            const idleLabel = 'Enable Firefox Support';
+            try {
+                setButtonBusy(enableFirefoxBtn, true, 'Opening Windows Approval...', idleLabel);
+                const message = await invoke('enable_firefox_support');
+                setStatus(message, 'success');
+            } catch (error) {
+                setStatus(formatError(error), 'error');
+            } finally {
+                setButtonBusy(enableFirefoxBtn, false, 'Opening Windows Approval...', idleLabel);
+                scheduleResize();
             }
         });
 

@@ -985,6 +985,57 @@ async fn disconnect_backend(
 }
 
 #[tauri::command]
+async fn enable_firefox_support(app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        warn!("Firefox support setup was requested on a non-Windows platform.");
+        Err("Firefox support setup is only available on Windows.".to_string())
+    }
+
+    #[cfg(windows)]
+    {
+        info!("Firefox support setup requested from Companion Settings.");
+        if !confirm_firefox_machine_root_install(&app) {
+            warn!("Firefox support setup was canceled in the Companion confirmation dialog.");
+            return Err("Firefox support setup was canceled.".to_string());
+        }
+
+        info!("Firefox support setup confirmed; launching elevated installer task.");
+        match tauri::async_runtime::spawn_blocking(
+            local_https_identity::install_firefox_machine_root_support,
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                info!("Firefox support setup completed successfully.");
+            }
+            Ok(Err(error)) => {
+                error!("Firefox support setup failed: {}", error);
+                return Err(error);
+            }
+            Err(error) => {
+                error!(
+                    "Firefox support setup task failed before completion: {}",
+                    error
+                );
+                return Err(format!("Firefox support setup task failed: {}", error));
+            }
+        }
+
+        notifications::show_notification(
+            &app,
+            "Firefox Support Enabled",
+            "Restart Firefox, then pair again from Nojoin using a fresh pairing request.",
+        );
+        Ok(
+            "Firefox support was enabled for this Windows device. Restart Firefox, then start a fresh pairing request and try again."
+                .to_string(),
+        )
+    }
+}
+
+#[tauri::command]
 async fn resize_current_window(
     window: tauri::WebviewWindow,
     width: f64,
@@ -1245,6 +1296,21 @@ fn confirm_local_https_trust_install(app: &tauri::AppHandle) -> bool {
             "Nojoin Companion needs to add a local Windows certificate so your browser can securely connect to the Companion on this device.\n\nThis applies only to secure local Companion communication, not general internet traffic. Windows will show its own confirmation dialog next. Click Continue here, then click Yes in the Windows dialog.",
         )
         .title("Approve Secure Local Connection")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Continue".to_string(),
+            "Cancel".to_string(),
+        ))
+        .blocking_show()
+}
+
+#[cfg(windows)]
+fn confirm_firefox_machine_root_install(app: &tauri::AppHandle) -> bool {
+    app.dialog()
+        .message(
+            "Firefox can only use Nojoin's local HTTPS certificate after you explicitly enable Firefox support.\n\nThis will install the Nojoin local HTTPS CA and revocation list into the Windows Local Machine trust stores so Firefox can import them when Windows root trust is enabled. Windows will show an administrator approval prompt next. Continue only if you want Firefox on this device to trust the Nojoin Companion local connection.",
+        )
+        .title("Enable Firefox Support")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             "Continue".to_string(),
@@ -2443,6 +2509,7 @@ fn main() {
             open_settings,
             open_nojoin,
             disconnect_backend,
+            enable_firefox_support,
             resize_current_window,
             set_run_on_startup,
             view_logs,

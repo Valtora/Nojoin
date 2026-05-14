@@ -110,6 +110,7 @@ The web app can show state and start signed pairing requests, but it cannot repa
 - The pairing request expired or was declined: start a fresh request from the browser and approve it promptly.
 - The Companion says `Temporarily disconnected`: wait briefly before assuming the pairing is gone.
 - The web app says `Local browser connection unavailable`: relaunch Companion and retry the browser action.
+- Firefox on Windows reaches the Nojoin site but cannot reach the local Companion while Chrome works: in the Companion app open `Settings`, choose `Enable Firefox Support`, approve the Windows administrator prompt, confirm `about:config -> security.enterprise_roots.enabled` is `true`, restart Firefox, then start a fresh pairing request.
 - You are switching to a different backend: do not expect the old pairing to disappear until the new pairing succeeds.
 - A recording or upload is still in progress: finish or wait before trying to replace the backend pairing.
 - The browser and Companion are on different machines: pairing will not work. The backend can be remote, but the browser and local Companion must be on the same device.
