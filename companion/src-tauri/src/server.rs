@@ -1,14 +1,22 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code, unused_imports))]
 
 use crate::companion_auth;
-use crate::config::{BackendConnection, Config, MachineLocalUpdate};
+use crate::config::{Config, MachineLocalUpdate};
+#[cfg(test)]
+use crate::config::BackendConnection;
 use crate::local_https_identity::LocalHttpsServerIdentity;
 use crate::notifications;
-use crate::secret_store::{self, BackendSecretBundle};
+use crate::secret_store;
+#[cfg(test)]
+use crate::secret_store::BackendSecretBundle;
 use crate::state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, recover_mutex_guard,
-    ActiveRecordingOwner, AppState, AppStatus, AudioCommand, LocalHttpsStatus, PairingSession,
-    PairingValidationError, RecordingRecoveryState,
+    recover_mutex_guard, ActiveRecordingOwner, AppState, AppStatus, AudioCommand,
+    LocalHttpsStatus, RecordingRecoveryState,
+};
+#[cfg(test)]
+use crate::state::{
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label,
+    PairingSession, PairingValidationError,
 };
 use crate::uploader;
 use axum::debug_handler;
@@ -30,7 +38,10 @@ use rustls::ServerConfig;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::Instant;
+#[cfg(test)]
 use tauri::Manager;
 use tokio_rustls::TlsAcceptor;
 use tower_http::cors::CorsLayer;
@@ -75,7 +86,6 @@ fn build_local_api_router(context: ServerContext) -> Router {
     Router::new()
         .route("/status", get(get_status))
         .route("/auth", post(deprecated_authorize))
-        .route("/pair/complete", post(complete_pairing))
         .route("/config", get(get_config).post(update_config))
         .route("/devices", get(get_devices))
         .route("/levels", get(get_audio_levels))
@@ -102,11 +112,6 @@ fn build_cors_layer(state: Arc<AppState>) -> CorsLayer {
                     .is_none()
                     {
                         return false;
-                    }
-
-                    if request_parts.uri.path() == "/pair/complete" {
-                        return state.is_pairing_active()
-                            && canonicalize_origin_value(origin_str).is_some();
                     }
 
                     return is_allowed_origin_value(origin_str, &config);
@@ -904,6 +909,7 @@ fn build_status_response(
     })
 }
 
+#[cfg(test)]
 #[derive(serde::Deserialize)]
 struct PairingCompleteRequest {
     pairing_code: String,
@@ -923,6 +929,7 @@ struct PairingCompleteResponse {
     message: String,
 }
 
+#[cfg(test)]
 fn compact_log_value(value: &str, max_len: usize) -> String {
     let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.len() <= max_len {
@@ -932,6 +939,7 @@ fn compact_log_value(value: &str, max_len: usize) -> String {
     }
 }
 
+#[cfg(test)]
 fn short_pairing_id(pairing_id: Option<&str>) -> String {
     let Some(pairing_id) = pairing_id.map(str::trim).filter(|value| !value.is_empty()) else {
         return "<missing>".to_string();
@@ -944,6 +952,7 @@ fn short_pairing_id(pairing_id: Option<&str>) -> String {
     }
 }
 
+#[cfg(test)]
 fn read_optional_log_header(headers: &HeaderMap, name: &str, max_len: usize) -> String {
     headers
         .get(name)
@@ -952,6 +961,7 @@ fn read_optional_log_header(headers: &HeaderMap, name: &str, max_len: usize) -> 
         .unwrap_or_else(|| "<missing>".to_string())
 }
 
+#[cfg(test)]
 fn pairing_backend_target(payload: &PairingCompleteRequest) -> String {
     let protocol = payload
         .api_protocol
@@ -967,6 +977,7 @@ fn pairing_backend_target(payload: &PairingCompleteRequest) -> String {
     format!("{}://{}:{}", protocol, host, port)
 }
 
+#[cfg(test)]
 fn short_fingerprint_label(fingerprint: &str) -> String {
     let normalized = fingerprint.trim();
 
@@ -981,6 +992,7 @@ fn short_fingerprint_label(fingerprint: &str) -> String {
     }
 }
 
+#[cfg(test)]
 fn summarize_pairing_request(
     payload: &PairingCompleteRequest,
     origin_header: Option<&str>,
@@ -1015,6 +1027,7 @@ fn summarize_pairing_request(
     )
 }
 
+#[cfg(test)]
 fn summarize_pairing_session(session: Option<&PairingSession>) -> String {
     match session {
         Some(session) => format!(
@@ -1030,6 +1043,7 @@ fn summarize_pairing_session(session: Option<&PairingSession>) -> String {
     }
 }
 
+#[cfg(test)]
 fn pairing_backend_details(payload: &PairingCompleteRequest) -> Result<(&str, &str, u16), String> {
     let protocol = payload
         .api_protocol
@@ -1046,6 +1060,7 @@ fn pairing_backend_details(payload: &PairingCompleteRequest) -> Result<(&str, &s
     Ok((protocol, host, port))
 }
 
+#[cfg(test)]
 async fn capture_pairing_tls_fingerprint(
     payload: &PairingCompleteRequest,
 ) -> Result<String, String> {
@@ -1062,6 +1077,7 @@ async fn capture_pairing_tls_fingerprint(
     Ok(fingerprint)
 }
 
+#[cfg(test)]
 async fn exchange_companion_access_token_for_pairing(
     payload: &PairingCompleteRequest,
     tls_fingerprint: &str,
@@ -1103,6 +1119,7 @@ async fn exchange_companion_access_token_for_pairing(
     Ok(access_token)
 }
 
+#[cfg(test)]
 async fn cancel_pending_pairing_from_request(
     payload: &PairingCompleteRequest,
     tls_fingerprint: Option<String>,
@@ -1138,6 +1155,7 @@ async fn cancel_pending_pairing_from_request(
     .await
 }
 
+#[cfg(test)]
 fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendConnection) -> bool {
     previous
         .api_protocol
@@ -1149,6 +1167,7 @@ fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendCon
         && previous.paired_web_origin == replacement.paired_web_origin
 }
 
+#[cfg(test)]
 #[debug_handler]
 async fn complete_pairing(
     State(context): State<ServerContext>,
@@ -1493,6 +1512,8 @@ async fn complete_pairing(
         tls_fingerprint: Some(captured_tls_fingerprint.clone()),
         paired_web_origin: Some(origin.clone()),
         backend_pairing_id: payload.backend_pairing_id.clone(),
+        backend_identity_key_id: None,
+        backend_identity_public_key: None,
         local_control_secret_version: payload.local_control_secret_version,
     };
     let new_secret_bundle = BackendSecretBundle {
@@ -2323,6 +2344,8 @@ mod tests {
                 paired_web_origin: Some("https://paired.example.com".to_string()),
                 backend_pairing_id: Some(pairing_id),
                 local_control_secret_version: Some(3),
+                backend_identity_key_id: None,
+                backend_identity_public_key: None,
             }),
         }
     }
@@ -2385,6 +2408,7 @@ mod tests {
             tray_status_item: Mutex::new(None),
             tray_icon: Mutex::new(None),
             pairing_session: Mutex::new(None),
+            pairing_request_in_progress: Mutex::new(None),
         };
 
         (Arc::new(state), audio_command_rx)

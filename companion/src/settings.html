@@ -442,7 +442,7 @@
 
         <section class="section" id="pairingSection">
             <h2>Pairing</h2>
-            <p class="section-copy">Use pairing here when you are intentionally connecting this device or replacing its current backend.</p>
+            <p class="section-copy">Start pairing from Nojoin in your browser. Companion shows the current state here and opens an OS-native approval prompt when a browser request arrives.</p>
 
             <div class="row">
                 <div>
@@ -453,8 +453,7 @@
             </div>
 
             <div class="actions">
-                <button id="startPairingBtn" class="primary" type="button">Start Pairing</button>
-                <button id="cancelPairingBtn" class="secondary" type="button" hidden>Cancel Pairing</button>
+                <button id="startPairingBtn" class="primary" type="button">Open Nojoin</button>
             </div>
 
             <p class="section-note" id="pairingActionNote">Loading pairing guidance...</p>
@@ -508,28 +507,10 @@
                         <span id="advancedToggleLabel" class="toggle-label">Show</span>
                     </div>
                 </div>
-                <p class="advanced-copy">Open Advanced for browser repair, Firefox support, and disconnect.</p>
+                <p class="advanced-copy">Open Advanced to disconnect the current backend from this device.</p>
             </summary>
 
             <div class="advanced-content">
-                <div class="row">
-                    <div>
-                        <span class="row-label">Local Browser Connection</span>
-                        <span class="row-value" id="localHttpsValue">Loading...</span>
-                        <p class="row-note" id="localHttpsNote">Loading local browser connection status...</p>
-                    </div>
-                    <button id="repairLocalHttpsBtn" class="support" type="button">Repair Local Browser Connection</button>
-                </div>
-
-                <div class="row">
-                    <div>
-                        <span class="row-label">Firefox Support</span>
-                        <span class="row-value" id="firefoxSupportValue">Loading...</span>
-                        <p class="row-note" id="firefoxSupportNote">Loading Firefox support guidance...</p>
-                    </div>
-                    <button id="enableFirefoxBtn" class="support" type="button">Enable Firefox Support</button>
-                </div>
-
                 <div class="row">
                     <div>
                         <span class="row-label">Disconnect Current Backend</span>
@@ -554,7 +535,6 @@
         const connectionStateNote = document.getElementById('connectionStateNote');
         const pairingActionNote = document.getElementById('pairingActionNote');
         const startPairingBtn = document.getElementById('startPairingBtn');
-        const cancelPairingBtn = document.getElementById('cancelPairingBtn');
         const runOnStartupToggle = document.getElementById('runOnStartupToggle');
         const runOnStartupLabel = document.getElementById('runOnStartupLabel');
         const viewLogsBtn = document.getElementById('viewLogsBtn');
@@ -563,12 +543,6 @@
         const aboutNote = document.getElementById('aboutNote');
         const advancedSection = document.getElementById('advancedSection');
         const advancedToggleLabel = document.getElementById('advancedToggleLabel');
-        const localHttpsValue = document.getElementById('localHttpsValue');
-        const localHttpsNote = document.getElementById('localHttpsNote');
-        const repairLocalHttpsBtn = document.getElementById('repairLocalHttpsBtn');
-        const firefoxSupportValue = document.getElementById('firefoxSupportValue');
-        const firefoxSupportNote = document.getElementById('firefoxSupportNote');
-        const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
         const disconnectNote = document.getElementById('disconnectNote');
         const disconnectBtn = document.getElementById('disconnectBtn');
 
@@ -642,32 +616,30 @@
             switch (view.connectionState) {
                 case 'browser-repair-required':
                     return {
-                        value: 'Browser repair required',
+                        value: 'Browser connection unavailable',
                         tone: 'critical',
-                        note: 'Browser-side local controls are blocked until you repair the secure local browser connection from Advanced.',
-                        actionNote: 'Open Advanced and run Repair Local Browser Connection first.',
-                        disablePairing: true,
-                        openAdvanced: true,
+                        note: 'Browser-side local controls are unavailable on this device right now.',
+                        actionNote: 'Use Open Nojoin to return to the browser. If the state does not recover after reopening Companion, relaunch the app and try again.',
+                        disablePairing: false,
+                        openAdvanced: false,
                     };
                 case 'browser-repair-in-progress':
                     return {
-                        value: 'Browser repair in progress',
+                        value: 'Browser connection recovering',
                         tone: 'warning',
-                        note: 'Companion is rebuilding the secure local browser connection now. Browser controls will refresh automatically when repair finishes.',
-                        actionNote: 'Wait for repair to finish before starting a new pairing action.',
-                        disablePairing: true,
-                        openAdvanced: true,
+                        note: 'Companion is reconnecting its local browser link now. Browser-side controls should refresh automatically when the connection settles.',
+                        actionNote: 'Wait for the connection to settle before starting a new pairing request from Nojoin.',
+                        disablePairing: false,
+                        openAdvanced: false,
                     };
                 case 'pairing-code-active':
                     return {
-                        value: 'Pairing code active',
+                        value: 'Pairing request pending',
                         tone: 'informational',
                         note: view.is_paired
-                            ? `${currentBackend ? `Current backend: ${currentBackend}. ` : ''}The current backend stays connected until the new pairing succeeds.`
-                            : 'Finish pairing in Nojoin with the current code.',
-                        actionNote: view.is_paired
-                            ? 'Cancel Pairing closes the current replacement code and keeps the existing backend unchanged.'
-                            : 'Cancel Pairing closes the current code so you can start again later.',
+                            ? `${currentBackend ? `Current backend: ${currentBackend}. ` : ''}The current backend stays connected until the new browser pairing request is approved.`
+                            : 'Approve or decline the active browser pairing request from the OS-native prompt.',
+                        actionNote: 'Use Open Nojoin to return to the browser. New pairing requests are created from the web settings page, not from Companion.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
@@ -678,7 +650,7 @@
                         note: currentBackend
                             ? `This device is still paired with ${currentBackend} and should resync automatically when the backend connection returns.`
                             : 'The saved pairing is still valid and should resync automatically when the backend connection returns.',
-                        actionNote: 'Generate New Pairing Code only if you are intentionally moving this device to a different backend.',
+                        actionNote: 'Use Open Nojoin to return to the browser. Start a new pairing request there only if you intentionally want to move this device.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
@@ -689,7 +661,7 @@
                         note: currentBackend
                             ? `This device is connected to ${currentBackend}.`
                             : 'This device is connected and ready for browser-side local controls.',
-                        actionNote: 'Generate New Pairing Code only if you are intentionally replacing the current backend.',
+                        actionNote: 'Use Open Nojoin to return to the browser. Start a new pairing request there only if you intentionally want to replace the current backend.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
@@ -699,67 +671,24 @@
                         value: 'Not paired',
                         tone: 'setup',
                         note: 'This device is not connected to a Nojoin backend yet.',
-                        actionNote: 'Start Pairing to connect this Companion to one Nojoin deployment.',
+                        actionNote: 'Use Open Nojoin to start pairing from the browser. Companion will open an OS-native approval prompt when the request arrives.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
             }
         }
 
-        function describeLocalHttps(view) {
-            if (view.localHttpsStatus === 'ready') {
-                return {
-                    value: 'Connected',
-                    note: 'Use repair only if the launcher or Nojoin says Browser repair required.',
-                };
-            }
-
-            if (view.localHttpsStatus === 'repairing') {
-                return {
-                    value: 'Browser repair in progress',
-                    note: 'Companion is rebuilding the secure local browser connection now. Browser controls will refresh automatically when repair finishes.',
-                };
-            }
-
-            return {
-                value: 'Browser repair required',
-                note: 'Browser-side local controls are blocked until you run Repair Local Browser Connection here.',
-            };
-        }
-
         function renderSettings(view) {
             const connection = describeConnectionState(view);
-            const localHttps = describeLocalHttps(view);
 
             connectionStatePill.textContent = connection.value;
             connectionStatePill.className = `status-pill ${connection.tone}`;
             connectionStateNote.textContent = connection.note;
             pairingActionNote.textContent = connection.actionNote;
 
-            startPairingBtn.textContent = view.is_paired || view.is_pairing_active
-                ? 'Generate New Pairing Code'
-                : 'Start Pairing';
-            startPairingBtn.disabled = connection.disablePairing;
-
-            cancelPairingBtn.hidden = !view.is_pairing_active;
-            cancelPairingBtn.textContent = 'Cancel Pairing';
-            cancelPairingBtn.disabled = false;
-
-            localHttpsValue.textContent = localHttps.value;
-            localHttpsNote.textContent = localHttps.note;
-            repairLocalHttpsBtn.textContent = 'Repair Local Browser Connection';
-            repairLocalHttpsBtn.disabled = view.localHttpsStatus === 'repairing';
-
-            firefoxSupportValue.textContent = view.localHttpsStatus === 'ready'
-                ? 'Available when needed'
-                : view.localHttpsStatus === 'repairing'
-                    ? 'Wait for repair to finish'
-                    : 'Finish browser repair first';
-            firefoxSupportNote.textContent = view.localHttpsStatus === 'ready'
-                ? 'Enable this only if you plan to use Firefox on this device. Then restart Firefox and generate a fresh pairing code.'
-                : 'Finish browser repair before enabling Firefox support.';
-            enableFirefoxBtn.textContent = 'Enable Firefox Support';
-            enableFirefoxBtn.disabled = view.localHttpsStatus !== 'ready';
+            startPairingBtn.textContent = 'Open Paired Nojoin';
+            startPairingBtn.hidden = !view.is_paired;
+            startPairingBtn.disabled = connection.disablePairing || !view.is_paired;
 
             runOnStartupToggle.checked = view.run_on_startup_enabled;
             runOnStartupToggle.disabled = false;
@@ -778,7 +707,7 @@
             disconnectBtn.textContent = 'Disconnect Current Backend';
             disconnectBtn.disabled = !view.is_paired;
 
-            advancedSection.open = connection.openAdvanced || advancedPinnedOpen;
+            advancedSection.open = advancedPinnedOpen;
             updateAdvancedToggleLabel();
             scheduleResize();
         }
@@ -796,59 +725,14 @@
         }
 
         startPairingBtn.addEventListener('click', async () => {
-            const idleLabel = startPairingBtn.textContent;
+            const idleLabel = 'Open Nojoin';
             try {
-                setButtonBusy(startPairingBtn, true, 'Opening Pairing...', idleLabel);
-                await invoke('start_pairing_mode');
-                setStatus(
-                    idleLabel === 'Generate New Pairing Code'
-                        ? 'Pairing window opened. The current backend stays active until the new pairing succeeds.'
-                        : 'Pairing window opened. Enter the displayed code in Nojoin to finish pairing.',
-                    'success',
-                );
+                setButtonBusy(startPairingBtn, true, 'Opening Nojoin...', idleLabel);
+                await invoke('open_nojoin');
             } catch (error) {
                 setStatus(formatError(error), 'error');
             } finally {
-                setButtonBusy(disconnectBtn, false, 'Disconnecting...', idleLabel);
-                await loadSettings();
-            }
-        });
-
-        cancelPairingBtn.addEventListener('click', async () => {
-            const idleLabel = 'Cancel Pairing';
-            try {
-                setButtonBusy(cancelPairingBtn, true, 'Cancelling...', idleLabel);
-                const message = await invoke('cancel_pairing_request');
-                setStatus(message, 'info');
-            } catch (error) {
-                setStatus(formatError(error), 'error');
-            } finally {
-                await loadSettings();
-            }
-        });
-
-        repairLocalHttpsBtn.addEventListener('click', async () => {
-            const idleLabel = 'Repair Local Browser Connection';
-            try {
-                setButtonBusy(repairLocalHttpsBtn, true, 'Repairing...', idleLabel);
-                const message = await invoke('repair_local_https');
-                setStatus(message, 'success');
-            } catch (error) {
-                setStatus(formatError(error), 'error');
-            } finally {
-                await loadSettings();
-            }
-        });
-
-        enableFirefoxBtn.addEventListener('click', async () => {
-            const idleLabel = 'Enable Firefox Support';
-            try {
-                setButtonBusy(enableFirefoxBtn, true, 'Opening Windows Approval...', idleLabel);
-                const message = await invoke('enable_firefox_support');
-                setStatus(message, 'success');
-            } catch (error) {
-                setStatus(formatError(error), 'error');
-            } finally {
+                setButtonBusy(startPairingBtn, false, 'Opening Nojoin...', idleLabel);
                 await loadSettings();
             }
         });

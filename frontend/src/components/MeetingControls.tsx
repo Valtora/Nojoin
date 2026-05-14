@@ -70,11 +70,11 @@ export default function MeetingControls({
         buttonTooltip:
           "The Nojoin backend is offline. Wait for it to reconnect before starting a meeting.",
       }
-    : companionGuidance.key === "browser-repair-required" ||
+    : companionGuidance.key === "local-browser-connection-unavailable" ||
         companionGuidance.key === "version-mismatch" ||
         companionGuidance.key === "not-paired" ||
         companionGuidance.key === "temporarily-disconnected" ||
-        companionGuidance.key === "browser-repair-in-progress" ||
+      companionGuidance.key === "local-browser-connection-recovering" ||
         companionGuidance.key === "companion-needs-attention"
       ? {
           buttonLabel: "Open Companion Settings",

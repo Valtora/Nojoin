@@ -2962,6 +2962,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "directories",
+ "ed25519-dalek",
  "fern",
  "hound",
  "hyper-util",
@@ -2991,6 +2992,7 @@ dependencies = [
  "tower-http 0.5.2",
  "win32_notif",
  "windows-sys 0.59.0",
+ "winreg 0.55.0",
  "x509-parser",
 ]
 

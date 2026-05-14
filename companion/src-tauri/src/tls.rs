@@ -179,6 +179,15 @@ pub fn create_client_builder(fingerprint: Option<String>) -> reqwest::ClientBuil
         .user_agent(concat!("Nojoin-Companion/", env!("CARGO_PKG_VERSION")))
 }
 
+pub fn create_unverified_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .use_preconfigured_tls(create_capture_tls_config())
+        .http1_only()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(5))
+        .user_agent(concat!("Nojoin-Companion/", env!("CARGO_PKG_VERSION")))
+}
+
 pub fn create_client(fingerprint: Option<String>) -> Result<reqwest::Client, reqwest::Error> {
     create_client_builder(fingerprint).build()
 }

@@ -61,6 +61,9 @@ const COMPANION_CONFIG_READ_ACTIONS: CompanionLocalAction[] = [
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
+  const companionAuthenticated = useServiceStatusStore(
+    (state) => state.companionAuthenticated,
+  );
   const handleCompanionPairingEnded = useServiceStatusStore(
     (state) => state.handleCompanionPairingEnded,
   );
@@ -171,6 +174,37 @@ export default function SettingsPage() {
 
     return refreshCompanionConfigRequestRef.current;
   }, [handleCompanionPairingEnded]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const syncCompanionConfigAfterAuthChange = async () => {
+      if (!companionAuthenticated) {
+        setCompanionConfig(null);
+        setCompanionDevices(null);
+        setSelectedInputDevice(null);
+        setSelectedOutputDevice(null);
+        return;
+      }
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const refreshed = await refreshCompanionConfig();
+        if (isCancelled || refreshed) {
+          return;
+        }
+
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 400);
+        });
+      }
+    };
+
+    void syncCompanionConfigAfterAuthChange();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [companionAuthenticated, refreshCompanionConfig]);
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {

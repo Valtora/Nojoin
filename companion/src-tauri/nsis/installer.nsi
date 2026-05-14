@@ -589,6 +589,13 @@ Section Install
   WriteRegDWORD SHCTX "${UNINSTKEY}" "NoRepair" "1"
   WriteRegDWORD SHCTX "${UNINSTKEY}" "EstimatedSize" "${ESTIMATEDSIZE}"
 
+  ; Register the browser-to-Companion pairing deep link.
+  DeleteRegKey HKCU "Software\Classes\nojoin"
+  WriteRegStr HKCU "Software\Classes\nojoin" "" "URL:Nojoin Companion Protocol"
+  WriteRegStr HKCU "Software\Classes\nojoin" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\nojoin\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+  WriteRegStr HKCU "Software\Classes\nojoin\shell\open\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+
   ; Create start menu shortcut (GUI)
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
     Call CreateStartMenuShortcut
@@ -724,6 +731,7 @@ Section Uninstall
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Nojoin Companion"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "com.valtora.nojoin.companion"
+  DeleteRegKey HKCU "Software\Classes\nojoin"
 
   ; Delete app data
   ${If} $DeleteAppDataCheckboxState == 1

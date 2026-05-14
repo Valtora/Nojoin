@@ -15,11 +15,11 @@ export interface CompanionSteadyStateSnapshot {
 
 export interface CompanionSteadyStateGuidance {
   key:
-    | "browser-repair-required"
+    | "local-browser-connection-unavailable"
     | "version-mismatch"
     | "not-paired"
     | "temporarily-disconnected"
-    | "browser-repair-in-progress"
+    | "local-browser-connection-recovering"
     | "connected"
     | "companion-needs-attention";
   statusLabel: string;
@@ -52,13 +52,13 @@ export const getCompanionSteadyStateGuidance = ({
 }: CompanionSteadyStateSnapshot): CompanionSteadyStateGuidance => {
   if (companionLocalHttpsStatus === "needs-repair") {
     return {
-      key: "browser-repair-required",
-      statusLabel: "Browser repair required",
+      key: "local-browser-connection-unavailable",
+      statusLabel: "Local browser connection unavailable",
       summary:
-        "Local browser controls are blocked until the Companion repair flow finishes.",
-      nextStepLabel: "Open Settings to Repair",
+        "Local browser controls are unavailable until the Companion restores its secure local connection.",
+      nextStepLabel: "Relaunch Companion",
       nextStepMessage:
-        "Open Companion support, then follow Open Settings to Repair in the Companion app.",
+        "Quit and relaunch the Companion app on this device, then retry browser-side local controls.",
       tone: "warning",
     };
   }
@@ -87,9 +87,9 @@ export const getCompanionSteadyStateGuidance = ({
       key: "not-paired",
       statusLabel: "Not paired",
       summary: "This deployment is not paired to a Companion yet.",
-      nextStepLabel: "Start Pairing",
+      nextStepLabel: "Pair This Device",
       nextStepMessage:
-        "Open Companion support, then start pairing in the Companion app.",
+        "Use the Nojoin settings page to start pairing, then approve the request in the Companion app.",
       tone: "info",
     };
   }
@@ -110,13 +110,13 @@ export const getCompanionSteadyStateGuidance = ({
 
   if (companionLocalHttpsStatus === "repairing") {
     return {
-      key: "browser-repair-in-progress",
-      statusLabel: "Browser repair in progress",
+      key: "local-browser-connection-recovering",
+      statusLabel: "Local browser connection recovering",
       summary:
-        "The Companion is repairing its local browser connection. Browser controls will refresh automatically when the repair finishes.",
-      nextStepLabel: "Open Settings",
+        "The Companion is restoring its local browser connection. Browser controls will refresh automatically when recovery finishes.",
+      nextStepLabel: "Wait For Recovery",
       nextStepMessage:
-        "Wait for reconnect first. Open Companion support if this takes longer than expected.",
+        "Wait for reconnect first. If this state lingers, quit and relaunch the Companion app.",
       tone: "info",
     };
   }

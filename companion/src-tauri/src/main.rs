@@ -17,8 +17,15 @@ use tauri::{
 };
 
 use semver::Version;
-#[cfg(windows)]
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+#[cfg(windows)]
+use windows_sys::Win32::UI::Shell::{
+    SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_DWORD, SHCNF_FLUSH,
+};
+#[cfg(windows)]
+use winreg::enums::HKEY_CURRENT_USER;
+#[cfg(windows)]
+use winreg::RegKey;
 
 mod audio;
 mod backend_url;
@@ -27,6 +34,7 @@ mod config;
 mod local_https_identity;
 mod log_redact;
 mod notifications;
+mod pairing_link;
 mod secret_store;
 mod server;
 mod state;
@@ -34,18 +42,16 @@ mod tls;
 mod uploader;
 mod win_notifications;
 
-use config::{Config, MachineLocalUpdate};
+use config::{BackendConnection, Config, MachineLocalUpdate};
+use pairing_link::PairingLaunchRequest;
 use state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, recover_mutex_guard,
-    AppState, AppStatus, LocalHttpsHealth, LocalHttpsStatus, RecordingRecoveryState,
-    PAIRING_WINDOW_LIFETIME_SECS,
+    pairing_block_message, recover_mutex_guard, AppState, AppStatus, LocalHttpsHealth,
+    LocalHttpsStatus, RecordingRecoveryState,
 };
 use tauri_plugin_autostart::ManagerExt;
 
 // Define SharedAppState at module level so it's visible to commands
 struct SharedAppState(Arc<AppState>);
-
-struct SharedLocalHttpsController(LocalHttpsControllerHandle);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LauncherOpenReason {
@@ -62,23 +68,16 @@ impl LauncherOpenReason {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum ProcessMode {
-    Normal { launched_from_autostart: bool },
+    Normal {
+        launched_from_autostart: bool,
+        pairing_link: Option<String>,
+    },
     UninstallCleanup,
 }
 
-#[derive(Clone)]
-struct LocalHttpsControllerHandle {
-    command_tx: tokio::sync::mpsc::UnboundedSender<LocalHttpsControllerCommand>,
-}
-
 enum LocalHttpsControllerCommand {
-    Repair {
-        #[cfg(windows)]
-        allow_identity_reset: bool,
-        response_tx: tokio::sync::oneshot::Sender<Result<String, String>>,
-    },
     #[cfg(windows)]
     ServerStopped {
         generation: u64,
@@ -86,32 +85,13 @@ enum LocalHttpsControllerCommand {
     },
 }
 
-impl LocalHttpsControllerHandle {
-    async fn repair_local_https(&self, allow_identity_reset: bool) -> Result<String, String> {
-        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        #[cfg(not(windows))]
-        let _ = allow_identity_reset;
-        self.command_tx
-            .send(LocalHttpsControllerCommand::Repair {
-                #[cfg(windows)]
-                allow_identity_reset,
-                response_tx,
-            })
-            .map_err(|_| {
-                "Local HTTPS repair is unavailable because the controller is offline.".to_string()
-            })?;
-
-        response_rx
-            .await
-            .map_err(|_| "Local HTTPS repair did not return a result.".to_string())?
-    }
-}
-
-const PAIRING_WINDOW_LABEL: &str = "pairing";
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const MAIN_WINDOW_LABEL: &str = "main";
 const AUTOSTART_ARG: &str = "--autostart";
 const LOCAL_HTTPS_UNINSTALL_CLEANUP_ARG: &str = "--cleanup-local-https-on-uninstall";
+const PAIRING_LINK_PREFIX: &str = "nojoin://pair";
+#[cfg(windows)]
+const NOJOIN_PROTOCOL_REGISTRY_PATH: &str = "Software\\Classes\\nojoin";
 
 #[derive(serde::Serialize)]
 struct ConfigView {
@@ -192,10 +172,8 @@ enum LauncherMode {
 #[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 enum LauncherPrimaryAction {
-    StartPairing,
     OpenNojoin,
     OpenSettings,
-    OpenSettingsToRepair,
 }
 
 #[derive(serde::Serialize)]
@@ -262,14 +240,16 @@ fn derive_launcher_mode(
 
 fn launcher_primary_action(mode: LauncherMode) -> LauncherPrimaryAction {
     match mode {
-        LauncherMode::FirstRun | LauncherMode::Unpaired => LauncherPrimaryAction::StartPairing,
-        LauncherMode::PairingActive | LauncherMode::PairedHealthy => {
+        LauncherMode::FirstRun | LauncherMode::Unpaired | LauncherMode::PairingActive => {
+            LauncherPrimaryAction::OpenSettings
+        }
+        LauncherMode::PairedHealthy => {
             LauncherPrimaryAction::OpenNojoin
         }
         LauncherMode::PairedDisconnected | LauncherMode::LocalHttpsRepairing => {
             LauncherPrimaryAction::OpenSettings
         }
-        LauncherMode::LocalHttpsNeedsRepair => LauncherPrimaryAction::OpenSettingsToRepair,
+        LauncherMode::LocalHttpsNeedsRepair => LauncherPrimaryAction::OpenSettings,
     }
 }
 
@@ -388,24 +368,15 @@ fn open_launcher_window(
     Ok(())
 }
 
-fn focus_pairing_window(app: &tauri::AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(PAIRING_WINDOW_LABEL)
-        .ok_or_else(|| "The pairing window is no longer available.".to_string())?;
-    info!("Focusing the active pairing window for an explicit launch.");
-    focus_webview_window(&window);
-    Ok(())
-}
-
 fn focus_primary_native_surface_for_launch(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
     reason: LauncherOpenReason,
 ) -> Result<(), String> {
     if state.is_pairing_active() {
-        return focus_pairing_window(app).or_else(|error| {
+        return open_settings_window(app).or_else(|error| {
             warn!(
-                "{} Falling back to the launcher window instead. reason={}",
+                "{} Falling back to the launcher window instead while pairing approval is active. reason={}",
                 error,
                 reason.as_str()
             );
@@ -450,7 +421,7 @@ fn open_paired_web_origin(app: &tauri::AppHandle) -> Result<String, String> {
         let config = state_wrapper.0.config.lock().unwrap();
         if !config.is_authenticated() {
             return Err(
-                "No paired Nojoin deployment is available yet. Start pairing from Companion Settings first."
+                "No paired Nojoin deployment is available yet. Start pairing from Nojoin in your browser first."
                     .to_string(),
             );
         }
@@ -921,69 +892,10 @@ fn open_nojoin(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn start_pairing_mode(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SharedAppState>,
-) -> Result<String, String> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let app_handle = app.clone();
-    let shared_state = state.0.clone();
-
-    app.run_on_main_thread(move || {
-        let result = start_pairing_mode_internal(&app_handle, &shared_state);
-        let _ = tx.send(result);
-    })
-    .map_err(|err| format!("Failed to schedule pairing window creation: {}", err))?;
-
-    rx.await
-        .map_err(|_| "Failed to receive pairing window result.".to_string())?
-}
-
-#[tauri::command]
-async fn cancel_pairing_request(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SharedAppState>,
-) -> Result<String, String> {
-    let had_local_pairing = state.0.is_pairing_active();
-    state.0.clear_pairing_session();
-    close_pairing_window(&app);
-
-    let backend = {
-        let config = state.0.config.lock().unwrap();
-        config.backend_connection()
-    };
-    if !had_local_pairing {
-        return Ok("No pairing code is currently active.".to_string());
-    }
-
-    let had_existing_backend = backend.is_some();
-
-    let backend_cleanup = match backend {
-        Some(backend) => match companion_auth::cancel_pending_pairing_for_backend(&backend).await {
-            Ok(0) => None,
-            Ok(count) => Some(format!(
-                "Cleared {} pending backend pairing request{}.",
-                count,
-                if count == 1 { "" } else { "s" }
-            )),
-            Err(err) => Some(format!("Backend cleanup could not be confirmed: {}.", err)),
-        },
-        None => None,
-    };
-
-    Ok(pairing_cancellation_result_message(
-        had_existing_backend,
-        backend_cleanup,
-    ))
-}
-
-#[tauri::command]
 async fn disconnect_backend(
     app: tauri::AppHandle,
     state: tauri::State<'_, SharedAppState>,
 ) -> Result<String, String> {
-    state.0.clear_pairing_session();
-    close_pairing_window(&app);
     state.0.is_backend_connected.store(false, Ordering::SeqCst);
 
     let (backend, secret_bundle, secret_cleanup_error, launcher_intro_reset_error) = {
@@ -1043,16 +955,16 @@ async fn disconnect_backend(
         .await
         {
             Ok(0) => (
-                "Disconnected from the current backend and cleared the saved trust state. Start pairing again from Companion Settings when you are ready to connect to another Nojoin deployment.".to_string(),
-                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
+                "Disconnected from the current backend and cleared the saved trust state. Start a new pairing request from Nojoin in your browser when you are ready to connect to another deployment.".to_string(),
+                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start a new pairing request from Nojoin when you are ready.".to_string(),
             ),
             Ok(count) => (
                 format!(
-                    "Disconnected from the current backend, cleared the saved trust state, and revoked {} backend pairing{}. Start pairing again from Companion Settings when you are ready.",
+                    "Disconnected from the current backend, cleared the saved trust state, and revoked {} backend pairing{}. Start a new pairing request from Nojoin in your browser when you are ready.",
                     count,
                     if count == 1 { "" } else { "s" }
                 ),
-                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start pairing again from Settings when you are ready.".to_string(),
+                "This Companion is no longer paired with a Nojoin backend, and the saved certificate trust has been cleared. Start a new pairing request from Nojoin when you are ready.".to_string(),
             ),
             Err(err) => (
                 format!(
@@ -1070,81 +982,6 @@ async fn disconnect_backend(
 
     notifications::show_notification(&app, "Companion Unpaired", &notification_body);
     Ok(response_message)
-}
-
-#[tauri::command]
-async fn enable_firefox_support(app: tauri::AppHandle) -> Result<String, String> {
-    #[cfg(not(windows))]
-    {
-        let _ = app;
-        warn!("Firefox support setup was requested on a non-Windows platform.");
-        Err("Firefox support setup is only available on Windows.".to_string())
-    }
-
-    #[cfg(windows)]
-    {
-        info!("Firefox support setup requested from Companion Settings.");
-        if !confirm_firefox_machine_root_install(&app) {
-            warn!("Firefox support setup was canceled in the Companion confirmation dialog.");
-            return Err("Firefox support setup was canceled.".to_string());
-        }
-
-        info!("Firefox support setup confirmed; launching elevated installer task.");
-        match tauri::async_runtime::spawn_blocking(
-            local_https_identity::install_firefox_machine_root_support,
-        )
-        .await
-        {
-            Ok(Ok(())) => {
-                info!("Firefox support setup completed successfully.");
-            }
-            Ok(Err(error)) => {
-                error!("Firefox support setup failed: {}", error);
-                return Err(error);
-            }
-            Err(error) => {
-                error!(
-                    "Firefox support setup task failed before completion: {}",
-                    error
-                );
-                return Err(format!("Firefox support setup task failed: {}", error));
-            }
-        }
-
-        notifications::show_notification(
-            &app,
-            "Firefox Support Enabled",
-            "Restart Firefox, then pair again from Nojoin using a fresh Companion code.",
-        );
-        Ok(
-            "Firefox support was enabled for this Windows device. Restart Firefox, then generate a fresh pairing code and try pairing again."
-                .to_string(),
-        )
-    }
-}
-
-#[tauri::command]
-async fn repair_local_https(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SharedAppState>,
-    controller: tauri::State<'_, SharedLocalHttpsController>,
-) -> Result<String, String> {
-    let allow_identity_reset = {
-        let local_https_health = state.0.local_https_health();
-        matches!(
-            local_https_health.repair_reason,
-            Some(local_https_identity::LocalHttpsRepairReason::InvalidCaMaterial)
-                | Some(local_https_identity::LocalHttpsRepairReason::UnsupportedSchema)
-        )
-    };
-
-    if allow_identity_reset && !confirm_local_https_identity_replace(&app) {
-        return Err(
-            "Local HTTPS repair was canceled before replacing the current identity.".to_string(),
-        );
-    }
-
-    controller.0.repair_local_https(allow_identity_reset).await
 }
 
 #[tauri::command]
@@ -1226,148 +1063,6 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<String, String> {
             app.package_info().version
         )),
     }
-}
-
-fn pairing_window_mode_query_value(was_previously_paired: bool) -> &'static str {
-    if was_previously_paired {
-        "replacement"
-    } else {
-        "first"
-    }
-}
-
-fn pairing_expired_notification_message(was_previously_paired: bool) -> &'static str {
-    if was_previously_paired {
-        "Pairing expired. The current backend stays connected. Open Companion Settings and choose Generate New Pairing Code if you still want to switch this device to a different Nojoin deployment."
-    } else {
-        "Pairing expired. Open Companion Settings and choose Start Pairing if you still want to connect this device."
-    }
-}
-
-fn pairing_cancellation_result_message(
-    had_existing_backend: bool,
-    backend_cleanup: Option<String>,
-) -> String {
-    let mut message = if had_existing_backend {
-        "Cancel Pairing closed the current code. The current backend stays connected."
-            .to_string()
-    } else {
-        "Cancel Pairing closed the current code.".to_string()
-    };
-
-    if let Some(detail) = backend_cleanup {
-        message.push(' ');
-        message.push_str(&detail);
-    }
-
-    message
-}
-
-fn close_pairing_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(PAIRING_WINDOW_LABEL) {
-        let _ = window.close();
-    }
-}
-
-fn start_pairing_mode_internal(
-    app: &tauri::AppHandle,
-    state: &Arc<AppState>,
-) -> Result<String, String> {
-    {
-        let status = recover_mutex_guard(state.status.lock(), "status").clone();
-        if let AppStatus::Error(message) = &status {
-            return Err(message.clone());
-        }
-        if let Some(message) = pairing_block_message(&status) {
-            return Err(message.to_string());
-        }
-    }
-
-    state.clear_pairing_session();
-    close_pairing_window(app);
-
-    let was_previously_paired = state.is_authenticated();
-    let session = state.begin_pairing_session();
-    info!(
-        "Started pairing mode: code={} code_hash={} expires_in={}s previously_paired={}",
-        pairing_code_log_label(&session.canonical_code),
-        pairing_code_fingerprint(&session.canonical_code),
-        session.remaining_seconds(),
-        was_previously_paired
-    );
-    let window_url = format!(
-        "pairing.html?code={}&expires_in={}&mode={}",
-        session.display_code,
-        session.remaining_seconds(),
-        pairing_window_mode_query_value(was_previously_paired)
-    );
-
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        PAIRING_WINDOW_LABEL,
-        tauri::WebviewUrl::App(window_url.into()),
-    )
-    .title("Pairing code active")
-    .inner_size(520.0, 420.0)
-    .min_inner_size(400.0, 300.0)
-    .always_on_top(true)
-    .resizable(false)
-    .center()
-    .build()
-    .map_err(|e| {
-        state.clear_pairing_session();
-        format!("Failed to open pairing window: {}", e)
-    })?;
-
-    let state_on_close = state.clone();
-    let code_on_close = session.canonical_code.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { .. } = event {
-            let should_clear_active_session = state_on_close
-                .current_pairing_session()
-                .map(|active| active.canonical_code == code_on_close)
-                .unwrap_or(false);
-
-            if should_clear_active_session {
-                info!(
-                    "Pairing window closed before completion: code={} code_hash={}",
-                    pairing_code_log_label(&code_on_close),
-                    pairing_code_fingerprint(&code_on_close)
-                );
-                state_on_close.clear_pairing_session();
-            }
-        }
-    });
-
-    let expected_code = session.canonical_code.clone();
-    let state_on_expiry = state.clone();
-    let app_on_expiry = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(PAIRING_WINDOW_LIFETIME_SECS)).await;
-
-        let should_expire = state_on_expiry
-            .current_pairing_session()
-            .map(|active| active.canonical_code == expected_code)
-            .unwrap_or(false);
-
-        if should_expire {
-            warn!(
-                "Pairing session expired before completion: code={} code_hash={} previously_paired={}",
-                pairing_code_log_label(&expected_code),
-                pairing_code_fingerprint(&expected_code),
-                was_previously_paired
-            );
-            state_on_expiry.clear_pairing_session();
-            close_pairing_window(&app_on_expiry);
-            notifications::show_notification(
-                &app_on_expiry,
-                "Pairing Expired",
-                pairing_expired_notification_message(was_previously_paired),
-            );
-        }
-    });
-
-    Ok(session.display_code)
 }
 
 #[tauri::command]
@@ -1559,41 +1254,6 @@ fn confirm_local_https_trust_install(app: &tauri::AppHandle) -> bool {
 }
 
 #[cfg(windows)]
-fn confirm_firefox_machine_root_install(app: &tauri::AppHandle) -> bool {
-    app.dialog()
-        .message(
-            "Firefox can only use Nojoin's local HTTPS certificate after you explicitly enable Firefox support.\n\nThis will install the Nojoin local HTTPS CA into the Windows Local Machine trusted root store so Firefox can import it when Windows root trust is enabled. Windows will show an administrator approval prompt next. Continue only if you want Firefox on this device to trust the Nojoin Companion local connection.",
-        )
-        .title("Enable Firefox Support")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Continue".to_string(),
-            "Cancel".to_string(),
-        ))
-        .blocking_show()
-}
-
-#[cfg(windows)]
-fn confirm_local_https_identity_replace(app: &tauri::AppHandle) -> bool {
-    app.dialog()
-        .message(
-            "Nojoin Companion needs to replace its current secure local identity before browser control can resume.\n\nThis will generate a new local HTTPS certificate authority for this Windows user profile and ask Windows to trust it again. Continue only if you want to rebuild the Companion's secure local browser connection on this device.",
-        )
-        .title("Replace Secure Local Identity")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Continue".to_string(),
-            "Cancel".to_string(),
-        ))
-        .blocking_show()
-}
-
-#[cfg(not(windows))]
-fn confirm_local_https_identity_replace(_app: &tauri::AppHandle) -> bool {
-    true
-}
-
-#[cfg(windows)]
 struct LocalHttpsReadyState {
     server_identity: local_https_identity::LocalHttpsServerIdentity,
     changes: local_https_identity::LocalHttpsReconcileChanges,
@@ -1634,47 +1294,22 @@ fn local_https_repair_message(
 ) -> String {
     match reason {
         Some(local_https_identity::LocalHttpsRepairReason::TrustStoreFailure) => {
-            "Companion could not restore Windows trust for its secure local connection. Use Repair Local HTTPS to try again."
+            "Companion could not restore Windows trust for its secure local connection. Quit and relaunch Companion to try again."
                 .to_string()
         }
         Some(local_https_identity::LocalHttpsRepairReason::InvalidCaMaterial) => {
-            "Companion's secure local connection identity needs to be rebuilt. Use Repair Local HTTPS to continue."
+            "Companion's secure local connection identity needs to be rebuilt. Quit and relaunch Companion to continue."
                 .to_string()
         }
         Some(local_https_identity::LocalHttpsRepairReason::UnsupportedSchema) => {
-            "Companion's secure local connection identity must be upgraded. Use Repair Local HTTPS to rebuild it."
+            "Companion's secure local connection identity must be upgraded. Quit and relaunch Companion to rebuild it."
                 .to_string()
         }
         None => {
-            "Companion could not initialize its secure local connection. Use Repair Local HTTPS to try again."
+            "Companion could not initialize its secure local connection. Quit and relaunch Companion to try again."
                 .to_string()
         }
     }
-}
-
-#[cfg(windows)]
-fn local_https_success_message(
-    changes: &local_https_identity::LocalHttpsReconcileChanges,
-    listener_restarted: bool,
-) -> String {
-    if changes.bootstrapped_identity {
-        return "Local HTTPS was rebuilt and secure local browser connections are ready again."
-            .to_string();
-    }
-    if changes.leaf_regenerated && listener_restarted {
-        return "Local HTTPS renewed its browser certificate and restarted the local listener."
-            .to_string();
-    }
-    if changes.trust_installed {
-        return "Local HTTPS trust was repaired and secure local browser connections are ready again."
-            .to_string();
-    }
-    if listener_restarted {
-        return "Local HTTPS restarted its local listener and secure browser connections are ready again."
-            .to_string();
-    }
-
-    "Local HTTPS is already ready.".to_string()
 }
 
 #[cfg(windows)]
@@ -1885,95 +1520,14 @@ async fn run_local_https_controller(
             );
             notifications::show_notification(
                 &app,
-                "Local HTTPS Repair Required",
-                "Companion local HTTPS needs repair. Open Companion Settings and use Repair Local HTTPS. The local browser connection will stay offline until this is fixed.",
+                "Local Browser Connection Unavailable",
+                "Companion could not restore its secure local browser connection automatically. Quit and relaunch Companion to try again.",
             );
         }
     }
 
     while let Some(command) = command_rx.recv().await {
         match command {
-            LocalHttpsControllerCommand::Repair {
-                allow_identity_reset,
-                response_tx,
-            } => {
-                let listener_running = server_task.is_some();
-                let current_health = state.local_https_health();
-                set_local_https_health_and_refresh(
-                    &app,
-                    &state,
-                    LocalHttpsHealth {
-                        status: LocalHttpsStatus::Repairing,
-                        detail_message: "Companion is repairing its secure local connection. Browser status will refresh automatically when this finishes.".to_string(),
-                        repair_reason: None,
-                        current_user_trust_installed: current_health.current_user_trust_installed,
-                        listener_running,
-                    },
-                );
-
-                match run_local_https_reconcile(&app, allow_identity_reset) {
-                    LocalHttpsReconcileOutcome::Ready(ready_state) => {
-                        let listener_restarted = ready_state.changes.bootstrapped_identity
-                            || ready_state.changes.leaf_regenerated
-                            || server_task.is_none();
-
-                        if listener_restarted {
-                            stop_local_https_server(
-                                &mut server_task,
-                                &mut server_shutdown,
-                                &mut server_generation,
-                                &mut expected_stopped_generation,
-                            )
-                            .await;
-
-                            let generation = next_generation;
-                            next_generation += 1;
-                            let (task, shutdown_tx) = spawn_local_https_server_task(
-                                command_tx.clone(),
-                                state.clone(),
-                                app.clone(),
-                                generation,
-                                ready_state.server_identity,
-                            );
-                            server_generation = Some(generation);
-                            server_task = Some(task);
-                            server_shutdown = Some(shutdown_tx);
-                        }
-
-                        let success_message =
-                            local_https_success_message(&ready_state.changes, listener_restarted);
-                        set_local_https_health_and_refresh(
-                            &app,
-                            &state,
-                            LocalHttpsHealth::ready(server_task.is_some()),
-                        );
-                        notifications::show_notification(
-                            &app,
-                            "Local HTTPS Repaired",
-                            &success_message,
-                        );
-                        let _ = response_tx.send(Ok(success_message));
-                    }
-                    LocalHttpsReconcileOutcome::NeedsRepair { reason, message } => {
-                        set_local_https_health_and_refresh(
-                            &app,
-                            &state,
-                            LocalHttpsHealth::needs_repair(
-                                message.clone(),
-                                reason,
-                                current_health.current_user_trust_installed,
-                                server_task.is_some(),
-                            ),
-                        );
-                        notifications::show_notification(
-                            &app,
-                            "Local HTTPS Repair Required",
-                            "Companion local HTTPS still needs repair. Open Companion Settings and use Repair Local HTTPS again if needed.",
-                        );
-                        let _ = response_tx.send(Err(message));
-                    }
-                }
-            }
             LocalHttpsControllerCommand::ServerStopped { generation, result } => {
                 if expected_stopped_generation == Some(generation) {
                     expected_stopped_generation = None;
@@ -2002,7 +1556,7 @@ async fn run_local_https_controller(
                     &app,
                     &state,
                     LocalHttpsHealth::needs_repair(
-                        "Companion's secure local listener stopped unexpectedly. Use Repair Local HTTPS to restart it.",
+                        "Companion's secure local listener stopped unexpectedly. Quit and relaunch Companion to restore browser-side local controls.",
                         None,
                         Some(true),
                         false,
@@ -2010,8 +1564,8 @@ async fn run_local_https_controller(
                 );
                 notifications::show_notification(
                     &app,
-                    "Local HTTPS Server Failed",
-                    "Companion could not keep its secure local listener online. Open Companion Settings and use Repair Local HTTPS.",
+                    "Local Browser Connection Unavailable",
+                    "Companion could not keep its secure local listener online. Quit and relaunch Companion to restore browser-side local controls.",
                 );
             }
         }
@@ -2039,12 +1593,7 @@ async fn run_local_https_controller(
         ),
     );
 
-    while let Some(command) = command_rx.recv().await {
-        let LocalHttpsControllerCommand::Repair { response_tx, .. } = command;
-        let _ = response_tx.send(Err(
-            "Local HTTPS repair is only available on Windows.".to_string()
-        ));
-    }
+    while command_rx.recv().await.is_some() {}
 }
 
 /// Maximum size of the active log file before it is rotated, in bytes.
@@ -2186,6 +1735,530 @@ fn handle_tray_double_click(app: &tauri::AppHandle, state: &Arc<AppState>) {
     }
 }
 
+#[cfg(windows)]
+fn windows_protocol_handler_exe_path(exe_path: &std::path::Path) -> String {
+    let path = exe_path.to_string_lossy().replace('/', "\\");
+
+    if let Some(stripped) = path.strip_prefix("\\\\?\\UNC\\") {
+        return format!("\\\\{}", stripped);
+    }
+
+    if let Some(stripped) = path.strip_prefix("\\\\?\\") {
+        return stripped.to_string();
+    }
+
+    path
+}
+
+#[cfg(windows)]
+fn set_registry_string_value_if_changed(
+    key: &RegKey,
+    name: &str,
+    value: &str,
+    description: &str,
+) -> Result<bool, String> {
+    if key.get_value::<String, _>(name).ok().as_deref() == Some(value) {
+        return Ok(false);
+    }
+
+    key.set_value(name, &value)
+        .map_err(|error| format!("Failed to set {}: {}", description, error))?;
+
+    Ok(true)
+}
+
+#[cfg(windows)]
+fn ensure_nojoin_protocol_handler_registered() -> Result<(), String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|error| format!("Failed to locate the current executable: {}", error))?;
+    let exe_path_string = windows_protocol_handler_exe_path(&exe_path);
+    let command_value = format!("\"{}\" \"%1\"", exe_path_string);
+    let icon_value = format!("\"{}\",0", exe_path_string);
+    let mut association_changed = false;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (protocol_key, _) = hkcu
+        .create_subkey(NOJOIN_PROTOCOL_REGISTRY_PATH)
+        .map_err(|error| format!("Failed to open the nojoin protocol registry key: {}", error))?;
+    association_changed |= set_registry_string_value_if_changed(
+        &protocol_key,
+        "",
+        "URL:Nojoin Protocol",
+        "the nojoin protocol description",
+    )?;
+    association_changed |= set_registry_string_value_if_changed(
+        &protocol_key,
+        "URL Protocol",
+        "",
+        "the nojoin protocol URL marker",
+    )?;
+    association_changed |= set_registry_string_value_if_changed(
+        &protocol_key,
+        "FriendlyTypeName",
+        "Nojoin Companion Pairing Link",
+        "the nojoin protocol friendly name",
+    )?;
+
+    let (default_icon_key, _) = protocol_key
+        .create_subkey("DefaultIcon")
+        .map_err(|error| format!("Failed to open the nojoin protocol icon key: {}", error))?;
+    association_changed |= set_registry_string_value_if_changed(
+        &default_icon_key,
+        "",
+        &icon_value,
+        "the nojoin protocol icon",
+    )?;
+
+    let (command_key, _) = protocol_key
+        .create_subkey("shell\\open\\command")
+        .map_err(|error| format!("Failed to open the nojoin protocol command key: {}", error))?;
+    association_changed |= set_registry_string_value_if_changed(
+        &command_key,
+        "",
+        &command_value,
+        "the nojoin protocol open command",
+    )?;
+
+    if association_changed {
+        unsafe {
+            SHChangeNotify(
+                SHCNE_ASSOCCHANGED as i32,
+                SHCNF_DWORD | SHCNF_FLUSH,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn ensure_nojoin_protocol_handler_registered() -> Result<(), String> {
+    Ok(())
+}
+
+struct PairingRequestGuard {
+    app: tauri::AppHandle,
+    state: Arc<AppState>,
+    request_id: String,
+}
+
+impl PairingRequestGuard {
+    fn acquire(
+        app: &tauri::AppHandle,
+        state: Arc<AppState>,
+        request_id: String,
+    ) -> Result<Self, String> {
+        state.begin_pairing_request(&request_id)?;
+        refresh_tray_menu(app, &state);
+        Ok(Self {
+            app: app.clone(),
+            state,
+            request_id,
+        })
+    }
+}
+
+impl Drop for PairingRequestGuard {
+    fn drop(&mut self) {
+        self.state.finish_pairing_request(&self.request_id);
+        refresh_tray_menu(&self.app, &self.state);
+    }
+}
+
+fn extract_pairing_link_arg(args: &[String]) -> Option<String> {
+    args.iter()
+        .map(|arg| arg.trim().trim_matches('"').to_string())
+        .find(|arg| arg.starts_with(PAIRING_LINK_PREFIX))
+}
+
+fn backend_label_from_connection(backend: &BackendConnection) -> String {
+    backend
+        .paired_web_origin
+        .clone()
+        .unwrap_or_else(|| backend.derived_web_origin())
+}
+
+async fn confirm_pairing_request(
+    app: &tauri::AppHandle,
+    launch_request: &PairingLaunchRequest,
+    previous_backend: Option<&BackendConnection>,
+) -> Result<bool, String> {
+    let app_handle = app.clone();
+    let prompt_message = if let Some(previous_backend) = previous_backend {
+        let current_origin = backend_label_from_connection(previous_backend);
+        if current_origin == launch_request.backend_origin {
+            format!(
+                "Approve pairing refresh for {} as {}?\n\nThis keeps the same Nojoin deployment but rotates this device's pairing.",
+                launch_request.backend_origin, launch_request.username
+            )
+        } else {
+            format!(
+                "Approve switching this device from {} to {} as {}?\n\nFuture recordings and browser-side controls will use the new Nojoin deployment after approval.",
+                current_origin, launch_request.backend_origin, launch_request.username
+            )
+        }
+    } else {
+        format!(
+            "Approve pairing this device with {} as {}?\n\nNojoin requested that this Companion connect to that deployment.",
+            launch_request.backend_origin, launch_request.username
+        )
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    app.run_on_main_thread(move || {
+        if let Err(error) = open_settings_window(&app_handle) {
+            warn!(
+                "Failed to surface the settings window before showing the pairing prompt: {}",
+                error
+            );
+        }
+
+        let decision = app_handle
+            .dialog()
+            .message(prompt_message)
+            .title("Approve Pairing Request")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Approve".to_string(),
+                "Decline".to_string(),
+            ))
+            .blocking_show();
+        let _ = tx.send(decision);
+    })
+    .map_err(|error| format!("Failed to schedule the pairing approval prompt: {}", error))?;
+
+    rx.await
+        .map_err(|_| "Failed to receive the pairing approval decision.".to_string())
+}
+
+async fn best_effort_reject_pairing_request(
+    backend_target: &crate::backend_url::ValidatedBackendTarget,
+    launch_request: &PairingLaunchRequest,
+    status: &str,
+    detail: &str,
+    failure_reason: &str,
+) {
+    if let Err(error) = companion_auth::reject_pairing_request(
+        backend_target,
+        &launch_request.request_id,
+        &launch_request.request_secret,
+        status,
+        detail,
+        failure_reason,
+    )
+    .await
+    {
+        warn!(
+            "Failed to update backend pairing request state (request_id={}): {}",
+            &launch_request.request_id,
+            error
+        );
+    }
+}
+
+fn pairing_request_identity_conflict(
+    existing_backend: &BackendConnection,
+    launch_request: &PairingLaunchRequest,
+) -> bool {
+    if backend_label_from_connection(existing_backend) != launch_request.backend_origin {
+        return false;
+    }
+
+    existing_backend
+        .backend_identity_public_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value != launch_request.backend_identity_public_key)
+        .unwrap_or(false)
+}
+
+fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendConnection) -> bool {
+    previous.api_protocol.eq_ignore_ascii_case(&replacement.api_protocol)
+        && previous.api_host.eq_ignore_ascii_case(&replacement.api_host)
+        && previous.api_port == replacement.api_port
+        && previous.paired_web_origin == replacement.paired_web_origin
+}
+
+async fn process_pairing_link(
+    app: tauri::AppHandle,
+    state: Arc<AppState>,
+    raw_url: String,
+) {
+    let (launch_request, backend_target) = match PairingLaunchRequest::parse(&raw_url) {
+        Ok(value) => value,
+        Err(error) => {
+            notifications::show_notification(&app, "Pairing Request Invalid", &error);
+            return;
+        }
+    };
+
+    if launch_request.is_expired() {
+        notifications::show_notification(
+            &app,
+            "Pairing Request Expired",
+            "This Nojoin pairing request has already expired. Start again from Nojoin in the browser.",
+        );
+        return;
+    }
+
+    let _guard = match PairingRequestGuard::acquire(
+        &app,
+        state.clone(),
+        launch_request.request_id.clone(),
+    ) {
+        Ok(guard) => guard,
+        Err(message) => {
+            notifications::show_notification(&app, "Pairing Already Open", &message);
+            best_effort_reject_pairing_request(
+                &backend_target,
+                &launch_request,
+                "failed",
+                &message,
+                "another_request_in_progress",
+            )
+            .await;
+            return;
+        }
+    };
+
+    if let Err(error) = companion_auth::mark_pairing_request_opened(
+        &backend_target,
+        &launch_request.request_id,
+        &launch_request.request_secret,
+    )
+    .await
+    {
+        notifications::show_notification(
+            &app,
+            "Pairing Request Failed",
+            "Nojoin Companion could not acknowledge the pairing request. Start again from Nojoin in the browser.",
+        );
+        warn!(
+            "Failed to mark pairing request opened (request_id={}): {}",
+            &launch_request.request_id,
+            error
+        );
+        return;
+    }
+
+    let current_status = recover_mutex_guard(state.status.lock(), "status").clone();
+    if let Some(message) = pairing_block_message(&current_status) {
+        best_effort_reject_pairing_request(
+            &backend_target,
+            &launch_request,
+            "failed",
+            message,
+            "companion_busy",
+        )
+        .await;
+        notifications::show_notification(&app, "Pairing Unavailable", message);
+        return;
+    }
+
+    let previous_backend = {
+        let config = recover_mutex_guard(state.config.lock(), "config");
+        config.backend_connection()
+    };
+
+    if previous_backend
+        .as_ref()
+        .map(|backend| pairing_request_identity_conflict(backend, &launch_request))
+        .unwrap_or(false)
+    {
+        let message = "This Nojoin deployment presented a different saved backend identity than the one already trusted on this device. Open Nojoin from the currently paired deployment and review the backend before approving another pairing.";
+        best_effort_reject_pairing_request(
+            &backend_target,
+            &launch_request,
+            "failed",
+            message,
+            "backend_identity_mismatch",
+        )
+        .await;
+        notifications::show_notification(&app, "Pairing Identity Mismatch", message);
+        return;
+    }
+
+    let approved = match confirm_pairing_request(&app, &launch_request, previous_backend.as_ref()).await {
+        Ok(approved) => approved,
+        Err(error) => {
+            best_effort_reject_pairing_request(
+                &backend_target,
+                &launch_request,
+                "failed",
+                "Nojoin Companion could not show the approval prompt. Start again from Nojoin.",
+                "prompt_unavailable",
+            )
+            .await;
+            notifications::show_notification(&app, "Pairing Failed", &error);
+            return;
+        }
+    };
+
+    if !approved {
+        best_effort_reject_pairing_request(
+            &backend_target,
+            &launch_request,
+            "declined",
+            "Pairing was declined in the Companion app.",
+            "user_declined",
+        )
+        .await;
+        notifications::show_notification(
+            &app,
+            "Pairing Declined",
+            "This device was not paired because the request was declined.",
+        );
+        return;
+    }
+
+    let captured_tls_fingerprint = match crate::tls::capture_tls_fingerprint(
+        &backend_target.host,
+        backend_target.port,
+    )
+    .await
+    {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            best_effort_reject_pairing_request(
+                &backend_target,
+                &launch_request,
+                "failed",
+                "Nojoin Companion could not capture the backend TLS certificate. Start pairing again from Nojoin.",
+                "tls_capture_failed",
+            )
+            .await;
+            notifications::show_notification(&app, "Pairing Failed", &error);
+            return;
+        }
+    };
+
+    let completion = match companion_auth::complete_pairing_request(
+        &backend_target,
+        &launch_request.request_id,
+        &launch_request.request_secret,
+        &captured_tls_fingerprint,
+    )
+    .await
+    {
+        Ok(completion) => completion,
+        Err(error) => {
+            best_effort_reject_pairing_request(
+                &backend_target,
+                &launch_request,
+                "failed",
+                "Nojoin Companion could not complete the pairing request. Start pairing again from Nojoin.",
+                "pairing_completion_failed",
+            )
+            .await;
+            notifications::show_notification(&app, "Pairing Failed", &error);
+            return;
+        }
+    };
+
+    let backend = BackendConnection {
+        api_protocol: completion.api_protocol.clone(),
+        api_host: completion.api_host.clone(),
+        api_port: completion.api_port,
+        tls_fingerprint: Some(captured_tls_fingerprint.clone()),
+        paired_web_origin: Some(completion.paired_web_origin.clone()),
+        backend_pairing_id: Some(completion.backend_pairing_id.clone()),
+        local_control_secret_version: Some(completion.local_control_secret_version),
+        backend_identity_key_id: Some(completion.backend_identity_key_id.clone()),
+        backend_identity_public_key: Some(completion.backend_identity_public_key.clone()),
+    };
+    let new_secret_bundle = secret_store::BackendSecretBundle {
+        companion_credential_secret: completion.companion_credential_secret.clone(),
+        local_control_secret: completion.local_control_secret.clone(),
+    };
+
+    let previous_secret_bundle = previous_backend
+        .as_ref()
+        .and_then(|existing| secret_store::load_backend_secret_bundle_for_backend(existing).ok());
+    let had_existing_backend = previous_backend.is_some();
+    let should_revoke_previous_backend = previous_backend
+        .as_ref()
+        .map(|existing| !is_same_backend_target(existing, &backend))
+        .unwrap_or(false);
+
+    if let Err(error) = secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle) {
+        let _ = companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
+        notifications::show_notification(&app, "Pairing Failed", &error);
+        return;
+    }
+
+    let save_result = {
+        let mut config = recover_mutex_guard(state.config.lock(), "config");
+        config.replace_backend_and_save(backend.clone())
+    };
+    if let Err(error) = save_result {
+        let _ = secret_store::delete_backend_secret_bundle_for_backend(&backend);
+        let _ = companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
+        notifications::show_notification(&app, "Pairing Failed", &format!("Failed to save pairing config: {}", error));
+        return;
+    }
+
+    *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
+    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
+    state.clear_current_recording_owner();
+    state.clear_recording_recovery_state();
+    *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
+
+    if should_revoke_previous_backend {
+        if let Some(previous_backend) = previous_backend.as_ref() {
+            if let Some(bundle) = previous_secret_bundle.as_ref() {
+                if let Err(error) =
+                    companion_auth::revoke_backend_pairings_with_bundle(previous_backend, bundle).await
+                {
+                    warn!("Failed to revoke pairing state on the previous backend: {}", error);
+                }
+            }
+        }
+    }
+
+    if let Some(previous_backend) = previous_backend.as_ref() {
+        if previous_backend.backend_pairing_id != backend.backend_pairing_id {
+            if let Err(error) = secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
+            {
+                warn!(
+                    "Failed to delete the previous backend companion secret bundle after successful pairing: {}",
+                    error
+                );
+            }
+        }
+    }
+
+    let (notification_title, notification_body) = if should_revoke_previous_backend {
+        (
+            "Backend Switch Complete",
+            "Companion is now paired with the new Nojoin deployment.",
+        )
+    } else if had_existing_backend {
+        (
+            "Pairing Refreshed",
+            "Companion pairing was refreshed for this Nojoin deployment.",
+        )
+    } else {
+        (
+            "Pairing Complete",
+            "Companion is now paired with this Nojoin deployment.",
+        )
+    };
+    notifications::show_notification(&app, notification_title, notification_body);
+    refresh_tray_menu(&app, &state);
+}
+
+fn dispatch_pairing_link(app: &tauri::AppHandle, state: &Arc<AppState>, raw_url: String) {
+    tauri::async_runtime::spawn(process_pairing_link(
+        app.clone(),
+        state.clone(),
+        raw_url,
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2274,34 +2347,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn pairing_window_mode_query_value_matches_variant() {
-        assert_eq!(pairing_window_mode_query_value(false), "first");
-        assert_eq!(pairing_window_mode_query_value(true), "replacement");
-    }
-
-    #[test]
-    fn pairing_expired_messages_match_restart_surface() {
-        let first_pair_message = pairing_expired_notification_message(false);
-        assert!(first_pair_message.contains("Start Pairing"));
-        assert!(!first_pair_message.contains("Generate New Pairing Code"));
-
-        let replacement_message = pairing_expired_notification_message(true);
-        assert!(replacement_message.contains("Generate New Pairing Code"));
-        assert!(replacement_message.contains("current backend stays connected"));
-    }
-
-    #[test]
-    fn pairing_cancellation_message_mentions_backend_continuity_when_needed() {
-        assert_eq!(
-            pairing_cancellation_result_message(false, None),
-            "Cancel Pairing closed the current code."
-        );
-        assert_eq!(
-            pairing_cancellation_result_message(true, None),
-            "Cancel Pairing closed the current code. The current backend stays connected."
-        );
-    }
 }
 
 fn handle_process_mode() -> ProcessMode {
@@ -2317,6 +2362,7 @@ fn handle_process_mode() -> ProcessMode {
 
     ProcessMode::Normal {
         launched_from_autostart: args.iter().any(|arg| arg == AUTOSTART_ARG),
+        pairing_link: extract_pairing_link_arg(&args),
     }
 }
 
@@ -2360,11 +2406,12 @@ fn main() {
         eprintln!("Failed to initialize logging: {}", e);
     }
 
-    let launched_from_autostart = match handle_process_mode() {
+    let (launched_from_autostart, startup_pairing_link) = match handle_process_mode() {
         ProcessMode::UninstallCleanup => return,
         ProcessMode::Normal {
             launched_from_autostart,
-        } => launched_from_autostart,
+            pairing_link,
+        } => (launched_from_autostart, pairing_link),
     };
 
     info!("Starting Nojoin Companion (Tauri)...");
@@ -2373,8 +2420,12 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let state = app.state::<SharedAppState>().0.clone();
+            if let Some(pairing_link) = extract_pairing_link_arg(&args) {
+                dispatch_pairing_link(app, &state, pairing_link);
+                return;
+            }
             if let Err(message) =
                 focus_primary_native_surface_for_launch(app, &state, LauncherOpenReason::ExplicitLaunch)
             {
@@ -2391,11 +2442,7 @@ fn main() {
             get_launcher_state,
             open_settings,
             open_nojoin,
-            start_pairing_mode,
-            cancel_pairing_request,
             disconnect_backend,
-            enable_firefox_support,
-            repair_local_https,
             resize_current_window,
             set_run_on_startup,
             view_logs,
@@ -2403,6 +2450,18 @@ fn main() {
             close_update_prompt
         ])
         .setup(move |app| {
+            if let Err(error) = ensure_nojoin_protocol_handler_registered() {
+                warn!(
+                    "Failed to ensure that the nojoin:// protocol handler is registered for this Companion binary: {}",
+                    error
+                );
+                notifications::show_notification(
+                    app.handle(),
+                    "Pairing Links Unavailable",
+                    "Nojoin Companion could not register the local nojoin:// pairing link handler. Browser pairing will fail until the app can repair that Windows association.",
+                );
+            }
+
             let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
             let mut config = Config::load();
             reconcile_backend_secret_state(&mut config);
@@ -2448,16 +2507,15 @@ fn main() {
                 local_https_health: Mutex::new(LocalHttpsHealth::default()),
                 tray_status_item: Mutex::new(None),
                 tray_icon: Mutex::new(None),
+                #[cfg(test)]
                 pairing_session: Mutex::new(None),
+                pairing_request_in_progress: Mutex::new(None),
             });
 
             let (local_https_command_tx, local_https_command_rx) =
                 tokio::sync::mpsc::unbounded_channel();
 
             app.manage(SharedAppState(state.clone()));
-            app.manage(SharedLocalHttpsController(LocalHttpsControllerHandle {
-                command_tx: local_https_command_tx.clone(),
-            }));
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 configure_launcher_window(&window);
@@ -2561,7 +2619,9 @@ fn main() {
                 audio::run_audio_loop(state_audio, audio_rx, app_handle_audio);
             });
 
-            if let Err(message) =
+            if let Some(pairing_link) = startup_pairing_link.clone() {
+                dispatch_pairing_link(app.handle(), &state, pairing_link);
+            } else if let Err(message) =
                 maybe_open_startup_surface(app.handle(), &state, launched_from_autostart)
             {
                 notifications::show_notification(app.handle(), "Launcher Error", &message);

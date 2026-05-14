@@ -162,6 +162,10 @@ pub struct BackendConnection {
     pub backend_pairing_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_control_secret_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_identity_key_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_identity_public_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -206,6 +210,9 @@ impl BackendConnection {
         self.backend_pairing_id = normalize_optional_string(self.backend_pairing_id);
         self.local_control_secret_version =
             self.local_control_secret_version.filter(|value| *value > 0);
+        self.backend_identity_key_id = normalize_optional_string(self.backend_identity_key_id);
+        self.backend_identity_public_key =
+            normalize_optional_string(self.backend_identity_public_key);
         self
     }
 
@@ -244,6 +251,8 @@ impl Default for BackendConnection {
             paired_web_origin: None,
             backend_pairing_id: None,
             local_control_secret_version: None,
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         }
     }
 }
@@ -290,6 +299,18 @@ impl Config {
         self.backend
             .as_ref()
             .and_then(|backend| backend.backend_pairing_id.clone())
+    }
+
+    pub fn backend_identity_key_id(&self) -> Option<String> {
+        self.backend
+            .as_ref()
+            .and_then(|backend| backend.backend_identity_key_id.clone())
+    }
+
+    pub fn backend_identity_public_key(&self) -> Option<String> {
+        self.backend
+            .as_ref()
+            .and_then(|backend| backend.backend_identity_public_key.clone())
     }
 
     pub fn get_web_url(&self) -> String {
@@ -727,6 +748,8 @@ mod tests {
             paired_web_origin: Some("https://app.example.com/workspace".to_string()),
             backend_pairing_id: Some("pairing-one".to_string()),
             local_control_secret_version: Some(1),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
 
         config.save_to(&path).unwrap();
@@ -846,6 +869,8 @@ mod tests {
             paired_web_origin: Some("https://old.example.com".to_string()),
             backend_pairing_id: Some("pairing-old".to_string()),
             local_control_secret_version: Some(1),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
 
         let before = config.backend.clone().unwrap();
@@ -857,6 +882,8 @@ mod tests {
             paired_web_origin: Some("https://new.example.com:8443/app".to_string()),
             backend_pairing_id: Some("pairing-new".to_string()),
             local_control_secret_version: Some(2),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         };
 
         config.replace_backend(replacement);
@@ -884,6 +911,8 @@ mod tests {
             paired_web_origin: Some("https://stable.example.com".to_string()),
             backend_pairing_id: Some("pairing-stable".to_string()),
             local_control_secret_version: Some(1),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
         config.save_to(&path).unwrap();
 
@@ -903,6 +932,8 @@ mod tests {
                 paired_web_origin: Some("https://replacement.example.com:8443".to_string()),
                 backend_pairing_id: Some("pairing-replacement".to_string()),
                 local_control_secret_version: Some(2),
+                backend_identity_key_id: None,
+                backend_identity_public_key: None,
             },
             &path,
         );
@@ -939,6 +970,8 @@ mod tests {
             paired_web_origin: Some("https://first.example.com".to_string()),
             backend_pairing_id: Some("pairing-first".to_string()),
             local_control_secret_version: Some(1),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
 
         config.replace_backend(BackendConnection {
@@ -949,6 +982,8 @@ mod tests {
             paired_web_origin: Some("https://second.example.com".to_string()),
             backend_pairing_id: Some("pairing-second".to_string()),
             local_control_secret_version: Some(2),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
 
         assert_eq!(config.machine_local, machine_before);
@@ -971,6 +1006,8 @@ mod tests {
             paired_web_origin: Some("https://paired.example.com".to_string()),
             backend_pairing_id: Some("pairing-123".to_string()),
             local_control_secret_version: Some(3),
+            backend_identity_key_id: None,
+            backend_identity_public_key: None,
         });
         config.save_to(&path).unwrap();
 

@@ -2,20 +2,28 @@ use crate::config::Config;
 use crate::local_https_identity::LocalHttpsRepairReason;
 use crossbeam_channel::Sender;
 use log::error;
+#[cfg(test)]
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use std::collections::hash_map::DefaultHasher;
+#[cfg(test)]
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+#[cfg(test)]
 use std::time::{Duration, SystemTime};
 use tauri::menu::MenuItem;
 use tauri::tray::TrayIcon;
 use tauri::Wry;
 
+#[cfg(test)]
 const PAIRING_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+#[cfg(test)]
 const PAIRING_CODE_LENGTH: usize = 8;
+#[cfg(test)]
 pub const PAIRING_WINDOW_LIFETIME_SECS: u64 = 300;
+#[cfg(test)]
 pub const MAX_PAIRING_ATTEMPTS: u8 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -101,6 +109,7 @@ pub fn pairing_block_message(status: &AppStatus) -> Option<&'static str> {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct PairingSession {
     pub canonical_code: String,
@@ -110,6 +119,7 @@ pub struct PairingSession {
     pub completion_in_progress: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingValidationError {
     NotActive,
@@ -119,6 +129,7 @@ pub enum PairingValidationError {
     InProgress,
 }
 
+#[cfg(test)]
 pub fn canonicalize_pairing_code(input: &str) -> String {
     input
         .chars()
@@ -127,6 +138,7 @@ pub fn canonicalize_pairing_code(input: &str) -> String {
         .collect()
 }
 
+#[cfg(test)]
 pub fn pairing_code_log_label(input: &str) -> String {
     let canonical = canonicalize_pairing_code(input);
     if canonical.is_empty() {
@@ -144,6 +156,7 @@ pub fn pairing_code_log_label(input: &str) -> String {
     )
 }
 
+#[cfg(test)]
 pub fn pairing_code_fingerprint(input: &str) -> String {
     let canonical = canonicalize_pairing_code(input);
     if canonical.is_empty() {
@@ -155,11 +168,13 @@ pub fn pairing_code_fingerprint(input: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
+#[cfg(test)]
 fn format_pairing_code(canonical_code: &str) -> String {
     let (left, right) = canonical_code.split_at(4);
     format!("{}-{}", left, right)
 }
 
+#[cfg(test)]
 impl PairingSession {
     pub fn new() -> Self {
         let mut rng = rand::thread_rng();
@@ -232,8 +247,9 @@ pub struct AppState {
     pub tray_status_item: Mutex<Option<MenuItem<Wry>>>,
     pub tray_icon: Mutex<Option<TrayIcon<Wry>>>,
 
-    // Manual pairing state
+    #[cfg(test)]
     pub pairing_session: Mutex<Option<PairingSession>>,
+    pub pairing_request_in_progress: Mutex<Option<String>>,
 }
 
 /// Returns the inner guard whether the mutex was healthy or poisoned. We log
@@ -291,6 +307,7 @@ impl AppState {
         config.is_authenticated()
     }
 
+    #[cfg(test)]
     pub fn begin_pairing_session(&self) -> PairingSession {
         let session = PairingSession::new();
         let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
@@ -298,11 +315,13 @@ impl AppState {
         session
     }
 
+    #[cfg(test)]
     pub fn clear_pairing_session(&self) {
         let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         *pairing_session = None;
     }
 
+    #[cfg(test)]
     pub fn current_pairing_session(&self) -> Option<PairingSession> {
         let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
 
@@ -317,14 +336,49 @@ impl AppState {
         pairing_session.clone()
     }
 
+    #[cfg(test)]
     pub fn pairing_session_snapshot(&self) -> Option<PairingSession> {
         recover_mutex_guard(self.pairing_session.lock(), "pairing_session").clone()
     }
 
-    pub fn is_pairing_active(&self) -> bool {
-        self.current_pairing_session().is_some()
+    pub fn begin_pairing_request(&self, request_id: &str) -> Result<(), String> {
+        let mut pairing_request = recover_mutex_guard(
+            self.pairing_request_in_progress.lock(),
+            "pairing_request_in_progress",
+        );
+
+        match pairing_request.as_deref() {
+            Some(active_request_id) if active_request_id == request_id => Ok(()),
+            Some(_) => {
+                Err("Another pairing approval is already open in Nojoin Companion.".to_string())
+            }
+            None => {
+                *pairing_request = Some(request_id.to_string());
+                Ok(())
+            }
+        }
     }
 
+    pub fn finish_pairing_request(&self, request_id: &str) {
+        let mut pairing_request = recover_mutex_guard(
+            self.pairing_request_in_progress.lock(),
+            "pairing_request_in_progress",
+        );
+
+        if pairing_request.as_deref() == Some(request_id) {
+            *pairing_request = None;
+        }
+    }
+
+    pub fn is_pairing_active(&self) -> bool {
+        recover_mutex_guard(
+            self.pairing_request_in_progress.lock(),
+            "pairing_request_in_progress",
+        )
+        .is_some()
+    }
+
+    #[cfg(test)]
     pub fn begin_pairing_completion(
         &self,
         submitted_code: &str,
@@ -358,6 +412,7 @@ impl AppState {
         Err(PairingValidationError::Invalid)
     }
 
+    #[cfg(test)]
     pub fn release_pairing_completion(&self) {
         let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         let Some(session) = pairing_session.as_mut() else {
@@ -372,6 +427,7 @@ impl AppState {
         session.completion_in_progress = false;
     }
 
+    #[cfg(test)]
     pub fn complete_pairing_session(&self) {
         self.clear_pairing_session();
     }
@@ -464,6 +520,7 @@ mod tests {
             tray_status_item: Mutex::new(None),
             tray_icon: Mutex::new(None),
             pairing_session: Mutex::new(None),
+            pairing_request_in_progress: Mutex::new(None),
         }
     }
 

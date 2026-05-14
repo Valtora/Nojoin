@@ -248,10 +248,8 @@
         let actionInFlight = false;
 
         const actionLabels = {
-            'start-pairing': 'Start Pairing',
             'open-nojoin': 'Open Nojoin',
             'open-settings': 'Open Settings',
-            'open-settings-to-repair': 'Open Settings to Repair',
         };
 
         const launcherCopy = {
@@ -259,22 +257,22 @@
                 tone: 'setup',
                 statusLabel: 'Not paired',
                 title: 'Nojoin Companion',
-                lead: 'This companion app connects to your browser to allow you to record your meetings without having a bot join and then it sends these recordings to your browser for processing. Start pairing now, or reopen this window later from the tray.',
-                secondaryAction: 'open-settings',
+                lead: 'This companion app connects to Nojoin so your browser can control local recording securely. Start pairing from Nojoin in your browser, or reopen this window later from the tray.',
+                secondaryAction: null,
             },
             'unpaired': {
                 tone: 'setup',
                 statusLabel: 'Not paired',
                 title: 'Nojoin Companion',
-                lead: 'This companion app connects to your browser to allow you to record your meetings without having a bot join and then it sends these recordings to your browser for processing. Start pairing from here, or reopen this window later from the tray.',
-                secondaryAction: 'open-settings',
+                lead: 'This companion app connects to Nojoin so your browser can control local recording securely. Start pairing from Nojoin in your browser, or reopen this window later from the tray.',
+                secondaryAction: null,
             },
             'pairing-active': {
                 tone: 'informational',
-                statusLabel: 'Pairing code active',
+                statusLabel: 'Pairing request pending',
                 title: 'Nojoin Companion',
-                lead: 'Finish pairing in Nojoin with the current code. If this is replacing an older backend, the current backend stays active until the new pairing succeeds.',
-                secondaryAction: 'open-settings',
+                lead: 'A browser pairing request is pending in Nojoin. Approve or decline it from the OS-native prompt on this device.',
+                secondaryAction: null,
             },
             'paired-healthy': {
                 tone: 'healthy',
@@ -292,17 +290,17 @@
             },
             'local-https-repairing': {
                 tone: 'warning',
-                statusLabel: 'Browser repair in progress',
+                statusLabel: 'Browser connection recovering',
                 title: 'Nojoin Companion',
-                lead: 'Companion is reconciling the secure local browser connection. Browser controls will refresh automatically when repair finishes.',
+                lead: 'Companion is reconnecting its local browser link. Browser-side controls should refresh automatically when the connection settles.',
                 secondaryAction: null,
             },
             'local-https-needs-repair': {
                 tone: 'critical',
-                statusLabel: 'Browser repair required',
+                statusLabel: 'Browser connection unavailable',
                 title: 'Nojoin Companion',
-                lead: 'Open Settings to repair the secure local browser connection before using browser-side local controls again.',
-                secondaryAction: 'open-settings',
+                lead: 'Browser-side local controls are unavailable on this device right now. Open Settings if you need details, then relaunch Companion if the state does not recover.',
+                secondaryAction: null,
             },
         };
 
@@ -401,12 +399,9 @@
             setStatusMessage('');
 
             try {
-                if (actionKey === 'start-pairing') {
-                    await invoke('start_pairing_mode');
-                    await loadLauncherState();
-                } else if (actionKey === 'open-nojoin') {
+                if (actionKey === 'open-nojoin') {
                     await invoke('open_nojoin');
-                } else if (actionKey === 'open-settings' || actionKey === 'open-settings-to-repair') {
+                } else if (actionKey === 'open-settings') {
                     await invoke('open_settings');
                 }
             } catch (error) {

@@ -150,11 +150,11 @@ pub fn validate_backend_target(
     })
 }
 
-/// Strict allowlist enforcement at pairing time. The payload-supplied backend
-/// target must canonicalize to the same `scheme://host:port` as the browser
-/// `Origin` header on the `/pair/complete` request. Because the browser is
-/// loaded from the operator-configured `WEB_APP_URL`, this pins the Companion
-/// to that single backend origin.
+/// Strict allowlist enforcement used by the legacy manual pairing tests. The
+/// payload-supplied backend target must canonicalize to the same
+/// `scheme://host:port` as the browser `Origin` header on the `/pair/complete`
+/// request.
+#[cfg(test)]
 pub fn enforce_origin_matches_target(
     target: &ValidatedBackendTarget,
     origin_header: &str,
@@ -224,6 +224,16 @@ pub async fn build_pinned_client(
         .resolve_to_addrs(&target.host, &addrs)
         .build()
         .map_err(|err| format!("Failed to build pinned HTTP client: {}", err))
+}
+
+pub async fn build_unverified_client(
+    target: &ValidatedBackendTarget,
+) -> Result<reqwest::Client, String> {
+    let addrs = resolve_pinned_addrs(target).await?;
+    crate::tls::create_unverified_client_builder()
+        .resolve_to_addrs(&target.host, &addrs)
+        .build()
+        .map_err(|err| format!("Failed to build unverified HTTP client: {}", err))
 }
 
 #[cfg(test)]

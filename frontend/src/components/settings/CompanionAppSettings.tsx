@@ -1,28 +1,23 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import {
-  Copy,
-  Download,
-  Link2,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link2 } from "lucide-react";
 
 import { CompanionDevices } from "@/types";
 import {
-  CompanionPairingError,
   type CompanionLocalHttpsStatus,
   type CompanionRuntimeStatus,
   useServiceStatusStore,
 } from "@/lib/serviceStatusStore";
-import { useNotificationStore } from "@/lib/notificationStore";
-import { getCompanionReleases, type CompanionReleases } from "@/lib/api";
 import {
-  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-  isCompanionLocalConnectionError,
-} from "@/lib/companionLocalApi";
-import { detectPlatform, getDownloadUrl } from "@/lib/platform";
+  cancelCompanionPairingRequest,
+  CompanionPairingRequestError,
+  type CompanionPairingRequestCreateResponse,
+  type CompanionPairingRequestState,
+  createCompanionPairingRequest,
+  getCompanionPairingRequestStatus,
+} from "@/lib/companionPairingApi";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { fuzzyMatch } from "@/lib/searchUtils";
 
 import AudioSettings from "./AudioSettings";
@@ -49,11 +44,9 @@ interface CompanionAppSettingsProps {
 
 type PairingAttemptState =
   | "idle"
-  | "code-required"
-  | "expired"
-  | "failed"
-  | "blocked"
-  | "unreachable";
+  | "launching"
+  | "cancelled"
+  | CompanionPairingRequestState;
 
 type CalloutTone = "success" | "info" | "warning" | "error";
 
@@ -69,23 +62,39 @@ interface PairingCardState {
   title: string;
   message: string;
   helperText: string;
+  primaryActionLabel: string;
 }
 
-const CALLOUT_STYLES: Record<CalloutTone, string> = {
+const STATUS_CHIP_STYLES: Record<CalloutTone, string> = {
   success:
-    "border-green-200 bg-green-50 text-green-800 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-200",
+    "border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200",
   info:
-    "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200",
+    "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200",
   warning:
-    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
+    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
   error:
-    "border-red-200 bg-red-50 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200",
+    "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200",
 };
 
-const SURFACE_CARD_STYLES =
-  "rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950";
+const NOTICE_STYLES: Record<CalloutTone, string> = {
+  success:
+    "border-green-200/80 bg-green-50/80 text-green-800 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-200",
+  info:
+    "border-blue-200/80 bg-blue-50/80 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200",
+  warning:
+    "border-amber-200/80 bg-amber-50/80 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
+  error:
+    "border-red-200/80 bg-red-50/80 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200",
+};
 
-const FIREFOX_ENTERPRISE_ROOTS_PREF = "security.enterprise_roots.enabled";
+const SECTION_CARD_STYLES =
+  "rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm shadow-gray-200/60 backdrop-blur dark:border-gray-800 dark:bg-gray-950/90 dark:shadow-none";
+
+const PANEL_STYLES =
+  "rounded-2xl border border-gray-200/80 bg-gray-50/85 p-4 dark:border-gray-800 dark:bg-gray-900/70";
+
+const META_CARD_STYLES =
+  "rounded-2xl border border-gray-200/80 bg-white/90 p-4 dark:border-gray-800 dark:bg-gray-950/80";
 
 const buildConnectionStateCard = ({
   backendVersion,
@@ -95,9 +104,8 @@ const buildConnectionStateCard = ({
   localHttpsStatus,
   companionStatus,
   companionVersion,
-  showFirefoxSetupGuidance,
   pairingAttemptState,
-  pairingError,
+  pairingMessage,
 }: {
   backendVersion: string | null;
   companion: boolean;
@@ -106,27 +114,24 @@ const buildConnectionStateCard = ({
   localHttpsStatus: CompanionLocalHttpsStatus | null;
   companionStatus: CompanionRuntimeStatus;
   companionVersion: string | null;
-  showFirefoxSetupGuidance: boolean;
   pairingAttemptState: PairingAttemptState;
-  pairingError: string | null;
+  pairingMessage: string | null;
 }): StatusCardState => {
   const versionMismatch =
     companionAuthenticated &&
     backendVersion &&
     companionVersion &&
     backendVersion !== companionVersion;
-  const pairingBlockedByUpload =
-    pairingError?.toLowerCase().includes("upload") ?? false;
 
   if (localHttpsStatus === "needs-repair") {
     return {
-      status: "Browser repair required",
+      status: "Local browser connection unavailable",
       message:
-        "Local browser controls are blocked until the Companion repair flow finishes.",
+        "Local browser controls are unavailable until the Companion restores its secure local connection.",
       tone: "warning",
-      primaryActionLabel: "Open Settings to Repair",
+      primaryActionLabel: "Relaunch Companion",
       primaryActionMessage:
-        "In the Companion app, open Settings and run the repair flow there before retrying pairing or local controls here.",
+        "Quit and relaunch the Companion app on this device, then retry pairing or browser-side local controls here.",
     };
   }
 
@@ -138,52 +143,75 @@ const buildConnectionStateCard = ({
       tone: "error",
       primaryActionLabel: "Open Settings",
       primaryActionMessage:
-        "Use the Companion app to review update status. If the update clears trust state, generate a new pairing code after versions align.",
+        "Use the Companion app to review update status. If the update clears trust state, pair this device again after versions align.",
     };
   }
 
-  if (pairingAttemptState === "blocked") {
-    return pairingBlockedByUpload
-      ? {
-          status: "Backend switch blocked until upload finishes",
-          message:
-            "This machine cannot switch to this deployment until the current queued upload finishes.",
-          tone: "warning",
-          primaryActionLabel: "Open Settings",
-          primaryActionMessage:
-            "Use the Companion app to verify the active upload clears before you generate a new pairing code for this deployment.",
-        }
-      : {
-          status: "Backend switch blocked while recording",
-          message:
-            "This machine cannot switch to this deployment while a recording is still active.",
-          tone: "warning",
-          primaryActionLabel: "Open Settings",
-          primaryActionMessage:
-            "Use the Companion app to stop or finish the active recording before you generate a new pairing code for this deployment.",
-        };
+  if (pairingAttemptState === "opened") {
+    return {
+      status: "Approval pending",
+      message:
+        "The Companion received the pairing request and is waiting for an OS-native accept or decline decision.",
+      tone: "info",
+      primaryActionLabel: "Approve Native Prompt",
+      primaryActionMessage:
+        "Use the operating system prompt opened by Nojoin Companion to approve or decline this browser request.",
+    };
   }
 
-  if (showFirefoxSetupGuidance && !companionAuthenticated) {
+  if (pairingAttemptState === "completing") {
     return {
-      status: "Firefox setup incomplete",
+      status: "Completing pairing",
       message:
-        "Firefox pairing did not complete in this browser.",
-      tone: "warning",
-      primaryActionLabel: "Enable Firefox Support",
+        "The Companion approved the request and is finishing secure backend registration now.",
+      tone: "info",
+      primaryActionLabel: "Wait For Completion",
       primaryActionMessage:
-        "In the Companion app, enable Firefox Support, turn on Firefox enterprise roots, restart Firefox, then generate a fresh pairing code.",
+        "This page will refresh automatically when secure pairing completes.",
+    };
+  }
+
+  if (pairingAttemptState === "declined") {
+    return {
+      status: "Pairing declined",
+      message: pairingMessage || "The local Companion declined the browser pairing request.",
+      tone: "warning",
+      primaryActionLabel: "Pair This Device",
+      primaryActionMessage:
+        "Start a new request when you are ready to approve it in the Companion app.",
     };
   }
 
   if (pairingAttemptState === "expired") {
     return {
       status: "Pairing expired",
-      message: "The last pairing code is no longer valid.",
+      message: pairingMessage || "The pairing request expired before it was approved.",
       tone: "warning",
-      primaryActionLabel: "Generate New Pairing Code",
+      primaryActionLabel: "Pair This Device",
       primaryActionMessage:
-        "In the Companion app, open Settings and start a fresh pairing session. If this machine is replacing another backend, the current backend stays active until the new pairing succeeds.",
+        "Start a new request and approve it from the Companion app before it times out.",
+    };
+  }
+
+  if (pairingAttemptState === "failed") {
+    return {
+      status: "Pairing failed",
+      message: pairingMessage || "The browser could not complete the pairing request.",
+      tone: "error",
+      primaryActionLabel: "Retry Pairing",
+      primaryActionMessage:
+        "Start a fresh request after you review the error in the browser or Companion app.",
+    };
+  }
+
+  if (pairingAttemptState === "cancelled") {
+    return {
+      status: "Pairing cancelled",
+      message: pairingMessage || "The pending pairing request was cancelled.",
+      tone: "info",
+      primaryActionLabel: "Pair This Device",
+      primaryActionMessage:
+        "Start a new request when you want to pair this Companion again.",
     };
   }
 
@@ -194,9 +222,9 @@ const buildConnectionStateCard = ({
         ? "This deployment is not paired to a Companion yet, and the browser cannot reach the local app right now."
         : "This deployment is not paired to a Companion yet.",
       tone: "info",
-      primaryActionLabel: "Start Pairing",
+      primaryActionLabel: "Pair This Device",
       primaryActionMessage:
-        "In the Companion app, open Settings and start pairing before you enter the current 8-character code in this browser.",
+        "Start pairing here, then approve the request in the local Companion app when it opens.",
     };
   }
 
@@ -215,13 +243,13 @@ const buildConnectionStateCard = ({
 
   if (localHttpsStatus === "repairing") {
     return {
-      status: "Browser repair in progress",
+      status: "Local browser connection recovering",
       message:
-        "The Companion is repairing its local browser connection. This page will refresh automatically when the repair finishes.",
+        "The Companion is restoring its local browser connection. This page will refresh automatically when recovery completes.",
       tone: "info",
-      primaryActionLabel: "Open Settings",
+      primaryActionLabel: "Wait For Recovery",
       primaryActionMessage:
-        "Wait for this state to clear first. If it lingers, reopen the Companion app and check the native troubleshooting surface.",
+        "Wait for this state to clear first. If it lingers, quit and relaunch the Companion app.",
     };
   }
 
@@ -286,173 +314,108 @@ const buildConnectionStateCard = ({
 
 const buildPairingCardState = ({
   pairingAttemptState,
-  isFirefoxBrowser,
-  showFirefoxSetupGuidance,
+  companionLocalConnectionUnavailable,
 }: {
   pairingAttemptState: PairingAttemptState;
-  isFirefoxBrowser: boolean;
-  showFirefoxSetupGuidance: boolean;
+  companionLocalConnectionUnavailable: boolean;
 }): PairingCardState => {
-  if (showFirefoxSetupGuidance) {
+  if (pairingAttemptState === "launching") {
     return {
-      title: "Enter pairing code",
+      title: "Launching Companion",
       message:
-        "After completing the Firefox support steps, enter a fresh 8-character code from the Companion pairing window.",
+        "The browser is opening the local Companion app with a signed pairing request.",
       helperText:
-        "Use a fresh code after completing the Firefox support steps.",
+        "If nothing appears, or Windows says no app is associated with nojoin://, relaunch Nojoin Companion and start a fresh request here.",
+      primaryActionLabel: "Launching...",
+    };
+  }
+
+  if (pairingAttemptState === "pending") {
+    return {
+      title: "Waiting for Companion",
+      message:
+        "Approve the request in the Companion app after it opens on this device.",
+      helperText:
+        "Keep this page open while the request moves from pending to approval. If the Companion never opens, relaunch it and retry the request.",
+      primaryActionLabel: "Waiting For Approval",
+    };
+  }
+
+  if (pairingAttemptState === "opened") {
+    return {
+      title: "Approval required",
+      message:
+        "The Companion launched an OS-native prompt to accept or decline this browser pairing request.",
+      helperText:
+        "Approving in that prompt completes secure backend registration for this browser session.",
+      primaryActionLabel: "Awaiting Approval",
+    };
+  }
+
+  if (pairingAttemptState === "completing") {
+    return {
+      title: "Completing pairing",
+      message:
+        "The Companion approved the request and is exchanging final credentials with the backend.",
+      helperText:
+        "This page will mark the device as paired as soon as the backend confirms completion.",
+      primaryActionLabel: "Finalizing...",
+    };
+  }
+
+  if (pairingAttemptState === "declined") {
+    return {
+      title: "Pairing declined",
+      message:
+        "The local Companion declined this browser request.",
+      helperText:
+        "Start a new request when you want to try again.",
+      primaryActionLabel: "Start New Request",
     };
   }
 
   if (pairingAttemptState === "expired") {
     return {
-      title: "Enter pairing code",
+      title: "Request expired",
       message:
-        "Enter a fresh 8-character code from the Companion pairing window.",
-      helperText: "Codes expire when the pairing window closes.",
+        "The signed request expired before it was approved in the Companion app.",
+      helperText:
+        "Start a new request and approve it from the native prompt before it times out.",
+      primaryActionLabel: "Start New Request",
+    };
+  }
+
+  if (pairingAttemptState === "failed") {
+    return {
+      title: "Retry pairing",
+      message:
+        "The browser or Companion could not complete the request.",
+      helperText:
+        "Review the error below, then start a fresh request.",
+      primaryActionLabel: "Retry Pairing",
+    };
+  }
+
+  if (pairingAttemptState === "cancelled") {
+    return {
+      title: "Request cancelled",
+      message:
+        "The pending request was cancelled before the Companion approved it.",
+      helperText:
+        "You can start another request whenever you are ready.",
+      primaryActionLabel: "Start New Request",
     };
   }
 
   return {
-    title: "Enter pairing code",
-    message:
-      "Enter the current 8-character code from the Companion pairing window.",
-    helperText: isFirefoxBrowser
-      ? "Codes expire when the pairing window closes. If Firefox pairing fails, support steps will appear here."
-      : "Codes expire when the pairing window closes.",
+    title: "Pair this device",
+    message: companionLocalConnectionUnavailable
+      ? "The browser cannot currently reach the local Companion status endpoint, but pairing still starts from this page and completes in the native app."
+      : "Start secure pairing from this browser, then approve the request in the local Companion app.",
+    helperText:
+      "No pairing code fallback exists. Each request is signed by the backend and must be explicitly approved on this device.",
+    primaryActionLabel: "Pair This Device",
   };
-};
-
-const resolvePairingFailure = (
-  error: unknown,
-  isFirefoxBrowser: boolean,
-): {
-  state: PairingAttemptState;
-  message: string;
-  notificationType: "error" | "warning" | "info";
-} => {
-  if (isCompanionLocalConnectionError(error)) {
-    return {
-      state: "unreachable",
-      message: isFirefoxBrowser
-        ? "Firefox could not reach the local Companion. Enable Firefox Support in the Companion app, turn on Firefox enterprise roots, restart Firefox, then try again with a fresh code."
-        : COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-      notificationType: "error",
-    };
-  }
-
-  if (error instanceof CompanionPairingError) {
-    const message = error.message || "Failed to pair with Companion App.";
-    const lowerMessage = message.toLowerCase();
-
-    if (error.status === 410 || lowerMessage.includes("expired")) {
-      return {
-        state: "expired",
-        message:
-          "The pairing code expired. Generate a new code from the Companion app and try again.",
-        notificationType: "warning",
-      };
-    }
-
-    if (
-      error.status === 409 &&
-      lowerMessage.includes("pairing is unavailable while")
-    ) {
-      return {
-        state: "blocked",
-        message: lowerMessage.includes("upload")
-          ? "Pairing is blocked until the current upload finishes. Wait for the Companion to return to idle, then try again."
-          : "Pairing is blocked while a recording is active on another deployment. Stop the recording before switching this machine to a new backend.",
-        notificationType: "warning",
-      };
-    }
-
-    if (error.status === 403 && lowerMessage.includes("not active")) {
-      return {
-        state: "code-required",
-        message:
-          "Companion pairing mode is not active. Open the Companion app, choose Start Pairing, and enter the current code.",
-        notificationType: "info",
-      };
-    }
-
-    if (error.status === 409 && lowerMessage.includes("still pending")) {
-      return {
-        state: "failed",
-        message:
-          "A previous pairing attempt is still pending. Cancel the earlier request and retry with the current Companion code.",
-        notificationType: "warning",
-      };
-    }
-
-    if (error.status === 409 && lowerMessage.includes("already in progress")) {
-      return {
-        state: "failed",
-        message:
-          "Pairing confirmation is already running. Wait a few seconds for the current request to finish before retrying.",
-        notificationType: "info",
-      };
-    }
-
-    if (error.status === 429) {
-      return {
-        state: "failed",
-        message:
-          "Too many invalid pairing attempts were made. Generate a fresh Companion code and try again.",
-        notificationType: "error",
-      };
-    }
-
-    if (error.status === 401) {
-      return {
-        state: "failed",
-        message:
-          "Pairing could not be confirmed because the backend pairing credential was rejected. Generate a new code and retry.",
-        notificationType: "error",
-      };
-    }
-
-    if (lowerMessage.includes("invalid")) {
-      return {
-        state: "failed",
-        message:
-          "The pairing code was rejected. Verify the current code from the Companion app and try again.",
-        notificationType: "error",
-      };
-    }
-
-    return {
-      state: "failed",
-      message,
-      notificationType: error.status === 409 ? "warning" : "error",
-    };
-  }
-
-  if (error instanceof Error && error.message) {
-    return {
-      state: "failed",
-      message: error.message,
-      notificationType: "error",
-    };
-  }
-
-  return {
-    state: "failed",
-    message: "Failed to pair with Companion App.",
-    notificationType: "error",
-  };
-};
-
-const formatPairingCode = (value: string) => {
-  const canonical = value
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 8);
-
-  if (canonical.length <= 4) {
-    return canonical;
-  }
-
-  return `${canonical.slice(0, 4)}-${canonical.slice(4)}`;
 };
 
 export default function CompanionAppSettings({
@@ -474,73 +437,104 @@ export default function CompanionAppSettings({
     companionLocalHttpsStatus,
     companionStatus,
     companionVersion,
-    companionUpdateAvailable,
     checkCompanion,
-    pairCompanion,
-    cancelPendingCompanionPairing,
-    triggerCompanionUpdate,
+    markCompanionPairingCompleted,
   } = useServiceStatusStore();
   const { addNotification } = useNotificationStore();
-  const [companionReleases, setCompanionReleases] =
-    useState<CompanionReleases | null>(null);
-  const [pairingCode, setPairingCode] = useState("");
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingNotice, setPairingNotice] = useState<string | null>(null);
-  const [isFirefoxBrowser, setIsFirefoxBrowser] = useState(false);
-  const [firefoxPreferenceCopied, setFirefoxPreferenceCopied] = useState(false);
+  const [pairingRequest, setPairingRequest] =
+    useState<CompanionPairingRequestCreateResponse | null>(null);
   const [pairingAttemptState, setPairingAttemptState] =
     useState<PairingAttemptState>("idle");
   const [isPairingCompanion, setIsPairingCompanion] = useState(false);
   const [isCancellingPendingPairing, setIsCancellingPendingPairing] =
     useState(false);
-  const [isTriggeringUpdate, setIsTriggeringUpdate] = useState(false);
   const pairingRequestInFlightRef = useRef(false);
+  const pairingLaunchFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const pairingLaunchWindowRef = useRef<Window | null>(null);
+  const pairingLaunchCleanupTimerRef = useRef<number | null>(null);
+  const handledTerminalRequestIdRef = useRef<string | null>(null);
   const refreshCompanionConfigRef = useRef(onRefreshCompanionConfig);
+
+  const closePairingLaunchWindow = () => {
+    const launchWindow = pairingLaunchWindowRef.current;
+    if (launchWindow && !launchWindow.closed) {
+      try {
+        launchWindow.close();
+      } catch {
+        // Ignore cross-browser close failures for external protocol handoff windows.
+      }
+    }
+    pairingLaunchWindowRef.current = null;
+  };
+
+  const clearPairingLaunchArtifacts = () => {
+    if (pairingLaunchCleanupTimerRef.current !== null) {
+      window.clearTimeout(pairingLaunchCleanupTimerRef.current);
+      pairingLaunchCleanupTimerRef.current = null;
+    }
+
+    pairingLaunchFrameRef.current?.remove();
+    pairingLaunchFrameRef.current = null;
+    closePairingLaunchWindow();
+  };
+
+  const primePairingLaunchWindow = () => {
+    closePairingLaunchWindow();
+
+    // Open a script-owned window during the original click so the later
+    // protocol navigation still counts as a user-initiated launch.
+    const launchWindow = window.open(
+      "",
+      "nojoin-pairing-launch",
+      "popup=yes,width=380,height=210,left=120,top=120",
+    );
+
+    if (!launchWindow) {
+      return null;
+    }
+
+    pairingLaunchWindowRef.current = launchWindow;
+
+    try {
+      launchWindow.document.title = "Opening Nojoin Companion";
+      launchWindow.document.body.innerHTML =
+        '<main style="min-height: 100vh; margin: 0; padding: 24px; background: #fff7ed; color: #111827; font-family: ui-sans-serif, system-ui, sans-serif; line-height: 1.5;"><h1 style="margin: 0 0 12px; font-size: 18px;">Opening Nojoin Companion...</h1><p style="margin: 0; font-size: 14px; color: #7c2d12;">If the native prompt does not appear, return to Nojoin and use Reopen Native Prompt.</p></main>';
+      launchWindow.document.body.style.margin = '0';
+      launchWindow.document.body.style.background = '#fff7ed';
+      launchWindow.document.body.style.color = '#111827';
+    } catch {
+      // The window is still usable for protocol navigation even if we cannot paint content.
+    }
+
+    return launchWindow;
+  };
 
   useEffect(() => {
     refreshCompanionConfigRef.current = onRefreshCompanionConfig;
   }, [onRefreshCompanionConfig]);
 
   useEffect(() => {
-    if (typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent)) {
-      setIsFirefoxBrowser(true);
-    }
-  }, []);
-
-  const synchronizeSuccessfulPairing = async () => {
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const latestStoreState = useServiceStatusStore.getState();
-      if (!latestStoreState.companionAuthenticated) {
-        await latestStoreState.checkCompanion();
+    return () => {
+      if (pairingLaunchCleanupTimerRef.current !== null) {
+        window.clearTimeout(pairingLaunchCleanupTimerRef.current);
+        pairingLaunchCleanupTimerRef.current = null;
       }
 
-      if (useServiceStatusStore.getState().companionAuthenticated) {
-        const refreshed =
-          (await refreshCompanionConfigRef.current?.()) ?? true;
-        if (refreshed) {
-          return true;
+      pairingLaunchFrameRef.current?.remove();
+      pairingLaunchFrameRef.current = null;
+
+      const launchWindow = pairingLaunchWindowRef.current;
+      if (launchWindow && !launchWindow.closed) {
+        try {
+          launchWindow.close();
+        } catch {
+          // Ignore cross-browser close failures during component teardown.
         }
       }
-
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 250);
-      });
-    }
-
-    return useServiceStatusStore.getState().companionAuthenticated;
-  };
-
-  useEffect(() => {
-    const fetchReleases = async () => {
-      try {
-        const releases = await getCompanionReleases();
-        setCompanionReleases(releases);
-      } catch (error) {
-        console.error("Failed to fetch companion releases:", error);
-      }
+      pairingLaunchWindowRef.current = null;
     };
-
-    void fetchReleases();
   }, []);
 
   useEffect(() => {
@@ -596,51 +590,169 @@ export default function CompanionAppSettings({
       return;
     }
 
+    setPairingRequest(null);
+    handledTerminalRequestIdRef.current = null;
     setPairingAttemptState("idle");
-    setPairingCode("");
     setPairingError(null);
     setPairingNotice(null);
     void onRefreshCompanionConfig?.();
   }, [companionAuthenticated, onRefreshCompanionConfig]);
 
+  useEffect(() => {
+    if (!pairingRequest) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const pollPairingRequest = async () => {
+      try {
+        const status = await getCompanionPairingRequestStatus(
+          pairingRequest.request_id,
+        );
+
+        if (isCancelled) {
+          return;
+        }
+
+        setPairingAttemptState(status.status);
+
+        if (status.status === "pending") {
+          setPairingNotice(
+            status.detail ||
+              "Waiting for Nojoin Companion to open and acknowledge the pairing request.",
+          );
+          return;
+        }
+
+        if (status.status === "opened") {
+          setPairingNotice(
+            status.detail ||
+              "Approve or decline the pairing request in the local Companion app.",
+          );
+          return;
+        }
+
+        if (status.status === "completing") {
+          setPairingNotice(
+            status.detail ||
+              "Companion approved the request and is finishing secure backend registration.",
+          );
+          return;
+        }
+
+        if (handledTerminalRequestIdRef.current === pairingRequest.request_id) {
+          return;
+        }
+
+        handledTerminalRequestIdRef.current = pairingRequest.request_id;
+        setPairingRequest(null);
+
+        if (status.status === "completed") {
+          setPairingError(null);
+          setPairingNotice(
+            status.detail ||
+              "Companion paired successfully. Local recording controls are ready.",
+          );
+          await markCompanionPairingCompleted();
+
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            const latestStoreState = useServiceStatusStore.getState();
+            if (!latestStoreState.companionAuthenticated) {
+              await latestStoreState.checkCompanion();
+            }
+
+            if (useServiceStatusStore.getState().companionAuthenticated) {
+              await refreshCompanionConfigRef.current?.();
+              break;
+            }
+
+            await new Promise<void>((resolve) => {
+              window.setTimeout(resolve, 250);
+            });
+          }
+
+          setPairingAttemptState("idle");
+          addNotification({
+            type: "success",
+            message:
+              "Companion paired successfully. Local recording controls are ready on this Nojoin deployment.",
+          });
+          return;
+        }
+
+        const terminalMessage =
+          status.detail ||
+          (status.status === "declined"
+            ? "The local Companion declined the pairing request."
+            : status.status === "cancelled"
+              ? "The pending pairing request was cancelled."
+              : status.status === "expired"
+                ? "The pairing request expired before it was approved."
+                : "The browser could not complete the pairing request.");
+
+        setPairingNotice(null);
+        setPairingError(status.status === "cancelled" ? null : terminalMessage);
+        if (status.status === "cancelled") {
+          setPairingNotice(terminalMessage);
+        }
+        addNotification({
+          type:
+            status.status === "declined" || status.status === "expired"
+              ? "warning"
+              : status.status === "cancelled"
+                ? "info"
+                : "error",
+          message: terminalMessage,
+        });
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to load the latest pairing request status.";
+        setPairingRequest(null);
+        setPairingAttemptState("failed");
+        setPairingNotice(null);
+        setPairingError(message);
+        addNotification({
+          type: "error",
+          message,
+        });
+      }
+    };
+
+    void pollPairingRequest();
+    const intervalId = window.setInterval(() => {
+      void pollPairingRequest();
+    }, 1500);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [addNotification, markCompanionPairingCompleted, pairingRequest]);
+
   const showOverview = !searchQuery || fuzzyMatch(searchQuery, COMPANION_KEYWORDS);
-  const showActions =
-    !searchQuery ||
-    fuzzyMatch(searchQuery, [
-      "download",
-      "installer",
-      "update",
-      "updates",
-      "version",
-      "pair",
-      "pairing",
-      "companion",
-    ]);
   const showAudioSections = !searchQuery || fuzzyMatch(searchQuery, AUDIO_KEYWORDS);
 
-  if (searchQuery && !showOverview && !showActions && !showAudioSections) {
+  if (searchQuery && !showOverview && !showAudioSections) {
     return <div className="text-gray-500">No matching settings found.</div>;
   }
 
-  const pairingHasPendingConflict =
-    pairingError?.toLowerCase().includes("still pending") ?? false;
-  const pairingCodeLength = pairingCode.replace(/[^A-Z0-9]/g, "").length;
   const versionMismatch =
     companionAuthenticated &&
     backendVersion &&
     companionVersion &&
     backendVersion !== companionVersion;
-  const showFirefoxSetupGuidance =
-    isFirefoxBrowser &&
-    (pairingAttemptState === "failed" || pairingAttemptState === "unreachable");
   const canShowPairingWorkflow =
     !companionAuthenticated &&
     companionLocalHttpsStatus !== "needs-repair" &&
     companionLocalHttpsStatus !== "repairing" &&
-    !versionMismatch &&
-    pairingAttemptState !== "blocked";
-  const showFirefoxRecoveryCard =
-    showFirefoxSetupGuidance && canShowPairingWorkflow;
+    !versionMismatch;
   const connectionStateCard = buildConnectionStateCard({
     backendVersion,
     companion,
@@ -649,76 +761,133 @@ export default function CompanionAppSettings({
     localHttpsStatus: companionLocalHttpsStatus,
     companionStatus,
     companionVersion,
-    showFirefoxSetupGuidance,
     pairingAttemptState,
-    pairingError,
+    pairingMessage: pairingError || pairingNotice,
   });
   const pairingCardState = buildPairingCardState({
     pairingAttemptState,
-    isFirefoxBrowser,
-    showFirefoxSetupGuidance,
+    companionLocalConnectionUnavailable,
   });
+  const hasActivePendingRequest =
+    pairingRequest !== null &&
+    pairingAttemptState !== "cancelled" &&
+    pairingAttemptState !== "declined" &&
+    pairingAttemptState !== "expired" &&
+    pairingAttemptState !== "failed";
+  const pairingFeedbackMessage = pairingError || pairingNotice;
+  const pairingFeedbackTone: CalloutTone = pairingError
+    ? "error"
+    : companionAuthenticated && pairingNotice
+      ? "success"
+      : pairingAttemptState === "declined" || pairingAttemptState === "expired"
+        ? "warning"
+        : "info";
+  const localControlsLabel =
+    companionLocalHttpsStatus === "needs-repair"
+      ? "Unavailable"
+      : companionLocalHttpsStatus === "repairing"
+        ? "Recovering"
+        : companionLocalHttpsStatus === "ready"
+          ? "Ready"
+          : companionLocalHttpsStatus === "disabled"
+            ? "Disabled"
+            : "Unavailable";
 
-  const handleDownloadCompanion = () => {
-    const platform = detectPlatform();
-
-    if (platform === "windows" && companionReleases?.windows_url) {
-      window.open(companionReleases.windows_url, "_blank");
-      return;
-    }
-
-    const downloadUrl = getDownloadUrl();
-    window.open(downloadUrl, "_blank");
-  };
-
-  const handleCopyFirefoxPreference = async () => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) {
-      setPairingError(`Copy ${FIREFOX_ENTERPRISE_ROOTS_PREF} manually.`);
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(FIREFOX_ENTERPRISE_ROOTS_PREF);
-      setFirefoxPreferenceCopied(true);
-      window.setTimeout(() => setFirefoxPreferenceCopied(false), 1800);
-    } catch {
-      setPairingError(`Copy ${FIREFOX_ENTERPRISE_ROOTS_PREF} manually.`);
-    }
-  };
-
-  const handlePairCompanion = async (
-    event?: FormEvent<HTMLFormElement>,
+  const openPairingLaunchUrl = (
+    request: CompanionPairingRequestCreateResponse,
+    launchWindow?: Window | null,
   ) => {
-    event?.preventDefault();
+    if (pairingLaunchCleanupTimerRef.current !== null) {
+      window.clearTimeout(pairingLaunchCleanupTimerRef.current);
+      pairingLaunchCleanupTimerRef.current = null;
+    }
 
-    if (pairingCodeLength !== 8) {
+    pairingLaunchFrameRef.current?.remove();
+    pairingLaunchFrameRef.current = null;
+
+    const targetWindow = launchWindow ?? pairingLaunchWindowRef.current;
+    if (targetWindow && !targetWindow.closed) {
+      pairingLaunchWindowRef.current = targetWindow;
+      try {
+        targetWindow.location.href = request.launch_url;
+      } catch {
+        closePairingLaunchWindow();
+      }
+
+      pairingLaunchCleanupTimerRef.current = window.setTimeout(() => {
+        clearPairingLaunchArtifacts();
+      }, 4000);
       return;
     }
 
+    closePairingLaunchWindow();
+
+    const launchFrame = document.createElement("iframe");
+    launchFrame.setAttribute("aria-hidden", "true");
+    launchFrame.tabIndex = -1;
+    launchFrame.style.position = "fixed";
+    launchFrame.style.width = "1px";
+    launchFrame.style.height = "1px";
+    launchFrame.style.opacity = "0";
+    launchFrame.style.pointerEvents = "none";
+    launchFrame.style.border = "0";
+    launchFrame.style.left = "-9999px";
+    launchFrame.style.top = "-9999px";
+    document.body.appendChild(launchFrame);
+
+    pairingLaunchFrameRef.current = launchFrame;
+    launchFrame.src = request.launch_url;
+    pairingLaunchCleanupTimerRef.current = window.setTimeout(() => {
+      clearPairingLaunchArtifacts();
+    }, 4000);
+  };
+
+  const handlePairCompanion = async () => {
     if (pairingRequestInFlightRef.current) {
       return;
     }
 
+    const primedLaunchWindow = primePairingLaunchWindow();
+
     pairingRequestInFlightRef.current = true;
+    handledTerminalRequestIdRef.current = null;
     setIsPairingCompanion(true);
+    setPairingAttemptState("launching");
     setPairingError(null);
-    setPairingNotice(null);
+    setPairingNotice("Creating a signed pairing request and opening Nojoin Companion.");
     try {
-      await pairCompanion(pairingCode);
-      await synchronizeSuccessfulPairing();
-      setPairingAttemptState("idle");
-      addNotification({
-        type: "success",
-        message:
-          "Companion paired successfully. Local recording controls are ready on this Nojoin deployment.",
-      });
+      const request = await createCompanionPairingRequest();
+      setPairingRequest(request);
+      setPairingAttemptState(request.status);
+      setPairingNotice(
+        request.replacement
+          ? "This request will replace the current Companion pairing after you approve it in the native app."
+          : "Approve the pairing request in Nojoin Companion on this device.",
+      );
+      openPairingLaunchUrl(request, primedLaunchWindow);
     } catch (error) {
-      const failure = resolvePairingFailure(error, isFirefoxBrowser);
-      setPairingAttemptState(failure.state);
-      setPairingError(failure.message);
+      if (primedLaunchWindow && !primedLaunchWindow.closed) {
+        try {
+          primedLaunchWindow.close();
+        } catch {
+          // Ignore browser-specific close failures for a primed launch window.
+        }
+      }
+      pairingLaunchWindowRef.current = null;
+      const message =
+        error instanceof CompanionPairingRequestError || error instanceof Error
+          ? error.message
+          : "Failed to create a new Companion pairing request.";
+      setPairingRequest(null);
+      setPairingAttemptState("failed");
+      setPairingNotice(null);
+      setPairingError(message);
       addNotification({
-        type: failure.notificationType,
-        message: failure.message,
+        type:
+          error instanceof CompanionPairingRequestError && error.status === 409
+            ? "warning"
+            : "error",
+        message,
       });
     } finally {
       pairingRequestInFlightRef.current = false;
@@ -727,26 +896,32 @@ export default function CompanionAppSettings({
   };
 
   const handleCancelPendingPairing = async () => {
+    if (!pairingRequest) {
+      return;
+    }
+
     setIsCancellingPendingPairing(true);
     setPairingNotice(null);
 
     try {
-      await cancelPendingCompanionPairing();
-      setPairingAttemptState("code-required");
+      await cancelCompanionPairingRequest(pairingRequest.request_id);
+      handledTerminalRequestIdRef.current = pairingRequest.request_id;
+      setPairingRequest(null);
+      setPairingAttemptState("cancelled");
       setPairingError(null);
       setPairingNotice(
-        "Previous pending pairing request cancelled. Enter the current Companion code and try again.",
+        "Pending pairing request cancelled. Start a new request whenever you are ready.",
       );
       addNotification({
         type: "info",
         message:
-          "Previous pending pairing request cancelled. Enter the current Companion code and try again.",
+          "Pending pairing request cancelled. Start a new request whenever you are ready.",
       });
     } catch (error: unknown) {
       const message =
-        error instanceof Error
+        error instanceof CompanionPairingRequestError || error instanceof Error
           ? error.message
-          : "Failed to cancel the previous pending pairing request.";
+          : "Failed to cancel the pending pairing request.";
       setPairingError(message);
       addNotification({
         type: "error",
@@ -757,101 +932,90 @@ export default function CompanionAppSettings({
     }
   };
 
-  const handleUpdateCompanion = async () => {
-    setIsTriggeringUpdate(true);
-    try {
-      const triggered = await triggerCompanionUpdate();
-      addNotification({
-        type: triggered ? "success" : "error",
-        message: triggered
-          ? "Companion update requested. Follow the Companion prompts to finish installation."
-          : "Failed to trigger the Companion update.",
-      });
-    } finally {
-      setIsTriggeringUpdate(false);
-    }
-  };
-
-  const toolsMessage = !companion
-    ? "Install or relaunch the Windows Companion on this machine before pairing here."
-    : companionUpdateAvailable
-      ? "A Companion update is available for this machine. Use the native flow to finish installation."
-      : "Download the latest Windows installer for another machine, or use the native app to review local updates.";
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {showOverview && (
-        <section className="space-y-4">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Companion Connection
-            </h3>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Confirm the current pairing state, follow the next native-owned step,
-              and finish browser-side pairing only when the state below allows it.
-            </p>
-          </div>
-
-          <div
-            className={`rounded-2xl border px-5 py-5 ${CALLOUT_STYLES[connectionStateCard.tone]}`}
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-full bg-white/70 p-2 dark:bg-gray-950/40">
-                {connectionStateCard.status === "Connected" ? (
-                  <ShieldCheck className="h-4 w-4" />
-                ) : (
-                  <Link2 className="h-4 w-4" />
-                )}
+        <section className={`${SECTION_CARD_STYLES} space-y-5`}>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-2xl">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+                Companion app
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                  Connection state
-                </div>
-                <h4 className="mt-2 text-xl font-semibold">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  Connection and pairing
+                </h3>
+                <span
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_CHIP_STYLES[connectionStateCard.tone]}`}
+                >
                   {connectionStateCard.status}
-                </h4>
-                <p className="mt-3 text-sm leading-6">
-                  {connectionStateCard.message}
-                </p>
+                </span>
               </div>
+              <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {connectionStateCard.message}
+              </p>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-current/20 px-3 py-1">
-                Nojoin version: {backendVersion || "Unavailable"}
-              </span>
-              <span className="rounded-full border border-current/20 px-3 py-1">
-                Companion version: {companionVersion || "Unavailable"}
-              </span>
-              <span className="rounded-full border border-current/20 px-3 py-1">
-                Local port: {companionConfig?.local_port || 12345}
-              </span>
-            </div>
-
-            <div className="mt-5 border-t border-current/15 pt-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
+            <div className={`${PANEL_STYLES} xl:max-w-sm`}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 Next step
               </div>
-              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-                <p className="text-sm font-semibold">
-                  {connectionStateCard.primaryActionLabel}
-                </p>
-                <p className="text-sm leading-6 opacity-90">
-                  {connectionStateCard.primaryActionMessage}
-                </p>
+              <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                {connectionStateCard.primaryActionLabel}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {connectionStateCard.primaryActionMessage}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className={META_CARD_STYLES}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Nojoin deployment
               </div>
+              <div className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                {backendVersion || "Unavailable"}
+              </div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Backend version reported by this browser session.
+              </p>
+            </div>
+
+            <div className={META_CARD_STYLES}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Local Companion
+              </div>
+              <div className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                {companionVersion || "Unavailable"}
+              </div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Runtime version currently visible to the browser on this machine.
+              </p>
+            </div>
+
+            <div className={META_CARD_STYLES}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Browser controls
+              </div>
+              <div className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                {localControlsLabel}
+              </div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Local port {companionConfig?.local_port || 12345}.
+              </p>
             </div>
           </div>
 
           {canShowPairingWorkflow && (
-            <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
+            <div className={`${PANEL_STYLES} space-y-4`}>
               <div className="flex items-start gap-3">
                 <div className="rounded-full bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-200">
                   <Link2 className="h-4 w-4" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    Pair in browser
+                    Pair from this browser
                   </div>
                   <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
                     {pairingCardState.title}
@@ -862,41 +1026,53 @@ export default function CompanionAppSettings({
                 </div>
               </div>
 
-              <form
-                className="space-y-3"
-                onSubmit={(event) => void handlePairCompanion(event)}
-              >
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Pairing code
-                </label>
-                <input
-                  type="text"
-                  value={pairingCode}
-                  onChange={(event) =>
-                    setPairingCode(formatPairingCode(event.target.value))
-                  }
-                  placeholder="ABCD-EFGH"
-                  autoFocus
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.22em] text-gray-950 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {pairingCardState.helperText}
-                </p>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                {pairingCardState.helperText}
+              </p>
 
-                {pairingError && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                    {pairingError}
+              {pairingRequest && (
+                <div className={`${META_CARD_STYLES} space-y-3`}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    Pending request
                   </div>
-                )}
-
-                {pairingNotice && (
-                  <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                    {pairingNotice}
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <span className="rounded-full border border-gray-200 px-3 py-1 dark:border-gray-700">
+                      Request {pairingRequest.request_id}
+                    </span>
+                    <span className="rounded-full border border-gray-200 px-3 py-1 dark:border-gray-700">
+                      Expires {new Date(pairingRequest.expires_at).toLocaleTimeString()}
+                    </span>
+                    <span className="rounded-full border border-gray-200 px-3 py-1 dark:border-gray-700">
+                      Native prompt required
+                    </span>
                   </div>
-                )}
+                </div>
+              )}
 
-                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:justify-end">
-                  {pairingHasPendingConflict && (
+              {pairingFeedbackMessage && (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-sm ${NOTICE_STYLES[pairingFeedbackTone]}`}
+                >
+                  {pairingFeedbackMessage}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
+                {hasActivePendingRequest && pairingRequest && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPairingLaunchUrl(
+                          pairingRequest,
+                          primePairingLaunchWindow(),
+                        )
+                      }
+                      disabled={isPairingCompanion || isCancellingPendingPairing}
+                      className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-950 dark:disabled:border-gray-800 dark:disabled:text-gray-500"
+                    >
+                      Reopen Native Prompt
+                    </button>
                     <button
                       type="button"
                       onClick={() => void handleCancelPendingPairing()}
@@ -904,140 +1080,47 @@ export default function CompanionAppSettings({
                       className="rounded-xl border border-orange-300 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-50 disabled:cursor-not-allowed disabled:border-orange-200 disabled:text-orange-300 dark:border-orange-500/30 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:disabled:border-orange-500/20 dark:disabled:text-orange-500/50"
                     >
                       {isCancellingPendingPairing
-                        ? "Cancelling Pending..."
-                        : "Cancel Previous Request"}
+                        ? "Cancelling Request..."
+                        : "Cancel Request"}
                     </button>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={
-                      isPairingCompanion ||
-                      isCancellingPendingPairing ||
-                      pairingCodeLength !== 8
-                    }
-                    className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
-                  >
-                    {isPairingCompanion ? "Pairing..." : "Complete Pairing"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
+                  </>
+                )}
 
-          {showFirefoxRecoveryCard && (
-            <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-full bg-amber-100 p-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200">
-                    Firefox recovery
-                  </div>
-                  <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
-                    Complete Firefox support, then retry
-                  </h4>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    Firefox pairing did not complete in this browser. Finish the
-                    Firefox support steps, restart Firefox, then retry with a fresh
-                    code.
-                  </p>
-                </div>
-              </div>
-
-              <ol className="space-y-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
-                <li>1. Enable Firefox Support in the native Companion app.</li>
-                <li>2. Turn on Firefox enterprise roots.</li>
-                <li>3. Restart Firefox.</li>
-                <li>4. Generate a fresh pairing code.</li>
-              </ol>
-
-              <p className="text-sm leading-6 text-gray-700 dark:text-gray-300">
-                In Firefox, open <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">about:config</span>,
-                search for <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">{FIREFOX_ENTERPRISE_ROOTS_PREF}</span>,
-                and make sure it is set to <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-900 dark:bg-gray-900 dark:text-gray-100">true</span>
-                before restarting Firefox.
-              </p>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
-                  onClick={() => void handleCopyFirefoxPreference()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-50 dark:border-amber-500/30 dark:bg-gray-950 dark:text-amber-100 dark:hover:bg-gray-900"
+                  onClick={() => void handlePairCompanion()}
+                  disabled={isPairingCompanion || isCancellingPendingPairing || hasActivePendingRequest}
+                  className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
                 >
-                  <Copy className="h-3.5 w-3.5" />
-                  {firefoxPreferenceCopied ? "Copied" : "Copy setting name"}
+                  {isPairingCompanion
+                    ? "Starting Pairing..."
+                    : pairingCardState.primaryActionLabel}
                 </button>
-                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300 sm:max-w-md sm:text-right">
-                  After restarting Firefox, generate a fresh pairing code and enter it here.
-                </p>
               </div>
             </div>
           )}
-        </section>
-      )}
 
-      {showActions && (
-        <section className="space-y-4">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Companion Tools
-            </h3>
-          </div>
-
-          <div className={`${SURFACE_CARD_STYLES} space-y-4`}>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                Companion tools
-              </div>
-              <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
-                Install or update Companion
-              </h4>
-              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {toolsMessage}
-              </p>
+          {!canShowPairingWorkflow && pairingFeedbackMessage && (
+            <div
+              className={`rounded-2xl border px-4 py-3 text-sm ${NOTICE_STYLES[pairingFeedbackTone]}`}
+            >
+              {pairingFeedbackMessage}
             </div>
-
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleDownloadCompanion}
-                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
-              >
-                <Download className="h-4 w-4" />
-                Download Companion
-              </button>
-              {companion &&
-                companionUpdateAvailable &&
-                companionLocalHttpsStatus !== "needs-repair" && (
-                  <button
-                    type="button"
-                    onClick={() => void handleUpdateCompanion()}
-                    disabled={isTriggeringUpdate}
-                    className="inline-flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
-                  >
-                    {isTriggeringUpdate ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    Update Companion
-                  </button>
-                )}
-            </div>
-          </div>
+          )}
         </section>
       )}
 
       {showAudioSections && (
-        <section className="space-y-4">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Recording Preferences
+        <section className={`${SECTION_CARD_STYLES} space-y-5`}>
+          <div className="max-w-2xl">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+              Recording preferences
+            </div>
+            <h3 className="mt-3 text-xl font-semibold text-gray-900 dark:text-white">
+              Devices and alerts
             </h3>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Manage local device selection, minimum meeting length, and
-              recording-time warning preferences for the Companion app.
+            <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              Manage local device selection, minimum meeting length, and quiet-audio warning behavior for the Companion app.
             </p>
           </div>
 

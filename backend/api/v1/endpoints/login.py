@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -15,21 +15,25 @@ from backend.api.deps import (
     get_current_pairing_management_user,
     get_current_user,
 )
-from backend.api.v1.endpoints.system import resolve_tls_fingerprint
 from backend.core import security
+from backend.models.companion_pairing_request import CompanionPairingRequestStatus
 from backend.models.user import User
 from backend.services.companion_frontend_events import (
     COMPANION_EXPLICIT_DISCONNECT_EVENT,
     companion_frontend_events,
 )
 from backend.services.companion_pairing_service import (
+    cancel_companion_pairing_request,
     cancel_pending_companion_pairings,
+    complete_companion_pairing_request,
     CompanionPairingStateError,
+    create_companion_pairing_request,
     exchange_companion_credential,
-    finalize_companion_pairing,
     get_active_companion_pairing_auth,
+    get_companion_pairing_request_status,
+    mark_companion_pairing_request_opened,
     normalize_origin,
-    prepare_companion_pairing,
+    reject_companion_pairing_request,
     revoke_companion_pairings,
 )
 from backend.services.jwt_revocation_service import revoke_jwt_by_payload
@@ -69,21 +73,58 @@ COMPANION_PAIRING_MUTATION_WINDOW_SECONDS = 10 * 60
 COMPANION_EVENTS_CONNECT_RATE_LIMIT = 30
 COMPANION_EVENTS_CONNECT_WINDOW_SECONDS = 60
 
+COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_RATE_LIMIT = 20
+COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_WINDOW_SECONDS = 10 * 60
+COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_RATE_LIMIT = 60
+COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_WINDOW_SECONDS = 10 * 60
 
-class CompanionPairingPrepareRequest(BaseModel):
-    pairing_code: str
+
+class CompanionPairingRequestCreateResponse(BaseModel):
+    request_id: str
+    launch_url: str
+    status: str
+    expires_at: datetime
+    backend_origin: str
+    replacement: bool
 
 
-class CompanionPairingPrepareResponse(BaseModel):
-    pairing_code: str
-    companion_credential_secret: str
+class CompanionPairingRequestStatusResponse(BaseModel):
+    request_id: str
+    status: str
+    expires_at: datetime
+    opened_at: datetime | None = None
+    completed_at: datetime | None = None
+    detail: str | None = None
+    backend_origin: str
+    replacement: bool
+
+
+class CompanionPairingRequestTransition(BaseModel):
+    request_id: str
+    request_secret: str
+
+
+class CompanionPairingRequestRejectRequest(CompanionPairingRequestTransition):
+    status: str
+    detail: str | None = None
+    failure_reason: str | None = None
+
+
+class CompanionPairingRequestCompleteRequest(CompanionPairingRequestTransition):
+    tls_fingerprint: str
+
+
+class CompanionPairingRequestCompleteResponse(BaseModel):
     api_protocol: str
     api_host: str
     api_port: int
-    tls_fingerprint: str | None = None
+    paired_web_origin: str
+    companion_credential_secret: str
     local_control_secret: str
     local_control_secret_version: int
     backend_pairing_id: str
+    backend_identity_key_id: str
+    backend_identity_public_key: str
 
 
 class CompanionCredentialExchangeRequest(BaseModel):
@@ -386,14 +427,13 @@ async def create_companion_local_control_token(
 
 @router.post(
     "/login/companion-pairing",
-    response_model=CompanionPairingPrepareResponse,
+    response_model=CompanionPairingRequestCreateResponse,
 )
-async def prepare_companion_pairing_payload(
-    payload: CompanionPairingPrepareRequest,
+async def create_browser_companion_pairing_request(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> CompanionPairingPrepareResponse:
+) -> CompanionPairingRequestCreateResponse:
     await enforce_rate_limit(
         request,
         namespace="companion-pairing-prepare",
@@ -403,25 +443,201 @@ async def prepare_companion_pairing_payload(
         detail="Too many companion pairing attempts. Please try again later.",
     )
 
-    pairing_code = payload.pairing_code.strip().upper()
-    if not pairing_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Pairing code is required",
-        )
-
     try:
-        prepared = await prepare_companion_pairing(
+        pairing_request = await create_companion_pairing_request(
             db,
             current_user=current_user,
-            pairing_code=pairing_code,
             paired_web_origin=request.headers.get("origin"),
-            tls_fingerprint=resolve_tls_fingerprint(),
         )
     except CompanionPairingStateError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    return CompanionPairingPrepareResponse(**prepared.__dict__)
+    return CompanionPairingRequestCreateResponse(**pairing_request.__dict__)
+
+
+@router.get(
+    "/login/companion-pairing/requests/{request_id}",
+    response_model=CompanionPairingRequestStatusResponse,
+)
+async def get_browser_companion_pairing_request_status(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanionPairingRequestStatusResponse:
+    try:
+        request_status = await get_companion_pairing_request_status(
+            db,
+            current_user=current_user,
+            request_id=request_id,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingRequestStatusResponse(**request_status.__dict__)
+
+
+@router.delete(
+    "/login/companion-pairing/requests/{request_id}",
+    response_model=CompanionPairingCancelResponse,
+)
+async def cancel_browser_companion_pairing_request(
+    request_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_pairing_management_user),
+) -> CompanionPairingCancelResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-mutation",
+        limit=COMPANION_PAIRING_MUTATION_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_MUTATION_WINDOW_SECONDS,
+        discriminator=current_user.username,
+        detail="Too many companion pairing changes. Please try again later.",
+    )
+
+    try:
+        cancelled_count = await cancel_companion_pairing_request(
+            db,
+            current_user=current_user,
+            request_id=request_id,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingCancelResponse(
+        cancelled=cancelled_count > 0,
+        cancelled_count=cancelled_count,
+    )
+
+
+@router.post(
+    "/login/companion-pairing/request/opened",
+    response_model=CompanionPairingRequestStatusResponse,
+)
+async def mark_companion_pairing_request_as_opened(
+    payload: CompanionPairingRequestTransition,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> CompanionPairingRequestStatusResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-ip",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_WINDOW_SECONDS,
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-request",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_WINDOW_SECONDS,
+        discriminator=payload.request_id.strip(),
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+
+    try:
+        request_status = await mark_companion_pairing_request_opened(
+            db,
+            request_id=payload.request_id,
+            request_secret=payload.request_secret,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingRequestStatusResponse(**request_status.__dict__)
+
+
+@router.post(
+    "/login/companion-pairing/request/reject",
+    response_model=CompanionPairingRequestStatusResponse,
+)
+async def reject_browser_companion_pairing_request(
+    payload: CompanionPairingRequestRejectRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> CompanionPairingRequestStatusResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-ip",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_WINDOW_SECONDS,
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-request",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_WINDOW_SECONDS,
+        discriminator=payload.request_id.strip(),
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+
+    status_value = payload.status.strip().lower()
+    if status_value == CompanionPairingRequestStatus.DECLINED.value:
+        target_status = CompanionPairingRequestStatus.DECLINED
+        detail = payload.detail or "Pairing was declined in the Companion app."
+        failure_reason = payload.failure_reason or "user_declined"
+    elif status_value == CompanionPairingRequestStatus.FAILED.value:
+        target_status = CompanionPairingRequestStatus.FAILED
+        detail = payload.detail or "The Companion app could not complete this pairing request."
+        failure_reason = payload.failure_reason or "companion_failed"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Companion pairing rejections must use status 'declined' or 'failed'.",
+        )
+
+    try:
+        request_status = await reject_companion_pairing_request(
+            db,
+            request_id=payload.request_id,
+            request_secret=payload.request_secret,
+            status=target_status,
+            detail=detail,
+            failure_reason=failure_reason,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingRequestStatusResponse(**request_status.__dict__)
+
+
+@router.post(
+    "/login/companion-pairing/request/complete",
+    response_model=CompanionPairingRequestCompleteResponse,
+)
+async def complete_browser_companion_pairing_request(
+    payload: CompanionPairingRequestCompleteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> CompanionPairingRequestCompleteResponse:
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-ip",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_IP_WINDOW_SECONDS,
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+    await enforce_rate_limit(
+        request,
+        namespace="companion-pairing-request-transition-request",
+        limit=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_RATE_LIMIT,
+        window_seconds=COMPANION_PAIRING_REQUEST_TRANSITION_PER_REQUEST_WINDOW_SECONDS,
+        discriminator=payload.request_id.strip(),
+        detail="Too many companion pairing requests. Please try again later.",
+    )
+
+    try:
+        completion = await complete_companion_pairing_request(
+            db,
+            request_id=payload.request_id,
+            request_secret=payload.request_secret,
+            tls_fingerprint=payload.tls_fingerprint,
+        )
+    except CompanionPairingStateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return CompanionPairingRequestCompleteResponse(**completion.__dict__)
 
 
 @router.delete(

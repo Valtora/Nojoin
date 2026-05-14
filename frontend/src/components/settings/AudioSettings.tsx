@@ -38,6 +38,18 @@ interface AudioSettingsProps {
   suppressNoMatch?: boolean;
 }
 
+const PANEL_STYLES =
+  "rounded-2xl border border-gray-200/80 bg-gray-50/85 p-5 dark:border-gray-800 dark:bg-gray-900/70";
+
+const FIELD_CARD_STYLES =
+  "rounded-2xl border border-gray-200/80 bg-white/90 p-4 dark:border-gray-800 dark:bg-gray-950/80";
+
+const CONTROL_STYLES =
+  "w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white";
+
+const SECONDARY_BUTTON_STYLES =
+  "inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900";
+
 export default function AudioSettings({
   companionConfig,
   onUpdateCompanionConfig,
@@ -126,17 +138,25 @@ export default function AudioSettings({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {showDevices && (
-        <div>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Recording Devices
-            </h3>
+        <section className={`${PANEL_STYLES} space-y-4`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Recording devices
+              </div>
+              <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                Input, output, and capture thresholds
+              </h4>
+              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                Choose which microphone and system output the Companion records, then set the minimum meeting length to keep.
+              </p>
+            </div>
             <button
               onClick={handleTestConnection}
               disabled={testingConnection}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className={SECONDARY_BUTTON_STYLES}
             >
               {testingConnection ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -146,99 +166,96 @@ export default function AudioSettings({
               Refresh devices
             </button>
           </div>
-          <div className="max-w-xl space-y-4">
+
+          <div className="space-y-4">
             {companionDevices ? (
               <>
                 {connectionResult === "success" && (
-                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300">
+                  <div className="rounded-xl border border-green-200/80 bg-green-50/80 px-4 py-3 text-sm text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300">
                     Companion device list refreshed.
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    <div className="flex items-center gap-2">
-                      <Mic className="w-4 h-4" />
-                      Input Device (Microphone)
-                    </div>
-                  </label>
-                  <select
-                    value={selectedInputDevice || ""}
-                    onChange={(e) =>
-                      onSelectInputDevice(e.target.value || null)
-                    }
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="">System Default</option>
-                    {companionDevices.input_devices.map((device) => (
-                      <option key={device.name} value={device.name}>
-                        {device.name}
-                        {device.is_default ? " (Default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    The microphone to capture your voice.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    <div className="flex items-center gap-2">
-                      <Speaker className="w-4 h-4" />
-                      Output Device (System Audio)
-                    </div>
-                  </label>
-                  <select
-                    value={selectedOutputDevice || ""}
-                    onChange={(e) =>
-                      onSelectOutputDevice(e.target.value || null)
-                    }
-                    className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="">System Default</option>
-                    {companionDevices.output_devices.map((device) => (
-                      <option key={device.name} value={device.name}>
-                        {device.name}
-                        {device.is_default ? " (Default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    The audio output to capture system sounds (loopback).
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Minimum Meeting Length (Minutes)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={
-                      companionConfig?.min_meeting_length?.toString() || "0"
-                    }
-                    onChange={handleMinLengthChange}
-                    className={`w-full p-2 rounded-lg border ${localError ? "border-red-500 focus:ring-red-500" : "border-gray-400 dark:border-gray-600 focus:ring-orange-500"} bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:border-transparent`}
-                  />
-                  {localError && (
-                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      {localError}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className={FIELD_CARD_STYLES}>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <span className="flex items-center gap-2">
+                        <Mic className="w-4 h-4" />
+                        Input device
+                      </span>
+                    </label>
+                    <select
+                      value={selectedInputDevice || ""}
+                      onChange={(e) => onSelectInputDevice(e.target.value || null)}
+                      className={CONTROL_STYLES}
+                    >
+                      <option value="">System Default</option>
+                      {companionDevices.input_devices.map((device) => (
+                        <option key={device.name} value={device.name}>
+                          {device.name}
+                          {device.is_default ? " (Default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Microphone used to capture your voice.
                     </p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">
-                    Recordings shorter than this will be automatically
-                    discarded. Set to 0 to disable.
-                  </p>
+                  </div>
+
+                  <div className={FIELD_CARD_STYLES}>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <span className="flex items-center gap-2">
+                        <Speaker className="w-4 h-4" />
+                        Output device
+                      </span>
+                    </label>
+                    <select
+                      value={selectedOutputDevice || ""}
+                      onChange={(e) => onSelectOutputDevice(e.target.value || null)}
+                      className={CONTROL_STYLES}
+                    >
+                      <option value="">System Default</option>
+                      {companionDevices.output_devices.map((device) => (
+                        <option key={device.name} value={device.name}>
+                          {device.name}
+                          {device.is_default ? " (Default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      System output captured for loopback audio.
+                    </p>
+                  </div>
+
+                  <div className={`${FIELD_CARD_STYLES} lg:col-span-2`}>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Minimum meeting length (minutes)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={companionConfig?.min_meeting_length?.toString() || "0"}
+                      onChange={handleMinLengthChange}
+                      className={`${CONTROL_STYLES} ${localError ? "border-red-500 focus:ring-red-500 dark:border-red-500/70" : ""}`}
+                    />
+                    {localError && (
+                      <p className="mt-2 flex items-center gap-1 text-xs text-red-500 dark:text-red-300">
+                        <AlertCircle className="w-3 h-3" />
+                        {localError}
+                      </p>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Recordings shorter than this are discarded automatically. Use 0 to disable the cutoff.
+                    </p>
+                  </div>
                 </div>
               </>
             ) : (
-              <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-800 rounded-lg">
-                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
                   Device settings unavailable
                 </p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
+                <p className="text-sm leading-6 text-amber-700 dark:text-amber-300 mb-3">
                   {companionLocalConnectionUnavailable
                     ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
                     : "Nojoin could not load the current Companion device list. Use the Companion App connection section above to pair or reconnect, then retry here."}
@@ -248,7 +265,7 @@ export default function AudioSettings({
                   <button
                     onClick={handleTestConnection}
                     disabled={testingConnection}
-                    className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {testingConnection ? (
                       <>
@@ -272,24 +289,28 @@ export default function AudioSettings({
               </div>
             )}
           </div>
-        </div>
+        </section>
       )}
 
       {showWarnings && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Audio Warnings
-          </h3>
-          <div className="max-w-xl rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
+        <section className={`${PANEL_STYLES} space-y-4`}>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              Audio warnings
+            </div>
+            <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
               Quiet-audio reminders
-            </p>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            </h4>
+            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
               Recording-time quiet-audio reminders can be dismissed for the rest of the current meeting or turned off permanently for advanced workflows.
             </p>
-            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300">
+          </div>
+
+          <div className={FIELD_CARD_STYLES}>
+            <div className="rounded-xl border border-gray-200/80 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               Current status: {suppressQuietAudioWarnings ? "suppressed" : "enabled"}
             </div>
+
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
@@ -300,13 +321,13 @@ export default function AudioSettings({
                     message: "Audio warnings have been reset.",
                   });
                 }}
-                className="inline-flex items-center rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-800 transition-colors hover:bg-orange-100 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-100 dark:hover:bg-orange-500/20"
+                className="inline-flex items-center rounded-xl border border-orange-300 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-800 transition-colors hover:bg-orange-100 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-100 dark:hover:bg-orange-500/20"
               >
                 Reset warnings
               </button>
             </div>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

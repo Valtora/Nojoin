@@ -91,7 +91,7 @@ export default function ServiceStatusAlerts() {
       addNotification({
         type: "info",
         message:
-          "Companion pairing ended for this Nojoin backend. Start pairing again from Companion Settings if you still need local recording controls.",
+          "Companion pairing ended for this Nojoin backend. Start a new pairing request from the Nojoin settings page if you still need local recording controls.",
       });
     }
 
@@ -177,11 +177,13 @@ export default function ServiceStatusAlerts() {
       // Companion
       if (!companionMonitoringEnabled) {
         clearCompanionNotification();
-      } else if (companionGuidance.key === "browser-repair-required") {
+      } else if (
+        companionGuidance.key === "local-browser-connection-unavailable"
+      ) {
         showCompanionNotification(
-          "browser-repair-required",
+          "local-browser-connection-unavailable",
           "warning",
-          "Browser repair required. Open Companion support, then follow Open Settings to Repair in the Companion app.",
+          "Local browser connection unavailable. Quit and relaunch the Companion app to restore browser-side local controls.",
           true,
         );
       } else if (companionGuidance.key === "version-mismatch") {
@@ -190,11 +192,13 @@ export default function ServiceStatusAlerts() {
           "warning",
           "Version mismatch. Open Companion support and align versions before local control will work again.",
         );
-      } else if (companionGuidance.key === "browser-repair-in-progress") {
+      } else if (
+        companionGuidance.key === "local-browser-connection-recovering"
+      ) {
         showCompanionNotification(
-          "browser-repair-in-progress",
+          "local-browser-connection-recovering",
           "info",
-          "Browser repair in progress. Browser controls will refresh automatically when repair finishes.",
+          "Local browser connection recovering. Browser controls will refresh automatically when recovery finishes.",
         );
       } else if (
         !isStartupRef.current &&

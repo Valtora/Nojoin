@@ -1,10 +1,11 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code))]
 
-use crate::backend_url::{build_pinned_client, validate_backend_target};
+use crate::backend_url::{build_pinned_client, build_unverified_client, validate_backend_target, ValidatedBackendTarget};
 use crate::config::{BackendConnection, Config};
 use crate::log_redact::sanitize_for_log;
 use crate::secret_store::{self, BackendSecretBundle};
 use reqwest::Method;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,102 @@ struct CompanionAccessTokenResponse {
 struct PairingManagementResponse {
     revoked_count: Option<u64>,
     cancelled_count: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct PairingRequestTransitionRequest {
+    request_id: String,
+    request_secret: String,
+}
+
+#[derive(Serialize)]
+struct PairingRequestRejectRequest {
+    request_id: String,
+    request_secret: String,
+    status: String,
+    detail: String,
+    failure_reason: String,
+}
+
+#[derive(Serialize)]
+struct PairingRequestCompleteRequest {
+    request_id: String,
+    request_secret: String,
+    tls_fingerprint: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct PairingRequestCompleteResponse {
+    pub api_protocol: String,
+    pub api_host: String,
+    pub api_port: u16,
+    pub paired_web_origin: String,
+    pub companion_credential_secret: String,
+    pub local_control_secret: String,
+    pub local_control_secret_version: u32,
+    pub backend_pairing_id: String,
+    pub backend_identity_key_id: String,
+    pub backend_identity_public_key: String,
+}
+
+async fn send_unverified_pairing_request<T, R>(
+    target: &ValidatedBackendTarget,
+    method: Method,
+    path: &str,
+    body: &T,
+) -> Result<R, String>
+where
+    T: Serialize + ?Sized,
+    R: DeserializeOwned,
+{
+    let backend_target = target.origin();
+    let url = target.build_url(path)?;
+    let started_at = Instant::now();
+    let client = build_unverified_client(target).await?;
+
+    let response = match tokio::time::timeout(
+        Duration::from_secs(COMPANION_NETWORK_TIMEOUT_SECS),
+        client.request(method.clone(), url).json(body).send(),
+    )
+    .await
+    {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
+            return Err(format!(
+                "Pairing request {} {} failed after {} ms: {}",
+                method.as_str(),
+                backend_target,
+                started_at.elapsed().as_millis(),
+                error
+            ));
+        }
+        Err(_) => {
+            return Err(format!(
+                "Pairing request {} {} timed out after {} ms.",
+                method.as_str(),
+                backend_target,
+                started_at.elapsed().as_millis()
+            ));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.map_err(|error| error.to_string())?;
+        return Err(format!(
+            "Pairing request {} {} failed in {} ms with status {} and body '{}'",
+            method.as_str(),
+            backend_target,
+            started_at.elapsed().as_millis(),
+            status,
+            sanitize_for_log(&body)
+        ));
+    }
+
+    response
+        .json::<R>()
+        .await
+        .map_err(|error| format!("Failed to decode pairing request response: {}", error))
 }
 
 fn backend_pairing_id(backend: &BackendConnection) -> Result<String, String> {
@@ -135,6 +232,67 @@ pub async fn exchange_access_token_for_target(
     Ok(payload.access_token)
 }
 
+pub async fn mark_pairing_request_opened(
+    target: &ValidatedBackendTarget,
+    request_id: &str,
+    request_secret: &str,
+) -> Result<(), String> {
+    let _: serde_json::Value = send_unverified_pairing_request(
+        target,
+        Method::POST,
+        "/api/v1/login/companion-pairing/request/opened",
+        &PairingRequestTransitionRequest {
+            request_id: request_id.to_string(),
+            request_secret: request_secret.to_string(),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn reject_pairing_request(
+    target: &ValidatedBackendTarget,
+    request_id: &str,
+    request_secret: &str,
+    status: &str,
+    detail: &str,
+    failure_reason: &str,
+) -> Result<(), String> {
+    let _: serde_json::Value = send_unverified_pairing_request(
+        target,
+        Method::POST,
+        "/api/v1/login/companion-pairing/request/reject",
+        &PairingRequestRejectRequest {
+            request_id: request_id.to_string(),
+            request_secret: request_secret.to_string(),
+            status: status.to_string(),
+            detail: detail.to_string(),
+            failure_reason: failure_reason.to_string(),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn complete_pairing_request(
+    target: &ValidatedBackendTarget,
+    request_id: &str,
+    request_secret: &str,
+    tls_fingerprint: &str,
+) -> Result<PairingRequestCompleteResponse, String> {
+    send_unverified_pairing_request(
+        target,
+        Method::POST,
+        "/api/v1/login/companion-pairing/request/complete",
+        &PairingRequestCompleteRequest {
+            request_id: request_id.to_string(),
+            request_secret: request_secret.to_string(),
+            tls_fingerprint: tls_fingerprint.to_string(),
+        },
+    )
+    .await
+}
+
 async fn send_pairing_management_request_for_target(
     method: Method,
     protocol: &str,
@@ -233,6 +391,7 @@ async fn send_pairing_management_request_for_backend_with_bundle(
     .await
 }
 
+#[cfg(test)]
 async fn send_pairing_management_request_for_backend(
     method: Method,
     backend: &BackendConnection,
@@ -242,6 +401,7 @@ async fn send_pairing_management_request_for_backend(
     send_pairing_management_request_for_backend_with_bundle(method, backend, &bundle, path).await
 }
 
+#[cfg(test)]
 pub async fn cancel_pending_pairing_for_target(
     protocol: &str,
     host: &str,
@@ -263,6 +423,7 @@ pub async fn cancel_pending_pairing_for_target(
     .await
 }
 
+#[cfg(test)]
 pub async fn cancel_pending_pairing_for_backend(
     backend: &BackendConnection,
 ) -> Result<u64, String> {
