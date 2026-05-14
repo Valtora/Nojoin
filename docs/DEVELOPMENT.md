@@ -211,8 +211,8 @@ The end-user source of truth for this workflow is [COMPANION.md](COMPANION.md). 
 If you are testing changes and need to switch your Companion between a production instance and your local development stack:
 
 1. Open the Companion app Settings.
-2. Either select `Disconnect Current Backend` first, or choose `Generate New Pairing Code` and start pairing against the target backend.
-3. Enter the displayed code into the target frontend (either your local dev site or production site).
+2. Either select `Disconnect Current Backend` first, or open the target Nojoin site and start a fresh pairing request from `Settings -> Companion App`.
+3. Let the browser launch the local Companion through `nojoin://pair`, then approve the OS-native prompt on that device.
 4. The current backend stays active until the new pairing succeeds.
 5. After success, the Companion cleanly replaces its previous trust state, clears any previous local secret bundle, and authenticates with the newly paired backend.
 
@@ -220,12 +220,12 @@ After upgrading across the companion credential-storage security change, expect 
 
 ### Companion UX Validation Expectations
 
-When changes touch the launcher, Settings, tray, pairing window, or browser-side Companion support surfaces, manually validate at least the following flows:
+When changes touch the launcher, Settings, tray, or browser-side Companion support surfaces, manually validate at least the following flows:
 
-- Fresh Chromium path: install, `Start Pairing`, enter the code in Nojoin, return to `Connected`, and start a recording.
-- Firefox path: run `Enable Firefox Support`, enable Firefox enterprise roots, restart Firefox, and pair with a fresh code.
-- Repair path: `Browser repair required` routes to Settings, and only `Repair Local Browser Connection` performs the repair.
-- Quiet degraded states: `Temporarily disconnected` and `Browser repair in progress` remain informative but non-alarmist.
+- Fresh browser path: install, start pairing from `Settings -> Companion App`, approve the OS-native prompt, return to `Connected`, and start a recording.
+- Protocol handoff path: the browser launches `nojoin://pair` successfully when Companion is already running and when it has just been relaunched.
+- Degraded local-browser path: `Local browser connection unavailable` routes the user toward relaunching Companion rather than a privileged browser-triggered repair action.
+- Quiet degraded states: `Temporarily disconnected` and `Local browser connection recovering` remain informative but non-alarmist.
 - Replacement pairing: the previous backend remains active until the new pairing succeeds, and switching stays blocked while a recording or queued upload is still active.
 - Tray fallback: the top level remains limited to status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
 

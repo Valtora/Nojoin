@@ -3,7 +3,7 @@
 This guide is the shortest path from a fresh checkout to a working Nojoin installation and your first processed meeting.
 
 For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYMENT.md) after this guide.
-For detailed Companion install, pairing, repair, re-pair, tray, and browser guidance, continue to [COMPANION.md](COMPANION.md).
+For detailed Companion install, pairing, reconnect, switching deployments, tray, and troubleshooting guidance, continue to [COMPANION.md](COMPANION.md).
 
 ## Before You Begin
 
@@ -68,13 +68,13 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 1. Download the latest Windows Companion build from the GitHub Releases page.
 2. Run the installer or portable build, then launch the Companion.
-3. On the first native screen, choose `Start Pairing`.
-4. In Nojoin, open `Settings -> Companion App` and enter the current 8-character code.
-5. Confirm the Companion shows `Connected` before starting a live recording.
+3. In Nojoin, open `Settings -> Companion App` and choose `Pair This Device`.
+4. Let the browser open the local Companion through `nojoin://pair`, then approve the OS-native prompt on this device.
+5. Confirm the Companion page shows `Connected` before starting a live recording.
 
-If this machine is already paired to a different backend later, choose `Generate New Pairing Code` instead. The current backend stays active until the new pairing succeeds.
+If this machine is already paired to a different backend later, start a fresh pairing request from the target Nojoin site instead. The current backend stays active until the new pairing succeeds.
 
-Chrome and Edge are the default path. If you plan to use Firefox on this device, or if you need repair, reconnect, tray guidance, or troubleshooting, use [COMPANION.md](COMPANION.md).
+The browser and Companion must run on the same machine. The Nojoin backend can be remote as long as both can reach the same HTTPS origin. For reconnect, tray guidance, or troubleshooting, use [COMPANION.md](COMPANION.md).
 
 ## 5. Make Your First Recording
 
@@ -86,7 +86,7 @@ Chrome and Edge are the default path. If you plan to use Firefox on this device,
 
 ## 6. Recommended Next Steps
 
-- Read [COMPANION.md](COMPANION.md) for the full Companion install, repair, re-pair, tray, and Firefox guide.
+- Read [COMPANION.md](COMPANION.md) for the full Companion install, pairing, reconnect, switching, tray, and troubleshooting guide.
 - Read [USAGE.md](USAGE.md) for the dashboard, recordings workspace, notes, search, and speaker workflows.
 - Read [CALENDAR.md](CALENDAR.md) if you want Google or Outlook calendar integration.
 - Read [ADMIN.md](ADMIN.md) if you will manage users, invitations, or system settings.

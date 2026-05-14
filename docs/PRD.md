@@ -53,8 +53,8 @@ The primary user interface for interacting with the system.
   - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and where to manage Companion setup and recovery.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
   - **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
-- **Companion Status:** The frontend displays the current pairing and connection state across Settings, dashboard capture controls, alerts, and live recording surfaces. The web UI confirms state and guides users back to native-owned actions such as repair, Firefox setup, and re-pairing instead of trying to execute those actions directly.
-- **Download Companion Button:** Companion installer entry points appear when the Companion is not paired or reachable and link to the Windows installer from GitHub Releases.
+- **Companion Status:** The frontend displays the current pairing and connection state across Settings, dashboard capture controls, alerts, and live recording surfaces. The web UI starts signed pairing requests, confirms state, and guides users back to native-owned actions such as disconnect or relaunching the Companion when local control is degraded.
+- **Companion Installer Links:** Windows Companion installer entry points remain available from the Updates area and GitHub Releases.
 
 ### 2.3 The Companion App (Tauri + Rust)
 
@@ -64,15 +64,14 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Framework:** Tauri v2.
 - **Language:** Rust (Backend) + HTML/JS (Frontend).
 - **Platforms:** Windows (macOS and Linux support is not currently available).
-- **Role:** Acts as the native control surface for local capture, pairing, repair, browser support, and backend handoff. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
+- **Role:** Acts as the native control surface for local capture, pairing approval, browser support, and backend handoff. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
 - **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
-- **Pairing Model:** Companion pairing is initiated manually by the user from the Companion app, which generates a short-lived pairing code. The user enters this code into the Web Client to authorize the Companion and establish a single-backend association. The backend issues a revocable companion credential plus local control secret, stores only the credential hash, and the browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
+- **Pairing Model:** Companion pairing is initiated from the authenticated Web Client, which creates a short-lived signed pairing request and launches the local app through `nojoin://pair`. The user approves that request through an OS-native prompt in the Companion app, after which the backend issues a revocable companion credential plus local control secret, stores only the credential hash, and the browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
 - **Per-Recording Upload Tokens:** Each recording initialisation returns a short-lived upload token bound to that recording ID. Segment upload, client-status updates, finalisation, and discard all use that narrower token.
 - **Launcher:** A compact first-run and steady-state native surface with one primary next action and a route into Nojoin or Settings.
-- **Settings:** The canonical native home for pairing, repair, Firefox support, updates, logs, and disconnect.
-- **Pairing Window:** The dedicated native surface for the current 8-character code, countdown, copy action, and `Cancel Pairing`.
+- **Settings:** The canonical native home for status, updates, logs, run-on-startup, and disconnect.
 - **Tray:** An operational fallback surface for status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
-- **Support Model:** The browser can submit pairing codes and show coarse state, but native-only repair, Firefox setup, and disconnect actions stay inside the Companion app.
+- **Support Model:** The browser can start signed pairing requests and show coarse state, but native approval and disconnect stay inside the Companion app.
 - **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
 - **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
 - **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub matched to the server version.
@@ -84,7 +83,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 - **Authentication:** JWT-based authentication is used for API access.
 - **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
-- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing requires a short-lived pairing code submitted manually, followed by a revocable companion credential that the Companion exchanges for short-lived backend access tokens. Each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
+- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing requires a short-lived signed pairing request plus native approval, followed by a revocable companion credential that the Companion exchanges for short-lived backend access tokens. Each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
 - **Password Rotation Enforcement:** Users created manually by an Admin or Owner, and users whose password is reset by a superuser, must change their password before they can access other authenticated features. While the flag is set, only the self-profile, self-password update, and logout routes remain available.
 - **JWT Secret Key:** A secure JWT signing key is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts without requiring manual configuration.
 - **Authorization:** Role-based access control (Owner/Admin/User), privilege guardrails around Owner and superuser creation, and strict ownership checks ensure users can only access their own data.
@@ -93,7 +92,7 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.
 - **Companion IPC Security:** Strict Origin validation to prevent Cross-Site Request Forgery (CSRF) and unauthorized local scripts from interfacing with the local Companion server.
-- **Companion TOFU TLS Pinning:** During manual pairing, the Companion captures and pins the backend TLS certificate it first sees. Subsequent Companion traffic requires that pinned certificate until the user explicitly disconnects or re-pairs.
+- **Companion TOFU TLS Pinning:** During browser-initiated pairing, the Companion captures and pins the backend TLS certificate it first sees. Subsequent Companion traffic requires that pinned certificate until the user explicitly disconnects or re-pairs.
 - **Trusted Public Origin:** Invitation links and Companion pairing API targeting use the configured public web origin rather than trusting request Host headers.
 - **CORS & Remote Access:**
   - **CORS:** Restricted to local development origins plus the configured `WEB_APP_URL` public origin.

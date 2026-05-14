@@ -7,7 +7,7 @@ Use the links below by task rather than treating the root README as the source o
 ## Start Here
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): First deployment, first admin account, and the shortest path to your first recording.
-- [COMPANION.md](COMPANION.md): Install, pair, reconnect, re-pair, repair, tray usage, and Firefox support for the Windows Companion app.
+- [COMPANION.md](COMPANION.md): Install, pair from the browser, reconnect, switch deployments, tray usage, and troubleshoot the Windows Companion app.
 - [DEPLOYMENT.md](DEPLOYMENT.md): Hosting, Docker, environment variables, reverse proxy, and updating.
 - [USAGE.md](USAGE.md): Day-to-day product usage for normal users.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development prerequisites and main source-build commands.
@@ -34,7 +34,7 @@ Use the links below by task rather than treating the root README as the source o
 | I want to... | Read this |
 | --- | --- |
 | Bring up Nojoin for the first time | [GETTING_STARTED.md](GETTING_STARTED.md) |
-| Install, pair, repair, or use Firefox with the Companion | [COMPANION.md](COMPANION.md) |
+| Install, pair, reconnect, or troubleshoot the Companion | [COMPANION.md](COMPANION.md) |
 | Deploy or upgrade a self-hosted instance | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Learn how to use the dashboard and recordings workspace | [USAGE.md](USAGE.md) |
 | Configure Google or Outlook calendar sync | [CALENDAR.md](CALENDAR.md) |

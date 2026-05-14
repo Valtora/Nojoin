@@ -3,7 +3,7 @@
 This guide covers normal day-to-day use after Nojoin has already been installed.
 
 For deployment, administration, calendar provider setup, and backup operations, use the dedicated guides in the `docs` folder.
-For detailed Companion install, pairing, repair, re-pair, tray usage, and Firefox setup, use [COMPANION.md](COMPANION.md).
+For detailed Companion install, pairing, reconnect, switching deployments, tray usage, and troubleshooting, use [COMPANION.md](COMPANION.md).
 
 ## First Run
 
@@ -20,11 +20,12 @@ The dedicated [COMPANION.md](COMPANION.md) guide is the canonical reference for 
 The short version:
 
 - The Companion pairs to one Nojoin deployment at a time.
-- Use `Start Pairing` for the first pair.
-- Use `Generate New Pairing Code` when the code expires or when you are replacing an existing backend pairing. The current backend stays active until the new pairing succeeds.
+- Start pairing from `Settings -> Companion App` in the browser by choosing `Pair This Device`.
+- Pairing completes only after you approve the OS-native prompt opened by the local Companion app on the same machine.
+- Start a fresh browser pairing request when you are replacing an existing backend pairing. The current backend stays active until the new pairing succeeds.
 - `Temporarily disconnected` means the pairing is still valid and should recover automatically.
-- `Browser repair required` and Firefox support both route back to the native Companion app rather than running in the browser.
-- Chrome and Edge are the default path. Firefox requires `Enable Firefox Support`, Firefox enterprise roots, a browser restart, and a fresh code.
+- `Local browser connection recovering` usually settles on its own. `Local browser connection unavailable` means you should relaunch the Companion and retry the browser action.
+- No pairing code fallback exists. The browser request is signed by the backend and must be explicitly approved on this device.
 
 ## Tours and Onboarding
 

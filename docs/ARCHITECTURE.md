@@ -10,7 +10,7 @@ Nojoin has three major parts:
 
 1. A Dockerised backend that stores data and runs processing workloads.
 2. A Next.js web client for capture control, review, and administration.
-3. A Windows Companion app that captures audio locally and owns pairing, repair, and tray-side operational fallback.
+3. A Windows Companion app that captures audio locally and owns native pairing approval, local browser connectivity, and tray-side operational fallback.
 
 ## Core Components
 
@@ -36,24 +36,24 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
-- Browser-side Companion status, pairing code entry, and support routing.
+- Browser-side Companion status, signed pairing request initiation, and support routing.
 
-The web Companion page is a secondary support surface. It confirms state and routes native-only repair, Firefox setup, and destructive actions back to the Companion app.
+The web Companion page is a secondary support surface. It confirms state, starts signed pairing requests, and routes native-only disconnect or troubleshooting actions back to the Companion app.
 
 ### Companion App
 
 The Companion app is responsible for:
 
-- Presenting the native launcher, Settings window, pairing window, and tray fallback surfaces.
+- Presenting the native launcher, Settings window, and tray fallback surfaces.
 - Capturing loopback system audio and microphone audio on Windows.
-- Owning pairing, repair, Firefox support, update, log, and disconnect actions.
+- Owning OS-native approval for browser-initiated pairing requests, update, log, and disconnect actions.
 - Exposing local status and live metering to the web client.
 - Uploading recording segments to the backend.
 
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The user manually pairs the Companion app to one Nojoin backend at a time using a short-lived pairing code. During that flow, the Companion captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata in `config.json`.
+2. The browser starts a signed pairing request from `Settings -> Companion App`, launches the local Companion through `nojoin://pair`, and the Companion shows an OS-native approval prompt on that same machine. During completion, the Companion validates the backend-signed request fields, captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata plus backend identity metadata in `config.json`.
 3. When the Companion needs backend access, it exchanges the stored companion credential for a short-lived companion access token.
 4. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
 5. The Companion uploads audio segments using that recording-scoped token.
@@ -62,7 +62,7 @@ The Companion app is responsible for:
 
 Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
 
-If browser-side local control degrades, the web client reports coarse state and routes the user back to Companion Settings for native-only repair or Firefox setup.
+If browser-side local control degrades, the web client reports coarse state and directs the user to relaunch Companion or inspect Companion Settings for status.
 
 ## Processing Pipeline
 
@@ -94,7 +94,7 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **Companion pairing**: A short-lived pairing code submitted manually, establishing a one-backend association and returning a revocable companion credential plus local control secret.
+- **Companion pairing**: A short-lived signed pairing request created by the authenticated browser session, explicitly approved in the local Companion app, and completed against one backend target.
 - **Companion backend access**: Short-lived companion access tokens exchanged on demand by the Companion.
 - **Companion upload operations**: Short-lived per-recording tokens.
 
