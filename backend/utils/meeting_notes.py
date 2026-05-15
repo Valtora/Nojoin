@@ -2,16 +2,38 @@ import re
 from typing import Any, Dict, Iterable, Optional
 
 
+PLACEHOLDER_SPEAKER_PATTERN = re.compile(
+    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$",
+    re.IGNORECASE,
+)
+
+
+def resolve_recording_speaker_name(speaker: Any) -> Optional[str]:
+    resolved_name = (
+        getattr(speaker, "local_name", None)
+        or getattr(getattr(speaker, "global_speaker", None), "name", None)
+        or getattr(speaker, "name", None)
+        or getattr(speaker, "diarization_label", None)
+    )
+    if resolved_name is None:
+        return None
+
+    cleaned_name = str(resolved_name).strip()
+    return cleaned_name or None
+
+
+def is_placeholder_speaker_name(name: Optional[str]) -> bool:
+    cleaned_name = (name or "").strip()
+    if not cleaned_name:
+        return True
+    return bool(PLACEHOLDER_SPEAKER_PATTERN.match(cleaned_name))
+
+
 def build_recording_speaker_map(speakers: Iterable[Any]) -> Dict[str, str]:
     speaker_map: Dict[str, str] = {}
 
     for speaker in speakers:
-        name = (
-            getattr(speaker, "local_name", None)
-            or getattr(getattr(speaker, "global_speaker", None), "name", None)
-            or getattr(speaker, "name", None)
-            or getattr(speaker, "diarization_label", None)
-        )
+        name = resolve_recording_speaker_name(speaker)
         label = getattr(speaker, "diarization_label", None)
         if label and name:
             speaker_map[label] = name
