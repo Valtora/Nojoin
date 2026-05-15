@@ -5,9 +5,7 @@ import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
 import {
   Mic,
-  Activity,
   Users,
-  Type,
   SpellCheck,
   Clock3,
   ChevronDown,
@@ -24,11 +22,16 @@ import {
   resolveTimeZone,
   setCachedUserTimeZone,
 } from "@/lib/timezone";
+import SettingsCallout from "./SettingsCallout";
+import SettingsField from "./SettingsField";
+import SettingsPanel from "./SettingsPanel";
+import SettingsSection from "./SettingsSection";
 
 interface GeneralSettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
   searchQuery?: string;
+  suppressNoMatch?: boolean;
 }
 
 function formatTimeZoneDisplay(timeZone: string): string {
@@ -46,6 +49,7 @@ export default function GeneralSettings({
   settings,
   onUpdate,
   searchQuery = "",
+  suppressNoMatch = false,
 }: GeneralSettingsProps) {
   const { theme, setTheme } = useTheme();
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
@@ -135,10 +139,10 @@ export default function GeneralSettings({
     "vad",
     "silence",
     "diarization",
-    "title",
-    "inference",
-    "speakers",
-    "notes",
+    "voice activity detection",
+    "speaker separation",
+    "speaker diarization",
+    "speech",
   ]);
 
   const showSpellCheck = fuzzyMatch(searchQuery, [
@@ -149,20 +153,27 @@ export default function GeneralSettings({
   ]);
 
   if (!showAppearance && !showDateTime && !showProcessing && !showSpellCheck && searchQuery)
-    return <div className="contrast-helper">No matching settings found.</div>;
+    return (
+      suppressNoMatch ? null : (
+        <SettingsCallout
+          tone="neutral"
+          title="No matching settings"
+          message="Try a broader search term for appearance, timezone, spellcheck, or recording preferences."
+        />
+      )
+    );
 
   return (
     <div className="space-y-8">
       {showAppearance && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Appearance
-          </h3>
-          <div className="grid grid-cols-1 gap-4 max-w-xl">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Theme
-              </label>
+        <SettingsSection
+          eyebrow="Preferences"
+          title="Appearance"
+          description="Choose how Nojoin looks in your browser."
+          width="compact"
+        >
+          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
+            <SettingsField label="Theme">
               <select
                 value={theme}
                 onChange={handleThemeChange}
@@ -172,25 +183,28 @@ export default function GeneralSettings({
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
               </select>
-              <p className="mt-1 text-xs contrast-helper">
-                Choose your preferred visual theme.
-              </p>
-            </div>
+            </SettingsField>
           </div>
-        </div>
+        </SettingsSection>
       )}
 
       {showDateTime && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Clock3 className="w-5 h-5 text-orange-500" /> Date & Time
-          </h3>
-          <div className="grid grid-cols-1 gap-4 max-w-xl">
+        <SettingsSection
+          eyebrow="Preferences"
+          title="Date and time"
+          description="Control the timezone used across the dashboard, calendars, and task deadlines."
+          width="compact"
+        >
+          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
             <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Timezone
-                </label>
+              <SettingsField
+                label={
+                  <span className="flex items-center gap-2">
+                    <Clock3 className="h-4 w-4 text-orange-500" />
+                    Timezone
+                  </span>
+                }
+              >
                 <Popover className="relative block">
                   {({ open, close }) => (
                     <>
@@ -298,31 +312,32 @@ export default function GeneralSettings({
                     </>
                   )}
                 </Popover>
-                <p className="mt-1 text-xs contrast-helper">
-                  Calendar events and task deadlines are shown in this timezone.
-                  Task deadlines are converted to UTC when saved so they remain
-                  stable if you travel or later change timezone.
-                </p>
-              </div>
+              </SettingsField>
 
               <p className="text-xs contrast-helper">
-                Browser detected: {browserTimeZone}
+                Browser detected: {browserTimeZone}. Calendar events and task deadlines are shown in this timezone, then converted to UTC on save so they stay stable if you travel or later change timezone.
               </p>
             </div>
           </div>
-        </div>
+        </SettingsSection>
       )}
 
       {showSpellCheck && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <SpellCheck className="w-5 h-5 text-orange-500" /> Spell Check
-          </h3>
-          <div className="grid grid-cols-1 gap-4 max-w-xl">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Language
-              </label>
+        <SettingsSection
+          eyebrow="Preferences"
+          title="Spellcheck"
+          description="Pick a dictionary language and manage your personal custom words."
+          width="compact"
+        >
+          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
+            <SettingsField
+              label={
+                <span className="flex items-center gap-2">
+                  <SpellCheck className="h-4 w-4 text-orange-500" />
+                  Language
+                </span>
+              }
+            >
               <select
                 value={settings.spellcheck_language || "en-GB"}
                 onChange={(e) => handleLanguageChange(e.target.value)}
@@ -335,12 +350,8 @@ export default function GeneralSettings({
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs contrast-helper">
-                Select the language for spell checking in meeting notes.
-              </p>
-            </div>
+            </SettingsField>
 
-            {/* Custom Dictionary Management */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsDictionaryModalOpen(true)}
@@ -350,7 +361,7 @@ export default function GeneralSettings({
               </button>
             </div>
           </div>
-        </div>
+        </SettingsSection>
       )}
 
       <DictionaryModal
@@ -359,14 +370,14 @@ export default function GeneralSettings({
       />
 
       {showProcessing && (
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-orange-500" /> Processing &
-            Intelligence
-          </h3>
-          <div className="max-w-2xl space-y-4">
-            {/* VAD Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
+        <SettingsSection
+          eyebrow="Recording"
+          title="Capture defaults"
+          description="Adjust silence filtering and speaker separation defaults for future recordings."
+          width="regular"
+        >
+          <div className="mx-auto max-w-2xl space-y-4">
+            <SettingsPanel variant="field" className="flex items-start gap-3">
               <div className="mt-1">
                 <Mic className="w-5 h-5 text-blue-500" />
               </div>
@@ -388,10 +399,9 @@ export default function GeneralSettings({
                   quiet speech is being cut off.
                 </p>
               </div>
-            </div>
+            </SettingsPanel>
 
-            {/* Diarization Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
+            <SettingsPanel variant="field" className="flex items-start gap-3">
               <div className="mt-1">
                 <Users className="w-5 h-5 text-purple-500" />
               </div>
@@ -413,35 +423,11 @@ export default function GeneralSettings({
                   single-speaker recordings to speed up processing.
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
-              <div className="mt-1">
-                <Type className="w-5 h-5 text-green-500" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-900 dark:text-white">
-                    Prefer Short Titles
-                  </label>
-                  <Switch
-                    checked={settings.prefer_short_titles !== false}
-                    onCheckedChange={(checked) =>
-                      onUpdate({ ...settings, prefer_short_titles: checked })
-                    }
-                  />
-                </div>
-                <p className="mt-1 text-xs contrast-helper">
-                  Use concise 3-5 word AI-generated meeting titles instead of
-                  longer descriptive ones.
-                </p>
-              </div>
-            </div>
+            </SettingsPanel>
           </div>
-        </div>
+        </SettingsSection>
       )}
 
-      {/* Custom Instructions (Moved from AI Settings) */}
     </div>
   );
 }

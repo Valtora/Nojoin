@@ -20,7 +20,7 @@ The dedicated [COMPANION.md](COMPANION.md) guide is the canonical reference for 
 The short version:
 
 - The Companion pairs to one Nojoin deployment at a time.
-- Start pairing from `Settings -> Companion App` in the browser by choosing `Pair This Device`.
+- Start pairing from `Settings -> Companion` in the browser by choosing `Pair This Device`.
 - Pairing completes only after you approve the OS-native prompt opened by the local Companion app on the same machine.
 - Start a fresh browser pairing request when you are replacing an existing backend pairing. The current backend stays active until the new pairing succeeds.
 - `Temporarily disconnected` means the pairing is still valid and should recover automatically.
@@ -80,7 +80,7 @@ You can monitor:
 - Recording state and duration.
 - A persistent notes panel for user-authored context.
 
-If live audio stays quiet for a while, Nojoin may show a low-key inline reminder near the waveform instead of a persistent fault-style warning. `Dismiss` hides that reminder for the rest of the current meeting, `Don't show again` suppresses it until you re-enable it, and `Settings > Audio & Recording > Audio Warnings` lets you reset the warning state later.
+If live audio stays quiet for a while, Nojoin may show a low-key inline reminder near the waveform instead of a persistent fault-style warning. `Dismiss` hides that reminder for the rest of the current meeting, `Don't show again` suppresses it until you re-enable it, and `Settings > Companion > Devices and alerts` lets you reset the warning state later.
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 
@@ -191,7 +191,7 @@ Nojoin supports:
 
 ## Settings Most Users Will Use
 
-### Account Settings
+### Personal Settings
 
 Normal users mainly interact with:
 
@@ -199,7 +199,7 @@ Normal users mainly interact with:
 - Password change.
 - Calendar connections.
 
-### AI Settings
+### AI
 
 Depending on permissions, users may also see or adjust:
 
@@ -209,11 +209,11 @@ Depending on permissions, users may also see or adjust:
 - Whisper model settings.
 - Local Ollama configuration.
 
-The General settings page no longer exposes separate automatic title, notes, or speaker-inference toggles. Automatic AI enhancement runs whenever provider configuration is complete, and `Prefer Short Titles` remains the main user-facing behavior control for that stage.
+The Personal settings area no longer exposes separate automatic title, notes, or speaker-inference toggles. Automatic AI enhancement runs whenever provider configuration is complete, and `Prefer Short Titles` remains the main user-facing behavior control for that stage.
 
 ### Timezone
 
-The General settings page lets each user choose the IANA timezone used for dashboard calendar rendering and task deadlines.
+The Personal settings area lets each user choose the IANA timezone used for dashboard calendar rendering and task deadlines.
 
 ### Updates
 

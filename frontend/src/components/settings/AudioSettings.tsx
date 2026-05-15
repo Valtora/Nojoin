@@ -17,6 +17,9 @@ import {
   Speaker,
   XCircle,
 } from "lucide-react";
+import SettingsCallout from "./SettingsCallout";
+import SettingsField from "./SettingsField";
+import SettingsPanel from "./SettingsPanel";
 
 interface AudioSettingsProps {
   companionConfig: {
@@ -37,12 +40,6 @@ interface AudioSettingsProps {
   searchQuery?: string;
   suppressNoMatch?: boolean;
 }
-
-const PANEL_STYLES =
-  "rounded-2xl border border-gray-200/80 bg-gray-50/85 p-5 dark:border-gray-800 dark:bg-gray-900/70";
-
-const FIELD_CARD_STYLES =
-  "rounded-2xl border border-gray-200/80 bg-white/90 p-4 dark:border-gray-800 dark:bg-gray-950/80";
 
 const CONTROL_STYLES =
   "w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white";
@@ -134,13 +131,19 @@ export default function AudioSettings({
   };
 
   if (!showDevices && !showWarnings && searchQuery) {
-    return suppressNoMatch ? null : <div className="text-gray-500">No matching settings found.</div>;
+    return suppressNoMatch ? null : (
+      <SettingsCallout
+        tone="neutral"
+        title="No matching settings"
+        message="Try a broader search term for recording devices, quiet audio, or meeting length."
+      />
+    );
   }
 
   return (
     <div className="space-y-4">
       {showDevices && (
-        <section className={`${PANEL_STYLES} space-y-4`}>
+        <SettingsPanel as="section" variant="subtle" className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -150,7 +153,7 @@ export default function AudioSettings({
                 Input, output, and capture thresholds
               </h4>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                Choose which microphone and system output the Companion records, then set the minimum meeting length to keep.
+                Choose which microphone and system output the local Companion records, then set the minimum meeting length to keep. Pairing, installer, and browser recovery actions stay in the section above.
               </p>
             </div>
             <button
@@ -171,19 +174,18 @@ export default function AudioSettings({
             {companionDevices ? (
               <>
                 {connectionResult === "success" && (
-                  <div className="rounded-xl border border-green-200/80 bg-green-50/80 px-4 py-3 text-sm text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-300">
-                    Companion device list refreshed.
-                  </div>
+                  <SettingsCallout
+                    tone="success"
+                    message="Companion device list refreshed."
+                  />
                 )}
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className={FIELD_CARD_STYLES}>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <span className="flex items-center gap-2">
-                        <Mic className="w-4 h-4" />
-                        Input device
-                      </span>
-                    </label>
+                  <SettingsField
+                    label="Input device"
+                    icon={<Mic className="h-4 w-4" />}
+                    description="Microphone used to capture your voice."
+                  >
                     <select
                       value={selectedInputDevice || ""}
                       onChange={(e) => onSelectInputDevice(e.target.value || null)}
@@ -197,18 +199,13 @@ export default function AudioSettings({
                         </option>
                       ))}
                     </select>
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      Microphone used to capture your voice.
-                    </p>
-                  </div>
+                  </SettingsField>
 
-                  <div className={FIELD_CARD_STYLES}>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <span className="flex items-center gap-2">
-                        <Speaker className="w-4 h-4" />
-                        Output device
-                      </span>
-                    </label>
+                  <SettingsField
+                    label="Output device"
+                    icon={<Speaker className="h-4 w-4" />}
+                    description="System output captured for loopback audio."
+                  >
                     <select
                       value={selectedOutputDevice || ""}
                       onChange={(e) => onSelectOutputDevice(e.target.value || null)}
@@ -222,15 +219,13 @@ export default function AudioSettings({
                         </option>
                       ))}
                     </select>
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      System output captured for loopback audio.
-                    </p>
-                  </div>
+                  </SettingsField>
 
-                  <div className={`${FIELD_CARD_STYLES} lg:col-span-2`}>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Minimum meeting length (minutes)
-                    </label>
+                  <SettingsField
+                    label="Minimum meeting length (minutes)"
+                    description="Recordings shorter than this are discarded automatically. Use 0 to disable the cutoff, or raise it to filter out tests and accidental starts."
+                    className="lg:col-span-2"
+                  >
                     <input
                       type="text"
                       inputMode="numeric"
@@ -244,56 +239,52 @@ export default function AudioSettings({
                         {localError}
                       </p>
                     )}
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      Recordings shorter than this are discarded automatically. Use 0 to disable the cutoff.
-                    </p>
-                  </div>
+                  </SettingsField>
                 </div>
               </>
             ) : (
-              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
-                  Device settings unavailable
-                </p>
-                <p className="text-sm leading-6 text-amber-700 dark:text-amber-300 mb-3">
-                  {companionLocalConnectionUnavailable
-                    ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
-                    : "Nojoin could not load the current Companion device list. Use the Companion App connection section above to pair or reconnect, then retry here."}
-                </p>
+              <SettingsCallout tone="warning" title="Device settings unavailable">
+                <div>
+                  <p className="leading-6">
+                    {companionLocalConnectionUnavailable
+                      ? COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE
+                      : "Nojoin could not load the current Companion device list. Use the connection and pairing section above to pair or reconnect, then retry here."}
+                  </p>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleTestConnection}
-                    disabled={testingConnection}
-                    className="inline-flex items-center rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {testingConnection ? (
-                      <>
-                        <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-3 h-3 mr-2" />
-                        Retry Connection
-                      </>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      onClick={handleTestConnection}
+                      disabled={testingConnection}
+                      className="inline-flex items-center rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {testingConnection ? (
+                        <>
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-3 w-3" />
+                          Retry Connection
+                        </>
+                      )}
+                    </button>
+                    {connectionResult === "error" && (
+                      <span className="flex animate-pulse items-center text-xs text-red-600 dark:text-red-400">
+                        <XCircle className="mr-1 h-3 w-3" />
+                        Failed
+                      </span>
                     )}
-                  </button>
-                  {connectionResult === "error" && (
-                    <span className="flex items-center text-xs text-red-600 dark:text-red-400 animate-pulse">
-                      <XCircle className="w-3 h-3 mr-1" />
-                      Failed
-                    </span>
-                  )}
+                  </div>
                 </div>
-              </div>
+              </SettingsCallout>
             )}
           </div>
-        </section>
+        </SettingsPanel>
       )}
 
       {showWarnings && (
-        <section className={`${PANEL_STYLES} space-y-4`}>
+        <SettingsPanel as="section" variant="subtle" className="space-y-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               Audio warnings
@@ -302,11 +293,11 @@ export default function AudioSettings({
               Quiet-audio reminders
             </h4>
             <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-              Recording-time quiet-audio reminders can be dismissed for the rest of the current meeting or turned off permanently for advanced workflows.
+              Recording-time quiet-audio reminders are local workflow aids. Reset them here if you want warning prompts to appear again after you previously dismissed them.
             </p>
           </div>
 
-          <div className={FIELD_CARD_STYLES}>
+          <SettingsPanel variant="field">
             <div className="rounded-xl border border-gray-200/80 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               Current status: {suppressQuietAudioWarnings ? "suppressed" : "enabled"}
             </div>
@@ -326,8 +317,8 @@ export default function AudioSettings({
                 Reset warnings
               </button>
             </div>
-          </div>
-        </section>
+          </SettingsPanel>
+        </SettingsPanel>
       )}
     </div>
   );

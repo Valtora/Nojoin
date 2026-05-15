@@ -46,6 +46,11 @@
             }
         }
 
+        html,
+        body {
+            min-height: 100%;
+        }
+
         body {
             margin: 0;
             padding: 18px 20px;
@@ -53,6 +58,9 @@
             color: var(--text);
             font-family: "Segoe UI", "Inter", system-ui, sans-serif;
             box-sizing: border-box;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
         }
 
         *, *::before, *::after {
@@ -60,7 +68,8 @@
         }
 
         .shell {
-            width: min(520px, 100%);
+            width: min(620px, calc(100vw - 40px));
+            margin: 0 auto;
             padding: 0;
         }
 
@@ -266,6 +275,9 @@
             border-color: color-mix(in srgb, var(--accent) 38%, var(--panel-border));
             color: var(--accent-strong);
             background: var(--accent-soft);
+            line-height: 1.3;
+            text-align: center;
+            white-space: normal;
         }
 
         button.support:hover {
@@ -435,14 +447,14 @@
 <body>
     <div class="shell">
         <div class="hero">
-            <h1>Companion App Settings</h1>
+            <h1>Companion App</h1>
         </div>
 
         <div id="status" class="status"></div>
 
         <section class="section" id="pairingSection">
-            <h2>Pairing</h2>
-            <p class="section-copy">Start pairing from Nojoin in your browser. Companion shows the current state here and opens an OS-native approval prompt when a browser request arrives.</p>
+            <h2>Connection and pairing</h2>
+            <p class="section-copy">Start pairing from Nojoin in your browser. Companion keeps the current connection state here and opens an OS-native approval prompt when a browser request arrives.</p>
 
             <div class="row">
                 <div>
@@ -450,16 +462,6 @@
                     <div id="connectionStatePill" class="status-pill setup">Loading...</div>
                 </div>
                 <p class="row-note" id="connectionStateNote">Loading current connection state...</p>
-            </div>
-
-            <div class="row">
-                <div class="row-header">
-                    <div>
-                        <span class="row-label">Firefox Support</span>
-                        <p class="row-note">Only required for Firefox on Windows. Installs the Nojoin local HTTPS CA and revocation list into the Windows machine trust stores so Firefox can trust the local Companion connection when enterprise roots are enabled.</p>
-                    </div>
-                    <button id="enableFirefoxBtn" class="support" type="button">Enable Firefox Support</button>
-                </div>
             </div>
 
             <div class="actions">
@@ -471,6 +473,7 @@
 
         <section class="section" id="deviceSection">
             <h2>Device</h2>
+            <p class="section-copy">Native-only controls for startup, updates, and local diagnostic access on this device.</p>
 
             <div class="row">
                 <div class="row-header">
@@ -517,10 +520,18 @@
                         <span id="advancedToggleLabel" class="toggle-label">Show</span>
                     </div>
                 </div>
-                <p class="advanced-copy">Open Advanced to disconnect the current backend from this device.</p>
+                <p class="advanced-copy">Open Advanced for Firefox browser support or to disconnect this device from its current backend.</p>
             </summary>
 
             <div class="advanced-content">
+                <div class="row">
+                    <div>
+                        <span class="row-label">Firefox Browser Support</span>
+                        <p class="row-note">Only required for Firefox on Windows. Installs the Nojoin local HTTPS CA and revocation list into the Windows machine trust stores so Firefox can trust the local Companion connection when enterprise roots are enabled.</p>
+                    </div>
+                    <button id="enableFirefoxBtn" class="support" type="button">Enable Firefox Support</button>
+                </div>
+
                 <div class="row">
                     <div>
                         <span class="row-label">Disconnect Current Backend</span>
@@ -557,6 +568,9 @@
         const disconnectBtn = document.getElementById('disconnectBtn');
         const enableFirefoxBtn = document.getElementById('enableFirefoxBtn');
 
+        const MIN_WINDOW_WIDTH = 680;
+        const MIN_WINDOW_HEIGHT = 700;
+
         let resizeTimer = null;
         let advancedPinnedOpen = false;
 
@@ -577,8 +591,25 @@
                 return;
             }
 
-            const width = Math.ceil(Math.max(400, shell.scrollWidth + 40));
-            const height = Math.ceil(Math.max(280, document.documentElement.scrollHeight + 24));
+            const root = document.documentElement;
+            const body = document.body;
+            const width = Math.ceil(
+                Math.max(
+                    MIN_WINDOW_WIDTH,
+                    root.clientWidth,
+                    root.scrollWidth,
+                    body.scrollWidth,
+                    shell.scrollWidth + 40,
+                ),
+            );
+            const height = Math.ceil(
+                Math.max(
+                    MIN_WINDOW_HEIGHT,
+                    root.clientHeight,
+                    root.scrollHeight,
+                    body.scrollHeight,
+                ),
+            );
 
             try {
                 await invoke('resize_current_window', { width, height });
@@ -627,30 +658,30 @@
             switch (view.connectionState) {
                 case 'browser-repair-required':
                     return {
-                        value: 'Browser connection unavailable',
-                        tone: 'critical',
-                        note: 'Browser-side local controls are unavailable on this device right now.',
-                        actionNote: 'Use Open Nojoin to return to the browser. If the state does not recover after reopening Companion, relaunch the app and try again.',
+                        value: 'Local browser connection unavailable',
+                        tone: 'warning',
+                        note: 'Local browser controls are unavailable until Companion restores its secure local connection on this device.',
+                        actionNote: 'Use Open Nojoin to return to the browser. If this state does not clear after reopening Companion, quit and relaunch the app on this device.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
                 case 'browser-repair-in-progress':
                     return {
-                        value: 'Browser connection recovering',
-                        tone: 'warning',
-                        note: 'Companion is reconnecting its local browser link now. Browser-side controls should refresh automatically when the connection settles.',
-                        actionNote: 'Wait for the connection to settle before starting a new pairing request from Nojoin.',
+                        value: 'Local browser connection recovering',
+                        tone: 'informational',
+                        note: 'Companion is restoring its local browser connection. Browser-side controls should refresh automatically when recovery completes.',
+                        actionNote: 'Wait for recovery first. If this state lingers, quit and relaunch Companion on this device.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
                 case 'pairing-code-active':
                     return {
-                        value: 'Pairing request pending',
+                        value: 'Approval pending',
                         tone: 'informational',
                         note: view.is_paired
-                            ? `${currentBackend ? `Current backend: ${currentBackend}. ` : ''}The current backend stays connected until the new browser pairing request is approved.`
-                            : 'Approve or decline the active browser pairing request from the OS-native prompt.',
-                        actionNote: 'Use Open Nojoin to return to the browser. New pairing requests are created from the web settings page, not from Companion.',
+                            ? `${currentBackend ? `Current backend: ${currentBackend}. ` : ''}Companion received the new pairing request and is waiting for an OS-native accept or decline decision.`
+                            : 'Companion received the pairing request and is waiting for an OS-native accept or decline decision.',
+                        actionNote: 'Use Open Nojoin to return to the browser. Approve or decline the operating-system prompt on this device.',
                         disablePairing: false,
                         openAdvanced: false,
                     };
@@ -659,8 +690,8 @@
                         value: 'Temporarily disconnected',
                         tone: 'informational',
                         note: currentBackend
-                            ? `This device is still paired with ${currentBackend} and should resync automatically when the backend connection returns.`
-                            : 'The saved pairing is still valid and should resync automatically when the backend connection returns.',
+                            ? `This device is still paired with ${currentBackend} and should recover automatically when the backend connection returns.`
+                            : 'The saved pairing is still valid and should recover automatically when the backend connection returns.',
                         actionNote: 'Use Open Nojoin to return to the browser. Start a new pairing request there only if you intentionally want to move this device.',
                         disablePairing: false,
                         openAdvanced: false,
@@ -671,7 +702,7 @@
                         tone: 'healthy',
                         note: currentBackend
                             ? `This device is connected to ${currentBackend}.`
-                            : 'This device is connected and ready for browser-side local controls.',
+                            : 'This device is connected and ready for local browser controls.',
                         actionNote: 'Use Open Nojoin to return to the browser. Start a new pairing request there only if you intentionally want to replace the current backend.',
                         disablePairing: false,
                         openAdvanced: false,
@@ -680,8 +711,8 @@
                 default:
                     return {
                         value: 'Not paired',
-                        tone: 'setup',
-                        note: 'This device is not connected to a Nojoin backend yet.',
+                        tone: 'informational',
+                        note: 'This device is not paired to a Nojoin backend yet.',
                         actionNote: 'Use Open Nojoin to start pairing from the browser. Companion will open an OS-native approval prompt when the request arrives.',
                         disablePairing: false,
                         openAdvanced: false,
@@ -697,9 +728,9 @@
             connectionStateNote.textContent = connection.note;
             pairingActionNote.textContent = connection.actionNote;
 
-            startPairingBtn.textContent = 'Open Paired Nojoin';
-            startPairingBtn.hidden = !view.is_paired;
-            startPairingBtn.disabled = connection.disablePairing || !view.is_paired;
+            startPairingBtn.textContent = 'Open Nojoin';
+            startPairingBtn.hidden = false;
+            startPairingBtn.disabled = connection.disablePairing;
 
             runOnStartupToggle.checked = view.run_on_startup_enabled;
             runOnStartupToggle.disabled = false;
@@ -710,10 +741,10 @@
                 ? `Current version ${view.app_version}. Version ${view.latest_version} is available.`
                 : `Current version ${view.app_version}.`;
 
-            aboutNote.textContent = `Nojoin Companion must be running on this device so Nojoin can access local browser controls and record meetings. Version ${view.app_version}.`;
+            aboutNote.textContent = `Nojoin Companion keeps local browser controls and recording support available on this device. Version ${view.app_version}.`;
 
             disconnectNote.textContent = view.is_paired
-                ? 'Remove this device from its current backend. Pair again before browser-side controls work.'
+                ? 'Remove this device from its current backend. Pair again from Nojoin in your browser before local browser controls work again.'
                 : 'This device is already unpaired.';
             disconnectBtn.textContent = 'Disconnect Current Backend';
             disconnectBtn.disabled = !view.is_paired;

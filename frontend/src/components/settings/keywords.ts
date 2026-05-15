@@ -4,7 +4,8 @@ export const AI_KEYWORDS = [
   'provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai', 
   'api key', 'gpt', 'claude', 'hugging face', 'token', 'diarization', 
   'pyannote', 'speaker', 'separation', 'voiceprint', 'auto-create', 
-  'identification', 'recognition', 'whisper', 'transcription', 'speech to text'
+  'identification', 'recognition', 'whisper', 'transcription', 'speech to text',
+  'automatic enhancement', 'meeting intelligence', 'short titles', 'title', 'titles', 'ollama'
 ];
 
 export const AUDIO_KEYWORDS = [
@@ -33,6 +34,19 @@ export const ACCOUNT_KEYWORDS = [
   'calendar', 'calendars', 'agenda', 'events', 'gmail', 'google', 'outlook', 'microsoft'
 ];
 
+export const PERSONAL_KEYWORDS = [
+  ...GENERAL_KEYWORDS,
+  ...ACCOUNT_KEYWORDS,
+  'preferences',
+  'personal',
+  'security',
+  'calendar connections',
+  'processing',
+  'vad',
+  'voice activity detection',
+  'speaker diarization',
+];
+
 export const UPDATES_KEYWORDS = [
   'update', 'updates', 'release', 'releases', 'version', 'versions',
   'latest', 'upgrade', 'changelog', 'release notes', 'installer',
@@ -48,13 +62,30 @@ export const INVITES_KEYWORDS = [
   'invite', 'invitation', 'link', 'code', 'join', 'register', 'create invite', 'revoke'
 ];
 
+export const ADMINISTRATION_KEYWORDS = [
+  ...ADMIN_KEYWORDS,
+  ...INVITES_KEYWORDS,
+  ...SYSTEM_KEYWORDS,
+  'administration',
+  'operations',
+  'system operations',
+  'logs',
+  'backup',
+  'restore',
+  'export',
+  'import',
+];
+
 export const TAB_KEYWORDS: Record<string, string[]> = {
+  personal: PERSONAL_KEYWORDS,
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
   companion: COMPANION_KEYWORDS,
   updates: UPDATES_KEYWORDS,
+  help: ['help', 'tour', 'demo', 'tutorial', 'issue', 'bug'],
   system: SYSTEM_KEYWORDS,
   account: ACCOUNT_KEYWORDS,
   admin: ADMIN_KEYWORDS,
+  administration: ADMINISTRATION_KEYWORDS,
   invites: INVITES_KEYWORDS,
 };

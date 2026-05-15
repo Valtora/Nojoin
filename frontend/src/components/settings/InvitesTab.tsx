@@ -11,11 +11,15 @@ import {
 import { sanitizeIntegerString } from "@/lib/validation";
 import { Plus, Trash2, Copy, Users, Clock, XCircle } from "lucide-react";
 import ConfirmationModal from "../ConfirmationModal";
+import { useNotificationStore } from "@/lib/notificationStore";
+import SettingsCallout from "./SettingsCallout";
+import SettingsPanel from "./SettingsPanel";
 
 export default function InvitesTab() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const { addNotification } = useNotificationStore();
 
   // Create Form State
   const [role, setRole] = useState<UserRole>(UserRole.USER);
@@ -37,6 +41,10 @@ export default function InvitesTab() {
       setInvitations(data);
     } catch (e) {
       console.error("Failed to fetch invitations", e);
+      addNotification({
+        type: "error",
+        message: "Failed to load invitations",
+      });
     } finally {
       setLoading(false);
     }
@@ -52,9 +60,16 @@ export default function InvitesTab() {
       await createInvitation(role, expiresIn, maxUses);
       await fetchInvitations();
       setShowCreateModal(false);
+      addNotification({
+        type: "success",
+        message: "Invitation created successfully",
+      });
     } catch (e) {
       console.error("Failed to create invitation", e);
-      alert("Failed to create invitation");
+      addNotification({
+        type: "error",
+        message: "Failed to create invitation",
+      });
     } finally {
       setCreating(false);
     }
@@ -70,8 +85,16 @@ export default function InvitesTab() {
     try {
       await revokeInvitation(inviteToRevoke);
       await fetchInvitations();
+      addNotification({
+        type: "success",
+        message: "Invitation revoked",
+      });
     } catch (e) {
       console.error("Failed to revoke invitation", e);
+      addNotification({
+        type: "error",
+        message: "Failed to revoke invitation",
+      });
     } finally {
       setRevokeModalOpen(false);
       setInviteToRevoke(null);
@@ -88,8 +111,16 @@ export default function InvitesTab() {
     try {
       await deleteInvitation(inviteToDelete);
       await fetchInvitations();
+      addNotification({
+        type: "success",
+        message: "Invitation deleted",
+      });
     } catch (e) {
       console.error("Failed to delete invitation", e);
+      addNotification({
+        type: "error",
+        message: "Failed to delete invitation",
+      });
     } finally {
       setDeleteModalOpen(false);
       setInviteToDelete(null);
@@ -97,19 +128,28 @@ export default function InvitesTab() {
   };
 
   const copyLink = (link: string) => {
-    navigator.clipboard.writeText(link);
-    // Could add toast here
+    navigator.clipboard
+      .writeText(link)
+      .then(() => {
+        addNotification({
+          type: "success",
+          message: "Invitation link copied",
+        });
+      })
+      .catch(() => {
+        addNotification({
+          type: "error",
+          message: "Failed to copy invitation link",
+        });
+      });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-          Invitation Management
-        </h3>
+      <div className="flex justify-end">
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Create Invite
@@ -117,19 +157,20 @@ export default function InvitesTab() {
       </div>
 
       {loading ? (
-        <div className="py-8 text-center contrast-helper">
-          Loading invitations...
-        </div>
+        <SettingsCallout tone="neutral" message="Loading invitations..." />
       ) : invitations.length === 0 ? (
-        <div className="text-center py-8 contrast-helper bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-          No invitations found. Create one to get started.
-        </div>
+        <SettingsCallout
+          tone="neutral"
+          title="No invitations yet"
+          message="Create an invitation to generate a registration link for a new user."
+        />
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           {invitations.map((inv) => (
-            <div
+            <SettingsPanel
               key={inv.id}
-              className={`p-4 rounded-lg border ${inv.is_revoked ? "bg-gray-100 border-gray-200 dark:bg-gray-900 dark:border-gray-800 opacity-75" : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm"}`}
+              variant={inv.is_revoked ? "subtle" : "default"}
+              className={inv.is_revoked ? "opacity-75" : ""}
             >
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
@@ -167,7 +208,7 @@ export default function InvitesTab() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mb-4 bg-gray-50 dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-gray-200/80 bg-gray-50/85 p-2 dark:border-gray-800 dark:bg-gray-900/70">
                 <input
                   readOnly
                   value={inv.link}
@@ -216,7 +257,7 @@ export default function InvitesTab() {
                   </div>
                 </div>
               )}
-            </div>
+            </SettingsPanel>
           ))}
         </div>
       )}

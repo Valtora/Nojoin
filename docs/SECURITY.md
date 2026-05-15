@@ -56,7 +56,7 @@ JWT signing material is stored as a small keyring rather than a single static va
 The Nojoin Companion app uses a strict browser-initiated but locally approved pairing workflow.
 
 - The Companion exposes a short-lived local API only for authenticated requests.
-- Pairing starts from the authenticated browser session in `Settings -> Companion App`, but the browser still cannot silently complete pairing, disconnect the backend, or mint reusable Companion credentials on its own.
+- Pairing starts from the authenticated browser session in `Settings -> Companion`, but the browser still cannot silently complete pairing, disconnect the backend, or mint reusable Companion credentials on its own.
 - The backend creates a short-lived pairing request, signs the `nojoin://pair` link fields with an Ed25519 backend identity key, and includes the backend origin, expiry, request id, request secret, and replacement flag in that signed payload.
 - The local Companion verifies the signed link, verifies that the embedded backend identity key id matches the supplied public key, validates the backend origin as a safe HTTPS target, and rejects expired or malformed requests before contacting the backend.
 - Pairing completion always requires an OS-native approval prompt on the same device that is running the browser and Companion app.

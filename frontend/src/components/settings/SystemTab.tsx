@@ -286,19 +286,8 @@ export default function SystemTab() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Logs Section */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-gray-500 dark:text-gray-400 font-mono text-lg">
-            {">_"}
-          </span>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            Logs
-          </h3>
-        </div>
-
-        <div className="bg-[#0d1117] rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[600px]">
+    <div className="animate-in fade-in duration-500">
+      <div className="bg-[#0d1117] rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[600px]">
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-gray-800">
             {/* Container Select */}
@@ -437,8 +426,7 @@ export default function SystemTab() {
             <span>{isConnected ? "Connected" : "Disconnected"}</span>
             <span>{filteredLogs.length} lines</span>
           </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

@@ -159,12 +159,8 @@ export default function BackupRestore() {
   };
 
   return (
-    <div className="space-y-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-      <div>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-          Backup & Restore
-        </h3>
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-6">
+    <div className="space-y-6">
+      <div className="rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950/60 space-y-6">
           {/* Export Section */}
           <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
             <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
@@ -329,7 +325,6 @@ export default function BackupRestore() {
             </div>
           )}
         </div>
-      </div>
       <RestoreOptionsModal
         isOpen={showRestoreOptions}
         onClose={() => setShowRestoreOptions(false)}

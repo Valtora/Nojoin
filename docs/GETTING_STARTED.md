@@ -70,7 +70,7 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 1. Download the latest Windows Companion build from the GitHub Releases page.
 2. Run the installer or portable build, then launch the Companion.
-3. In Nojoin, open `Settings -> Companion App` and choose `Pair This Device`.
+3. In Nojoin, open `Settings -> Companion` and choose `Pair This Device`.
 4. Let the browser open the local Companion through `nojoin://pair`, then approve the OS-native prompt on this device.
 5. Confirm the Companion page shows `Connected` before starting a live recording.
 

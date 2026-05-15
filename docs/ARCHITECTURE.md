@@ -53,7 +53,7 @@ The Companion app is responsible for:
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The browser starts a signed pairing request from `Settings -> Companion App`, launches the local Companion through `nojoin://pair`, and the Companion shows an OS-native approval prompt on that same machine. During completion, the Companion validates the backend-signed request fields, captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata plus backend identity metadata in `config.json`.
+2. The browser starts a signed pairing request from `Settings -> Companion`, launches the local Companion through `nojoin://pair`, and the Companion shows an OS-native approval prompt on that same machine. During completion, the Companion validates the backend-signed request fields, captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata plus backend identity metadata in `config.json`.
 3. When the Companion needs backend access, it exchanges the stored companion credential for a short-lived companion access token.
 4. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
 5. The Companion uploads audio segments using that recording-scoped token.
@@ -85,7 +85,7 @@ If AI configuration is missing, the recording still completes with transcript, d
 ## Calendar Flow
 
 1. An admin configures Google and/or Microsoft OAuth credentials for the installation.
-2. End users connect their own accounts from the Account settings page.
+2. End users connect their own accounts from the Personal settings area.
 3. Nojoin syncs selected calendars into stored dashboard-facing event data.
 4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources.
 

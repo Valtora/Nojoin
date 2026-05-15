@@ -79,10 +79,7 @@ enum ProcessMode {
 
 enum LocalHttpsControllerCommand {
     #[cfg(windows)]
-    ServerStopped {
-        generation: u64,
-        result: Result<(), String>,
-    },
+    ServerStopped { result: Result<(), String> },
 }
 
 const SETTINGS_WINDOW_LABEL: &str = "settings";
@@ -773,8 +770,8 @@ fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("settings.html".into()),
     )
     .title("Settings")
-    .inner_size(540.0, 420.0)
-    .min_inner_size(380.0, 280.0)
+    .inner_size(660.0, 760.0)
+    .min_inner_size(560.0, 520.0)
     .resizable(false)
     .center()
     .build()
@@ -1041,8 +1038,15 @@ async fn resize_current_window(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let clamped_width = width.clamp(360.0, 720.0);
-    let clamped_height = height.clamp(220.0, 760.0);
+    let window_label = window.label().to_string();
+    let (min_width, max_width, min_height, max_height) =
+        if window_label == SETTINGS_WINDOW_LABEL {
+            (600.0, 920.0, 620.0, 1100.0)
+        } else {
+            (360.0, 640.0, 220.0, 520.0)
+        };
+    let clamped_width = width.clamp(min_width, max_width);
+    let clamped_height = height.clamp(min_height, max_height);
     let app_handle = window.app_handle().clone();
     let resize_window = window.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -1473,45 +1477,19 @@ fn run_local_https_reconcile(
 }
 
 #[cfg(windows)]
-async fn stop_local_https_server(
-    server_task: &mut Option<tokio::task::JoinHandle<()>>,
-    server_shutdown: &mut Option<tokio::sync::watch::Sender<bool>>,
-    server_generation: &mut Option<u64>,
-    expected_stopped_generation: &mut Option<u64>,
-) {
-    if server_task.is_some() {
-        *expected_stopped_generation = *server_generation;
-    }
-
-    if let Some(shutdown_tx) = server_shutdown.take() {
-        let _ = shutdown_tx.send(true);
-    }
-
-    if let Some(task) = server_task.take() {
-        let _ = task.await;
-    }
-
-    *server_generation = None;
-}
-
-#[cfg(windows)]
 fn spawn_local_https_server_task(
     command_tx: tokio::sync::mpsc::UnboundedSender<LocalHttpsControllerCommand>,
     state: Arc<AppState>,
     app: tauri::AppHandle,
-    generation: u64,
     server_identity: local_https_identity::LocalHttpsServerIdentity,
-) -> (
-    tokio::task::JoinHandle<()>,
-    tokio::sync::watch::Sender<bool>,
-) {
+) -> tokio::sync::watch::Sender<bool> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let task = tokio::spawn(async move {
+    tokio::spawn(async move {
         let result = server::start_server(state, app, server_identity, shutdown_rx).await;
-        let _ = command_tx.send(LocalHttpsControllerCommand::ServerStopped { generation, result });
+        let _ = command_tx.send(LocalHttpsControllerCommand::ServerStopped { result });
     });
 
-    (task, shutdown_tx)
+    shutdown_tx
 }
 
 #[cfg(windows)]
@@ -1521,10 +1499,6 @@ async fn run_local_https_controller(
     command_tx: tokio::sync::mpsc::UnboundedSender<LocalHttpsControllerCommand>,
     mut command_rx: tokio::sync::mpsc::UnboundedReceiver<LocalHttpsControllerCommand>,
 ) {
-    let mut next_generation: u64 = 1;
-    let mut server_generation: Option<u64> = None;
-    let mut expected_stopped_generation: Option<u64> = None;
-    let mut server_task: Option<tokio::task::JoinHandle<()>> = None;
     let mut server_shutdown: Option<tokio::sync::watch::Sender<bool>> = None;
 
     set_local_https_health_and_refresh(
@@ -1564,17 +1538,12 @@ async fn run_local_https_controller(
                 }
             }
 
-            let generation = next_generation;
-            next_generation += 1;
-            let (task, shutdown_tx) = spawn_local_https_server_task(
+            let shutdown_tx = spawn_local_https_server_task(
                 command_tx.clone(),
                 state.clone(),
                 app.clone(),
-                generation,
                 ready_state.server_identity,
             );
-            server_generation = Some(generation);
-            server_task = Some(task);
             server_shutdown = Some(shutdown_tx);
             set_local_https_health_and_refresh(&app, &state, LocalHttpsHealth::ready(true));
         }
@@ -1594,18 +1563,8 @@ async fn run_local_https_controller(
 
     while let Some(command) = command_rx.recv().await {
         match command {
-            LocalHttpsControllerCommand::ServerStopped { generation, result } => {
-                if expected_stopped_generation == Some(generation) {
-                    expected_stopped_generation = None;
-                    continue;
-                }
-                if server_generation != Some(generation) {
-                    continue;
-                }
-
-                server_task = None;
-                server_shutdown = None;
-                server_generation = None;
+            LocalHttpsControllerCommand::ServerStopped { result } => {
+                drop(server_shutdown.take());
 
                 match result {
                     Ok(()) => {

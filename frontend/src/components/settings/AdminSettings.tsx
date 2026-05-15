@@ -1,128 +1,139 @@
-import { useState, useEffect } from "react";
-import { Shield, Mail, Cpu, Server, Database, CalendarRange } from "lucide-react";
-import { Settings } from "@/types";
+import { fuzzyMatch } from "@/lib/searchUtils";
 import UsersTab from "./UsersTab";
 import InvitesTab from "./InvitesTab";
-import AISettings from "./AISettings";
 import BackupRestore from "./BackupRestore";
 import SystemTab from "./SystemTab";
 import CalendarProviderSettings from "./CalendarProviderSettings";
-import { fuzzyMatch } from "@/lib/searchUtils";
+import SettingsCallout from "./SettingsCallout";
+import SettingsSection from "./SettingsSection";
 
 interface AdminSettingsProps {
-  settings: Settings;
-  onUpdateSettings: (newSettings: Settings) => void;
-  onPersistSettings?: (newSettings: Settings) => Promise<void>;
   isAdmin: boolean;
   searchQuery?: string;
 }
 
 export default function AdminSettings({
-  settings,
-  onUpdateSettings,
-  onPersistSettings,
   isAdmin,
   searchQuery = "",
 }: AdminSettingsProps) {
-  const [activeTab, setActiveTab] = useState<
-    "users" | "invites" | "ai" | "system" | "calendar" | "backup"
-  >("users");
+  if (!isAdmin) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (!searchQuery) return;
+  const showUsers = !searchQuery || fuzzyMatch(searchQuery, [
+    "users",
+    "roles",
+    "permissions",
+    "access",
+    "superuser",
+  ]);
+  const showInvites = !searchQuery || fuzzyMatch(searchQuery, [
+    "invite",
+    "token",
+    "link",
+    "join",
+    "registration",
+  ]);
+  const showCalendar = !searchQuery || fuzzyMatch(searchQuery, [
+    "calendar",
+    "gmail",
+    "google",
+    "outlook",
+    "microsoft",
+    "oauth",
+    "provider",
+  ]);
+  const showSystem = !searchQuery || fuzzyMatch(searchQuery, [
+    "system",
+    "logs",
+    "infrastructure",
+    "docker",
+    "port",
+    "redis",
+    "worker",
+  ]);
+  const showBackup = !searchQuery || fuzzyMatch(searchQuery, [
+    "backup",
+    "restore",
+    "export",
+    "import",
+    "archive",
+    "recovery",
+    "data",
+  ]);
 
-    if (fuzzyMatch(searchQuery, ["users", "roles", "permissions"]))
-      setActiveTab("users");
-    if (fuzzyMatch(searchQuery, ["invite", "token", "link"]))
-      setActiveTab("invites");
-    if (
-      fuzzyMatch(searchQuery, [
-        "ai",
-        "llm",
-        "api key",
-        "provider",
-        "model",
-        "gemini",
-        "openai",
-      ])
-    )
-      setActiveTab("ai");
-    if (
-      fuzzyMatch(searchQuery, [
-        "system",
-        "infrastructure",
-        "docker",
-        "port",
-        "redis",
-        "worker",
-      ])
-    )
-      setActiveTab("system");
-    if (
-      fuzzyMatch(searchQuery, [
-        "calendar",
-        "gmail",
-        "google",
-        "outlook",
-        "microsoft",
-        "oauth",
-        "agenda",
-      ])
-    )
-      setActiveTab("calendar");
-    if (
-      fuzzyMatch(searchQuery, ["backup", "restore", "export", "import", "data"])
-    )
-      setActiveTab("backup");
-  }, [searchQuery]);
-
-  const tabs = [
-    { id: "users", label: "Users", icon: Shield },
-    { id: "invites", label: "Invites", icon: Mail },
-    { id: "ai", label: "AI Configuration", icon: Cpu },
-    { id: "system", label: "System", icon: Server },
-    { id: "calendar", label: "Calendar", icon: CalendarRange },
-    { id: "backup", label: "Backup & Restore", icon: Database },
-  ] as const;
+  if (
+    !showUsers &&
+    !showInvites &&
+    !showCalendar &&
+    !showSystem &&
+    !showBackup
+  ) {
+    return (
+      <SettingsCallout
+        tone="neutral"
+        title="No matching settings"
+        message="Try a broader search term for users, invitations, calendar providers, logs, backups, or restore operations."
+      />
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`
-                            flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2
-                            ${
-                              activeTab === tab.id
-                                ? "border-orange-500 text-orange-700 dark:text-orange-300 bg-orange-50/50 dark:bg-orange-900/10"
-                                : "border-transparent text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                            }
-                        `}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-8">
+      {showUsers && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="Users"
+          description="Create, edit, and review account access across the installation."
+          width="full"
+        >
+          <UsersTab />
+        </SettingsSection>
+      )}
 
-      <div className="mt-6">
-        {activeTab === "users" && <UsersTab />}
-        {activeTab === "invites" && <InvitesTab />}
-        {activeTab === "ai" && (
-          <AISettings
-            settings={settings}
-            onUpdate={(newSettings) => onUpdateSettings(newSettings)}
-            onPersist={onPersistSettings}
-            isAdmin={isAdmin}
-            searchQuery={searchQuery}
-          />
-        )}
-        {activeTab === "system" && <SystemTab />}
-        {activeTab === "calendar" && <CalendarProviderSettings />}
-        {activeTab === "backup" && <BackupRestore />}
-      </div>
+      {showInvites && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="Invitations"
+          description="Issue and revoke invitation links for new user sign-ups."
+          width="wide"
+        >
+          <InvitesTab />
+        </SettingsSection>
+      )}
+
+      {showCalendar && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="Calendar providers"
+          description="Configure installation-wide OAuth credentials for Google and Microsoft calendar connections."
+          width="wide"
+        >
+          <CalendarProviderSettings />
+        </SettingsSection>
+      )}
+
+      {showSystem && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="System operations"
+          description="Inspect live logs and operational output from the Nojoin services."
+          width="full"
+        >
+          <SystemTab />
+        </SettingsSection>
+      )}
+
+      {showBackup && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="Backup and restore"
+          description="Export or recover application data with explicit, transactional actions."
+          width="wide"
+        >
+          <BackupRestore />
+        </SettingsSection>
+      )}
     </div>
   );
 }

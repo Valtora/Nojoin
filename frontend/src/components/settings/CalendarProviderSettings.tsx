@@ -12,6 +12,9 @@ import {
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { CalendarRange, Loader2, Save } from "lucide-react";
+import SettingsCallout from "./SettingsCallout";
+import SettingsField from "./SettingsField";
+import SettingsPanel from "./SettingsPanel";
 
 
 interface ProviderFormState {
@@ -163,39 +166,32 @@ export default function CalendarProviderSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/60 p-4">
+      <SettingsCallout tone="info">
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
             <CalendarRange className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Calendar Provider OAuth Configuration
-            </h3>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Store the one-time installation OAuth app credentials for Google and Microsoft.
-              End users do not paste these values. They only click Connect Gmail Calendar
-              or Connect Outlook Calendar and then approve access in the provider&apos;s own
-              sign-in and consent screen.
-            </p>
+            Store the installation OAuth app credentials for Google and Microsoft here. End users never paste these values. They only click Connect from Personal settings and then complete the provider&apos;s own sign-in and consent flow.
           </div>
         </div>
-      </div>
+      </SettingsCallout>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <SettingsPanel variant="subtle" className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
           <Loader2 className="w-4 h-4 animate-spin" />
           Loading provider configuration...
-        </div>
+        </SettingsPanel>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {providers.map((provider) => {
             const form = forms[provider.provider];
             const isSaving = savingProvider === provider.provider;
             return (
-              <div
+              <SettingsPanel
                 key={provider.provider}
-                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/60 p-4 space-y-4"
+                variant="subtle"
+                className="space-y-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -208,7 +204,7 @@ export default function CalendarProviderSettings() {
                         : "Missing OAuth credentials"}
                     </div>
                     {provider.redirect_uri && (
-                      <div className="mt-2 space-y-1 text-xs contrast-helper">
+                      <SettingsPanel variant="meta" className="mt-3 space-y-1 text-xs contrast-helper">
                         <div>
                           Register redirect URI:
                         </div>
@@ -220,7 +216,7 @@ export default function CalendarProviderSettings() {
                             ? "Google app type: Web application"
                             : "Microsoft account types: if Tenant ID is common, the app must allow personal Microsoft accounts and work/school accounts"}
                         </div>
-                      </div>
+                      </SettingsPanel>
                     )}
                   </div>
                   <label className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -238,12 +234,13 @@ export default function CalendarProviderSettings() {
                   </label>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium contrast-muted mb-1">
-                    {provider.provider === "microsoft"
+                <SettingsField
+                  label={
+                    provider.provider === "microsoft"
                       ? "Application (client) ID"
-                      : "OAuth Client ID"}
-                  </label>
+                      : "OAuth Client ID"
+                  }
+                >
                   <input
                     type="text"
                     value={form.client_id}
@@ -257,13 +254,13 @@ export default function CalendarProviderSettings() {
                       ? "Paste the Application (client) ID"
                       : "Paste the OAuth client ID"}
                   />
-                </div>
+                </SettingsField>
 
                 {provider.provider === "microsoft" && (
-                  <div>
-                    <label className="block text-sm font-medium contrast-muted mb-1">
-                      Tenant ID or common
-                    </label>
+                  <SettingsField
+                    label="Tenant ID or common"
+                    description="Use common for both Outlook.com and Microsoft 365 accounts. Use a specific tenant ID only for a single-tenant app or to restrict sign-in to one directory."
+                  >
                     <input
                       type="text"
                       value={form.tenant_id}
@@ -275,18 +272,16 @@ export default function CalendarProviderSettings() {
                       className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
                       placeholder="common"
                     />
-                    <p className="mt-1 text-xs contrast-helper">
-                      Use common for both Outlook.com and Microsoft 365 accounts. Use a specific tenant ID only for a single-tenant app or to restrict sign-in to one directory.
-                    </p>
-                  </div>
+                  </SettingsField>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium contrast-muted mb-1">
-                    {provider.provider === "microsoft"
+                <SettingsField
+                  label={
+                    provider.provider === "microsoft"
                       ? "Client Secret Value"
-                      : "OAuth Client Secret"}
-                  </label>
+                      : "OAuth Client Secret"
+                  }
+                >
                   <input
                     type="password"
                     value={form.client_secret}
@@ -305,7 +300,7 @@ export default function CalendarProviderSettings() {
                         ? "Stored. Enter a new value to replace it."
                         : "Paste the provider secret"}
                   />
-                </div>
+                </SettingsField>
 
                 <label className="flex items-center gap-2 text-sm contrast-helper">
                   <input
@@ -322,20 +317,22 @@ export default function CalendarProviderSettings() {
                   Clear saved secret on next save
                 </label>
 
-                <button
-                  type="button"
-                  onClick={() => handleSave(provider.provider)}
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
-                >
-                  {isSaving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  Save provider
-                </button>
-              </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleSave(provider.provider)}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Save provider
+                  </button>
+                </div>
+              </SettingsPanel>
             );
           })}
         </div>

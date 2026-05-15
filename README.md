@@ -70,7 +70,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 7. Complete the first-run wizard.
 
-8. Download and launch the latest Windows Companion build from GitHub Releases, then pair it from `Settings -> Companion App` inside Nojoin.
+8. Download and launch the latest Windows Companion build from GitHub Releases, then pair it from `Settings -> Companion` inside Nojoin.
 
 Notes:
 

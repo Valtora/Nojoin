@@ -51,6 +51,11 @@
                 --shadow: 0 18px 40px rgba(2, 6, 23, 0.36);
             }
         }
+        html,
+        body {
+            min-height: 100%;
+        }
+
         body {
             margin: 0;
             padding: 18px 20px;
@@ -58,12 +63,14 @@
             color: var(--text);
             font-family: "Segoe UI", "Inter", system-ui, sans-serif;
             box-sizing: border-box;
+            overflow: hidden;
         }
         *, *::before, *::after {
             box-sizing: inherit;
         }
         .shell {
             width: min(460px, 100%);
+            margin: 0 auto;
             padding: 0;
         }
         .hero {

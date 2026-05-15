@@ -1,6 +1,6 @@
 # Nojoin Backup and Restore Guide
 
-Nojoin includes a full-system backup and restore flow under **Settings > Backup & Restore**.
+Nojoin includes a full-system backup and restore flow under **Settings > Administration > Backup and restore**.
 
 This guide explains what is included, what remains redacted, and what should be treated as sensitive during handling.
 
@@ -39,7 +39,7 @@ Treat the archive like a secrets file, not just a convenience export.
 
 ## Creating a Backup
 
-1. Open **Settings > Backup & Restore**.
+1. Open **Settings > Administration > Backup and restore**.
 2. Choose whether to include audio recordings.
 3. Start the export.
 4. Store the resulting ZIP file somewhere secure.
@@ -48,7 +48,7 @@ If audio is included, Nojoin compresses it to Opus to reduce archive size.
 
 ## Restoring a Backup
 
-1. Open **Settings > Backup & Restore**.
+1. Open **Settings > Administration > Backup and restore**.
 2. Upload the backup ZIP.
 3. Choose the conflict mode.
 4. Wait for the import to finish before closing the page.

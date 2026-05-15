@@ -195,7 +195,7 @@ location / {
 
 - Keep server and Companion app versions aligned.
 - When performing major upgrades, check release notes for breaking changes.
-- **Companion Security Upgrade**: Upgrading to a version that implements the signed browser-initiated pairing model will automatically clear out any legacy code-based connection state in the Companion app. You will need to perform a clean first-pair workflow from `Settings -> Companion App` in Nojoin and approve the native prompt to continue using the Companion.
+- **Companion Security Upgrade**: Upgrading to a version that implements the signed browser-initiated pairing model will automatically clear out any legacy code-based connection state in the Companion app. You will need to perform a clean first-pair workflow from `Settings -> Companion` in Nojoin and approve the native prompt to continue using the Companion.
 - **Companion TOFU TLS Pinning**: The Companion now pins the backend certificate it first sees during pairing. Disconnecting the current backend from Companion Settings clears that saved trust and leaves the app ready for a clean new pairing.
 
 ## Database Migrations

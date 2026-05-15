@@ -49,7 +49,7 @@ If an update clears old trust state, expect to pair again after updating.
 ## First Pair Or Refresh A Pairing
 
 1. Open the Companion.
-2. Open your Nojoin site and go to `Settings -> Companion App`.
+2. Open your Nojoin site and go to `Settings -> Companion`.
 3. Choose `Pair This Device`. The browser creates a signed pairing request and opens the local Companion through `nojoin://pair`.
 4. Review the OS-native prompt that names the Nojoin deployment and username. Approve to continue or decline to cancel.
 5. Keep the browser page open while the request moves through `Waiting for Companion`, `Approval pending`, and `Completing pairing`.
@@ -71,9 +71,9 @@ If Windows says no app is associated with `nojoin://`, or nothing appears after 
 | Status | What it means | What to do next |
 | --- | --- | --- |
 | `Connected` | The Companion is paired and ready. | Use `Open Nojoin` or start from the dashboard. |
-| `Not paired` | This machine does not have an active backend pairing. | Open Nojoin and start pairing from `Settings -> Companion App`. |
-| `Pairing request pending` | The browser created a signed request and the Companion is still surfacing or processing it. | Keep the browser page open and respond to the native prompt when it appears. |
+| `Not paired` | This machine does not have an active backend pairing. | Open Nojoin and start pairing from `Settings -> Companion`. |
 | `Approval pending` | The Companion is waiting for an OS-native accept or decline decision. | Approve or decline the native prompt on this device. |
+| `Completing pairing` | The local approval succeeded and the Companion is finishing secure backend registration. | Keep the browser page open until the page refreshes into the connected state. |
 | `Temporarily disconnected` | Pairing is still valid, but the browser cannot reach the local Companion right now. | Wait a moment first. If it does not recover, open `Settings`. |
 | `Local browser connection recovering` | The Companion is restoring its local browser connection automatically. | Wait for the connection to settle, then retry from the browser. |
 | `Local browser connection unavailable` | Browser-side local controls are unavailable on this device right now. | Quit and relaunch Companion, then retry the browser action. |
@@ -110,7 +110,7 @@ The web app can show state and start signed pairing requests, but it cannot repa
 - The pairing request expired or was declined: start a fresh request from the browser and approve it promptly.
 - The Companion says `Temporarily disconnected`: wait briefly before assuming the pairing is gone.
 - The web app says `Local browser connection unavailable`: relaunch Companion and retry the browser action.
-- Firefox on Windows reaches the Nojoin site but cannot reach the local Companion while Chrome works: in the Companion app open `Settings`, choose `Enable Firefox Support`, approve the Windows administrator prompt, confirm `about:config -> security.enterprise_roots.enabled` is `true`, restart Firefox, then start a fresh pairing request.
+- Firefox on Windows reaches the Nojoin site but cannot reach the local Companion while Chrome works: in the Companion app open `Settings`, expand `Advanced`, choose `Enable Firefox Support`, approve the Windows administrator prompt, confirm `about:config -> security.enterprise_roots.enabled` is `true`, restart Firefox, then start a fresh pairing request.
 - You are switching to a different backend: do not expect the old pairing to disappear until the new pairing succeeds.
 - A recording or upload is still in progress: finish or wait before trying to replace the backend pairing.
 - The browser and Companion are on different machines: pairing will not work. The backend can be remote, but the browser and local Companion must be on the same device.

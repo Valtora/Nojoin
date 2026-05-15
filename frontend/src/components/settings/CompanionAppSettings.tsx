@@ -22,6 +22,10 @@ import { fuzzyMatch } from "@/lib/searchUtils";
 
 import AudioSettings from "./AudioSettings";
 import { AUDIO_KEYWORDS, COMPANION_KEYWORDS } from "./keywords";
+import SettingsCallout from "./SettingsCallout";
+import SettingsPanel from "./SettingsPanel";
+import SettingsSection from "./SettingsSection";
+import SettingsStatusBadge from "./SettingsStatusBadge";
 
 interface CompanionAppSettingsProps {
   companionConfig: {
@@ -64,37 +68,6 @@ interface PairingCardState {
   helperText: string;
   primaryActionLabel: string;
 }
-
-const STATUS_CHIP_STYLES: Record<CalloutTone, string> = {
-  success:
-    "border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200",
-  info:
-    "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200",
-  warning:
-    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
-  error:
-    "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200",
-};
-
-const NOTICE_STYLES: Record<CalloutTone, string> = {
-  success:
-    "border-green-200/80 bg-green-50/80 text-green-800 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-200",
-  info:
-    "border-blue-200/80 bg-blue-50/80 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200",
-  warning:
-    "border-amber-200/80 bg-amber-50/80 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
-  error:
-    "border-red-200/80 bg-red-50/80 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200",
-};
-
-const SECTION_CARD_STYLES =
-  "rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm shadow-gray-200/60 backdrop-blur dark:border-gray-800 dark:bg-gray-950/90 dark:shadow-none";
-
-const PANEL_STYLES =
-  "rounded-2xl border border-gray-200/80 bg-gray-50/85 p-4 dark:border-gray-800 dark:bg-gray-900/70";
-
-const META_CARD_STYLES =
-  "rounded-2xl border border-gray-200/80 bg-white/90 p-4 dark:border-gray-800 dark:bg-gray-950/80";
 
 const buildConnectionStateCard = ({
   backendVersion,
@@ -740,7 +713,13 @@ export default function CompanionAppSettings({
   const showAudioSections = !searchQuery || fuzzyMatch(searchQuery, AUDIO_KEYWORDS);
 
   if (searchQuery && !showOverview && !showAudioSections) {
-    return <div className="text-gray-500">No matching settings found.</div>;
+    return (
+      <SettingsCallout
+        tone="neutral"
+        title="No matching settings"
+        message="Try a broader search term for pairing, connection status, or audio controls."
+      />
+    );
   }
 
   const versionMismatch =
@@ -935,28 +914,17 @@ export default function CompanionAppSettings({
   return (
     <div className="space-y-6">
       {showOverview && (
-        <section className={`${SECTION_CARD_STYLES} space-y-5`}>
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-2xl">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
-                Companion app
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Connection and pairing
-                </h3>
-                <span
-                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_CHIP_STYLES[connectionStateCard.tone]}`}
-                >
-                  {connectionStateCard.status}
-                </span>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {connectionStateCard.message}
-              </p>
-            </div>
-
-            <div className={`${PANEL_STYLES} xl:max-w-sm`}>
+        <SettingsSection
+          eyebrow="Companion app"
+          title="Connection and pairing"
+          description={connectionStateCard.message}
+          badge={
+            <SettingsStatusBadge tone={connectionStateCard.tone}>
+              {connectionStateCard.status}
+            </SettingsStatusBadge>
+          }
+          headerAside={
+            <SettingsPanel variant="subtle" className="xl:max-w-sm">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 Next step
               </div>
@@ -966,11 +934,12 @@ export default function CompanionAppSettings({
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
                 {connectionStateCard.primaryActionMessage}
               </p>
-            </div>
-          </div>
+            </SettingsPanel>
+          }
+        >
 
           <div className="grid gap-3 md:grid-cols-3">
-            <div className={META_CARD_STYLES}>
+            <SettingsPanel variant="meta">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 Nojoin deployment
               </div>
@@ -980,9 +949,9 @@ export default function CompanionAppSettings({
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 Backend version reported by this browser session.
               </p>
-            </div>
+            </SettingsPanel>
 
-            <div className={META_CARD_STYLES}>
+            <SettingsPanel variant="meta">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 Local Companion
               </div>
@@ -992,9 +961,9 @@ export default function CompanionAppSettings({
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 Runtime version currently visible to the browser on this machine.
               </p>
-            </div>
+            </SettingsPanel>
 
-            <div className={META_CARD_STYLES}>
+            <SettingsPanel variant="meta">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 Browser controls
               </div>
@@ -1004,11 +973,11 @@ export default function CompanionAppSettings({
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 Local port {companionConfig?.local_port || 12345}.
               </p>
-            </div>
+            </SettingsPanel>
           </div>
 
           {canShowPairingWorkflow && (
-            <div className={`${PANEL_STYLES} space-y-4`}>
+            <SettingsPanel variant="subtle" className="space-y-4">
               <div className="flex items-start gap-3">
                 <div className="rounded-full bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-200">
                   <Link2 className="h-4 w-4" />
@@ -1031,7 +1000,7 @@ export default function CompanionAppSettings({
               </p>
 
               {pairingRequest && (
-                <div className={`${META_CARD_STYLES} space-y-3`}>
+                <SettingsPanel variant="meta" className="space-y-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                     Pending request
                   </div>
@@ -1046,15 +1015,14 @@ export default function CompanionAppSettings({
                       Native prompt required
                     </span>
                   </div>
-                </div>
+                </SettingsPanel>
               )}
 
               {pairingFeedbackMessage && (
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-sm ${NOTICE_STYLES[pairingFeedbackTone]}`}
-                >
-                  {pairingFeedbackMessage}
-                </div>
+                <SettingsCallout
+                  tone={pairingFeedbackTone}
+                  message={pairingFeedbackMessage}
+                />
               )}
 
               <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
@@ -1097,33 +1065,24 @@ export default function CompanionAppSettings({
                     : pairingCardState.primaryActionLabel}
                 </button>
               </div>
-            </div>
+            </SettingsPanel>
           )}
 
           {!canShowPairingWorkflow && pairingFeedbackMessage && (
-            <div
-              className={`rounded-2xl border px-4 py-3 text-sm ${NOTICE_STYLES[pairingFeedbackTone]}`}
-            >
-              {pairingFeedbackMessage}
-            </div>
+            <SettingsCallout
+              tone={pairingFeedbackTone}
+              message={pairingFeedbackMessage}
+            />
           )}
-        </section>
+        </SettingsSection>
       )}
 
       {showAudioSections && (
-        <section className={`${SECTION_CARD_STYLES} space-y-5`}>
-          <div className="max-w-2xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
-              Recording preferences
-            </div>
-            <h3 className="mt-3 text-xl font-semibold text-gray-900 dark:text-white">
-              Devices and alerts
-            </h3>
-            <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-              Manage local device selection, minimum meeting length, and quiet-audio warning behavior for the Companion app.
-            </p>
-          </div>
-
+        <SettingsSection
+          eyebrow="Recording preferences"
+          title="Devices and alerts"
+          description="Manage local device selection, minimum meeting length, and quiet-audio warning behavior. Pairing, installer, and native repair actions stay in the connection section above."
+        >
           <AudioSettings
             companionConfig={companionConfig}
             onUpdateCompanionConfig={onUpdateCompanionConfig}
@@ -1136,7 +1095,7 @@ export default function CompanionAppSettings({
             searchQuery={searchQuery}
             suppressNoMatch
           />
-        </section>
+        </SettingsSection>
       )}
     </div>
   );

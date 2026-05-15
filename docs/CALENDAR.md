@@ -30,7 +30,7 @@ For the full hosting context, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 You can provide the installation OAuth credentials in either of these ways:
 
-1. Preferred: sign in as an Owner or Admin and save them in **Settings > Admin > Calendar**.
+1. Preferred: sign in as an Owner or Admin and save them in **Settings > Administration > Calendar providers**.
 2. Alternative: set the matching environment variables and restart the stack.
 
 Supported environment variables:
@@ -49,7 +49,7 @@ Supported environment variables:
 
 Once the installation credentials exist:
 
-1. Open **Settings > Account**.
+1. Open **Settings > Personal** and go to **Calendar Connections**.
 2. Choose **Connect Gmail Calendar** or **Connect Outlook Calendar**.
 3. Complete the provider sign-in and consent flow.
 4. Return to Nojoin and choose which calendars to sync.
@@ -139,7 +139,7 @@ Microsoft setup is slightly more sensitive because tenant choice affects which a
 After setup:
 
 1. Sign in as a normal user.
-2. Connect Google or Microsoft from **Settings > Account**.
+2. Connect Google or Microsoft from **Settings > Personal > Calendar Connections**.
 3. Approve the provider consent flow.
 4. Select one or more calendars.
 5. Confirm the dashboard shows calendar markers, agenda items, and next-event data.

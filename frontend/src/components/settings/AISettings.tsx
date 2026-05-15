@@ -32,6 +32,10 @@ import {
 import { useNotificationStore } from "@/lib/notificationStore";
 import { trimString, sanitizeUrl } from "@/lib/validation";
 import Tooltip from "@/components/ui/Tooltip";
+import { Switch } from "@/components/ui/Switch";
+import SettingsCallout from "./SettingsCallout";
+import SettingsPanel from "./SettingsPanel";
+import SettingsSection from "./SettingsSection";
 import WhisperModelModal from "./WhisperModelModal";
 
 const WHISPER_MODELS = [
@@ -54,6 +58,10 @@ const WHISPER_MODELS = [
   },
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
+
+function isMaskedSecret(value: string | null | undefined): boolean {
+  return Boolean(value && (value.includes("...") || value.includes("***")));
+}
 
 interface AISettingsProps {
   settings: Settings;
@@ -100,6 +108,22 @@ export default function AISettings({
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
 
+  const getProviderConnectionDetails = (provider: string) => {
+    let rawKey = "";
+    let url = "";
+
+    if (provider === "gemini") rawKey = settings.gemini_api_key || "";
+    else if (provider === "openai") rawKey = settings.openai_api_key || "";
+    else if (provider === "anthropic") rawKey = settings.anthropic_api_key || "";
+    else if (provider === "ollama") url = settings.ollama_api_url || "";
+
+    return {
+      rawKey,
+      key: isMaskedSecret(rawKey) ? "" : rawKey,
+      url,
+    };
+  };
+
   useEffect(() => {
     getModelsStatus(settings.whisper_model_size)
       .then(setModelStatus)
@@ -110,20 +134,14 @@ export default function AISettings({
   useEffect(() => {
     const fetchModels = async () => {
       const provider = settings.llm_provider;
-      let key = "";
-      let url = "";
-
-      if (provider === "gemini") key = settings.gemini_api_key || "";
-      else if (provider === "openai") key = settings.openai_api_key || "";
-      else if (provider === "anthropic") key = settings.anthropic_api_key || "";
-      else if (provider === "ollama") url = settings.ollama_api_url || "";
+      const { rawKey, key, url } = getProviderConnectionDetails(provider || "");
 
       const needsKey = ["gemini", "openai", "anthropic"].includes(
         provider || "",
       );
       const needsUrl = ["ollama"].includes(provider || "");
 
-      if (provider && ((needsKey && key) || (needsUrl && url))) {
+      if (provider && ((needsKey && rawKey) || (needsUrl && url))) {
         setFetchingModels(true);
         try {
           const res = await listModels(provider, key, url);
@@ -154,21 +172,17 @@ export default function AISettings({
     setValidating(provider);
     setValidationMsg(null);
     try {
-      let key = "";
-      let url = "";
-      if (provider === "gemini") key = settings.gemini_api_key || "";
-      else if (provider === "openai") key = settings.openai_api_key || "";
-      else if (provider === "anthropic") key = settings.anthropic_api_key || "";
-      else if (provider === "hf") key = settings.hf_token || "";
-      else if (provider === "ollama") url = settings.ollama_api_url || "";
+      const { rawKey, key, url } = getProviderConnectionDetails(provider);
+      const validationKey =
+        provider === "hf" ? settings.hf_token || "" : rawKey;
 
-      if (!key && !url) throw new Error("No API key/URL provided");
+      if (!validationKey && !url) throw new Error("No API key/URL provided");
 
       let res;
       if (provider === "hf") {
-        res = await validateHF(key);
+        res = await validateHF(validationKey);
       } else {
-        res = await validateLLM(provider, key, url);
+        res = await validateLLM(provider, validationKey, url);
         // If models are returned (e.g. from Ollama), update the list
         if (res.models) {
           setAvailableModels(res.models);
@@ -304,6 +318,13 @@ export default function AISettings({
     "token",
     "diarization",
   ]);
+  const showAutomaticEnhancement = fuzzyMatch(searchQuery, [
+    "automatic enhancement",
+    "meeting intelligence",
+    "short titles",
+    "title",
+    "titles",
+  ]);
   const showTranscription = fuzzyMatch(searchQuery, [
     "transcription",
     "whisper",
@@ -318,29 +339,49 @@ export default function AISettings({
 
   const hasSearch = !!searchQuery;
   const showLLMSection = !hasSearch || showLLM;
-  const showHFSection = !hasSearch || showHF;
-  const showTranscriptionSection = !hasSearch || showTranscription;
-  const showDependenciesSection = !hasSearch || showDependencies;
+  const showAutomaticEnhancementSection = !hasSearch || showAutomaticEnhancement;
+  const showHFSection = isAdmin && (!hasSearch || showHF);
+  const showTranscriptionSection = isAdmin && (!hasSearch || showTranscription);
+  const showDependenciesSection = isAdmin && (!hasSearch || showDependencies);
 
   if (
     !showLLMSection &&
+    !showAutomaticEnhancementSection &&
     !showHFSection &&
     !showTranscriptionSection &&
     !showDependenciesSection
   ) {
-    return <div className="text-gray-500">No matching settings found.</div>;
+    return (
+      <SettingsCallout
+        tone="neutral"
+        title="No matching settings"
+        message="Try a broader search term for providers, models, tokens, or local model downloads."
+      />
+    );
   }
 
   return (
-    <div className="space-y-6">
-      {/* 1. LLM Settings Group */}
+    <div className="space-y-8">
       {showLLMSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 max-w-3xl">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-orange-500" /> LLM Configuration
-          </h3>
+        <SettingsSection
+          eyebrow="AI"
+          title="Provider and model preferences"
+          description={
+            isAdmin
+              ? "Configure provider credentials, default models, and local endpoints."
+              : "Choose which configured provider, model, and local endpoint this account prefers."
+          }
+          width="wide"
+        >
+          <div className="mx-auto max-w-3xl space-y-4">
+            {!isAdmin && (
+              <SettingsCallout
+                tone="info"
+                message="Credentials remain installation-managed. You can still change your preferred provider, model, Ollama endpoint, and AI title style."
+              />
+            )}
 
-          <div className="space-y-6">
+            <SettingsPanel className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Provider */}
               <div>
@@ -359,7 +400,6 @@ export default function AISettings({
                   onChange={(e) =>
                     onUpdate({ ...settings, llm_provider: e.target.value })
                   }
-                  disabled={!isAdmin}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 >
                   <option value="gemini">Google Gemini</option>
@@ -395,7 +435,6 @@ export default function AISettings({
                           ? "http://host.docker.internal:11434"
                           : ""
                       }
-                      disabled={!isAdmin}
                       className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     />
                     <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -422,23 +461,14 @@ export default function AISettings({
                   <button
                     onClick={() => {
                       const provider = settings.llm_provider || "gemini";
-                      let key = "";
-                      let url = "";
-                      if (provider === "gemini")
-                        key = settings.gemini_api_key || "";
-                      else if (provider === "openai")
-                        key = settings.openai_api_key || "";
-                      else if (provider === "anthropic")
-                        key = settings.anthropic_api_key || "";
-                      else if (provider === "ollama")
-                        url = settings.ollama_api_url || "";
+                      const { key, rawKey, url } = getProviderConnectionDetails(provider);
 
-                      if (key || url)
+                      if (rawKey || url)
                         listModels(provider, key, url).then((res) =>
                           setAvailableModels(res.models),
                         );
                     }}
-                    disabled={fetchingModels || !isAdmin}
+                    disabled={fetchingModels}
                     className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
                   >
                     <RefreshCw
@@ -469,7 +499,7 @@ export default function AISettings({
                     else updates.gemini_model = val;
                     onUpdate(updates);
                   }}
-                  disabled={!isAdmin || availableModels.length === 0}
+                  disabled={availableModels.length === 0}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 >
                   <option value="" disabled>
@@ -555,7 +585,7 @@ export default function AISettings({
                     onClick={() =>
                       handleValidate(settings.llm_provider || "gemini")
                     }
-                    disabled={validating === settings.llm_provider || !isAdmin}
+                    disabled={validating === settings.llm_provider}
                     className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {validating === settings.llm_provider ? (
@@ -584,7 +614,7 @@ export default function AISettings({
                   onClick={() =>
                     handleValidate(settings.llm_provider || "ollama")
                   }
-                  disabled={validating === settings.llm_provider || !isAdmin}
+                  disabled={validating === settings.llm_provider}
                   className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {validating === settings.llm_provider ? (
@@ -604,17 +634,46 @@ export default function AISettings({
                   )}
               </div>
             )}
+            </SettingsPanel>
           </div>
-        </div>
+        </SettingsSection>
       )}
 
-      {/* 2. HuggingFace Group */}
+      {showAutomaticEnhancementSection && (
+        <SettingsSection
+          eyebrow="AI"
+          title="Automatic enhancement"
+          description="Control how AI-generated titles are written for your meetings and summaries."
+          width="compact"
+        >
+          <SettingsPanel variant="field" className="mx-auto max-w-2xl flex items-start gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+                <Cpu className="h-4 w-4 text-orange-500" />
+                Prefer short titles
+              </div>
+              <p className="mt-2 text-xs contrast-helper">
+                Use concise 3-5 word AI-generated meeting titles instead of longer descriptive ones.
+              </p>
+            </div>
+            <Switch
+              checked={settings.prefer_short_titles !== false}
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, prefer_short_titles: checked })
+              }
+            />
+          </SettingsPanel>
+        </SettingsSection>
+      )}
+
       {showHFSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-            <Key className="w-5 h-5 text-blue-500" /> Hugging Face
-          </h3>
-          <div className="space-y-4">
+        <SettingsSection
+          eyebrow="Administration"
+          title="Hugging Face access"
+          description="Store and validate the installation token required for diarization and related model downloads."
+          width="regular"
+        >
+          <SettingsPanel className="mx-auto max-w-3xl space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Access Token
@@ -679,18 +738,18 @@ export default function AISettings({
                 Face.
               </p>
             </div>
-          </div>
-        </div>
+          </SettingsPanel>
+        </SettingsSection>
       )}
 
-      {/* 3. Transcription Group */}
       {showTranscriptionSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-            <Layers className="w-5 h-5 text-purple-500" /> Transcription
-            Settings
-          </h3>
-          <div className="space-y-4">
+        <SettingsSection
+          eyebrow="Administration"
+          title="Transcription model"
+          description="Choose which Whisper model size the installation should run for transcription."
+          width="regular"
+        >
+          <SettingsPanel className="mx-auto max-w-3xl space-y-4">
             <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                 Whisper Model Size
@@ -775,21 +834,17 @@ export default function AISettings({
                 onUpdate({ ...settings, whisper_model_size: newSize })
               }
             />
-          </div>
-        </div>
+          </SettingsPanel>
+        </SettingsSection>
       )}
 
-      {/* 4. Dependencies Group */}
       {showDependenciesSection && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-3xl">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <HardDrive className="w-5 h-5 text-green-500" /> Model
-              Dependencies
-            </h3>
-          </div>
-
-          <div className="space-y-6">
+        <SettingsSection
+          eyebrow="Administration"
+          title="Model dependencies"
+          description="Inspect and manage locally downloaded AI model assets on the server."
+        >
+          <SettingsPanel className="mx-auto max-w-3xl space-y-6">
             <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="space-y-3">
                 {[
@@ -906,8 +961,8 @@ export default function AISettings({
                 </p>
               </div>
             </div>
-          </div>
-        </div>
+          </SettingsPanel>
+        </SettingsSection>
       )}
     </div>
   );

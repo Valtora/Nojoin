@@ -292,7 +292,7 @@ export default function CalendarConnectionsSettings() {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-300 dark:border-gray-600 space-y-6">
+    <div className="rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950/60 space-y-6">
       <div className="flex items-start gap-3">
         <div className="rounded-xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
           <CalendarRange className="w-5 h-5" />
@@ -303,8 +303,9 @@ export default function CalendarConnectionsSettings() {
           </h3>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
             Connect Gmail or Outlook calendars, approve access in the provider&apos;s
-            own consent screen, then choose which calendars Nojoin should sync.
-            No personal client IDs or secrets are entered here.
+            own consent screen, then choose which calendars Nojoin should sync for
+            this account. Installation-wide OAuth client credentials are managed
+            separately by an administrator.
           </p>
         </div>
       </div>

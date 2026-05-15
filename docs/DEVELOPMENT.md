@@ -211,7 +211,7 @@ The end-user source of truth for this workflow is [COMPANION.md](COMPANION.md). 
 If you are testing changes and need to switch your Companion between a production instance and your local development stack:
 
 1. Open the Companion app Settings.
-2. Either select `Disconnect Current Backend` first, or open the target Nojoin site and start a fresh pairing request from `Settings -> Companion App`.
+2. Either select `Disconnect Current Backend` first, or open the target Nojoin site and start a fresh pairing request from `Settings -> Companion`.
 3. Let the browser launch the local Companion through `nojoin://pair`, then approve the OS-native prompt on that device.
 4. The current backend stays active until the new pairing succeeds.
 5. After success, the Companion cleanly replaces its previous trust state, clears any previous local secret bundle, and authenticates with the newly paired backend.
@@ -222,7 +222,7 @@ After upgrading across the companion credential-storage security change, expect 
 
 When changes touch the launcher, Settings, tray, or browser-side Companion support surfaces, manually validate at least the following flows:
 
-- Fresh browser path: install, start pairing from `Settings -> Companion App`, approve the OS-native prompt, return to `Connected`, and start a recording.
+- Fresh browser path: install, start pairing from `Settings -> Companion`, approve the OS-native prompt, return to `Connected`, and start a recording.
 - Protocol handoff path: the browser launches `nojoin://pair` successfully when Companion is already running and when it has just been relaunched.
 - Degraded local-browser path: `Local browser connection unavailable` routes the user toward relaunching Companion rather than a privileged browser-triggered repair action.
 - Quiet degraded states: `Temporarily disconnected` and `Local browser connection recovering` remain informative but non-alarmist.

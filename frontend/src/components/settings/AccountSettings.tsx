@@ -1,18 +1,39 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { updateUserMe, updatePasswordMe, getUserMe } from '@/lib/api';
-import { Loader2, User, Lock, Save } from 'lucide-react';
+import { updatePasswordMe, updateUserMe } from '@/lib/api';
+import { fuzzyMatch } from '@/lib/searchUtils';
+import { Loader2, User, Lock } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
+import SettingsCallout from './SettingsCallout';
+import SettingsField from './SettingsField';
+import SettingsSection from './SettingsSection';
+import useDebouncedAutosave, {
+  type SettingsAutosaveSnapshot,
+} from './useDebouncedAutosave';
+
+interface AccountSettingsProps {
+  forcePasswordChange?: boolean;
+  initialUsername: string | null;
+  onUsernameSaved?: (username: string) => void;
+  onAutosaveStateChange?: (snapshot: SettingsAutosaveSnapshot) => void;
+  searchQuery?: string;
+  suppressNoMatch?: boolean;
+  includeCalendarConnections?: boolean;
+}
 
 export default function AccountSettings({
   forcePasswordChange = false,
-}: {
-  forcePasswordChange?: boolean;
-}) {
+  initialUsername,
+  onUsernameSaved,
+  onAutosaveStateChange,
+  searchQuery = '',
+  suppressNoMatch = false,
+  includeCalendarConnections = true,
+}: AccountSettingsProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const [username, setUsername] = useState('');
   const { addNotification } = useNotificationStore();
   
@@ -22,38 +43,81 @@ export default function AccountSettings({
     confirm_password: ''
   });
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const data = await getUserMe();
-        setUsername(data.username);
-      } catch (e: any) {
-        console.error(e);
-        addNotification({ 
-            message: e.response?.data?.detail || 'Failed to load user profile', 
-            type: 'error' 
-        });
+  const { markAsSaved: markProfileAsSaved } = useDebouncedAutosave({
+    value: { username },
+    enabled: initialUsername !== null,
+    serialize: (value) =>
+      JSON.stringify({ username: trimString(value.username) }),
+    validate: (value) => {
+      const trimmedUsername = trimString(value.username);
+      if (!trimmedUsername) {
+        return 'Username cannot be empty.';
       }
-    };
-    fetchUser();
-  }, [addNotification]);
 
-  const handleProfileUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const trimmedUsername = trimString(username);
-    try {
-      await updateUserMe({ username: trimmedUsername });
-      addNotification({ message: 'Profile updated successfully', type: 'success' });
-      // Update local storage if username changed
-      localStorage.setItem('username', trimmedUsername);
-      setUsername(trimmedUsername);
-    } catch (err: any) {
-      addNotification({ message: err.response?.data?.detail || 'Failed to update profile', type: 'error' });
-    } finally {
-      setLoading(false);
+      return null;
+    },
+    save: async (value) => {
+      const trimmedUsername = trimString(value.username);
+      const updatedUser = await updateUserMe({ username: trimmedUsername });
+      setUsername(updatedUser.username);
+      localStorage.setItem('username', updatedUser.username);
+      onUsernameSaved?.(updatedUser.username);
+    },
+    pendingMessage: 'Profile changes pending...',
+    savingMessage: 'Saving profile...',
+    savedMessage: 'Profile saved',
+    fallbackErrorMessage: 'Failed to save profile',
+    onStatusChange: onAutosaveStateChange,
+  });
+
+  useEffect(() => {
+    if (initialUsername === null) {
+      return;
     }
-  };
+
+    setUsername(initialUsername);
+    markProfileAsSaved({ username: initialUsername });
+  }, [initialUsername, markProfileAsSaved]);
+
+  const showProfile = !searchQuery || fuzzyMatch(searchQuery, [
+    'profile',
+    'username',
+    'account',
+    'personal',
+    'user',
+  ]);
+  const showSecurity = !searchQuery || fuzzyMatch(searchQuery, [
+    'password',
+    'security',
+    'credentials',
+    'change password',
+    'login',
+  ]);
+  const showCalendars =
+    includeCalendarConnections &&
+    !forcePasswordChange &&
+    (!searchQuery ||
+      fuzzyMatch(searchQuery, [
+        'calendar',
+        'calendars',
+        'calendar connections',
+        'gmail',
+        'google',
+        'outlook',
+        'microsoft',
+        'agenda',
+        'events',
+      ]));
+
+  if (!showProfile && !showSecurity && !showCalendars && searchQuery) {
+    return suppressNoMatch ? null : (
+      <SettingsCallout
+        tone="neutral"
+        title="No matching settings"
+        message="Try a broader search term for profile, passwords, security, or calendar connections."
+      />
+    );
+  }
 
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +126,7 @@ export default function AccountSettings({
       return;
     }
     
-    setLoading(true);
+    setPasswordLoading(true);
     try {
       await updatePasswordMe({
         current_password: passwordData.current_password,
@@ -76,123 +140,111 @@ export default function AccountSettings({
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to update password', type: 'error' });
     } finally {
-      setLoading(false);
+      setPasswordLoading(false);
     }
   };
 
   return (
     <div className="space-y-8">
-      {/* Profile Section */}
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-300 dark:border-gray-600">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          Profile Information
-        </h3>
-        <form
-          id="account-profile-form"
-          name="account-profile-form"
-          onSubmit={handleProfileUpdate}
-          className="space-y-4 max-w-md"
-          autoComplete="on"
+      {showProfile && (
+        <SettingsSection
+          eyebrow="Personal"
+          title="Profile"
+          description="Update the name shown across your workspace."
+          width="compact"
         >
-          <div>
-            <label htmlFor="account-username" className="block text-sm font-medium contrast-muted mb-1">Username</label>
-            <input
-              id="account-username"
-              name="account-username"
-              type="text"
-              autoComplete="section-account-profile username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
-              required
-            />
+          <div className="mx-auto max-w-md space-y-4">
+            <SettingsField label="Username" icon={<User className="h-4 w-4" />}>
+              <input
+                id="account-username"
+                name="account-username"
+                type="text"
+                autoComplete="section-account-profile username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                disabled={initialUsername === null}
+                required
+              />
+            </SettingsField>
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Profile
-          </button>
-        </form>
-      </div>
+        </SettingsSection>
+      )}
 
-      {/* Password Section */}
-      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          Change Password
-        </h3>
-        {forcePasswordChange && (
-          <p className="mb-4 text-sm text-orange-700 dark:text-orange-300">
-            You must choose a new password before continuing to the rest of the application.
-          </p>
-        )}
-        <form
-          id="account-password-form"
-          name="account-password-form"
-          onSubmit={handlePasswordUpdate}
-          className="space-y-4 max-w-md"
-          autoComplete="on"
+      {showSecurity && (
+        <SettingsSection
+          eyebrow="Security"
+          title="Password"
+          description="Change the password used to sign in to this account."
+          width="compact"
         >
-          <div>
-            <label htmlFor="account-current-password" className="block text-sm font-medium contrast-muted mb-1">Current Password</label>
-            <input
-              id="account-current-password"
-              name="account-current-password"
-              type="password"
-              autoComplete="section-account-password current-password"
-              value={passwordData.current_password}
-              onChange={(e) => setPasswordData({...passwordData, current_password: e.target.value})}
-              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
-              required
+          {forcePasswordChange && (
+            <SettingsCallout
+              tone="warning"
+              message="You must choose a new password before continuing to the rest of the application."
             />
-          </div>
-          <div>
-            <label htmlFor="account-new-password" className="block text-sm font-medium contrast-muted mb-1">New Password</label>
-            <input
-              id="account-new-password"
-              name="account-new-password"
-              type="password"
-              autoComplete="section-account-password new-password"
-              value={passwordData.new_password}
-              onChange={(e) => setPasswordData({...passwordData, new_password: e.target.value})}
-              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
-              required
-              minLength={8}
-            />
-          </div>
-          <div>
-            <label htmlFor="account-confirm-password" className="block text-sm font-medium contrast-muted mb-1">Confirm New Password</label>
-            <input
-              id="account-confirm-password"
-              name="account-confirm-password"
-              type="password"
-              autoComplete="section-account-password new-password"
-              value={passwordData.confirm_password}
-              onChange={(e) => setPasswordData({...passwordData, confirm_password: e.target.value})}
-              className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-gray-900 dark:text-white"
-              required
-              minLength={8}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors disabled:opacity-50"
+          )}
+          <form
+            id="account-password-form"
+            name="account-password-form"
+            onSubmit={handlePasswordUpdate}
+            className="mx-auto max-w-md space-y-4"
+            autoComplete="on"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Update Password
-          </button>
-        </form>
-      </div>
+            <SettingsField label="Current Password" icon={<Lock className="h-4 w-4" />}>
+              <input
+                id="account-current-password"
+                name="account-current-password"
+                type="password"
+                autoComplete="section-account-password current-password"
+                value={passwordData.current_password}
+                onChange={(e) => setPasswordData({...passwordData, current_password: e.target.value})}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                required
+              />
+            </SettingsField>
+            <SettingsField label="New Password" icon={<Lock className="h-4 w-4" />}>
+              <input
+                id="account-new-password"
+                name="account-new-password"
+                type="password"
+                autoComplete="section-account-password new-password"
+                value={passwordData.new_password}
+                onChange={(e) => setPasswordData({...passwordData, new_password: e.target.value})}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                required
+                minLength={8}
+              />
+            </SettingsField>
+            <SettingsField label="Confirm New Password" icon={<Lock className="h-4 w-4" />}>
+              <input
+                id="account-confirm-password"
+                name="account-confirm-password"
+                type="password"
+                autoComplete="section-account-password new-password"
+                value={passwordData.confirm_password}
+                onChange={(e) => setPasswordData({...passwordData, confirm_password: e.target.value})}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                required
+                minLength={8}
+              />
+            </SettingsField>
+            <button
+              type="submit"
+              disabled={passwordLoading}
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+            >
+              {passwordLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Update Password
+            </button>
+          </form>
+        </SettingsSection>
+      )}
 
-      {!forcePasswordChange && <CalendarConnectionsSettings />}
+      {showCalendars && <CalendarConnectionsSettings />}
     </div>
   );
 }

@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { getUsers, createUser, deleteUser, updateUser } from "@/lib/api";
 import {
   Loader2,
-  Shield,
   Trash2,
   UserPlus,
   Edit2,
@@ -14,6 +13,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "../ConfirmationModal";
 import { User } from "@/types";
 import { trimString } from "@/lib/validation";
+import SettingsPanel from "./SettingsPanel";
 
 type NewUserFormState = {
   username: string;
@@ -184,13 +184,8 @@ export default function UsersTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
-          <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-          User Management
-        </h3>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
-          <div className="relative">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
             <input
               value={search}
@@ -199,24 +194,28 @@ export default function UsersTab() {
                 setPage(1);
               }}
               placeholder="Search users..."
-              className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
-          </div>
-          <button
-            onClick={toggleCreateForm}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm flex items-center gap-2"
-          >
-            <UserPlus className="w-4 h-4" />
-            Add User
-          </button>
         </div>
+        <button
+          onClick={toggleCreateForm}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700"
+        >
+          <UserPlus className="w-4 h-4" />
+          Add User
+        </button>
       </div>
 
       {isCreating && (
-        <div className="bg-white dark:bg-gray-800/50 p-4 rounded border border-purple-200 dark:border-purple-500/30 mb-4">
-          <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-3">
-            New User Details
-          </h4>
+        <SettingsPanel variant="subtle" className="space-y-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              Create user
+            </div>
+            <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+              New account
+            </h4>
+          </div>
           <form
             onSubmit={handleCreateUser}
             autoComplete="off"
@@ -270,17 +269,18 @@ export default function UsersTab() {
               </button>
               <button
                 type="submit"
-                className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm"
+                className="rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700"
               >
                 Create User
               </button>
             </div>
           </form>
-        </div>
+        </SettingsPanel>
       )}
 
-      <div className="bg-white dark:bg-gray-800/70 rounded-lg border border-gray-300 dark:border-gray-600 overflow-x-auto">
-        <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
+      <SettingsPanel className="overflow-hidden p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
           <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
             <tr>
               <th className="px-4 py-3">ID</th>
@@ -351,34 +351,33 @@ export default function UsersTab() {
               ))
             )}
           </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-        <div className="text-sm contrast-helper">
-          Showing {users.length > 0 ? (page - 1) * limit + 1 : 0} to{" "}
-          {Math.min(page * limit, total)} of {total} users
+          </table>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() =>
-              setPage((p) => Math.min(Math.ceil(total / limit), p + 1))
-            }
-            disabled={page >= Math.ceil(total / limit)}
-            className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+        <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3">
+          <div className="text-sm contrast-helper">
+            Showing {users.length > 0 ? (page - 1) * limit + 1 : 0} to{" "}
+            {Math.min(page * limit, total)} of {total} users
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() =>
+                setPage((p) => Math.min(Math.ceil(total / limit), p + 1))
+              }
+              disabled={page >= Math.ceil(total / limit)}
+              className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
         </div>
-      </div>
+      </SettingsPanel>
 
       {/* Edit User Modal */}
       {editModalOpen && (
@@ -397,7 +396,7 @@ export default function UsersTab() {
                   onChange={(e) =>
                     setEditForm({ ...editForm, username: e.target.value })
                   }
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>
 
@@ -418,7 +417,7 @@ export default function UsersTab() {
                   placeholder="Enter new password"
                   autoComplete="new-password"
                   minLength={8}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>
 
@@ -431,7 +430,7 @@ export default function UsersTab() {
                   onChange={(e) =>
                     setEditForm({ ...editForm, role: e.target.value as any })
                   }
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
@@ -467,7 +466,7 @@ export default function UsersTab() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors"
                 >
                   Save Changes
                 </button>

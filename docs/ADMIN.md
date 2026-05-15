@@ -42,17 +42,17 @@ When an Admin or Owner creates a user manually:
 
 The same restriction also applies when a superuser resets another user's password through the privileged user-management flow.
 
-## Admin Settings Areas
+## Administration Settings Areas
 
 ### Calendar
 
-Use **Settings > Admin > Calendar** to save installation-wide Google and Microsoft OAuth credentials.
+Use **Settings > Administration > Calendar providers** to save installation-wide Google and Microsoft OAuth credentials.
 
 Read [CALENDAR.md](CALENDAR.md) for the full provider registration and tenant guidance.
 
 ### AI and Models
 
-Use the AI settings area to:
+Use **Settings > AI** for installation-wide provider defaults, credentials, and model operations. Admin-only sections there let you:
 
 - Choose the default LLM provider.
 - Store provider API keys.
@@ -62,13 +62,13 @@ Use the AI settings area to:
 
 ### Backup and Restore
 
-Use **Settings > Backup & Restore** for export and restore operations.
+Use **Settings > Administration > Backup and restore** for export and restore operations.
 
 Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on it operationally, especially because backup archives can contain restorable calendar credentials and connected-account tokens.
 
 ### System
 
-Use **Settings > System** for operational controls such as:
+Use **Settings > Administration > System operations** for operational controls such as:
 
 - Restarting the stack.
 - Viewing live logs.
@@ -94,7 +94,7 @@ Use **Settings > Updates** to see:
 ### Companion Pairing and Security Resets
 
 - The Companion app forms a strict 1-to-1 association with a single backend.
-- Users must explicitly re-pair the Companion from the target Nojoin site by starting a fresh pairing request in `Settings -> Companion App` if they switch to a different deployment, or if the backend's identity or URL changes.
+- Users must explicitly re-pair the Companion from the target Nojoin site by starting a fresh pairing request in `Settings -> Companion` if they switch to a different deployment, or if the backend's identity or URL changes.
 - The Companion pins the backend TLS certificate it first sees during pairing. Replacing or rotating that backend certificate requires an explicit re-pair.
 - Companion secrets are no longer stored in plaintext config. On Windows, they are moved into a DPAPI-protected secret bundle tied to the active pairing.
 - Using Disconnect Current Backend in Companion Settings clears the saved backend certificate trust and local secret bundle, then attempts a best-effort remote revoke. Users can still switch backends even if the old backend is offline.
