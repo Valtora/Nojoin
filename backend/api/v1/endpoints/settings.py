@@ -8,7 +8,14 @@ import logging
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
-from backend.utils.config_manager import get_default_user_settings, config_manager, WHISPER_MODEL_SIZES, APP_THEMES, SENSITIVE_KEYS
+from backend.utils.config_manager import (
+    APP_THEMES,
+    SENSITIVE_KEYS,
+    WHISPER_MODEL_SIZES,
+    config_manager,
+    get_default_user_settings,
+    strip_legacy_automatic_ai_settings,
+)
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
@@ -28,10 +35,7 @@ class SettingsUpdate(BaseModel):
     ollama_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
-    auto_generate_notes: Optional[bool] = None
-    auto_generate_title: Optional[bool] = None
     prefer_short_titles: Optional[bool] = None
-    auto_infer_speakers: Optional[bool] = None
     enable_vad: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
@@ -102,8 +106,11 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
             merged[sys_field] = owner_settings[sys_field]
     
     # 3. Apply User Specific Settings
-    if user_settings:
-        merged.update({k: v for k, v in user_settings.items() if v is not None})
+    sanitized_user_settings = _get_mutable_user_settings(user_settings)
+    if sanitized_user_settings:
+        merged.update(
+            {k: v for k, v in sanitized_user_settings.items() if v is not None}
+        )
         
     # 4. Inject system API keys (from Admin DB or .env) globally
     from backend.utils.config_manager import async_get_system_api_keys
@@ -123,6 +130,61 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
                 merged[key] = "***"
                 
     return merged
+
+
+def _get_mutable_user_settings(user_settings: dict | None) -> dict[str, Any]:
+    return strip_legacy_automatic_ai_settings(dict(user_settings) if user_settings else {})
+
+
+def _build_settings_update_data(
+    settings: SettingsUpdate,
+    *,
+    is_admin: bool,
+) -> dict[str, Any]:
+    update_data = strip_legacy_automatic_ai_settings(
+        settings.model_dump(exclude_unset=True)
+    )
+
+    for key in list(SENSITIVE_KEYS):
+        if key not in update_data:
+            continue
+
+        value = update_data[key]
+        if not is_admin or (value and ("..." in str(value) or "***" in str(value))):
+            del update_data[key]
+
+    return update_data
+
+
+async def _save_user_settings(
+    settings: SettingsUpdate,
+    current_user: User,
+    db: AsyncSession,
+) -> Any:
+    current_settings = _get_mutable_user_settings(current_user.settings)
+    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
+    update_data = _build_settings_update_data(settings, is_admin=is_admin)
+
+    try:
+        for key, value in update_data.items():
+            config_manager.validate_config_value(key, value)
+    except ValueError as e:
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Invalid settings value.",
+            log_message="Rejected settings update due to invalid value.",
+            exc=e,
+        )
+
+    current_settings.update(update_data)
+    current_user.settings = current_settings
+
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+
+    return await _merge_settings(current_user.settings, db)
 
 @router.get("", response_model=Any)
 async def get_settings_root(
@@ -155,44 +217,7 @@ async def update_settings_root(
     """
     Update user settings (root path).
     """
-    # Update user settings
-    # Create a copy to ensure SQLAlchemy detects the change
-    current_settings = dict(current_user.settings) if current_user.settings else {}
-    update_data = settings.dict(exclude_unset=True)
-    
-    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
-    
-    # Ignore any sensitive keys that are masked to avoid overwriting real keys
-    # Also drop them entirely if the user is not an admin
-    for key in SENSITIVE_KEYS:
-        if key in update_data:
-            if not is_admin:
-                del update_data[key]
-            elif update_data[key] and ("..." in update_data[key] or "***" in update_data[key]):
-                del update_data[key]
-    
-    # Validate settings
-    try:
-        for key, value in update_data.items():
-            config_manager.validate_config_value(key, value)
-    except ValueError as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=400,
-            client_message="Invalid settings value.",
-            log_message="Rejected settings update due to invalid value.",
-            exc=e,
-        )
-
-    # Merge new settings
-    current_settings.update(update_data)
-    current_user.settings = current_settings
-    
-    db.add(current_user)
-    await db.commit()
-    await db.refresh(current_user)
-    
-    return await _merge_settings(current_user.settings, db)
+    return await _save_user_settings(settings, current_user, db)
 
 @router.post("/", response_model=Any)
 async def update_settings(
@@ -203,45 +228,7 @@ async def update_settings(
     """
     Update user settings.
     """
-    # Update user settings
-    # Create a copy to ensure SQLAlchemy detects the change
-    current_settings = dict(current_user.settings) if current_user.settings else {}
-    update_data = settings.dict(exclude_unset=True)
-    
-    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
-    
-    # Ignore any sensitive keys that are masked to avoid overwriting real keys
-    # Also drop them entirely if the user is not an admin
-    for key in SENSITIVE_KEYS:
-        if key in update_data:
-            if not is_admin:
-                del update_data[key]
-            elif update_data[key] and ("..." in update_data[key] or "***" in update_data[key]):
-                del update_data[key]
-            del update_data[key]
-    
-    # Validate settings
-    try:
-        for key, value in update_data.items():
-            config_manager.validate_config_value(key, value)
-    except ValueError as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=400,
-            client_message="Invalid settings value.",
-            log_message="Rejected settings update due to invalid value.",
-            exc=e,
-        )
-
-    # Merge new settings
-    current_settings.update(update_data)
-    current_user.settings = current_settings
-    
-    db.add(current_user)
-    await db.commit()
-    await db.refresh(current_user)
-    
-    return await _merge_settings(current_user.settings, db)
+    return await _save_user_settings(settings, current_user, db)
 
 
 # --- Personal Dictionary ---
@@ -262,7 +249,7 @@ async def add_personal_dictionary_word(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> List[str]:
-    current_settings = dict(current_user.settings) if current_user.settings else {}
+    current_settings = _get_mutable_user_settings(current_user.settings)
     words = current_settings.get("personal_dictionary", [])
     normalised = payload.word.strip()
     if not normalised:
@@ -281,7 +268,7 @@ async def remove_personal_dictionary_word(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> List[str]:
-    current_settings = dict(current_user.settings) if current_user.settings else {}
+    current_settings = _get_mutable_user_settings(current_user.settings)
     words = current_settings.get("personal_dictionary", [])
     words = [w for w in words if w != word]
     current_settings["personal_dictionary"] = words
@@ -306,7 +293,7 @@ async def add_spellcheck_ignored_word(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> List[str]:
-    current_settings = dict(current_user.settings) if current_user.settings else {}
+    current_settings = _get_mutable_user_settings(current_user.settings)
     words = current_settings.get("spellcheck_ignored_words", [])
     normalised = payload.word.strip()
     if not normalised:
@@ -325,7 +312,7 @@ async def remove_spellcheck_ignored_word(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> List[str]:
-    current_settings = dict(current_user.settings) if current_user.settings else {}
+    current_settings = _get_mutable_user_settings(current_user.settings)
     words = current_settings.get("spellcheck_ignored_words", [])
     words = [w for w in words if w != word]
     current_settings["spellcheck_ignored_words"] = words

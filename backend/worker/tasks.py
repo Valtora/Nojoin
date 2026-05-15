@@ -7,7 +7,7 @@ import warnings
 import urllib.error
 import requests.exceptions
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 from celery import Task
 from celery.signals import worker_ready
 from sqlmodel import select
@@ -28,6 +28,11 @@ from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager
 from backend.utils.llm_config import ResolvedLLMConfig, resolve_llm_config
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceRequest,
+    AutomaticMeetingIntelligenceResult,
+    get_speakers_eligible_for_llm_renaming,
+)
 from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
 from backend.utils.recording_storage import cleanup_stale_recording_artifacts
 from backend.utils.status_manager import update_recording_status
@@ -45,6 +50,11 @@ logger = logging.getLogger(__name__)
 
 # Suppress specific warnings in the worker process
 warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
+
+AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS = 300
+AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS = 97
+AUTOMATIC_MEETING_INTELLIGENCE_STAGE = "Generating Notes"
+AUTOMATIC_MEETING_INTELLIGENCE_STEP = "Generating meeting notes..."
 
 
 def _paths_point_to_same_media(path_a: str | None, path_b: str | None) -> bool:
@@ -99,6 +109,19 @@ def _mark_notes_generation_error(
         update_recording_status(session, recording.id)
 
 
+def _complete_speaker_inference_task(
+    session,
+    recording: Recording | None,
+) -> None:
+    if not recording:
+        return
+
+    recording.status = RecordingStatus.PROCESSED
+    recording.processing_step = "Completed"
+    session.add(recording)
+    session.commit()
+
+
 def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
     from backend.processing.llm_services import get_llm_backend
 
@@ -108,6 +131,166 @@ def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
         model=llm_config.model,
         api_url=llm_config.api_url,
     )
+
+
+def _format_recording_timestamp(seconds: float) -> str:
+    return time.strftime("%H:%M:%S", time.gmtime(max(float(seconds), 0.0)))
+
+
+def _build_automatic_meeting_intelligence_transcript(
+    segments: Sequence[dict],
+    speaker_map: dict[str, str],
+    unresolved_speakers: Sequence[str],
+) -> str:
+    unresolved_labels = set(unresolved_speakers)
+    lines: list[str] = []
+
+    for seg in segments:
+        speaker_label = str(seg.get("speaker", "Unknown"))
+        display_name = (
+            speaker_label
+            if speaker_label in unresolved_labels
+            else speaker_map.get(speaker_label, speaker_label)
+        )
+
+        overlapping_names = []
+        for overlapping_label in seg.get("overlapping_speakers", []):
+            normalized_label = str(overlapping_label)
+            if normalized_label in unresolved_labels:
+                overlapping_names.append(normalized_label)
+            else:
+                overlapping_names.append(
+                    speaker_map.get(normalized_label, normalized_label)
+                )
+
+        overlapping_suffix = (
+            f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
+        )
+        text = str(seg.get("text", "")).strip()
+        lines.append(
+            f"[{_format_recording_timestamp(seg.get('start', 0))} - "
+            f"{_format_recording_timestamp(seg.get('end', seg.get('start', 0)))}] "
+            f"{display_name}{overlapping_suffix}: {text}"
+        )
+
+    return "\n".join(lines)
+
+
+def _apply_automatic_meeting_intelligence_result(
+    session,
+    recording: Recording,
+    transcript: Transcript,
+    speakers: Sequence[RecordingSpeaker],
+    result: AutomaticMeetingIntelligenceResult,
+) -> None:
+    speakers_by_label = {speaker.diarization_label: speaker for speaker in speakers}
+
+    for label, inferred_name in result.speaker_mapping.items():
+        speaker = speakers_by_label.get(label)
+        if speaker is None:
+            continue
+        if speaker.merged_into_id or speaker.local_name or speaker.global_speaker_id:
+            logger.info(
+                "Skipping automatic speaker rename for trusted or merged label %s",
+                label,
+            )
+            continue
+
+        if speaker.name != inferred_name:
+            speaker.name = inferred_name
+            session.add(speaker)
+
+    recording.name = result.title
+    transcript.notes = result.notes_markdown
+    transcript.notes_status = "completed"
+    transcript.error_message = None
+    session.add(recording)
+    session.add(transcript)
+    session.commit()
+    update_recording_status(session, recording.id)
+
+
+def _run_automatic_meeting_intelligence_stage(
+    *,
+    session,
+    task: Task | None,
+    recording: Recording,
+    transcript: Transcript,
+    speakers: Sequence[RecordingSpeaker],
+    transcript_text: str,
+    unresolved_speakers: Sequence[str],
+    llm_config: ResolvedLLMConfig,
+    prefer_short_titles: bool,
+    device_suffix: str,
+) -> AutomaticMeetingIntelligenceResult | None:
+    cleaned_transcript = transcript_text.strip()
+    if not cleaned_transcript:
+        logger.info(
+            "Skipping automatic meeting intelligence for recording %s: transcript is empty",
+            recording.id,
+        )
+        return None
+
+    missing_llm_config = llm_config.missing_configuration_message()
+    if missing_llm_config:
+        logger.warning(
+            "Skipping automatic meeting intelligence for recording %s: %s",
+            recording.id,
+            missing_llm_config,
+        )
+        return None
+
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript=cleaned_transcript,
+        unresolved_speakers=tuple(unresolved_speakers),
+        user_notes=transcript.user_notes,
+        prefer_short_titles=prefer_short_titles,
+    )
+
+    if task is not None:
+        task.update_state(
+            state="PROCESSING",
+            meta={
+                "progress": AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS,
+                "stage": AUTOMATIC_MEETING_INTELLIGENCE_STAGE,
+            },
+        )
+
+    recording.processing_step = f"{AUTOMATIC_MEETING_INTELLIGENCE_STEP}{device_suffix}"
+    recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
+    transcript.notes_status = "generating"
+    transcript.error_message = None
+    session.add(recording)
+    session.add(transcript)
+    session.commit()
+    update_recording_status(session, recording.id)
+
+    try:
+        llm = _llm_backend_from_config(llm_config)
+        result = llm.generate_meeting_intelligence(
+            request,
+            timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+        )
+        _apply_automatic_meeting_intelligence_result(
+            session,
+            recording,
+            transcript,
+            speakers,
+            result,
+        )
+        logger.info(
+            "Generated unified meeting intelligence for recording %s",
+            recording.id,
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "Failed to generate automatic meeting intelligence for recording %s: %s",
+            recording.id,
+            exc,
+        )
+        _mark_notes_generation_error(session, recording, transcript, exc)
+        return None
 
 class DatabaseTask(Task):
     _session = None
@@ -135,7 +318,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker, AUTO_UPDATE_THRESHOLD
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
-    from backend.processing.llm_services import get_llm_backend
 
     config_manager.reload()
     
@@ -380,56 +562,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         final_segments = consolidate_diarized_transcript(combined_segments)
         logger.info(f"Final segments after consolidation: {len(final_segments)}")
         
-        # --- LLM Speaker Name Inference (First Pass) ---
-        inferred_mapping = {}
-        
-        # Check availability using merged_config (user settings + system config)
-        llm_provider = merged_config.get("llm_provider", "gemini")
-        llm_api_key = merged_config.get(f"{llm_provider}_api_key")
-        llm_model = merged_config.get(f"{llm_provider}_model")
-        auto_infer_speakers = merged_config.get("auto_infer_speakers", True)
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
-        
-        if llm_api_key and llm_model and auto_infer_speakers:
-            try:
-                self.update_state(state='PROCESSING', meta={'progress': 88, 'stage': 'Inferring Speakers'})
-                recording.processing_step = f"Inferring speaker names...{device_suffix}"
-                recording.processing_progress = 88
-                session.add(recording)
-                session.commit()
-                logger.info("Running LLM speaker inference...")
-                
-                # Prepare transcript for LLM
-                transcript_for_llm = ""
-                for entry in final_segments:
-                    start = entry['start']
-                    end = entry['end']
-                    def fmt(ts):
-                        h = int(ts // 3600)
-                        m = int((ts % 3600) // 60)
-                        s = ts % 60
-                        return f"{h:02}.{m:02}.{s:05.2f}s"
-                    diarization_label = entry['speaker']
-                    overlapping_labels = entry.get('overlapping_speakers', [])
-                    overlapping_str = f" (overlapping with {', '.join(overlapping_labels)})" if overlapping_labels else ""
-                    transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label}{overlapping_str} - {entry['text']}\n"
-                
-                # Get backend and run inference
-                backend = get_llm_backend(llm_provider, api_key=llm_api_key, model=llm_model)
-                inferred_mapping = backend.infer_speakers(
-                    transcript_for_llm,
-                    timeout=300,
-                    user_notes=transcript.user_notes if transcript else None,
-                )
-                logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
-                
-            except Exception as e:
-                logger.error(f"LLM speaker inference failed: {e}")
-        else:
-            if not auto_infer_speakers:
-                logger.info("Skipping speaker inference (auto_infer_speakers=False)")
-            else:
-                logger.info("LLM not available (missing key or model in merged config), skipping speaker inference.")
 
         # Create or Update Transcript Record
         # Handle case where transcription_result is None (e.g. due to error)
@@ -439,6 +572,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             transcript.text = full_text
             transcript.segments = final_segments
             transcript.transcript_status = "completed"
+            transcript.error_message = None
+            if transcript.notes_status == "error":
+                transcript.notes_status = "pending"
             session.add(transcript)
         else:
             transcript = Transcript(
@@ -596,13 +732,8 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
 
             # If not identified as a global speaker, assign a friendly sequential name
             if not is_identified:
-                # Check if we have an inferred name from LLM
-                if label in inferred_mapping:
-                    resolved_name = inferred_mapping[label]
-                    logger.info(f"Using inferred name for {label}: {resolved_name}")
-                else:
-                    resolved_name = f"Speaker {speaker_counter}"
-                    speaker_counter += 1
+                resolved_name = f"Speaker {speaker_counter}"
+                speaker_counter += 1
 
             # Auto-promotion logic removed. Speakers must be manually promoted.
 
@@ -696,101 +827,28 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         transcript.segments = updated_segments
         session.add(transcript)
 
-        # Construct transcript text with resolved names for LLM usage
-        transcript_text = ""
-        for seg in updated_segments:
-            seg_start_time = time.strftime('%H:%M:%S', time.gmtime(seg['start']))
-            seg_end_time = time.strftime('%H:%M:%S', time.gmtime(seg['end']))
-            speaker_label = seg['speaker']
-            speaker_name = label_map.get(speaker_label, speaker_label)
-            overlapping_names = [label_map.get(ov_lbl, ov_lbl) for ov_lbl in seg.get('overlapping_speakers', [])]
-            overlapping_str = f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
-            transcript_text += f"[{seg_start_time} - {seg_end_time}] {speaker_name}{overlapping_str}: {seg['text']}\n"
+        recording_speakers = session.exec(
+            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
+        ).all()
+        unresolved_speakers = get_speakers_eligible_for_llm_renaming(recording_speakers)
+        transcript_text = _build_automatic_meeting_intelligence_transcript(
+            updated_segments,
+            label_map,
+            unresolved_speakers,
+        )
 
-        # Auto-generate Meeting Title
-        auto_generate_title = force_title_regeneration or merged_config.get("auto_generate_title", True)
-        if auto_generate_title:
-            try:
-                self.update_state(state='PROCESSING', meta={'progress': 94, 'stage': 'Inferring Title'})
-                recording.processing_step = f"Inferring meeting title...{device_suffix}"
-                recording.processing_progress = 94
-                session.add(recording)
-                session.commit()
-
-                missing_llm_config = llm_config.missing_configuration_message()
-                prefer_short_titles = merged_config.get("prefer_short_titles", True)
-
-                if not missing_llm_config:
-                    llm = _llm_backend_from_config(llm_config)
-                    
-                    # Construct prompt based on preference
-                    if prefer_short_titles:
-                        prompt_template = (
-                            "You are an expert meeting assistant. Given the full meeting transcript below, "
-                            "provide a very short, punchy title (3-5 words) that captures the core essence of the meeting. "
-                            "Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
-                            "# Transcript\n\n{transcript}\n"
-                        )
-                    else:
-                        # Use default prompt (longer/descriptive)
-                        prompt_template = None 
-
-                    title = llm.infer_meeting_title(transcript_text, prompt_template=prompt_template)
-                    recording.name = title
-                    session.add(recording)
-                    session.commit()
-                    logger.info(f"Inferred title for recording {recording_id}: {title}")
-                else:
-                    logger.warning("Skipping title inference: %s", missing_llm_config)
-
-            except Exception as e:
-                logger.error(f"Failed to infer meeting title: {e}")
-                # Don't fail the whole process
-
-        # Auto-generate Meeting Notes
-        auto_generate_notes = merged_config.get("auto_generate_notes", True)
-        if auto_generate_notes:
-            try:
-                self.update_state(state='PROCESSING', meta={'progress': 97, 'stage': 'Generating Notes'})
-                recording.processing_step = f"Generating meeting notes...{device_suffix}"
-                recording.processing_progress = 97
-                session.add(recording)
-                session.commit()
-                
-                missing_llm_config = llm_config.missing_configuration_message()
-                
-                if not missing_llm_config:
-                    session.refresh(transcript)
-                    transcript.notes_status = "generating"
-                    transcript.error_message = None
-                    session.add(transcript)
-                    session.commit()
-                    update_recording_status(session, recording.id)
-                    
-                    llm = _llm_backend_from_config(llm_config)
-                    # Passes an empty mapping because names are already resolved in transcript_text.
-                    # Use a generous timeout (300s) for meeting notes generation as it can be slow
-                    notes = llm.generate_meeting_notes(
-                        transcript_text,
-                        {},
-                        timeout=300,
-                        user_notes=transcript.user_notes,
-                    )
-                    transcript.notes = notes
-                    transcript.notes_status = "completed"
-                    transcript.error_message = None
-                    session.add(transcript)
-                    session.commit()
-                    update_recording_status(session, recording.id)
-                    logger.info(f"Generated meeting notes for recording {recording_id}")
-                else:
-                    logger.warning("Skipping note generation: %s", missing_llm_config)
-                    _mark_notes_generation_error(session, recording, transcript, missing_llm_config)
-
-            except Exception as e:
-                logger.error(f"Failed to generate meeting notes: {e}")
-                _mark_notes_generation_error(session, recording, transcript, e)
-                # Don't fail the whole process
+        _run_automatic_meeting_intelligence_stage(
+            session=session,
+            task=self,
+            recording=recording,
+            transcript=transcript,
+            speakers=recording_speakers,
+            transcript_text=transcript_text,
+            unresolved_speakers=unresolved_speakers,
+            llm_config=llm_config,
+            prefer_short_titles=merged_config.get("prefer_short_titles", True),
+            device_suffix=device_suffix,
+        )
 
         # Update Recording Status
         recording.processing_step = "Completed"
@@ -1219,7 +1277,6 @@ def infer_speakers_task(self, recording_id: int):
     """
     Independent task to re-run speaker inference using LLM.
     """
-    from backend.processing.llm_services import get_llm_backend
     # Reload config
     config_manager.reload()
     
@@ -1230,46 +1287,28 @@ def infer_speakers_task(self, recording_id: int):
             logger.error(f"Recording {recording_id} not found.")
             return
 
-        # Fetch User Settings & Merge with System Config
+        # Fetch user settings for provider resolution.
         user_settings = {}
         if recording.user_id:
             user = session.get(User, recording.user_id)
             if user and user.settings:
                 user_settings = user.settings
-        
-        system_config = config_manager.get_all()
-        from backend.utils.config_manager import get_system_api_keys
-        system_keys = get_system_api_keys(session)
-        system_config.update(system_keys)
-        
-        # Extract owner's global LLM config if we need it
-        from sqlmodel import select
-        res = session.execute(select(User).where(User.role == "owner"))
-        owner = res.scalar_one_or_none()
-        owner_settings = getattr(owner, "settings", {}) if owner else {}
-        system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
-        for sys_field in system_fields:
-            if owner_settings and owner_settings.get(sys_field):
-                system_config[sys_field] = owner_settings[sys_field]
-        
-        merged_config = system_config.copy()
-        merged_config.update({k: v for k, v in user_settings.items() if v is not None})
-        for sk, val in system_keys.items():
-            if val:
-                merged_config[sk] = val
-
-        provider = merged_config.get("llm_provider", "gemini")
-        api_key = merged_config.get(f"{provider}_api_key")
-        model = merged_config.get(f"{provider}_model")
-
-        if not api_key and provider != "ollama":
-            logger.warning(f"No API key configured for {provider}. Skipping inference.")
+        llm_config = resolve_llm_config(session, user_settings)
+        missing_llm_config = llm_config.missing_configuration_message()
+        if missing_llm_config:
+            logger.warning(
+                "Cannot infer speakers for recording %s: %s",
+                recording_id,
+                missing_llm_config,
+            )
+            _complete_speaker_inference_task(session, recording)
             return
 
         # Fetch transcript
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
         if not transcript or not transcript.segments:
             logger.error(f"No transcript found for recording {recording_id}.")
+            _complete_speaker_inference_task(session, recording)
             return
 
         # Update status (optional, but good for UI feedback if we had a specific status for this)
@@ -1292,7 +1331,7 @@ def infer_speakers_task(self, recording_id: int):
             transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
 
         # Run inference
-        backend = get_llm_backend(provider, api_key=api_key, model=model)
+        backend = _llm_backend_from_config(llm_config)
         inferred_mapping = backend.infer_speakers(
             transcript_for_llm,
             user_notes=transcript.user_notes,
@@ -1314,21 +1353,14 @@ def infer_speakers_task(self, recording_id: int):
         session.commit()
         logger.info(f"Updated {updated_count} speakers for recording {recording_id}")
 
-        # Update status back to PROCESSED
-        recording.status = RecordingStatus.PROCESSED
-        recording.processing_step = "Completed"
-        session.add(recording)
-        session.commit()
+        _complete_speaker_inference_task(session, recording)
 
     except Exception as e:
         logger.error(f"Speaker inference task failed: {e}", exc_info=True)
         # Revert status to PROCESSED on error so spinner stops
         try:
             recording = session.get(Recording, recording_id)
-            if recording:
-                recording.status = RecordingStatus.PROCESSED
-                session.add(recording)
-                session.commit()
+            _complete_speaker_inference_task(session, recording)
         except Exception as db_err:
             logger.error(f"Failed to revert recording status: {db_err}")
 

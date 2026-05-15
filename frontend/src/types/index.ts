@@ -172,10 +172,7 @@ export interface Settings {
   worker_url?: string;
   companion_url?: string;
   enable_auto_voiceprints?: boolean;
-  auto_generate_notes?: boolean;
-  auto_generate_title?: boolean;
   prefer_short_titles?: boolean;
-  auto_infer_speakers?: boolean;
   enable_vad?: boolean;
   enable_diarization?: boolean;
   spellcheck_language?: string;

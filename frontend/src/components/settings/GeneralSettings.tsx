@@ -2,7 +2,7 @@ import { useTheme, Theme } from "@/lib/ThemeProvider";
 import { useEffect, useMemo, useState } from "react";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
-import { Brain, Mic, Activity, Users, FileText, Type, SpellCheck, Clock3 } from "lucide-react";
+import { Mic, Activity, Users, Type, SpellCheck, Clock3 } from "lucide-react";
 import { Switch } from "../ui/Switch";
 import { SPELLCHECK_LANGUAGES, spellCheckService } from "@/lib/spellCheckService";
 import DictionaryModal from "../DictionaryModal";
@@ -309,98 +309,25 @@ export default function GeneralSettings({
               </div>
             </div>
 
-            {/* Title Inference Toggle */}
-            <div className="flex flex-col gap-2 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
-              <div className="flex items-start gap-3">
-                <div className="mt-1">
-                  <Type className="w-5 h-5 text-green-500" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Infer Meeting Title
-                    </label>
-                    <Switch
-                      checked={settings.auto_generate_title !== false} // Default true
-                      onCheckedChange={(checked) =>
-                        onUpdate({ ...settings, auto_generate_title: checked })
-                      }
-                    />
-                  </div>
-                  <p className="mt-1 text-xs contrast-helper">
-                    Automatically generates a descriptive title for the meeting
-                    based on the transcript content using the configured LLM.
-                  </p>
-                </div>
-              </div>
-
-              {/* Sub-toggle for Short Titles */}
-              {settings.auto_generate_title !== false && (
-                <div className="ml-9 pl-3 border-l-2 border-gray-300 dark:border-gray-600">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      Prefer Short Titles
-                    </label>
-                    <Switch
-                      checked={settings.prefer_short_titles !== false} // Default true
-                      onCheckedChange={(checked) =>
-                        onUpdate({ ...settings, prefer_short_titles: checked })
-                      }
-                    />
-                  </div>
-                  <p className="mt-1 text-xs contrast-helper">
-                    Generates concise 3-5 word titles instead of longer
-                    descriptive ones.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Speaker Inference Toggle */}
             <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
               <div className="mt-1">
-                <Brain className="w-5 h-5 text-pink-500" />
+                <Type className="w-5 h-5 text-green-500" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-gray-900 dark:text-white">
-                    Infer Speaker Names
+                    Prefer Short Titles
                   </label>
                   <Switch
-                    checked={settings.auto_infer_speakers !== false} // Default true
+                    checked={settings.prefer_short_titles !== false}
                     onCheckedChange={(checked) =>
-                      onUpdate({ ...settings, auto_infer_speakers: checked })
+                      onUpdate({ ...settings, prefer_short_titles: checked })
                     }
                   />
                 </div>
                 <p className="mt-1 text-xs contrast-helper">
-                  Uses the LLM to infer real names (e.g., &quot;John&quot;,
-                  &quot;Interviewer&quot;) from context and replaces generic
-                  labels like &quot;Speaker 1&quot;.
-                </p>
-              </div>
-            </div>
-
-            {/* Notes Generation Toggle */}
-            <div className="flex items-start gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-lg border border-gray-300 dark:border-gray-600">
-              <div className="mt-1">
-                <FileText className="w-5 h-5 text-yellow-500" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-900 dark:text-white">
-                    Auto-Generate Notes
-                  </label>
-                  <Switch
-                    checked={settings.auto_generate_notes !== false} // Default true
-                    onCheckedChange={(checked) =>
-                      onUpdate({ ...settings, auto_generate_notes: checked })
-                    }
-                  />
-                </div>
-                <p className="mt-1 text-xs contrast-helper">
-                  Automatically generates summaries, action items, and key
-                  takeaways after processing.
+                  Use concise 3-5 word AI-generated meeting titles instead of
+                  longer descriptive ones.
                 </p>
               </div>
             </div>

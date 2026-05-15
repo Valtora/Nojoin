@@ -1044,7 +1044,10 @@ async def generate_notes(
         transcript.error_message = missing_llm_config
         db.add(transcript)
         await db.commit()
-        raise HTTPException(status_code=400, detail=f"{missing_llm_config}. Please configure AI settings.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
+        )
     
     # 4. Call Worker Task
     from backend.worker.tasks import generate_notes_task

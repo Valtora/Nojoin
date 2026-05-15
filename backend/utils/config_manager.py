@@ -43,6 +43,14 @@ SENSITIVE_KEYS = {
     "hf_token"
 }
 
+LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
+    {
+        "auto_generate_notes",
+        "auto_generate_title",
+        "auto_infer_speakers",
+    }
+)
+
 def _get_default_device():
     """Determine default processing device safely."""
     # Always default to 'auto' so the worker can decide at runtime based on availability.
@@ -100,10 +108,7 @@ DEFAULT_USER_SETTINGS = {
     "ollama_model": None,       # Default Ollama model
     "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
-    "auto_generate_notes": True, # Automatically generate meeting notes after processing
-    "auto_generate_title": True, # Automatically infer meeting title after processing
     "prefer_short_titles": True, # Prefer short (3-5 words) meeting titles
-    "auto_infer_speakers": True, # Automatically infer real speaker names using LLM
     "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True, # Enable Speaker Diarization (who said what)
     "spellcheck_language": "en-GB", # Default spell check language for meeting notes
@@ -133,6 +138,18 @@ def get_default_user_settings():
     defaults = DEFAULT_USER_SETTINGS.copy()
     defaults["timezone"] = get_default_timezone_name()
     return defaults
+
+
+def strip_legacy_automatic_ai_settings(settings: dict | None) -> dict:
+    """Removes deprecated automatic AI toggle keys from a settings mapping."""
+    if not settings:
+        return {}
+
+    return {
+        key: value
+        for key, value in dict(settings).items()
+        if key not in LEGACY_AUTOMATIC_AI_SETTING_KEYS
+    }
 
 
 class ConfigManager:

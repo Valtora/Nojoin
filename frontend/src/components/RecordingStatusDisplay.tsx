@@ -111,7 +111,7 @@ export default function RecordingStatusDisplay({
     : recording.processing_step ||
       (recording.status === RecordingStatus.QUEUED
         ? "Waiting for a worker to begin processing."
-        : "Preparing your meeting notes.");
+        : "Preparing your meeting transcript.");
 
   const progressValue = isActiveRecording
     ? null
@@ -136,7 +136,7 @@ export default function RecordingStatusDisplay({
                   ) : (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   )}
-                  {isActiveRecording ? "Live Capture" : "Meeting Intelligence"}
+                  {isActiveRecording ? "Live Capture" : "Meeting Processing"}
                 </span>
                 <div>
                   <h2 className="text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">

@@ -483,8 +483,8 @@ export default function SetupPage() {
         onClose={() => setShowSkipLLMModal(false)}
         onConfirm={confirmSkipLLM}
         title="Skip AI Setup?"
-        message="Without an API key and model, features like Meeting Notes, Chat, and Speaker Identification will be disabled. You can configure this later in Settings."
-        confirmText="Skip AI Features"
+        message="Without an AI provider and model, Nojoin will still record and transcribe meetings, but automatic meeting enhancement will be skipped. Generate Notes, meeting chat, and Retry Speaker Inference will work after you configure AI later in Settings."
+        confirmText="Skip AI Configuration"
         isDangerous={true}
       />
 
@@ -729,7 +729,8 @@ export default function SetupPage() {
                   AI Configuration
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Configure your LLM provider for meeting intelligence
+                  Configure an AI provider for automatic meeting enhancement,
+                  notes, chat, and speaker inference
                 </p>
               </div>
 

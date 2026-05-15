@@ -71,6 +71,17 @@ def test_parse_automatic_meeting_intelligence_response_rejects_missing_field() -
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
 
+def test_parse_automatic_meeting_intelligence_response_rejects_malformed_json() -> None:
+    response = '{"speaker_mapping": {"SPEAKER_00": "Alex"}, "title": "Launch"'
+
+    try:
+        parse_automatic_meeting_intelligence_response(response)
+    except MeetingIntelligenceContractError as exc:
+        assert "Could not parse" in str(exc)
+    else:
+        raise AssertionError("Expected MeetingIntelligenceContractError")
+
+
 def test_parse_automatic_meeting_intelligence_response_rejects_unknown_labels() -> None:
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript="[00:00 - 00:05] Speaker 1: Status update.",

@@ -11,6 +11,7 @@ from backend.utils.config_manager import (
     async_get_system_api_keys,
     config_manager,
     get_system_api_keys,
+    strip_legacy_automatic_ai_settings,
 )
 
 
@@ -50,6 +51,9 @@ def _merge_llm_config(
     user_settings: Mapping[str, Any] | None,
 ) -> ResolvedLLMConfig:
     merged: dict[str, Any] = dict(base_config)
+    sanitized_user_settings = strip_legacy_automatic_ai_settings(
+        dict(user_settings) if user_settings else {}
+    )
     merged.update({key: value for key, value in system_keys.items() if value})
 
     if owner_settings:
@@ -58,8 +62,14 @@ def _merge_llm_config(
             if value:
                 merged[field] = value
 
-    if user_settings:
-        merged.update({key: value for key, value in user_settings.items() if value is not None})
+    if sanitized_user_settings:
+        merged.update(
+            {
+                key: value
+                for key, value in sanitized_user_settings.items()
+                if value is not None
+            }
+        )
 
     for key, value in system_keys.items():
         if value:

@@ -675,7 +675,7 @@ export default function RecordingPage({ params }: PageProps) {
       }
       alert(
         e.response?.data?.detail ||
-          "Failed to generate notes. Please check your LLM settings.",
+          "Failed to generate notes. Configure an AI provider and model in Settings, then try again.",
       );
     } finally {
       setIsGeneratingNotes(false);
@@ -962,7 +962,7 @@ export default function RecordingPage({ params }: PageProps) {
               errorMessage={
                 recording.transcript?.notes_status === "error"
                   ? recording.transcript?.error_message ||
-                    "Meeting notes could not be generated. Check your AI settings and try again."
+                    "Meeting notes could not be generated. Configure an AI provider and model in Settings, then try again."
                   : null
               }
               onExport={() => setShowExportModal(true)}

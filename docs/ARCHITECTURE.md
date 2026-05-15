@@ -74,12 +74,13 @@ The normal backend processing path is:
 4. Whisper transcription.
 5. Pyannote diarisation.
 6. Phantom speaker filtering.
-7. Merge and speaker resolution.
-8. Voiceprint extraction.
-9. Title inference.
-10. Meeting note generation.
+7. Merge, voiceprint extraction, and deterministic speaker resolution.
+8. Automatic meeting intelligence when an AI provider and model are configured.
+9. Persistence of unresolved speaker suggestions, meeting title, and Markdown meeting notes.
 
-Manual user notes can be captured during recording or processing and are fed into later inference and note-generation stages.
+Manual user notes can be captured during recording or processing and are fed into both the automatic meeting-intelligence stage and the manual note-generation flow.
+
+If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
 
 ## Calendar Flow
 

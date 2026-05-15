@@ -114,7 +114,7 @@ Typical stages include:
 3. Proxy creation for playback.
 4. Transcription.
 5. Diarisation.
-6. Merge, inference, and note generation.
+6. Merge, deterministic speaker resolution, and optional automatic AI enhancement.
 
 ### Processing ETA
 
@@ -158,18 +158,21 @@ Speakers with voiceprints display a fingerprint indicator in the UI.
 
 ## Meeting Intelligence
 
-Nojoin can generate:
+When an AI provider and model are configured, Nojoin can automatically generate and apply:
 
-- Meeting summaries.
-- Action items.
-- Rich structured notes.
-- Suggested speaker naming context.
+- Markdown meeting notes.
+- A meeting title.
+- Suggested renames for unresolved speaker labels.
 
-Manual user notes are also used as supporting context for inference and final note generation, and the final notes explicitly label user-authored items.
+This automatic enhancement happens once near the end of processing. If AI configuration is incomplete, the recording still finishes and remains fully reviewable, but the automatic AI stage is skipped.
+
+Manual user notes are also used as supporting context for speaker suggestions and both automatic and manual note generation, and the final notes explicitly label user-authored items.
 
 Use **Generate Notes** or **Regenerate Notes** from the notes panel to rebuild only the meeting notes from the current saved transcript and speaker labels. This uses the currently saved AI provider, API key, model, and Ollama URL settings. If the provider configuration is incomplete or the provider rejects the request, the recording remains available and the notes panel reports the failure.
 
-Use **Retry Processing** only when you want to rebuild the full meeting artefacts from the original audio, including transcription, diarisation, speaker resolution, title inference, and notes.
+Use **Retry Speaker Inference** from the recording actions when you want to rerun only the speaker-naming step from the current saved transcript. This does not regenerate the title or meeting notes.
+
+Use **Retry Processing** only when you want to rebuild the full meeting artefacts from the original audio, including transcription, diarisation, deterministic speaker resolution, and the automatic meeting-intelligence stage.
 
 ### Meeting Chat
 
@@ -201,8 +204,12 @@ Normal users mainly interact with:
 Depending on permissions, users may also see or adjust:
 
 - LLM provider selection.
+- Provider model selection.
+- Provider API keys or Ollama URL.
 - Whisper model settings.
 - Local Ollama configuration.
+
+The General settings page no longer exposes separate automatic title, notes, or speaker-inference toggles. Automatic AI enhancement runs whenever provider configuration is complete, and `Prefer Short Titles` remains the main user-facing behavior control for that stage.
 
 ### Timezone
 

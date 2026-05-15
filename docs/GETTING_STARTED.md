@@ -59,8 +59,10 @@ The first user becomes the Owner account.
 During setup you will usually want to provide:
 
 - A Hugging Face token for diarisation.
-- Your preferred LLM provider.
+- An AI provider and model for meeting intelligence.
 - Optional API keys for OpenAI, Anthropic, Gemini, or a local Ollama endpoint.
+
+If you skip AI configuration, Nojoin still records, transcribes, and diarises meetings. The automatic AI enhancement step is simply skipped until you configure a provider later in Settings.
 
 You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 
@@ -82,7 +84,9 @@ The browser and Companion must run on the same machine. The Nojoin backend can b
 2. Use **Meet Now** to start a recording.
 3. Stop the recording when finished.
 4. Open the recording in the `/recordings` workspace.
-5. Wait for transcription, diarisation, title inference, and note generation to complete.
+5. Wait for transcription and diarisation to complete.
+6. If AI is configured, Nojoin then runs one automatic meeting-intelligence pass that can apply unresolved speaker suggestions, a meeting title, and Markdown meeting notes.
+7. If AI is not configured, the meeting still completes normally and remains available for transcript review. You can configure AI later before using Generate Notes, meeting chat, or Retry Speaker Inference.
 
 ## 6. Recommended Next Steps
 

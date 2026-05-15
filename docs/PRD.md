@@ -27,6 +27,7 @@ The core processing unit is hosted on a machine with NVIDIA GPU capabilities.
 - **Database:** PostgreSQL serves as the single source of truth for all metadata, transcripts, and speaker profiles.
 - **Broker:** Redis manages the task queue and caching.
 - **Setup Wizard:** Collects critical user settings (LLM Provider, API Keys, HuggingFace Token) during the creation of the first admin account.
+  - **Optional AI Configuration:** AI provider setup is optional. If no provider is configured, recordings still process through transcription and diarisation, but automatic AI enhancement is skipped until configuration is added later.
   - **Auto-Fill:** Settings can be pre-configured via environment variables (defined in `.env`) to simplify the setup process for valid keys.
 - **Database Initialization:** Automatically handles schema creation and migrations on startup.
 - **Storage:** Docker Volumes provide persistent storage for raw audio and model artifacts.
@@ -161,7 +162,8 @@ The system provides the following core capabilities:
   - **Drift Guard:** Embedding merges are rejected when the incoming embedding is too dissimilar to the current voiceprint, protecting against false-positive pollution.
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
-- **Meeting Intelligence:** LLM-powered notes (Summaries, Action Items), Chat Q&A, and automatic meeting title inference.
+- **Meeting Intelligence:** Provider-gated automatic AI enhancement via one LLM call that can return unresolved speaker suggestions, a meeting title, and Markdown meeting notes, plus separate Chat Q&A.
+  - **Manual AI Actions:** `Generate Notes` remains a notes-only manual action, and `Retry Speaker Inference` remains a speaker-only manual action.
   - **User-Authored Notes:** Users can write manual notes during recording or processing. These notes are injected into speaker-name inference and meeting-note generation as supporting context.
   - **Final Note Attribution:** Final notes append a deterministic `User Notes` section in which each manual note is labelled as user-authored.
 - **Search Capabilities:**
