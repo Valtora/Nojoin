@@ -1,15 +1,27 @@
+import { Fragment, useMemo, useState } from "react";
+import { Popover, Transition } from "@headlessui/react";
 import { useTheme, Theme } from "@/lib/ThemeProvider";
-import { useEffect, useMemo, useState } from "react";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
-import { Mic, Activity, Users, Type, SpellCheck, Clock3 } from "lucide-react";
+import {
+  Mic,
+  Activity,
+  Users,
+  Type,
+  SpellCheck,
+  Clock3,
+  ChevronDown,
+  Search,
+  Check,
+} from "lucide-react";
 import { Switch } from "../ui/Switch";
 import { SPELLCHECK_LANGUAGES, spellCheckService } from "@/lib/spellCheckService";
 import DictionaryModal from "../DictionaryModal";
 import {
+  DEFAULT_TIME_ZONE,
   getBrowserTimeZone,
   getSupportedTimeZones,
-  normaliseTimeZone,
+  resolveTimeZone,
   setCachedUserTimeZone,
 } from "@/lib/timezone";
 
@@ -19,6 +31,17 @@ interface GeneralSettingsProps {
   searchQuery?: string;
 }
 
+function formatTimeZoneDisplay(timeZone: string): string {
+  if (timeZone === DEFAULT_TIME_ZONE) {
+    return "Coordinated Universal Time";
+  }
+
+  return timeZone
+    .split("/")
+    .map((part) => part.replaceAll("_", " "))
+    .join(" / ");
+}
+
 export default function GeneralSettings({
   settings,
   onUpdate,
@@ -26,15 +49,46 @@ export default function GeneralSettings({
 }: GeneralSettingsProps) {
   const { theme, setTheme } = useTheme();
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
-  const [timezoneDraft, setTimezoneDraft] = useState(settings.timezone || "UTC");
-  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+  const [timezoneSearch, setTimezoneSearch] = useState("");
   const browserTimeZone = useMemo(() => getBrowserTimeZone(), []);
-  const supportedTimeZones = useMemo(() => getSupportedTimeZones(), []);
+  const selectedTimeZone = resolveTimeZone(settings.timezone, DEFAULT_TIME_ZONE);
+  const supportedTimeZones = useMemo(() => {
+    return Array.from(
+      new Set([selectedTimeZone, browserTimeZone, ...getSupportedTimeZones()]),
+    ).sort((left, right) => {
+      if (left === DEFAULT_TIME_ZONE) {
+        return -1;
+      }
 
-  useEffect(() => {
-    setTimezoneDraft(settings.timezone || "UTC");
-    setTimezoneError(null);
-  }, [settings.timezone]);
+      if (right === DEFAULT_TIME_ZONE) {
+        return 1;
+      }
+
+      if (left === browserTimeZone) {
+        return -1;
+      }
+
+      if (right === browserTimeZone) {
+        return 1;
+      }
+
+      return left.localeCompare(right);
+    });
+  }, [browserTimeZone, selectedTimeZone]);
+  const filteredTimeZones = useMemo(() => {
+    const query = timezoneSearch.trim().toLowerCase();
+
+    if (!query) {
+      return supportedTimeZones;
+    }
+
+    return supportedTimeZones.filter((timeZone) => {
+      const searchTarget = `${timeZone.toLowerCase()} ${formatTimeZoneDisplay(
+        timeZone,
+      ).toLowerCase()}`;
+      return searchTarget.includes(query);
+    });
+  }, [supportedTimeZones, timezoneSearch]);
 
   const handleLanguageChange = async (locale: string) => {
     onUpdate({ ...settings, spellcheck_language: locale });
@@ -45,15 +99,13 @@ export default function GeneralSettings({
     setTheme(e.target.value as Theme);
   };
 
-  const applyTimezone = (candidate: string) => {
-    const resolvedTimeZone = normaliseTimeZone(candidate);
-    if (!resolvedTimeZone) {
-      setTimezoneError("Enter a valid IANA timezone such as Europe/London.");
+  const handleTimeZoneSelect = (candidate: string) => {
+    const resolvedTimeZone = resolveTimeZone(candidate, DEFAULT_TIME_ZONE);
+    if (resolvedTimeZone === selectedTimeZone) {
       return;
     }
 
-    setTimezoneError(null);
-    setTimezoneDraft(resolvedTimeZone);
+    setTimezoneSearch("");
     setCachedUserTimeZone(resolvedTimeZone);
     onUpdate({ ...settings, timezone: resolvedTimeZone });
   };
@@ -134,35 +186,118 @@ export default function GeneralSettings({
             <Clock3 className="w-5 h-5 text-orange-500" /> Date & Time
           </h3>
           <div className="grid grid-cols-1 gap-4 max-w-xl">
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                applyTimezone(timezoneDraft);
-              }}
-              className="space-y-3"
-            >
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Timezone
                 </label>
-                <input
-                  type="text"
-                  list="general-settings-timezone-options"
-                  value={timezoneDraft}
-                  onChange={(event) => {
-                    setTimezoneDraft(event.target.value);
-                    if (timezoneError) {
-                      setTimezoneError(null);
-                    }
-                  }}
-                  placeholder="UTC"
-                  className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-                <datalist id="general-settings-timezone-options">
-                  {supportedTimeZones.map((timeZone) => (
-                    <option key={timeZone} value={timeZone} />
-                  ))}
-                </datalist>
+                <Popover className="relative block">
+                  {({ open, close }) => (
+                    <>
+                      <Popover.Button className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-400 bg-white px-3 py-2 text-left text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {selectedTimeZone}
+                          </span>
+                          <span className="mt-0.5 block text-xs contrast-helper">
+                            Select the timezone used across your dashboard.
+                          </span>
+                        </div>
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${open ? "rotate-180" : ""}`}
+                        />
+                      </Popover.Button>
+
+                      <Transition
+                        as={Fragment}
+                        enter="transition ease-out duration-100"
+                        enterFrom="transform opacity-0 scale-95"
+                        enterTo="transform opacity-100 scale-100"
+                        leave="transition ease-in duration-75"
+                        leaveFrom="transform opacity-100 scale-100"
+                        leaveTo="transform opacity-0 scale-95"
+                      >
+                        <Popover.Panel className="absolute left-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                          <div className="border-b border-gray-200 p-3 dark:border-gray-800">
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={timezoneSearch}
+                                onChange={(event) =>
+                                  setTimezoneSearch(event.target.value)
+                                }
+                                placeholder="Filter timezones"
+                                autoFocus
+                                className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition-colors focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div
+                            role="radiogroup"
+                            aria-label="Timezone"
+                            className="max-h-80 space-y-1.5 overflow-y-auto p-2"
+                          >
+                            {filteredTimeZones.length > 0 ? (
+                              filteredTimeZones.map((timeZone) => {
+                                const isSelected = timeZone === selectedTimeZone;
+                                const isBrowserDetected = timeZone === browserTimeZone;
+
+                                return (
+                                  <label
+                                    key={timeZone}
+                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                                      isSelected
+                                        ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                                        : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name="general-settings-timezone"
+                                      value={timeZone}
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        handleTimeZoneSelect(timeZone);
+                                        close();
+                                      }}
+                                      className="h-4 w-4 shrink-0 accent-orange-600"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                          {timeZone}
+                                        </span>
+                                        {timeZone === DEFAULT_TIME_ZONE && (
+                                          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                            UTC
+                                          </span>
+                                        )}
+                                        {isBrowserDetected && (
+                                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-orange-700 dark:bg-orange-900/20 dark:text-orange-200">
+                                            Browser detected
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <Check className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+                                    )}
+                                  </label>
+                                );
+                              })
+                            ) : (
+                              <div className="px-3 py-6 text-sm contrast-helper">
+                                No timezones match that filter.
+                              </div>
+                            )}
+                          </div>
+                        </Popover.Panel>
+                      </Transition>
+                    </>
+                  )}
+                </Popover>
                 <p className="mt-1 text-xs contrast-helper">
                   Calendar events and task deadlines are shown in this timezone.
                   Task deadlines are converted to UTC when saved so they remain
@@ -170,39 +305,10 @@ export default function GeneralSettings({
                 </p>
               </div>
 
-              {timezoneError && (
-                <p className="text-sm text-rose-600 dark:text-rose-300">
-                  {timezoneError}
-                </p>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="submit"
-                  className="px-3 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
-                >
-                  Apply timezone
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyTimezone(browserTimeZone)}
-                  className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
-                >
-                  Use browser timezone
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyTimezone("UTC")}
-                  className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
-                >
-                  Use UTC
-                </button>
-              </div>
-
               <p className="text-xs contrast-helper">
                 Browser detected: {browserTimeZone}
               </p>
-            </form>
+            </div>
           </div>
         </div>
       )}

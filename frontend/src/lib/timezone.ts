@@ -86,11 +86,24 @@ export function getBrowserTimeZone(): string {
 }
 
 export function getSupportedTimeZones(): string[] {
-  if (typeof Intl.supportedValuesOf === "function") {
-    return Intl.supportedValuesOf("timeZone");
-  }
+  const timeZones =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : FALLBACK_TIME_ZONES;
 
-  return FALLBACK_TIME_ZONES;
+  return Array.from(new Set([DEFAULT_TIME_ZONE, ...timeZones])).sort(
+    (left, right) => {
+      if (left === DEFAULT_TIME_ZONE) {
+        return -1;
+      }
+
+      if (right === DEFAULT_TIME_ZONE) {
+        return 1;
+      }
+
+      return left.localeCompare(right);
+    },
+  );
 }
 
 export function setCachedUserTimeZone(value: string | null | undefined): string {
