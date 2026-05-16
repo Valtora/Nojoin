@@ -396,7 +396,7 @@ fn start_segment(
 
     thread::spawn(move || {
         let run = || -> anyhow::Result<SegmentThreadOutcome> {
-            const MAX_SEGMENT_DURATION_SECS: u64 = 5 * 60;
+            const MAX_SEGMENT_DURATION_SECS: u64 = 2;
             let temp_dir = std::env::temp_dir().join("Nojoin").join("recordings");
             if let Err(e) = std::fs::create_dir_all(&temp_dir) {
                 log::error!("Failed to create temp directory {:?}: {}", temp_dir, e);
@@ -699,10 +699,10 @@ fn run_mixing_loop(
 
         // Record for up to MAX_SEGMENT_DURATION_SECS or until stopped
         while is_recording.load(Ordering::SeqCst) {
-            // Checks if maximum segment duration is exceeded.
+            // Flush the live segment once the ~2 second interval elapses.
             if segment_start.elapsed().as_secs() >= max_duration {
                 info!(
-                    "Segment {} reached maximum duration, starting new segment",
+                    "Segment {} reached live flush interval, starting new segment",
                     current_sequence
                 );
                 break;

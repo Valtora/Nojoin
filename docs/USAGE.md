@@ -84,6 +84,10 @@ If live audio stays quiet for a while, Nojoin may show a low-key inline reminder
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 
+### Live Transcription
+
+While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. Live segments are transcribed with padded speech regions plus a short rolling audio context window, so live quality tracks the final transcript more closely and word edges are not clipped. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
+
 ## Importing Recordings
 
 You can import existing audio files directly through the web client.
@@ -132,6 +136,17 @@ Retry Processing:
 - Rebuilds the meeting from the original audio.
 - Preserves recording metadata, tags, uploaded documents, and user-authored notes.
 - Records a fresh processing timing sample for future ETA calculations.
+
+### Reprocess a Recording
+
+From the recording detail page you can **Reprocess at higher quality**. This re-runs the full pipeline like Retry Processing, but lets you pick the transcription engine for this run only.
+
+Reprocessing:
+
+- Lets you choose the transcription engine (for example a more accurate model) for this run.
+- Clears and rebuilds the transcript and generated artefacts, preserving metadata, tags, documents, and user-authored notes.
+- Asks for confirmation before discarding the existing transcript.
+- Does not change your default transcription settings; the chosen engine applies to this reprocess only.
 
 ## Transcript and Playback Workflow
 
@@ -206,6 +221,7 @@ Depending on permissions, users may also see or adjust:
 - LLM provider selection.
 - Provider model selection.
 - Provider API keys or Ollama URL.
+- Transcription engine selection (Whisper or Parakeet).
 - Whisper model settings.
 - Local Ollama configuration.
 
