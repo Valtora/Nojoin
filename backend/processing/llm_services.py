@@ -9,7 +9,9 @@ from typing import Dict, Tuple, List, Generator, Any, Optional
 from backend.utils.transcript_utils import render_transcript
 from backend.utils.config_manager import from_project_relative_path
 from backend.utils.meeting_notes import (
+    MeetingEventContext,
     append_user_notes_section,
+    build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
 from backend.utils.meeting_intelligence import (
@@ -31,6 +33,7 @@ class LLMBackend:
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> Dict[str, str]:
         """
         Infer the most likely real names or roles for each speaker label in the transcript.
@@ -44,7 +47,7 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
         Returns the meeting notes as a string.
@@ -128,7 +131,7 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
     @staticmethod
     def get_default_speaker_prompt_template():
         return """
-You are an expert meeting assistant. Analyze the diarized meeting transcript below, where speakers are labeled generically (e.g., 'Speaker 1', 'SPEAKER_00').\n\nFirst, infer the most likely real names or roles for each speaker, based on context, introductions, or references in the transcript. Use the user-authored notes as supplemental context when they mention attendee names, roles, or who said what. If a real name is not clear, suggest a likely role (e.g., 'Project Manager', 'Client', 'Engineer') or keep the generic label. Be conservative: only use a real name or role if it is clearly stated or strongly implied. If the user notes conflict with the transcript, prefer the transcript.\n\nOutput a Markdown table mapping each diarization label to the inferred name or role. Only output the table and nothing else.\n\n# User Notes Context\n{user_notes_section}\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
+You are an expert meeting assistant. Analyze the diarized meeting transcript below, where speakers are labeled generically (e.g., 'Speaker 1', 'SPEAKER_00').\n\nFirst, infer the most likely real names or roles for each speaker, based on context, introductions, or references in the transcript. Use the user-authored notes as supplemental context when they mention attendee names, roles, or who said what. If a real name is not clear, suggest a likely role (e.g., 'Project Manager', 'Client', 'Engineer') or keep the generic label. Be conservative: only use a real name or role if it is clearly stated or strongly implied. If the user notes conflict with the transcript, prefer the transcript.\n\nOutput a Markdown table mapping each diarization label to the inferred name or role. Only output the table and nothing else.\n\n# User Notes Context\n{user_notes_section}\n\n# Meeting Context\n{meeting_context_section}\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
 
     @staticmethod
     def get_default_notes_prompt_template():
@@ -149,6 +152,9 @@ You MUST follow these formatting rules EXACTLY. Do not deviate:
 
 # User Notes Context
 {user_notes_section}
+
+# Meeting Context
+{meeting_context_section}
 
 # OUTPUT FORMAT - Follow this EXACT structure:
 
@@ -289,11 +295,13 @@ Now generate the meeting notes following the exact format specified above. Be co
         transcript: str,
         speaker_mapping: Dict[str, str],
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> str:
         return prompt_template.format(
             transcript=transcript,
             mapping_table=LLMBackend.mapping_to_markdown_table(speaker_mapping),
             user_notes_section=build_user_notes_prompt_section(user_notes),
+            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
         )
 
     @staticmethod
@@ -301,10 +309,12 @@ Now generate the meeting notes following the exact format specified above. Be co
         prompt_template: str,
         transcript: str,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> str:
         return prompt_template.format(
             transcript=transcript,
             user_notes_section=build_user_notes_prompt_section(user_notes),
+            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
         )
 
     @staticmethod
@@ -465,6 +475,7 @@ class GeminiLLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> Dict[str, str]:
         """
         Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
@@ -472,7 +483,7 @@ class GeminiLLMBackend(LLMBackend):
         """
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes)
+        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
@@ -487,13 +498,13 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API error (speaker mapping): {e}")
             raise RuntimeError(f"Gemini API error (speaker mapping): {e}")
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
@@ -697,6 +708,7 @@ class OpenAILLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> Dict[str, str]:
         """
         Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
@@ -704,7 +716,7 @@ class OpenAILLMBackend(LLMBackend):
         """
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes)
+        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
@@ -729,13 +741,13 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (speaker mapping): {e}")
             raise RuntimeError(f"OpenAI API error (speaker mapping): {e}")
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
@@ -996,6 +1008,7 @@ class AnthropicLLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> Dict[str, str]:
         """
         Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
@@ -1003,7 +1016,7 @@ class AnthropicLLMBackend(LLMBackend):
         """
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes)
+        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
@@ -1020,13 +1033,13 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (speaker mapping): {e}")
             raise RuntimeError(f"Anthropic API error (speaker mapping): {e}")
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
@@ -1247,10 +1260,11 @@ class OllamaLLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
     ) -> Dict[str, str]:
         if prompt_template is None:
             prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes)
+        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Ollama model configured. Please select a model in Settings.")
         
@@ -1269,10 +1283,10 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (speaker mapping): {e}")
             raise RuntimeError(f"Ollama API error (speaker mapping): {e}")
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
         if not self.model:
             raise ValueError("No Ollama model configured. Please select a model in Settings.")
         
