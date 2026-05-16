@@ -105,6 +105,7 @@ export interface TranscriptSegment {
   text: string;
   speaker: string;
   overlapping_speakers?: string[];
+  provisional?: boolean;
 }
 
 export interface Transcript extends BaseDBModel {
@@ -138,6 +139,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   audio_path: string;
   has_proxy?: boolean;
   duration_seconds?: number;
+  trim_start_s?: number | null;
+  trim_end_s?: number | null;
   file_size_bytes?: number;
   status: RecordingStatus;
   client_status?: ClientStatus;
@@ -156,6 +159,10 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
 
 export interface Settings {
   whisper_model_size?: string;
+  transcription_backend?: string;
+  parakeet_model?: string;
+  enable_live_transcription?: boolean;
+  live_transcription_backend?: string;
   processing_device?: string;
   theme?: string;
   timezone?: string;
@@ -436,4 +443,10 @@ export interface SegmentSelection {
   recording_id: RecordingId;
   start: number;
   end: number;
+}
+
+export interface ReprocessRequest {
+  transcription_backend: "whisper" | "parakeet";
+  whisper_model_size?: string;
+  parakeet_model?: string;
 }

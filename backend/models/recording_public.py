@@ -77,6 +77,8 @@ class RecordingPublicRead(PublicModel):
     audio_path: str
     has_proxy: bool = False
     duration_seconds: Optional[float] = None
+    trim_start_s: Optional[float] = None
+    trim_end_s: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
     client_status: Optional[ClientStatus] = None
@@ -217,6 +219,8 @@ def serialize_recording(
         audio_path=recording.audio_path,
         has_proxy=has_proxy,
         duration_seconds=recording.duration_seconds,
+        trim_start_s=recording.trim_start_s,
+        trim_end_s=recording.trim_end_s,
         file_size_bytes=recording.file_size_bytes,
         status=recording.status,
         client_status=recording.client_status,

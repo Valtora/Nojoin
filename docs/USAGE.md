@@ -84,6 +84,10 @@ If live audio stays quiet for a while, Nojoin may show a low-key inline reminder
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
 
+### Live Transcription
+
+While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
+
 ## Importing Recordings
 
 You can import existing audio files directly through the web client.
@@ -133,6 +137,17 @@ Retry Processing:
 - Preserves recording metadata, tags, uploaded documents, and user-authored notes.
 - Records a fresh processing timing sample for future ETA calculations.
 
+### Reprocess a Recording
+
+From the recording detail page you can **Reprocess at higher quality**. This re-runs the full pipeline like Retry Processing, but lets you pick the transcription engine for this run only.
+
+Reprocessing:
+
+- Lets you choose the transcription engine (for example a more accurate model) for this run.
+- Clears and rebuilds the transcript and generated artefacts, preserving metadata, tags, documents, and user-authored notes.
+- Asks for confirmation before discarding the existing transcript.
+- Does not change your default transcription settings; the chosen engine applies to this reprocess only.
+
 ## Transcript and Playback Workflow
 
 Within a processed recording you can:
@@ -142,6 +157,21 @@ Within a processed recording you can:
 - Click transcript text to seek playback.
 - Edit transcript text and speaker assignments.
 - Export transcript-only, notes-only, or combined text output.
+
+### Trimming a Recording
+
+If you forgot to stop a recording and it carries trailing dead air (or a slow
+start), you can trim it without altering the original audio.
+
+- From the audio player on a processed recording, move the playhead and use
+  **Set trim start** and **Set trim end** to mark the kept window.
+- The player slider, the transcript view, and exports then reflect only the
+  trimmed window.
+- **Clear trim** restores the full recording everywhere.
+
+Trimming is non-destructive: it stores two offsets and never re-encodes the
+audio or changes the transcript. The downloaded audio file remains the full,
+untrimmed recording.
 
 ## Speaker Management
 
@@ -206,6 +236,7 @@ Depending on permissions, users may also see or adjust:
 - LLM provider selection.
 - Provider model selection.
 - Provider API keys or Ollama URL.
+- Transcription engine selection (Whisper or Parakeet).
 - Whisper model settings.
 - Local Ollama configuration.
 
