@@ -958,9 +958,15 @@ async def list_recordings(
         query = query.where(search_filter)
 
     # 2. Filters (AND conditions)
+    # created_at is stored as naive UTC; normalise tz-aware bounds to match
+    # (the frontend sends UTC ISO instants with a 'Z' suffix).
     if start_date:
+        if start_date.tzinfo is not None:
+            start_date = start_date.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Recording.created_at >= start_date)
     if end_date:
+        if end_date.tzinfo is not None:
+            end_date = end_date.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Recording.created_at <= end_date)
 
     if speaker_ids:
