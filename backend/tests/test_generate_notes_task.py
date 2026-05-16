@@ -63,7 +63,8 @@ CREATE TABLE recordings (
     processing_completed_at DATETIME,
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
-    user_id INTEGER
+    user_id INTEGER,
+    calendar_event_id INTEGER
 );
 
 CREATE TABLE transcripts (
@@ -208,11 +209,13 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             prompt_template: str | None = None,
             timeout: int = 60,
             user_notes: str | None = None,
+            meeting_context=None,
         ) -> str:
             captured["transcript"] = transcript
             captured["speaker_mapping"] = speaker_mapping
             captured["timeout"] = timeout
             captured["user_notes"] = user_notes
+            captured["meeting_context"] = meeting_context
             return "# Meeting Notes\n\n## Summary\nGenerated notes."
 
     def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None):

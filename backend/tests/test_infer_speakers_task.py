@@ -51,7 +51,8 @@ CREATE TABLE recordings (
     processing_completed_at DATETIME,
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
-    user_id INTEGER
+    user_id INTEGER,
+    calendar_event_id INTEGER
 );
 
 CREATE TABLE transcripts (
@@ -227,10 +228,12 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
             prompt_template: str | None = None,
             timeout: int = 60,
             user_notes: str | None = None,
+            meeting_context=None,
         ) -> dict[str, str]:
             captured["transcript"] = transcript
             captured["timeout"] = timeout
             captured["user_notes"] = user_notes
+            captured["meeting_context"] = meeting_context
             return {"SPEAKER_00": "Alex", "SPEAKER_01": "Dana"}
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))

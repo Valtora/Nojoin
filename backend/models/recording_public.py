@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.models.calendar import CalendarEvent
 from backend.models.chat import ChatMessage
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
@@ -68,6 +69,13 @@ class DocumentPublicRead(PublicModel):
     error_message: Optional[str] = None
 
 
+class CalendarEventLinkRead(PublicModel):
+    id: int
+    title: str
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+
+
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -91,6 +99,7 @@ class RecordingPublicRead(PublicModel):
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
+    calendar_event: Optional[CalendarEventLinkRead] = None
 
 
 def serialize_recording_speaker(
@@ -182,6 +191,8 @@ def serialize_recording(
     include_transcript: bool = False,
     include_speakers: bool = False,
     include_tags: bool = False,
+    include_calendar_event: bool = False,
+    calendar_event: Optional[CalendarEvent] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -208,6 +219,10 @@ def serialize_recording(
             if isinstance(tag, Tag):
                 tags.append(TagRead.model_validate(tag))
 
+    calendar_event_link: Optional[CalendarEventLinkRead] = None
+    if include_calendar_event and calendar_event is not None:
+        calendar_event_link = CalendarEventLinkRead.model_validate(calendar_event)
+
     return RecordingPublicRead(
         id=recording.public_id,
         created_at=recording.created_at,
@@ -231,4 +246,5 @@ def serialize_recording(
         transcript=transcript,
         speakers=speakers,
         tags=tags,
+        calendar_event=calendar_event_link,
     )

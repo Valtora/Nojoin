@@ -22,6 +22,7 @@ from backend.models.user import User
 from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
+from backend.services.calendar_link_service import auto_link_recording
 
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.models.document import Document, DocumentStatus
@@ -33,7 +34,13 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceResult,
     get_speakers_eligible_for_llm_renaming,
 )
-from backend.utils.meeting_notes import build_recording_speaker_map, format_segments_for_llm
+from backend.utils.meeting_notes import (
+    MeetingEventContext,
+    build_recording_speaker_map,
+    format_segments_for_llm,
+    meeting_event_context_from_calendar_event,
+)
+from backend.models.calendar import CalendarEvent
 from backend.utils.recording_storage import cleanup_stale_recording_artifacts
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
@@ -210,6 +217,27 @@ def _apply_automatic_meeting_intelligence_result(
     update_recording_status(session, recording.id)
 
 
+def _resolve_meeting_event_context(
+    session,
+    recording: Recording,
+) -> MeetingEventContext | None:
+    """Load the linked calendar event for a recording and build its context.
+
+    Returns ``None`` when no event is linked, so the prompt paths fall back to
+    the unchanged "no context" string.
+    """
+    if recording.calendar_event_id is None:
+        return None
+    try:
+        event = session.get(CalendarEvent, recording.calendar_event_id)
+        return meeting_event_context_from_calendar_event(event)
+    except Exception:
+        logger.exception(
+            "Failed to load calendar event context for recording %s", recording.id
+        )
+        return None
+
+
 def _run_automatic_meeting_intelligence_stage(
     *,
     session,
@@ -245,6 +273,7 @@ def _run_automatic_meeting_intelligence_stage(
         unresolved_speakers=tuple(unresolved_speakers),
         user_notes=transcript.user_notes,
         prefer_short_titles=prefer_short_titles,
+        meeting_context=_resolve_meeting_event_context(session, recording),
     )
 
     if task is not None:
@@ -306,7 +335,7 @@ class DatabaseTask(Task):
             self._session.close()
 
 @celery_app.task(base=DatabaseTask, bind=True, autoretry_for=(ConnectionError, urllib.error.URLError, requests.exceptions.RequestException), retry_backoff=True, max_retries=3)
-def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False):
+def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False, engine_override: dict | None = None):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
@@ -445,16 +474,17 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 recording.status = RecordingStatus.PROCESSED
                 recording.processing_step = "Completed (No speech detected)"
                 recording.processing_completed_at = utc_now()
-                
+
                 # Create empty transcript
                 transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
                 if not transcript:
                     transcript = Transcript(recording_id=recording.id)
-                
+
                 transcript.text = ""  # Empty string to prevent hallucinations
                 transcript.segments = []
                 transcript.transcript_status = "completed"
-                
+
+                auto_link_recording(session, recording)
                 session.add(transcript)
                 session.add(recording)
                 session.commit()
@@ -483,6 +513,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         session.add(recording)
         session.commit()
         
+        # Apply per-reprocess transcription-engine override, if provided.
+        if engine_override:
+            merged_config.update(engine_override)
+            logger.info("Reprocess: engine override applied: %s", engine_override)
+
         # Run Whisper
         transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
         
@@ -854,6 +889,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         recording.processing_completed_at = utc_now()
+        auto_link_recording(session, recording)
         session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)
@@ -1206,6 +1242,7 @@ def generate_notes_task(self, recording_id: int):
             speaker_map,
             timeout=300,
             user_notes=transcript.user_notes,
+            meeting_context=_resolve_meeting_event_context(session, recording),
         )
 
         # Save Notes
@@ -1335,6 +1372,7 @@ def infer_speakers_task(self, recording_id: int):
         inferred_mapping = backend.infer_speakers(
             transcript_for_llm,
             user_notes=transcript.user_notes,
+            meeting_context=_resolve_meeting_event_context(session, recording),
         )
         logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
 

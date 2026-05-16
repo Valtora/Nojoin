@@ -37,6 +37,12 @@ RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 # Install pyannote.audio without dependencies to use system torch
 RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.txt
 
+# Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
+# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu, which is a
+# drop-in providing both the CPU and CUDA execution providers.
+RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
+    pip install --no-cache-dir onnxruntime-gpu
+
 # Copy the rest of the application code
 COPY . .
 

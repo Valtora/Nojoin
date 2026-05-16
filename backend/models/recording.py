@@ -78,6 +78,10 @@ class Recording(BaseDBModel, table=True):
     is_deleted: bool = Field(default=False, index=True)
     
     user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
+    calendar_event_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(BigInteger, ForeignKey("calendar_events.id", ondelete="SET NULL")),
+    )
 
     # Relationships
     speakers: List["RecordingSpeaker"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})

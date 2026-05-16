@@ -105,6 +105,7 @@ export interface TranscriptSegment {
   text: string;
   speaker: string;
   overlapping_speakers?: string[];
+  provisional?: boolean;
 }
 
 export interface Transcript extends BaseDBModel {
@@ -131,6 +132,13 @@ export interface UserTask extends BaseDBModel {
   completed_at?: string | null;
 }
 
+export interface CalendarEventLink {
+  id: number;
+  title: string;
+  starts_at: string | null;
+  ends_at: string | null;
+}
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
@@ -152,10 +160,15 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   transcript?: Transcript;
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
+  calendar_event?: CalendarEventLink | null;
 }
 
 export interface Settings {
   whisper_model_size?: string;
+  transcription_backend?: string;
+  parakeet_model?: string;
+  enable_live_transcription?: boolean;
+  live_transcription_backend?: string;
   processing_device?: string;
   theme?: string;
   timezone?: string;
@@ -436,4 +449,10 @@ export interface SegmentSelection {
   recording_id: RecordingId;
   start: number;
   end: number;
+}
+
+export interface ReprocessRequest {
+  transcription_backend: "whisper" | "parakeet";
+  whisper_model_size?: string;
+  parakeet_model?: string;
 }

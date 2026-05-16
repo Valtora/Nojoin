@@ -20,6 +20,7 @@ from backend.worker.tasks import process_recording_task, infer_speakers_task, ge
 from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.llm_services import get_llm_backend
+from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now
 from backend.models.transcript import Transcript
@@ -97,6 +98,41 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
 
     if preserved_user_notes:
         db.add(Transcript(recording_id=recording_id, user_notes=preserved_user_notes))
+
+
+async def _requeue_for_processing(
+    db: AsyncSession,
+    recording: Recording,
+    *,
+    engine_override: dict | None = None,
+    queued_step: str = "Queued for processing...",
+) -> None:
+    """Reset generated state and re-dispatch the processing pipeline.
+
+    Shared by retry_processing and reprocess_recording. The optional
+    engine_override is forwarded to the Celery task to swap the transcription
+    engine for this run only.
+    """
+    await _reset_generated_recording_state(db, recording.id)
+
+    # Reset processing state while preserving recording metadata and documents.
+    recording.status = RecordingStatus.QUEUED
+    recording.processing_progress = 0
+    recording.processing_step = queued_step
+    recording.processing_started_at = None
+    recording.processing_completed_at = None
+    recording.celery_task_id = None
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    # Trigger Celery task
+    task = process_recording_task.delay(recording.id, True, engine_override)
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
 
 def get_ordinal_suffix(day: int) -> str:
     if 11 <= day <= 13:
@@ -280,7 +316,10 @@ async def init_upload(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
+    # Create the Transcript row early so live transcription can attach to it.
+    db.add(Transcript(recording_id=recording.id, transcript_status="processing"))
+    await db.commit()
 
     recording_upload_temp_dir(recording.id, create=True)
 
@@ -331,7 +370,21 @@ async def upload_segment(
             log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
             exc=e,
         )
-        
+
+    # Dispatch the live transcription task. This is best-effort: a missed live
+    # dispatch is non-fatal because the final processing pipeline is
+    # authoritative, so a broker failure must not break the segment upload.
+    if config_manager.get("enable_live_transcription"):
+        try:
+            transcribe_segment_live_task.delay(recording.id, sequence)
+        except Exception as e:
+            logger.warning(
+                "Failed to dispatch live transcription task for recording %s segment %s: %s",
+                recording.id,
+                sequence,
+                e,
+            )
+
     return {"status": "received", "segment": sequence}
 
 
@@ -927,6 +980,128 @@ async def list_recordings(
 from sqlalchemy.orm import selectinload
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag
+from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
+from backend.models.recording_public import CalendarEventLinkRead
+from backend.services.calendar_link_service import (
+    CANDIDATE_WINDOW_PADDING,
+    score_event_match,
+)
+
+
+async def _get_owned_calendar_event(
+    db: AsyncSession,
+    calendar_event_id: int,
+    user_id: int,
+) -> CalendarEvent:
+    """Load a calendar event, owner-scoped via the connection join.
+
+    ``CalendarEvent`` has no ``user_id``; ownership is established by joining
+    ``CalendarSource -> CalendarConnection``. Returns 404 on any miss so a
+    cross-user event id is indistinguishable from a non-existent one.
+    """
+    statement = (
+        select(CalendarEvent)
+        .join(CalendarSource, CalendarEvent.calendar_id == CalendarSource.id)
+        .join(CalendarConnection, CalendarSource.connection_id == CalendarConnection.id)
+        .where(
+            CalendarEvent.id == calendar_event_id,
+            CalendarConnection.user_id == user_id,
+        )
+    )
+    event = (await db.execute(statement)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Calendar event not found")
+    return event
+
+
+class CalendarEventLink(BaseModel):
+    calendar_event_id: int | None = None
+
+
+@router.put("/{recording_id}/calendar-event", response_model=RecordingPublicRead)
+async def link_recording_calendar_event(
+    recording_id: str,
+    body: CalendarEventLink,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Link, change or unlink the calendar event for a recording.
+
+    A ``calendar_event_id`` of ``None`` unlinks. A non-null id must belong to
+    the current user (verified via the calendar connection join) or the
+    request is rejected with 404.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    linked_event: CalendarEvent | None = None
+    if body.calendar_event_id is not None:
+        linked_event = await _get_owned_calendar_event(
+            db, body.calendar_event_id, current_user.id
+        )
+        recording.calendar_event_id = linked_event.id
+    else:
+        recording.calendar_event_id = None
+
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    return serialize_recording(
+        recording,
+        has_proxy=_recording_has_proxy(recording),
+        include_calendar_event=True,
+        calendar_event=linked_event,
+    )
+
+
+@router.get(
+    "/{recording_id}/calendar-event/candidates",
+    response_model=List[CalendarEventLinkRead],
+)
+async def get_recording_calendar_event_candidates(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return scored, owner-scoped calendar events near the recording window.
+
+    Timed events on the user's selected calendars only, best score first.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if not recording.duration_seconds or recording.duration_seconds <= 0:
+        return []
+    if recording.created_at is None:
+        return []
+
+    window_start = recording.created_at
+    window_end = window_start + timedelta(seconds=recording.duration_seconds)
+
+    statement = (
+        select(CalendarEvent)
+        .join(CalendarSource, CalendarEvent.calendar_id == CalendarSource.id)
+        .join(CalendarConnection, CalendarSource.connection_id == CalendarConnection.id)
+        .where(
+            CalendarConnection.user_id == current_user.id,
+            CalendarSource.is_selected.is_(True),
+            CalendarEvent.is_all_day.is_(False),
+            CalendarEvent.starts_at.is_not(None),
+            CalendarEvent.ends_at.is_not(None),
+            CalendarEvent.starts_at < window_end + CANDIDATE_WINDOW_PADDING,
+            CalendarEvent.ends_at > window_start - CANDIDATE_WINDOW_PADDING,
+        )
+    )
+    events = list((await db.execute(statement)).scalars().all())
+    scored = sorted(
+        (
+            (event, score_event_match(window_start, window_end, event.starts_at, event.ends_at))
+            for event in events
+        ),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    return [CalendarEventLinkRead.model_validate(event) for event, _score in scored]
+
 
 @router.get("/{recording_id}", response_model=RecordingPublicRead)
 async def get_recording(
@@ -991,6 +1166,10 @@ async def get_recording(
         processing_eta_learning = eta_estimate.learning
         processing_eta_sample_size = eta_estimate.sample_size
 
+    linked_event: CalendarEvent | None = None
+    if recording.calendar_event_id is not None:
+        linked_event = await db.get(CalendarEvent, recording.calendar_event_id)
+
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),
@@ -1000,6 +1179,8 @@ async def get_recording(
         include_transcript=True,
         include_speakers=True,
         include_tags=True,
+        include_calendar_event=True,
+        calendar_event=linked_event,
     )
 
 @router.get("/{recording_id}/info")
@@ -1249,26 +1430,64 @@ async def retry_processing(
             detail="Recording is already uploading or processing",
         )
 
-    await _reset_generated_recording_state(db, recording.id)
-        
-    # Reset processing state while preserving recording metadata and documents.
-    recording.status = RecordingStatus.QUEUED
-    recording.processing_progress = 0
-    recording.processing_step = "Queued for processing..."
-    recording.processing_started_at = None
-    recording.processing_completed_at = None
-    recording.celery_task_id = None
-    db.add(recording)
-    await db.commit()
-    await db.refresh(recording)
-    
-    # Trigger Celery task
-    task = process_recording_task.delay(recording.id, True)
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    await db.refresh(recording)
-    
+    await _requeue_for_processing(db, recording)
+
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+
+
+class ReprocessRequest(BaseModel):
+    transcription_backend: str
+    whisper_model_size: str | None = None
+    parakeet_model: str | None = None
+
+
+@router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
+async def reprocess_recording(
+    recording_id: str,
+    body: ReprocessRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Re-run the full processing pipeline with a caller-chosen transcription engine.
+
+    Behaves like /retry, but applies a per-reprocess transcription-engine
+    override (non-persistent) so a recording can be reprocessed at higher quality.
+    """
+    from backend.utils.config_manager import TRANSCRIPTION_BACKENDS
+
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.is_deleted:
+        raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
+
+    if recording.status in {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Recording is already uploading or processing",
+        )
+
+    if body.transcription_backend not in TRANSCRIPTION_BACKENDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown transcription backend: {body.transcription_backend}",
+        )
+
+    engine_override: dict = {"transcription_backend": body.transcription_backend}
+    if body.whisper_model_size is not None:
+        engine_override["whisper_model_size"] = body.whisper_model_size
+    if body.parakeet_model is not None:
+        engine_override["parakeet_model"] = body.parakeet_model
+
+    queued_step = f"Queued for reprocessing with {body.transcription_backend}..."
+    await _requeue_for_processing(
+        db, recording, engine_override=engine_override, queued_step=queued_step
+    )
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 

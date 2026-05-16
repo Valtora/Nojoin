@@ -27,6 +27,8 @@ import {
   SegmentSelection,
   TranscriptSpeakerAssignment,
   UserTask,
+  ReprocessRequest,
+  CalendarEventLink,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -222,6 +224,26 @@ export const getRecording = async (id: RecordingId): Promise<Recording> => {
   return response.data;
 };
 
+export const linkRecordingCalendarEvent = async (
+  recordingId: RecordingId,
+  calendarEventId: number | null,
+): Promise<Recording> => {
+  const response = await api.put<Recording>(
+    `/recordings/${recordingId}/calendar-event`,
+    { calendar_event_id: calendarEventId },
+  );
+  return response.data;
+};
+
+export const getRecordingCalendarEventCandidates = async (
+  recordingId: RecordingId,
+): Promise<CalendarEventLink[]> => {
+  const response = await api.get<CalendarEventLink[]>(
+    `/recordings/${recordingId}/calendar-event/candidates`,
+  );
+  return response.data;
+};
+
 export const getUserTasks = async (): Promise<UserTask[]> => {
   const response = await api.get<UserTask[]>("/tasks/");
   return response.data;
@@ -265,6 +287,17 @@ export const renameRecording = async (
 
 export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/retry`);
+  return response.data;
+};
+
+export const reprocessRecording = async (
+  id: RecordingId,
+  body: ReprocessRequest,
+): Promise<Recording> => {
+  const response = await api.post<Recording>(
+    `/recordings/${id}/reprocess`,
+    body,
+  );
   return response.data;
 };
 

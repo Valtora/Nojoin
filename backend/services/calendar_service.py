@@ -147,6 +147,7 @@ MICROSOFT_EVENT_SELECT = ",".join(
         "bodyPreview",
         "onlineMeeting",
         "onlineMeetingUrl",
+        "attendees",
     ]
 )
 
@@ -204,6 +205,8 @@ class ProviderEventRecord:
     source_url: str | None = None
     location_text: str | None = None
     meeting_url: str | None = None
+    description: str | None = None
+    attendees: list | None = None
     external_updated_at: datetime | None = None
 
 
@@ -987,6 +990,15 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         location_text,
         item.get("description"),
     )
+    description = item.get("description")
+    attendees = [
+        {
+            "name": attendee.get("displayName") or attendee.get("email"),
+            "email": attendee.get("email"),
+        }
+        for attendee in item.get("attendees", []) or []
+        if isinstance(attendee, dict)
+    ]
     if "date" in start_payload:
         start_date = date.fromisoformat(start_payload["date"])
         end_date = date.fromisoformat(end_payload.get("date", start_payload["date"]))
@@ -1004,6 +1016,8 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
             source_url=item.get("htmlLink"),
             location_text=location_text,
             meeting_url=meeting_url,
+            description=description,
+            attendees=attendees,
             external_updated_at=_parse_iso_datetime(item.get("updated")),
         )
 
@@ -1023,6 +1037,8 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         source_url=item.get("htmlLink"),
         location_text=location_text,
         meeting_url=meeting_url,
+        description=description,
+        attendees=attendees,
         external_updated_at=_parse_iso_datetime(item.get("updated")),
     )
 
@@ -1112,6 +1128,23 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         item.get("bodyPreview"),
         body_content,
     )
+    description = item.get("bodyPreview")
+    attendees = []
+    for attendee in item.get("attendees", []) or []:
+        if not isinstance(attendee, dict):
+            continue
+        if attendee.get("type") == "resource":
+            continue
+        email_address = attendee.get("emailAddress")
+        if not isinstance(email_address, dict):
+            continue
+        address = email_address.get("address")
+        attendees.append(
+            {
+                "name": email_address.get("name") or address,
+                "email": address,
+            }
+        )
     if item.get("isAllDay"):
         start_date = date.fromisoformat(item["start"]["dateTime"][:10])
         end_date = date.fromisoformat(item["end"]["dateTime"][:10])
@@ -1129,6 +1162,8 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
             source_url=item.get("webLink"),
             location_text=location_text,
             meeting_url=meeting_url,
+            description=description,
+            attendees=attendees,
             external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
         )
 
@@ -1148,6 +1183,8 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         source_url=item.get("webLink"),
         location_text=location_text,
         meeting_url=meeting_url,
+        description=description,
+        attendees=attendees,
         external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
     )
 
@@ -1403,6 +1440,8 @@ def _apply_provider_event_to_model(
     calendar_event.start_date = provider_event.start_date
     calendar_event.end_date = provider_event.end_date
     calendar_event.location_text = provider_event.location_text
+    calendar_event.description = provider_event.description
+    calendar_event.attendees = provider_event.attendees
     calendar_event.meeting_url = provider_event.meeting_url
     calendar_event.source_url = provider_event.source_url
     calendar_event.external_updated_at = provider_event.external_updated_at

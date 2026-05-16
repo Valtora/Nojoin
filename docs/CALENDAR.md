@@ -71,6 +71,8 @@ When calendar sync is configured:
 
 When no calendar is connected, the dashboard deliberately shows an honest empty state rather than mock data.
 
+Synced calendar events also store their description and attendee list, and recordings carry a nullable `calendar_event_id` so a recording can be linked to the calendar event it belongs to (see Meeting Intelligence in [USAGE.md](USAGE.md)).
+
 ## Google OAuth Setup
 
 1. Open Google Cloud Console and create or select the project you want to use.

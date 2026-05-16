@@ -71,7 +71,7 @@ The normal backend processing path is:
 1. Validation.
 2. VAD and audio preprocessing.
 3. Proxy creation for web playback.
-4. Whisper transcription.
+4. Transcription via a pluggable engine (Whisper by default, Parakeet via onnx-asr selectable).
 5. Pyannote diarisation.
 6. Phantom speaker filtering.
 7. Merge, voiceprint extraction, and deterministic speaker resolution.
@@ -82,12 +82,41 @@ Manual user notes can be captured during recording or processing and are fed int
 
 If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
 
+### Live Transcription Lane
+
+While a recording is still uploading, a secondary lane produces provisional
+transcript text so the web client can show progress before the full pipeline
+runs:
+
+1. Each segment upload endpoint dispatches a live transcription task
+   (`backend/processing/live_transcribe.py`).
+2. The task slices completed speech regions, transcribes them with the engine
+   selected by `live_transcription_backend`, and appends provisional segments
+   to `Transcript.segments` (each flagged `"provisional": True`).
+3. The web client polls the transcript roughly every 3 seconds to render the
+   provisional text.
+
+Segments are numbered sequentially but uploaded concurrently, so the lane uses
+a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording
+`live/state.json`; a task whose segment is ahead of `next_expected` returns
+immediately (its WAV waits on disk), and only the task holding `next_expected`
+drains the contiguous run of segments present on disk. Audio from the trailing,
+not-yet-complete utterance is **carried over** in `live/buffer.wav` and joined
+to the next run, so an utterance split across a segment boundary is transcribed
+once as a whole.
+
+The live lane is best-effort: any failure is logged, the lane still advances,
+and nothing is re-raised. When the recording finalises, `process_recording_task`
+runs the full pipeline against the source audio and overwrites the provisional
+segments with the final transcript.
+
 ## Calendar Flow
 
 1. An admin configures Google and/or Microsoft OAuth credentials for the installation.
 2. End users connect their own accounts from the Personal settings area.
-3. Nojoin syncs selected calendars into stored dashboard-facing event data.
+3. Nojoin syncs selected calendars into stored dashboard-facing event data, including each event's description and attendee list.
 4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources.
+5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts.
 
 ## Authentication Model
 
