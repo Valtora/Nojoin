@@ -28,6 +28,7 @@ import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
+import LinkedEventPanel from "@/components/LinkedEventPanel";
 import Link from "next/link";
 import { Edit2, MessageSquare, RefreshCw, X } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -836,6 +837,15 @@ export default function RecordingPage({ params }: PageProps) {
                 recordingId={recording!.id}
                 tags={recording!.tags || []}
                 onTagsUpdated={() => {
+                  getRecording(recording!.id)
+                    .then(setRecording)
+                    .catch(console.error);
+                }}
+              />
+              <LinkedEventPanel
+                recordingId={recording!.id}
+                linkedEvent={recording!.calendar_event}
+                onLinkChanged={() => {
                   getRecording(recording!.id)
                     .then(setRecording)
                     .catch(console.error);

@@ -28,6 +28,7 @@ import {
   TranscriptSpeakerAssignment,
   UserTask,
   ReprocessRequest,
+  CalendarEventLink,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -220,6 +221,26 @@ export const getRecordings = async (
 
 export const getRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.get<Recording>(`/recordings/${id}`);
+  return response.data;
+};
+
+export const linkRecordingCalendarEvent = async (
+  recordingId: RecordingId,
+  calendarEventId: number | null,
+): Promise<Recording> => {
+  const response = await api.put<Recording>(
+    `/recordings/${recordingId}/calendar-event`,
+    { calendar_event_id: calendarEventId },
+  );
+  return response.data;
+};
+
+export const getRecordingCalendarEventCandidates = async (
+  recordingId: RecordingId,
+): Promise<CalendarEventLink[]> => {
+  const response = await api.get<CalendarEventLink[]>(
+    `/recordings/${recordingId}/calendar-event/candidates`,
+  );
   return response.data;
 };
 
