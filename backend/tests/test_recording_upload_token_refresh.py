@@ -39,7 +39,8 @@ CREATE TABLE recordings (
     processing_completed_at DATETIME,
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
-    user_id INTEGER
+    user_id INTEGER,
+    calendar_event_id INTEGER
 )
 """
 

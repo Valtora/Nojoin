@@ -90,6 +90,8 @@ SCHEMA_STATEMENTS = [
         start_date DATE,
         end_date DATE,
         location_text TEXT,
+        description TEXT,
+        attendees JSON,
         meeting_url VARCHAR(2048),
         source_url VARCHAR(2048),
         external_updated_at DATETIME
