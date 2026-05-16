@@ -221,7 +221,7 @@ Depending on permissions, users may also see or adjust:
 - LLM provider selection.
 - Provider model selection.
 - Provider API keys or Ollama URL.
-- Transcription engine selection (Whisper or Parakeet).
+- Transcription engine selection (Whisper, Parakeet or Canary).
 - Whisper model settings.
 - Local Ollama configuration.
 
