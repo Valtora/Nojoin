@@ -31,7 +31,11 @@ import {
   permanentlyDeleteRecording,
   getTags,
   cancelProcessing,
+  getRecordingsCalendar,
 } from "@/lib/api";
+import MonthCalendar from "./MonthCalendar";
+import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
+import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import BatchActionBar from "./BatchActionBar";
@@ -154,6 +158,58 @@ export default function Sidebar() {
     end: "",
   });
   const [tags, setTags] = useState<Tag[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() =>
+    startOfMonth(new Date()),
+  );
+  const [calendarMarkedDays, setCalendarMarkedDays] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(
+    null,
+  );
+  const [userTimeZone, setUserTimeZone] = useState<string>("UTC");
+
+  // Resolve the user's IANA timezone for IANA-correct date filtering
+  useEffect(() => {
+    let active = true;
+    getUserTimeZone()
+      .then((tz) => {
+        if (active) {
+          setUserTimeZone(tz);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Load per-day recording counts for the viewed calendar month
+  useEffect(() => {
+    let active = true;
+    const monthKey = format(calendarMonth, "yyyy-MM");
+    getRecordingsCalendar(monthKey, userTimeZone)
+      .then((calendar) => {
+        if (!active) {
+          return;
+        }
+        setCalendarMarkedDays(
+          new Set(
+            calendar.day_counts
+              .filter((entry) => entry.count > 0)
+              .map((entry) => entry.date),
+          ),
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setCalendarMarkedDays(new Set());
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [calendarMonth, userTimeZone]);
 
   // Load tags for filter pills
   useEffect(() => {
@@ -292,15 +348,27 @@ export default function Sidebar() {
 
       if (dateMode === "range") {
         if (dateRange.start)
-          filters.start_date = new Date(dateRange.start).toISOString();
+          filters.start_date = localDayRangeToUtc(
+            dateRange.start,
+            userTimeZone,
+          ).startISO;
         if (dateRange.end)
-          filters.end_date = new Date(dateRange.end).toISOString();
+          filters.end_date = localDayRangeToUtc(
+            dateRange.end,
+            userTimeZone,
+          ).endISO;
       } else if (dateMode === "before") {
         if (dateRange.end)
-          filters.end_date = new Date(dateRange.end).toISOString();
+          filters.end_date = localDayRangeToUtc(
+            dateRange.end,
+            userTimeZone,
+          ).endISO;
       } else if (dateMode === "after") {
         if (dateRange.start)
-          filters.start_date = new Date(dateRange.start).toISOString();
+          filters.start_date = localDayRangeToUtc(
+            dateRange.start,
+            userTimeZone,
+          ).startISO;
       }
 
       if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
@@ -318,7 +386,14 @@ export default function Sidebar() {
     } catch (error) {
       console.error("Failed to fetch recordings:", error);
     }
-  }, [dateRange, dateMode, selectedSpeakers, selectedTagIds, currentView]);
+  }, [
+    dateRange,
+    dateMode,
+    selectedSpeakers,
+    selectedTagIds,
+    currentView,
+    userTimeZone,
+  ]);
 
   useEffect(() => {
     fetchRecordings();
@@ -863,6 +938,18 @@ export default function Sidebar() {
                   />
                 )}
               </div>
+
+              <MonthCalendar
+                month={calendarMonth}
+                markedDays={calendarMarkedDays}
+                selectedDay={selectedCalendarDay}
+                onSelectDay={(day) => {
+                  setSelectedCalendarDay(day);
+                  setDateMode("range");
+                  setDateRange({ start: day, end: day });
+                }}
+                onMonthChange={setCalendarMonth}
+              />
             </div>
 
             <div className="space-y-1">
@@ -900,6 +987,7 @@ export default function Sidebar() {
                 onClick={() => {
                   setSearchQuery("");
                   setDateRange({ start: "", end: "" });
+                  setSelectedCalendarDay(null);
                   setSelectedSpeakers([]);
                   clearTagFilters();
                 }}

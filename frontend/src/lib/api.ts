@@ -8,6 +8,7 @@ import {
   CalendarProviderStatus,
   Recording,
   RecordingId,
+  RecordingsCalendar,
   GlobalSpeaker,
   Settings,
   Tag,
@@ -27,6 +28,7 @@ import {
   SegmentSelection,
   TranscriptSpeakerAssignment,
   UserTask,
+  ReprocessRequest,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -268,6 +270,17 @@ export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
   return response.data;
 };
 
+export const reprocessRecording = async (
+  id: RecordingId,
+  body: ReprocessRequest,
+): Promise<Recording> => {
+  const response = await api.post<Recording>(
+    `/recordings/${id}/reprocess`,
+    body,
+  );
+  return response.data;
+};
+
 export const cancelProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/cancel`);
   return response.data;
@@ -491,6 +504,22 @@ export const getCalendarDashboardSummary = async (
 
   const response = await api.get<CalendarDashboardSummary>(
     `/calendar/dashboard?${params.toString()}`,
+  );
+  return response.data;
+};
+
+export const getRecordingsCalendar = async (
+  month: string,
+  timeZone?: string,
+): Promise<RecordingsCalendar> => {
+  const params = new URLSearchParams();
+  params.set("month", month);
+  if (timeZone) {
+    params.set("timezone", timeZone);
+  }
+
+  const response = await api.get<RecordingsCalendar>(
+    `/recordings/calendar?${params.toString()}`,
   );
   return response.data;
 };

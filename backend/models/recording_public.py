@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.models.chat import ChatMessage
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
@@ -91,6 +92,12 @@ class RecordingPublicRead(PublicModel):
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
+
+
+class RecordingsCalendarRead(BaseModel):
+    month: str
+    timezone: str
+    day_counts: List[CalendarDashboardDayCountRead] = Field(default_factory=list)
 
 
 def serialize_recording_speaker(
