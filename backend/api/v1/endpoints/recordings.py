@@ -980,6 +980,128 @@ async def list_recordings(
 from sqlalchemy.orm import selectinload
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag
+from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
+from backend.models.recording_public import CalendarEventLinkRead
+from backend.services.calendar_link_service import (
+    CANDIDATE_WINDOW_PADDING,
+    score_event_match,
+)
+
+
+async def _get_owned_calendar_event(
+    db: AsyncSession,
+    calendar_event_id: int,
+    user_id: int,
+) -> CalendarEvent:
+    """Load a calendar event, owner-scoped via the connection join.
+
+    ``CalendarEvent`` has no ``user_id``; ownership is established by joining
+    ``CalendarSource -> CalendarConnection``. Returns 404 on any miss so a
+    cross-user event id is indistinguishable from a non-existent one.
+    """
+    statement = (
+        select(CalendarEvent)
+        .join(CalendarSource, CalendarEvent.calendar_id == CalendarSource.id)
+        .join(CalendarConnection, CalendarSource.connection_id == CalendarConnection.id)
+        .where(
+            CalendarEvent.id == calendar_event_id,
+            CalendarConnection.user_id == user_id,
+        )
+    )
+    event = (await db.execute(statement)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Calendar event not found")
+    return event
+
+
+class CalendarEventLink(BaseModel):
+    calendar_event_id: int | None = None
+
+
+@router.put("/{recording_id}/calendar-event", response_model=RecordingPublicRead)
+async def link_recording_calendar_event(
+    recording_id: str,
+    body: CalendarEventLink,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Link, change or unlink the calendar event for a recording.
+
+    A ``calendar_event_id`` of ``None`` unlinks. A non-null id must belong to
+    the current user (verified via the calendar connection join) or the
+    request is rejected with 404.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    linked_event: CalendarEvent | None = None
+    if body.calendar_event_id is not None:
+        linked_event = await _get_owned_calendar_event(
+            db, body.calendar_event_id, current_user.id
+        )
+        recording.calendar_event_id = linked_event.id
+    else:
+        recording.calendar_event_id = None
+
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    return serialize_recording(
+        recording,
+        has_proxy=_recording_has_proxy(recording),
+        include_calendar_event=True,
+        calendar_event=linked_event,
+    )
+
+
+@router.get(
+    "/{recording_id}/calendar-event/candidates",
+    response_model=List[CalendarEventLinkRead],
+)
+async def get_recording_calendar_event_candidates(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return scored, owner-scoped calendar events near the recording window.
+
+    Timed events on the user's selected calendars only, best score first.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if not recording.duration_seconds or recording.duration_seconds <= 0:
+        return []
+    if recording.created_at is None:
+        return []
+
+    window_start = recording.created_at
+    window_end = window_start + timedelta(seconds=recording.duration_seconds)
+
+    statement = (
+        select(CalendarEvent)
+        .join(CalendarSource, CalendarEvent.calendar_id == CalendarSource.id)
+        .join(CalendarConnection, CalendarSource.connection_id == CalendarConnection.id)
+        .where(
+            CalendarConnection.user_id == current_user.id,
+            CalendarSource.is_selected.is_(True),
+            CalendarEvent.is_all_day.is_(False),
+            CalendarEvent.starts_at.is_not(None),
+            CalendarEvent.ends_at.is_not(None),
+            CalendarEvent.starts_at < window_end + CANDIDATE_WINDOW_PADDING,
+            CalendarEvent.ends_at > window_start - CANDIDATE_WINDOW_PADDING,
+        )
+    )
+    events = list((await db.execute(statement)).scalars().all())
+    scored = sorted(
+        (
+            (event, score_event_match(window_start, window_end, event.starts_at, event.ends_at))
+            for event in events
+        ),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    return [CalendarEventLinkRead.model_validate(event) for event, _score in scored]
+
 
 @router.get("/{recording_id}", response_model=RecordingPublicRead)
 async def get_recording(
@@ -1044,6 +1166,10 @@ async def get_recording(
         processing_eta_learning = eta_estimate.learning
         processing_eta_sample_size = eta_estimate.sample_size
 
+    linked_event: CalendarEvent | None = None
+    if recording.calendar_event_id is not None:
+        linked_event = await db.get(CalendarEvent, recording.calendar_event_id)
+
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),
@@ -1053,6 +1179,8 @@ async def get_recording(
         include_transcript=True,
         include_speakers=True,
         include_tags=True,
+        include_calendar_event=True,
+        calendar_event=linked_event,
     )
 
 @router.get("/{recording_id}/info")

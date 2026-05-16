@@ -99,34 +99,6 @@ def _selected_timed_events_overlapping(
     return list(session.exec(statement).all())
 
 
-def find_candidate_events(
-    session,
-    recording: Recording,
-) -> list[tuple[CalendarEvent, float]]:
-    """Return scored candidate events for a recording, best score first.
-
-    Owner-scoped; timed events on the user's selected calendars only. The
-    search window is padded so events that sit close to (but not strictly
-    overlapping) the recording are still offered for manual linking.
-    """
-    window = _recording_window(recording)
-    if window is None or recording.user_id is None:
-        return []
-    window_start, window_end = window
-    events = _selected_timed_events_overlapping(
-        session,
-        recording.user_id,
-        window_start - CANDIDATE_WINDOW_PADDING,
-        window_end + CANDIDATE_WINDOW_PADDING,
-    )
-    scored = [
-        (event, score_event_match(window_start, window_end, event.starts_at, event.ends_at))
-        for event in events
-    ]
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored
-
-
 def auto_link_recording(session, recording: Recording) -> None:
     """Conservatively auto-link a recording to its calendar event.
 
