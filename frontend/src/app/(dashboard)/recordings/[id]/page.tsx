@@ -7,6 +7,7 @@ import {
   updateTranscriptSegmentText,
   findAndReplace,
   renameRecording,
+  updateRecordingTrim,
   updateTranscriptSegments,
   getGlobalSpeakers,
   updateSpeakerColor,
@@ -397,6 +398,33 @@ export default function RecordingPage({ params }: PageProps) {
   const handleResume = () => {
     if (audioRef.current) {
       audioRef.current.play();
+    }
+  };
+
+  // Non-destructive trim: persist the offsets and merge the result locally.
+  const handleTrimChange = async (
+    startS: number | null,
+    endS: number | null,
+  ) => {
+    if (!recording) return;
+    try {
+      const updated = await updateRecordingTrim(recording.id, startS, endS);
+      setRecording((prev) =>
+        prev
+          ? {
+              ...prev,
+              trim_start_s: updated.trim_start_s,
+              trim_end_s: updated.trim_end_s,
+            }
+          : updated,
+      );
+    } catch (e: any) {
+      console.error("Failed to update trim", e);
+      addNotification({
+        type: "error",
+        message:
+          e?.response?.data?.detail ?? "Failed to update the recording trim.",
+      });
     }
   };
 
@@ -872,6 +900,13 @@ export default function RecordingPage({ params }: PageProps) {
               onTimeUpdate={handleTimeUpdate}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              trimStartS={recording.trim_start_s}
+              trimEndS={recording.trim_end_s}
+              onTrimChange={
+                recording.status === RecordingStatus.PROCESSED
+                  ? handleTrimChange
+                  : undefined
+              }
             />
           )}
       </header>
@@ -944,6 +979,8 @@ export default function RecordingPage({ params }: PageProps) {
               canUndo={history.length > 0 && !isUndoing}
               canRedo={future.length > 0 && !isUndoing}
               onExport={() => setShowExportModal(true)}
+              trimStartS={recording.trim_start_s}
+              trimEndS={recording.trim_end_s}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
@@ -1085,6 +1122,8 @@ export default function RecordingPage({ params }: PageProps) {
                       canRedo={false}
                       onExport={() => setShowExportModal(true)}
                       readOnly
+                      trimStartS={recording.trim_start_s}
+                      trimEndS={recording.trim_end_s}
                     />
                   </div>
                 </div>

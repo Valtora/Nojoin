@@ -54,6 +54,8 @@ interface TranscriptViewProps {
   canRedo: boolean;
   onExport: () => void;
   readOnly?: boolean;
+  trimStartS?: number | null;
+  trimEndS?: number | null;
 }
 
 const formatTime = (seconds: number) => {
@@ -83,6 +85,8 @@ export default function TranscriptView({
   canRedo,
   onExport,
   readOnly = false,
+  trimStartS,
+  trimEndS,
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   const { addNotification } = useNotificationStore();
@@ -441,12 +445,24 @@ export default function TranscriptView({
     index,
   }));
 
-  const displaySegments = hasKnownSpeakers
+  const speakerFilteredSegments = hasKnownSpeakers
     ? indexedSegments.filter(
         ({ segment }) =>
           segment.speaker !== "UNKNOWN" || segment.provisional === true,
       )
     : indexedSegments;
+
+  // Apply the non-destructive trim window (display only). A NULL bound is
+  // unbounded that side; a boundary-straddling segment is kept.
+  const trimLowerBound = trimStartS ?? Number.NEGATIVE_INFINITY;
+  const trimUpperBound = trimEndS ?? Number.POSITIVE_INFINITY;
+  const displaySegments =
+    trimStartS == null && trimEndS == null
+      ? speakerFilteredSegments
+      : speakerFilteredSegments.filter(
+          ({ segment }) =>
+            segment.end > trimLowerBound && segment.start < trimUpperBound,
+        );
 
   // --- Grouping Logic ---
   const trackGroups: {
