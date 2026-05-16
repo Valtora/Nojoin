@@ -204,6 +204,17 @@ Nojoin supports:
 - Fuzzy matching for tolerant search.
 - Speaker-based filtering and navigation.
 
+### Browse Recordings by Calendar Date
+
+The recordings filter panel includes a month calendar. Days that have
+recordings are marked with a dot, and clicking a day filters the recordings
+list to that day. Use the arrows to move between months. The raw date inputs
+(Range, After, Before) remain available as an alternative.
+
+Day boundaries follow your configured timezone (see **Settings → Timezone**),
+so a recording captured just before local midnight is grouped on the correct
+local day rather than on a UTC day.
+
 ## Settings Most Users Will Use
 
 ### Personal Settings
