@@ -22,6 +22,7 @@ from backend.models.user import User
 from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
+from backend.services.calendar_link_service import auto_link_recording
 
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.models.document import Document, DocumentStatus
@@ -445,16 +446,17 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 recording.status = RecordingStatus.PROCESSED
                 recording.processing_step = "Completed (No speech detected)"
                 recording.processing_completed_at = utc_now()
-                
+
                 # Create empty transcript
                 transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
                 if not transcript:
                     transcript = Transcript(recording_id=recording.id)
-                
+
                 transcript.text = ""  # Empty string to prevent hallucinations
                 transcript.segments = []
                 transcript.transcript_status = "completed"
-                
+
+                auto_link_recording(session, recording)
                 session.add(transcript)
                 session.add(recording)
                 session.commit()
@@ -859,6 +861,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         recording.processing_completed_at = utc_now()
+        auto_link_recording(session, recording)
         session.add(recording)
         session.commit()
         update_recording_status(session, recording.id)
