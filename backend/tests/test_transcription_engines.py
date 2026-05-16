@@ -23,6 +23,13 @@ def test_validate_config_value_transcription_backend():
     assert validate_config_value("transcription_backend", "bogus") is False
 
 
+def test_validate_config_value_canary_backend():
+    """The canary backend is a valid transcription_backend; the default is unchanged."""
+    assert validate_config_value("transcription_backend", "canary") is True
+    assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
+    assert DEFAULT_SYSTEM_CONFIG["canary_model"] == "nemo-canary-1b-v2"
+
+
 @pytest.fixture(autouse=True)
 def _clean_engine_registry():
     """Keep the dispatcher engine registry isolated between tests."""
@@ -184,6 +191,16 @@ def test_dispatcher_selects_parakeet():
     fake = _FakeEngine("parakeet")
     transcribe._ENGINE_REGISTRY["parakeet"] = fake
     result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "parakeet"})
+    assert fake.transcribe_called_with is not None
+    assert fake.transcribe_called_with[0] == "meeting.wav"
+    assert result == {"text": "fake", "language": "en", "segments": []}
+
+
+def test_dispatcher_selects_canary():
+    """transcribe_audio routes to the canary engine in the registry."""
+    fake = _FakeEngine("canary")
+    transcribe._ENGINE_REGISTRY["canary"] = fake
+    result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "canary"})
     assert fake.transcribe_called_with is not None
     assert fake.transcribe_called_with[0] == "meeting.wav"
     assert result == {"text": "fake", "language": "en", "segments": []}
