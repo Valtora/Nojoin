@@ -300,6 +300,12 @@ export interface CalendarDashboardSummary {
   next_event?: CalendarDashboardEvent | null;
 }
 
+export interface RecordingsCalendar {
+  month: string;
+  timezone: string;
+  day_counts: CalendarDashboardDayCount[];
+}
+
 export interface ChatMessage extends BaseDBModel {
   recording_id: RecordingId;
   user_id: number;

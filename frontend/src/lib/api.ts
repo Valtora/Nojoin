@@ -8,6 +8,7 @@ import {
   CalendarProviderStatus,
   Recording,
   RecordingId,
+  RecordingsCalendar,
   GlobalSpeaker,
   Settings,
   Tag,
@@ -503,6 +504,22 @@ export const getCalendarDashboardSummary = async (
 
   const response = await api.get<CalendarDashboardSummary>(
     `/calendar/dashboard?${params.toString()}`,
+  );
+  return response.data;
+};
+
+export const getRecordingsCalendar = async (
+  month: string,
+  timeZone?: string,
+): Promise<RecordingsCalendar> => {
+  const params = new URLSearchParams();
+  params.set("month", month);
+  if (timeZone) {
+    params.set("timezone", timeZone);
+  }
+
+  const response = await api.get<RecordingsCalendar>(
+    `/recordings/calendar?${params.toString()}`,
   );
   return response.data;
 };
