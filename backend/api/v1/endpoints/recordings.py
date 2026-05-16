@@ -1311,6 +1311,7 @@ class ReprocessRequest(BaseModel):
     transcription_backend: str
     whisper_model_size: str | None = None
     parakeet_model: str | None = None
+    canary_model: str | None = None
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
@@ -1354,6 +1355,8 @@ async def reprocess_recording(
         engine_override["whisper_model_size"] = body.whisper_model_size
     if body.parakeet_model is not None:
         engine_override["parakeet_model"] = body.parakeet_model
+    if body.canary_model is not None:
+        engine_override["canary_model"] = body.canary_model
 
     queued_step = f"Queued for reprocessing with {body.transcription_backend}..."
     await _requeue_for_processing(

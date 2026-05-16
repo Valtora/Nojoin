@@ -86,8 +86,9 @@ DEFAULT_SYSTEM_CONFIG = {
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
-    "transcription_backend": "whisper",          # "whisper" | "parakeet"
+    "transcription_backend": "whisper",          # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
+    "canary_model": "nemo-canary-1b-v2",
     "enable_live_transcription": True,
     "live_transcription_backend": "parakeet",
     "vad_parameters": {
@@ -120,7 +121,7 @@ DEFAULT_USER_SETTINGS = {
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
-TRANSCRIPTION_BACKENDS = ["whisper", "parakeet"]
+TRANSCRIPTION_BACKENDS = ["whisper", "parakeet", "canary"]
 APP_THEMES = ["dark", "light"] # Available UI themes
 
 def get_available_whisper_model_sizes():

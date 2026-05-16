@@ -30,6 +30,7 @@ class SettingsUpdate(BaseModel):
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None
+    canary_model: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
     live_transcription_backend: Optional[str] = None
     theme: Optional[str] = None

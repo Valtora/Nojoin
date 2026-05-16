@@ -282,6 +282,19 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         logger.warning(f"Failed to load Parakeet model: {e}")
         report("Skipping Parakeet (download failed).", 100, stage="parakeet")
 
+    # 3c. Preload Canary ASR Model (pluggable transcription backend)
+    report("Checking Canary model...", 0, stage="canary")
+    try:
+        # Lazy import keeps onnx-asr out of module-level imports.
+        import onnx_asr
+        # load_model triggers the ONNX file download from the Hugging Face Hub.
+        onnx_asr.load_model("nemo-canary-1b-v2", quantization="int8")
+        report("Canary model loaded.", 100, stage="canary")
+    except Exception as e:
+        # A Canary download failure must not abort the whole preload.
+        logger.warning(f"Failed to load Canary model: {e}")
+        report("Skipping Canary (download failed).", 100, stage="canary")
+
     # 4. Preload Pyannote Diarization Model
     pipeline_name = "pyannote/speaker-diarization-community-1"
     report(f"Downloading Pyannote pipeline ({pipeline_name})...", 0, stage="pyannote")
@@ -359,6 +372,7 @@ def check_model_status(whisper_model_size=None):
     status = {
         "whisper": {"downloaded": False, "path": None, "checked_paths": []},
         "parakeet": {"downloaded": False, "path": None, "checked_paths": []},
+        "canary": {"downloaded": False, "path": None, "checked_paths": []},
         "pyannote": {"downloaded": False, "path": None, "checked_paths": []},
         "embedding": {"downloaded": False, "path": None, "checked_paths": []}
     }
@@ -415,6 +429,22 @@ def check_model_status(whisper_model_size=None):
             except OSError:
                 pass
         if status["parakeet"]["downloaded"]:
+            break
+
+    # Check Canary
+    # Same best-effort HF-cache directory-name match as Parakeet above.
+    for cache_dir in parakeet_hf_caches:
+        status["canary"]["checked_paths"].append(cache_dir)
+        if os.path.isdir(cache_dir):
+            try:
+                for entry in os.listdir(cache_dir):
+                    if "nemo-canary-1b-v2" in entry:
+                        status["canary"]["downloaded"] = True
+                        status["canary"]["path"] = os.path.join(cache_dir, entry)
+                        break
+            except OSError:
+                pass
+        if status["canary"]["downloaded"]:
             break
 
     # Check Pyannote

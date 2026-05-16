@@ -25,6 +25,9 @@ def _get_engine(name: str):
     elif name == "parakeet":
         from .engines.parakeet_engine import ParakeetEngine
         engine = ParakeetEngine()
+    elif name == "canary":
+        from .engines.canary_engine import CanaryEngine
+        engine = CanaryEngine()
     else:
         raise ValueError(f"Unknown transcription backend: {name}")
     _ENGINE_REGISTRY[name] = engine
