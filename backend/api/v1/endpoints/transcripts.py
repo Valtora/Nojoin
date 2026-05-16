@@ -125,6 +125,35 @@ def _build_speaker_map(speakers) -> dict:
         speaker_map[rs.diarization_label] = name
     return speaker_map
 
+def filter_segments_for_trim(segments, trim_start_s, trim_end_s):
+    """Return only segments overlapping the trim window. NULL bound = unbounded.
+
+    Non-destructive: a boundary-straddling segment is partially inside the
+    window, so it is kept. The original segments list is never mutated.
+    """
+    if trim_start_s is None and trim_end_s is None:
+        return segments
+    start = trim_start_s if trim_start_s is not None else float("-inf")
+    end = trim_end_s if trim_end_s is not None else float("inf")
+    return [
+        s for s in segments
+        if s.get("end", 0) > start and s.get("start", 0) < end
+    ]
+
+
+def _effective_trimmed_duration(recording: Recording):
+    """The displayed duration once the trim offsets are applied.
+
+    Returns ``(trim_end ?? duration) - (trim_start ?? 0)``, or ``None`` when
+    the recording has no duration recorded.
+    """
+    if recording.duration_seconds is None:
+        return None
+    end = recording.trim_end_s if recording.trim_end_s is not None else recording.duration_seconds
+    start = recording.trim_start_s if recording.trim_start_s is not None else 0.0
+    return end - start
+
+
 def _format_transcript_text(segments, speaker_map: dict) -> str:
     """Format transcript segments as text."""
     lines = []
@@ -254,19 +283,23 @@ def _parse_markdown_line(line: str) -> dict:
 
 
 
-def _generate_full_markdown(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> str:
+def _generate_full_markdown(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool, segments=None, effective_duration=None) -> str:
     """Generate a single markdown string for the entire export."""
+    if segments is None:
+        segments = transcript.segments
+    if effective_duration is None:
+        effective_duration = recording.duration_seconds
     md_lines = []
-    
+
     # Header
     md_lines.append(f"# {html.escape(recording.name)}")
     md_lines.append("")
-    
+
     date_str = recording.created_at.strftime("%B %d, %Y at %I:%M %p") if recording.created_at else "Unknown Date"
     md_lines.append(f"**Date:** {date_str}")
     md_lines.append("")
-    
-    duration_str = str(timedelta(seconds=int(recording.duration_seconds))) if recording.duration_seconds else "Unknown"
+
+    duration_str = str(timedelta(seconds=int(effective_duration))) if effective_duration else "Unknown"
     md_lines.append(f"**Duration:** {duration_str}")
     md_lines.append("")
     
@@ -291,12 +324,12 @@ def _generate_full_markdown(recording: Recording, transcript: Transcript, includ
         md_lines.append("")
         
     # Transcript
-    if include_transcript and transcript.segments:
+    if include_transcript and segments:
         md_lines.append("## Transcript")
         md_lines.append("")
         speaker_map = _build_speaker_map(recording.speakers)
-        
-        for seg in transcript.segments:
+
+        for seg in segments:
             speaker_label = seg.get('speaker', 'Unknown')
             speaker_name = speaker_map.get(speaker_label, speaker_label)
             text = seg.get('text', '').strip()
@@ -313,9 +346,9 @@ def _generate_full_markdown(recording: Recording, transcript: Transcript, includ
 
     return "\n".join(md_lines)
 
-def _generate_pdf_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
+def _generate_pdf_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool, segments=None, effective_duration=None) -> bytes:
     """Generate a PDF export using markdown-pdf."""
-    markdown_content = _generate_full_markdown(recording, transcript, include_transcript, include_notes)
+    markdown_content = _generate_full_markdown(recording, transcript, include_transcript, include_notes, segments=segments, effective_duration=effective_duration)
     
     pdf = MarkdownPdf(toc_level=2)
     css = "body { font-family: Helvetica, sans-serif; }"
@@ -341,8 +374,12 @@ def _generate_pdf_export(recording: Recording, transcript: Transcript, include_t
     return pdf_bytes
 
 
-def _generate_docx_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool) -> bytes:
+def _generate_docx_export(recording: Recording, transcript: Transcript, include_transcript: bool, include_notes: bool, segments=None, effective_duration=None) -> bytes:
     """Generate a DOCX export."""
+    if segments is None:
+        segments = transcript.segments
+    if effective_duration is None:
+        effective_duration = recording.duration_seconds
     buffer = BytesIO()
     doc = DocxDocument()
     
@@ -355,7 +392,7 @@ def _generate_docx_export(recording: Recording, transcript: Transcript, include_
     runner = p.add_run(f"Date: {date_str}")
     
     p = doc.add_paragraph()
-    duration_str = str(timedelta(seconds=int(recording.duration_seconds))) if recording.duration_seconds else "Unknown"
+    duration_str = str(timedelta(seconds=int(effective_duration))) if effective_duration else "Unknown"
     p.add_run(f"Duration: {duration_str}")
     
     if recording.speakers:
@@ -413,12 +450,12 @@ def _generate_docx_export(recording: Recording, transcript: Transcript, include_
             doc.add_page_break()
 
     # --- Transcript ---
-    if include_transcript and transcript.segments:
+    if include_transcript and segments:
         doc.add_heading("Transcript", level=1)
-        
+
         speaker_map = _build_speaker_map(recording.speakers)
-        
-        for seg in transcript.segments:
+
+        for seg in segments:
             speaker_label = seg.get('speaker', 'Unknown')
             speaker_name = speaker_map.get(speaker_label, speaker_label)
             text = seg.get('text', '').strip()
@@ -480,6 +517,15 @@ async def export_content(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
+    # Apply the non-destructive trim window (display/export only). The stored
+    # transcript segments and recording duration are never mutated.
+    segments = filter_segments_for_trim(
+        transcript.segments or [],
+        recording.trim_start_s,
+        recording.trim_end_s,
+    )
+    effective_duration = _effective_trimmed_duration(recording)
+
     # 3. Handle Formats
     include_transcript = content_type in ["transcript", "both"]
     include_notes = content_type in ["notes", "both"]
@@ -502,10 +548,10 @@ async def export_content(
     # 4. Generate Content
     try:
         if export_format == "pdf":
-            content = _generate_pdf_export(recording, transcript, include_transcript, include_notes)
+            content = _generate_pdf_export(recording, transcript, include_transcript, include_notes, segments=segments, effective_duration=effective_duration)
             media_type = "application/pdf"
         elif export_format == "docx":
-            content = _generate_docx_export(recording, transcript, include_transcript, include_notes)
+            content = _generate_docx_export(recording, transcript, include_transcript, include_notes, segments=segments, effective_duration=effective_duration)
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else: # txt
             # Text Generation Logic
@@ -516,8 +562,8 @@ async def export_content(
             sections.append(recording.name)
             if recording.created_at:
                  sections.append(f"Date: {recording.created_at.strftime('%B %d, %Y at %I:%M %p')}")
-            if recording.duration_seconds:
-                 sections.append(f"Duration: {str(timedelta(seconds=int(recording.duration_seconds)))}")
+            if effective_duration:
+                 sections.append(f"Duration: {str(timedelta(seconds=int(effective_duration)))}")
             if recording.speakers:
                 s_names = [s.local_name or (s.global_speaker.name if s.global_speaker else None) or s.name or s.diarization_label for s in recording.speakers]
                 sections.append(f"Speakers: {', '.join(s_names)}")
@@ -527,7 +573,7 @@ async def export_content(
             if include_transcript:
                 sections.append("Transcript")
                 sections.append("-" * 20)
-                sections.append(_format_transcript_text(transcript.segments, speaker_map))
+                sections.append(_format_transcript_text(segments, speaker_map))
                 sections.append("")
             
             if include_notes and transcript.notes:
