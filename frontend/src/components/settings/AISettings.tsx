@@ -777,6 +777,7 @@ export default function AISettings({
               >
                 <option value="whisper">Whisper</option>
                 <option value="parakeet">Parakeet (NVIDIA)</option>
+                <option value="canary">Canary 1B (NVIDIA)</option>
               </select>
             </div>
             {(settings.transcription_backend || "whisper") === "parakeet" ? (
@@ -788,6 +789,22 @@ export default function AISettings({
                   <div className="flex-1">
                     <div className="font-semibold text-gray-900 dark:text-white">
                       {settings.parakeet_model || "parakeet-tdt-0.6b-v3"}
+                    </div>
+                    <p className="mt-1 text-xs contrast-helper">
+                      Current active model for transcription.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (settings.transcription_backend || "whisper") === "canary" ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Canary Model
+                </label>
+                <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {settings.canary_model || "nemo-canary-1b-v2"}
                     </div>
                     <p className="mt-1 text-xs contrast-helper">
                       Current active model for transcription.
