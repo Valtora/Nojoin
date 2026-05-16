@@ -183,6 +183,10 @@ This automatic enhancement happens once near the end of processing. If AI config
 
 Manual user notes are also used as supporting context for speaker suggestions and both automatic and manual note generation, and the final notes explicitly label user-authored items.
 
+### Linked Calendar Event
+
+A recording can be linked to a calendar event. When processing finishes, Nojoin auto-links the recording to a calendar event from your selected calendars if there is a single, confident time overlap; it never links an ambiguous, all-day or zero-duration event and never overwrites a link you set yourself. On the recording page you can link, change, or unlink the calendar event manually. The linked event's title, description, and attendee list are added as context to generated meeting notes and to speaker naming, so attendee names become candidate speaker names.
+
 Use **Generate Notes** or **Regenerate Notes** from the notes panel to rebuild only the meeting notes from the current saved transcript and speaker labels. This uses the currently saved AI provider, API key, model, and Ollama URL settings. If the provider configuration is incomplete or the provider rejects the request, the recording remains available and the notes panel reports the failure.
 
 Use **Retry Speaker Inference** from the recording actions when you want to rerun only the speaker-naming step from the current saved transcript. This does not regenerate the title or meeting notes.
