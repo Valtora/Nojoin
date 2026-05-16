@@ -26,9 +26,10 @@ import NotesView from "@/components/NotesView";
 import DocumentsView from "@/components/DocumentsView";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
+import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import Link from "next/link";
-import { Edit2, MessageSquare, X } from "lucide-react";
+import { Edit2, MessageSquare, RefreshCw, X } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -124,6 +125,9 @@ export default function RecordingPage({ params }: PageProps) {
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
+  // Reprocess Dialog State
+  const [showReprocessDialog, setShowReprocessDialog] = useState(false);
+
   // Mobile State
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
@@ -197,6 +201,13 @@ export default function RecordingPage({ params }: PageProps) {
         const { id } = await params;
         const data = await getRecording(id);
 
+        const segmentsSignature = (rec: Recording | null) => {
+          const segs = rec?.transcript?.segments;
+          if (!segs || segs.length === 0) return "0";
+          const last = segs[segs.length - 1];
+          return `${segs.length}|${last.end}|${last.text}`;
+        };
+
         if (
           data.status !== recording.status ||
           data.client_status !== recording.client_status ||
@@ -210,6 +221,7 @@ export default function RecordingPage({ params }: PageProps) {
           data.transcript?.notes_status !== recording.transcript?.notes_status ||
           data.transcript?.notes !== recording.transcript?.notes ||
           data.transcript?.user_notes !== recording.transcript?.user_notes ||
+          segmentsSignature(data) !== segmentsSignature(recording) ||
           JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
         ) {
           setRecording(data);
@@ -831,6 +843,21 @@ export default function RecordingPage({ params }: PageProps) {
               />
             </div>
           </div>
+
+          {recording &&
+            (recording.status === RecordingStatus.PROCESSED ||
+              recording.status === RecordingStatus.ERROR) && (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowReprocessDialog(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                  title="Reprocess this recording at higher quality"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reprocess
+                </button>
+              </div>
+            )}
         </div>
 
         {/* Audio Player in Header */}
@@ -1009,10 +1036,66 @@ export default function RecordingPage({ params }: PageProps) {
         {recording.status === RecordingStatus.UPLOADING ||
         recording.status === RecordingStatus.PROCESSING ||
         recording.status === RecordingStatus.QUEUED ? (
-          <RecordingStatusDisplay
-            recording={recording}
-            onSaveProcessingNotes={handleProcessingNotesChange}
-          />
+          recording.status === RecordingStatus.UPLOADING &&
+          recording.transcript?.segments &&
+          recording.transcript.segments.length > 0 ? (
+            <PanelGroup
+              direction="horizontal"
+              autoSaveId="recording-live-layout-persistence"
+              className="h-full flex-1 min-w-0"
+            >
+              <Panel defaultSize={60} minSize={30}>
+                <RecordingStatusDisplay
+                  recording={recording}
+                  onSaveProcessingNotes={handleProcessingNotesChange}
+                />
+              </Panel>
+
+              <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+              </PanelResizeHandle>
+
+              <Panel defaultSize={40} minSize={25}>
+                <div className="flex flex-col h-full min-h-0 bg-white dark:bg-gray-800">
+                  <div className="px-4 py-3 border-b-2 border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-900">
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Live transcript
+                    </h2>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <TranscriptView
+                      recordingId={recording.id}
+                      segments={recording.transcript.segments}
+                      currentTime={currentTime}
+                      onPlaySegment={handlePlaySegment}
+                      isPlaying={isPlaying}
+                      onPause={handlePause}
+                      onResume={handleResume}
+                      speakerMap={speakerMap}
+                      speakers={recording.speakers || []}
+                      globalSpeakers={globalSpeakers}
+                      onRenameSpeaker={handleRenameSpeaker}
+                      onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
+                      onUpdateSegmentText={handleUpdateSegmentText}
+                      onFindAndReplace={handleGlobalFindAndReplace}
+                      speakerColors={speakerColors}
+                      onUndo={handleUndo}
+                      onRedo={handleRedo}
+                      canUndo={false}
+                      canRedo={false}
+                      onExport={() => setShowExportModal(true)}
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </Panel>
+            </PanelGroup>
+          ) : (
+            <RecordingStatusDisplay
+              recording={recording}
+              onSaveProcessingNotes={handleProcessingNotesChange}
+            />
+          )
         ) : isMobile ? (
           <div className="h-full flex-1 flex flex-col min-w-0 relative">
             {renderMainContent()}
@@ -1117,6 +1200,23 @@ export default function RecordingPage({ params }: PageProps) {
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
       />
+
+      {/* Reprocess Dialog */}
+      {recording && (
+        <ReprocessDialog
+          recordingId={recording.id}
+          isOpen={showReprocessDialog}
+          onClose={() => setShowReprocessDialog(false)}
+          onReprocessed={(updatedRecording) => {
+            setRecording(updatedRecording);
+            window.dispatchEvent(
+              new CustomEvent("recording-updated", {
+                detail: { id: updatedRecording.id },
+              }),
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

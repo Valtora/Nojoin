@@ -200,6 +200,8 @@ cd companion
 npm run tauri build
 ```
 
+On Windows, `companion/src-tauri/build.rs` gates out the Swift runtime linker flags (`-Wl,-rpath`, `/usr/lib/swift`), which are only valid for the Unix linker on macOS/Linux and would otherwise break the MSVC linker.
+
 If you are building signed updates locally, ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` are available in your environment.
 
 ### Testing and Switching Deployments

@@ -1,6 +1,10 @@
 -r base.txt
 celery[redis]
 openai-whisper
+# Parakeet ASR engine (pluggable transcription backend)
+onnx-asr
+# onnxruntime-gpu (CUDA build) is installed in docker/Dockerfile.worker: it must
+# replace the CPU-only onnxruntime that fastembed pulls in, not coexist with it.
 silero-vad
 numpy
 pandas
