@@ -323,13 +323,22 @@ def _apply_vad_processing(
     return processed_audio
 
 
-def detect_speech_segments(audio, sample_rate: int = 16000, min_silence_duration_ms: int | None = None) -> list:
+def detect_speech_segments(
+    audio,
+    sample_rate: int = 16000,
+    min_silence_duration_ms: int | None = None,
+    speech_pad_ms: int | None = None,
+) -> list:
     """Return speech-region boundaries for a 16 kHz mono audio buffer.
 
     audio: either a 1-D torch tensor of 16 kHz mono samples, OR a path to a WAV file.
     min_silence_duration_ms: optional override for the minimum silence gap (ms).
         When not None, it overrides the value from get_vad_config_from_settings();
         when None, the config/default value is used (behaviour unchanged).
+    speech_pad_ms: optional override for the per-region padding (ms) applied by
+        silero VAD. When not None, it overrides the value from
+        get_vad_config_from_settings(); when None, the config/default value is
+        used (behaviour unchanged for the batch path).
     Returns: list[dict] of {"start": float_seconds, "end": float_seconds}.
     """
     from pathlib import Path
@@ -349,7 +358,8 @@ def detect_speech_segments(audio, sample_rate: int = 16000, min_silence_duration
     min_speech_duration_ms = vad_config.get("min_speech_duration_ms", 250)
     if min_silence_duration_ms is None:
         min_silence_duration_ms = vad_config.get("min_silence_duration_ms", 2000)
-    speech_pad_ms = vad_config.get("speech_pad_ms", 30)
+    if speech_pad_ms is None:
+        speech_pad_ms = vad_config.get("speech_pad_ms", 30)
 
     timestamps = silero_vad.get_speech_timestamps(
         tensor,
