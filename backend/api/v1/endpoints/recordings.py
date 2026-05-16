@@ -1313,6 +1313,11 @@ class ReprocessRequest(BaseModel):
     parakeet_model: str | None = None
 
 
+class TrimUpdate(BaseModel):
+    trim_start_s: float | None = None
+    trim_end_s: float | None = None
+
+
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
 async def reprocess_recording(
     recording_id: str,
@@ -1359,6 +1364,75 @@ async def reprocess_recording(
     await _requeue_for_processing(
         db, recording, engine_override=engine_override, queued_step=queued_step
     )
+
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+
+
+@router.patch("/{recording_id}/trim", response_model=RecordingPublicRead)
+async def update_recording_trim(
+    recording_id: str,
+    body: TrimUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Set or clear the non-destructive trim offsets of a finished recording.
+
+    Full-replace semantics: the client always sends both fields; both NULL
+    clears the trim. The audio file and transcript are never mutated.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.status != RecordingStatus.PROCESSED:
+        raise HTTPException(
+            status_code=409,
+            detail="Trimming is only allowed on a processed recording",
+        )
+
+    trim_start_s = body.trim_start_s
+    trim_end_s = body.trim_end_s
+
+    if trim_start_s is not None and trim_start_s < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="trim_start_s must be greater than or equal to 0",
+        )
+
+    if (
+        trim_end_s is not None
+        and recording.duration_seconds is not None
+        and trim_end_s > recording.duration_seconds
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="trim_end_s must not exceed the recording duration",
+        )
+
+    if trim_start_s is not None and trim_end_s is not None and trim_start_s >= trim_end_s:
+        raise HTTPException(
+            status_code=422,
+            detail="trim_start_s must be less than trim_end_s",
+        )
+
+    if trim_start_s is not None or trim_end_s is not None:
+        effective_end = (
+            trim_end_s
+            if trim_end_s is not None
+            else recording.duration_seconds
+        )
+        effective_start = trim_start_s if trim_start_s is not None else 0.0
+        if effective_end is not None and (effective_end - effective_start) < 1.0:
+            raise HTTPException(
+                status_code=422,
+                detail="The trimmed window must be at least 1 second long",
+            )
+
+    recording.trim_start_s = trim_start_s
+    recording.trim_end_s = trim_end_s
+
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
