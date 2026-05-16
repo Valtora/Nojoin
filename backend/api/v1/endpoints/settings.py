@@ -11,6 +11,7 @@ from backend.models.user import User
 from backend.utils.config_manager import (
     APP_THEMES,
     SENSITIVE_KEYS,
+    TRANSCRIPTION_BACKENDS,
     WHISPER_MODEL_SIZES,
     config_manager,
     get_default_user_settings,
@@ -27,6 +28,11 @@ class SettingsUpdate(BaseModel):
     gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
     whisper_model_size: Optional[str] = None
+    transcription_backend: Optional[str] = None
+    parakeet_model: Optional[str] = None
+    canary_model: Optional[str] = None
+    enable_live_transcription: Optional[bool] = None
+    live_transcription_backend: Optional[str] = None
     theme: Optional[str] = None
     hf_token: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -46,6 +52,20 @@ class SettingsUpdate(BaseModel):
     def validate_whisper_model_size(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in WHISPER_MODEL_SIZES:
             raise ValueError(f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}")
+        return value
+
+    @field_validator('transcription_backend')
+    @classmethod
+    def validate_transcription_backend(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in TRANSCRIPTION_BACKENDS:
+            raise ValueError(f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
+        return value
+
+    @field_validator('live_transcription_backend')
+    @classmethod
+    def validate_live_transcription_backend(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in TRANSCRIPTION_BACKENDS:
+            raise ValueError(f"Invalid live_transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
         return value
 
     @field_validator('theme')

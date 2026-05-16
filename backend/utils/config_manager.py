@@ -86,6 +86,11 @@ DEFAULT_SYSTEM_CONFIG = {
     "default_input_device_index": None, # None means system default
     "default_output_device_index": None, # None means system default
     "whisper_model_size": "turbo", # Default model size (e.g., tiny, base, small, medium, large)
+    "transcription_backend": "whisper",          # "whisper" | "parakeet" | "canary"
+    "parakeet_model": "parakeet-tdt-0.6b-v3",
+    "canary_model": "nemo-canary-1b-v2",
+    "enable_live_transcription": True,
+    "live_transcription_backend": "parakeet",
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,
@@ -116,6 +121,7 @@ DEFAULT_USER_SETTINGS = {
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
+TRANSCRIPTION_BACKENDS = ["whisper", "parakeet", "canary"]
 APP_THEMES = ["dark", "light"] # Available UI themes
 
 def get_available_whisper_model_sizes():
@@ -233,6 +239,12 @@ class ConfigManager:
         """Validates a configuration value."""
         if key == "whisper_model_size" and value not in WHISPER_MODEL_SIZES:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
+        if key == "transcription_backend":
+            return value in TRANSCRIPTION_BACKENDS
+        if key == "live_transcription_backend":
+            return value in TRANSCRIPTION_BACKENDS
+        if key == "enable_live_transcription":
+            return isinstance(value, bool)
         if key == "theme" and value not in APP_THEMES:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:

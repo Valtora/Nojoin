@@ -329,6 +329,8 @@ export default function AISettings({
     "transcription",
     "whisper",
     "speech to text",
+    "parakeet",
+    "engine",
   ]);
   const showDependencies = fuzzyMatch(searchQuery, [
     "dependencies",
@@ -751,6 +753,67 @@ export default function AISettings({
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <Tooltip
+                  content="Select the transcription engine used for speech to text."
+                  position="right"
+                >
+                  <span className="flex items-center gap-1 cursor-help">
+                    Transcription engine{" "}
+                    <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                  </span>
+                </Tooltip>
+              </label>
+              <select
+                value={settings.transcription_backend || "whisper"}
+                onChange={(e) =>
+                  onUpdate({
+                    ...settings,
+                    transcription_backend: e.target.value,
+                  })
+                }
+                disabled={!isAdmin}
+                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+              >
+                <option value="whisper">Whisper</option>
+                <option value="parakeet">Parakeet (NVIDIA)</option>
+                <option value="canary">Canary 1B (NVIDIA)</option>
+              </select>
+            </div>
+            {(settings.transcription_backend || "whisper") === "parakeet" ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Parakeet Model
+                </label>
+                <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {settings.parakeet_model || "parakeet-tdt-0.6b-v3"}
+                    </div>
+                    <p className="mt-1 text-xs contrast-helper">
+                      Current active model for transcription.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (settings.transcription_backend || "whisper") === "canary" ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Canary Model
+                </label>
+                <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {settings.canary_model || "nemo-canary-1b-v2"}
+                    </div>
+                    <p className="mt-1 text-xs contrast-helper">
+                      Current active model for transcription.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                 Whisper Model Size
                 <div className="group relative">
@@ -824,6 +887,7 @@ export default function AISettings({
                 model variant. You may need to download the new model.
               </p>
             </div>
+            )}
             <WhisperModelModal
               isOpen={showWhisperModal}
               onClose={() => setShowWhisperModal(false)}
