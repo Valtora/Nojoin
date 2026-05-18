@@ -7,7 +7,9 @@ from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
 from backend.utils.meeting_notes import (
+    MeetingEventContext,
     append_user_notes_section,
+    build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
@@ -40,6 +42,9 @@ Your task is to produce one valid JSON object that combines:
 
 # User Notes Context
 {user_notes_section}
+
+# Meeting Context
+{meeting_context_section}
 
 # Required JSON Schema
 {{
@@ -95,6 +100,7 @@ class AutomaticMeetingIntelligenceRequest:
     unresolved_speakers: tuple[str, ...]
     user_notes: str | None = None
     prefer_short_titles: bool = True
+    meeting_context: MeetingEventContext | None = None
 
     def __post_init__(self) -> None:
         transcript = self.resolved_transcript.strip()
@@ -180,12 +186,14 @@ def build_automatic_meeting_intelligence_request(
     *,
     user_notes: str | None = None,
     prefer_short_titles: bool = True,
+    meeting_context: MeetingEventContext | None = None,
 ) -> AutomaticMeetingIntelligenceRequest:
     return AutomaticMeetingIntelligenceRequest(
         resolved_transcript=resolved_transcript,
         unresolved_speakers=get_speakers_eligible_for_llm_renaming(speakers),
         user_notes=user_notes,
         prefer_short_titles=prefer_short_titles,
+        meeting_context=meeting_context,
     )
 
 
@@ -229,6 +237,9 @@ def build_automatic_meeting_intelligence_prompt(
             request.unresolved_speakers
         ),
         user_notes_section=build_user_notes_prompt_section(request.user_notes),
+        meeting_context_section=build_meeting_context_prompt_section(
+            request.meeting_context
+        ),
         title_preference_instruction=build_title_preference_instruction(
             request.prefer_short_titles
         ),

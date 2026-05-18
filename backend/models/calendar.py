@@ -152,6 +152,8 @@ class CalendarEvent(BaseDBModel, table=True):
     start_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
     end_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
     location_text: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    attendees: Optional[list] = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
     meeting_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
     source_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
     external_updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))

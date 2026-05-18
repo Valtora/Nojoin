@@ -1,5 +1,6 @@
 import re
-from typing import Any, Dict, Iterable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional
 
 
 PLACEHOLDER_SPEAKER_PATTERN = re.compile(
@@ -81,6 +82,83 @@ def build_user_notes_prompt_section(user_notes: Optional[str]) -> str:
         "Incorporate relevant items into the summary, detailed notes, and action items where they materially improve accuracy.\n\n"
         f"{cleaned_notes}"
     )
+
+
+@dataclass
+class MeetingEventContext:
+    """Lightweight value object describing the calendar event a recording is
+    linked to. Threaded through the three LLM prompt paths so notes generation
+    and speaker inference can use the meeting's agenda and attendee list.
+    """
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    attendees: List[str] = field(default_factory=list)
+
+
+def meeting_event_context_from_calendar_event(event: Any) -> Optional[MeetingEventContext]:
+    """Build a :class:`MeetingEventContext` from a ``CalendarEvent`` model.
+
+    Returns ``None`` when no event is supplied so the prompt paths fall back
+    to the unchanged "no context" string.
+    """
+    if event is None:
+        return None
+    raw_attendees = getattr(event, "attendees", None) or []
+    attendee_names: List[str] = []
+    for attendee in raw_attendees:
+        if isinstance(attendee, dict):
+            name = attendee.get("name") or attendee.get("email")
+        else:
+            name = attendee
+        if name:
+            cleaned = str(name).strip()
+            if cleaned:
+                attendee_names.append(cleaned)
+    return MeetingEventContext(
+        title=getattr(event, "title", None),
+        description=getattr(event, "description", None),
+        attendees=attendee_names,
+    )
+
+
+def build_meeting_context_prompt_section(
+    event_context: Optional[MeetingEventContext],
+) -> str:
+    """Render the ``{meeting_context_section}`` block for the LLM prompts.
+
+    With no linked event this returns a fixed fallback string, leaving the
+    rendered prompt unchanged in substance. With an event it provides the
+    title and description as agenda context and the attendee names as
+    *candidate* speaker names.
+    """
+    if event_context is None:
+        return "No calendar event is linked to this meeting."
+
+    lines: List[str] = []
+    title = (event_context.title or "").strip()
+    if title:
+        lines.append(f"Meeting title: {title}")
+
+    description = (event_context.description or "").strip()
+    if description:
+        lines.append(f"Agenda / description:\n{description}")
+
+    attendees = [name for name in event_context.attendees if name and name.strip()]
+    if attendees:
+        attendee_list = ", ".join(attendees)
+        lines.append(
+            "Invited attendees (candidate speaker names): "
+            f"{attendee_list}. "
+            "Prefer one of these names when a diarization label's real name is "
+            "unclear and the transcript supports it; never invent a name that is "
+            "neither in the transcript nor an attendee."
+        )
+
+    if not lines:
+        return "No calendar event is linked to this meeting."
+
+    return "\n\n".join(lines)
 
 
 def append_user_notes_section(notes: str, user_notes: Optional[str]) -> str:

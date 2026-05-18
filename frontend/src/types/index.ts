@@ -132,6 +132,13 @@ export interface UserTask extends BaseDBModel {
   completed_at?: string | null;
 }
 
+export interface CalendarEventLink {
+  id: number;
+  title: string;
+  starts_at: string | null;
+  ends_at: string | null;
+}
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
@@ -155,6 +162,7 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   transcript?: Transcript;
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
+  calendar_event?: CalendarEventLink | null;
 }
 
 export interface Settings {
