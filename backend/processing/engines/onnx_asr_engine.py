@@ -11,6 +11,17 @@ logger = logging.getLogger(__name__)
 # Gap (seconds) between consecutive words that starts a new segment.
 SEGMENT_PAUSE_THRESHOLD_S = 0.8
 
+# Longest audio (seconds) fed to onnx-asr in a single recognize() call. onnx-asr
+# has no long-form support: the exported Parakeet/Canary FastConformer attention
+# does not handle long sequences — past ~5 min recognize() raises an onnxruntime
+# shape error, and on long meetings the O(n^2) attention tensor exhausts memory
+# and the call never returns. Longer audio is transcribed in windows capped here.
+MAX_CHUNK_DURATION_S = 240.0
+
+# Half-width (seconds) of the search window used to snap a chunk boundary onto
+# the quietest nearby point, so a window never cuts through a spoken word.
+CHUNK_SNAP_RADIUS_S = 18.0
+
 
 def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[float] | None,
                         audio_duration: float | None = None) -> dict:
@@ -95,6 +106,53 @@ def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[fl
     return {"text": text, "language": None, "segments": result_segments}
 
 
+def _shift_segment(segment: dict, offset_s: float) -> dict:
+    """Return a copy of a canonical segment with every time shifted by offset_s."""
+    shifted = {
+        "start": segment["start"] + offset_s,
+        "end": segment["end"] + offset_s,
+        "text": segment["text"],
+    }
+    if segment.get("words"):
+        shifted["words"] = [
+            {"start": w["start"] + offset_s, "end": w["end"] + offset_s, "word": w["word"]}
+            for w in segment["words"]
+        ]
+    return shifted
+
+
+def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
+    """Split [0, len(audio)) into windows of at most MAX_CHUNK_DURATION_S.
+
+    Each internal boundary is snapped, within CHUNK_SNAP_RADIUS_S of the ideal
+    cut, onto the quietest 0.2 s of audio so a window never cuts mid-word.
+    Returns a list of (start_frame, end_frame) pairs covering the whole signal.
+    """
+    total_frames = len(audio)
+    target = int(MAX_CHUNK_DURATION_S * sample_rate)
+    radius = int(CHUNK_SNAP_RADIUS_S * sample_rate)
+    probe = max(1, int(0.2 * sample_rate))
+
+    boundaries: list[tuple[int, int]] = []
+    start = 0
+    while total_frames - start > target:
+        ideal = start + target
+        low = max(ideal - radius, start + probe)
+        high = min(ideal + radius, total_frames - probe)
+        cut = ideal
+        if high > low:
+            quietest = None
+            for pos in range(low, high, max(1, probe // 2)):
+                energy = float(abs(audio[pos:pos + probe]).mean())
+                if quietest is None or energy < quietest:
+                    quietest = energy
+                    cut = pos
+        boundaries.append((start, cut))
+        start = cut
+    boundaries.append((start, total_frames))
+    return boundaries
+
+
 class OnnxAsrEngine(TranscriptionEngine):
     """Shared transcription engine backed by onnx-asr.
 
@@ -137,6 +195,10 @@ class OnnxAsrEngine(TranscriptionEngine):
     def transcribe(self, audio_path: str, config: dict) -> dict | None:
         """Transcribe the given audio file using onnx-asr.
 
+        Audio longer than MAX_CHUNK_DURATION_S is transcribed window-by-window
+        (onnx-asr has no long-form support); shorter audio goes through a single
+        recognize() call.
+
         Args:
             audio_path: Path to a 16kHz mono WAV file.
             config: Configuration dictionary (reads the engine's config_key).
@@ -152,11 +214,10 @@ class OnnxAsrEngine(TranscriptionEngine):
 
         try:
             model = self._get_model(config or {})
+            recognizer = model.with_timestamps()
 
-            logger.info(f"Starting {self.name} transcription for {audio_path}")
-            result = model.with_timestamps().recognize(audio_path)
-
-            # Audio duration is optional; failure to read it must not abort.
+            # Audio duration is optional; failure to read it must not abort, but
+            # without it the audio cannot be safely chunked (single-pass only).
             audio_duration: float | None = None
             try:
                 import soundfile
@@ -164,12 +225,77 @@ class OnnxAsrEngine(TranscriptionEngine):
             except Exception as e:
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
+            logger.info(f"Starting {self.name} transcription for {audio_path}")
+
+            if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
+                result = self._transcribe_chunked(recognizer, audio_path, audio_duration)
+            else:
+                recognized = recognizer.recognize(audio_path)
+                result = map_onnx_asr_result(
+                    recognized.text, recognized.tokens, recognized.timestamps, audio_duration
+                )
+
             logger.info(f"{self.name} transcription completed for {audio_path}")
-            return map_onnx_asr_result(result.text, result.tokens, result.timestamps, audio_duration)
+            return result
 
         except Exception as e:
             logger.error(f"Error during {self.name} transcription for {audio_path}: {e}", exc_info=True)
             return None
+
+    def _transcribe_chunked(self, recognizer, audio_path: str, audio_duration: float) -> dict:
+        """Transcribe long audio as a sequence of windows, then merge.
+
+        Each window is at most MAX_CHUNK_DURATION_S long and its boundaries snap
+        onto quiet points so a spoken word is never split. Per-window segments
+        are shifted into absolute time and concatenated.
+        """
+        import os
+        import tempfile
+
+        import soundfile
+
+        audio, sample_rate = soundfile.read(audio_path, dtype="float32", always_2d=False)
+        if getattr(audio, "ndim", 1) > 1:
+            audio = audio.mean(axis=1)
+
+        boundaries = _chunk_boundaries(audio, sample_rate)
+        logger.info(
+            f"{self.name}: {audio_duration:.0f}s audio exceeds the "
+            f"{MAX_CHUNK_DURATION_S:.0f}s single-pass limit; transcribing in "
+            f"{len(boundaries)} windows."
+        )
+
+        texts: list[str] = []
+        segments: list[dict] = []
+        for index, (start_frame, end_frame) in enumerate(boundaries):
+            offset_s = start_frame / sample_rate
+            chunk = audio[start_frame:end_frame]
+            chunk_duration = len(chunk) / sample_rate
+
+            handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            chunk_path = handle.name
+            handle.close()
+            try:
+                soundfile.write(chunk_path, chunk, sample_rate)
+                recognized = recognizer.recognize(chunk_path)
+            finally:
+                try:
+                    os.remove(chunk_path)
+                except OSError:
+                    pass
+
+            chunk_result = map_onnx_asr_result(
+                recognized.text, recognized.tokens, recognized.timestamps, chunk_duration
+            )
+            if chunk_result["text"]:
+                texts.append(chunk_result["text"])
+            segments.extend(_shift_segment(s, offset_s) for s in chunk_result["segments"])
+            logger.info(
+                f"{self.name}: window {index + 1}/{len(boundaries)} done "
+                f"({offset_s:.0f}s +{chunk_duration:.0f}s)."
+            )
+
+        return {"text": " ".join(texts), "language": None, "segments": segments}
 
     def release(self) -> None:
         """Release all loaded models from memory."""
