@@ -173,7 +173,7 @@ The system provides the following core capabilities:
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
   - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
-- **Dashboard Workspace:** The dashboard now combines `Meet Now`, recent meetings, an interactive calendar shell, and personal task capture into a single operational home surface.
+- **Dashboard Workspace:** The dashboard now combines `Meet Now`, an interactive calendar shell with recorded meeting history, and personal task capture into a single operational home surface.
   - **Calendar Modes:** Month navigation, a `Today` reset action, and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
   - **Calendar Colour Mapping:** Connected calendar sources can be given distinct colours in Personal settings. The dashboard month dots and agenda cards reuse those per-calendar colours instead of collapsing every event into a single accent colour.
   - **Task Flow:** Tasks are created inline in the dashboard Task List. Users can rename an existing task by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active tasks show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.

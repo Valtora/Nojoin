@@ -55,23 +55,24 @@ Once the installation credentials exist:
 4. Return to Nojoin and choose which calendars to sync.
 5. Optionally apply per-calendar colour overrides.
 
-Connected calendars then feed the dashboard month view, agenda view, and next-event surface.
+Connected calendars then feed the dashboard month view, agenda view, and next-event surface. Unlinked Nojoin recordings also appear on the dashboard calendar as first-class historical items.
 
 ## Dashboard Behaviour
 
 When calendar sync is configured:
 
-- The dashboard month view shows dots on days with synced events.
-- The agenda view focuses on future events rather than historical clutter.
+- The dashboard month view shows dots on days with synced events and on days that contain unlinked Nojoin recordings.
+- Unlinked Nojoin recordings use the Nojoin orange accent so they remain visually distinct from Google or Microsoft calendar sources.
+- The agenda view is month-scoped and shows both calendar events and unlinked historical recordings for the viewed month.
 - Selecting a day in month view opens a day agenda, and selecting today shows a live now marker against timed events.
 - The `Today` action jumps back to the current month and date context.
 - Per-calendar colours can be used so different sources remain visually distinct.
 - Event times render in the user's configured Nojoin timezone.
 - Meeting links and supported online meeting URLs can be surfaced directly from agenda items.
 
-When no calendar is connected, the dashboard deliberately shows an honest empty state rather than mock data.
+When no calendar is connected and there are no unlinked recordings in view, the dashboard deliberately shows an honest empty state rather than mock data.
 
-Synced calendar events also store their description and attendee list, and recordings carry a nullable `calendar_event_id` so a recording can be linked to the calendar event it belongs to (see Meeting Intelligence in [USAGE.md](USAGE.md)).
+Synced calendar events also store their description and attendee list, and recordings carry a nullable `calendar_event_id` so a recording can be linked to the calendar event it belongs to (see Meeting Intelligence in [USAGE.md](USAGE.md)). When a recording is linked, the dashboard suppresses the standalone Nojoin meeting item and shows only the calendar event.
 
 ## Google OAuth Setup
 

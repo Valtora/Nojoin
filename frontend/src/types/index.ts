@@ -280,6 +280,23 @@ export interface CalendarDashboardDayCount {
   count: number;
 }
 
+export interface CalendarDashboardTag {
+  id: number;
+  name: string;
+  color?: string | null;
+}
+
+export interface CalendarDashboardRecording {
+  id: RecordingId;
+  name: string;
+  starts_at: string;
+  ends_at?: string | null;
+  duration_seconds?: number | null;
+  status: RecordingStatus;
+  speaker_names: string[];
+  tags: CalendarDashboardTag[];
+}
+
 export interface CalendarDashboardEvent {
   id: number;
   title: string;
@@ -297,6 +314,7 @@ export interface CalendarDashboardEvent {
   ends_at?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  linked_recordings: CalendarDashboardRecording[];
 }
 
 export interface CalendarDashboardSummary {
@@ -310,6 +328,7 @@ export interface CalendarDashboardSummary {
   last_synced_at?: string | null;
   day_counts: CalendarDashboardDayCount[];
   agenda_items: CalendarDashboardEvent[];
+  recording_items: CalendarDashboardRecording[];
   next_event?: CalendarDashboardEvent | null;
 }
 

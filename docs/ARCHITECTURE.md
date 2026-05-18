@@ -134,8 +134,8 @@ transcription engine in Settings.
 1. An admin configures Google and/or Microsoft OAuth credentials for the installation.
 2. End users connect their own accounts from the Personal settings area.
 3. Nojoin syncs selected calendars into stored dashboard-facing event data, including each event's description and attendee list.
-4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources.
-5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts.
+4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources, combining synced calendar events with unlinked Nojoin recordings.
+5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts while suppressing the recording's standalone dashboard calendar item.
 
 ## Authentication Model
 

@@ -42,8 +42,7 @@ The root route is the operational home surface for Nojoin.
 It brings together:
 
 - **Meet Now** for live capture.
-- **Recent meetings** for quick re-entry into recent work.
-- **Calendar context** through month and agenda views.
+- **Calendar context** through month and agenda views, including recorded meeting history.
 - **Task List** for personal follow-up work.
 
 ### Calendar Surface
@@ -51,9 +50,12 @@ It brings together:
 - Switch between month and agenda views.
 - Use `Today` to jump back to the current date context.
 - In month view, selecting a day opens a day agenda, and selecting today shows a live now marker against timed events.
+- Unlinked Nojoin recordings appear on the dashboard calendar as orange meeting items, while Google or Microsoft calendar sources keep their own colours.
+- Recorded meeting cards surface tags, speakers, and timestamps directly inside the selected-day agenda.
+- The agenda view is month-scoped and includes both synced calendar events and unlinked Nojoin meeting history for the viewed month.
 - When calendars are connected, per-calendar colours help distinguish event sources.
 - Event times render in your configured Nojoin timezone.
-- If no calendar is connected, the dashboard shows an empty state instead of fake data.
+- If no calendar is connected and there are no unlinked recordings in view, the dashboard shows an empty state instead of fake data.
 
 Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
 
@@ -204,7 +206,7 @@ Manual user notes are also used as supporting context for speaker suggestions an
 
 ### Linked Calendar Event
 
-A recording can be linked to a calendar event. When processing finishes, Nojoin auto-links the recording to a calendar event from your selected calendars if there is a single, confident time overlap; it never links an ambiguous, all-day or zero-duration event and never overwrites a link you set yourself. On the recording page you can link, change, or unlink the calendar event manually. The linked event's title, description, and attendee list are added as context to generated meeting notes and to speaker naming, so attendee names become candidate speaker names.
+A recording can be linked to a calendar event. When processing finishes, Nojoin auto-links the recording to a calendar event from your selected calendars if there is a single, confident time overlap; it never links an ambiguous, all-day or zero-duration event and never overwrites a link you set yourself. On the recording page you can link, change, or unlink the calendar event manually. The linked event's title, description, and attendee list are added as context to generated meeting notes and to speaker naming, so attendee names become candidate speaker names. On the dashboard calendar, a linked recording no longer appears as a separate orange Nojoin meeting card; only the calendar event is shown.
 
 Use **Generate Notes** or **Regenerate Notes** from the notes panel to rebuild only the meeting notes from the current saved transcript and speaker labels. This uses the currently saved AI provider, API key, model, and Ollama URL settings. If the provider configuration is incomplete or the provider rejects the request, the recording remains available and the notes panel reports the failure.
 

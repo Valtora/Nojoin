@@ -35,10 +35,10 @@ export const dashboardSteps: DriveStep[] = [
     }
   },
   {
-    element: '#dashboard-recent-meetings',
+    element: '#dashboard-upcoming-meetings',
     popover: {
-      title: 'Recent Meetings',
-      description: 'Your latest processed meetings appear here. When you are ready to explore transcripts, head into Recordings next.',
+      title: 'Meeting History',
+      description: 'The calendar also surfaces recorded meetings in orange, including tags and speakers, so past sessions stay visible alongside calendar events.',
       side: 'left',
     }
   },

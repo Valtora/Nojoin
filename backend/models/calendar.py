@@ -243,6 +243,23 @@ class CalendarDashboardDayCountRead(SQLModel):
     count: int
 
 
+class CalendarDashboardTagRead(SQLModel):
+    id: int
+    name: str
+    color: Optional[str] = None
+
+
+class CalendarDashboardRecordingRead(SQLModel):
+    id: str
+    name: str
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    status: str
+    speaker_names: List[str] = Field(default_factory=list)
+    tags: List[CalendarDashboardTagRead] = Field(default_factory=list)
+
+
 class CalendarDashboardEventRead(SQLModel):
     id: int
     title: str
@@ -260,6 +277,7 @@ class CalendarDashboardEventRead(SQLModel):
     ends_at: Optional[datetime] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    linked_recordings: List[CalendarDashboardRecordingRead] = Field(default_factory=list)
 
 
 class CalendarDashboardSummaryRead(SQLModel):
@@ -273,4 +291,5 @@ class CalendarDashboardSummaryRead(SQLModel):
     last_synced_at: Optional[datetime] = None
     day_counts: List[CalendarDashboardDayCountRead]
     agenda_items: List[CalendarDashboardEventRead]
+    recording_items: List[CalendarDashboardRecordingRead] = Field(default_factory=list)
     next_event: Optional[CalendarDashboardEventRead] = None

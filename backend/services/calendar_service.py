@@ -29,8 +29,10 @@ from backend.models.calendar import (
     CalendarConnectionRead,
     CalendarDashboardDayCountRead,
     CalendarDashboardEventRead,
+    CalendarDashboardRecordingRead,
     CalendarDashboardState,
     CalendarDashboardSummaryRead,
+    CalendarDashboardTagRead,
     CalendarOverviewRead,
     CalendarProvider,
     CalendarProviderAvailabilityRead,
@@ -43,6 +45,9 @@ from backend.models.calendar import (
     CalendarSyncStatus,
     CalendarEvent,
 )
+from backend.models.recording import Recording
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.tag import RecordingTag, Tag
 from backend.models.user import User
 from backend.utils.config_manager import get_trusted_web_origin
 from backend.utils.time import utc_now
@@ -1988,6 +1993,9 @@ def _to_dashboard_event(
     event: CalendarEvent,
     calendars_by_id: dict[int, CalendarSource],
     accounts_by_connection_id: dict[int, CalendarConnection],
+    linked_recordings: list[Recording] | None = None,
+    recording_speaker_names_by_id: dict[int, list[str]] | None = None,
+    recording_tags_by_id: dict[int, list[CalendarDashboardTagRead]] | None = None,
 ) -> CalendarDashboardEventRead:
     calendar = calendars_by_id[event.calendar_id]
     connection = accounts_by_connection_id[calendar.connection_id]
@@ -2011,6 +2019,140 @@ def _to_dashboard_event(
         ends_at=utc_naive_to_aware(event.ends_at),
         start_date=event.start_date,
         end_date=event.end_date,
+        linked_recordings=[
+            _to_dashboard_recording(
+                recording,
+                speaker_names=(recording_speaker_names_by_id or {}).get(recording.id),
+                tags=(recording_tags_by_id or {}).get(recording.id),
+            )
+            for recording in sorted(
+                linked_recordings or [],
+                key=lambda recording: (
+                    recording.created_at or datetime.min,
+                    recording.name,
+                    recording.public_id,
+                ),
+            )
+        ],
+    )
+
+
+def _get_recording_end(recording: Recording) -> datetime | None:
+    if recording.created_at is None:
+        return None
+    if recording.duration_seconds is None or recording.duration_seconds <= 0:
+        return None
+    return recording.created_at + timedelta(seconds=recording.duration_seconds)
+
+
+def _recording_status_value(recording: Recording) -> str:
+    status_value = getattr(recording.status, "value", recording.status)
+    return str(status_value)
+
+
+async def _get_dashboard_recording_speaker_names(
+    db: AsyncSession,
+    recording_ids: list[int],
+) -> dict[int, list[str]]:
+    if not recording_ids:
+        return {}
+
+    statement = (
+        select(
+            RecordingSpeaker.recording_id,
+            RecordingSpeaker.local_name,
+            RecordingSpeaker.name,
+            RecordingSpeaker.diarization_label,
+            RecordingSpeaker.merged_into_id,
+            GlobalSpeaker.name,
+        )
+        .select_from(RecordingSpeaker)
+        .outerjoin(GlobalSpeaker, RecordingSpeaker.global_speaker_id == GlobalSpeaker.id)
+        .where(RecordingSpeaker.recording_id.in_(recording_ids))
+    )
+    rows = (await db.execute(statement)).all()
+
+    names_by_recording_id: dict[int, list[str]] = {}
+    seen_by_recording_id: dict[int, set[str]] = {}
+    for recording_id, local_name, deprecated_name, diarization_label, merged_into_id, global_name in rows:
+        if merged_into_id is not None:
+            continue
+
+        display_name = local_name or global_name or deprecated_name or diarization_label
+        if not display_name:
+            continue
+
+        clean_name = display_name.strip()
+        if not clean_name:
+            continue
+
+        normalized_name = clean_name.casefold()
+        seen_names = seen_by_recording_id.setdefault(recording_id, set())
+        if normalized_name in seen_names:
+            continue
+
+        seen_names.add(normalized_name)
+        names_by_recording_id.setdefault(recording_id, []).append(clean_name)
+
+    for names in names_by_recording_id.values():
+        names.sort(key=str.casefold)
+
+    return names_by_recording_id
+
+
+async def _get_dashboard_recording_tags(
+    db: AsyncSession,
+    recording_ids: list[int],
+) -> dict[int, list[CalendarDashboardTagRead]]:
+    if not recording_ids:
+        return {}
+
+    statement = (
+        select(
+            RecordingTag.recording_id,
+            Tag.id,
+            Tag.name,
+            Tag.color,
+        )
+        .select_from(RecordingTag)
+        .join(Tag, RecordingTag.tag_id == Tag.id)
+        .where(RecordingTag.recording_id.in_(recording_ids))
+    )
+    rows = (await db.execute(statement)).all()
+
+    tags_by_recording_id: dict[int, list[CalendarDashboardTagRead]] = {}
+    for recording_id, tag_id, tag_name, tag_color in rows:
+        tags_by_recording_id.setdefault(recording_id, []).append(
+            CalendarDashboardTagRead(
+                id=tag_id,
+                name=tag_name,
+                color=tag_color,
+            )
+        )
+
+    for tags in tags_by_recording_id.values():
+        tags.sort(key=lambda tag: (tag.name.casefold(), tag.id))
+
+    return tags_by_recording_id
+
+
+def _to_dashboard_recording(
+    recording: Recording,
+    *,
+    speaker_names: list[str] | None = None,
+    tags: list[CalendarDashboardTagRead] | None = None,
+) -> CalendarDashboardRecordingRead:
+    starts_at = utc_naive_to_aware(recording.created_at)
+    ends_at = _get_recording_end(recording)
+    return CalendarDashboardRecordingRead(
+        id=recording.public_id,
+        name=recording.name,
+        starts_at=starts_at,
+        ends_at=utc_naive_to_aware(ends_at),
+        duration_seconds=recording.duration_seconds,
+        status=_recording_status_value(recording),
+        speaker_names=list(speaker_names or []),
+        tags=list(tags or []),
     )
 
 
@@ -2061,6 +2203,16 @@ async def get_dashboard_summary(
     elif not selected_calendars:
         state = CalendarDashboardState.NO_SELECTED_CALENDARS.value
 
+    unlinked_recordings_statement = select(Recording).where(
+        Recording.user_id == user.id,
+        Recording.is_deleted.is_(False),
+        Recording.is_archived.is_(False),
+        Recording.calendar_event_id.is_(None),
+        Recording.created_at >= month_start,
+        Recording.created_at < month_end,
+    )
+    unlinked_recordings = list((await db.execute(unlinked_recordings_statement)).scalars().all())
+
     events: list[CalendarEvent] = []
     calendars_by_id = {calendar.id: calendar for calendar in selected_calendars}
     accounts_by_connection_id = {connection.id: connection for connection in connections}
@@ -2083,7 +2235,35 @@ async def get_dashboard_summary(
         )
         events = list((await db.execute(overlap_statement)).scalars().all())
 
-    if selected_calendars and not events:
+    linked_recordings_by_event_id: dict[int, list[Recording]] = {}
+    linked_recordings: list[Recording] = []
+    if events:
+        linked_recordings_statement = select(Recording).where(
+            Recording.user_id == user.id,
+            Recording.is_deleted.is_(False),
+            Recording.is_archived.is_(False),
+            Recording.calendar_event_id.in_([event.id for event in events]),
+        )
+        linked_recordings = list((await db.execute(linked_recordings_statement)).scalars().all())
+        for recording in linked_recordings:
+            if recording.calendar_event_id is None:
+                continue
+            linked_recordings_by_event_id.setdefault(recording.calendar_event_id, []).append(recording)
+
+    all_dashboard_recordings = [*unlinked_recordings, *linked_recordings]
+    all_dashboard_recording_ids = [recording.id for recording in all_dashboard_recordings]
+    recording_speaker_names_by_id = await _get_dashboard_recording_speaker_names(
+        db,
+        all_dashboard_recording_ids,
+    )
+    recording_tags_by_id = await _get_dashboard_recording_tags(
+        db,
+        all_dashboard_recording_ids,
+    )
+
+    if events or unlinked_recordings:
+        state = CalendarDashboardState.READY.value
+    elif selected_calendars and not events:
         if any(connection.sync_status == CalendarSyncStatus.SYNCING.value for connection in connections):
             state = CalendarDashboardState.SYNC_IN_PROGRESS.value
         else:
@@ -2095,7 +2275,39 @@ async def get_dashboard_summary(
             if month_start_date <= event_date < month_end_date:
                 day_counts[event_date] = day_counts.get(event_date, 0) + 1
 
-    agenda_items = [_to_dashboard_event(event, calendars_by_id, accounts_by_connection_id) for event in sorted(events, key=_event_sort_key)]
+    for recording in unlinked_recordings:
+        if recording.created_at is None:
+            continue
+        recording_date = utc_naive_to_timezone(recording.created_at, effective_timezone).date()
+        if month_start_date <= recording_date < month_end_date:
+            day_counts[recording_date] = day_counts.get(recording_date, 0) + 1
+
+    agenda_items = [
+        _to_dashboard_event(
+            event,
+            calendars_by_id,
+            accounts_by_connection_id,
+            linked_recordings_by_event_id.get(event.id),
+            recording_speaker_names_by_id,
+            recording_tags_by_id,
+        )
+        for event in sorted(events, key=_event_sort_key)
+    ]
+    recording_items = [
+        _to_dashboard_recording(
+            recording,
+            speaker_names=recording_speaker_names_by_id.get(recording.id),
+            tags=recording_tags_by_id.get(recording.id),
+        )
+        for recording in sorted(
+            unlinked_recordings,
+            key=lambda recording: (
+                recording.created_at or datetime.min,
+                recording.name,
+                recording.public_id,
+            ),
+        )
+    ]
 
     next_event_obj: CalendarDashboardEventRead | None = None
     if selected_calendars:
@@ -2132,5 +2344,6 @@ async def get_dashboard_summary(
             for event_date, count in sorted(day_counts.items())
         ],
         agenda_items=agenda_items,
+        recording_items=recording_items,
         next_event=next_event_obj,
     )

@@ -98,6 +98,65 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE recordings (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        name VARCHAR NOT NULL,
+        public_id VARCHAR(36) NOT NULL,
+        meeting_uid VARCHAR(36) NOT NULL,
+        audio_path VARCHAR NOT NULL,
+        proxy_path VARCHAR,
+        celery_task_id VARCHAR,
+        duration_seconds FLOAT,
+        trim_start_s FLOAT,
+        trim_end_s FLOAT,
+        file_size_bytes INTEGER,
+        status VARCHAR NOT NULL,
+        client_status VARCHAR,
+        upload_progress INTEGER NOT NULL,
+        processing_progress INTEGER NOT NULL,
+        processing_step VARCHAR,
+        processing_started_at DATETIME,
+        processing_completed_at DATETIME,
+        is_archived BOOLEAN NOT NULL,
+        is_deleted BOOLEAN NOT NULL,
+        user_id INTEGER,
+        calendar_event_id INTEGER
+    )
+    """,
+    """
+    CREATE TABLE global_speakers (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(255) NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE recording_speakers (
+        id INTEGER PRIMARY KEY,
+        recording_id INTEGER NOT NULL,
+        global_speaker_id INTEGER,
+        diarization_label VARCHAR(255) NOT NULL,
+        local_name VARCHAR(255),
+        name VARCHAR(255),
+        merged_into_id INTEGER
+    )
+    """,
+    """
+    CREATE TABLE tags (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        color VARCHAR(32)
+    )
+    """,
+    """
+    CREATE TABLE recording_tags (
+        id INTEGER PRIMARY KEY,
+        recording_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL
+    )
+    """,
+    """
     CREATE TABLE user_tasks (
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
@@ -369,6 +428,194 @@ async def seed_calendar_source(
             "last_synced_at": None,
             "sync_window_start": None,
             "sync_window_end": None,
+        },
+    )
+
+
+async def seed_recording(
+    session_maker: sessionmaker,
+    *,
+    recording_id: int,
+    user_id: int,
+    name: str,
+    public_id: str,
+    created_at: datetime,
+    duration_seconds: float | None = None,
+    status: str = "PROCESSED",
+    calendar_event_id: int | None = None,
+    is_archived: bool = False,
+    is_deleted: bool = False,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO recordings (
+            id,
+            created_at,
+            updated_at,
+            name,
+            public_id,
+            meeting_uid,
+            audio_path,
+            proxy_path,
+            celery_task_id,
+            duration_seconds,
+            file_size_bytes,
+            status,
+            client_status,
+            upload_progress,
+            processing_progress,
+            processing_step,
+            processing_started_at,
+            processing_completed_at,
+            is_archived,
+            is_deleted,
+            user_id,
+            calendar_event_id
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :name,
+            :public_id,
+            :meeting_uid,
+            :audio_path,
+            NULL,
+            NULL,
+            :duration_seconds,
+            NULL,
+            :status,
+            NULL,
+            0,
+            100,
+            NULL,
+            NULL,
+            NULL,
+            :is_archived,
+            :is_deleted,
+            :user_id,
+            :calendar_event_id
+        )
+        """,
+        {
+            "id": recording_id,
+            "created_at": created_at,
+            "updated_at": created_at,
+            "name": name,
+            "public_id": public_id,
+            "meeting_uid": f"meeting-{recording_id}",
+            "audio_path": f"/audio/{recording_id}.wav",
+            "duration_seconds": duration_seconds,
+            "status": status,
+            "is_archived": is_archived,
+            "is_deleted": is_deleted,
+            "user_id": user_id,
+            "calendar_event_id": calendar_event_id,
+        },
+    )
+
+
+async def seed_global_speaker(
+    session_maker: sessionmaker,
+    *,
+    speaker_id: int,
+    name: str,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO global_speakers (id, name)
+        VALUES (:id, :name)
+        """,
+        {
+            "id": speaker_id,
+            "name": name,
+        },
+    )
+
+
+async def seed_recording_speaker(
+    session_maker: sessionmaker,
+    *,
+    row_id: int,
+    recording_id: int,
+    diarization_label: str,
+    global_speaker_id: int | None = None,
+    local_name: str | None = None,
+    name: str | None = None,
+    merged_into_id: int | None = None,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO recording_speakers (
+            id,
+            recording_id,
+            global_speaker_id,
+            diarization_label,
+            local_name,
+            name,
+            merged_into_id
+        ) VALUES (
+            :id,
+            :recording_id,
+            :global_speaker_id,
+            :diarization_label,
+            :local_name,
+            :name,
+            :merged_into_id
+        )
+        """,
+        {
+            "id": row_id,
+            "recording_id": recording_id,
+            "global_speaker_id": global_speaker_id,
+            "diarization_label": diarization_label,
+            "local_name": local_name,
+            "name": name,
+            "merged_into_id": merged_into_id,
+        },
+    )
+
+
+async def seed_tag(
+    session_maker: sessionmaker,
+    *,
+    tag_id: int,
+    name: str,
+    color: str | None = None,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO tags (id, name, color)
+        VALUES (:id, :name, :color)
+        """,
+        {
+            "id": tag_id,
+            "name": name,
+            "color": color,
+        },
+    )
+
+
+async def seed_recording_tag(
+    session_maker: sessionmaker,
+    *,
+    row_id: int,
+    recording_id: int,
+    tag_id: int,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO recording_tags (id, recording_id, tag_id)
+        VALUES (:id, :recording_id, :tag_id)
+        """,
+        {
+            "id": row_id,
+            "recording_id": recording_id,
+            "tag_id": tag_id,
         },
     )
 
@@ -689,6 +936,213 @@ async def test_calendar_dashboard_resets_connections_with_invalid_encrypted_toke
     assert payload["provider_configured"] is True
     assert payload["connection_count"] == 0
     assert payload["state"] == "no_accounts"
+
+
+@pytest.mark.anyio
+async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_linked_recordings(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_provider_config(test_session_maker, provider="google")
+    await seed_calendar_connection(test_session_maker, connection_id=301, user_id=1)
+    await seed_calendar_source(
+        test_session_maker,
+        calendar_id=401,
+        connection_id=301,
+        provider_calendar_id="primary",
+        name="Work",
+        colour="#4285f4",
+    )
+    await execute_sql(
+        test_session_maker,
+        """
+        INSERT INTO calendar_events (
+            id,
+            created_at,
+            updated_at,
+            calendar_id,
+            provider_event_id,
+            title,
+            status,
+            is_all_day,
+            starts_at,
+            ends_at,
+            start_date,
+            end_date,
+            location_text,
+            description,
+            attendees,
+            meeting_url,
+            source_url,
+            external_updated_at
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :calendar_id,
+            :provider_event_id,
+            :title,
+            'confirmed',
+            0,
+            :starts_at,
+            :ends_at,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL
+        )
+        """,
+        {
+            "id": 501,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
+            "calendar_id": 401,
+            "provider_event_id": "event-501",
+            "title": "Roadmap review",
+            "starts_at": datetime(2026, 4, 18, 9, 0, 0),
+            "ends_at": datetime(2026, 4, 18, 10, 0, 0),
+        },
+    )
+    await seed_recording(
+        test_session_maker,
+        recording_id=601,
+        user_id=1,
+        name="Roadmap follow-up",
+        public_id="recording-601",
+        created_at=datetime(2026, 4, 18, 13, 0, 0),
+        duration_seconds=1800,
+    )
+    await seed_global_speaker(
+        test_session_maker,
+        speaker_id=801,
+        name="Alex Morgan",
+    )
+    await seed_recording_speaker(
+        test_session_maker,
+        row_id=901,
+        recording_id=601,
+        diarization_label="SPEAKER_00",
+        global_speaker_id=801,
+    )
+    await seed_recording_speaker(
+        test_session_maker,
+        row_id=902,
+        recording_id=601,
+        diarization_label="SPEAKER_01",
+        local_name="Blair Chen",
+    )
+    await seed_tag(
+        test_session_maker,
+        tag_id=1001,
+        name="Customer",
+        color="orange",
+    )
+    await seed_recording_tag(
+        test_session_maker,
+        row_id=1101,
+        recording_id=601,
+        tag_id=1001,
+    )
+    await seed_recording(
+        test_session_maker,
+        recording_id=602,
+        user_id=1,
+        name="Linked roadmap meeting",
+        public_id="recording-602",
+        created_at=datetime(2026, 4, 18, 9, 5, 0),
+        duration_seconds=3300,
+        calendar_event_id=501,
+    )
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/calendar/dashboard",
+        params={"month": "2026-04", "timezone": "UTC"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "ready"
+    assert payload["day_counts"] == [{"date": "2026-04-18", "count": 2}]
+    assert payload["recording_items"] == [
+        {
+            "id": "recording-601",
+            "name": "Roadmap follow-up",
+            "starts_at": "2026-04-18T13:00:00Z",
+            "ends_at": "2026-04-18T13:30:00Z",
+            "duration_seconds": 1800.0,
+            "status": "PROCESSED",
+            "speaker_names": ["Alex Morgan", "Blair Chen"],
+            "tags": [
+                {
+                    "id": 1001,
+                    "name": "Customer",
+                    "color": "orange",
+                }
+            ],
+        }
+    ]
+    assert len(payload["agenda_items"]) == 1
+    assert payload["agenda_items"][0]["title"] == "Roadmap review"
+    assert payload["agenda_items"][0]["linked_recordings"] == [
+        {
+            "id": "recording-602",
+            "name": "Linked roadmap meeting",
+            "starts_at": "2026-04-18T09:05:00Z",
+            "ends_at": "2026-04-18T10:00:00Z",
+            "duration_seconds": 3300.0,
+            "status": "PROCESSED",
+            "speaker_names": [],
+            "tags": [],
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_calendar_dashboard_surfaces_recordings_without_calendar_connections(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=701,
+        user_id=1,
+        name="Standalone meeting",
+        public_id="recording-701",
+        created_at=datetime(2026, 4, 7, 12, 0, 0),
+        duration_seconds=2700,
+    )
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/calendar/dashboard",
+        params={"month": "2026-04", "timezone": "UTC"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_configured"] is False
+    assert payload["connection_count"] == 0
+    assert payload["state"] == "ready"
+    assert payload["agenda_items"] == []
+    assert payload["recording_items"] == [
+        {
+            "id": "recording-701",
+            "name": "Standalone meeting",
+            "starts_at": "2026-04-07T12:00:00Z",
+            "ends_at": "2026-04-07T12:45:00Z",
+            "duration_seconds": 2700.0,
+            "status": "PROCESSED",
+            "speaker_names": [],
+            "tags": [],
+        }
+    ]
 
 
 @pytest.mark.anyio
