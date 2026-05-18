@@ -159,6 +159,7 @@ export interface Settings {
   whisper_model_size?: string;
   transcription_backend?: string;
   parakeet_model?: string;
+  canary_model?: string;
   enable_live_transcription?: boolean;
   live_transcription_backend?: string;
   processing_device?: string;
@@ -444,7 +445,8 @@ export interface SegmentSelection {
 }
 
 export interface ReprocessRequest {
-  transcription_backend: "whisper" | "parakeet";
+  transcription_backend: "whisper" | "parakeet" | "canary";
   whisper_model_size?: string;
   parakeet_model?: string;
+  canary_model?: string;
 }
