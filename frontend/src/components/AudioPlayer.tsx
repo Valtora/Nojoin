@@ -2,7 +2,15 @@
 
 import { Recording, RecordingStatus } from "@/types";
 import { getRecordingStreamUrl } from "@/lib/api";
-import { Play, Pause, Volume2, VolumeX, Loader2 } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Loader2,
+  Scissors,
+  X,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface AudioPlayerProps {
@@ -13,6 +21,9 @@ interface AudioPlayerProps {
   onEnded?: () => void;
   onPlay?: () => void;
   onPause?: () => void;
+  trimStartS?: number | null;
+  trimEndS?: number | null;
+  onTrimChange?: (startS: number | null, endS: number | null) => void;
 }
 
 const formatTime = (seconds: number) => {
@@ -30,6 +41,9 @@ export default function AudioPlayer({
   onEnded,
   onPlay,
   onPause,
+  trimStartS,
+  trimEndS,
+  onTrimChange,
 }: AudioPlayerProps) {
   const [hasError, setHasError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -38,12 +52,20 @@ export default function AudioPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
 
+  // Effective trim window. NULL bound falls back to the full recording.
+  const lowerBound = trimStartS ?? 0;
+  const upperBound = trimEndS ?? duration;
+
   // Sync local playing state with audio element events
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const handlePlay = () => {
+      // If the playhead sits before the trim start, jump into the window.
+      if (trimStartS != null && audio.currentTime < trimStartS) {
+        audio.currentTime = trimStartS;
+      }
       setIsPlaying(true);
       onPlay?.();
     };
@@ -55,6 +77,10 @@ export default function AudioPlayer({
       if (audio.duration && !isNaN(audio.duration)) {
         setDuration(audio.duration);
       }
+      // Clamp the initial playhead into the trim window.
+      if (trimStartS != null && audio.currentTime < trimStartS) {
+        audio.currentTime = trimStartS;
+      }
       setHasError(false);
     };
     const handleError = () => {
@@ -62,11 +88,19 @@ export default function AudioPlayer({
       setHasError(true);
       setIsPlaying(false);
     };
+    // Enforce the trim end: pause and clamp when the playhead reaches it.
+    const handleTrimBoundary = () => {
+      if (trimEndS != null && audio.currentTime >= trimEndS) {
+        audio.pause();
+        audio.currentTime = trimEndS;
+      }
+    };
 
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("error", handleError);
+    audio.addEventListener("timeupdate", handleTrimBoundary);
     audio.addEventListener("timeupdate", onTimeUpdate);
     if (onEnded) audio.addEventListener("ended", onEnded);
 
@@ -75,10 +109,11 @@ export default function AudioPlayer({
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
       audio.removeEventListener("error", handleError);
+      audio.removeEventListener("timeupdate", handleTrimBoundary);
       audio.removeEventListener("timeupdate", onTimeUpdate);
       if (onEnded) audio.removeEventListener("ended", onEnded);
     };
-  }, [audioRef, onTimeUpdate, onEnded, onPlay, onPause]);
+  }, [audioRef, onTimeUpdate, onEnded, onPlay, onPause, trimStartS, trimEndS]);
 
   const togglePlay = () => {
     if (audioRef.current && !hasError) {
@@ -93,7 +128,9 @@ export default function AudioPlayer({
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
     if (audioRef.current && !hasError) {
-      audioRef.current.currentTime = time;
+      // Clamp the target into the trim window.
+      const clamped = Math.min(Math.max(time, lowerBound), upperBound);
+      audioRef.current.currentTime = clamped;
     }
   };
 
@@ -239,20 +276,69 @@ export default function AudioPlayer({
       <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
         <div className="flex justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
           <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{formatTime(upperBound || duration)}</span>
         </div>
-        <input
-          type="range"
-          min={0}
-          max={duration || 100}
-          value={currentTime}
-          onChange={handleSeek}
-          className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-orange-500"
-        />
+        <div className="relative w-full">
+          <input
+            type="range"
+            min={lowerBound}
+            max={upperBound || 100}
+            value={Math.min(Math.max(currentTime, lowerBound), upperBound || 100)}
+            onChange={handleSeek}
+            className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-orange-500"
+          />
+          {/* Trim markers over the slider track */}
+          {duration > 0 && trimStartS != null && (
+            <span
+              className="absolute top-0 h-2.5 w-0.5 bg-orange-600 pointer-events-none"
+              style={{ left: `${(trimStartS / duration) * 100}%` }}
+              title={`Trim start ${formatTime(trimStartS)}`}
+            />
+          )}
+          {duration > 0 && trimEndS != null && (
+            <span
+              className="absolute top-0 h-2.5 w-0.5 bg-orange-600 pointer-events-none"
+              style={{ left: `${(trimEndS / duration) * 100}%` }}
+              title={`Trim end ${formatTime(trimEndS)}`}
+            />
+          )}
+        </div>
       </div>
 
       {/* Controls Group */}
       <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
+        {/* Trim Controls */}
+        {onTrimChange && (
+          <div className="flex items-center gap-1 pr-1 md:pr-2 border-r-0 md:border-r border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => onTrimChange(currentTime, trimEndS ?? null)}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-orange-500"
+              title="Set trim start at the playhead"
+            >
+              <Scissors className="w-4 h-4" />
+              <span className="hidden md:inline">Start</span>
+            </button>
+            <button
+              onClick={() => onTrimChange(trimStartS ?? null, currentTime)}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-orange-500"
+              title="Set trim end at the playhead"
+            >
+              <Scissors className="w-4 h-4 -scale-x-100" />
+              <span className="hidden md:inline">End</span>
+            </button>
+            {(trimStartS != null || trimEndS != null) && (
+              <button
+                onClick={() => onTrimChange(null, null)}
+                className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-orange-500"
+                title="Clear trim and restore the full recording"
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden md:inline">Clear</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Speed Toggle */}
         <button
           onClick={changePlaybackRate}

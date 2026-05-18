@@ -264,6 +264,18 @@ export const renameRecording = async (
   return response.data;
 };
 
+export const updateRecordingTrim = async (
+  id: RecordingId,
+  trimStartS: number | null,
+  trimEndS: number | null,
+): Promise<Recording> => {
+  const response = await api.patch<Recording>(`/recordings/${id}/trim`, {
+    trim_start_s: trimStartS,
+    trim_end_s: trimEndS,
+  });
+  return response.data;
+};
+
 export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/retry`);
   return response.data;

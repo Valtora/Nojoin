@@ -139,6 +139,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   audio_path: string;
   has_proxy?: boolean;
   duration_seconds?: number;
+  trim_start_s?: number | null;
+  trim_end_s?: number | null;
   file_size_bytes?: number;
   status: RecordingStatus;
   client_status?: ClientStatus;
