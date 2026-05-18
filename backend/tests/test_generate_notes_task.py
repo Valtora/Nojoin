@@ -53,6 +53,8 @@ CREATE TABLE recordings (
     proxy_path VARCHAR(1024),
     celery_task_id VARCHAR(255),
     duration_seconds FLOAT,
+    trim_start_s FLOAT,
+    trim_end_s FLOAT,
     file_size_bytes INTEGER,
     status VARCHAR(32) NOT NULL,
     client_status VARCHAR(32),

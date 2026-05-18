@@ -149,3 +149,27 @@ export function toTimeZoneDate(
 export function fromTimeZoneDate(value: Date, timeZone: string): Date {
   return fromZonedTime(value, resolveTimeZone(timeZone));
 }
+
+/**
+ * Convert a local calendar day (YYYY-MM-DD) into a UTC instant range.
+ *
+ * `startISO` is the UTC instant of `localDate` at 00:00:00.000 in `timeZone`.
+ * `endISO` is the UTC instant of the *next* local day at 00:00:00.000 in
+ * `timeZone`, minus 1 ms — so it pairs with a `<=` end-date filter and stays
+ * inclusive-start / exclusive-next-day.
+ */
+export function localDayRangeToUtc(
+  localDate: string,
+  timeZone: string,
+): { startISO: string; endISO: string } {
+  const [year, month, day] = localDate.split("-").map((part) => Number(part));
+
+  const startLocal = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const nextDayLocal = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+
+  const startUtc = fromTimeZoneDate(startLocal, timeZone);
+  const nextDayUtc = fromTimeZoneDate(nextDayLocal, timeZone);
+  const endUtc = new Date(nextDayUtc.getTime() - 1);
+
+  return { startISO: startUtc.toISOString(), endISO: endUtc.toISOString() };
+}

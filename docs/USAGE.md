@@ -86,7 +86,7 @@ Manual notes are captured with low-latency autosave behaviour so typing remains 
 
 ### Live Transcription
 
-While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
+While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. Live segments are transcribed with padded speech regions plus a short rolling audio context window, so live quality tracks the final transcript more closely and word edges are not clipped. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
 
 ## Importing Recordings
 
@@ -158,6 +158,21 @@ Within a processed recording you can:
 - Edit transcript text and speaker assignments.
 - Export transcript-only, notes-only, or combined text output.
 
+### Trimming a Recording
+
+If you forgot to stop a recording and it carries trailing dead air (or a slow
+start), you can trim it without altering the original audio.
+
+- From the audio player on a processed recording, move the playhead and use
+  **Set trim start** and **Set trim end** to mark the kept window.
+- The player slider, the transcript view, and exports then reflect only the
+  trimmed window.
+- **Clear trim** restores the full recording everywhere.
+
+Trimming is non-destructive: it stores two offsets and never re-encodes the
+audio or changes the transcript. The downloaded audio file remains the full,
+untrimmed recording.
+
 ## Speaker Management
 
 Nojoin maintains a global speaker library across recordings.
@@ -208,6 +223,17 @@ Nojoin supports:
 - Fuzzy matching for tolerant search.
 - Speaker-based filtering and navigation.
 
+### Browse Recordings by Calendar Date
+
+The recordings filter panel includes a month calendar. Days that have
+recordings are marked with a dot, and clicking a day filters the recordings
+list to that day. Use the arrows to move between months. The raw date inputs
+(Range, After, Before) remain available as an alternative.
+
+Day boundaries follow your configured timezone (see **Settings → Timezone**),
+so a recording captured just before local midnight is grouped on the correct
+local day rather than on a UTC day.
+
 ## Settings Most Users Will Use
 
 ### Personal Settings
@@ -225,7 +251,7 @@ Depending on permissions, users may also see or adjust:
 - LLM provider selection.
 - Provider model selection.
 - Provider API keys or Ollama URL.
-- Transcription engine selection (Whisper or Parakeet).
+- Transcription engine selection (Whisper, Parakeet or Canary).
 - Whisper model settings.
 - Local Ollama configuration.
 

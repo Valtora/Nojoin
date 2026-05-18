@@ -5,7 +5,7 @@ import { X, RefreshCw, AlertTriangle } from "lucide-react";
 import { reprocessRecording } from "@/lib/api";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
 
-type TranscriptionBackend = "whisper" | "parakeet";
+type TranscriptionBackend = "whisper" | "parakeet" | "canary";
 
 const WHISPER_MODEL_SIZES = [
   "turbo",
@@ -17,6 +17,7 @@ const WHISPER_MODEL_SIZES = [
 ];
 
 const PARAKEET_MODEL = "parakeet-tdt-0.6b-v3";
+const CANARY_MODEL = "nemo-canary-1b-v2";
 const DEFAULT_WHISPER_MODEL_SIZE = "turbo";
 
 interface ReprocessDialogProps {
@@ -24,6 +25,7 @@ interface ReprocessDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onReprocessed: (updatedRecording: Recording) => void;
+  defaultBackend?: TranscriptionBackend;
 }
 
 export default function ReprocessDialog({
@@ -31,8 +33,9 @@ export default function ReprocessDialog({
   isOpen,
   onClose,
   onReprocessed,
+  defaultBackend = "whisper",
 }: ReprocessDialogProps) {
-  const [backend, setBackend] = useState<TranscriptionBackend>("whisper");
+  const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
   const [whisperModelSize, setWhisperModelSize] = useState<string>(
     DEFAULT_WHISPER_MODEL_SIZE,
   );
@@ -41,12 +44,12 @@ export default function ReprocessDialog({
 
   useEffect(() => {
     if (isOpen) {
-      setBackend("whisper");
+      setBackend(defaultBackend);
       setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
       setIsSubmitting(false);
       setError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, defaultBackend]);
 
   if (!isOpen) return null;
 
@@ -54,16 +57,23 @@ export default function ReprocessDialog({
     setIsSubmitting(true);
     setError(null);
 
-    const body: ReprocessRequest =
-      backend === "whisper"
-        ? {
-            transcription_backend: "whisper",
-            whisper_model_size: whisperModelSize,
-          }
-        : {
-            transcription_backend: "parakeet",
-            parakeet_model: PARAKEET_MODEL,
-          };
+    let body: ReprocessRequest;
+    if (backend === "whisper") {
+      body = {
+        transcription_backend: "whisper",
+        whisper_model_size: whisperModelSize,
+      };
+    } else if (backend === "canary") {
+      body = {
+        transcription_backend: "canary",
+        canary_model: CANARY_MODEL,
+      };
+    } else {
+      body = {
+        transcription_backend: "parakeet",
+        parakeet_model: PARAKEET_MODEL,
+      };
+    }
 
     try {
       const updatedRecording = await reprocessRecording(recordingId, body);
@@ -121,6 +131,7 @@ export default function ReprocessDialog({
             >
               <option value="whisper">Whisper</option>
               <option value="parakeet">Parakeet (NVIDIA)</option>
+              <option value="canary">Canary 1B (NVIDIA)</option>
             </select>
           </div>
 
@@ -142,6 +153,22 @@ export default function ReprocessDialog({
                   </option>
                 ))}
               </select>
+            </div>
+          ) : backend === "canary" ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Canary Model
+              </label>
+              <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                <div className="flex-1">
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {CANARY_MODEL}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Model used for transcription.
+                  </p>
+                </div>
+              </div>
             </div>
           ) : (
             <div>

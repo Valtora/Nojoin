@@ -71,7 +71,7 @@ The normal backend processing path is:
 1. Validation.
 2. VAD and audio preprocessing.
 3. Proxy creation for web playback.
-4. Transcription via a pluggable engine (Whisper by default, Parakeet via onnx-asr selectable).
+4. Transcription via a pluggable engine (Whisper by default, Parakeet or Canary via onnx-asr selectable).
 5. Pyannote diarisation.
 6. Phantom speaker filtering.
 7. Merge, voiceprint extraction, and deterministic speaker resolution.
@@ -81,6 +81,8 @@ The normal backend processing path is:
 Manual user notes can be captured during recording or processing and are fed into both the automatic meeting-intelligence stage and the manual note-generation flow.
 
 If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
+
+Recordings carry nullable `trim_start_s` / `trim_end_s` offsets; trimming is display- and export-only, so the source audio and stored transcript are never mutated.
 
 ### Live Transcription Lane
 
@@ -92,7 +94,11 @@ runs:
    (`backend/processing/live_transcribe.py`).
 2. The task slices completed speech regions, transcribes them with the engine
    selected by `live_transcription_backend`, and appends provisional segments
-   to `Transcript.segments` (each flagged `"provisional": True`).
+   to `Transcript.segments` (each flagged `"provisional": True`). VAD regions
+   are padded and each region clip is prepended with a short rolling audio
+   context window (`live/context.wav`) so the engine has acoustic run-up and
+   word edges are not clipped; the engine output is then sliced back to the
+   region. The final batch pipeline is unchanged.
 3. The web client polls the transcript roughly every 3 seconds to render the
    provisional text.
 

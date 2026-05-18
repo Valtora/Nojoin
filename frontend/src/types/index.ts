@@ -146,6 +146,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   audio_path: string;
   has_proxy?: boolean;
   duration_seconds?: number;
+  trim_start_s?: number | null;
+  trim_end_s?: number | null;
   file_size_bytes?: number;
   status: RecordingStatus;
   client_status?: ClientStatus;
@@ -167,6 +169,7 @@ export interface Settings {
   whisper_model_size?: string;
   transcription_backend?: string;
   parakeet_model?: string;
+  canary_model?: string;
   enable_live_transcription?: boolean;
   live_transcription_backend?: string;
   processing_device?: string;
@@ -306,6 +309,12 @@ export interface CalendarDashboardSummary {
   day_counts: CalendarDashboardDayCount[];
   agenda_items: CalendarDashboardEvent[];
   next_event?: CalendarDashboardEvent | null;
+}
+
+export interface RecordingsCalendar {
+  month: string;
+  timezone: string;
+  day_counts: CalendarDashboardDayCount[];
 }
 
 export interface ChatMessage extends BaseDBModel {
@@ -452,7 +461,8 @@ export interface SegmentSelection {
 }
 
 export interface ReprocessRequest {
-  transcription_backend: "whisper" | "parakeet";
+  transcription_backend: "whisper" | "parakeet" | "canary";
   whisper_model_size?: string;
   parakeet_model?: string;
+  canary_model?: string;
 }

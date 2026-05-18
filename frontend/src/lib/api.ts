@@ -8,6 +8,7 @@ import {
   CalendarProviderStatus,
   Recording,
   RecordingId,
+  RecordingsCalendar,
   GlobalSpeaker,
   Settings,
   Tag,
@@ -285,6 +286,18 @@ export const renameRecording = async (
   return response.data;
 };
 
+export const updateRecordingTrim = async (
+  id: RecordingId,
+  trimStartS: number | null,
+  trimEndS: number | null,
+): Promise<Recording> => {
+  const response = await api.patch<Recording>(`/recordings/${id}/trim`, {
+    trim_start_s: trimStartS,
+    trim_end_s: trimEndS,
+  });
+  return response.data;
+};
+
 export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/retry`);
   return response.data;
@@ -524,6 +537,22 @@ export const getCalendarDashboardSummary = async (
 
   const response = await api.get<CalendarDashboardSummary>(
     `/calendar/dashboard?${params.toString()}`,
+  );
+  return response.data;
+};
+
+export const getRecordingsCalendar = async (
+  month: string,
+  timeZone?: string,
+): Promise<RecordingsCalendar> => {
+  const params = new URLSearchParams();
+  params.set("month", month);
+  if (timeZone) {
+    params.set("timezone", timeZone);
+  }
+
+  const response = await api.get<RecordingsCalendar>(
+    `/recordings/calendar?${params.toString()}`,
   );
   return response.data;
 };

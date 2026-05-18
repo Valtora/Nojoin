@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models.calendar import CalendarEvent
+from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.models.chat import ChatMessage
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
@@ -85,6 +85,8 @@ class RecordingPublicRead(PublicModel):
     audio_path: str
     has_proxy: bool = False
     duration_seconds: Optional[float] = None
+    trim_start_s: Optional[float] = None
+    trim_end_s: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
     client_status: Optional[ClientStatus] = None
@@ -100,6 +102,12 @@ class RecordingPublicRead(PublicModel):
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     calendar_event: Optional[CalendarEventLinkRead] = None
+
+
+class RecordingsCalendarRead(BaseModel):
+    month: str
+    timezone: str
+    day_counts: List[CalendarDashboardDayCountRead] = Field(default_factory=list)
 
 
 def serialize_recording_speaker(
@@ -232,6 +240,8 @@ def serialize_recording(
         audio_path=recording.audio_path,
         has_proxy=has_proxy,
         duration_seconds=recording.duration_seconds,
+        trim_start_s=recording.trim_start_s,
+        trim_end_s=recording.trim_end_s,
         file_size_bytes=recording.file_size_bytes,
         status=recording.status,
         client_status=recording.client_status,

@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import List, Optional, Any
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete
@@ -14,7 +14,9 @@ from backend.api.deps import get_current_companion_bootstrap_user, get_current_r
 from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
 from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingUpdate, RecordingUploadTokenResponse
-from backend.models.recording_public import RecordingPublicRead, serialize_recording
+from backend.models.recording_public import RecordingPublicRead, RecordingsCalendarRead, serialize_recording
+from backend.models.calendar import CalendarDashboardDayCountRead
+from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
 from backend.models.user import User
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
@@ -956,9 +958,15 @@ async def list_recordings(
         query = query.where(search_filter)
 
     # 2. Filters (AND conditions)
+    # created_at is stored as naive UTC; normalise tz-aware bounds to match
+    # (the frontend sends UTC ISO instants with a 'Z' suffix).
     if start_date:
+        if start_date.tzinfo is not None:
+            start_date = start_date.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Recording.created_at >= start_date)
     if end_date:
+        if end_date.tzinfo is not None:
+            end_date = end_date.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Recording.created_at <= end_date)
 
     if speaker_ids:
@@ -1101,6 +1109,70 @@ async def get_recording_calendar_event_candidates(
         reverse=True,
     )
     return [CalendarEventLinkRead.model_validate(event) for event, _score in scored]
+
+
+
+@router.get("/calendar", response_model=RecordingsCalendarRead)
+async def get_recordings_calendar(
+    month: str,
+    timezone: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Per-day recording counts for a given month.
+
+    Returns the number of recordings created on each local day of ``month``
+    (``YYYY-MM``), bucketed using the user's effective IANA timezone. Only
+    recordings the default list view shows are counted (deleted and archived
+    recordings are excluded).
+    """
+    try:
+        viewed_month = datetime.strptime(month, "%Y-%m")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Month must use YYYY-MM format",
+        ) from exc
+
+    effective_timezone = get_user_timezone_name(
+        current_user.settings or {},
+        fallback=timezone,
+    )
+    tz = get_timezone(effective_timezone)
+
+    month_start_local = datetime(viewed_month.year, viewed_month.month, 1, tzinfo=tz)
+    if viewed_month.month == 12:
+        month_end_local = datetime(viewed_month.year + 1, 1, 1, tzinfo=tz)
+    else:
+        month_end_local = datetime(viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz)
+
+    month_start = month_start_local.astimezone(UTC).replace(tzinfo=None)
+    month_end = month_end_local.astimezone(UTC).replace(tzinfo=None)
+
+    query = select(Recording.created_at).where(
+        Recording.user_id == current_user.id,
+        Recording.is_deleted == False,
+        Recording.is_archived == False,
+        Recording.created_at >= month_start,
+        Recording.created_at < month_end,
+    )
+    result = await db.execute(query)
+    created_at_values = result.scalars().all()
+
+    day_counts: dict = {}
+    for created_at in created_at_values:
+        local_date = utc_naive_to_timezone(created_at, effective_timezone).date()
+        day_counts[local_date] = day_counts.get(local_date, 0) + 1
+
+    return RecordingsCalendarRead(
+        month=month,
+        timezone=effective_timezone,
+        day_counts=[
+            CalendarDashboardDayCountRead(date=day, count=count)
+            for day, count in sorted(day_counts.items())
+        ],
+    )
 
 
 @router.get("/{recording_id}", response_model=RecordingPublicRead)
@@ -1439,6 +1511,12 @@ class ReprocessRequest(BaseModel):
     transcription_backend: str
     whisper_model_size: str | None = None
     parakeet_model: str | None = None
+    canary_model: str | None = None
+
+
+class TrimUpdate(BaseModel):
+    trim_start_s: float | None = None
+    trim_end_s: float | None = None
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
@@ -1482,11 +1560,82 @@ async def reprocess_recording(
         engine_override["whisper_model_size"] = body.whisper_model_size
     if body.parakeet_model is not None:
         engine_override["parakeet_model"] = body.parakeet_model
+    if body.canary_model is not None:
+        engine_override["canary_model"] = body.canary_model
 
     queued_step = f"Queued for reprocessing with {body.transcription_backend}..."
     await _requeue_for_processing(
         db, recording, engine_override=engine_override, queued_step=queued_step
     )
+
+    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+
+
+@router.patch("/{recording_id}/trim", response_model=RecordingPublicRead)
+async def update_recording_trim(
+    recording_id: str,
+    body: TrimUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Set or clear the non-destructive trim offsets of a finished recording.
+
+    Full-replace semantics: the client always sends both fields; both NULL
+    clears the trim. The audio file and transcript are never mutated.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.status != RecordingStatus.PROCESSED:
+        raise HTTPException(
+            status_code=409,
+            detail="Trimming is only allowed on a processed recording",
+        )
+
+    trim_start_s = body.trim_start_s
+    trim_end_s = body.trim_end_s
+
+    if trim_start_s is not None and trim_start_s < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="trim_start_s must be greater than or equal to 0",
+        )
+
+    if (
+        trim_end_s is not None
+        and recording.duration_seconds is not None
+        and trim_end_s > recording.duration_seconds
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="trim_end_s must not exceed the recording duration",
+        )
+
+    if trim_start_s is not None and trim_end_s is not None and trim_start_s >= trim_end_s:
+        raise HTTPException(
+            status_code=422,
+            detail="trim_start_s must be less than trim_end_s",
+        )
+
+    if trim_start_s is not None or trim_end_s is not None:
+        effective_end = (
+            trim_end_s
+            if trim_end_s is not None
+            else recording.duration_seconds
+        )
+        effective_start = trim_start_s if trim_start_s is not None else 0.0
+        if effective_end is not None and (effective_end - effective_start) < 1.0:
+            raise HTTPException(
+                status_code=422,
+                detail="The trimmed window must be at least 1 second long",
+            )
+
+    recording.trim_start_s = trim_start_s
+    recording.trim_end_s = trim_end_s
+
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 

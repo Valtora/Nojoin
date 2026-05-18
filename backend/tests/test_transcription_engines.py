@@ -23,6 +23,13 @@ def test_validate_config_value_transcription_backend():
     assert validate_config_value("transcription_backend", "bogus") is False
 
 
+def test_validate_config_value_canary_backend():
+    """The canary backend is a valid transcription_backend; the default is unchanged."""
+    assert validate_config_value("transcription_backend", "canary") is True
+    assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
+    assert DEFAULT_SYSTEM_CONFIG["canary_model"] == "nemo-canary-1b-v2"
+
+
 @pytest.fixture(autouse=True)
 def _clean_engine_registry():
     """Keep the dispatcher engine registry isolated between tests."""
@@ -187,3 +194,96 @@ def test_dispatcher_selects_parakeet():
     assert fake.transcribe_called_with is not None
     assert fake.transcribe_called_with[0] == "meeting.wav"
     assert result == {"text": "fake", "language": "en", "segments": []}
+
+
+def test_dispatcher_selects_canary():
+    """transcribe_audio routes to the canary engine in the registry."""
+    fake = _FakeEngine("canary")
+    transcribe._ENGINE_REGISTRY["canary"] = fake
+    result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "canary"})
+    assert fake.transcribe_called_with is not None
+    assert fake.transcribe_called_with[0] == "meeting.wav"
+    assert result == {"text": "fake", "language": "en", "segments": []}
+
+
+# --- onnx-asr long-audio chunking (shared OnnxAsrEngine base) ---
+
+
+class _FakeRecognized:
+    """A fixed onnx-asr recognize() result with one timestamped token."""
+
+    text = "chunk"
+    tokens = [" chunk"]
+    timestamps = [0.0]
+
+
+def _fake_onnx_model(calls):
+    """Build a fake onnx-asr model whose recognize() records each call's path."""
+
+    class _Recognizer:
+        def recognize(self, path):
+            calls.append(path)
+            return _FakeRecognized()
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    return _Model()
+
+
+def _write_silence(path, seconds, sample_rate=16000):
+    """Write `seconds` of 16kHz mono silence to `path`."""
+    import numpy as np
+    import soundfile
+
+    soundfile.write(str(path), np.zeros(int(seconds * sample_rate), dtype="float32"), sample_rate)
+
+
+def test_onnx_asr_short_audio_single_pass(tmp_path, monkeypatch):
+    """Audio within the single-pass limit goes through one recognize() call."""
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    audio_path = tmp_path / "short.wav"
+    _write_silence(audio_path, 5)
+
+    calls = []
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _fake_onnx_model(calls))
+
+    result = engine.transcribe(str(audio_path), {})
+
+    assert calls == [str(audio_path)]
+    assert result["text"] == "chunk"
+    assert len(result["segments"]) == 1
+
+
+def test_onnx_asr_chunks_long_audio(tmp_path, monkeypatch):
+    """Audio beyond the limit is split into windows and merged into absolute time."""
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    # Shrink the window so the fixture audio stays tiny: 4s windows, 10s audio.
+    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
+    monkeypatch.setattr(onnx_asr_engine, "CHUNK_SNAP_RADIUS_S", 0.5)
+
+    audio_path = tmp_path / "long.wav"
+    _write_silence(audio_path, 10)
+
+    calls = []
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _fake_onnx_model(calls))
+
+    result = engine.transcribe(str(audio_path), {})
+
+    # recognize() ran once per window, on temp files — never on the source path.
+    assert len(calls) == 3
+    assert str(audio_path) not in calls
+    # Per-window transcripts and segments are concatenated.
+    assert result["text"] == "chunk chunk chunk"
+    assert len(result["segments"]) == 3
+    # Window segments are shifted into absolute, strictly increasing time.
+    starts = [segment["start"] for segment in result["segments"]]
+    assert starts == sorted(starts)
+    assert starts[0] == 0.0
+    assert starts[1] >= onnx_asr_engine.MAX_CHUNK_DURATION_S - onnx_asr_engine.CHUNK_SNAP_RADIUS_S
