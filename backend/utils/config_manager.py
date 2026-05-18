@@ -91,6 +91,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "canary_model": "nemo-canary-1b-v2",
     "enable_live_transcription": True,
     "live_transcription_backend": "parakeet",
+    "live_context_window_s": 5.0,
+    "live_speech_pad_ms": 300,
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,

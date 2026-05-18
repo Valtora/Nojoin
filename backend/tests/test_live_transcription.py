@@ -295,6 +295,59 @@ def test_detect_speech_segments_min_silence_override(monkeypatch):
     assert captured["min_silence_duration_ms"] == 700
 
 
+def test_detect_speech_segments_speech_pad_override(monkeypatch):
+    """An explicit speech_pad_ms overrides the config value."""
+    import torch
+
+    from backend.processing import vad as vad_module
+
+    captured = {}
+
+    def fake_get_speech_timestamps(*a, **k):
+        captured.update(k)
+        return []
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: object()
+    )
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    vad_module.detect_speech_segments(
+        torch.zeros(16000), sample_rate=16000, speech_pad_ms=300
+    )
+
+    assert captured["speech_pad_ms"] == 300
+
+
+def test_detect_speech_segments_speech_pad_default(monkeypatch):
+    """Without an override, the config/default speech_pad value (30 ms) is used.
+
+    Guards the batch path: an unpadded call must behave exactly as before.
+    """
+    import torch
+
+    from backend.processing import vad as vad_module
+
+    captured = {}
+
+    def fake_get_speech_timestamps(*a, **k):
+        captured.update(k)
+        return []
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: object()
+    )
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    vad_module.detect_speech_segments(torch.zeros(16000), sample_rate=16000)
+
+    assert captured["speech_pad_ms"] == 30
+
+
 def test_detect_speech_segments_min_silence_default(monkeypatch):
     """Without an override, the config/default min_silence value is used."""
     import torch
@@ -408,11 +461,20 @@ def _patch_live_deps(monkeypatch, *, speech_map, transcribe_text="hello", db_sta
     from backend.processing import transcribe as transcribe_module
 
     monkeypatch.setattr(vad_module, "detect_speech_segments", lambda audio, *a, **k: speech_map(audio))
-    monkeypatch.setattr(
-        transcribe_module,
-        "transcribe_audio",
-        lambda path, config=None: {"text": transcribe_text, "language": None, "segments": []},
-    )
+
+    def fake_transcribe_audio(path, config=None):
+        # A single segment spanning the whole clip: with no `words`, the
+        # midpoint heuristic in _extract_region_text keeps it for any
+        # prefix_s, so context-window runs still emit text.
+        return {
+            "text": transcribe_text,
+            "language": None,
+            "segments": [
+                {"start": 0.0, "end": 1.0e9, "text": transcribe_text}
+            ],
+        }
+
+    monkeypatch.setattr(transcribe_module, "transcribe_audio", fake_transcribe_audio)
     # silero_vad.save_audio is real (torchaudio-backed); the buffer.wav it
     # writes is needed for the carry-over seam test.
 
@@ -700,6 +762,181 @@ def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
 
     assert transcript.segments == []
     assert lt.read_live_state(temp_dir / "live")["next_expected"] == 2
+
+
+# --- _extract_region_text unit tests ----------------------------------------
+
+
+def test_extract_region_text_drops_pure_context_segment():
+    """A segment entirely within the prefix run-up is dropped."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    result = {
+        "segments": [
+            {"start": 0.0, "end": 1.5, "text": "context only"},
+            {"start": 2.1, "end": 3.0, "text": "region words"},
+        ]
+    }
+    assert _extract_region_text(result, prefix_s=2.0) == "region words"
+
+
+def test_extract_region_text_keeps_region_segment():
+    """A segment entirely after the prefix is kept whole."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    result = {"segments": [{"start": 2.5, "end": 4.0, "text": "the region"}]}
+    assert _extract_region_text(result, prefix_s=2.0) == "the region"
+
+
+def test_extract_region_text_straddle_with_words():
+    """A boundary-straddling segment with words keeps only post-prefix words."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    result = {
+        "segments": [
+            {
+                "start": 1.0,
+                "end": 3.0,
+                "text": "before before after after",
+                "words": [
+                    {"start": 1.0, "end": 1.5, "word": "before"},
+                    {"start": 1.5, "end": 2.0, "word": "before"},
+                    {"start": 2.2, "end": 2.6, "word": "after"},
+                    {"start": 2.6, "end": 3.0, "word": "after"},
+                ],
+            }
+        ]
+    }
+    assert _extract_region_text(result, prefix_s=2.0) == "after after"
+
+
+def test_extract_region_text_straddle_without_words_midpoint():
+    """A boundary-straddling segment without words uses the midpoint heuristic."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    # Midpoint 2.5 >= prefix 2.0 -> kept.
+    kept = {"segments": [{"start": 1.0, "end": 4.0, "text": "kept"}]}
+    assert _extract_region_text(kept, prefix_s=2.0) == "kept"
+
+    # Midpoint 1.5 < prefix 2.0 -> dropped.
+    dropped = {"segments": [{"start": 1.0, "end": 2.0, "text": "dropped"}]}
+    assert _extract_region_text(dropped, prefix_s=2.0) == ""
+
+
+def test_extract_region_text_prefix_zero_keeps_all():
+    """With prefix_s == 0, all segments belong to the region."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    result = {
+        "segments": [
+            {"start": 0.0, "end": 1.0, "text": "one"},
+            {"start": 1.0, "end": 2.0, "text": "two"},
+        ]
+    }
+    assert _extract_region_text(result, prefix_s=0.0) == "one two"
+
+
+def test_extract_region_text_no_segments_falls_back_to_text():
+    """Without segments, the top-level text is used only when prefix_s <= 0."""
+    from backend.processing.live_transcribe import _extract_region_text
+
+    assert _extract_region_text({"text": "plain"}, prefix_s=0.0) == "plain"
+    assert _extract_region_text({"text": "plain"}, prefix_s=1.5) == ""
+
+
+# --- _strip_repetition unit tests --------------------------------------------
+
+
+def test_strip_repetition_collapses_consecutive_words():
+    """Three or more identical consecutive words collapse to one."""
+    from backend.processing.live_transcribe import _strip_repetition
+
+    assert _strip_repetition("yes yes yes please") == "yes please"
+
+
+def test_strip_repetition_collapses_repeated_phrase():
+    """A short phrase repeated three or more times collapses to one."""
+    from backend.processing.live_transcribe import _strip_repetition
+
+    assert (
+        _strip_repetition("thank you thank you thank you bye")
+        == "thank you bye"
+    )
+
+
+def test_strip_repetition_leaves_legitimate_text_untouched():
+    """Ordinary text, including a single doubled word, is preserved."""
+    from backend.processing.live_transcribe import _strip_repetition
+
+    text = "the meeting starts at noon and we will review the budget"
+    assert _strip_repetition(text) == text
+    # A word repeated only twice is not collapsed.
+    assert _strip_repetition("very very good") == "very very good"
+
+
+# --- context.wav lifecycle test ---------------------------------------------
+
+
+def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path):
+    """A run writes live/context.wav, and a region's left-context prefix text
+    is excluded from the emitted provisional segment."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import vad as vad_module
+    from backend.processing import transcribe as transcribe_module
+
+    temp_dir = tmp_path / "21"
+    temp_dir.mkdir()
+
+    monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
+    monkeypatch.setattr(
+        vad_module, "detect_speech_segments",
+        lambda audio, *a, **k: [{"start": 1.0, "end": 2.0}],
+    )
+
+    # The clip handed to the engine is `left_context ++ region`. A 1.0 s
+    # context.wav plus the 1.0 s of `combined` preceding the region gives
+    # prefix_s == 2.0. The fake result carries a context-prefixed segment
+    # (PREFIX, ending inside the prefix) and a region segment (REGION); only
+    # the region text must survive _extract_region_text.
+    def fake_transcribe_audio(path, config=None):
+        return {
+            "text": "PREFIX REGION",
+            "language": None,
+            "segments": [
+                {"start": 0.0, "end": 0.5, "text": "PREFIX"},
+                {"start": 1.5, "end": 2.5, "text": "REGION"},
+            ],
+        }
+
+    monkeypatch.setattr(transcribe_module, "transcribe_audio", fake_transcribe_audio)
+
+    _make_segment_wav(temp_dir, 1, 3.0)
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    session = _FakeSession(recording)
+
+    # Seed a 1.0 s context.wav so prefix_s is non-zero (2.0 s) and prefix
+    # exclusion is actually exercised.
+    import torch
+    import silero_vad
+
+    ctx = torch.zeros(1, int(1.0 * lt.LIVE_SAMPLE_RATE))
+    (temp_dir / "live").mkdir(parents=True, exist_ok=True)
+    silero_vad.save_audio(
+        str(temp_dir / "live" / "context.wav"), ctx, sampling_rate=lt.LIVE_SAMPLE_RATE
+    )
+
+    _run_live_task(monkeypatch, 21, 1, session)
+
+    # context.wav was rewritten with the consumed audio's tail.
+    assert (temp_dir / "live" / "context.wav").exists()
+    # One provisional segment emitted; the PREFIX segment (end 0.5 <= prefix
+    # 1.0+EPS) is dropped, only REGION survives.
+    assert len(transcript.segments) == 1
+    assert transcript.segments[0]["text"] == "REGION"
+    assert transcript.segments[0]["provisional"] is True
 
 
 # --- segment endpoint live-task dispatch tests ------------------------------

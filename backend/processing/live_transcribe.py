@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+import re
 
 from backend.celery_app import celery_app
 from backend.utils.config_manager import config_manager
@@ -26,6 +27,7 @@ LIVE_MIN_SILENCE_MS = 700
 
 _STATE_FILENAME = "state.json"
 _BUFFER_FILENAME = "buffer.wav"
+_CONTEXT_FILENAME = "context.wav"
 
 
 def read_live_state(live_dir) -> dict:
@@ -88,7 +90,103 @@ def _build_live_config() -> dict:
         "parakeet_model": config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3"),
         "whisper_model_size": config_manager.get("whisper_model_size", "turbo"),
         "processing_device": config_manager.get("processing_device", "auto"),
+        "context_window_s": config_manager.get("live_context_window_s", 5.0),
+        "speech_pad_ms": config_manager.get("live_speech_pad_ms", 300),
     }
+
+
+def _extract_region_text(result: dict, prefix_s: float) -> str:
+    """Select, from an engine result for a context-prefixed clip, the text that
+    belongs to the speech region (the audio after `prefix_s` seconds).
+
+    The clip handed to the engine is `left_context ++ region`; `prefix_s` is the
+    length of the left-context run-up. Segment/word timestamps are clip-relative.
+    """
+    EPS = 0.10
+    segments = result.get("segments") or []
+    if not segments:
+        if prefix_s <= 0:
+            return (result.get("text") or "").strip()
+        return ""
+
+    kept: list[str] = []
+    for seg in segments:
+        start = float(seg.get("start", 0.0))
+        end = float(seg.get("end", 0.0))
+        seg_text = (seg.get("text") or "").strip()
+        if not seg_text:
+            continue
+        if end <= prefix_s + EPS:
+            # Pure context: entirely within the run-up.
+            continue
+        if start >= prefix_s - EPS:
+            # Entirely within the region.
+            kept.append(seg_text)
+            continue
+        # Straddles the prefix boundary.
+        words = seg.get("words")
+        if words:
+            region_words = [
+                (w.get("word") or "")
+                for w in words
+                if float(w.get("start", 0.0)) >= prefix_s - EPS
+            ]
+            joined = " ".join(p.strip() for p in region_words if p.strip())
+            if joined:
+                kept.append(joined)
+        elif (start + end) / 2 >= prefix_s:
+            kept.append(seg_text)
+
+    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+
+
+def _strip_repetition(text: str) -> str:
+    """Lightweight hallucination guard: collapse runs of repeated words or short
+    phrases. Defensive only — on any doubt the text is returned unchanged.
+    """
+    if not text:
+        return text
+    words = text.split()
+    if len(words) < 3:
+        return text
+
+    # Collapse a run of 3+ consecutive identical words to a single occurrence.
+    deduped: list[str] = []
+    i = 0
+    n_words = len(words)
+    while i < n_words:
+        j = i
+        while j < n_words and words[j] == words[i]:
+            j += 1
+        run = j - i
+        deduped.extend([words[i]] if run >= 3 else words[i:j])
+        i = j
+
+    # Collapse a short phrase (2-5 words) repeated 3+ times consecutively.
+    out: list[str] = []
+    i = 0
+    n = len(deduped)
+    while i < n:
+        collapsed = False
+        for plen in range(2, 6):
+            if i + plen * 3 > n:
+                continue
+            phrase = deduped[i : i + plen]
+            reps = 1
+            j = i + plen
+            while j + plen <= n and deduped[j : j + plen] == phrase:
+                reps += 1
+                j += plen
+            if reps >= 3:
+                out.extend(phrase)
+                i = j
+                collapsed = True
+                break
+        if not collapsed:
+            out.append(deduped[i])
+            i += 1
+
+    return " ".join(out)
 
 
 @celery_app.task(bind=True)
@@ -162,19 +260,42 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         combined_len = combined.numel() / LIVE_SAMPLE_RATE
         combined_abs_start = buffer_abs_start
 
+        # --- Build the live engine config (needed before the VAD call) ---
+        live_config = _build_live_config()
+        W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
+
         # --- Detect speech and classify ---
-        speech = detect_speech_segments(combined, min_silence_duration_ms=LIVE_MIN_SILENCE_MS)
+        speech = detect_speech_segments(
+            combined,
+            min_silence_duration_ms=LIVE_MIN_SILENCE_MS,
+            speech_pad_ms=live_config["speech_pad_ms"],
+        )
         complete, cut_point = classify_speech(speech, combined_len)
 
+        # --- Read the rolling left-context buffer (already-consumed audio) ---
+        context_path = str(live_dir / _CONTEXT_FILENAME)
+        if os.path.exists(context_path):
+            prev_context = safe_read_audio(context_path, sampling_rate=LIVE_SAMPLE_RATE)
+        else:
+            prev_context = torch.zeros(0)
+
         # --- Transcribe each completed speech region ---
-        live_config = _build_live_config()
         new_segments = []
         for sp in complete:
             start_sample = int(sp["start"] * LIVE_SAMPLE_RATE)
             end_sample = int(sp["end"] * LIVE_SAMPLE_RATE)
-            clip = combined[start_sample:end_sample]
-            if clip.numel() == 0:
+            region = combined[start_sample:end_sample]
+            if region.numel() == 0:
                 continue
+
+            # Prepend a rolling audio context window so the engine has run-up.
+            left_context = torch.cat([prev_context, combined[:start_sample]])
+            if W > 0:
+                left_context = left_context[-W:]
+            else:
+                left_context = left_context[:0]
+            clip = torch.cat([left_context, region])
+            prefix_s = left_context.numel() / LIVE_SAMPLE_RATE
 
             clip_path = str(live_dir / "clip.wav")
             try:
@@ -192,7 +313,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
 
             if not result:
                 continue
-            text = (result.get("text") or "").strip()
+            text = _strip_repetition(_extract_region_text(result, prefix_s))
             if not text:
                 continue
 
@@ -207,7 +328,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             )
 
         # --- Carry over the unconsumed trailing audio ---
-        new_buffer = combined[int(cut_point * LIVE_SAMPLE_RATE):]
+        cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
+        new_buffer = combined[cut_sample:]
         if new_buffer.numel() > 0:
             tensor = new_buffer if new_buffer.ndim > 1 else new_buffer.unsqueeze(0)
             import silero_vad
@@ -219,6 +341,25 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             except OSError:
                 pass
         new_abs_start = combined_abs_start + cut_point
+
+        # --- Update the rolling left-context buffer ---
+        # consumed = the already-consumed audio immediately preceding the new
+        # buffer; its last W samples become run-up for the next run.
+        consumed = torch.cat([prev_context, combined[:cut_sample]])
+        if W > 0:
+            consumed = consumed[-W:]
+        else:
+            consumed = consumed[:0]
+        if consumed.numel() > 0:
+            tensor = consumed if consumed.ndim > 1 else consumed.unsqueeze(0)
+            import silero_vad
+
+            silero_vad.save_audio(context_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
+        elif os.path.exists(context_path):
+            try:
+                os.remove(context_path)
+            except OSError:
+                pass
 
         # --- Persist provisional segments (race-guarded) ---
         if new_segments:

@@ -92,7 +92,11 @@ runs:
    (`backend/processing/live_transcribe.py`).
 2. The task slices completed speech regions, transcribes them with the engine
    selected by `live_transcription_backend`, and appends provisional segments
-   to `Transcript.segments` (each flagged `"provisional": True`).
+   to `Transcript.segments` (each flagged `"provisional": True`). VAD regions
+   are padded and each region clip is prepended with a short rolling audio
+   context window (`live/context.wav`) so the engine has acoustic run-up and
+   word edges are not clipped; the engine output is then sliced back to the
+   region. The final batch pipeline is unchanged.
 3. The web client polls the transcript roughly every 3 seconds to render the
    provisional text.
 

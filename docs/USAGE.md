@@ -86,7 +86,7 @@ Manual notes are captured with low-latency autosave behaviour so typing remains 
 
 ### Live Transcription
 
-While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
+While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. Live segments are transcribed with padded speech regions plus a short rolling audio context window, so live quality tracks the final transcript more closely and word edges are not clipped. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
 
 ## Importing Recordings
 
