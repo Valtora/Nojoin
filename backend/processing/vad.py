@@ -323,6 +323,52 @@ def _apply_vad_processing(
     return processed_audio
 
 
+def detect_speech_segments(audio, sample_rate: int = 16000, min_silence_duration_ms: int | None = None) -> list:
+    """Return speech-region boundaries for a 16 kHz mono audio buffer.
+
+    audio: either a 1-D torch tensor of 16 kHz mono samples, OR a path to a WAV file.
+    min_silence_duration_ms: optional override for the minimum silence gap (ms).
+        When not None, it overrides the value from get_vad_config_from_settings();
+        when None, the config/default value is used (behaviour unchanged).
+    Returns: list[dict] of {"start": float_seconds, "end": float_seconds}.
+    """
+    from pathlib import Path
+
+    # Resolve the input into a tensor.
+    if isinstance(audio, (str, Path)):
+        tensor = safe_read_audio(str(audio), sampling_rate=sample_rate)
+    else:
+        tensor = audio
+
+    # Load the VAD model.
+    model = silero_vad.load_silero_vad()
+
+    # Merge VAD parameters from settings, falling back to sensible defaults.
+    vad_config = get_vad_config_from_settings()
+    threshold = vad_config.get("threshold", 0.5)
+    min_speech_duration_ms = vad_config.get("min_speech_duration_ms", 250)
+    if min_silence_duration_ms is None:
+        min_silence_duration_ms = vad_config.get("min_silence_duration_ms", 2000)
+    speech_pad_ms = vad_config.get("speech_pad_ms", 30)
+
+    timestamps = silero_vad.get_speech_timestamps(
+        tensor,
+        model,
+        sampling_rate=sample_rate,
+        return_seconds=True,
+        threshold=threshold,
+        min_speech_duration_ms=min_speech_duration_ms,
+        min_silence_duration_ms=min_silence_duration_ms,
+        speech_pad_ms=speech_pad_ms,
+    )
+
+    # Normalise the dict shape and coerce to float seconds.
+    return [
+        {"start": float(seg["start"]), "end": float(seg["end"])}
+        for seg in timestamps
+    ]
+
+
 def get_vad_config_from_settings() -> Dict[str, Any]:
     """Get VAD configuration from application settings."""
     from backend.utils.config_manager import config_manager

@@ -269,6 +269,19 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         logger.error(f"Failed to load Whisper model: {e}")
         raise e
 
+    # 3b. Preload Parakeet ASR Model (pluggable transcription backend)
+    report("Checking Parakeet model...", 0, stage="parakeet")
+    try:
+        # Lazy import keeps onnx-asr out of module-level imports.
+        import onnx_asr
+        # load_model triggers the ONNX file download from the Hugging Face Hub.
+        onnx_asr.load_model("nemo-parakeet-tdt-0.6b-v3", quantization="int8")
+        report("Parakeet model loaded.", 100, stage="parakeet")
+    except Exception as e:
+        # A Parakeet download failure must not abort the whole preload.
+        logger.warning(f"Failed to load Parakeet model: {e}")
+        report("Skipping Parakeet (download failed).", 100, stage="parakeet")
+
     # 4. Preload Pyannote Diarization Model
     pipeline_name = "pyannote/speaker-diarization-community-1"
     report(f"Downloading Pyannote pipeline ({pipeline_name})...", 0, stage="pyannote")
@@ -345,6 +358,7 @@ def check_model_status(whisper_model_size=None):
     """
     status = {
         "whisper": {"downloaded": False, "path": None, "checked_paths": []},
+        "parakeet": {"downloaded": False, "path": None, "checked_paths": []},
         "pyannote": {"downloaded": False, "path": None, "checked_paths": []},
         "embedding": {"downloaded": False, "path": None, "checked_paths": []}
     }
@@ -378,10 +392,33 @@ def check_model_status(whisper_model_size=None):
                     status["whisper"]["downloaded"] = True
                     status["whisper"]["path"] = default_filepath
     
-    # Check Pyannote
-    # 1. Check HF_HOME location (Primary)
+    # Check Parakeet
+    # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
+    # cache. Detection is a directory-name match; the exact repo dir name may vary
+    # by onnx-asr version, so this is treated as a heuristic, not authoritative.
     hf_cache_base = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
     hf_cache = os.path.join(hf_cache_base, "hub")
+    parakeet_hf_caches = [hf_cache]
+    default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+    if default_hf_cache not in parakeet_hf_caches:
+        parakeet_hf_caches.append(default_hf_cache)
+
+    for cache_dir in parakeet_hf_caches:
+        status["parakeet"]["checked_paths"].append(cache_dir)
+        if os.path.isdir(cache_dir):
+            try:
+                for entry in os.listdir(cache_dir):
+                    if "parakeet-tdt-0.6b-v3" in entry:
+                        status["parakeet"]["downloaded"] = True
+                        status["parakeet"]["path"] = os.path.join(cache_dir, entry)
+                        break
+            except OSError:
+                pass
+        if status["parakeet"]["downloaded"]:
+            break
+
+    # Check Pyannote
+    # 1. Check HF_HOME location (Primary)
     pyannote_path = os.path.join(hf_cache, "models--pyannote--speaker-diarization-community-1")
     
     status["pyannote"]["checked_paths"].append(pyannote_path)

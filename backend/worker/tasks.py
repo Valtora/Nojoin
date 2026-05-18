@@ -306,7 +306,7 @@ class DatabaseTask(Task):
             self._session.close()
 
 @celery_app.task(base=DatabaseTask, bind=True, autoretry_for=(ConnectionError, urllib.error.URLError, requests.exceptions.RequestException), retry_backoff=True, max_retries=3)
-def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False):
+def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False, engine_override: dict | None = None):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
     """
@@ -483,6 +483,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         session.add(recording)
         session.commit()
         
+        # Apply per-reprocess transcription-engine override, if provided.
+        if engine_override:
+            merged_config.update(engine_override)
+            logger.info("Reprocess: engine override applied: %s", engine_override)
+
         # Run Whisper
         transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
         

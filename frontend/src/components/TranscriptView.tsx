@@ -53,6 +53,7 @@ interface TranscriptViewProps {
   canUndo: boolean;
   canRedo: boolean;
   onExport: () => void;
+  readOnly?: boolean;
 }
 
 const formatTime = (seconds: number) => {
@@ -81,6 +82,7 @@ export default function TranscriptView({
   canUndo,
   canRedo,
   onExport,
+  readOnly = false,
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
   const { addNotification } = useNotificationStore();
@@ -345,6 +347,7 @@ export default function TranscriptView({
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
+    if (readOnly || segments[index]?.provisional === true) return;
     setEditingTextIndex(index);
     setEditValue(text);
     setEditingSpeaker(null);
@@ -439,7 +442,10 @@ export default function TranscriptView({
   }));
 
   const displaySegments = hasKnownSpeakers
-    ? indexedSegments.filter(({ segment }) => segment.speaker !== "UNKNOWN")
+    ? indexedSegments.filter(
+        ({ segment }) =>
+          segment.speaker !== "UNKNOWN" || segment.provisional === true,
+      )
     : indexedSegments;
 
   // --- Grouping Logic ---
@@ -495,6 +501,8 @@ export default function TranscriptView({
   const renderSegmentContent = (item: typeof displaySegments[0]) => {
     const { segment, index: originalIndex } = item;
     const isActive = currentTime >= segment.start && currentTime < segment.end;
+    const isProvisional = segment.provisional === true;
+    const isSegmentReadOnly = readOnly || isProvisional;
     const speakerName = speakerMap[segment.speaker] || segment.speaker;
     const isEditingSpeaker = editingSpeaker === segment.speaker;
     const isEditingSegmentSpeaker =
@@ -545,6 +553,7 @@ export default function TranscriptView({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isSegmentReadOnly) return;
                   if (activePopover?.index === originalIndex) {
                     setActivePopover(null);
                   } else {
@@ -556,17 +565,27 @@ export default function TranscriptView({
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
+                  if (isSegmentReadOnly) return;
                   setEditingSpeaker(segment.speaker);
                   setEditValue(speakerName);
                   setActivePopover(null);
                 }}
-                className="text-base font-bold text-gray-700 dark:text-gray-300 hover:text-orange-700 dark:hover:text-orange-400 transition-colors text-left"
-                title="Click to change speaker, Double-click to rename"
+                disabled={isSegmentReadOnly}
+                className={`text-base font-bold text-gray-700 dark:text-gray-300 transition-colors text-left ${
+                  isSegmentReadOnly
+                    ? "cursor-default"
+                    : "hover:text-orange-700 dark:hover:text-orange-400"
+                }`}
+                title={
+                  isSegmentReadOnly
+                    ? speakerName
+                    : "Click to change speaker, Double-click to rename"
+                }
               >
                 {speakerName}
               </button>
 
-              {activePopover?.index === originalIndex && (
+              {activePopover?.index === originalIndex && !isSegmentReadOnly && (
                 <SpeakerAssignmentPopover
                   availableSpeakers={speakers}
                   globalSpeakers={globalSpeakers}
@@ -589,8 +608,18 @@ export default function TranscriptView({
           id={`segment-${originalIndex}`}
           className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
             isEditingText ? "ring-2 ring-blue-500" : ""
+          } ${
+            isProvisional
+              ? "border-dashed border-2 opacity-70"
+              : ""
           }`}
         >
+          {isProvisional && (
+            <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:bg-orange-500/15 dark:text-orange-300">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
+              Live
+            </span>
+          )}
           {isEditingText ? (
             <textarea
               autoFocus
@@ -603,9 +632,13 @@ export default function TranscriptView({
             />
           ) : (
             <p
-              className="leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 cursor-text hover:text-gray-900 dark:hover:text-white"
+              className={`leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 ${
+                isSegmentReadOnly
+                  ? ""
+                  : "cursor-text hover:text-gray-900 dark:hover:text-white"
+              }`}
               onClick={(e) => handleTextClick(originalIndex, segment.text, e)}
-              title="Click to edit text"
+              title={isSegmentReadOnly ? undefined : "Click to edit text"}
             >
               {renderHighlightedText(segment.text, originalIndex)}
             </p>
