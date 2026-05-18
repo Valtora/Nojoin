@@ -122,7 +122,10 @@ export default function RecordingStatusDisplay({
         : Math.max(20, recording.processing_progress || 20);
 
   return (
-    <AmbientWorkspace>
+    <AmbientWorkspace
+      wrapperClassName="flex-1 overflow-visible"
+      backgroundClassName="bg-transparent"
+    >
       <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">

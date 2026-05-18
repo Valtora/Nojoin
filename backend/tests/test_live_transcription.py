@@ -27,23 +27,19 @@ validate_config_value = config_manager.validate_config_value
 
 
 def test_config_default_live_transcription_keys_present():
-    """The two live transcription keys ship in DEFAULT_SYSTEM_CONFIG."""
+    """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
-    assert DEFAULT_SYSTEM_CONFIG["live_transcription_backend"] == "parakeet"
+    assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
 
 
 def test_live_transcription_keys_survive_reload(tmp_path):
-    """Persisted live transcription keys survive a config_manager reload.
-
-    Keys absent from DEFAULT_SYSTEM_CONFIG are dropped by the persistence
-    filter on reload, so this guards against that regression.
-    """
+    """Persisted live transcription enablement survives a config_manager reload."""
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
             {
                 "enable_live_transcription": False,
-                "live_transcription_backend": "whisper",
+                "transcription_backend": "parakeet",
             }
         ),
         encoding="utf-8",
@@ -51,18 +47,11 @@ def test_live_transcription_keys_survive_reload(tmp_path):
 
     manager = ConfigManager(config_path=str(config_path))
     assert manager.get("enable_live_transcription") is False
-    assert manager.get("live_transcription_backend") == "whisper"
+    assert manager.get("transcription_backend") == "parakeet"
 
     manager.reload()
     assert manager.get("enable_live_transcription") is False
-    assert manager.get("live_transcription_backend") == "whisper"
-
-
-def test_validate_config_value_live_transcription_backend():
-    """live_transcription_backend accepts known backends and rejects others."""
-    assert validate_config_value("live_transcription_backend", "whisper") is True
-    assert validate_config_value("live_transcription_backend", "parakeet") is True
-    assert validate_config_value("live_transcription_backend", "bogus") is False
+    assert manager.get("transcription_backend") == "parakeet"
 
 
 def test_validate_config_value_enable_live_transcription():
@@ -443,13 +432,126 @@ def test_classify_speech_last_ends_with_silence():
 
 
 def test_classify_speech_forced_cut():
-    """A trailing region longer than FORCED_MAX is treated as complete."""
+    """A trailing region longer than the default forced max is complete."""
     from backend.processing.live_transcribe import classify_speech
 
-    speech = [{"start": 0.0, "end": 31.0}]
-    complete, cut = classify_speech(speech, 31.0)
+    speech = [{"start": 0.0, "end": 8.1}]
+    complete, cut = classify_speech(speech, 8.1)
     assert complete == speech
-    assert cut == 31.0
+    assert cut == 8.1
+
+
+def test_live_state_preserves_last_speaker_label(tmp_path):
+    """Live state persists the last stable speaker label across runs."""
+    from backend.processing.live_transcribe import read_live_state, write_live_state
+
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+
+    write_live_state(
+        live_dir,
+        {"next_expected": 3, "buffer_abs_start": 4.5, "last_speaker_label": "LIVE_02"},
+    )
+
+    state = read_live_state(live_dir)
+
+    assert state["next_expected"] == 3
+    assert state["buffer_abs_start"] == 4.5
+    assert state["last_speaker_label"] == "LIVE_02"
+
+
+def test_resolve_live_speaker_reuses_fallback_without_embedding(monkeypatch):
+    """Short/embedding-less live regions reuse the last stable speaker."""
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    class _ExecResult:
+        def all(self):
+            return [
+                SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1]),
+                SimpleNamespace(diarization_label="LIVE_02", embedding=[0.2]),
+            ]
+
+    class _Session:
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
+    )
+
+    label = _resolve_live_speaker(
+        session=_Session(),
+        recording_id=42,
+        user_id=None,
+        audio_path="/tmp/short.wav",
+        merged_config={},
+        fallback_label="LIVE_02",
+    )
+
+    assert label == "LIVE_02"
+
+
+def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
+    """Medium-confidence live embeddings reuse an existing speaker label."""
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    live_speaker = SimpleNamespace(
+        diarization_label="LIVE_01",
+        embedding=[0.1, 0.2],
+        global_speaker_id=None,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [live_speaker]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=48000, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding_core.extract_embedding_for_segments",
+        lambda *a, **k: [0.3, 0.4],
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.cosine_similarity",
+        lambda *a, **k: 0.5,
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.merge_embeddings",
+        lambda *a, **k: [0.2, 0.3],
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=None,
+        audio_path="/tmp/voice.wav",
+        merged_config={},
+    )
+
+    assert label == "LIVE_01"
+    assert live_speaker.embedding == [0.2, 0.3]
+    assert session.added == [live_speaker]
 
 
 def _patch_live_deps(monkeypatch, *, speech_map, transcribe_text="hello", db_status="UPLOADING"):

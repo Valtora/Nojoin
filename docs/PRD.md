@@ -152,6 +152,7 @@ The system provides the following core capabilities:
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
+  - **Transcription Engine Choices:** Whisper remains the broad-coverage default. Parakeet provides much faster transcription on supported NVIDIA systems, with a tradeoff of slightly lower accuracy and fewer supported languages. Normal live and final transcription use the same selected engine so live transcript work can be reused; different-engine transcription is handled through manual reprocessing.
   - **Phantom Speaker Filter:** Post-diarization stage that detects and reassigns segments caused by non-speech audio (notification sounds, background noise) to prevent phantom "UNKNOWN" speaker assignments. Uses heuristic detection validated by embedding similarity analysis.
 - **Processing Telemetry & ETA:** New processing runs persist `processing_started_at` and `processing_completed_at` on the recording and use those samples to estimate remaining processing time for future meetings.
   - **Learning Threshold:** ETA is only shown once at least three prior processed meetings with timing data exist.

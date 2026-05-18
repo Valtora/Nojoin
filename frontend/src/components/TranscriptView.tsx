@@ -19,6 +19,7 @@ import {
   Undo2,
   Redo2,
   Settings,
+  Radio,
 } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
@@ -54,6 +55,10 @@ interface TranscriptViewProps {
   canRedo: boolean;
   onExport: () => void;
   readOnly?: boolean;
+  allowProvisionalEdits?: boolean;
+  disableSegmentPlayback?: boolean;
+  emptyStateTitle?: string;
+  emptyStateDescription?: string;
   trimStartS?: number | null;
   trimEndS?: number | null;
 }
@@ -85,6 +90,10 @@ export default function TranscriptView({
   canRedo,
   onExport,
   readOnly = false,
+  allowProvisionalEdits = false,
+  disableSegmentPlayback = false,
+  emptyStateTitle = "No transcript segments",
+  emptyStateDescription,
   trimStartS,
   trimEndS,
 }: TranscriptViewProps) {
@@ -351,7 +360,7 @@ export default function TranscriptView({
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
-    if (readOnly || segments[index]?.provisional === true) return;
+    if (readOnly || (segments[index]?.provisional === true && !allowProvisionalEdits)) return;
     setEditingTextIndex(index);
     setEditValue(text);
     setEditingSpeaker(null);
@@ -518,7 +527,7 @@ export default function TranscriptView({
     const { segment, index: originalIndex } = item;
     const isActive = currentTime >= segment.start && currentTime < segment.end;
     const isProvisional = segment.provisional === true;
-    const isSegmentReadOnly = readOnly || isProvisional;
+    const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
     const speakerName = speakerMap[segment.speaker] || segment.speaker;
     const isEditingSpeaker = editingSpeaker === segment.speaker;
     const isEditingSegmentSpeaker =
@@ -528,6 +537,8 @@ export default function TranscriptView({
     const bubbleColor = isActive
       ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
       : getSpeakerColor(segment.speaker);
+    const speakerColorKey = speakerColors[segment.speaker] || "gray";
+    const speakerColor = getColorByKey(speakerColorKey);
 
     return (
       <div
@@ -587,7 +598,9 @@ export default function TranscriptView({
                   setActivePopover(null);
                 }}
                 disabled={isSegmentReadOnly}
-                className={`text-base font-bold text-gray-700 dark:text-gray-300 transition-colors text-left ${
+                className={`text-base font-bold transition-colors text-left ${
+                  isProvisional ? speakerColor.text : "text-gray-700 dark:text-gray-300"
+                } ${
                   isSegmentReadOnly
                     ? "cursor-default"
                     : "hover:text-orange-700 dark:hover:text-orange-400"
@@ -626,16 +639,10 @@ export default function TranscriptView({
             isEditingText ? "ring-2 ring-blue-500" : ""
           } ${
             isProvisional
-              ? "border-dashed border-2 opacity-70"
+              ? "border-dashed border-2 shadow-sm"
               : ""
           }`}
         >
-          {isProvisional && (
-            <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:bg-orange-500/15 dark:text-orange-300">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
-              Live
-            </span>
-          )}
           {isEditingText ? (
             <textarea
               autoFocus
@@ -726,8 +733,8 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-4 md:px-6 pb-3 flex flex-col md:flex-row items-stretch md:items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
-            <div className="relative flex-1 min-w-0">
+          <div className="px-4 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
+            <div className="relative min-w-48 flex-[1_1_14rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 placeholder="Find..."
@@ -763,7 +770,7 @@ export default function TranscriptView({
               )}
             </div>
             {showReplace && (
-              <div className="relative flex-1 min-w-0">
+              <div className="relative min-w-48 flex-[1_1_14rem]">
                 <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   placeholder="Replace..."
@@ -774,7 +781,7 @@ export default function TranscriptView({
               </div>
             )}
             {showReplace && (
-              <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mt-1 md:mt-0 w-full md:w-auto justify-end">
+              <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-2">
                 {/* Settings Toggle */}
                 <div className="relative">
                   <button
@@ -870,7 +877,23 @@ export default function TranscriptView({
       </div>
 
       <div className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0">
-        {trackGroups.map((group, groupIndex) => {
+        {trackGroups.length === 0 ? (
+          <div className="flex h-full min-h-[220px] items-center justify-center px-4">
+            <div className="flex max-w-sm flex-col items-center text-center">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+                <Radio className="h-4 w-4" />
+              </div>
+              <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {emptyStateTitle}
+              </div>
+              {emptyStateDescription && (
+                <div className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">
+                  {emptyStateDescription}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : trackGroups.map((group, groupIndex) => {
           const isGroupActive =
             currentTime >= group.start && currentTime < group.end;
           
@@ -888,30 +911,32 @@ export default function TranscriptView({
                 <span className="text-sm text-gray-400 font-mono mb-1">
                   {formatTime(group.start)}
                 </span>
-                <button
-                  onClick={() => {
-                    if (isGroupActive) {
-                      if (isPlaying) onPause();
-                      else onResume();
-                    } else {
-                      onPlaySegment(group.start, group.end);
+                {!disableSegmentPlayback && (
+                  <button
+                    onClick={() => {
+                      if (isGroupActive) {
+                        if (isPlaying) onPause();
+                        else onResume();
+                      } else {
+                        onPlaySegment(group.start, group.end);
+                      }
+                    }}
+                    className={`p-2 md:p-1.5 rounded-full transition-colors shadow-sm ${
+                      isGroupActive
+                        ? "bg-green-500 text-white hover:bg-green-600"
+                        : "bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400"
+                    }`}
+                    title={
+                      isGroupActive && isPlaying ? "Pause segment" : "Play segment"
                     }
-                  }}
-                  className={`p-2 md:p-1.5 rounded-full transition-colors shadow-sm ${
-                    isGroupActive
-                      ? "bg-green-500 text-white hover:bg-green-600"
-                      : "bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400"
-                  }`}
-                  title={
-                    isGroupActive && isPlaying ? "Pause segment" : "Play segment"
-                  }
-                >
-                  {isGroupActive && isPlaying ? (
-                    <Pause className="w-5 h-5 md:w-3 md:h-3 fill-current" />
-                  ) : (
-                    <Play className="w-5 h-5 md:w-3 md:h-3 fill-current" />
-                  )}
-                </button>
+                  >
+                    {isGroupActive && isPlaying ? (
+                      <Pause className="w-5 h-5 md:w-3 md:h-3 fill-current" />
+                    ) : (
+                      <Play className="w-5 h-5 md:w-3 md:h-3 fill-current" />
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Content */}

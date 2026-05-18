@@ -32,7 +32,6 @@ class SettingsUpdate(BaseModel):
     parakeet_model: Optional[str] = None
     canary_model: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
-    live_transcription_backend: Optional[str] = None
     theme: Optional[str] = None
     hf_token: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -59,13 +58,6 @@ class SettingsUpdate(BaseModel):
     def validate_transcription_backend(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in TRANSCRIPTION_BACKENDS:
             raise ValueError(f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
-        return value
-
-    @field_validator('live_transcription_backend')
-    @classmethod
-    def validate_live_transcription_backend(cls, value: Optional[str]) -> Optional[str]:
-        if value and value not in TRANSCRIPTION_BACKENDS:
-            raise ValueError(f"Invalid live_transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
         return value
 
     @field_validator('theme')

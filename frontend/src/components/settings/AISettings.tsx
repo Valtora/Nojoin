@@ -748,10 +748,15 @@ export default function AISettings({
         <SettingsSection
           eyebrow="Administration"
           title="Transcription model"
-          description="Choose which Whisper model size the installation should run for transcription."
+          description="Choose the engine Nojoin uses for live and final transcription during normal recording."
           width="regular"
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-4">
+            <SettingsCallout
+              tone="info"
+              title="Live and final transcription use the same engine"
+              message="Normal recording reuses the live transcript during final processing. Change the engine here before manually reprocessing a meeting when you want a different transcription pass."
+            />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 <Tooltip
@@ -791,7 +796,7 @@ export default function AISettings({
                       {settings.parakeet_model || "parakeet-tdt-0.6b-v3"}
                     </div>
                     <p className="mt-1 text-xs contrast-helper">
-                      Current active model for transcription.
+                      Fast NVIDIA transcription with slightly lower accuracy and fewer supported languages than Whisper.
                     </p>
                   </div>
                 </div>

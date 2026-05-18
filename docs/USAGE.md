@@ -86,7 +86,11 @@ Manual notes are captured with low-latency autosave behaviour so typing remains 
 
 ### Live Transcription
 
-While a meeting is recording, provisional transcript segments appear in the transcript view roughly 3 seconds behind speech. These segments are read-only and marked with a `Live` badge. Live segments are transcribed with padded speech regions plus a short rolling audio context window, so live quality tracks the final transcript more closely and word edges are not clipped. When the recording is stopped and processed, they are automatically replaced by the final diarized transcript.
+While a meeting is recording, the live transcript pane is visible immediately. It shows a listening state until speech is detected, then provisional transcript segments appear as live utterances complete. Long continuous speech is force-emitted after roughly 8 seconds, so natural monologues do not wait for a 30-second cutoff. These segments use per-speaker colours and can be edited while the recording is still in flight. Live speaker names and live transcript edits are treated as authoritative and carried into final processing.
+
+Live speaker labels are assigned by an online embedding matcher. Matching voice regions keep the same provisional `LIVE_XX` speaker identity, while very short or embedding-less regions reuse the most recent stable live speaker instead of creating a new speaker for every fragment.
+
+The normal stop-to-final workflow uses the same transcription engine for live and final transcription so Nojoin can reuse the live transcript rather than transcribing the meeting again from scratch. Final processing still performs diarisation, speaker reconciliation, voiceprint work when enabled, and meeting-intelligence generation.
 
 ## Importing Recordings
 
@@ -139,14 +143,14 @@ Retry Processing:
 
 ### Reprocess a Recording
 
-From the recording detail page you can **Reprocess at higher quality**. This re-runs the full pipeline like Retry Processing, but lets you pick the transcription engine for this run only.
+From the recording detail page you can **Reprocess at higher quality**. This re-runs the full pipeline like Retry Processing after you change the transcription engine or model in Settings.
 
 Reprocessing:
 
-- Lets you choose the transcription engine (for example a more accurate model) for this run.
+- Uses the transcription engine and model currently selected in Settings.
 - Clears and rebuilds the transcript and generated artefacts, preserving metadata, tags, documents, and user-authored notes.
 - Asks for confirmation before discarding the existing transcript.
-- Does not change your default transcription settings; the chosen engine applies to this reprocess only.
+- Use this when you want a different transcription pass from the one used during live capture.
 
 ## Transcript and Playback Workflow
 
@@ -253,6 +257,7 @@ Depending on permissions, users may also see or adjust:
 - Provider API keys or Ollama URL.
 - Transcription engine selection (Whisper, Parakeet or Canary).
 - Whisper model settings.
+- Parakeet is much faster than Whisper on supported NVIDIA systems, but it may be slightly less accurate and supports fewer languages. Use Whisper when language coverage or accuracy is more important than speed.
 - Local Ollama configuration.
 
 The Personal settings area no longer exposes separate automatic title, notes, or speaker-inference toggles. Automatic AI enhancement runs whenever provider configuration is complete, and `Prefer Short Titles` remains the main user-facing behavior control for that stage.

@@ -106,6 +106,9 @@ export interface TranscriptSegment {
   speaker: string;
   overlapping_speakers?: string[];
   provisional?: boolean;
+  segment_source?: "live" | string;
+  speaker_manually_edited?: boolean;
+  text_manually_edited?: boolean;
 }
 
 export interface Transcript extends BaseDBModel {
@@ -171,7 +174,6 @@ export interface Settings {
   parakeet_model?: string;
   canary_model?: string;
   enable_live_transcription?: boolean;
-  live_transcription_backend?: string;
   processing_device?: string;
   theme?: string;
   timezone?: string;

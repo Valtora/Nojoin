@@ -92,15 +92,24 @@ runs:
 
 1. Each segment upload endpoint dispatches a live transcription task
    (`backend/processing/live_transcribe.py`).
-2. The task slices completed speech regions, transcribes them with the engine
-   selected by `live_transcription_backend`, and appends provisional segments
-   to `Transcript.segments` (each flagged `"provisional": True`). VAD regions
+2. The task slices completed speech regions, transcribes them with the same
+   engine selected by `transcription_backend` for final processing, assigns
+   provisional live speaker identities, and appends provisional segments to
+   `Transcript.segments` (each flagged `"provisional": True`). VAD regions
    are padded and each region clip is prepended with a short rolling audio
    context window (`live/context.wav`) so the engine has acoustic run-up and
    word edges are not clipped; the engine output is then sliced back to the
-   region. The final batch pipeline is unchanged.
-3. The web client polls the transcript roughly every 3 seconds to render the
-   provisional text.
+   region.
+3. The web client shows the live transcript pane as soon as the recording is in
+   flight and polls uploading recordings roughly every second. Completed live
+   utterances appear after VAD detects the end of speech, and long continuous
+   speech is force-emitted after about 8 seconds to avoid monologue-length
+   delays.
+4. Live speaker assignment uses online voice embeddings. Matching regions are
+   merged into stable `LIVE_XX` speaker labels; short or embedding-less regions
+   reuse the most recent stable label instead of creating new speaker churn.
+   Live speaker names and transcript edits made by the user are treated as
+   authoritative.
 
 Segments are numbered sequentially but uploaded concurrently, so the lane uses
 a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording
@@ -108,13 +117,17 @@ a **sequence-gated buffer**. Each task reads `next_expected` from a per-recordin
 immediately (its WAV waits on disk), and only the task holding `next_expected`
 drains the contiguous run of segments present on disk. Audio from the trailing,
 not-yet-complete utterance is **carried over** in `live/buffer.wav` and joined
-to the next run, so an utterance split across a segment boundary is transcribed
-once as a whole.
+to the next run, so an utterance split across a segment boundary is normally
+transcribed once as a whole. If speech continues past the live forced-emission
+window, the lane emits the current speech region and starts a new live segment.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
-runs the full pipeline against the source audio and overwrites the provisional
-segments with the final transcript.
+reuses the live transcript text for the normal final pass, runs diarisation and
+speaker reconciliation, preserves authoritative user edits, and replaces the
+provisional markers with the finalized transcript. A different transcription
+engine is reserved for explicit manual reprocessing after the user changes the
+transcription engine in Settings.
 
 ## Calendar Flow
 

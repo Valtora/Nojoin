@@ -201,8 +201,9 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
             if find_text in segment['text']:
                 new_text = segment['text'].replace(find_text, replace_text)
                 if new_text != segment['text']:
-                   segment['text'] = new_text
-                   total_segment_replacements += 1
+                      segment['text'] = new_text
+                      segment['text_manually_edited'] = True
+                      total_segment_replacements += 1
                    
         if transcript.notes and find_text in transcript.notes:
              transcript.notes = transcript.notes.replace(find_text, replace_text)
@@ -236,6 +237,7 @@ def _apply_find_replace(transcript: Transcript, find_text: str, replace_text: st
             new_text, count = regex.subn(replace_text, segment['text'])
             if count > 0:
                 segment['text'] = new_text
+                segment['text_manually_edited'] = True
                 total_segment_replacements += 1
         
         # Replace in notes
@@ -794,6 +796,7 @@ async def update_segment_speaker(
     # 3. Update Transcript Segment
     updated_segments = [dict(entry) for entry in transcript.segments]
     reconcile_segment_assignment(updated_segments, segment_index, old_label, target_label)
+    updated_segments[segment_index]["speaker_manually_edited"] = True
     transcript.segments = updated_segments
     flag_modified(transcript, "segments")
     db.add(transcript)
@@ -869,7 +872,10 @@ async def update_transcript_segment_text(
         raise HTTPException(status_code=400, detail="Invalid segment index")
         
     # 2. Update Segment
-    transcript.segments[segment_index]['text'] = update.text
+    updated_segments = [dict(entry) for entry in transcript.segments]
+    updated_segments[segment_index]['text'] = update.text
+    updated_segments[segment_index]['text_manually_edited'] = True
+    transcript.segments = updated_segments
     flag_modified(transcript, "segments")
     
     # 3. Reconstruct Full Text

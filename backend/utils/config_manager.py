@@ -90,8 +90,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
     "enable_live_transcription": True,
-    "live_transcription_backend": "parakeet",
     "live_context_window_s": 5.0,
+    "live_forced_max_s": 8.0,
     "live_speech_pad_ms": 300,
     "vad_parameters": {
         "threshold": 0.5,
@@ -242,8 +242,6 @@ class ConfigManager:
         if key == "whisper_model_size" and value not in WHISPER_MODEL_SIZES:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
-            return value in TRANSCRIPTION_BACKENDS
-        if key == "live_transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
         if key == "enable_live_transcription":
             return isinstance(value, bool)

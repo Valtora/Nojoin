@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
@@ -267,6 +268,9 @@ async def update_recording_speaker(
     for rs in recording_speakers:
         if rs.local_name: old_names.add(rs.local_name)
         if rs.name: old_names.add(rs.name)
+        live_match = re.match(r"^LIVE_(\d+)$", rs.diarization_label or "")
+        if live_match:
+            old_names.add(f"Speaker {int(live_match.group(1))}")
         # Also captures the new name in case the transcript already stores it directly.
         old_names.add(update.global_speaker_name)
 

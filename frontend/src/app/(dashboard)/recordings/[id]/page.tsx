@@ -192,9 +192,10 @@ export default function RecordingPage({ params }: PageProps) {
     }
 
     const pollIntervalMs =
-      recording.status === RecordingStatus.PROCESSED &&
-      recording.has_proxy === false &&
-      !isDemoRecording(recording)
+      recording.status === RecordingStatus.UPLOADING ||
+      (recording.status === RecordingStatus.PROCESSED &&
+        recording.has_proxy === false &&
+        !isDemoRecording(recording))
         ? 1000
         : 3000;
 
@@ -537,10 +538,39 @@ export default function RecordingPage({ params }: PageProps) {
   // Transcript Handlers
   const handleRenameSpeaker = async (label: string, newName: string) => {
     if (!recording) return;
+    const previousDisplayName = speakerMap[label] || label;
     // Note: Global speaker rename is not currently undoable via segment history
     // as it affects the global speaker table, not just segments.
     try {
       await updateSpeaker(recording.id, label, newName);
+      setRecording((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          speakers: (prev.speakers || []).map((speaker) =>
+            speaker.diarization_label === label
+              ? {
+                  ...speaker,
+                  local_name: newName,
+                  name: undefined,
+                  global_speaker_id: undefined,
+                  global_speaker: undefined,
+                }
+              : speaker,
+          ),
+          transcript: prev.transcript
+            ? {
+                ...prev.transcript,
+                segments: (prev.transcript.segments || []).map((segment) =>
+                  segment.speaker === previousDisplayName
+                    ? { ...segment, speaker: label }
+                    : segment,
+                ),
+              }
+            : prev.transcript,
+        };
+      });
       router.refresh();
       const updated = await getRecording(recording.id);
       setRecording(updated);
@@ -1077,42 +1107,54 @@ export default function RecordingPage({ params }: PageProps) {
     );
   }
 
+  const isInFlightRecording =
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PROCESSING ||
+    recording.status === RecordingStatus.QUEUED;
+  const hasLiveTranscriptSegments =
+    Boolean(recording.transcript?.segments?.length) &&
+    recording.transcript?.segments?.some(
+      (segment) => segment.provisional === true || segment.segment_source === "live",
+    );
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-1 flex min-h-0">
-        {recording.status === RecordingStatus.UPLOADING ||
-        recording.status === RecordingStatus.PROCESSING ||
-        recording.status === RecordingStatus.QUEUED ? (
-          recording.status === RecordingStatus.UPLOADING &&
-          recording.transcript?.segments &&
-          recording.transcript.segments.length > 0 ? (
-            <PanelGroup
-              direction="horizontal"
-              autoSaveId="recording-live-layout-persistence"
-              className="h-full flex-1 min-w-0"
-            >
-              <Panel defaultSize={60} minSize={30}>
-                <RecordingStatusDisplay
-                  recording={recording}
-                  onSaveProcessingNotes={handleProcessingNotesChange}
-                />
+        {isInFlightRecording ? (
+          <PanelGroup
+            direction="horizontal"
+            autoSaveId="recording-live-layout-v2"
+            className="h-full flex-1 min-w-0"
+          >
+            <Panel defaultSize={60} minSize={32}>
+                <div className="h-full min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.34),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.26),_transparent_36%),linear-gradient(180deg,_#ffedd5_0%,_#fff7ed_45%,_#ffe4c4_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_34%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_50%,_#0b1220_100%)]">
+                  <RecordingStatusDisplay
+                    recording={recording}
+                    onSaveProcessingNotes={handleProcessingNotesChange}
+                  />
+                </div>
               </Panel>
 
               <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
                 <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
               </PanelResizeHandle>
 
-              <Panel defaultSize={40} minSize={25}>
+              <Panel defaultSize={40} minSize={32}>
                 <div className="flex flex-col h-full min-h-0 bg-white dark:bg-gray-800">
                   <div className="px-4 py-3 border-b-2 border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-900">
-                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Live transcript
-                    </h2>
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        Live Transcript
+                      </h2>
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+                        {hasLiveTranscriptSegments ? "Editable" : "Listening"}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex-1 min-h-0">
                     <TranscriptView
                       recordingId={recording.id}
-                      segments={recording.transcript.segments}
+                      segments={recording.transcript?.segments || []}
                       currentTime={currentTime}
                       onPlaySegment={handlePlaySegment}
                       isPlaying={isPlaying}
@@ -1131,20 +1173,17 @@ export default function RecordingPage({ params }: PageProps) {
                       canUndo={false}
                       canRedo={false}
                       onExport={() => setShowExportModal(true)}
-                      readOnly
+                      allowProvisionalEdits
+                      disableSegmentPlayback
+                      emptyStateTitle="Listening for speech"
+                      emptyStateDescription="Live transcript text will appear as Nojoin detects speech."
                       trimStartS={recording.trim_start_s}
                       trimEndS={recording.trim_end_s}
                     />
                   </div>
                 </div>
               </Panel>
-            </PanelGroup>
-          ) : (
-            <RecordingStatusDisplay
-              recording={recording}
-              onSaveProcessingNotes={handleProcessingNotesChange}
-            />
-          )
+          </PanelGroup>
         ) : isMobile ? (
           <div className="h-full flex-1 flex flex-col min-w-0 relative">
             {renderMainContent()}

@@ -347,6 +347,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker, AUTO_UPDATE_THRESHOLD
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
+    from backend.utils.live_transcript import (
+        apply_live_authority_to_segments,
+        build_transcription_result_from_segments,
+        map_final_speakers_to_live_labels,
+    )
 
     config_manager.reload()
     
@@ -373,6 +378,17 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             
     llm_config = resolve_llm_config(session, user_settings)
     merged_config = llm_config.merged_config
+    live_segments_for_reuse = []
+    if engine_override is None:
+        initial_transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == recording.id)
+        ).first()
+        if initial_transcript and initial_transcript.segments:
+            live_segments_for_reuse = [
+                dict(segment)
+                for segment in initial_transcript.segments
+                if segment.get("segment_source") == "live" or segment.get("provisional") is True
+            ]
     
     # Platform/Device detection for UX
     import torch
@@ -518,8 +534,25 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             merged_config.update(engine_override)
             logger.info("Reprocess: engine override applied: %s", engine_override)
 
-        # Run Whisper
-        transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
+        transcription_result = None
+        reused_live_transcript_segments = []
+        if live_segments_for_reuse and engine_override is None:
+            transcription_result, reused_live_transcript_segments = (
+                build_transcription_result_from_segments(live_segments_for_reuse)
+            )
+            if transcription_result:
+                recording.processing_step = f"Reusing live transcript...{device_suffix}"
+                session.add(recording)
+                session.commit()
+                logger.info(
+                    "Reusing %s live transcript segments for recording %s",
+                    len(reused_live_transcript_segments),
+                    recording_id,
+                )
+
+        if not transcription_result:
+            # Run the configured transcription engine.
+            transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
         
         # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
@@ -593,6 +626,35 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.error("Transcription result is None or missing segments during fallback.")
                 combined_segments = []
 
+        label_map_from_final_to_live = {}
+        if reused_live_transcript_segments and combined_segments:
+            if diarization_result:
+                label_map_from_final_to_live = map_final_speakers_to_live_labels(
+                    live_segments_for_reuse,
+                    combined_segments,
+                )
+            else:
+                for index, segment in enumerate(combined_segments):
+                    if index < len(live_segments_for_reuse):
+                        live_label = live_segments_for_reuse[index].get("speaker")
+                        if live_label:
+                            segment["speaker"] = live_label
+
+            if label_map_from_final_to_live:
+                for segment in combined_segments:
+                    current_label = segment.get("speaker")
+                    if current_label in label_map_from_final_to_live:
+                        segment["speaker"] = label_map_from_final_to_live[current_label]
+                    if segment.get("overlapping_speakers"):
+                        segment["overlapping_speakers"] = [
+                            label_map_from_final_to_live.get(label, label)
+                            for label in segment.get("overlapping_speakers", [])
+                        ]
+            combined_segments = apply_live_authority_to_segments(
+                live_segments_for_reuse,
+                combined_segments,
+            )
+
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
         logger.info(f"Final segments after consolidation: {len(final_segments)}")
@@ -652,6 +714,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             session.commit()
             logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
             speaker_embeddings = extract_embeddings(processed_audio_path, diarization_result, device_str=merged_config.get("processing_device", "cpu"), config=merged_config)
+            if label_map_from_final_to_live:
+                speaker_embeddings = {
+                    label_map_from_final_to_live.get(label, label): embedding
+                    for label, embedding in speaker_embeddings.items()
+                }
         elif not enable_auto_voiceprints:
             logger.info("Skipping voiceprint extraction (enable_auto_voiceprints=False)")
         

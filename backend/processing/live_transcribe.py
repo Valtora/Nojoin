@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+from typing import Any
 
 from backend.celery_app import celery_app
 from backend.utils.config_manager import config_manager
@@ -17,13 +18,19 @@ logger = logging.getLogger(__name__)
 
 # Tolerance (seconds) for treating a speech region as touching the buffer end.
 TRAIL_EPS = 0.20
-# Maximum length (seconds) of a trailing utterance before a forced cut.
-FORCED_MAX = 30.0
+# Default maximum length (seconds) of a trailing utterance before a forced cut.
+DEFAULT_FORCED_MAX = 8.0
 # Sample rate of the live audio buffer.
 LIVE_SAMPLE_RATE = 16000
 # Silence threshold (ms) for the live lane: longer than the batch default so
 # normal inter-phrase pauses do not fragment the live transcript.
 LIVE_MIN_SILENCE_MS = 700
+LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
+LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.45
+LIVE_NEW_SPEAKER_THRESHOLD = 0.35
+LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
+LIVE_MIN_EMBEDDING_DURATION_S = 0.5
+LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
 
 _STATE_FILENAME = "state.json"
 _BUFFER_FILENAME = "buffer.wav"
@@ -33,13 +40,14 @@ _CONTEXT_FILENAME = "context.wav"
 def read_live_state(live_dir) -> dict:
     """Read the live lane state, returning defaults when absent or unreadable."""
     state_path = os.path.join(str(live_dir), _STATE_FILENAME)
-    default = {"next_expected": 1, "buffer_abs_start": 0.0}
+    default = {"next_expected": 1, "buffer_abs_start": 0.0, "last_speaker_label": None}
     try:
         with open(state_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return {
             "next_expected": int(data.get("next_expected", 1)),
             "buffer_abs_start": float(data.get("buffer_abs_start", 0.0)),
+            "last_speaker_label": data.get("last_speaker_label"),
         }
     except (FileNotFoundError, ValueError, OSError):
         return default
@@ -48,17 +56,22 @@ def read_live_state(live_dir) -> dict:
 def write_live_state(live_dir, state: dict) -> None:
     """Persist the live lane state to disk."""
     state_path = os.path.join(str(live_dir), _STATE_FILENAME)
+    state_payload = {
+        "next_expected": int(state["next_expected"]),
+        "buffer_abs_start": float(state["buffer_abs_start"]),
+    }
+    if state.get("last_speaker_label"):
+        state_payload["last_speaker_label"] = state["last_speaker_label"]
     with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "next_expected": int(state["next_expected"]),
-                "buffer_abs_start": float(state["buffer_abs_start"]),
-            },
-            f,
-        )
+        json.dump(state_payload, f)
 
 
-def classify_speech(speech: list[dict], combined_len: float) -> tuple[list[dict], float]:
+def classify_speech(
+    speech: list[dict],
+    combined_len: float,
+    *,
+    forced_max_s: float = DEFAULT_FORCED_MAX,
+) -> tuple[list[dict], float]:
     """Split detected speech regions into completed regions and a carry-over cut point.
 
     Returns (complete_segments, cut_point) where cut_point is the buffer offset
@@ -71,7 +84,7 @@ def classify_speech(speech: list[dict], combined_len: float) -> tuple[list[dict]
     last = speech[-1]
     trailing_incomplete = last["end"] >= combined_len - TRAIL_EPS
 
-    if trailing_incomplete and (combined_len - last["start"]) >= FORCED_MAX:
+    if trailing_incomplete and (combined_len - last["start"]) >= forced_max_s:
         # Trailing utterance has run too long; treat it as complete now.
         return speech, combined_len
     if trailing_incomplete:
@@ -83,16 +96,202 @@ def classify_speech(speech: list[dict], combined_len: float) -> tuple[list[dict]
 
 def _build_live_config() -> dict:
     """Build a minimal config dict for the live transcription engine call."""
-    backend = config_manager.get("live_transcription_backend", "parakeet")
+    backend = config_manager.get("transcription_backend", "whisper")
     return {
         "transcription_backend": backend,
-        "live_transcription_backend": backend,
         "parakeet_model": config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3"),
         "whisper_model_size": config_manager.get("whisper_model_size", "turbo"),
         "processing_device": config_manager.get("processing_device", "auto"),
         "context_window_s": config_manager.get("live_context_window_s", 5.0),
+        "forced_max_s": config_manager.get("live_forced_max_s", DEFAULT_FORCED_MAX),
         "speech_pad_ms": config_manager.get("live_speech_pad_ms", 300),
     }
+
+
+def _get_live_speaker_display_name(index: int) -> str:
+    return f"Speaker {index}"
+
+
+def _get_live_speaker_label(index: int) -> str:
+    return f"LIVE_{index:02d}"
+
+
+def _get_speaker_display_name(speaker: Any) -> str:
+    global_speaker = getattr(speaker, "global_speaker", None)
+    return (
+        getattr(speaker, "local_name", None)
+        or (getattr(global_speaker, "name", None) if global_speaker else None)
+        or getattr(speaker, "name", None)
+        or _get_live_speaker_display_name(1)
+    )
+
+
+def _resolve_live_speaker(
+    *,
+    session,
+    recording_id: int,
+    user_id: int | None,
+    audio_path: str,
+    merged_config: dict,
+    fallback_label: str | None = None,
+) -> str:
+    from sqlmodel import select
+
+    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+    from backend.processing.embedding import cosine_similarity, merge_embeddings
+    from backend.processing.embedding_core import extract_embedding_for_segments
+
+    existing_speakers = session.exec(
+        select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    ).all()
+    live_speakers = [
+        speaker
+        for speaker in existing_speakers
+        if speaker.diarization_label.startswith("LIVE_")
+    ]
+    live_speaker_by_label = {speaker.diarization_label: speaker for speaker in live_speakers}
+
+    embedding = None
+    duration = 0.0
+    try:
+        import soundfile as sf
+
+        info = sf.info(audio_path)
+        duration = float(info.frames) / float(info.samplerate)
+    except Exception:
+        duration = 0.0
+
+    if duration >= LIVE_MIN_EMBEDDING_DURATION_S:
+        try:
+            embedding = extract_embedding_for_segments(
+                audio_path,
+                [(0.0, duration)],
+                device_str=merged_config.get("processing_device", "auto"),
+                hf_token=merged_config.get("hf_token"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Live embedding extraction failed for recording %s: %s",
+                recording_id,
+                exc,
+                exc_info=True,
+            )
+
+    if not embedding:
+        if fallback_label and fallback_label in live_speaker_by_label:
+            return fallback_label
+        if len(live_speakers) == 1:
+            return live_speakers[0].diarization_label
+        if live_speakers:
+            return live_speakers[-1].diarization_label
+
+    if embedding:
+        best_speaker = None
+        best_score = 0.0
+        for speaker in live_speakers:
+            if not speaker.embedding:
+                continue
+            score = cosine_similarity(speaker.embedding, embedding)
+            if score > best_score:
+                best_score = score
+                best_speaker = speaker
+
+        if not best_speaker and fallback_label and fallback_label in live_speaker_by_label:
+            fallback_speaker = live_speaker_by_label[fallback_label]
+            fallback_speaker.embedding = embedding
+            session.add(fallback_speaker)
+            session.flush()
+            return fallback_speaker.diarization_label
+
+        if best_speaker and best_score >= LIVE_SPEAKER_MATCH_THRESHOLD:
+            best_speaker.embedding = merge_embeddings(
+                best_speaker.embedding,
+                embedding,
+                alpha=0.25,
+                drift_guard=False,
+            )
+            session.add(best_speaker)
+            session.flush()
+            return best_speaker.diarization_label
+
+        if best_speaker and best_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD:
+            best_speaker.embedding = merge_embeddings(
+                best_speaker.embedding,
+                embedding,
+                alpha=0.10,
+                drift_guard=False,
+            )
+            session.add(best_speaker)
+            session.flush()
+            return best_speaker.diarization_label
+
+        if user_id:
+            global_speakers = session.exec(
+                select(GlobalSpeaker)
+                .where(GlobalSpeaker.user_id == user_id)
+                .where(GlobalSpeaker.embedding != None)
+            ).all()
+            best_global = None
+            best_global_score = 0.0
+            for global_speaker in global_speakers:
+                score = cosine_similarity(global_speaker.embedding, embedding)
+                if score > best_global_score:
+                    best_global_score = score
+                    best_global = global_speaker
+
+            if best_global and best_global_score >= LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD:
+                linked_speaker = next(
+                    (
+                        speaker
+                        for speaker in live_speakers
+                        if speaker.global_speaker_id == best_global.id
+                    ),
+                    None,
+                )
+                if linked_speaker:
+                    linked_speaker.embedding = merge_embeddings(
+                        linked_speaker.embedding or [],
+                        embedding,
+                        alpha=0.25,
+                        drift_guard=False,
+                    )
+                    session.add(linked_speaker)
+                    session.flush()
+                    return linked_speaker.diarization_label
+
+                next_index = len(live_speakers) + 1
+                live_speaker = RecordingSpeaker(
+                    recording_id=recording_id,
+                    diarization_label=_get_live_speaker_label(next_index),
+                    name=None,
+                    global_speaker_id=best_global.id,
+                    embedding=embedding,
+                )
+                session.add(live_speaker)
+                session.flush()
+                return live_speaker.diarization_label
+
+        if live_speakers:
+            if (
+                best_speaker
+                and best_score > LIVE_NEW_SPEAKER_THRESHOLD
+            ) or duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
+                if fallback_label and fallback_label in live_speaker_by_label:
+                    return fallback_label
+                if best_speaker:
+                    return best_speaker.diarization_label
+                return live_speakers[-1].diarization_label
+
+    next_index = len(live_speakers) + 1
+    live_speaker = RecordingSpeaker(
+        recording_id=recording_id,
+        diarization_label=_get_live_speaker_label(next_index),
+        name=_get_live_speaker_display_name(next_index),
+        embedding=embedding,
+    )
+    session.add(live_speaker)
+    session.flush()
+    return live_speaker.diarization_label
 
 
 def _extract_region_text(result: dict, prefix_s: float) -> str:
@@ -201,8 +400,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
 
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording, RecordingStatus
+    from backend.models.user import User
     from backend.processing.vad import detect_speech_segments, safe_read_audio
     from backend.processing.transcribe import transcribe_audio
+    from backend.worker.tasks import resolve_llm_config
 
     config_manager.reload()
 
@@ -264,13 +465,60 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         live_config = _build_live_config()
         W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
 
+        # --- Load user-aware config once for live speaker matching ---
+        merged_config = live_config
+        user_id = None
+        session = get_sync_session()
+        try:
+            recording = session.get(Recording, recording_id)
+            if recording:
+                user_id = getattr(recording, "user_id", None)
+                user_settings = {}
+                if user_id:
+                    user = session.get(User, user_id)
+                    if user and user.settings:
+                        user_settings = user.settings
+                if hasattr(session, "exec"):
+                    merged_config = resolve_llm_config(session, user_settings).merged_config
+                merged_config.setdefault("transcription_backend", live_config["transcription_backend"])
+                live_config.update(
+                    {
+                        "transcription_backend": merged_config.get(
+                            "transcription_backend",
+                            live_config["transcription_backend"],
+                        ),
+                        "parakeet_model": merged_config.get(
+                            "parakeet_model",
+                            live_config["parakeet_model"],
+                        ),
+                        "whisper_model_size": merged_config.get(
+                            "whisper_model_size",
+                            live_config["whisper_model_size"],
+                        ),
+                        "processing_device": merged_config.get(
+                            "processing_device",
+                            live_config["processing_device"],
+                        ),
+                        "forced_max_s": merged_config.get(
+                            "live_forced_max_s",
+                            live_config["forced_max_s"],
+                        ),
+                    }
+                )
+        finally:
+            session.close()
+
         # --- Detect speech and classify ---
         speech = detect_speech_segments(
             combined,
             min_silence_duration_ms=LIVE_MIN_SILENCE_MS,
             speech_pad_ms=live_config["speech_pad_ms"],
         )
-        complete, cut_point = classify_speech(speech, combined_len)
+        complete, cut_point = classify_speech(
+            speech,
+            combined_len,
+            forced_max_s=float(live_config["forced_max_s"]),
+        )
 
         # --- Read the rolling left-context buffer (already-consumed audio) ---
         context_path = str(live_dir / _CONTEXT_FILENAME)
@@ -298,16 +546,54 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             prefix_s = left_context.numel() / LIVE_SAMPLE_RATE
 
             clip_path = str(live_dir / "clip.wav")
+            region_path = str(live_dir / f"speaker_region_{sp['start']:.3f}_{sp['end']:.3f}.wav")
             try:
                 import silero_vad
 
                 tensor = clip if clip.ndim > 1 else clip.unsqueeze(0)
                 silero_vad.save_audio(clip_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
+                region_tensor = region if region.ndim > 1 else region.unsqueeze(0)
+                silero_vad.save_audio(
+                    region_path,
+                    region_tensor,
+                    sampling_rate=LIVE_SAMPLE_RATE,
+                )
                 result = transcribe_audio(clip_path, config=live_config)
+                speaker_label = "UNKNOWN"
+                session = get_sync_session()
+                try:
+                    speaker_label = _resolve_live_speaker(
+                        session=session,
+                        recording_id=recording_id,
+                        user_id=user_id,
+                        audio_path=region_path,
+                        merged_config=merged_config,
+                        fallback_label=state.get("last_speaker_label"),
+                    )
+                    session.commit()
+                except Exception as speaker_exc:
+                    if hasattr(session, "rollback"):
+                        session.rollback()
+                    logger.warning(
+                        "Live speaker matching failed for recording %s region %.2f-%.2f: %s",
+                        recording_id,
+                        combined_abs_start + sp["start"],
+                        combined_abs_start + sp["end"],
+                        speaker_exc,
+                        exc_info=True,
+                    )
+                finally:
+                    session.close()
+
             finally:
                 if os.path.exists(clip_path):
                     try:
                         os.remove(clip_path)
+                    except OSError:
+                        pass
+                if os.path.exists(region_path):
+                    try:
+                        os.remove(region_path)
                     except OSError:
                         pass
 
@@ -321,11 +607,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 {
                     "start": combined_abs_start + sp["start"],
                     "end": combined_abs_start + sp["end"],
-                    "speaker": "UNKNOWN",
+                    "speaker": speaker_label,
                     "text": text,
                     "provisional": True,
+                    "segment_source": "live",
                 }
             )
+            if speaker_label != "UNKNOWN":
+                state["last_speaker_label"] = speaker_label
 
         # --- Carry over the unconsumed trailing audio ---
         cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
