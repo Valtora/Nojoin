@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+from pathlib import Path
+import wave
 
 import pytest
 from fastapi import FastAPI
@@ -138,6 +142,30 @@ CREATE TABLE transcripts (
 )
 """
 
+RECORDING_AUDIO_CHUNKS_SCHEMA = """
+CREATE TABLE recording_audio_chunks (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    absolute_start_ms INTEGER NOT NULL,
+    absolute_end_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    sample_rate_hz INTEGER NOT NULL,
+    channel_count INTEGER NOT NULL,
+    byte_size INTEGER NOT NULL,
+    sha256 VARCHAR(128) NOT NULL,
+    storage_path VARCHAR(1024) NOT NULL,
+    upload_status VARCHAR(32) NOT NULL,
+    idempotency_key VARCHAR(255),
+    received_at DATETIME NOT NULL,
+    cleanup_eligible_at DATETIME
+)
+"""
+
 
 def build_test_user(user_id: int = 1, username: str = "alice", settings: dict | None = None):
     from types import SimpleNamespace
@@ -148,6 +176,18 @@ def build_test_user(user_id: int = 1, username: str = "alice", settings: dict | 
         force_password_change=False,
         settings=settings or {},
     )
+
+
+def _make_wav_bytes(*, duration_s: float = 0.5, sample_rate: int = 16000) -> bytes:
+    frame_count = int(duration_s * sample_rate)
+    pcm_frames = b"\x00\x00" * frame_count
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_frames)
+    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -162,6 +202,7 @@ async def test_session_maker() -> sessionmaker:
     async with engine.begin() as connection:
         await connection.execute(text(RECORDINGS_SCHEMA))
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
 
     try:
         yield session_maker
@@ -1268,6 +1309,7 @@ async def _insert_uploading_recording(
     recording_id: int = 101,
     public_id: str = "live-rec-public-id",
     user_id: int = 1,
+    audio_path: str = "/tmp/live.wav",
 ) -> None:
     """Insert a single recording row in UPLOADING status into the test DB."""
     async with session_maker() as session:
@@ -1290,7 +1332,7 @@ async def _insert_uploading_recording(
                 "name": "Live meeting",
                 "public_id": public_id,
                 "meeting_uid": "live-meeting-uid",
-                "audio_path": "/tmp/live.wav",
+                "audio_path": audio_path,
                 "status": "UPLOADING",
                 "user_id": user_id,
             },
@@ -1336,6 +1378,19 @@ async def test_segment_upload_dispatches_live_task_when_enabled(
     assert response.json() == {"status": "received", "segment": 3}
     assert len(calls) == 1
     assert calls[0][0] == (101, 3)
+
+    async with test_session_maker() as session:
+        chunk_row = (
+            await session.execute(
+                text(
+                    "SELECT sequence_no, upload_status, byte_size, storage_path FROM recording_audio_chunks WHERE recording_id = 101"
+                )
+            )
+        ).one()
+        assert chunk_row[0] == 3
+        assert chunk_row[1] == "received"
+        assert chunk_row[2] == len(b"fake-wav-bytes")
+        assert chunk_row[3] == str(tmp_path / "3.wav")
 
 
 @pytest.mark.anyio
@@ -1413,6 +1468,192 @@ async def test_segment_upload_swallows_live_task_dispatch_failure(
 
     assert response.status_code == 200
     assert response.json() == {"status": "received", "segment": 5}
+
+
+@pytest.mark.anyio
+async def test_segment_upload_swallows_metric_failure_after_commit(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """A metrics failure after commit must not roll back or delete a successful upload."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    await _insert_uploading_recording(test_session_maker, recording_id=101)
+
+    monkeypatch.setattr(
+        recordings_module, "recording_upload_temp_dir", lambda *a, **k: tmp_path
+    )
+    monkeypatch.setattr(
+        recordings_module.config_manager,
+        "get",
+        lambda key, default=None: False if key == "enable_live_transcription" else default,
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("metrics unavailable")
+
+    monkeypatch.setattr(recordings_module, "record_pipeline_metric", boom)
+
+    response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 7},
+        files={"file": ("7.wav", b"fake-wav-bytes", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "received", "segment": 7}
+    assert (tmp_path / "7.wav").exists()
+
+    async with test_session_maker() as session:
+        chunk_row = (
+            await session.execute(
+                text(
+                    "SELECT sequence_no, upload_status, storage_path FROM recording_audio_chunks WHERE recording_id = 101"
+                )
+            )
+        ).one()
+
+        assert chunk_row[0] == 7
+        assert chunk_row[1] == "received"
+        assert chunk_row[2] == str(tmp_path / "7.wav")
+
+
+@pytest.mark.anyio
+async def test_segment_upload_retry_reuses_existing_chunk_row(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    await _insert_uploading_recording(test_session_maker, recording_id=101)
+
+    monkeypatch.setattr(
+        recordings_module, "recording_upload_temp_dir", lambda *a, **k: tmp_path
+    )
+    monkeypatch.setattr(
+        recordings_module.config_manager,
+        "get",
+        lambda key, default=None: False if key == "enable_live_transcription" else default,
+    )
+
+    first_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 3},
+        files={"file": ("3.wav", b"fake-wav-bytes", "audio/wav")},
+    )
+    second_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 3},
+        files={"file": ("3.wav", b"fake-wav-bytes", "audio/wav")},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*), MIN(sequence_no), MAX(sequence_no) FROM recording_audio_chunks WHERE recording_id = 101"
+                )
+            )
+        ).one()
+
+        assert row[0] == 1
+        assert row[1] == 3
+        assert row[2] == 3
+
+
+@pytest.mark.anyio
+async def test_segment_upload_persists_chunk_metadata_and_finalize_marks_cleanup(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    final_audio_path = tmp_path / "final.wav"
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    await _insert_uploading_recording(
+        test_session_maker,
+        recording_id=101,
+        audio_path=str(final_audio_path),
+    )
+
+    monkeypatch.setattr(
+        recordings_module, "recording_upload_temp_dir", lambda *a, **k: upload_dir
+    )
+    monkeypatch.setattr(
+        recordings_module.config_manager,
+        "get",
+        lambda key, default=None: False if key == "enable_live_transcription" else default,
+    )
+
+    concatenated_paths: list[list[str]] = []
+
+    def fake_concatenate_wavs(paths: list[str], destination: str) -> None:
+        concatenated_paths.append(list(paths))
+        Path(destination).write_bytes(b"joined-audio")
+
+    monkeypatch.setattr(recordings_module, "concatenate_wavs", fake_concatenate_wavs)
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(
+        recordings_module.process_recording_task,
+        "delay",
+        lambda recording_id: SimpleNamespace(id=f"task-{recording_id}"),
+    )
+    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
+
+    wav_bytes = _make_wav_bytes(duration_s=0.5, sample_rate=16000)
+    upload_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 0},
+        files={"file": ("0.wav", wav_bytes, "audio/wav")},
+    )
+
+    assert upload_response.status_code == 200
+
+    finalize_response = await client.post("/api/v1/recordings/live-rec-public-id/finalize")
+
+    assert finalize_response.status_code == 200
+    assert concatenated_paths == [[str(upload_dir / "0.wav")]]
+    assert upload_dir.exists()
+    assert (upload_dir / "0.wav").exists()
+
+    async with test_session_maker() as session:
+        chunk_row = (
+            await session.execute(
+                text(
+                    "SELECT sample_rate_hz, channel_count, duration_ms, sha256, upload_status, cleanup_eligible_at "
+                    "FROM recording_audio_chunks WHERE recording_id = 101 AND sequence_no = 0"
+                )
+            )
+        ).one()
+        recording_row = (
+            await session.execute(
+                text(
+                    "SELECT status, file_size_bytes, celery_task_id FROM recordings WHERE id = 101"
+                )
+            )
+        ).one()
+
+    assert chunk_row[0] == 16000
+    assert chunk_row[1] == 1
+    assert chunk_row[2] == 500
+    assert chunk_row[3] == hashlib.sha256(wav_bytes).hexdigest()
+    assert chunk_row[4] == "finalized"
+    assert chunk_row[5] is not None
+    assert recording_row[0] == "QUEUED"
+    assert recording_row[1] == len(b"joined-audio")
+    assert recording_row[2] == "task-101"
 
 
 # --- Celery registration test ----------------------------------------------

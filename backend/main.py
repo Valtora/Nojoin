@@ -109,6 +109,16 @@ from backend.models.chat import ChatMessage
 from backend.models.companion_pairing import CompanionPairing
 from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
+from backend.models.pipeline import (
+    RecordingAudioChunk,
+    ProcessingRun,
+    TranscriptUtterance,
+    TranscriptUtteranceEvent,
+    RecordingSpeakerAlias,
+    SpeakerCorrectionEvent,
+    DiarizationWindowResult,
+    DiarizationWindowTurn,
+)
 from backend.core.db import async_session_maker
 from backend.seed_demo import seed_demo_data
 from backend.services.recording_identity_service import ensure_recording_meeting_uids, ensure_recording_public_ids

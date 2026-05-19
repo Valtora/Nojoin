@@ -97,6 +97,9 @@ CREATE TABLE recording_speakers (
     diarization_label VARCHAR(255),
     local_name VARCHAR(255),
     name VARCHAR(255),
+    processing_run_id INTEGER,
+    last_speaker_correction_event_id INTEGER,
+    last_diarization_window_result_id INTEGER,
     snippet_start FLOAT,
     snippet_end FLOAT,
     voice_snippet_path VARCHAR(1024)

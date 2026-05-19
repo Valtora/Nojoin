@@ -92,17 +92,27 @@ CREATE TABLE recording_speakers (
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
     recording_id INTEGER NOT NULL,
     global_speaker_id INTEGER,
     diarization_label VARCHAR NOT NULL,
     local_name VARCHAR,
     name VARCHAR,
+    speaker_status VARCHAR NOT NULL DEFAULT 'active',
+    speaker_kind VARCHAR NOT NULL DEFAULT 'automated',
     snippet_start FLOAT,
     snippet_end FLOAT,
     voice_snippet_path VARCHAR,
     embedding JSON,
     color VARCHAR,
-    merged_into_id INTEGER
+    merged_into_id INTEGER,
+    processing_run_id INTEGER,
+    last_speaker_correction_event_id INTEGER,
+    last_diarization_window_result_id INTEGER,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    identity_confidence FLOAT,
+    identity_locked BOOLEAN NOT NULL DEFAULT 0
 );
 """
 

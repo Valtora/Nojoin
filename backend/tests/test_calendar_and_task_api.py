@@ -139,6 +139,9 @@ SCHEMA_STATEMENTS = [
         diarization_label VARCHAR(255) NOT NULL,
         local_name VARCHAR(255),
         name VARCHAR(255),
+        processing_run_id INTEGER,
+        last_speaker_correction_event_id INTEGER,
+        last_diarization_window_result_id INTEGER,
         merged_into_id INTEGER
     )
     """,

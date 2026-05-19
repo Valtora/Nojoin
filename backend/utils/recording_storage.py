@@ -4,7 +4,16 @@ import logging
 import os
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
+
+from sqlmodel import select
+
+from backend.models.pipeline import RecordingAudioChunk
+from backend.utils.time import utc_now
+
+
+RECORDING_UPLOAD_RETENTION_HOURS = 24
 
 
 def recordings_root_dir(*, create: bool = True) -> Path:
@@ -93,6 +102,92 @@ def delete_recording_artifacts(
         shutil.rmtree(temp_dir)
     except OSError as error:
         logger.warning("Failed to delete recording temp directory %s: %s", temp_dir, error)
+
+
+def _cleanup_empty_chunk_parent_dirs(path: Path, *, logger: logging.Logger) -> None:
+    candidate = path.parent
+    roots: list[Path] = []
+    for root in (recordings_temp_dir(create=False), recordings_failed_dir(create=False)):
+        try:
+            roots.append(root.resolve())
+        except OSError:
+            continue
+
+    while True:
+        try:
+            resolved_candidate = candidate.resolve()
+        except OSError:
+            return
+
+        matching_root = next(
+            (
+                root
+                for root in roots
+                if resolved_candidate == root or root in resolved_candidate.parents
+            ),
+            None,
+        )
+        if matching_root is None:
+            return
+
+        try:
+            next(candidate.iterdir())
+            return
+        except StopIteration:
+            pass
+        except OSError as error:
+            logger.warning("Failed to inspect recording chunk directory %s: %s", candidate, error)
+            return
+
+        if resolved_candidate == matching_root:
+            try:
+                candidate.rmdir()
+            except OSError:
+                pass
+            return
+
+        try:
+            candidate.rmdir()
+        except OSError as error:
+            logger.warning("Failed to remove empty recording chunk directory %s: %s", candidate, error)
+            return
+        candidate = candidate.parent
+
+
+def cleanup_recording_audio_chunks(
+    session,
+    *,
+    logger: logging.Logger,
+    now: datetime | None = None,
+) -> int:
+    cutoff = now or utc_now()
+    rows = session.exec(
+        select(RecordingAudioChunk)
+        .where(RecordingAudioChunk.cleanup_eligible_at.is_not(None))
+        .where(RecordingAudioChunk.cleanup_eligible_at <= cutoff)
+        .where(RecordingAudioChunk.upload_status.in_(["finalized", "failed"]))
+    ).all()
+
+    cleaned_count = 0
+    for row in rows:
+        resolved_path = _resolve_path_within_recordings_root(row.storage_path)
+        if resolved_path is not None and resolved_path.exists():
+            try:
+                resolved_path.unlink()
+                cleaned_count += 1
+            except OSError as error:
+                logger.warning("Failed to delete recording chunk file %s: %s", resolved_path, error)
+                continue
+            _cleanup_empty_chunk_parent_dirs(resolved_path, logger=logger)
+
+        row.upload_status = "cleaned"
+        row.cleanup_eligible_at = None
+        session.add(row)
+
+    if rows:
+        session.commit()
+
+    return cleaned_count
 
 
 def move_recording_upload_to_failed(

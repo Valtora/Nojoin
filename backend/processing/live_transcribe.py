@@ -533,9 +533,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     )
 
     # The live lane is only meaningful while the recording is uploading. Once
-    # finalize() runs, the API deletes the upload temp dir; a live task that is
-    # still queued must stop here rather than recreate an orphan dir or crash on
-    # the vanished buffer/state files. The final pipeline is authoritative.
+    # finalize() changes the recording status, queued live work must stop even
+    # though uploaded chunk files may remain on disk until lifecycle cleanup.
+    # The final pipeline is authoritative after the status flip.
     session = get_sync_session()
     try:
         recording = session.get(Recording, recording_id)
@@ -556,6 +556,18 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         session.close()
 
     temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        record_pipeline_metric(
+            stage="live_task_skipped",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "reason": "upload_buffer_missing",
+            },
+            status="skipped",
+            log=logger,
+        )
+        return
     live_dir = temp_dir / "live"
     live_dir.mkdir(parents=True, exist_ok=True)
 

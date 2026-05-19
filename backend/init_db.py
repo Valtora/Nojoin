@@ -12,6 +12,16 @@ from backend.models.chat import ChatMessage
 from backend.models.companion_pairing import CompanionPairing
 from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
+from backend.models.pipeline import (
+    RecordingAudioChunk,
+    ProcessingRun,
+    TranscriptUtterance,
+    TranscriptUtteranceEvent,
+    RecordingSpeakerAlias,
+    SpeakerCorrectionEvent,
+    DiarizationWindowResult,
+    DiarizationWindowTurn,
+)
 from backend.seed_demo import seed_demo_data
 
 logger = logging.getLogger(__name__)

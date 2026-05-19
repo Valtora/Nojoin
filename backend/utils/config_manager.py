@@ -81,6 +81,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
     "companion_url": "http://localhost:12345", # Default Companion App URL
     "web_app_url": "https://localhost:14443", # Default Web App URL
+    "enable_canonical_transcript_writes": True,
     "recordings_directory": "recordings",  # Relative to user data directory
     "processing_device": _get_default_device(), # Default to GPU if available
     "default_input_device_index": None, # None means system default
@@ -261,7 +262,7 @@ class ConfigManager:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
-        if key in {"enable_live_transcription", "enable_meeting_edge"}:
+        if key in {"enable_live_transcription", "enable_meeting_edge", "enable_canonical_transcript_writes"}:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:
             return isinstance(value, (int, float)) and float(value) > 0

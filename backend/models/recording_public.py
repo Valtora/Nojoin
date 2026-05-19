@@ -20,6 +20,7 @@ class PublicModel(BaseModel):
 
 class RecordingSpeakerPublicRead(PublicModel):
     id: int
+    public_id: str
     created_at: datetime
     updated_at: datetime
     recording_id: str
@@ -30,6 +31,12 @@ class RecordingSpeakerPublicRead(PublicModel):
     color: Optional[str] = None
     has_voiceprint: bool = False
     merged_into_id: Optional[int] = None
+    speaker_status: str = "active"
+    speaker_kind: str = "automated"
+    first_seen_ms: Optional[int] = None
+    last_seen_ms: Optional[int] = None
+    identity_confidence: Optional[float] = None
+    identity_locked: bool = False
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 
@@ -121,6 +128,7 @@ def serialize_recording_speaker(
 ) -> RecordingSpeakerPublicRead:
     return RecordingSpeakerPublicRead(
         id=speaker.id,
+        public_id=speaker.public_id,
         created_at=speaker.created_at,
         updated_at=speaker.updated_at,
         recording_id=recording_public_id,
@@ -131,6 +139,12 @@ def serialize_recording_speaker(
         color=speaker.color,
         has_voiceprint=speaker.has_voiceprint,
         merged_into_id=speaker.merged_into_id,
+        speaker_status=speaker.speaker_status,
+        speaker_kind=speaker.speaker_kind,
+        first_seen_ms=speaker.first_seen_ms,
+        last_seen_ms=speaker.last_seen_ms,
+        identity_confidence=speaker.identity_confidence,
+        identity_locked=speaker.identity_locked,
         global_speaker=(
             GlobalSpeakerRead.model_validate(speaker.global_speaker)
             if speaker.global_speaker is not None

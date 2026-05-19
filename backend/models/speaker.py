@@ -1,6 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
+from uuid import uuid4
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column, BigInteger, ForeignKey
+from sqlalchemy import Column, BigInteger, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from pydantic import computed_field
 from .base import BaseDBModel
@@ -11,6 +12,10 @@ if TYPE_CHECKING:
 
 from .people_tag import PeopleTagLink, PeopleTag
 from .people_tag_schemas import PeopleTagRead
+
+
+def generate_recording_speaker_public_id() -> str:
+    return str(uuid4())
 
 class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
@@ -80,6 +85,17 @@ class GlobalSpeakerWithCount(GlobalSpeakerRead):
 
 class RecordingSpeaker(BaseDBModel, table=True):
     __tablename__ = "recording_speakers"
+
+    public_id: str = Field(
+        default_factory=generate_recording_speaker_public_id,
+        sa_column=Column(
+            String(36),
+            unique=True,
+            index=True,
+            nullable=False,
+            default=generate_recording_speaker_public_id,
+        ),
+    )
     
     recording_id: int = Field(sa_column=Column(BigInteger, ForeignKey("recordings.id", ondelete="CASCADE")))
     global_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("global_speakers.id", ondelete="SET NULL")))
@@ -92,6 +108,16 @@ class RecordingSpeaker(BaseDBModel, table=True):
     # DEPRECATED: The resolved name for this speaker (kept for backward compatibility)
     # New code should use local_name or global_speaker.name
     name: Optional[str] = None
+
+    speaker_status: str = Field(default="active")
+    speaker_kind: str = Field(default="automated")
+    processing_run_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("processing_runs.id", ondelete="SET NULL"), index=True))
+    last_speaker_correction_event_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("speaker_correction_events.id", ondelete="SET NULL"), index=True))
+    last_diarization_window_result_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("diarization_window_results.id", ondelete="SET NULL"), index=True))
+    first_seen_ms: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
+    last_seen_ms: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
+    identity_confidence: Optional[float] = None
+    identity_locked: bool = Field(default=False)
 
     # Optional snippet for identification
     snippet_start: Optional[float] = None

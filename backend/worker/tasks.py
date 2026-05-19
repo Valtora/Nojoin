@@ -18,6 +18,7 @@ from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
+from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag
 from backend.models.user import User
@@ -49,9 +50,10 @@ from backend.utils.meeting_notes import (
     meeting_event_context_from_calendar_event,
 )
 from backend.models.calendar import CalendarEvent
-from backend.utils.recording_storage import cleanup_stale_recording_artifacts
+from backend.utils.recording_storage import cleanup_recording_audio_chunks, cleanup_stale_recording_artifacts
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
+from backend.utils.canonical_pipeline import replace_utterances_from_segments
 from backend.processing.text_embedding import get_text_embedding_service
 
 if TYPE_CHECKING:
@@ -1348,6 +1350,18 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             
         transcript.segments = updated_segments
         session.add(transcript)
+        if config_manager.get("enable_canonical_transcript_writes", True):
+            replace_utterances_from_segments(
+                session,
+                recording_id=recording.id,
+                segments=[dict(segment) for segment in updated_segments],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                force=True,
+                state_override=TranscriptUtteranceState.FINALIZED,
+                reused_live_asr=bool(reused_live_transcript_segments),
+                trigger_source="worker",
+            )
 
         recording_speakers = session.exec(
             select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
@@ -1910,15 +1924,16 @@ def infer_speakers_task(self, recording_id: int):
         except Exception as db_err:
             logger.error(f"Failed to revert recording status: {db_err}")
 
-@celery_app.task
-def cleanup_temp_recordings():
+@celery_app.task(base=DatabaseTask, bind=True)
+def cleanup_temp_recordings(self):
     """
     Periodic task to clean up old temporary files and failed uploads.
     Runs every 24 hours.
     """
     logger.info("Starting cleanup of temp recordings...")
-    
-    cleaned_count = cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
+
+    cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
+    cleaned_count += cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
 
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
 

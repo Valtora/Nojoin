@@ -78,39 +78,88 @@ Exit gate:
 
 Purpose: replace append-only transcript JSON assumptions with durable identities and event-aware state.
 
-- [ ] Define the canonical processing model.
-  - [ ] `RecordingAudioChunk` for durable uploaded chunks and timing metadata.
-  - [ ] `TranscriptUtterance` or equivalent stable segment object with immutable ID.
-  - [ ] `DiarizationWindowResult` for rolling Pyannote output and model metadata.
-  - [ ] `RecordingSpeaker` canonical speaker identity for the recording.
-  - [ ] `SpeakerAlias` or merge/correction mapping from transient labels to canonical speakers.
-  - [ ] `SpeakerCorrectionEvent` for user-authored assignments, renames, and merges.
-  - [ ] `ProcessingRun` for live, catch-up, finalize, reprocess, and import runs.
-  - [ ] Confidence and provenance fields for transcript text, speaker labels, and inferred names.
-- [ ] Choose storage shape.
-  - [ ] Decide which objects move from `Transcript.segments` JSONB into relational tables.
-  - [ ] Keep a compatibility read model for existing API responses.
-  - [ ] Define transaction boundaries for live workers updating utterances and speaker state.
-  - [ ] Define idempotency keys for chunk, ASR, diarization, and reconciliation tasks.
-- [ ] Design the update model.
-  - [ ] Create utterance events: create, update text, update timing, update speaker, supersede, finalize.
-  - [ ] Define how backward-looking diarization revisions are applied.
-  - [ ] Define how manual edits block or constrain automated revisions.
-  - [ ] Define how overlapping speech is represented without corrupting primary text order.
-- [ ] Design API contracts.
-  - [ ] Stable segment/utterance IDs for speaker and text edits.
-  - [ ] Speaker correction scopes: this segment, this speaker everywhere, from now on, merge speakers.
-  - [ ] Live transcript polling or event responses that include revision metadata.
-  - [ ] Final transcript response compatible with the current frontend until migration completes.
-- [ ] Write the migration plan.
-  - [ ] Alembic migration for new tables or columns.
-  - [ ] Backfill existing transcript JSON segments into stable utterance records if needed.
-  - [ ] Preserve existing `RecordingSpeaker` rows and global speaker links.
-  - [ ] Rollback strategy for schema changes.
+- [x] Freeze the approved Phase 1 defaults before schema work starts.
+  - [x] The canonical write model will be relational current-state tables plus immutable event tables, not `Transcript.segments` JSONB.
+  - [x] `Transcript.segments` will remain only as a compatibility projection for existing API and frontend consumers.
+  - [x] `RecordingSpeaker` will remain the canonical per-recording speaker identity table and will be extended rather than replaced.
+  - [x] Stable utterance IDs will survive text-only and speaker-only revisions, but boundary-changing split and merge operations will supersede prior utterances with new IDs.
+  - [x] The originally approved design-only scope has now been implemented through the minimum schema, migration, compatibility API, worker sync, and test seams needed to exercise the canonical model.
+- [x] Define the canonical relational write model in dependency order.
+  - [x] Add `RecordingAudioChunk` as the durable uploaded-audio source for live, catch-up, finalize, and import flows.
+    - [x] Required fields: internal `id`, public `public_id`, `recording_id`, `sequence_no`, `source_kind`, `absolute_start_ms`, `absolute_end_ms`, `duration_ms`, `sample_rate_hz`, `channel_count`, `byte_size`, `sha256`, `storage_path`, `upload_status`, `idempotency_key`, `received_at`, `cleanup_eligible_at`.
+    - [x] Define uniqueness and idempotency around `(recording_id, sequence_no)` plus `idempotency_key`.
+    - [x] Define retention and cleanup ownership without relying on upload temp-dir deletion.
+  - [x] Add `ProcessingRun` as the canonical run ledger for `live`, `catch_up`, `finalize`, `reprocess`, `import`, and `backfill`.
+    - [x] Required fields: internal `id`, public `public_id`, `recording_id`, optional `parent_run_id`, `run_kind`, `trigger_source`, optional `requested_by_user_id`, `status`, `config_hash`, `transcription_backend`, `diarization_backend`, `model_metadata`, `span_start_ms`, `span_end_ms`, `reused_live_asr`, `idempotency_key`, `metrics`, `error_summary`, `started_at`, `completed_at`.
+    - [x] Define the default cardinality as one live run per recording session, with additional runs for catch-up, finalize, import, reprocess, and backfill.
+  - [x] Add `TranscriptUtterance` as the canonical transcript display row.
+    - [x] Required fields: internal `id`, public `public_id`, `recording_id`, `sort_key`, `start_ms`, `end_ms`, `text`, optional `recording_speaker_id`, `state`, `source_kind`, `processing_run_id`, `revision`, optional `overlap_group_id`, `overlap_rank`, `manual_text_locked`, `manual_speaker_locked`, `text_confidence`, `speaker_confidence`, `confidence_payload`, `created_at`, `updated_at`.
+    - [x] Define state values for provisional, stable, superseded, finalized, and deleted or tombstoned views.
+  - [x] Add `TranscriptUtteranceEvent` as the immutable utterance change log.
+    - [x] Required fields: `id`, `recording_id`, `utterance_id`, optional `processing_run_id`, optional `actor_user_id`, `event_type`, `source`, `old_values`, `new_values`, `resulting_revision`, `created_at`.
+    - [x] Cover create, revise text, revise timing, revise speaker, split, merge, supersede, manual lock, and finalize events.
+  - [x] Extend `RecordingSpeaker` into the canonical recording-speaker identity row.
+    - [x] Additive fields: public `public_id`, `speaker_status`, `speaker_kind`, `first_seen_ms`, `last_seen_ms`, `identity_confidence`, `identity_locked`.
+    - [x] Keep `global_speaker_id`, `local_name`, `embedding`, `color`, `merged_into_id`, and existing merge-chain semantics.
+    - [x] Keep `diarization_label` only as a legacy alias input and compatibility surface, not as the long-term identity key.
+  - [x] Add `RecordingSpeakerAlias` to map transient labels and names onto canonical recording speakers.
+    - [x] Required fields: `id`, `recording_speaker_id`, `alias_type`, `alias_value`, optional `source_run_id`, `active`, optional `valid_from_ms`, optional `valid_to_ms`, `confidence`, `created_at`.
+    - [x] Cover `LIVE_XX`, `SPEAKER_XX`, `MANUAL_x`, inferred names, imported labels, and merge-related aliases.
+  - [x] Add `SpeakerCorrectionEvent` as the authoritative user-intent log.
+    - [x] Required fields: `id`, public `public_id`, `recording_id`, `actor_user_id`, optional `utterance_id`, optional `source_recording_speaker_id`, optional `target_recording_speaker_id`, optional `target_global_speaker_id`, `event_type`, `scope`, optional `effective_from_ms`, `payload`, `created_at`.
+    - [x] Cover rename, utterance assignment, recording-wide reassignment, from-now-on reassignment, merge, link-to-global, and promote-to-global actions.
+  - [x] Add `DiarizationWindowResult` and `DiarizationWindowTurn` as the rolling and final diarization store.
+    - [x] `DiarizationWindowResult` fields: `id`, public `public_id`, `recording_id`, `processing_run_id`, `window_index`, `window_start_ms`, `window_end_ms`, optional `chunk_start_sequence`, optional `chunk_end_sequence`, `model_name`, `model_version`, `device`, `config_hash`, `status`, `raw_payload`, `created_at`.
+    - [x] `DiarizationWindowTurn` fields: `id`, `window_result_id`, `local_speaker_key`, `start_ms`, `end_ms`, `confidence`, optional `matched_recording_speaker_id`, `metadata`.
+  - [x] Define the shared provenance and confidence conventions.
+    - [x] Store human-facing confidence as normalized `0..1` floats.
+    - [x] Store raw provider or model evidence in JSONB fields.
+    - [x] Require every canonical write row to retain the producing `processing_run_id` and the last correcting event or diarization window that touched it.
+- [x] Define the compatibility read model and serializer boundary.
+  - [x] Keep `Transcript` as the notes, user-notes, Meeting Edge, and compatibility projection shell.
+  - [x] Project current active `TranscriptUtterance` rows back into `Transcript.segments` for existing response serializers.
+  - [x] Preserve the current frontend shape during rollout while allowing additive fields such as `id`, `revision`, `recording_speaker_id`, `state`, `speaker_confidence`, `text_confidence`, and `updated_at`.
+  - [x] Define projection rules for overlapping speech so existing transcript rendering is preserved until the later UX phase.
+  - [x] Define how merged speakers, aliases, and global-speaker links resolve into the compatibility segment `speaker` field.
+- [x] Define transaction, concurrency, and idempotency boundaries.
+  - [x] Specify which writes must be atomic when live workers create or revise utterances, speaker identities, aliases, and run state.
+  - [x] Define idempotency keys for chunk ingest, ASR window processing, diarization window processing, reconciliation, and finalize promotion.
+  - [x] Define retry semantics so failed live or catch-up work can be replayed without duplicate canonical rows.
+  - [x] Define ordering guarantees between `RecordingAudioChunk`, `ProcessingRun`, `TranscriptUtteranceEvent`, and compatibility projection refreshes.
+- [x] Define the canonical update and supersession model.
+  - [x] Specify when an automated revision updates an utterance in place versus superseding it with replacement utterances.
+  - [x] Specify how backward-looking diarization revisions attach to existing utterances and when they create split or merge supersession chains.
+  - [x] Specify how manual text edits block automated text replacement.
+  - [x] Specify how manual speaker edits block automated speaker reassignment unless the user explicitly changes scope.
+  - [x] Specify how overlapping speech is represented without corrupting primary chronological transcript order.
+  - [x] Specify how tombstones or superseded utterances are exposed to later live-delta consumers.
+- [x] Define the API contract cutover plan.
+  - [x] Add stable utterance ID read and write contracts while preserving existing index-based endpoints as compatibility wrappers.
+  - [x] Define canonical text-edit input: `utterance_id`, `text`, `expected_revision`.
+  - [x] Define canonical speaker-edit input: `utterance_id`, target speaker selector, correction scope, and `expected_revision`.
+  - [x] Define correction scopes explicitly: `utterance_only`, `speaker_everywhere_in_recording`, `from_this_utterance_forward`, and `merge_into_speaker`.
+  - [x] Define live transcript polling or event envelopes with transcript revision metadata, changed utterances, and superseded utterance IDs.
+  - [x] Define the compatibility rule that current `GET /recordings/{id}` and transcript payloads remain consumable by the existing frontend during rollout.
+  - [x] Define deprecation handling for whole-array transcript replacement so current undo and redo keep working until stable-ID editing lands in the frontend.
+- [x] Define the migration, backfill, and rollback package.
+  - [x] Write the additive Alembic plan for new tables, new columns, and required indexes without removing `Transcript.segments`.
+  - [x] Define completed-recording backfill order: create `ProcessingRun`, reuse or normalize `RecordingSpeaker`, generate aliases, create `TranscriptUtterance`, create `TranscriptUtteranceEvent`, then project back into `Transcript.segments`.
+  - [x] Preserve manual flags currently stored in segment JSON, including `speaker_manually_edited` and `text_manually_edited`.
+  - [x] Preserve existing `RecordingSpeaker` rows, merge chains, global speaker links, and voiceprint data.
+  - [x] Define how to exclude in-flight `UPLOADING`, `QUEUED`, and `PROCESSING` recordings from backfill until later live-pipeline cutover phases.
+  - [x] Define rollback behavior with a feature flag that disables canonical writes and falls back to legacy JSON read and write behavior.
+- [x] Define the Phase 1 validation and handoff package.
+  - [x] Add migration design tests for backfilling legacy transcript JSON into canonical utterances.
+  - [x] Add projection tests proving canonical utterances serialize back into the current transcript response shape.
+  - [x] Add API contract tests for utterance-ID text edits, speaker edits, correction scopes, and compatibility wrappers.
+  - [x] Add alias and merge tests covering `LIVE_XX`, `SPEAKER_XX`, `MANUAL_x`, merged speakers, and global-speaker links.
+  - [x] Add supersession tests covering utterance split, merge, and tombstone behavior.
+  - [x] Add rollback and feature-flag tests proving legacy reads still work with canonical writes disabled.
+  - [x] Record open implementation dependencies that later phases will consume directly: durable chunk ingest, unified live ASR, rolling diarization, backward speaker revision, and frontend live revision UX.
 
 Exit gate:
 
-- [ ] Architecture notes, schema decisions, and API contracts are approved before implementation begins.
+- [x] The canonical Phase 1 design package is fully documented, including schema definitions, compatibility rules, update semantics, migration and rollback strategy, API contracts, and the test plan needed for implementation in later phases.
 
 ## Phase 2: Durable Audio Ingest and Rolling Window Store
 

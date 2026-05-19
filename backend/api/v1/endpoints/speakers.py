@@ -29,6 +29,11 @@ from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
 )
+from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+from backend.utils.canonical_pipeline import (
+    record_recording_speaker_corrections,
+    recording_ready_for_canonical_backfill,
+)
 from backend.utils.config_manager import config_manager
 from backend.celery_app import celery_app
 
@@ -46,6 +51,10 @@ async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
+
+
+def _canonical_transcript_writes_enabled() -> bool:
+    return bool(config_manager.get("enable_canonical_transcript_writes", True))
 
 
 def _serialize_recording_speakers(
@@ -263,6 +272,11 @@ async def update_recording_speaker(
     
     if not recording_speakers:
         raise HTTPException(status_code=404, detail=f"No speakers found with label {update.diarization_label} in this recording")
+
+    old_display_names = {
+        rs.id: (rs.local_name or rs.name or rs.diarization_label)
+        for rs in recording_speakers
+    }
         
     # Capture old names for transcript repair
     old_names = set()
@@ -323,6 +337,35 @@ async def update_recording_speaker(
             flag_modified(transcript, "segments")
             db.add(transcript)
 
+    segments_repaired = segments_updated if transcript and transcript.segments else False
+
+    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        event_type = (
+            SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
+            if global_speaker is not None
+            else SpeakerCorrectionEventType.RENAME
+        )
+        await db.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=recording.id,
+                target_recording_speaker_ids=[rs.id for rs in recording_speakers],
+                actor_user_id=current_user.id,
+                event_type=event_type,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=global_speaker.id if global_speaker is not None else None,
+                payload_by_speaker_id={
+                    rs.id: {
+                        "old_name": old_display_names.get(rs.id),
+                        "new_name": update.global_speaker_name,
+                        "matched_global_speaker": global_speaker is not None,
+                        "segments_repaired": segments_repaired,
+                    }
+                    for rs in recording_speakers
+                },
+            )
+        )
+
     await db.commit()
     record_pipeline_metric(
         stage="speaker_correction_applied",
@@ -332,7 +375,7 @@ async def update_recording_speaker(
             "diarization_label": update.diarization_label,
             "new_name": update.global_speaker_name,
             "matched_global_speaker": global_speaker is not None,
-            "segments_repaired": segments_updated if transcript and transcript.segments else False,
+            "segments_repaired": segments_repaired,
         },
         log=logger,
     )
@@ -417,6 +460,30 @@ async def promote_speaker_to_global(
         recording_speaker.name = None
     
     db.add(recording_speaker)
+
+    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        event_type = (
+            SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
+            if existing_global is not None
+            else SpeakerCorrectionEventType.PROMOTE_GLOBAL_SPEAKER
+        )
+        await db.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=recording.id,
+                target_recording_speaker_ids=[recording_speaker.id],
+                actor_user_id=current_user.id,
+                event_type=event_type,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=recording_speaker.global_speaker_id,
+                payload={
+                    "old_name": speaker_name,
+                    "new_name": speaker_name,
+                    "created_global_speaker": existing_global is None,
+                },
+            )
+        )
+
     await db.commit()
     await db.refresh(recording_speaker)
     

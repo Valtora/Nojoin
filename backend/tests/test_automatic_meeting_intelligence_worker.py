@@ -68,17 +68,27 @@ CREATE TABLE recording_speakers (
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
     recording_id INTEGER NOT NULL,
     global_speaker_id INTEGER,
     diarization_label VARCHAR NOT NULL,
     local_name VARCHAR,
     name VARCHAR,
+    speaker_status VARCHAR NOT NULL DEFAULT 'active',
+    speaker_kind VARCHAR NOT NULL DEFAULT 'automated',
     snippet_start FLOAT,
     snippet_end FLOAT,
     voice_snippet_path VARCHAR,
     embedding JSON,
     color VARCHAR,
-    merged_into_id INTEGER
+    merged_into_id INTEGER,
+    processing_run_id INTEGER,
+    last_speaker_correction_event_id INTEGER,
+    last_diarization_window_result_id INTEGER,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    identity_confidence FLOAT,
+    identity_locked BOOLEAN NOT NULL DEFAULT 0
 );
 """
 
@@ -144,12 +154,12 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
             text(
                 """
                 INSERT INTO recording_speakers (
-                    id, created_at, updated_at, recording_id, global_speaker_id,
+                    id, created_at, updated_at, public_id, recording_id, global_speaker_id,
                     diarization_label, local_name, name, snippet_start,
                     snippet_end, voice_snippet_path, embedding, color,
                     merged_into_id
                 ) VALUES (
-                    1, :now, :now, 1, NULL, 'SPEAKER_00', NULL, 'Speaker 1',
+                    1, :now, :now, 'recording-speaker-1', 1, NULL, 'SPEAKER_00', NULL, 'Speaker 1',
                     NULL, NULL, NULL, NULL, NULL, NULL
                 )
                 """
@@ -160,12 +170,12 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
             text(
                 """
                 INSERT INTO recording_speakers (
-                    id, created_at, updated_at, recording_id, global_speaker_id,
+                    id, created_at, updated_at, public_id, recording_id, global_speaker_id,
                     diarization_label, local_name, name, snippet_start,
                     snippet_end, voice_snippet_path, embedding, color,
                     merged_into_id
                 ) VALUES (
-                    2, :now, :now, 1, 11, 'SPEAKER_01', NULL, 'Dana',
+                    2, :now, :now, 'recording-speaker-2', 1, 11, 'SPEAKER_01', NULL, 'Dana',
                     NULL, NULL, NULL, NULL, NULL, NULL
                 )
                 """

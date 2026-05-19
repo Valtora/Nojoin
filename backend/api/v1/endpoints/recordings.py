@@ -1,6 +1,9 @@
-import os
 import logging
+import hashlib
+import os
+from pathlib import Path
 from typing import List, Optional, Any
+import wave
 from datetime import UTC, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,6 +21,7 @@ from backend.models.recording_public import RecordingPublicRead, RecordingsCalen
 from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
 from backend.models.user import User
+from backend.models.pipeline import RecordingAudioChunk
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
@@ -33,6 +37,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
 from backend.utils.processing_eta import estimate_processing_eta
 from backend.utils.recording_storage import (
+    RECORDING_UPLOAD_RETENTION_HOURS,
     delete_recording_artifacts,
     move_recording_upload_to_failed,
     recording_upload_temp_dir,
@@ -71,6 +76,177 @@ def get_initial_proxy_path(file_path: str) -> Optional[str]:
     if file_ext.lower() == ".mp3":
         return file_path
     return None
+
+
+def _chunk_cleanup_deadline() -> datetime:
+    return utc_now() + timedelta(hours=RECORDING_UPLOAD_RETENTION_HOURS)
+
+
+def _chunk_idempotency_key(*, source_kind: str, sequence: int, sha256: str) -> str:
+    return f"{source_kind}:{sequence}:{sha256}"
+
+
+def _sha256_for_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_wav_chunk_metadata(path: Path) -> tuple[int, int, int]:
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            sample_rate_hz = int(wav_file.getframerate() or 0)
+            channel_count = int(wav_file.getnchannels() or 0)
+            frame_count = int(wav_file.getnframes() or 0)
+    except (EOFError, OSError, wave.Error):
+        return 0, 0, 0
+
+    if sample_rate_hz <= 0:
+        return 0, channel_count, 0
+    duration_ms = int((frame_count / sample_rate_hz) * 1000)
+    return sample_rate_hz, channel_count, duration_ms
+
+
+def _build_recording_audio_chunk_fields(
+    *,
+    sequence: int,
+    source_kind: str,
+    storage_path: Path,
+) -> dict[str, Any]:
+    sample_rate_hz = 0
+    channel_count = 0
+    duration_ms = 0
+    if storage_path.suffix.lower() == ".wav":
+        sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(storage_path)
+
+    sha256 = _sha256_for_path(storage_path)
+    byte_size = storage_path.stat().st_size
+    return {
+        "sequence_no": sequence,
+        "source_kind": source_kind,
+        "absolute_start_ms": 0,
+        "absolute_end_ms": duration_ms,
+        "duration_ms": duration_ms,
+        "sample_rate_hz": sample_rate_hz,
+        "channel_count": channel_count,
+        "byte_size": byte_size,
+        "sha256": sha256,
+        "storage_path": str(storage_path),
+        "upload_status": "received",
+        "idempotency_key": _chunk_idempotency_key(
+            source_kind=source_kind,
+            sequence=sequence,
+            sha256=sha256,
+        ),
+        "received_at": utc_now(),
+        "cleanup_eligible_at": None,
+    }
+
+
+async def _sync_recording_audio_chunks_from_directory(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    source_kind: str,
+    suffix: str,
+) -> list[RecordingAudioChunk]:
+    temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        return []
+
+    disk_entries: list[tuple[int, Path]] = []
+    for filename in os.listdir(temp_dir):
+        if not filename.endswith(suffix):
+            continue
+        try:
+            sequence = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        disk_entries.append((sequence, temp_dir / filename))
+    disk_entries.sort(key=lambda item: item[0])
+
+    if not disk_entries:
+        return []
+
+    existing_rows = (
+        await db.execute(
+            select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+        )
+    ).scalars().all()
+    existing_by_sequence = {row.sequence_no: row for row in existing_rows}
+    existing_by_idempotency = {
+        row.idempotency_key: row
+        for row in existing_rows
+        if row.idempotency_key
+    }
+
+    synced_rows: list[RecordingAudioChunk] = []
+    absolute_start_ms = 0
+    for sequence, storage_path in disk_entries:
+        fields = _build_recording_audio_chunk_fields(
+            sequence=sequence,
+            source_kind=source_kind,
+            storage_path=storage_path,
+        )
+        row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(fields["idempotency_key"])
+
+        if row is None:
+            row = RecordingAudioChunk(recording_id=recording_id, **fields)
+        else:
+            for field_name, field_value in fields.items():
+                setattr(row, field_name, field_value)
+
+        row.absolute_start_ms = absolute_start_ms
+        row.absolute_end_ms = absolute_start_ms + row.duration_ms
+        absolute_start_ms = row.absolute_end_ms
+        db.add(row)
+        synced_rows.append(row)
+        existing_by_sequence[row.sequence_no] = row
+        if row.idempotency_key:
+            existing_by_idempotency[row.idempotency_key] = row
+
+    return synced_rows
+
+
+async def _mark_recording_audio_chunks_ready_for_cleanup(
+    db: AsyncSession,
+    *,
+    chunk_rows: list[RecordingAudioChunk],
+    upload_status: str,
+) -> None:
+    deadline = _chunk_cleanup_deadline()
+    for row in chunk_rows:
+        row.upload_status = upload_status
+        row.cleanup_eligible_at = deadline
+        db.add(row)
+
+
+async def _mark_recording_audio_chunks_failed(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    failed_root: Path | None,
+) -> None:
+    rows = (
+        await db.execute(
+            select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+        )
+    ).scalars().all()
+    if not rows:
+        return
+
+    deadline = _chunk_cleanup_deadline()
+    for row in rows:
+        if failed_root is not None:
+            row.storage_path = str(failed_root / Path(row.storage_path).name)
+        row.upload_status = "failed"
+        row.cleanup_eligible_at = deadline
+        db.add(row)
 
 
 async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) -> None:
@@ -360,11 +536,34 @@ async def upload_segment(
         
     filename = os.path.basename(f"{int(sequence)}.wav")
     segment_path = recording_temp_dir / filename
+    content = b""
     
     try:
         async with aiofiles.open(segment_path, 'wb') as out_file:
             content = await file.read()
             await out_file.write(content)
+        await _sync_recording_audio_chunks_from_directory(
+            db,
+            recording_id=recording.id,
+            source_kind="companion",
+            suffix=".wav",
+        )
+        await db.commit()
+    except Exception as e:
+        try:
+            if segment_path.exists():
+                segment_path.unlink()
+        except OSError:
+            pass
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message="Failed to save the uploaded segment.",
+            log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
+            exc=e,
+        )
+
+    try:
         record_pipeline_metric(
             stage="audio_chunk_uploaded",
             recording_id=recording.id,
@@ -375,13 +574,12 @@ async def upload_segment(
             },
             log=logger,
         )
-    except Exception as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to save the uploaded segment.",
-            log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
-            exc=e,
+    except Exception as exc:
+        logger.warning(
+            "Failed to record audio chunk upload metric for recording %s segment %s: %s",
+            recording.id,
+            sequence,
+            exc,
         )
 
     # Dispatch the live transcription task. This is best-effort: a missed live
@@ -444,47 +642,41 @@ async def finalize_upload(
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
-        
-    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
-    if not recording_temp_dir.exists():
-        raise HTTPException(status_code=400, detail="No segments found for this recording")
-        
-    # List all segments and sort by sequence
-    segments = []
-    for filename in os.listdir(recording_temp_dir):
-        if filename.endswith(".wav"):
-            try:
-                seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, str(recording_temp_dir / filename)))
-            except ValueError:
-                continue
-                
-    segments.sort(key=lambda x: x[0])
-    
-    if not segments:
+
+    chunk_rows = await _sync_recording_audio_chunks_from_directory(
+        db,
+        recording_id=recording.id,
+        source_kind="companion",
+        suffix=".wav",
+    )
+    if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
-        
 
     try:
-        segment_paths = [path for _, path in segments]
+        segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_wavs(segment_paths, recording.audio_path)
-        
-        # Cleanup temp dir
-        delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=None,
-            proxy_path=None,
-            logger=logger,
+
+        await _mark_recording_audio_chunks_ready_for_cleanup(
+            db,
+            chunk_rows=chunk_rows,
+            upload_status="finalized",
         )
-        
+
         # Set duration
         recording.duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
+        failed_root: Path | None = None
         try:
-            move_recording_upload_to_failed(recording.id, logger=logger)
+            failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
         except Exception as move_error:
             logger.error(f"Failed to move segments to failed dir: {move_error}")
+        await _mark_recording_audio_chunks_failed(
+            db,
+            recording_id=recording.id,
+            failed_root=failed_root,
+        )
+        await db.commit()
             
         delete_recording_artifacts(
             recording_id=None,
@@ -701,7 +893,19 @@ async def upload_chunked_segment(
         async with aiofiles.open(segment_path, 'wb') as out_file:
             content = await file.read()
             await out_file.write(content)
+        await _sync_recording_audio_chunks_from_directory(
+            db,
+            recording_id=recording.id,
+            source_kind="import",
+            suffix=".part",
+        )
+        await db.commit()
     except Exception as e:
+        try:
+            if segment_path.exists():
+                segment_path.unlink()
+        except OSError:
+            pass
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -726,37 +930,24 @@ async def finalize_chunked_import(
         
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
-        
-    recording_temp_dir = recording_upload_temp_dir(recording.id, create=False)
-    if not recording_temp_dir.exists():
-        raise HTTPException(status_code=400, detail="No segments found for this recording")
-        
-    # List all segments and sort by sequence
-    segments = []
-    for filename in os.listdir(recording_temp_dir):
-        if filename.endswith(".part"):
-            try:
-                seq = int(os.path.splitext(filename)[0])
-                segments.append((seq, str(recording_temp_dir / filename)))
-            except ValueError:
-                continue
-                
-    segments.sort(key=lambda x: x[0])
-    
-    if not segments:
+
+    chunk_rows = await _sync_recording_audio_chunks_from_directory(
+        db,
+        recording_id=recording.id,
+        source_kind="import",
+        suffix=".part",
+    )
+    if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
-        
 
     try:
-        segment_paths = [path for _, path in segments]
+        segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
-        
-        # Cleanup temp dir
-        delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=None,
-            proxy_path=None,
-            logger=logger,
+
+        await _mark_recording_audio_chunks_ready_for_cleanup(
+            db,
+            chunk_rows=chunk_rows,
+            upload_status="finalized",
         )
         
         # Get file stats
@@ -770,10 +961,18 @@ async def finalize_chunked_import(
             logger.warning(f"Failed to get duration: {e}")
         
     except Exception as e:
+        failed_root: Path | None = None
         try:
-            move_recording_upload_to_failed(recording.id, logger=logger)
+            failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
         except Exception as move_error:
             logger.error(f"Failed to move failed chunked upload to failed dir: {move_error}")
+
+        await _mark_recording_audio_chunks_failed(
+            db,
+            recording_id=recording.id,
+            failed_root=failed_root,
+        )
+        await db.commit()
 
         delete_recording_artifacts(
             recording_id=None,
