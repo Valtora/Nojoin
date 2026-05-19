@@ -46,6 +46,7 @@ from backend.models.chat import ChatMessage
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.celery_app import celery_app
 from backend.processing.llm_services import get_llm_backend
+from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
@@ -843,6 +844,18 @@ async def update_segment_speaker(
                 # Note: We don't delete the GlobalSpeaker, just the local association
     
     await db.commit()
+    record_pipeline_metric(
+        stage="speaker_correction_applied",
+        recording_id=recording.id,
+        payload={
+            "correction_kind": "segment_speaker",
+            "segment_index": segment_index,
+            "old_label": old_label,
+            "new_label": target_label,
+            "duration_s": round(float(segment.get("end", 0.0)) - float(segment.get("start", 0.0)), 3),
+        },
+        log=logger,
+    )
     _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
@@ -910,6 +923,15 @@ async def update_transcript_segment_text(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
+    record_pipeline_metric(
+        stage="transcript_text_correction_applied",
+        recording_id=recording.id,
+        payload={
+            "segment_index": segment_index,
+            "text_chars": len(update.text),
+        },
+        log=logger,
+    )
     _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),

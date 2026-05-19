@@ -6,6 +6,7 @@ __pycache__/
 # Pytest cache
 .pytest_cache/
 backend/tests/__pycache__/
+backend/tests/pipeline_fixtures/generated/
 
 # Environment
 /.venv

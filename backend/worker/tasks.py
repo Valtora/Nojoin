@@ -24,6 +24,7 @@ from backend.models.user import User
 from backend.models.invitation import Invitation
 from backend.models.chat import ChatMessage
 from backend.core.exceptions import AudioProcessingError, AudioFormatError, VADNoSpeechError
+from backend.processing.pipeline_metrics import pipeline_metric_timer, record_pipeline_metric
 from backend.services.calendar_link_service import auto_link_recording
 
 # Heavy processing imports moved inside tasks to avoid loading torch in API
@@ -894,6 +895,15 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 recording.processing_step = f"Reusing live transcript...{device_suffix}"
                 session.add(recording)
                 session.commit()
+                record_pipeline_metric(
+                    stage="final_transcription_reused_live",
+                    recording_id=recording_id,
+                    payload={
+                        "segment_count": len(reused_live_transcript_segments),
+                        "text_chars": len(transcription_result.get("text", "")),
+                    },
+                    log=logger,
+                )
                 logger.info(
                     "Reusing %s live transcript segments for recording %s",
                     len(reused_live_transcript_segments),
@@ -902,7 +912,20 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
 
         if not transcription_result:
             # Run the configured transcription engine.
-            transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
+            with pipeline_metric_timer(
+                stage="final_asr_invocation",
+                recording_id=recording_id,
+                payload={
+                    "engine": merged_config.get("transcription_backend"),
+                    "engine_override": bool(engine_override),
+                    "input_path": processed_audio_path,
+                },
+                log=logger,
+            ) as metric:
+                transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
+                metric["payload"]["segment_count"] = len(
+                    (transcription_result or {}).get("segments", [])
+                )
         
         # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
@@ -916,7 +939,17 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             session.commit()
             
             # Run Pyannote
-            diarization_result = diarize_audio(processed_audio_path, config=merged_config)
+            with pipeline_metric_timer(
+                stage="final_diarization_invocation",
+                recording_id=recording_id,
+                payload={
+                    "input_path": processed_audio_path,
+                    "enabled": True,
+                },
+                log=logger,
+            ) as metric:
+                diarization_result = diarize_audio(processed_audio_path, config=merged_config)
+                metric["payload"]["result_available"] = diarization_result is not None
 
             if diarization_result is None:
                  msg = "Diarization failed (check HF token), falling back to single speaker."
@@ -1004,9 +1037,46 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 live_segments_for_reuse,
                 combined_segments,
             )
+            record_pipeline_metric(
+                stage="final_live_reconciliation",
+                recording_id=recording_id,
+                payload={
+                    "live_segment_count": len(live_segments_for_reuse),
+                    "combined_segment_count": len(combined_segments),
+                    "mapped_speaker_count": len(label_map_from_final_to_live),
+                    "used_diarization": bool(diarization_result),
+                    "manual_speaker_edits": sum(
+                        1
+                        for segment in live_segments_for_reuse
+                        if segment.get("speaker_manually_edited") is True
+                    ),
+                    "preserved_manual_speaker_edits": sum(
+                        1
+                        for segment in combined_segments
+                        if segment.get("speaker_manually_edited") is True
+                    ),
+                    "manual_text_edits": sum(
+                        1
+                        for segment in live_segments_for_reuse
+                        if segment.get("text_manually_edited") is True
+                    ),
+                    "preserved_manual_text_edits": sum(
+                        1
+                        for segment in combined_segments
+                        if segment.get("text_manually_edited") is True
+                    ),
+                },
+                log=logger,
+            )
 
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
+        record_pipeline_metric(
+            stage="final_segments_built",
+            recording_id=recording_id,
+            payload={"segment_count": len(final_segments)},
+            log=logger,
+        )
         logger.info(f"Final segments after consolidation: {len(final_segments)}")
         
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording.id)).first()
@@ -1321,6 +1391,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
         
         elapsed_time = time.time() - float(start_time)
+        record_pipeline_metric(
+            stage="final_processing_completed",
+            recording_id=recording_id,
+            payload={"status": "success"},
+            elapsed_ms=elapsed_time * 1000.0,
+            log=logger,
+        )
         logger.info(f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds")
         
         # Trigger Transcript Indexing for RAG
@@ -1331,6 +1408,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         return {"status": "success", "recording_id": recording_id}
 
     except AudioProcessingError as e:
+        record_pipeline_metric(
+            stage="final_processing_failed",
+            recording_id=recording_id,
+            payload={"error": str(e), "error_type": "AudioProcessingError"},
+            status="error",
+            log=logger,
+        )
         logger.error(f"Audio processing error for {recording_id}: {e}", exc_info=True)
         recording = session.get(Recording, recording_id)
         if recording:
@@ -1342,6 +1426,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             update_recording_status(session, recording.id)
             
     except Exception as e:
+        record_pipeline_metric(
+            stage="final_processing_failed",
+            recording_id=recording_id,
+            payload={"error": str(e), "error_type": type(e).__name__},
+            status="error",
+            log=logger,
+        )
         logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
         recording = session.get(Recording, recording_id)
         if recording:

@@ -17,6 +17,8 @@ Use the links below by task rather than treating the root README as the source o
 - [CALENDAR.md](CALENDAR.md): Google and Microsoft calendar setup, user connection flow, dashboard behaviour, and troubleshooting.
 - [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, admin settings, and system operations.
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
+- [pipeline-refactor.md](pipeline-refactor.md): Waterfall implementation plan for the unified live transcription, diarization, speaker identity, and final processing refactor.
+- [pipeline-baseline-2026-05-19.md](pipeline-baseline-2026-05-19.md): Initial Phase 0 baseline harness and current pipeline behavior report.
 - [SETTINGS_UX_PLAN.md](SETTINGS_UX_PLAN.md): Phased implementation plan for the settings UI and autosave unification work.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and Companion work.

@@ -24,6 +24,7 @@ from backend.processing.embedding import (
     SCAN_MATCH_THRESHOLD, MARGIN_OF_VICTORY,
     UI_SHOW_MATCH_THRESHOLD, UI_STRONG_MATCH_THRESHOLD,
 )
+from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
@@ -323,6 +324,18 @@ async def update_recording_speaker(
             db.add(transcript)
 
     await db.commit()
+    record_pipeline_metric(
+        stage="speaker_correction_applied",
+        recording_id=recording.id,
+        payload={
+            "correction_kind": "recording_speaker_rename",
+            "diarization_label": update.diarization_label,
+            "new_name": update.global_speaker_name,
+            "matched_global_speaker": global_speaker is not None,
+            "segments_repaired": segments_updated if transcript and transcript.segments else False,
+        },
+        log=logger,
+    )
     
     # Return updated list
     return _serialize_recording_speakers(

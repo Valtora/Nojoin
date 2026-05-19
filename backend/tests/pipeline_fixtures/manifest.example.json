@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "id": "two_speaker_alternating_realistic",
+      "path": "local-fixtures/two_speaker_alternating.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "en",
+      "scenarios": [
+        "alternating_turns",
+        "speaker_identity",
+        "live_correction"
+      ],
+      "known_turns": [
+        {
+          "start": 0.0,
+          "end": 4.0,
+          "speaker": "speaker_a"
+        },
+        {
+          "start": 4.2,
+          "end": 8.5,
+          "speaker": "speaker_b"
+        }
+      ],
+      "notes": "Private realistic audio fixture. Do not commit the WAV file."
+    }
+  ]
+}

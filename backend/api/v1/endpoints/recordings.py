@@ -23,6 +23,7 @@ from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.llm_services import get_llm_backend
 from backend.processing.live_transcribe import transcribe_segment_live_task
+from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now
 from backend.models.transcript import Transcript
@@ -364,6 +365,16 @@ async def upload_segment(
         async with aiofiles.open(segment_path, 'wb') as out_file:
             content = await file.read()
             await out_file.write(content)
+        record_pipeline_metric(
+            stage="audio_chunk_uploaded",
+            recording_id=recording.id,
+            payload={
+                "sequence": sequence,
+                "bytes": len(content),
+                "filename": filename,
+            },
+            log=logger,
+        )
     except Exception as e:
         raise sanitized_http_exception(
             logger=logger,

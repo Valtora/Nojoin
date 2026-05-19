@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from backend.celery_app import celery_app
+from backend.processing.pipeline_metrics import pipeline_metric_timer, record_pipeline_metric
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
 
@@ -215,6 +216,16 @@ def _resolve_live_speaker(
                 hf_token=merged_config.get("hf_token"),
             )
         except Exception as exc:
+            record_pipeline_metric(
+                stage="live_speaker_embedding_error",
+                recording_id=recording_id,
+                payload={
+                    "duration_s": round(duration, 3),
+                    "error": str(exc),
+                },
+                status="error",
+                log=logger,
+            )
             logger.warning(
                 "Live embedding extraction failed for recording %s: %s",
                 recording_id,
@@ -222,13 +233,46 @@ def _resolve_live_speaker(
                 exc_info=True,
             )
 
+    def _record_resolution(
+        label: str,
+        match_kind: str,
+        *,
+        score: float | None = None,
+        global_score: float | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "label": label,
+            "match_kind": match_kind,
+            "duration_s": round(duration, 3),
+            "had_embedding": bool(embedding),
+            "fallback_label": fallback_label,
+            "live_speaker_count": len(live_speakers),
+        }
+        if score is not None:
+            payload["score"] = round(score, 4)
+        if global_score is not None:
+            payload["global_score"] = round(global_score, 4)
+        record_pipeline_metric(
+            stage="live_speaker_resolved",
+            recording_id=recording_id,
+            payload=payload,
+            log=logger,
+        )
+        return label
+
     if not embedding:
         if fallback_label and fallback_label in live_speaker_by_label:
-            return fallback_label
+            return _record_resolution(fallback_label, "fallback_last_label")
         if len(live_speakers) == 1:
-            return live_speakers[0].diarization_label
+            return _record_resolution(
+                live_speakers[0].diarization_label,
+                "single_live_speaker_fallback",
+            )
         if live_speakers:
-            return live_speakers[-1].diarization_label
+            return _record_resolution(
+                live_speakers[-1].diarization_label,
+                "latest_live_speaker_fallback",
+            )
 
     if embedding:
         best_speaker = None
@@ -246,7 +290,10 @@ def _resolve_live_speaker(
             fallback_speaker.embedding = embedding
             session.add(fallback_speaker)
             session.flush()
-            return fallback_speaker.diarization_label
+            return _record_resolution(
+                fallback_speaker.diarization_label,
+                "fallback_claim_embedding",
+            )
 
         if best_speaker and best_score >= LIVE_SPEAKER_MATCH_THRESHOLD:
             best_speaker.embedding = merge_embeddings(
@@ -257,7 +304,11 @@ def _resolve_live_speaker(
             )
             session.add(best_speaker)
             session.flush()
-            return best_speaker.diarization_label
+            return _record_resolution(
+                best_speaker.diarization_label,
+                "local_embedding",
+                score=best_score,
+            )
 
         if best_speaker and best_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD:
             best_speaker.embedding = merge_embeddings(
@@ -268,7 +319,11 @@ def _resolve_live_speaker(
             )
             session.add(best_speaker)
             session.flush()
-            return best_speaker.diarization_label
+            return _record_resolution(
+                best_speaker.diarization_label,
+                "local_embedding_soft",
+                score=best_score,
+            )
 
         if user_id:
             global_speakers = session.exec(
@@ -302,7 +357,11 @@ def _resolve_live_speaker(
                     )
                     session.add(linked_speaker)
                     session.flush()
-                    return linked_speaker.diarization_label
+                    return _record_resolution(
+                        linked_speaker.diarization_label,
+                        "global_embedding_existing",
+                        global_score=best_global_score,
+                    )
 
                 next_index = len(live_speakers) + 1
                 live_speaker = RecordingSpeaker(
@@ -314,7 +373,11 @@ def _resolve_live_speaker(
                 )
                 session.add(live_speaker)
                 session.flush()
-                return live_speaker.diarization_label
+                return _record_resolution(
+                    live_speaker.diarization_label,
+                    "global_embedding_new",
+                    global_score=best_global_score,
+                )
 
         if live_speakers:
             if (
@@ -322,10 +385,21 @@ def _resolve_live_speaker(
                 and best_score > LIVE_NEW_SPEAKER_THRESHOLD
             ) or duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
                 if fallback_label and fallback_label in live_speaker_by_label:
-                    return fallback_label
+                    return _record_resolution(
+                        fallback_label,
+                        "low_confidence_fallback_label",
+                        score=best_score if best_speaker else None,
+                    )
                 if best_speaker:
-                    return best_speaker.diarization_label
-                return live_speakers[-1].diarization_label
+                    return _record_resolution(
+                        best_speaker.diarization_label,
+                        "low_confidence_best_speaker",
+                        score=best_score,
+                    )
+                return _record_resolution(
+                    live_speakers[-1].diarization_label,
+                    "low_confidence_latest_speaker",
+                )
 
     next_index = len(live_speakers) + 1
     live_speaker = RecordingSpeaker(
@@ -336,7 +410,7 @@ def _resolve_live_speaker(
     )
     session.add(live_speaker)
     session.flush()
-    return live_speaker.diarization_label
+    return _record_resolution(live_speaker.diarization_label, "new_live_speaker")
 
 
 def _extract_region_text(result: dict, prefix_s: float) -> str:
@@ -451,6 +525,12 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     from backend.worker.tasks import resolve_llm_config
 
     config_manager.reload()
+    record_pipeline_metric(
+        stage="live_task_started",
+        recording_id=recording_id,
+        payload={"sequence": sequence},
+        log=logger,
+    )
 
     # The live lane is only meaningful while the recording is uploading. Once
     # finalize() runs, the API deletes the upload temp dir; a live task that is
@@ -460,6 +540,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     try:
         recording = session.get(Recording, recording_id)
         if not recording or recording.status != RecordingStatus.UPLOADING:
+            record_pipeline_metric(
+                stage="live_task_skipped",
+                recording_id=recording_id,
+                payload={
+                    "sequence": sequence,
+                    "reason": "not_uploading",
+                    "status": getattr(recording, "status", None),
+                },
+                status="skipped",
+                log=logger,
+            )
             return
     finally:
         session.close()
@@ -475,9 +566,31 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     # --- Gating ---
     if sequence < next_expected:
         # Already consumed by an earlier run.
+        record_pipeline_metric(
+            stage="live_sequence_skipped",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "next_expected": next_expected,
+                "reason": "already_consumed",
+            },
+            status="skipped",
+            log=logger,
+        )
         return
     if sequence > next_expected:
         # Gap: this segment waits on disk until the run reaches it.
+        record_pipeline_metric(
+            stage="live_sequence_skipped",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "next_expected": next_expected,
+                "reason": "waiting_for_gap",
+            },
+            status="skipped",
+            log=logger,
+        )
         return
 
     # --- Drain: contiguous run starting at next_expected ---
@@ -488,11 +601,28 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         n += 1
     if not run:
         # Defensive: the triggering segment should exist; nothing to do.
+        record_pipeline_metric(
+            stage="live_sequence_skipped",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "next_expected": next_expected,
+                "reason": "triggering_segment_missing",
+            },
+            status="skipped",
+            log=logger,
+        )
         return
 
     buffer_path = str(live_dir / _BUFFER_FILENAME)
 
     try:
+        record_pipeline_metric(
+            stage="live_run_started",
+            recording_id=recording_id,
+            payload={"sequence": sequence, "run": run},
+            log=logger,
+        )
         # --- Build combined buffer ---
         parts = []
         if os.path.exists(buffer_path):
@@ -569,6 +699,19 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             forced_max_s=float(live_config["forced_max_s"]),
             max_segment_s=float(live_config["max_segment_s"]),
         )
+        record_pipeline_metric(
+            stage="live_vad_classified",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "run": run,
+                "speech_count": len(speech),
+                "complete_count": len(complete),
+                "combined_len_s": round(combined_len, 3),
+                "cut_point_s": round(cut_point, 3),
+            },
+            log=logger,
+        )
 
         # --- Read the rolling left-context buffer (already-consumed audio) ---
         context_path = str(live_dir / _CONTEXT_FILENAME)
@@ -608,7 +751,20 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     region_tensor,
                     sampling_rate=LIVE_SAMPLE_RATE,
                 )
-                result = transcribe_audio(clip_path, config=live_config)
+                with pipeline_metric_timer(
+                    stage="live_asr_region",
+                    recording_id=recording_id,
+                    payload={
+                        "sequence": sequence,
+                        "region_start_s": round(combined_abs_start + sp["start"], 3),
+                        "region_end_s": round(combined_abs_start + sp["end"], 3),
+                        "prefix_s": round(prefix_s, 3),
+                        "engine": live_config.get("transcription_backend"),
+                    },
+                    log=logger,
+                ) as metric:
+                    result = transcribe_audio(clip_path, config=live_config)
+                    metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
                 speaker_label = "UNKNOWN"
                 session = get_sync_session()
                 try:
@@ -715,6 +871,24 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         flag_modified(transcript, "segments")
                         session.add(transcript)
                         session.commit()
+                        record_pipeline_metric(
+                            stage="live_segments_persisted",
+                            recording_id=recording_id,
+                            payload={
+                                "sequence": sequence,
+                                "segment_count": len(new_segments),
+                                "first_segment_start_s": round(
+                                    min(segment["start"] for segment in new_segments),
+                                    3,
+                                ),
+                                "last_segment_end_s": round(
+                                    max(segment["end"] for segment in new_segments),
+                                    3,
+                                ),
+                                "last_speaker_label": state.get("last_speaker_label"),
+                            },
+                            log=logger,
+                        )
 
                         user_settings = getattr(
                             getattr(recording, "user", None),
@@ -747,8 +921,27 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
         write_live_state(live_dir, state)
+        record_pipeline_metric(
+            stage="live_run_completed",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "run": run,
+                "new_segments": len(new_segments),
+                "next_expected": state["next_expected"],
+                "buffer_abs_start": round(new_abs_start, 3),
+            },
+            log=logger,
+        )
 
     except Exception as exc:
+        record_pipeline_metric(
+            stage="live_run_failed",
+            recording_id=recording_id,
+            payload={"sequence": sequence, "run": run, "error": str(exc)},
+            status="error",
+            log=logger,
+        )
         # Non-fatal: log, advance past the run, do not re-raise. The final
         # processing pipeline re-transcribes everything from the source audio.
         logger.error(

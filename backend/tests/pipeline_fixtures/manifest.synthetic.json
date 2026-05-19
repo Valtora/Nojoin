@@ -1,0 +1,127 @@
+{
+  "fixtures": [
+    {
+      "id": "single_speaker_clean",
+      "path": "generated/single_speaker_clean.wav",
+      "kind": "live_recording",
+      "expected_speakers": 1,
+      "expected_language": "synthetic",
+      "scenarios": ["single_speaker", "ingest", "timing"],
+      "known_turns": [
+        {"start": 0.0, "end": 4.0, "speaker": "speaker_a"}
+      ],
+      "notes": "Synthetic tone fixture for ingest and timing smoke tests."
+    },
+    {
+      "id": "two_speaker_alternating",
+      "path": "generated/two_speaker_alternating.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": [
+        "alternating_turns",
+        "speaker_identity",
+        "live_correction",
+        "user_rename",
+        "global_speaker_assignment"
+      ],
+      "known_turns": [
+        {"start": 0.0, "end": 2.0, "speaker": "speaker_a"},
+        {"start": 2.2, "end": 4.2, "speaker": "speaker_b"},
+        {"start": 4.4, "end": 6.4, "speaker": "speaker_a"}
+      ],
+      "notes": "Synthetic alternating tones stand in for two speakers."
+    },
+    {
+      "id": "three_speaker_meeting",
+      "path": "generated/three_speaker_meeting.wav",
+      "kind": "live_recording",
+      "expected_speakers": 3,
+      "expected_language": "synthetic",
+      "scenarios": ["multi_speaker", "speaker_churn"],
+      "known_turns": [
+        {"start": 0.0, "end": 1.8, "speaker": "speaker_a"},
+        {"start": 2.0, "end": 3.8, "speaker": "speaker_b"},
+        {"start": 4.0, "end": 5.8, "speaker": "speaker_c"}
+      ],
+      "notes": "Synthetic multi-speaker timing fixture."
+    },
+    {
+      "id": "overlap_interruptions",
+      "path": "generated/overlap_interruptions.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": ["overlap", "interruptions", "diarization"],
+      "known_turns": [
+        {"start": 0.0, "end": 3.0, "speaker": "speaker_a"},
+        {"start": 1.4, "end": 2.6, "speaker": "speaker_b"}
+      ],
+      "notes": "Synthetic overlapping tones for overlap plumbing tests."
+    },
+    {
+      "id": "long_monologue",
+      "path": "generated/long_monologue.wav",
+      "kind": "live_recording",
+      "expected_speakers": 1,
+      "expected_language": "synthetic",
+      "scenarios": ["long_monologue", "forced_emission"],
+      "known_turns": [
+        {"start": 0.0, "end": 24.0, "speaker": "speaker_a"}
+      ],
+      "notes": "Synthetic long continuous tone for live forced-emission baselines."
+    },
+    {
+      "id": "quiet_noisy_room",
+      "path": "generated/quiet_noisy_room.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": ["quiet_speaker", "noise", "vad"],
+      "known_turns": [
+        {"start": 0.0, "end": 2.5, "speaker": "speaker_a"},
+        {"start": 3.0, "end": 5.5, "speaker": "speaker_b"}
+      ],
+      "notes": "Synthetic low-amplitude and noise-mixed fixture for degraded audio paths."
+    },
+    {
+      "id": "late_joining_speaker",
+      "path": "generated/late_joining_speaker.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": ["late_speaker", "speaker_identity"],
+      "known_turns": [
+        {"start": 0.0, "end": 5.0, "speaker": "speaker_a"},
+        {"start": 8.0, "end": 11.0, "speaker": "speaker_b"}
+      ],
+      "notes": "Synthetic fixture where a second speaker appears later."
+    },
+    {
+      "id": "imported_recording_smoke",
+      "path": "generated/imported_recording_smoke.wav",
+      "kind": "imported_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": ["import", "batch_pipeline"],
+      "known_turns": [
+        {"start": 0.0, "end": 2.0, "speaker": "speaker_a"},
+        {"start": 2.2, "end": 4.2, "speaker": "speaker_b"}
+      ],
+      "notes": "Synthetic import path smoke fixture."
+    },
+    {
+      "id": "missing_hf_token_path",
+      "path": "generated/missing_hf_token_path.wav",
+      "kind": "live_recording",
+      "expected_speakers": 2,
+      "expected_language": "synthetic",
+      "scenarios": ["missing_hf_token", "degraded_mode"],
+      "known_turns": [
+        {"start": 0.0, "end": 2.0, "speaker": "speaker_a"},
+        {"start": 2.2, "end": 4.2, "speaker": "speaker_b"}
+      ],
+      "notes": "Synthetic fixture for degraded diarization readiness checks."
+    }
+  ]
+}
