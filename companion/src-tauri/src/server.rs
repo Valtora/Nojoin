@@ -1,22 +1,22 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code, unused_imports))]
 
 use crate::companion_auth;
-use crate::config::{Config, MachineLocalUpdate};
 #[cfg(test)]
 use crate::config::BackendConnection;
+use crate::config::{Config, MachineLocalUpdate};
 use crate::local_https_identity::LocalHttpsServerIdentity;
 use crate::notifications;
 use crate::secret_store;
 #[cfg(test)]
 use crate::secret_store::BackendSecretBundle;
-use crate::state::{
-    recover_mutex_guard, ActiveRecordingOwner, AppState, AppStatus, AudioCommand,
-    LocalHttpsStatus, RecordingRecoveryState,
-};
 #[cfg(test)]
 use crate::state::{
-    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label,
-    PairingSession, PairingValidationError,
+    pairing_block_message, pairing_code_fingerprint, pairing_code_log_label, PairingSession,
+    PairingValidationError,
+};
+use crate::state::{
+    recover_mutex_guard, ActiveRecordingOwner, AppState, AppStatus, AudioCommand, LocalHttpsStatus,
+    RecordingRecoveryState,
 };
 use crate::uploader;
 use axum::debug_handler;
@@ -684,7 +684,11 @@ fn build_recording_status_update(
         recording_id,
         status,
         config: recover_mutex_guard(state.config.lock(), "config").clone(),
-        token: recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone(),
+        token: recover_mutex_guard(
+            state.current_recording_token.lock(),
+            "current_recording_token",
+        )
+        .clone(),
         state: state.clone(),
     }
 }
@@ -701,7 +705,10 @@ pub fn spawn_recording_status_update(update: RecordingStatusUpdate) {
             .await
             {
                 Ok(Some(new_token)) => {
-                    *recover_mutex_guard(update.state.current_recording_token.lock(), "current_recording_token") = Some(new_token);
+                    *recover_mutex_guard(
+                        update.state.current_recording_token.lock(),
+                        "current_recording_token",
+                    ) = Some(new_token);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -734,10 +741,12 @@ pub fn pause_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatusU
 
         *status = AppStatus::Paused;
 
-        let mut start_time = recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
+        let mut start_time =
+            recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
         if let Some(started_at) = *start_time {
             if let Ok(elapsed) = started_at.elapsed() {
-                let mut accumulated = recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
+                let mut accumulated =
+                    recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
                 *accumulated += elapsed;
             }
         }
@@ -772,7 +781,8 @@ pub fn resume_recording_locally(state: &Arc<AppState>) -> Result<RecordingStatus
         *status = AppStatus::Recording;
         let mut sequence = recover_mutex_guard(state.current_sequence.lock(), "current_sequence");
         *sequence += 1;
-        *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = Some(SystemTime::now());
+        *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") =
+            Some(SystemTime::now());
     }
 
     state
@@ -1307,8 +1317,7 @@ async fn complete_pairing(
             );
         }
     };
-    if let Err(err) =
-        crate::backend_url::enforce_origin_matches_target(&validated_target, &origin)
+    if let Err(err) = crate::backend_url::enforce_origin_matches_target(&validated_target, &origin)
     {
         warn!(
             "Rejected pairing completion because backend target did not match browser origin: {}; {}",
@@ -1318,9 +1327,8 @@ async fn complete_pairing(
             StatusCode::FORBIDDEN,
             Json(PairingCompleteResponse {
                 success: false,
-                message:
-                    "Pairing backend target must match the Nojoin web origin (WEB_APP_URL)."
-                        .to_string(),
+                message: "Pairing backend target must match the Nojoin web origin (WEB_APP_URL)."
+                    .to_string(),
             }),
         );
     }
@@ -1615,7 +1623,10 @@ async fn complete_pairing(
     }
 
     *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
-    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
+    *recover_mutex_guard(
+        state.current_recording_token.lock(),
+        "current_recording_token",
+    ) = None;
     state.clear_current_recording_owner();
     state.clear_recording_recovery_state();
     *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
@@ -1869,8 +1880,14 @@ async fn start_recording(
                     }
 
                     // Start Audio Thread
-                    *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = Some(id.clone());
-                    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = upload_token;
+                    *recover_mutex_guard(
+                        state.current_recording_id.lock(),
+                        "current_recording_id",
+                    ) = Some(id.clone());
+                    *recover_mutex_guard(
+                        state.current_recording_token.lock(),
+                        "current_recording_token",
+                    ) = upload_token;
                     state.set_current_recording_owner(ActiveRecordingOwner {
                         user_id: guard.claims.user_id,
                         username: guard.claims.username.clone(),
@@ -1878,8 +1895,14 @@ async fn start_recording(
                     });
                     state.clear_recording_recovery_state();
                     *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
-                    *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = Some(SystemTime::now());
-                    *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration") = Duration::new(0, 0);
+                    *recover_mutex_guard(
+                        state.recording_start_time.lock(),
+                        "recording_start_time",
+                    ) = Some(SystemTime::now());
+                    *recover_mutex_guard(
+                        state.accumulated_duration.lock(),
+                        "accumulated_duration",
+                    ) = Duration::new(0, 0);
 
                     state
                         .audio_command_tx

@@ -110,6 +110,16 @@ runs:
    reuse the most recent stable label instead of creating new speaker churn.
    Live speaker names and transcript edits made by the user are treated as
    authoritative.
+5. After new live segments land, the API/worker layer best-effort dispatches a
+   separate `refresh_meeting_edge_task`. That task builds a bounded recent
+   transcript window, reuses the previous Meeting Edge summary as rolling
+   context, folds in user-authored notes, optional user focus text, and linked
+   calendar context, then requests a strict JSON response from the configured
+   LLM provider.
+6. Meeting Edge uses the same configured provider as the rest of Nojoin AI, but
+   resolves a separate provider-specific live model when one is set. If no
+   Meeting Edge model is configured for that provider, the worker falls back to
+   the provider's main model instead of failing the live guidance path.
 
 Segments are numbered sequentially but uploaded concurrently, so the lane uses
 a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording

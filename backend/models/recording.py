@@ -112,6 +112,10 @@ class TranscriptRead(BaseDBModel):
     segments: List[Dict[str, Any]] = []
     notes: Optional[str] = None
     user_notes: Optional[str] = None
+    meeting_edge_focus: Optional[str] = None
+    meeting_edge_payload: Optional[Dict[str, Any]] = None
+    meeting_edge_status: str = "idle"
+    meeting_edge_error_message: Optional[str] = None
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None

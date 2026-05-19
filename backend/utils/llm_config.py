@@ -18,11 +18,25 @@ from backend.utils.config_manager import (
 SYSTEM_LLM_FIELDS = (
     "llm_provider",
     "gemini_model",
+    "gemini_live_model",
     "openai_model",
+    "openai_live_model",
     "anthropic_model",
+    "anthropic_live_model",
     "ollama_model",
+    "ollama_live_model",
     "ollama_api_url",
 )
+
+LLM_PURPOSE_DEFAULT = "default"
+LLM_PURPOSE_MEETING_EDGE = "meeting_edge"
+
+LIVE_MODEL_FIELDS_BY_PROVIDER = {
+    "gemini": "gemini_live_model",
+    "openai": "openai_live_model",
+    "anthropic": "anthropic_live_model",
+    "ollama": "ollama_live_model",
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +63,7 @@ def _merge_llm_config(
     system_keys: Mapping[str, str],
     owner_settings: Mapping[str, Any] | None,
     user_settings: Mapping[str, Any] | None,
+    purpose: str = LLM_PURPOSE_DEFAULT,
 ) -> ResolvedLLMConfig:
     merged: dict[str, Any] = dict(base_config)
     sanitized_user_settings = strip_legacy_automatic_ai_settings(
@@ -77,7 +92,7 @@ def _merge_llm_config(
 
     provider = str(merged.get("llm_provider") or "gemini")
     api_key = merged.get(f"{provider}_api_key")
-    model = merged.get(f"{provider}_model")
+    model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
 
     return ResolvedLLMConfig(
@@ -89,9 +104,25 @@ def _merge_llm_config(
     )
 
 
+def _resolve_model_for_purpose(
+    merged: Mapping[str, Any],
+    provider: str,
+    purpose: str,
+) -> Any:
+    if purpose == LLM_PURPOSE_MEETING_EDGE:
+        live_field = LIVE_MODEL_FIELDS_BY_PROVIDER.get(provider)
+        if live_field:
+            live_model = merged.get(live_field)
+            if live_model:
+                return live_model
+
+    return merged.get(f"{provider}_model")
+
+
 def resolve_llm_config(
     session: Session,
     user_settings: Mapping[str, Any] | None = None,
+    purpose: str = LLM_PURPOSE_DEFAULT,
 ) -> ResolvedLLMConfig:
     system_keys = get_system_api_keys(session)
     owner = session.exec(select(User).where(User.role == "owner")).first()
@@ -102,12 +133,14 @@ def resolve_llm_config(
         system_keys=system_keys,
         owner_settings=owner_settings,
         user_settings=user_settings,
+        purpose=purpose,
     )
 
 
 async def resolve_llm_config_async(
     db: AsyncSession,
     user_settings: Mapping[str, Any] | None = None,
+    purpose: str = LLM_PURPOSE_DEFAULT,
 ) -> ResolvedLLMConfig:
     system_keys = await async_get_system_api_keys(db)
     result = await db.execute(select(User).where(User.role == "owner"))
@@ -119,4 +152,5 @@ async def resolve_llm_config_async(
         system_keys=system_keys,
         owner_settings=owner_settings,
         user_settings=user_settings,
+        purpose=purpose,
     )

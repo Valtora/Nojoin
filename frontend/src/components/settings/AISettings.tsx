@@ -124,6 +124,52 @@ export default function AISettings({
     };
   };
 
+  const getSelectedModelForProvider = (kind: "main" | "live") => {
+    const provider = settings.llm_provider || "gemini";
+    if (provider === "openai") {
+      return kind === "live"
+        ? settings.openai_live_model || ""
+        : settings.openai_model || "";
+    }
+    if (provider === "anthropic") {
+      return kind === "live"
+        ? settings.anthropic_live_model || ""
+        : settings.anthropic_model || "";
+    }
+    if (provider === "ollama") {
+      return kind === "live"
+        ? settings.ollama_live_model || ""
+        : settings.ollama_model || "";
+    }
+    return kind === "live"
+      ? settings.gemini_live_model || ""
+      : settings.gemini_model || "";
+  };
+
+  const updateSelectedModelForProvider = (
+    kind: "main" | "live",
+    value: string,
+  ) => {
+    const provider = settings.llm_provider || "gemini";
+    const updates: Settings = { ...settings };
+
+    if (provider === "openai") {
+      if (kind === "live") updates.openai_live_model = value || null;
+      else updates.openai_model = value;
+    } else if (provider === "anthropic") {
+      if (kind === "live") updates.anthropic_live_model = value || null;
+      else updates.anthropic_model = value;
+    } else if (provider === "ollama") {
+      if (kind === "live") updates.ollama_live_model = value || null;
+      else updates.ollama_model = value;
+    } else {
+      if (kind === "live") updates.gemini_live_model = value || null;
+      else updates.gemini_model = value;
+    }
+
+    onUpdate(updates);
+  };
+
   useEffect(() => {
     getModelsStatus(settings.whisper_model_size)
       .then(setModelStatus)
@@ -310,6 +356,9 @@ export default function AISettings({
     "gemini",
     "openai",
     "anthropic",
+    "meeting edge",
+    "live model",
+    "live assistant",
     "api key",
     "model",
   ]);
@@ -383,7 +432,30 @@ export default function AISettings({
               />
             )}
 
+            <SettingsCallout
+              tone="info"
+              title="Meeting Edge can use a lighter model"
+              message="Leave the Meeting Edge model blank to reuse the main AI model, or choose a faster lower-cost model just for the live Meeting Edge card."
+            />
+
             <SettingsPanel className="space-y-6">
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-orange-200/70 bg-orange-50/70 px-4 py-4 dark:border-orange-500/20 dark:bg-orange-500/10">
+              <div className="space-y-1">
+                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                  Enable Meeting Edge
+                </div>
+                <p className="text-xs leading-5 contrast-helper">
+                  Turn off the live Meeting Edge card and skip its model calls during recordings to reduce API spend.
+                </p>
+              </div>
+              <Switch
+                checked={settings.enable_meeting_edge !== false}
+                onCheckedChange={(checked) =>
+                  onUpdate({ ...settings, enable_meeting_edge: checked })
+                }
+              />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Provider */}
               <div>
@@ -480,27 +552,10 @@ export default function AISettings({
                   </button>
                 </label>
                 <select
-                  value={
-                    (settings.llm_provider === "openai"
-                      ? settings.openai_model
-                      : settings.llm_provider === "anthropic"
-                        ? settings.anthropic_model
-                        : settings.llm_provider === "ollama"
-                          ? settings.ollama_model
-                          : settings.gemini_model) || ""
+                  value={getSelectedModelForProvider("main")}
+                  onChange={(e) =>
+                    updateSelectedModelForProvider("main", e.target.value)
                   }
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const updates: any = { ...settings };
-                    if (settings.llm_provider === "openai")
-                      updates.openai_model = val;
-                    else if (settings.llm_provider === "anthropic")
-                      updates.anthropic_model = val;
-                    else if (settings.llm_provider === "ollama")
-                      updates.ollama_model = val;
-                    else updates.gemini_model = val;
-                    onUpdate(updates);
-                  }}
                   disabled={availableModels.length === 0}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 >
@@ -513,6 +568,43 @@ export default function AISettings({
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-xs contrast-helper">
+                  Used for full-meeting notes, speaker inference, titles, and chat.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                  <Tooltip
+                    content="Optional separate model for Meeting Edge live meeting guidance."
+                    position="right"
+                  >
+                    <span className="flex items-center gap-1 cursor-help">
+                      Meeting Edge model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                    </span>
+                  </Tooltip>
+                </label>
+                <select
+                  value={getSelectedModelForProvider("live")}
+                  onChange={(e) =>
+                    updateSelectedModelForProvider("live", e.target.value)
+                  }
+                  disabled={
+                    settings.enable_meeting_edge === false ||
+                    availableModels.length === 0
+                  }
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                >
+                  <option value="">Use main model</option>
+                  {availableModels.map((model) => (
+                    <option key={`meeting-edge-${model}`} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs contrast-helper">
+                  Used only for the Meeting Edge card during active meetings. This is a good place to pick a lighter or cheaper model.
+                </p>
               </div>
             </div>
 

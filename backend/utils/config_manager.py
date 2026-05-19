@@ -92,6 +92,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "enable_live_transcription": True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
+    "live_max_segment_s": 20.0,
     "live_speech_pad_ms": 300,
     "vad_parameters": {
         "threshold": 0.5,
@@ -105,14 +106,19 @@ DEFAULT_SYSTEM_CONFIG = {
 DEFAULT_USER_SETTINGS = {
     "theme": "dark", # Default theme (dark, light)
     "llm_provider": "gemini",  # LLM provider selection
+    "enable_meeting_edge": True,  # Enable the Meeting Edge live advisory card and model calls
     "gemini_api_key": None,     # Google Gemini API key
     "openai_api_key": None,     # OpenAI API key
     "anthropic_api_key": None,  # Anthropic API key
     "hf_token": None,           # Hugging Face Token for Pyannote
     "gemini_model": _default_models["gemini_model"],     # Default Gemini model
+    "gemini_live_model": None,  # Optional lower-latency Meeting Edge Gemini model
     "openai_model": _default_models["openai_model"],     # Default OpenAI model
+    "openai_live_model": None,  # Optional lower-latency Meeting Edge OpenAI model
     "anthropic_model": _default_models["anthropic_model"], # Default Anthropic model
+    "anthropic_live_model": None,  # Optional lower-latency Meeting Edge Anthropic model
     "ollama_model": None,       # Default Ollama model
+    "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "prefer_short_titles": True, # Prefer short (3-5 words) meeting titles
@@ -158,6 +164,18 @@ def strip_legacy_automatic_ai_settings(settings: dict | None) -> dict:
         for key, value in dict(settings).items()
         if key not in LEGACY_AUTOMATIC_AI_SETTING_KEYS
     }
+
+
+def is_meeting_edge_enabled(settings: dict | None) -> bool:
+    """Returns whether Meeting Edge is enabled for the given user settings."""
+    defaults = get_default_user_settings()
+    sanitized = strip_legacy_automatic_ai_settings(settings)
+    return bool(
+        sanitized.get(
+            "enable_meeting_edge",
+            defaults.get("enable_meeting_edge", True),
+        )
+    )
 
 
 class ConfigManager:
@@ -243,8 +261,12 @@ class ConfigManager:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
-        if key == "enable_live_transcription":
+        if key in {"enable_live_transcription", "enable_meeting_edge"}:
             return isinstance(value, bool)
+        if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:
+            return isinstance(value, (int, float)) and float(value) > 0
+        if key == "live_speech_pad_ms":
+            return isinstance(value, int) and value >= 0
         if key == "theme" and value not in APP_THEMES:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:

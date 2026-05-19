@@ -1,6 +1,8 @@
 #![cfg_attr(not(any(windows, test)), allow(dead_code))]
 
-use crate::backend_url::{build_pinned_client, build_unverified_client, validate_backend_target, ValidatedBackendTarget};
+use crate::backend_url::{
+    build_pinned_client, build_unverified_client, validate_backend_target, ValidatedBackendTarget,
+};
 use crate::config::{BackendConnection, Config};
 use crate::log_redact::sanitize_for_log;
 use crate::secret_store::{self, BackendSecretBundle};

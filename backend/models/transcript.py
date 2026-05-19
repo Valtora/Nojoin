@@ -16,6 +16,11 @@ class Transcript(BaseDBModel, table=True):
     segments: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSONB))
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     user_notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    meeting_edge_focus: Optional[str] = Field(default=None, sa_column=Column(Text))
+    meeting_edge_payload: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
+    meeting_edge_status: str = Field(default="idle")
+    meeting_edge_error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    meeting_edge_source_signature: Optional[str] = Field(default=None, sa_column=Column(Text))
     notes_status: str = Field(default="pending") # pending, generating, completed, error
     transcript_status: str = Field(default="pending") # pending, processing, completed, error
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))

@@ -8,6 +8,7 @@ use cpal::Device;
 use crossbeam_channel::Receiver;
 use hound;
 use log::{info, warn};
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -61,6 +62,90 @@ enum SegmentUploadOutcome {
     Failed(i32),
 }
 
+const TARGET_SEGMENT_DURATION_SECS: u64 = 2;
+const HARD_MAX_SEGMENT_DURATION_SECS: u64 = 20;
+const MIX_LOOP_WAIT_SLICE_MS: u64 = 100;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SegmentCutReason {
+    TargetDuration,
+    HardMaxDuration,
+}
+
+impl SegmentCutReason {
+    fn log_label(self) -> &'static str {
+        match self {
+            Self::TargetDuration => "target live flush interval",
+            Self::HardMaxDuration => "absolute live segment cap",
+        }
+    }
+}
+
+fn segment_frame_limit(sample_rate: u32, duration_secs: u64) -> usize {
+    sample_rate as usize * duration_secs as usize
+}
+
+fn segment_cut_reason(
+    segment_start: std::time::Instant,
+    written_frames: usize,
+    sample_rate: u32,
+    target_duration_secs: u64,
+    hard_max_duration_secs: u64,
+) -> Option<SegmentCutReason> {
+    if written_frames >= segment_frame_limit(sample_rate, hard_max_duration_secs)
+        || segment_start.elapsed().as_secs_f64() >= hard_max_duration_secs as f64
+    {
+        return Some(SegmentCutReason::HardMaxDuration);
+    }
+
+    if written_frames >= segment_frame_limit(sample_rate, target_duration_secs)
+        || segment_start.elapsed().as_secs_f64() >= target_duration_secs as f64
+    {
+        return Some(SegmentCutReason::TargetDuration);
+    }
+
+    None
+}
+
+fn drain_channel_into_buffer(
+    rx: &crossbeam_channel::Receiver<Vec<f32>>,
+    buffer: &mut VecDeque<f32>,
+) {
+    while let Ok(chunk) = rx.try_recv() {
+        buffer.extend(chunk);
+    }
+}
+
+fn write_mixed_frames<W: std::io::Write + std::io::Seek>(
+    writer: &mut hound::WavWriter<W>,
+    mic_buffer: &mut VecDeque<f32>,
+    sys_buffer: &mut VecDeque<f32>,
+    frame_budget: usize,
+) -> anyhow::Result<usize> {
+    let frames_to_write = mic_buffer.len().min(frame_budget);
+
+    for _ in 0..frames_to_write {
+        let mut mixed = mic_buffer.pop_front().unwrap_or_default();
+
+        if let Some(sys_sample) = sys_buffer.pop_front() {
+            mixed += sys_sample;
+        }
+
+        if mixed > 1.0 {
+            mixed = 1.0;
+        } else if mixed < -1.0 {
+            mixed = -1.0;
+        }
+
+        let sample_i16 = (mixed * i16::MAX as f32) as i16;
+        writer
+            .write_sample(sample_i16)
+            .map_err(|error| anyhow::anyhow!("Failed to write wav sample: {}", error))?;
+    }
+
+    Ok(frames_to_write)
+}
+
 fn prune_empty_parent_directories(start_dir: &Path) {
     let mut current = Some(start_dir);
 
@@ -94,9 +179,7 @@ fn cleanup_segment_file(path: &Path, reason: &str) {
         Err(error) => {
             warn!(
                 "Failed to remove temp segment file {:?} after {}: {}",
-                path,
-                reason,
-                error
+                path, reason, error
             );
             return;
         }
@@ -110,11 +193,18 @@ fn cleanup_segment_file(path: &Path, reason: &str) {
 fn reset_recording_state(state: &Arc<AppState>) {
     *recover_mutex_guard(state.status.lock(), "status") = AppStatus::Idle;
     *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
-    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
-    *recover_mutex_guard(state.current_recording_owner.lock(), "current_recording_owner") = None;
+    *recover_mutex_guard(
+        state.current_recording_token.lock(),
+        "current_recording_token",
+    ) = None;
+    *recover_mutex_guard(
+        state.current_recording_owner.lock(),
+        "current_recording_owner",
+    ) = None;
     state.clear_recording_recovery_state();
     *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
-    *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration") = std::time::Duration::new(0, 0);
+    *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration") =
+        std::time::Duration::new(0, 0);
     *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time") = None;
 }
 
@@ -136,8 +226,13 @@ fn join_recording_thread(
 fn handle_terminal_recording_failure(state: &Arc<AppState>, app_handle: &AppHandle, reason: &str) {
     warn!("Recording cannot be finalized safely: {}", reason);
 
-    let recording_id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
-    let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
+    let recording_id =
+        recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+    let recording_token = recover_mutex_guard(
+        state.current_recording_token.lock(),
+        "current_recording_token",
+    )
+    .clone();
     let config = recover_mutex_guard(state.config.lock(), "config").clone();
 
     if let (Some(recording_id), Some(recording_token)) = (recording_id, recording_token) {
@@ -249,7 +344,9 @@ pub fn run_audio_loop(
                 recording_handle = Some(start_segment(id, 1, state.clone(), is_recording.clone()));
             }
             AudioCommand::Resume => {
-                let id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+                let id =
+                    recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id")
+                        .clone();
                 let seq = *recover_mutex_guard(state.current_sequence.lock(), "current_sequence");
                 if let Some(rec_id) = id {
                     recording_handle = Some(start_segment(
@@ -293,13 +390,21 @@ pub fn run_audio_loop(
                 }
 
                 // Trigger finalize
-                let id = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").clone();
+                let id =
+                    recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id")
+                        .clone();
                 let config = recover_mutex_guard(state.config.lock(), "config").clone();
 
                 // Calculate duration
                 let duration = {
-                    let acc = *recover_mutex_guard(state.accumulated_duration.lock(), "accumulated_duration");
-                    let start = *recover_mutex_guard(state.recording_start_time.lock(), "recording_start_time");
+                    let acc = *recover_mutex_guard(
+                        state.accumulated_duration.lock(),
+                        "accumulated_duration",
+                    );
+                    let start = *recover_mutex_guard(
+                        state.recording_start_time.lock(),
+                        "recording_start_time",
+                    );
                     if let Some(s) = start {
                         if let Ok(elapsed) = s.elapsed() {
                             acc + elapsed
@@ -396,7 +501,6 @@ fn start_segment(
 
     thread::spawn(move || {
         let run = || -> anyhow::Result<SegmentThreadOutcome> {
-            const MAX_SEGMENT_DURATION_SECS: u64 = 2;
             let temp_dir = std::env::temp_dir().join("Nojoin").join("recordings");
             if let Err(e) = std::fs::create_dir_all(&temp_dir) {
                 log::error!("Failed to create temp directory {:?}: {}", temp_dir, e);
@@ -640,7 +744,7 @@ fn start_segment(
                     sys_rx,
                     is_recording,
                     state.clone(),
-                    MAX_SEGMENT_DURATION_SECS,
+                    TARGET_SEGMENT_DURATION_SECS,
                     temp_dir,
                 );
             } else {
@@ -653,7 +757,7 @@ fn start_segment(
                     sys_rx,
                     is_recording,
                     state.clone(),
-                    MAX_SEGMENT_DURATION_SECS,
+                    TARGET_SEGMENT_DURATION_SECS,
                     temp_dir,
                 );
             }
@@ -683,12 +787,24 @@ fn run_mixing_loop(
     max_duration: u64,
     temp_dir: std::path::PathBuf,
 ) -> anyhow::Result<SegmentThreadOutcome> {
-    let mut sys_buffer: Vec<f32> = Vec::new();
+    let mut mic_buffer: VecDeque<f32> = VecDeque::new();
+    let mut sys_buffer: VecDeque<f32> = VecDeque::new();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut upload_handles = Vec::new();
     let (upload_outcome_tx, mut upload_outcome_rx) = mpsc::unbounded_channel();
+    let target_frame_limit = segment_frame_limit(spec.sample_rate, max_duration);
+    let hard_max_frame_limit =
+        segment_frame_limit(spec.sample_rate, HARD_MAX_SEGMENT_DURATION_SECS);
 
-    while is_recording.load(Ordering::SeqCst) {
+    loop {
+        if !is_recording.load(Ordering::SeqCst) {
+            drain_channel_into_buffer(&mic_rx, &mut mic_buffer);
+            drain_channel_into_buffer(&sys_rx, &mut sys_buffer);
+            if mic_buffer.is_empty() {
+                break;
+            }
+        }
+
         let filename = format!("temp_{}_{}.wav", recording_id, current_sequence);
         let path = temp_dir.join(&filename);
 
@@ -696,54 +812,79 @@ fn run_mixing_loop(
             .map_err(|e| anyhow::anyhow!("Failed to create wav writer: {}", e))?;
 
         let segment_start = std::time::Instant::now();
+        let mut written_frames = 0usize;
+        let mut cut_reason = None;
 
-        // Record for up to MAX_SEGMENT_DURATION_SECS or until stopped
-        while is_recording.load(Ordering::SeqCst) {
-            // Flush the live segment once the ~2 second interval elapses.
-            if segment_start.elapsed().as_secs() >= max_duration {
-                info!(
-                    "Segment {} reached live flush interval, starting new segment",
-                    current_sequence
-                );
+        while is_recording.load(Ordering::SeqCst) || !mic_buffer.is_empty() {
+            if let Some(reason) = segment_cut_reason(
+                segment_start,
+                written_frames,
+                spec.sample_rate,
+                max_duration,
+                HARD_MAX_SEGMENT_DURATION_SECS,
+            ) {
+                cut_reason = Some(reason);
                 break;
             }
 
-            // Block on Mic data (Master)
-            if let Ok(mic_data) = mic_rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                // Collect available System data
-                while let Ok(sys_chunk) = sys_rx.try_recv() {
-                    sys_buffer.extend(sys_chunk);
-                }
+            drain_channel_into_buffer(&sys_rx, &mut sys_buffer);
 
-                // Mix
-                for (_i, mic_sample) in mic_data.iter().enumerate() {
-                    let mut mixed = *mic_sample;
-
-                    // Simple mixing: Add system audio if available
-                    // Note: This is a naive mix. Real mixing needs resampling if rates differ.
-                    // Sample rate mismatch warning is logged at startup if significant.
-                    if !sys_buffer.is_empty() {
-                        let sys_sample = sys_buffer.remove(0);
-                        mixed += sys_sample;
+            if mic_buffer.is_empty() {
+                match mic_rx.recv_timeout(std::time::Duration::from_millis(MIX_LOOP_WAIT_SLICE_MS))
+                {
+                    Ok(mic_data) => {
+                        mic_buffer.extend(mic_data);
+                        drain_channel_into_buffer(&sys_rx, &mut sys_buffer);
                     }
-
-                    // Hard clip to avoid wrapping
-                    if mixed > 1.0 {
-                        mixed = 1.0;
-                    } else if mixed < -1.0 {
-                        mixed = -1.0;
-                    }
-
-                    // Convert f32 (-1.0 to 1.0) to i16
-                    let sample_i16 = (mixed * i16::MAX as f32) as i16;
-                    writer.write_sample(sample_i16).unwrap();
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
                 }
             }
+
+            if mic_buffer.is_empty() {
+                continue;
+            }
+
+            let remaining_target_frames = target_frame_limit.saturating_sub(written_frames);
+            let remaining_hard_frames = hard_max_frame_limit.saturating_sub(written_frames);
+            let frame_budget = remaining_target_frames.min(remaining_hard_frames);
+
+            if frame_budget == 0 {
+                cut_reason = segment_cut_reason(
+                    segment_start,
+                    written_frames,
+                    spec.sample_rate,
+                    max_duration,
+                    HARD_MAX_SEGMENT_DURATION_SECS,
+                )
+                .or(Some(SegmentCutReason::TargetDuration));
+                break;
+            }
+
+            written_frames +=
+                write_mixed_frames(&mut writer, &mut mic_buffer, &mut sys_buffer, frame_budget)?;
         }
 
         writer
             .finalize()
             .map_err(|e| anyhow::anyhow!("Failed to finalize wav writer: {}", e))?;
+
+        if written_frames == 0 {
+            cleanup_segment_file(&path, "empty segment");
+            if !is_recording.load(Ordering::SeqCst) {
+                break;
+            }
+            continue;
+        }
+
+        if let Some(reason) = cut_reason {
+            info!(
+                "Segment {} closed after {:.2}s of audio because it reached the {}.",
+                current_sequence,
+                written_frames as f64 / spec.sample_rate as f64,
+                reason.log_label()
+            );
+        }
         info!("Segment {} recorded: {:?}", current_sequence, path);
 
         // Upload segment in background
@@ -751,7 +892,11 @@ fn run_mixing_loop(
         let path_clone = path.clone();
         let seq = current_sequence;
         let config = recover_mutex_guard(state.config.lock(), "config").clone();
-        let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
+        let recording_token = recover_mutex_guard(
+            state.current_recording_token.lock(),
+            "current_recording_token",
+        )
+        .clone();
         let tx = upload_outcome_tx.clone();
         let recording_id_for_upload = recording_id.clone();
 
@@ -782,8 +927,10 @@ fn run_mixing_loop(
             {
                 Ok(refreshed_token) => {
                     if let Some(new_token) = refreshed_token {
-                        *recover_mutex_guard(state_upload.current_recording_token.lock(), "current_recording_token") =
-                            Some(new_token.clone());
+                        *recover_mutex_guard(
+                            state_upload.current_recording_token.lock(),
+                            "current_recording_token",
+                        ) = Some(new_token.clone());
                     }
                     info!("Segment {} uploaded successfully", seq);
                     cleanup_segment_file(&path_clone, "successful upload");
@@ -808,7 +955,11 @@ fn run_mixing_loop(
 
     let total_segments = current_sequence.saturating_sub(1);
     let config = recover_mutex_guard(state.config.lock(), "config").clone();
-    let recording_token = recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token").clone();
+    let recording_token = recover_mutex_guard(
+        state.current_recording_token.lock(),
+        "current_recording_token",
+    )
+    .clone();
 
     // Check if we should report "UPLOADING" status
     // We only want to do this if we are STOPPING/UPLOADING, not if we are PAUSED.
@@ -843,7 +994,10 @@ fn run_mixing_loop(
             .await
             .map(|refreshed_token| {
                 if let Some(new_token) = refreshed_token {
-                    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
+                    *recover_mutex_guard(
+                        state.current_recording_token.lock(),
+                        "current_recording_token",
+                    ) = Some(new_token.clone());
                     recording_token = new_token;
                 }
             })
@@ -873,8 +1027,10 @@ fn run_mixing_loop(
                         .await
                         .map(|refreshed_token| {
                             if let Some(new_token) = refreshed_token {
-                                *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") =
-                                    Some(new_token.clone());
+                                *recover_mutex_guard(
+                                    state.current_recording_token.lock(),
+                                    "current_recording_token",
+                                ) = Some(new_token.clone());
                                 recording_token = new_token;
                             }
                         })
@@ -904,9 +1060,16 @@ fn run_mixing_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{cleanup_segment_file, SegmentThreadOutcome};
+    use super::{
+        cleanup_segment_file, segment_cut_reason, write_mixed_frames, SegmentCutReason,
+        SegmentThreadOutcome,
+    };
+    use hound;
     use std::fs;
+    use std::io::Cursor;
+    use std::time::Instant;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{collections::VecDeque, thread, time::Duration};
 
     fn unique_test_dir() -> std::path::PathBuf {
         let unique = SystemTime::now()
@@ -940,5 +1103,43 @@ mod tests {
             outcome.upload_failure_reason().as_deref(),
             Some("segments 2, 4, 7 failed to upload after repeated retries")
         );
+    }
+
+    #[test]
+    fn segment_cut_reason_prefers_hard_cap_once_target_is_missed() {
+        let started = Instant::now();
+        thread::sleep(Duration::from_millis(25));
+
+        let reason = segment_cut_reason(started, 20 * 48_000, 48_000, 2, 20);
+
+        assert_eq!(reason, Some(SegmentCutReason::HardMaxDuration));
+    }
+
+    #[test]
+    fn segment_cut_reason_marks_target_duration_from_written_frames() {
+        let reason = segment_cut_reason(Instant::now(), 96_000, 48_000, 2, 20);
+
+        assert_eq!(reason, Some(SegmentCutReason::TargetDuration));
+    }
+
+    #[test]
+    fn write_mixed_frames_respects_frame_budget_and_keeps_carry_over() {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let cursor = Cursor::new(Vec::<u8>::new());
+        let mut writer = hound::WavWriter::new(cursor, spec).unwrap();
+        let mut mic_buffer = VecDeque::from(vec![0.1, 0.2, 0.3, 0.4, 0.5]);
+        let mut sys_buffer = VecDeque::from(vec![0.05, 0.05, 0.05, 0.05, 0.05]);
+
+        let written = write_mixed_frames(&mut writer, &mut mic_buffer, &mut sys_buffer, 3).unwrap();
+        writer.finalize().unwrap();
+
+        assert_eq!(written, 3);
+        assert_eq!(mic_buffer, VecDeque::from(vec![0.4, 0.5]));
+        assert_eq!(sys_buffer, VecDeque::from(vec![0.05, 0.05]));
     }
 }

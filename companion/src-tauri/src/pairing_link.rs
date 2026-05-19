@@ -29,7 +29,10 @@ fn canonical_signature_message(fields: &[(&str, &str)]) -> Vec<u8> {
     parts.join("\n").into_bytes()
 }
 
-fn required_query_value<'a>(query: &'a HashMap<String, String>, key: &str) -> Result<&'a str, String> {
+fn required_query_value<'a>(
+    query: &'a HashMap<String, String>,
+    key: &str,
+) -> Result<&'a str, String> {
     query
         .get(key)
         .map(String::as_str)
@@ -52,7 +55,9 @@ fn parse_backend_target(origin: &str) -> Result<(ValidatedBackendTarget, String)
         return Err("Pairing link backend origin must not include a path.".to_string());
     }
     if parsed.query().is_some() || parsed.fragment().is_some() {
-        return Err("Pairing link backend origin must not include a query or fragment.".to_string());
+        return Err(
+            "Pairing link backend origin must not include a query or fragment.".to_string(),
+        );
     }
 
     Ok((target.clone(), target.origin()))
@@ -88,7 +93,9 @@ fn verify_key_id(expected_key_id: &str, public_key: &str) -> Result<(), String> 
         .map_err(|err| format!("Pairing link public key is invalid: {}", err))?;
     let actual_key_id = format!("{:x}", Sha256::digest(public_key_bytes));
     if &actual_key_id[..16] != expected_key_id {
-        return Err("Pairing link backend identity key id does not match its public key.".to_string());
+        return Err(
+            "Pairing link backend identity key id does not match its public key.".to_string(),
+        );
     }
     Ok(())
 }

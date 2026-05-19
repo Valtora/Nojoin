@@ -27,6 +27,7 @@ class SettingsUpdate(BaseModel):
     anthropic_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
+    enable_meeting_edge: Optional[bool] = None
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None
@@ -35,9 +36,13 @@ class SettingsUpdate(BaseModel):
     theme: Optional[str] = None
     hf_token: Optional[str] = None
     gemini_model: Optional[str] = None
+    gemini_live_model: Optional[str] = None
     openai_model: Optional[str] = None
+    openai_live_model: Optional[str] = None
     anthropic_model: Optional[str] = None
+    anthropic_live_model: Optional[str] = None
     ollama_model: Optional[str] = None
+    ollama_live_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     prefer_short_titles: Optional[bool] = None
@@ -112,7 +117,18 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     owner = result.scalar_one_or_none()
     owner_settings = getattr(owner, "settings", {}) if owner else {}
     
-    system_fields = ["llm_provider", "gemini_model", "openai_model", "anthropic_model", "ollama_model", "ollama_api_url"]
+    system_fields = [
+        "llm_provider",
+        "gemini_model",
+        "gemini_live_model",
+        "openai_model",
+        "openai_live_model",
+        "anthropic_model",
+        "anthropic_live_model",
+        "ollama_model",
+        "ollama_live_model",
+        "ollama_api_url",
+    ]
     for sys_field in system_fields:
         if owner_settings and owner_settings.get(sys_field):
             merged[sys_field] = owner_settings[sys_field]

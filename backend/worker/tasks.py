@@ -1,6 +1,7 @@
 import os
 import shutil
 import logging
+import hashlib
 import time
 from datetime import datetime, timedelta
 import warnings
@@ -10,6 +11,7 @@ import requests.exceptions
 from typing import TYPE_CHECKING, Sequence
 from celery import Task
 from celery.signals import worker_ready
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.celery_app import celery_app
@@ -27,8 +29,13 @@ from backend.services.calendar_link_service import auto_link_recording
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
-from backend.utils.config_manager import config_manager
-from backend.utils.llm_config import ResolvedLLMConfig, resolve_llm_config
+from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.llm_config import (
+    LLM_PURPOSE_MEETING_EDGE,
+    ResolvedLLMConfig,
+    resolve_llm_config,
+)
+from backend.utils.meeting_edge import MeetingEdgeRequest, serialize_meeting_edge_result
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
@@ -62,6 +69,21 @@ AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS = 300
 AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS = 97
 AUTOMATIC_MEETING_INTELLIGENCE_STAGE = "Generating Notes"
 AUTOMATIC_MEETING_INTELLIGENCE_STEP = "Generating meeting notes..."
+
+MEETING_EDGE_TIMEOUT_SECONDS = 90
+MEETING_EDGE_MIN_SEGMENTS = 3
+MEETING_EDGE_MIN_WORDS = 80
+MEETING_EDGE_FOCUSED_MIN_SEGMENTS = 2
+MEETING_EDGE_FOCUSED_MIN_WORDS = 35
+MEETING_EDGE_MIN_REFRESH_SECONDS = 20
+MEETING_EDGE_MIN_NEW_SEGMENTS = 3
+MEETING_EDGE_MIN_NEW_WORDS = 60
+MEETING_EDGE_RECENT_SEGMENTS = 12
+MEETING_EDGE_MAX_TRANSCRIPT_CHARS = 6000
+MEETING_EDGE_STATUS_IDLE = "idle"
+MEETING_EDGE_STATUS_UPDATING = "updating"
+MEETING_EDGE_STATUS_READY = "ready"
+MEETING_EDGE_STATUS_ERROR = "error"
 
 
 def _paths_point_to_same_media(path_a: str | None, path_b: str | None) -> bool:
@@ -137,6 +159,123 @@ def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
         api_key=llm_config.api_key,
         model=llm_config.model,
         api_url=llm_config.api_url,
+    )
+
+
+def _count_meeting_edge_words(segments: Sequence[dict]) -> int:
+    total = 0
+    for segment in segments:
+        total += len(str(segment.get("text", "")).split())
+    return total
+
+
+def _has_meeting_edge_signal(
+    *,
+    segment_count: int,
+    word_count: int,
+    focus_text: str | None,
+) -> bool:
+    min_segments = (
+        MEETING_EDGE_FOCUSED_MIN_SEGMENTS if focus_text else MEETING_EDGE_MIN_SEGMENTS
+    )
+    min_words = MEETING_EDGE_FOCUSED_MIN_WORDS if focus_text else MEETING_EDGE_MIN_WORDS
+    return word_count >= min_words or (
+        segment_count >= min_segments and word_count >= max(18, min_words // 2)
+    )
+
+
+def _build_recent_meeting_edge_transcript(
+    segments: Sequence[dict],
+    speaker_map: dict[str, str],
+) -> str:
+    lines: list[str] = []
+    total_chars = 0
+
+    for segment in reversed(list(segments)[-MEETING_EDGE_RECENT_SEGMENTS:]):
+        rendered = format_segments_for_llm([segment], speaker_map)
+        if not rendered:
+            continue
+        rendered_length = len(rendered) + 1
+        if lines and total_chars + rendered_length > MEETING_EDGE_MAX_TRANSCRIPT_CHARS:
+            break
+        lines.append(rendered)
+        total_chars += rendered_length
+
+    return "\n".join(reversed(lines)).strip()
+
+
+def _hash_meeting_edge_text(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    return hashlib.sha1(cleaned.encode("utf-8")).hexdigest()
+
+
+def _build_meeting_edge_source_signature(
+    *,
+    recent_transcript: str,
+    focus_text: str | None,
+    user_notes: str | None,
+    config_signature: str,
+) -> str:
+    payload = "\n||\n".join(
+        [recent_transcript.strip(), (focus_text or "").strip(), (user_notes or "").strip(), config_signature]
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _parse_meeting_edge_generated_at(payload: dict | None) -> datetime | None:
+    if not isinstance(payload, dict):
+        return None
+
+    raw_value = payload.get("generated_at")
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+
+    try:
+        return datetime.fromisoformat(raw_value.replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
+    except ValueError:
+        return None
+
+
+def _should_refresh_meeting_edge(
+    *,
+    transcript: Transcript,
+    source_signature: str,
+    current_segment_count: int,
+    current_word_count: int,
+    focus_text: str | None,
+    user_notes: str | None,
+) -> bool:
+    if transcript.meeting_edge_source_signature == source_signature and transcript.meeting_edge_status in {
+        MEETING_EDGE_STATUS_READY,
+        MEETING_EDGE_STATUS_UPDATING,
+        MEETING_EDGE_STATUS_ERROR,
+    }:
+        return False
+
+    previous_payload = (
+        transcript.meeting_edge_payload if isinstance(transcript.meeting_edge_payload, dict) else {}
+    )
+    previous_generated_at = _parse_meeting_edge_generated_at(previous_payload)
+    previous_segment_count = int(previous_payload.get("source_segment_count") or 0)
+    previous_word_count = int(previous_payload.get("source_word_count") or 0)
+    focus_changed = previous_payload.get("focus_hash") != _hash_meeting_edge_text(focus_text)
+    user_notes_changed = previous_payload.get("user_notes_hash") != _hash_meeting_edge_text(user_notes)
+
+    if focus_changed or user_notes_changed or not previous_generated_at:
+        return True
+
+    elapsed_seconds = max((utc_now() - previous_generated_at).total_seconds(), 0.0)
+    new_segment_count = max(current_segment_count - previous_segment_count, 0)
+    new_word_count = max(current_word_count - previous_word_count, 0)
+
+    if elapsed_seconds < MEETING_EDGE_MIN_REFRESH_SECONDS:
+        return False
+
+    return (
+        new_segment_count >= MEETING_EDGE_MIN_NEW_SEGMENTS
+        or new_word_count >= MEETING_EDGE_MIN_NEW_WORDS
     )
 
 
@@ -238,6 +377,26 @@ def _resolve_meeting_event_context(
         return None
 
 
+def _set_meeting_edge_state(
+    session,
+    transcript: Transcript,
+    *,
+    status: str,
+    error_message: str | None = None,
+    source_signature: str | None = None,
+    payload: dict | None = None,
+) -> None:
+    transcript.meeting_edge_status = status
+    transcript.meeting_edge_error_message = error_message
+    if source_signature is not None:
+        transcript.meeting_edge_source_signature = source_signature
+    if payload is not None:
+        transcript.meeting_edge_payload = payload
+        flag_modified(transcript, "meeting_edge_payload")
+    session.add(transcript)
+    session.commit()
+
+
 def _run_automatic_meeting_intelligence_stage(
     *,
     session,
@@ -333,6 +492,197 @@ class DatabaseTask(Task):
     def after_return(self, status, retval, task_id, args, kwargs, einfo):
         if self._session:
             self._session.close()
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def refresh_meeting_edge_task(self, recording_id: int):
+    session = self.session
+
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording:
+            return None
+
+        if recording.status not in {
+            RecordingStatus.UPLOADING,
+            RecordingStatus.QUEUED,
+            RecordingStatus.PROCESSING,
+        }:
+            return None
+
+        transcript = session.exec(
+            select(Transcript)
+            .where(Transcript.recording_id == recording_id)
+            .with_for_update()
+        ).first()
+        if transcript is None:
+            return None
+
+        user_settings = {}
+        if recording.user_id:
+            user = session.get(User, recording.user_id)
+            if user and user.settings:
+                user_settings = user.settings
+
+        if not is_meeting_edge_enabled(user_settings):
+            if (
+                transcript.meeting_edge_status != MEETING_EDGE_STATUS_IDLE
+                or transcript.meeting_edge_error_message
+            ):
+                _set_meeting_edge_state(
+                    session,
+                    transcript,
+                    status=MEETING_EDGE_STATUS_IDLE,
+                    error_message=None,
+                )
+            return None
+
+        segments = [
+            dict(segment)
+            for segment in (transcript.segments or [])
+            if str(segment.get("text", "")).strip()
+        ]
+        focus_text = transcript.meeting_edge_focus
+        user_notes = transcript.user_notes
+
+        if not segments:
+            if transcript.meeting_edge_status != MEETING_EDGE_STATUS_IDLE:
+                _set_meeting_edge_state(
+                    session,
+                    transcript,
+                    status=MEETING_EDGE_STATUS_IDLE,
+                    error_message=None,
+                )
+            return None
+
+        segment_count = len(segments)
+        word_count = _count_meeting_edge_words(segments)
+        if not _has_meeting_edge_signal(
+            segment_count=segment_count,
+            word_count=word_count,
+            focus_text=focus_text,
+        ):
+            if transcript.meeting_edge_status not in {
+                MEETING_EDGE_STATUS_IDLE,
+                MEETING_EDGE_STATUS_READY,
+            }:
+                _set_meeting_edge_state(
+                    session,
+                    transcript,
+                    status=MEETING_EDGE_STATUS_IDLE,
+                    error_message=None,
+                )
+            return None
+
+        llm_config = resolve_llm_config(
+            session,
+            user_settings,
+            purpose=LLM_PURPOSE_MEETING_EDGE,
+        )
+        config_signature = ":".join(
+            [
+                llm_config.provider,
+                llm_config.model or "",
+                llm_config.api_url or "",
+            ]
+        )
+
+        speakers = session.exec(
+            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+        ).all()
+        speaker_map = build_recording_speaker_map(speakers)
+        recent_transcript = _build_recent_meeting_edge_transcript(segments, speaker_map)
+        source_signature = _build_meeting_edge_source_signature(
+            recent_transcript=recent_transcript,
+            focus_text=focus_text,
+            user_notes=user_notes,
+            config_signature=config_signature,
+        )
+
+        if not _should_refresh_meeting_edge(
+            transcript=transcript,
+            source_signature=source_signature,
+            current_segment_count=segment_count,
+            current_word_count=word_count,
+            focus_text=focus_text,
+            user_notes=user_notes,
+        ):
+            return None
+
+        missing_llm_config = llm_config.missing_configuration_message()
+        if missing_llm_config:
+            _set_meeting_edge_state(
+                session,
+                transcript,
+                status=MEETING_EDGE_STATUS_ERROR,
+                error_message=missing_llm_config,
+                source_signature=source_signature,
+            )
+            return None
+
+        previous_payload = (
+            transcript.meeting_edge_payload if isinstance(transcript.meeting_edge_payload, dict) else {}
+        )
+        request = MeetingEdgeRequest(
+            recent_transcript=recent_transcript,
+            rolling_summary=(previous_payload or {}).get("summary"),
+            focus_text=focus_text,
+            user_notes=user_notes,
+            meeting_context=_resolve_meeting_event_context(session, recording),
+        )
+
+        _set_meeting_edge_state(
+            session,
+            transcript,
+            status=MEETING_EDGE_STATUS_UPDATING,
+            error_message=None,
+            source_signature=source_signature,
+        )
+
+        llm = _llm_backend_from_config(llm_config)
+        result = llm.generate_meeting_edge(
+            request,
+            timeout=MEETING_EDGE_TIMEOUT_SECONDS,
+        )
+        payload = serialize_meeting_edge_result(result)
+        payload.update(
+            {
+                "generated_at": utc_now().isoformat(),
+                "source_segment_count": segment_count,
+                "source_word_count": word_count,
+                "source_last_end": float(segments[-1].get("end", 0.0)),
+                "focus_hash": _hash_meeting_edge_text(focus_text),
+                "user_notes_hash": _hash_meeting_edge_text(user_notes),
+            }
+        )
+        _set_meeting_edge_state(
+            session,
+            transcript,
+            status=MEETING_EDGE_STATUS_READY,
+            error_message=None,
+            source_signature=source_signature,
+            payload=payload,
+        )
+        return payload
+    except Exception as exc:
+        logger.error(
+            "Meeting Edge refresh failed for recording %s: %s",
+            recording_id,
+            exc,
+            exc_info=True,
+        )
+
+        transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        ).first()
+        if transcript is not None:
+            _set_meeting_edge_state(
+                session,
+                transcript,
+                status=MEETING_EDGE_STATUS_ERROR,
+                error_message=str(exc).strip()[:500] or "Meeting Edge could not be updated.",
+            )
+        return None
 
 @celery_app.task(base=DatabaseTask, bind=True, autoretry_for=(ConnectionError, urllib.error.URLError, requests.exceptions.RequestException), retry_backoff=True, max_retries=3)
 def process_recording_task(self, recording_id: int, force_title_regeneration: bool = False, engine_override: dict | None = None):

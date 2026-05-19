@@ -53,6 +53,11 @@ CREATE TABLE transcripts (
     segments JSON,
     notes TEXT,
     user_notes TEXT,
+    meeting_edge_focus TEXT,
+    meeting_edge_payload JSON,
+    meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
+    meeting_edge_error_message TEXT,
+    meeting_edge_source_signature TEXT,
     notes_status VARCHAR(32) NOT NULL,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT

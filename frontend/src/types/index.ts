@@ -111,12 +111,32 @@ export interface TranscriptSegment {
   text_manually_edited?: boolean;
 }
 
+export interface MeetingEdgeConcept {
+  term: string;
+  explanation: string;
+}
+
+export interface MeetingEdgePayload {
+  summary: string;
+  questions: string[];
+  points: string[];
+  concepts: MeetingEdgeConcept[];
+  generated_at?: string;
+  source_segment_count?: number;
+  source_word_count?: number;
+  source_last_end?: number;
+}
+
 export interface Transcript extends BaseDBModel {
   recording_id: RecordingId;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
   user_notes?: string | null;
+  meeting_edge_focus?: string | null;
+  meeting_edge_payload?: MeetingEdgePayload | null;
+  meeting_edge_status?: string;
+  meeting_edge_error_message?: string | null;
   notes_status?: string; // pending, generating, completed, error
   transcript_status?: string; // pending, processing, completed, error
   error_message?: string;
@@ -174,6 +194,7 @@ export interface Settings {
   parakeet_model?: string;
   canary_model?: string;
   enable_live_transcription?: boolean;
+  enable_meeting_edge?: boolean;
   processing_device?: string;
   theme?: string;
   timezone?: string;
@@ -182,9 +203,13 @@ export interface Settings {
   openai_api_key?: string;
   anthropic_api_key?: string;
   gemini_model?: string;
+  gemini_live_model?: string | null;
   openai_model?: string;
+  openai_live_model?: string | null;
   anthropic_model?: string;
+  anthropic_live_model?: string | null;
   ollama_model?: string;
+  ollama_live_model?: string | null;
   ollama_api_url?: string;
   hf_token?: string;
   worker_url?: string;

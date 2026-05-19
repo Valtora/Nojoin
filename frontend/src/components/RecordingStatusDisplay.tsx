@@ -9,6 +9,7 @@ import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
+import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 
 function formatClock(seconds: number) {
@@ -79,11 +80,15 @@ function LiveRecordingTimer() {
 interface RecordingStatusDisplayProps {
   recording: Recording;
   onSaveProcessingNotes: (notes: string) => Promise<void>;
+  onSaveMeetingEdgeFocus: (focus: string) => Promise<void>;
+  showMeetingEdge?: boolean;
 }
 
 export default function RecordingStatusDisplay({
   recording,
   onSaveProcessingNotes,
+  onSaveMeetingEdgeFocus,
+  showMeetingEdge = true,
 }: RecordingStatusDisplayProps) {
   const isActiveRecording =
     recording.status === RecordingStatus.UPLOADING &&
@@ -218,7 +223,16 @@ export default function RecordingStatusDisplay({
             </div>
       </section>
 
-      <div className="mx-auto w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-5xl space-y-4">
+        {showMeetingEdge ? (
+          <MeetingEdgePanel
+            payload={recording.transcript?.meeting_edge_payload}
+            focusText={recording.transcript?.meeting_edge_focus}
+            status={recording.transcript?.meeting_edge_status}
+            errorMessage={recording.transcript?.meeting_edge_error_message}
+            onSaveFocus={onSaveMeetingEdgeFocus}
+          />
+        ) : null}
         <ProcessingNotesPanel
           value={recording.transcript?.user_notes}
           onSave={onSaveProcessingNotes}

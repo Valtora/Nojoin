@@ -80,11 +80,14 @@ You can monitor:
 
 - A unified live audio activity waveform.
 - Recording state and duration.
+- A Meeting Edge card with live questions, missed points, and quick concept help.
 - A persistent notes panel for user-authored context.
 
 If live audio stays quiet for a while, Nojoin may show a low-key inline reminder near the waveform instead of a persistent fault-style warning. `Dismiss` hides that reminder for the rest of the current meeting, `Don't show again` suppresses it until you re-enable it, and `Settings > Companion > Devices and alerts` lets you reset the warning state later.
 
 Manual notes are captured with low-latency autosave behaviour so typing remains responsive while the meeting is live.
+
+Meeting Edge also includes a smaller guidance field where you can tell the assistant what to optimize for during the meeting, such as timeline risk, unanswered dependencies, or decision ownership. It autosaves while you type and updates the live guidance after enough transcript signal is available.
 
 ### Live Transcription
 
@@ -93,6 +96,8 @@ While a meeting is recording, the live transcript pane is visible immediately. I
 Live speaker labels are assigned by an online embedding matcher. Matching voice regions keep the same provisional `LIVE_XX` speaker identity, while very short or embedding-less regions reuse the most recent stable live speaker instead of creating a new speaker for every fragment.
 
 The normal stop-to-final workflow uses the same transcription engine for live and final transcription so Nojoin can reuse the live transcript rather than transcribing the meeting again from scratch. Final processing still performs diarisation, speaker reconciliation, voiceprint work when enabled, and meeting-intelligence generation.
+
+Meeting Edge uses the recent live transcript window, the latest saved live guidance summary, your optional Meeting Edge focus text, your manual notes, and linked calendar context when available. In Settings > AI you can optionally choose a separate Meeting Edge model for the current provider; if you leave that field empty, Nojoin reuses your main AI model.
 
 ## Importing Recordings
 
@@ -203,6 +208,8 @@ When an AI provider and model are configured, Nojoin can automatically generate 
 This automatic enhancement happens once near the end of processing. If AI configuration is incomplete, the recording still finishes and remains fully reviewable, but the automatic AI stage is skipped.
 
 Manual user notes are also used as supporting context for speaker suggestions and both automatic and manual note generation, and the final notes explicitly label user-authored items.
+
+Meeting Edge is a separate live guidance flow. It does not wait for the end-of-processing meeting-intelligence pass, and it can use a cheaper provider-specific model than the main notes/title model. If the Meeting Edge model is unset, it falls back to the provider's main configured model.
 
 ### Linked Calendar Event
 

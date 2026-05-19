@@ -19,9 +19,7 @@ use tauri::{
 use semver::Version;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 #[cfg(windows)]
-use windows_sys::Win32::UI::Shell::{
-    SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_DWORD, SHCNF_FLUSH,
-};
+use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_DWORD, SHCNF_FLUSH};
 #[cfg(windows)]
 use winreg::enums::HKEY_CURRENT_USER;
 #[cfg(windows)]
@@ -240,9 +238,7 @@ fn launcher_primary_action(mode: LauncherMode) -> LauncherPrimaryAction {
         LauncherMode::FirstRun | LauncherMode::Unpaired | LauncherMode::PairingActive => {
             LauncherPrimaryAction::OpenSettings
         }
-        LauncherMode::PairedHealthy => {
-            LauncherPrimaryAction::OpenNojoin
-        }
+        LauncherMode::PairedHealthy => LauncherPrimaryAction::OpenNojoin,
         LauncherMode::PairedDisconnected | LauncherMode::LocalHttpsRepairing => {
             LauncherPrimaryAction::OpenSettings
         }
@@ -485,14 +481,10 @@ fn current_tray_status_label(
             RecordingRecoveryState::WaitingForReconnect => {
                 "Recording paused while temporarily disconnected".to_string()
             }
-            RecordingRecoveryState::StopRequested => {
-                "Upload queued until reconnect".to_string()
-            }
+            RecordingRecoveryState::StopRequested => "Upload queued until reconnect".to_string(),
         },
         AppStatus::Uploading => match recovery_state {
-            RecordingRecoveryState::StopRequested => {
-                "Upload queued until reconnect".to_string()
-            }
+            RecordingRecoveryState::StopRequested => "Upload queued until reconnect".to_string(),
             _ => "Uploading recording".to_string(),
         },
         AppStatus::BackendOffline => "Temporarily disconnected".to_string(),
@@ -526,7 +518,9 @@ fn update_tray_status_ui(state: &Arc<AppState>) {
     let status_text = current_tray_status_text(state);
     let tooltip_text = current_tray_tooltip_text(state);
 
-    if let Some(item) = recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item").as_ref() {
+    if let Some(item) =
+        recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item").as_ref()
+    {
         let _ = item.set_text(&status_text);
     }
 
@@ -535,10 +529,14 @@ fn update_tray_status_ui(state: &Arc<AppState>) {
     }
 }
 
-fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Result<Menu<tauri::Wry>> {
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+) -> tauri::Result<Menu<tauri::Wry>> {
     let status = recover_mutex_guard(state.status.lock(), "status").clone();
     let recovery_state = state.recording_recovery_state();
-    let has_active_recording = recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_some();
+    let has_active_recording =
+        recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id").is_some();
     let can_open_nojoin = tray_has_open_nojoin_target(state);
     let can_pause_recording = has_active_recording
         && matches!(status, AppStatus::Recording)
@@ -594,7 +592,8 @@ fn build_tray_menu(app: &tauri::AppHandle, state: &Arc<AppState>) -> tauri::Resu
         None::<&str>,
     )?;
 
-    *recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item") = Some(status_item.clone());
+    *recover_mutex_guard(state.tray_status_item.lock(), "tray_status_item") =
+        Some(status_item.clone());
 
     let separator_after_status = PredefinedMenuItem::separator(app)?;
     let separator_after_controls = PredefinedMenuItem::separator(app)?;
@@ -844,7 +843,8 @@ fn get_settings_state(app: tauri::AppHandle, state: tauri::State<SharedAppState>
         derive_backend_label(&config)
     };
     let local_https_health = state.0.local_https_health();
-    let latest_version = recover_mutex_guard(state.0.latest_version.lock(), "latest_version").clone();
+    let latest_version =
+        recover_mutex_guard(state.0.latest_version.lock(), "latest_version").clone();
 
     SettingsView {
         backend_label,
@@ -1039,12 +1039,11 @@ async fn resize_current_window(
     height: f64,
 ) -> Result<(), String> {
     let window_label = window.label().to_string();
-    let (min_width, max_width, min_height, max_height) =
-        if window_label == SETTINGS_WINDOW_LABEL {
-            (600.0, 920.0, 620.0, 1100.0)
-        } else {
-            (360.0, 640.0, 220.0, 520.0)
-        };
+    let (min_width, max_width, min_height, max_height) = if window_label == SETTINGS_WINDOW_LABEL {
+        (600.0, 920.0, 620.0, 1100.0)
+    } else {
+        (360.0, 640.0, 220.0, 520.0)
+    };
     let clamped_width = width.clamp(min_width, max_width);
     let clamped_height = height.clamp(min_height, max_height);
     let app_handle = window.app_handle().clone();
@@ -1751,11 +1750,9 @@ fn handle_tray_double_click(app: &tauri::AppHandle, state: &Arc<AppState>) {
         return;
     }
 
-    if let Err(message) = focus_primary_native_surface_for_launch(
-        app,
-        state,
-        LauncherOpenReason::ExplicitLaunch,
-    ) {
+    if let Err(message) =
+        focus_primary_native_surface_for_launch(app, state, LauncherOpenReason::ExplicitLaunch)
+    {
         notifications::show_notification(app, "Launcher Error", &message);
     }
 }
@@ -1978,8 +1975,7 @@ async fn best_effort_reject_pairing_request(
     {
         warn!(
             "Failed to update backend pairing request state (request_id={}): {}",
-            &launch_request.request_id,
-            error
+            &launch_request.request_id, error
         );
     }
 }
@@ -2002,17 +1998,17 @@ fn pairing_request_identity_conflict(
 }
 
 fn is_same_backend_target(previous: &BackendConnection, replacement: &BackendConnection) -> bool {
-    previous.api_protocol.eq_ignore_ascii_case(&replacement.api_protocol)
-        && previous.api_host.eq_ignore_ascii_case(&replacement.api_host)
+    previous
+        .api_protocol
+        .eq_ignore_ascii_case(&replacement.api_protocol)
+        && previous
+            .api_host
+            .eq_ignore_ascii_case(&replacement.api_host)
         && previous.api_port == replacement.api_port
         && previous.paired_web_origin == replacement.paired_web_origin
 }
 
-async fn process_pairing_link(
-    app: tauri::AppHandle,
-    state: Arc<AppState>,
-    raw_url: String,
-) {
+async fn process_pairing_link(app: tauri::AppHandle, state: Arc<AppState>, raw_url: String) {
     let (launch_request, backend_target) = match PairingLaunchRequest::parse(&raw_url) {
         Ok(value) => value,
         Err(error) => {
@@ -2064,8 +2060,7 @@ async fn process_pairing_link(
         );
         warn!(
             "Failed to mark pairing request opened (request_id={}): {}",
-            &launch_request.request_id,
-            error
+            &launch_request.request_id, error
         );
         return;
     }
@@ -2107,21 +2102,22 @@ async fn process_pairing_link(
         return;
     }
 
-    let approved = match confirm_pairing_request(&app, &launch_request, previous_backend.as_ref()).await {
-        Ok(approved) => approved,
-        Err(error) => {
-            best_effort_reject_pairing_request(
-                &backend_target,
-                &launch_request,
-                "failed",
-                "Nojoin Companion could not show the approval prompt. Start again from Nojoin.",
-                "prompt_unavailable",
-            )
-            .await;
-            notifications::show_notification(&app, "Pairing Failed", &error);
-            return;
-        }
-    };
+    let approved =
+        match confirm_pairing_request(&app, &launch_request, previous_backend.as_ref()).await {
+            Ok(approved) => approved,
+            Err(error) => {
+                best_effort_reject_pairing_request(
+                    &backend_target,
+                    &launch_request,
+                    "failed",
+                    "Nojoin Companion could not show the approval prompt. Start again from Nojoin.",
+                    "prompt_unavailable",
+                )
+                .await;
+                notifications::show_notification(&app, "Pairing Failed", &error);
+                return;
+            }
+        };
 
     if !approved {
         best_effort_reject_pairing_request(
@@ -2209,8 +2205,11 @@ async fn process_pairing_link(
         .map(|existing| !is_same_backend_target(existing, &backend))
         .unwrap_or(false);
 
-    if let Err(error) = secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle) {
-        let _ = companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
+    if let Err(error) =
+        secret_store::save_backend_secret_bundle_for_backend(&backend, &new_secret_bundle)
+    {
+        let _ =
+            companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
         notifications::show_notification(&app, "Pairing Failed", &error);
         return;
     }
@@ -2221,13 +2220,21 @@ async fn process_pairing_link(
     };
     if let Err(error) = save_result {
         let _ = secret_store::delete_backend_secret_bundle_for_backend(&backend);
-        let _ = companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
-        notifications::show_notification(&app, "Pairing Failed", &format!("Failed to save pairing config: {}", error));
+        let _ =
+            companion_auth::revoke_backend_pairings_with_bundle(&backend, &new_secret_bundle).await;
+        notifications::show_notification(
+            &app,
+            "Pairing Failed",
+            &format!("Failed to save pairing config: {}", error),
+        );
         return;
     }
 
     *recover_mutex_guard(state.current_recording_id.lock(), "current_recording_id") = None;
-    *recover_mutex_guard(state.current_recording_token.lock(), "current_recording_token") = None;
+    *recover_mutex_guard(
+        state.current_recording_token.lock(),
+        "current_recording_token",
+    ) = None;
     state.clear_current_recording_owner();
     state.clear_recording_recovery_state();
     *recover_mutex_guard(state.current_sequence.lock(), "current_sequence") = 1;
@@ -2236,9 +2243,13 @@ async fn process_pairing_link(
         if let Some(previous_backend) = previous_backend.as_ref() {
             if let Some(bundle) = previous_secret_bundle.as_ref() {
                 if let Err(error) =
-                    companion_auth::revoke_backend_pairings_with_bundle(previous_backend, bundle).await
+                    companion_auth::revoke_backend_pairings_with_bundle(previous_backend, bundle)
+                        .await
                 {
-                    warn!("Failed to revoke pairing state on the previous backend: {}", error);
+                    warn!(
+                        "Failed to revoke pairing state on the previous backend: {}",
+                        error
+                    );
                 }
             }
         }
@@ -2246,7 +2257,8 @@ async fn process_pairing_link(
 
     if let Some(previous_backend) = previous_backend.as_ref() {
         if previous_backend.backend_pairing_id != backend.backend_pairing_id {
-            if let Err(error) = secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
+            if let Err(error) =
+                secret_store::delete_backend_secret_bundle_for_backend(previous_backend)
             {
                 warn!(
                     "Failed to delete the previous backend companion secret bundle after successful pairing: {}",
@@ -2277,11 +2289,7 @@ async fn process_pairing_link(
 }
 
 fn dispatch_pairing_link(app: &tauri::AppHandle, state: &Arc<AppState>, raw_url: String) {
-    tauri::async_runtime::spawn(process_pairing_link(
-        app.clone(),
-        state.clone(),
-        raw_url,
-    ));
+    tauri::async_runtime::spawn(process_pairing_link(app.clone(), state.clone(), raw_url));
 }
 
 #[cfg(test)]
@@ -2371,7 +2379,6 @@ mod tests {
             "Upload queued until reconnect"
         );
     }
-
 }
 
 fn handle_process_mode() -> ProcessMode {

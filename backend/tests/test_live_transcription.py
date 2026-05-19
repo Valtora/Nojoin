@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.api.deps import get_current_recording_client_user, get_db
+from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
     ConfigManager,
     config_manager,
+    get_default_user_settings,
 )
 
 validate_config_value = config_manager.validate_config_value
@@ -30,6 +31,7 @@ def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
+    assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
 
 
 def test_live_transcription_keys_survive_reload(tmp_path):
@@ -40,6 +42,7 @@ def test_live_transcription_keys_survive_reload(tmp_path):
             {
                 "enable_live_transcription": False,
                 "transcription_backend": "parakeet",
+                "live_max_segment_s": 12.0,
             }
         ),
         encoding="utf-8",
@@ -48,10 +51,12 @@ def test_live_transcription_keys_survive_reload(tmp_path):
     manager = ConfigManager(config_path=str(config_path))
     assert manager.get("enable_live_transcription") is False
     assert manager.get("transcription_backend") == "parakeet"
+    assert manager.get("live_max_segment_s") == 12.0
 
     manager.reload()
     assert manager.get("enable_live_transcription") is False
     assert manager.get("transcription_backend") == "parakeet"
+    assert manager.get("live_max_segment_s") == 12.0
 
 
 def test_validate_config_value_enable_live_transcription():
@@ -59,6 +64,26 @@ def test_validate_config_value_enable_live_transcription():
     assert validate_config_value("enable_live_transcription", True) is True
     assert validate_config_value("enable_live_transcription", False) is True
     assert validate_config_value("enable_live_transcription", "yes") is False
+
+
+def test_default_user_settings_enable_meeting_edge_by_default():
+    """Meeting Edge defaults to enabled for new users."""
+    assert get_default_user_settings()["enable_meeting_edge"] is True
+
+
+def test_validate_config_value_enable_meeting_edge():
+    """enable_meeting_edge is validated as a boolean."""
+    assert validate_config_value("enable_meeting_edge", True) is True
+    assert validate_config_value("enable_meeting_edge", False) is True
+    assert validate_config_value("enable_meeting_edge", "no") is False
+
+
+def test_validate_config_value_live_max_segment_s():
+    """live_max_segment_s must be a positive number."""
+    assert validate_config_value("live_max_segment_s", 20) is True
+    assert validate_config_value("live_max_segment_s", 7.5) is True
+    assert validate_config_value("live_max_segment_s", 0) is False
+    assert validate_config_value("live_max_segment_s", -1) is False
 
 
 # --- init endpoint Transcript creation test ---------------------------------
@@ -102,6 +127,11 @@ CREATE TABLE transcripts (
     segments JSON,
     notes TEXT,
     user_notes TEXT,
+    meeting_edge_focus TEXT,
+    meeting_edge_payload JSON,
+    meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
+    meeting_edge_error_message TEXT,
+    meeting_edge_source_signature TEXT,
     notes_status VARCHAR(32) NOT NULL,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT
@@ -109,13 +139,14 @@ CREATE TABLE transcripts (
 """
 
 
-def build_test_user(user_id: int = 1, username: str = "alice"):
+def build_test_user(user_id: int = 1, username: str = "alice", settings: dict | None = None):
     from types import SimpleNamespace
 
     return SimpleNamespace(
         id=user_id,
         username=username,
         force_password_change=False,
+        settings=settings or {},
     )
 
 
@@ -153,6 +184,7 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker, monkeypatch
 
     api_app.dependency_overrides[get_db] = override_get_db
     api_app.dependency_overrides[get_current_recording_client_user] = lambda: build_test_user()
+    api_app.dependency_overrides[get_current_user] = lambda: build_test_user()
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
@@ -190,6 +222,121 @@ async def test_init_endpoint_creates_processing_transcript(
 
     assert len(rows) == 1
     assert rows[0][1] == "processing"
+
+
+@pytest.mark.anyio
+async def test_meeting_edge_focus_endpoint_persists_focus_and_dispatches_refresh(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    """PUT /transcripts/{id}/meeting-edge-focus saves focus text and queues a refresh."""
+    from backend.api.v1.endpoints import transcripts as transcripts_module
+
+    dispatched: list[tuple[str, list[int]]] = []
+
+    def fake_send_task(task_name: str, args: list[int] | None = None, **_: object) -> None:
+        dispatched.append((task_name, list(args or [])))
+
+    monkeypatch.setattr(transcripts_module.celery_app, "send_task", fake_send_task)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, proxy_path, celery_task_id, duration_seconds,
+                    trim_start_s, trim_end_s, file_size_bytes, status,
+                    client_status, upload_progress, processing_progress,
+                    processing_step, processing_started_at,
+                    processing_completed_at, is_archived, is_deleted,
+                    user_id, calendar_event_id
+                ) VALUES (
+                    1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
+                    'rec-public', 'meeting-public', '/tmp/audio.wav', NULL,
+                    NULL, 120.0, NULL, NULL, NULL, 'UPLOADING', NULL, 0, 0,
+                    NULL, NULL, NULL, 0, 0, 1, NULL
+                )
+                """
+            )
+        )
+        await session.commit()
+
+    response = await client.put(
+        "/api/v1/transcripts/rec-public/meeting-edge-focus",
+        json={"meeting_edge_focus": "Flag missing owners and timeline risk."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["meeting_edge_focus"] == "Flag missing owners and timeline risk."
+    assert dispatched == [
+        ("backend.worker.tasks.refresh_meeting_edge_task", [1])
+    ]
+
+    async with test_session_maker() as session:
+        result = await session.execute(
+            text(
+                "SELECT meeting_edge_focus, meeting_edge_status FROM transcripts WHERE recording_id = 1"
+            )
+        )
+        row = result.one()
+
+    assert row[0] == "Flag missing owners and timeline risk."
+    assert row[1] == "idle"
+
+
+@pytest.mark.anyio
+async def test_meeting_edge_focus_endpoint_skips_refresh_when_feature_disabled(
+    client: AsyncClient,
+    api_app: FastAPI,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    """PUT /transcripts/{id}/meeting-edge-focus saves focus text without queuing refresh when disabled."""
+    from backend.api.v1.endpoints import transcripts as transcripts_module
+
+    dispatched: list[tuple[str, list[int]]] = []
+
+    def fake_send_task(task_name: str, args: list[int] | None = None, **_: object) -> None:
+        dispatched.append((task_name, list(args or [])))
+
+    monkeypatch.setattr(transcripts_module.celery_app, "send_task", fake_send_task)
+    api_app.dependency_overrides[get_current_user] = lambda: build_test_user(
+        settings={"enable_meeting_edge": False}
+    )
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, proxy_path, celery_task_id, duration_seconds,
+                    trim_start_s, trim_end_s, file_size_bytes, status,
+                    client_status, upload_progress, processing_progress,
+                    processing_step, processing_started_at,
+                    processing_completed_at, is_archived, is_deleted,
+                    user_id, calendar_event_id
+                ) VALUES (
+                    2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
+                    'rec-public-disabled', 'meeting-public-disabled', '/tmp/audio.wav', NULL,
+                    NULL, 120.0, NULL, NULL, NULL, 'UPLOADING', NULL, 0, 0,
+                    NULL, NULL, NULL, 0, 0, 1, NULL
+                )
+                """
+            )
+        )
+        await session.commit()
+
+    response = await client.put(
+        "/api/v1/transcripts/rec-public-disabled/meeting-edge-focus",
+        json={"meeting_edge_focus": "Keep this saved but do not refresh."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["meeting_edge_focus"] == "Keep this saved but do not refresh."
+    assert dispatched == []
 
 
 # --- detect_speech_segments VAD helper tests --------------------------------
@@ -439,6 +586,35 @@ def test_classify_speech_forced_cut():
     complete, cut = classify_speech(speech, 8.1)
     assert complete == speech
     assert cut == 8.1
+
+
+def test_classify_speech_splits_long_complete_region():
+    """A long complete region is split into hard-capped emitted segments."""
+    from backend.processing.live_transcribe import classify_speech
+
+    speech = [{"start": 0.0, "end": 45.0}]
+    complete, cut = classify_speech(speech, 50.0, max_segment_s=20.0)
+
+    assert complete == [
+        {"start": 0.0, "end": 20.0},
+        {"start": 20.0, "end": 40.0},
+        {"start": 40.0, "end": 45.0},
+    ]
+    assert cut == 45.0
+
+
+def test_classify_speech_splits_long_forced_trailing_region():
+    """A forced trailing flush is still subdivided into smaller provisional chunks."""
+    from backend.processing.live_transcribe import classify_speech
+
+    speech = [{"start": 0.0, "end": 31.0}]
+    complete, cut = classify_speech(speech, 31.0, max_segment_s=20.0)
+
+    assert complete == [
+        {"start": 0.0, "end": 20.0},
+        {"start": 20.0, "end": 31.0},
+    ]
+    assert cut == 31.0
 
 
 def test_live_state_preserves_last_speaker_label(tmp_path):
@@ -733,7 +909,7 @@ def test_live_carry_over_across_seam(monkeypatch, tmp_path):
 
 
 def test_live_forced_cut(monkeypatch, tmp_path):
-    """A >30 s continuous speech region produces a completed provisional segment."""
+    """A >30 s continuous speech region is emitted as hard-capped provisional chunks."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
 
@@ -754,9 +930,48 @@ def test_live_forced_cut(monkeypatch, tmp_path):
 
     _run_live_task(monkeypatch, 11, 1, session)
 
-    assert len(transcript.segments) == 1
+    assert len(transcript.segments) == 2
     assert transcript.segments[0]["start"] == 0.0
-    assert transcript.segments[0]["end"] == 31.0
+    assert transcript.segments[0]["end"] == 20.0
+    assert transcript.segments[1]["start"] == 20.0
+    assert transcript.segments[1]["end"] == 31.0
+
+
+def test_live_task_skips_meeting_edge_dispatch_when_disabled(monkeypatch, tmp_path):
+    """Live provisional transcript writes do not enqueue Meeting Edge when disabled."""
+    from types import SimpleNamespace
+
+    import backend.worker.tasks as tasks_module
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "15"
+    temp_dir.mkdir()
+
+    monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
+
+    def speech_map(audio):
+        return [{"start": 0.0, "end": 1.0}]
+
+    _patch_live_deps(monkeypatch, speech_map=speech_map)
+
+    dispatched: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        tasks_module,
+        "refresh_meeting_edge_task",
+        SimpleNamespace(delay=lambda *args, **kwargs: dispatched.append((args, kwargs))),
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    recording.user = SimpleNamespace(settings={"enable_meeting_edge": False})
+    session = _FakeSession(recording)
+
+    _make_segment_wav(temp_dir, 1, 2.0)
+    _run_live_task(monkeypatch, 15, 1, session)
+
+    assert len(transcript.segments) == 1
+    assert dispatched == []
 
 
 def test_live_entry_guard_bails_when_not_uploading(monkeypatch, tmp_path):

@@ -694,7 +694,8 @@ fn run_firefox_machine_root_installer(
         warn!("Firefox support setup stderr: {}", stderr);
     }
 
-    let install_log_summary = read_firefox_machine_root_install_log_summary(&install_files.log_path);
+    let install_log_summary =
+        read_firefox_machine_root_install_log_summary(&install_files.log_path);
     if let Some(summary) = install_log_summary.as_ref() {
         warn!(
             "Firefox support setup installer log tail from {}: {}",

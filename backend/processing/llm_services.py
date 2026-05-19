@@ -22,6 +22,13 @@ from backend.utils.meeting_intelligence import (
     get_default_automatic_meeting_intelligence_prompt_template,
     parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
 )
+from backend.utils.meeting_edge import (
+    MeetingEdgeRequest,
+    MeetingEdgeResult,
+    build_meeting_edge_prompt as build_meeting_edge_prompt_text,
+    get_default_meeting_edge_prompt_template,
+    parse_meeting_edge_response as parse_meeting_edge_payload,
+)
 import os
 
 logger = logging.getLogger(__name__)
@@ -63,6 +70,17 @@ class LLMBackend:
         """
         Generate speaker suggestions for unresolved labels, a meeting title, and
         meeting notes from a single LLM call.
+        """
+        raise NotImplementedError
+
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        """
+        Generate live Meeting Edge guidance from the current meeting context.
         """
         raise NotImplementedError
 
@@ -237,6 +255,10 @@ Now generate the meeting notes following the exact format specified above. Be co
         return get_default_automatic_meeting_intelligence_prompt_template()
 
     @staticmethod
+    def get_meeting_edge_prompt_template() -> str:
+        return get_default_meeting_edge_prompt_template()
+
+    @staticmethod
     def parse_mapping_table(response_text: str) -> Dict[str, str]:
         lines = [line.strip() for line in response_text.splitlines() if line.strip()]
         mapping = {}
@@ -328,6 +350,13 @@ Now generate the meeting notes following the exact format specified above. Be co
         )
 
     @staticmethod
+    def build_meeting_edge_prompt(
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+    ) -> str:
+        return build_meeting_edge_prompt_text(request, prompt_template)
+
+    @staticmethod
     def finalise_meeting_notes(notes: str, user_notes: Optional[str] = None) -> str:
         return append_user_notes_section(notes, user_notes)
 
@@ -344,6 +373,13 @@ Now generate the meeting notes following the exact format specified above. Be co
             result,
             request.user_notes,
         )
+
+    @staticmethod
+    def parse_meeting_edge_result(
+        response_text: str,
+        request: MeetingEdgeRequest,
+    ) -> MeetingEdgeResult:
+        return parse_meeting_edge_payload(response_text, request=request)
 
     @staticmethod
     def get_mapped_transcript_for_llm(recording_id: int) -> str:
@@ -541,6 +577,26 @@ class GeminiLLMBackend(LLMBackend):
         except Exception as e:
             logger.error(f"Gemini API error (meeting intelligence): {e}")
             raise RuntimeError(f"Gemini API error (meeting intelligence): {e}")
+
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
+            text = self._extract_text_from_response(response)
+            return self.parse_meeting_edge_result(text, request)
+        except Exception as e:
+            logger.error(f"Gemini API error (Meeting Edge): {e}")
+            raise RuntimeError(f"Gemini API error (Meeting Edge): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
@@ -801,6 +857,35 @@ class OpenAILLMBackend(LLMBackend):
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
             logger.error(f"OpenAI API error (meeting intelligence): {e}")
             raise RuntimeError(f"OpenAI API error (meeting intelligence): {e}")
+
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+
+        request_kwargs = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "timeout": timeout,
+        }
+        if self.model.startswith("gpt") or "gpt" in self.model:
+            request_kwargs["temperature"] = 0.2
+
+        try:
+            response = self.client.chat.completions.create(**request_kwargs)
+            text = response.choices[0].message.content or ""
+            return self.parse_meeting_edge_result(text, request)
+        except Exception as e:
+            if "not a chat model" in str(e) or "404" in str(e):
+                logger.error(f"OpenAI API error (Meeting Edge): Invalid model {self.model}. {e}")
+                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+            logger.error(f"OpenAI API error (Meeting Edge): {e}")
+            raise RuntimeError(f"OpenAI API error (Meeting Edge): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
@@ -1081,6 +1166,28 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
             raise RuntimeError(f"Anthropic API error (meeting intelligence): {e}")
 
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            return self.parse_meeting_edge_result(text, request)
+        except Exception as e:
+            logger.error(f"Anthropic API error (Meeting Edge): {e}")
+            raise RuntimeError(f"Anthropic API error (Meeting Edge): {e}")
+
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
     def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
@@ -1332,6 +1439,31 @@ class OllamaLLMBackend(LLMBackend):
         except Exception as e:
             logger.error(f"Ollama API error (meeting intelligence): {e}")
             raise RuntimeError(f"Ollama API error (meeting intelligence): {e}")
+
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            text = resp.json().get('message', {}).get('content', '')
+            return self.parse_meeting_edge_result(text, request)
+        except Exception as e:
+            logger.error(f"Ollama API error (Meeting Edge): {e}")
+            raise RuntimeError(f"Ollama API error (Meeting Edge): {e}")
 
     def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
         if recording_id is not None:

@@ -42,6 +42,10 @@ class TranscriptPublicRead(PublicModel):
     segments: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
     user_notes: Optional[str] = None
+    meeting_edge_focus: Optional[str] = None
+    meeting_edge_payload: Optional[dict[str, Any]] = None
+    meeting_edge_status: str = "idle"
+    meeting_edge_error_message: Optional[str] = None
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -149,6 +153,10 @@ def serialize_transcript(
         segments=transcript.segments,
         notes=transcript.notes,
         user_notes=transcript.user_notes,
+        meeting_edge_focus=transcript.meeting_edge_focus,
+        meeting_edge_payload=transcript.meeting_edge_payload,
+        meeting_edge_status=transcript.meeting_edge_status,
+        meeting_edge_error_message=transcript.meeting_edge_error_message,
         notes_status=transcript.notes_status,
         transcript_status=transcript.transcript_status,
         error_message=transcript.error_message,

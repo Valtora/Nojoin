@@ -47,6 +47,8 @@ The primary user interface for interacting with the system.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
   - **Waveform Monitoring:** While the Companion is recording, the page shows a unified live audio activity waveform sourced from the local Companion service.
+  - **Meeting Edge Guidance:** The live workspace includes a Meeting Edge card that turns the recent transcript into a small set of tactful clarifying questions, overlooked points, and short concept explanations.
+  - **Guidance Steering:** Users can provide a separate short Meeting Edge focus prompt during the meeting to steer the live guidance without editing their broader manual notes.
   - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
   - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
@@ -165,6 +167,8 @@ The system provides the following core capabilities:
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** Provider-gated automatic AI enhancement via one LLM call that can return unresolved speaker suggestions, a meeting title, and Markdown meeting notes, plus separate Chat Q&A.
   - **Manual AI Actions:** `Generate Notes` remains a notes-only manual action, and `Retry Speaker Inference` remains a speaker-only manual action.
+  - **Meeting Edge Live Guidance:** A separate low-latency Meeting Edge flow uses recent live transcript context to generate real-time questions, missed points, and concept help during in-flight meetings.
+  - **Separate Live Model Slot:** Each provider can optionally configure a dedicated Meeting Edge model; when unset, Meeting Edge falls back to that provider's main model.
   - **User-Authored Notes:** Users can write manual notes during recording or processing. These notes are injected into speaker-name inference and meeting-note generation as supporting context.
   - **Final Note Attribution:** Final notes append a deterministic `User Notes` section in which each manual note is labelled as user-authored.
 - **Search Capabilities:**

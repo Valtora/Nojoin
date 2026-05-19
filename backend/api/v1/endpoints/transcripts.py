@@ -43,7 +43,7 @@ from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.user import User
 from backend.models.chat import ChatMessage
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.celery_app import celery_app
 from backend.processing.llm_services import get_llm_backend
 from backend.core.db import async_session_maker
@@ -82,6 +82,23 @@ async def _get_owned_recording(
     return recording
 
 
+def _dispatch_meeting_edge_refresh(recording_id: int, *, enabled: bool = True) -> None:
+    if not enabled:
+        return
+
+    try:
+        celery_app.send_task(
+            "backend.worker.tasks.refresh_meeting_edge_task",
+            args=[recording_id],
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to dispatch Meeting Edge refresh for recording %s: %s",
+            recording_id,
+            exc,
+        )
+
+
 # --- Pydantic Models ---
 
 class TranscriptSegmentTextUpdate(BaseModel):
@@ -108,6 +125,10 @@ class NotesUpdate(BaseModel):
 
 class UserNotesUpdate(BaseModel):
     user_notes: str
+
+
+class MeetingEdgeFocusUpdate(BaseModel):
+    meeting_edge_focus: str
 
 class ChatRequest(BaseModel):
     message: str
@@ -822,6 +843,10 @@ async def update_segment_speaker(
                 # Note: We don't delete the GlobalSpeaker, just the local association
     
     await db.commit()
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
 
     # 6. Update Embeddings (Active Learning)
     try:
@@ -885,6 +910,10 @@ async def update_transcript_segment_text(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
     
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
@@ -924,6 +953,10 @@ async def find_and_replace(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
         
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
@@ -960,6 +993,10 @@ async def update_transcript_segments(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
     
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
@@ -1028,8 +1065,46 @@ async def update_user_notes(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
 
     return {"user_notes": transcript.user_notes, "status": "success"}
+
+
+@router.put("/{recording_id}/meeting-edge-focus")
+async def update_meeting_edge_focus(
+    recording_id: str,
+    update: MeetingEdgeFocusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update the user-provided Meeting Edge focus prompt for a live meeting.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    result = await db.execute(stmt)
+    transcript = result.scalar_one_or_none()
+
+    if not transcript:
+        transcript = Transcript(recording_id=recording.id)
+
+    transcript.meeting_edge_focus = update.meeting_edge_focus.strip() or None
+    db.add(transcript)
+    await db.commit()
+    await db.refresh(transcript)
+    _dispatch_meeting_edge_refresh(
+        recording.id,
+        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+    )
+
+    return {
+        "meeting_edge_focus": transcript.meeting_edge_focus,
+        "status": "success",
+    }
 
 @router.put("/{recording_id}/notes")
 async def update_notes(

@@ -813,6 +813,19 @@ export const updateUserNotes = async (
   return response.data;
 };
 
+export const updateMeetingEdgeFocus = async (
+  recordingId: RecordingId,
+  meetingEdgeFocus: string,
+): Promise<{ meeting_edge_focus: string | null; status: string }> => {
+  const response = await api.put<{
+    meeting_edge_focus: string | null;
+    status: string;
+  }>(`/transcripts/${recordingId}/meeting-edge-focus`, {
+    meeting_edge_focus: meetingEdgeFocus,
+  });
+  return response.data;
+};
+
 export const generateNotes = async (
   recordingId: RecordingId,
 ): Promise<{

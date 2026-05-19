@@ -310,20 +310,23 @@ impl AppState {
     #[cfg(test)]
     pub fn begin_pairing_session(&self) -> PairingSession {
         let session = PairingSession::new();
-        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
+        let mut pairing_session =
+            recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         *pairing_session = Some(session.clone());
         session
     }
 
     #[cfg(test)]
     pub fn clear_pairing_session(&self) {
-        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
+        let mut pairing_session =
+            recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         *pairing_session = None;
     }
 
     #[cfg(test)]
     pub fn current_pairing_session(&self) -> Option<PairingSession> {
-        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
+        let mut pairing_session =
+            recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
 
         if pairing_session
             .as_ref()
@@ -383,7 +386,8 @@ impl AppState {
         &self,
         submitted_code: &str,
     ) -> Result<(), PairingValidationError> {
-        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
+        let mut pairing_session =
+            recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         let session = match pairing_session.as_mut() {
             Some(session) => session,
             None => return Err(PairingValidationError::NotActive),
@@ -414,7 +418,8 @@ impl AppState {
 
     #[cfg(test)]
     pub fn release_pairing_completion(&self) {
-        let mut pairing_session = recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
+        let mut pairing_session =
+            recover_mutex_guard(self.pairing_session.lock(), "pairing_session");
         let Some(session) = pairing_session.as_mut() else {
             return;
         };
@@ -433,25 +438,41 @@ impl AppState {
     }
 
     pub fn set_current_recording_owner(&self, owner: ActiveRecordingOwner) {
-        let mut current_owner = recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner");
+        let mut current_owner = recover_mutex_guard(
+            self.current_recording_owner.lock(),
+            "current_recording_owner",
+        );
         *current_owner = Some(owner);
     }
 
     pub fn current_recording_owner(&self) -> Option<ActiveRecordingOwner> {
-        recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner").clone()
+        recover_mutex_guard(
+            self.current_recording_owner.lock(),
+            "current_recording_owner",
+        )
+        .clone()
     }
 
     pub fn clear_current_recording_owner(&self) {
-        let mut current_owner = recover_mutex_guard(self.current_recording_owner.lock(), "current_recording_owner");
+        let mut current_owner = recover_mutex_guard(
+            self.current_recording_owner.lock(),
+            "current_recording_owner",
+        );
         *current_owner = None;
     }
 
     pub fn recording_recovery_state(&self) -> RecordingRecoveryState {
-        *recover_mutex_guard(self.recording_recovery_state.lock(), "recording_recovery_state")
+        *recover_mutex_guard(
+            self.recording_recovery_state.lock(),
+            "recording_recovery_state",
+        )
     }
 
     pub fn set_recording_recovery_state(&self, recovery_state: RecordingRecoveryState) {
-        let mut current_state = recover_mutex_guard(self.recording_recovery_state.lock(), "recording_recovery_state");
+        let mut current_state = recover_mutex_guard(
+            self.recording_recovery_state.lock(),
+            "recording_recovery_state",
+        );
         *current_state = recovery_state;
     }
 
@@ -468,7 +489,8 @@ impl AppState {
     }
 
     pub fn set_local_https_health(&self, health: LocalHttpsHealth) {
-        let mut current_health = recover_mutex_guard(self.local_https_health.lock(), "local_https_health");
+        let mut current_health =
+            recover_mutex_guard(self.local_https_health.lock(), "local_https_health");
         *current_health = health;
     }
 }

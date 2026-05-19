@@ -107,10 +107,7 @@ pub fn validate_backend_target(
         return Err("Backend host must not be empty.".to_string());
     }
     if trimmed_host.len() > MAX_HOST_LEN {
-        return Err(format!(
-            "Backend host exceeds {} characters.",
-            MAX_HOST_LEN
-        ));
+        return Err(format!("Backend host exceeds {} characters.", MAX_HOST_LEN));
     }
     if trimmed_host.chars().any(|c| {
         matches!(
@@ -171,9 +168,7 @@ pub fn enforce_origin_matches_target(
         .port_or_known_default()
         .ok_or_else(|| "Origin header is missing a port.".to_string())?;
 
-    if origin_scheme != target.protocol
-        || origin_host != target.host
-        || origin_port != target.port
+    if origin_scheme != target.protocol || origin_host != target.host || origin_port != target.port
     {
         return Err(format!(
             "Backend target {} does not match the browser origin scheme/host/port.",
@@ -350,9 +345,7 @@ mod tests {
     #[test]
     fn origin_match_rejects_port_mismatch() {
         let target = validate_backend_target("https", "nojoin.example.com", 14443).unwrap();
-        assert!(
-            enforce_origin_matches_target(&target, "https://nojoin.example.com:9999").is_err()
-        );
+        assert!(enforce_origin_matches_target(&target, "https://nojoin.example.com:9999").is_err());
     }
 
     #[test]
@@ -361,9 +354,7 @@ mod tests {
         // operator-configured WEB_APP_URL. If WEB_APP_URL is a real backend,
         // the metadata host will not match and the request is rejected.
         let target = validate_backend_target("https", "nojoin.example.com", 14443).unwrap();
-        assert!(
-            enforce_origin_matches_target(&target, "https://169.254.169.254").is_err()
-        );
+        assert!(enforce_origin_matches_target(&target, "https://169.254.169.254").is_err());
     }
 
     #[tokio::test]

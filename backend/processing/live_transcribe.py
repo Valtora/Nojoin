@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from backend.celery_app import celery_app
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 TRAIL_EPS = 0.20
 # Default maximum length (seconds) of a trailing utterance before a forced cut.
 DEFAULT_FORCED_MAX = 8.0
+# Absolute maximum length (seconds) of any emitted provisional live segment.
+DEFAULT_MAX_SEGMENT_S = 20.0
 # Sample rate of the live audio buffer.
 LIVE_SAMPLE_RATE = 16000
 # Silence threshold (ms) for the live lane: longer than the batch default so
@@ -71,6 +73,7 @@ def classify_speech(
     combined_len: float,
     *,
     forced_max_s: float = DEFAULT_FORCED_MAX,
+    max_segment_s: float = DEFAULT_MAX_SEGMENT_S,
 ) -> tuple[list[dict], float]:
     """Split detected speech regions into completed regions and a carry-over cut point.
 
@@ -86,12 +89,53 @@ def classify_speech(
 
     if trailing_incomplete and (combined_len - last["start"]) >= forced_max_s:
         # Trailing utterance has run too long; treat it as complete now.
-        return speech, combined_len
-    if trailing_incomplete:
+        complete_regions = speech
+        cut_point = combined_len
+    elif trailing_incomplete:
         # Carry the trailing utterance forward from its start.
-        return speech[:-1], last["start"]
-    # Last region ended with silence; everything is complete.
-    return speech, last["end"]
+        complete_regions = speech[:-1]
+        cut_point = last["start"]
+    else:
+        # Last region ended with silence; everything is complete.
+        complete_regions = speech
+        cut_point = last["end"]
+
+    return _split_complete_regions(complete_regions, max_segment_s=max_segment_s), cut_point
+
+
+def _split_complete_regions(
+    regions: list[dict],
+    *,
+    max_segment_s: float,
+) -> list[dict]:
+    if max_segment_s <= 0:
+        return regions
+
+    split_regions: list[dict] = []
+    for region in regions:
+        split_regions.extend(_split_region(region, max_segment_s=max_segment_s))
+    return split_regions
+
+
+def _split_region(region: dict, *, max_segment_s: float) -> list[dict]:
+    start = float(region["start"])
+    end = float(region["end"])
+    duration = end - start
+
+    if duration <= max_segment_s:
+        return [region]
+
+    split_regions: list[dict] = []
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = min(end, chunk_start + max_segment_s)
+        chunk = dict(region)
+        chunk["start"] = chunk_start
+        chunk["end"] = chunk_end
+        split_regions.append(chunk)
+        chunk_start = chunk_end
+
+    return split_regions
 
 
 def _build_live_config() -> dict:
@@ -104,6 +148,7 @@ def _build_live_config() -> dict:
         "processing_device": config_manager.get("processing_device", "auto"),
         "context_window_s": config_manager.get("live_context_window_s", 5.0),
         "forced_max_s": config_manager.get("live_forced_max_s", DEFAULT_FORCED_MAX),
+        "max_segment_s": config_manager.get("live_max_segment_s", DEFAULT_MAX_SEGMENT_S),
         "speech_pad_ms": config_manager.get("live_speech_pad_ms", 300),
     }
 
@@ -503,6 +548,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             "live_forced_max_s",
                             live_config["forced_max_s"],
                         ),
+                        "max_segment_s": merged_config.get(
+                            "live_max_segment_s",
+                            live_config["max_segment_s"],
+                        ),
                     }
                 )
         finally:
@@ -518,6 +567,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             speech,
             combined_len,
             forced_max_s=float(live_config["forced_max_s"]),
+            max_segment_s=float(live_config["max_segment_s"]),
         )
 
         # --- Read the rolling left-context buffer (already-consumed audio) ---
@@ -654,6 +704,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         if new_segments:
             from sqlalchemy.orm.attributes import flag_modified
 
+            should_dispatch_meeting_edge = False
             session = get_sync_session()
             try:
                 recording = session.get(Recording, recording_id)
@@ -664,8 +715,33 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         flag_modified(transcript, "segments")
                         session.add(transcript)
                         session.commit()
+
+                        user_settings = getattr(
+                            getattr(recording, "user", None),
+                            "settings",
+                            None,
+                        )
+                        if user_settings is None and getattr(recording, "user_id", None):
+                            from backend.models.user import User
+
+                            user = session.get(User, recording.user_id)
+                            user_settings = getattr(user, "settings", None) if user else None
+
+                        should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
             finally:
                 session.close()
+
+            if should_dispatch_meeting_edge:
+                try:
+                    from backend.worker.tasks import refresh_meeting_edge_task
+
+                    refresh_meeting_edge_task.delay(recording_id)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to dispatch Meeting Edge refresh for recording %s: %s",
+                        recording_id,
+                        exc,
+                    )
 
         # --- Advance the lane ---
         state["next_expected"] = run[-1] + 1

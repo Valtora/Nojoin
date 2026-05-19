@@ -2,6 +2,7 @@
 
 import {
   getRecording,
+  getSettings,
   updateSpeaker,
   updateTranscriptSegmentSpeaker,
   updateTranscriptSegmentText,
@@ -14,6 +15,7 @@ import {
   generateNotes,
   updateNotes,
   updateUserNotes,
+  updateMeetingEdgeFocus,
   exportContent,
   exportAudio,
   ExportContentType,
@@ -66,6 +68,7 @@ const shouldPollRecordingUpdates = (recording: Recording) => {
     recording.status === RecordingStatus.UPLOADING ||
     recording.status === RecordingStatus.QUEUED ||
     recording.transcript?.notes_status === "generating" ||
+    recording.transcript?.meeting_edge_status === "updating" ||
     waitingForProxy
   );
 };
@@ -96,6 +99,7 @@ interface HistoryItem {
 export default function RecordingPage({ params }: PageProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
+  const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -154,12 +158,16 @@ export default function RecordingPage({ params }: PageProps) {
   const fetchRecording = useCallback(async () => {
     try {
       const { id } = await params;
-      const [recData, gsData] = await Promise.all([
+      const [recData, gsData, settingsData] = await Promise.all([
         getRecording(id),
         getGlobalSpeakers(),
+        getSettings().catch(() => null),
       ]);
       setRecording(recData);
       setGlobalSpeakers(gsData);
+      if (settingsData) {
+        setMeetingEdgeEnabled(settingsData.enable_meeting_edge !== false);
+      }
       // Only set title if not editing, or on first load
       if (!isEditingTitle) {
         setTitleValue(recData.name);
@@ -211,6 +219,14 @@ export default function RecordingPage({ params }: PageProps) {
           return `${segs.length}|${last.end}|${last.text}`;
         };
 
+        const meetingEdgeSignature = (rec: Recording | null) =>
+          JSON.stringify({
+            focus: rec?.transcript?.meeting_edge_focus ?? null,
+            status: rec?.transcript?.meeting_edge_status ?? null,
+            error: rec?.transcript?.meeting_edge_error_message ?? null,
+            payload: rec?.transcript?.meeting_edge_payload ?? null,
+          });
+
         if (
           data.status !== recording.status ||
           data.client_status !== recording.client_status ||
@@ -224,6 +240,7 @@ export default function RecordingPage({ params }: PageProps) {
           data.transcript?.notes_status !== recording.transcript?.notes_status ||
           data.transcript?.notes !== recording.transcript?.notes ||
           data.transcript?.user_notes !== recording.transcript?.user_notes ||
+          meetingEdgeSignature(data) !== meetingEdgeSignature(recording) ||
           segmentsSignature(data) !== segmentsSignature(recording) ||
           JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
         ) {
@@ -812,6 +829,12 @@ export default function RecordingPage({ params }: PageProps) {
     await updateUserNotes(recording.id, notes);
   }, [recording?.id]);
 
+  const handleMeetingEdgeFocusChange = useCallback(async (focus: string) => {
+    if (!recording?.id) return;
+
+    await updateMeetingEdgeFocus(recording.id, focus);
+  }, [recording?.id]);
+
   const handleExport = async (
     contentType: ExportContentType,
     format: ExportFormat,
@@ -1131,6 +1154,8 @@ export default function RecordingPage({ params }: PageProps) {
                   <RecordingStatusDisplay
                     recording={recording}
                     onSaveProcessingNotes={handleProcessingNotesChange}
+                    onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
+                    showMeetingEdge={meetingEdgeEnabled}
                   />
                 </div>
               </Panel>
