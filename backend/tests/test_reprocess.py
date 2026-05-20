@@ -653,6 +653,20 @@ def test_process_recording_task_runs_catch_up_diarization_before_promotion(monke
     )
     monkeypatch.setattr(
         tasks_module,
+        "build_reusable_live_segments",
+        lambda *a, **k: [
+            {
+                "id": "canon-live-1",
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello",
+                "segment_source": "live",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        tasks_module,
         "_build_catch_up_segments",
         lambda **kwargs: ([], {11}, SimpleNamespace(id=91, status="running")),
     )
@@ -676,3 +690,385 @@ def test_process_recording_task_runs_catch_up_diarization_before_promotion(monke
         task.run(401, False, None)
 
     assert captured == {"processing_run_id": 91, "recording_id": 401}
+
+
+def test_process_recording_task_prefers_canonical_live_segments_for_reuse(monkeypatch):
+    from backend.models.recording import RecordingStatus
+    from backend.worker import tasks as tasks_module
+
+    captured: dict = {}
+
+    class _StopPipeline(BaseException):
+        pass
+
+    base_config = {
+        "transcription_backend": "whisper",
+        "whisper_model_size": "base",
+        "enable_vad": False,
+        "enable_diarization": False,
+    }
+
+    class _FakeLlmConfig:
+        merged_config = dict(base_config)
+
+    monkeypatch.setattr(
+        tasks_module, "resolve_llm_config", lambda *a, **k: _FakeLlmConfig()
+    )
+
+    class _FakeTranscript:
+        segments = []
+
+    class _ExecResult:
+        def first(self):
+            return _FakeTranscript()
+
+    class _FakeRecording:
+        id = 501
+        status = RecordingStatus.PROCESSED
+        user_id = None
+        audio_path = "/tmp/recording.wav"
+        proxy_path = None
+        duration_seconds = 60.0
+        processing_started_at = None
+        processing_completed_at = None
+        processing_progress = 0
+        processing_step = ""
+
+    class _FakeSession:
+        def get(self, model, recording_id):
+            return _FakeRecording()
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def refresh(self, obj):
+            pass
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True
+        if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
+        else default,
+    )
+
+    fake_session = _FakeSession()
+
+    import sys
+    import types
+
+    def _install(module_name: str, **attrs):
+        mod = types.ModuleType(module_name)
+        for name, value in attrs.items():
+            setattr(mod, name, value)
+        monkeypatch.setitem(sys.modules, module_name, mod)
+
+    _install(
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 10.0),
+    )
+    _install(
+        "backend.processing.audio_preprocessing",
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: "/tmp/recording_vad.wav",
+        validate_audio_file=lambda *a, **k: None,
+        cleanup_temp_file=lambda *a, **k: None,
+        repair_audio_file=lambda *a, **k: None,
+    )
+
+    def _unexpected_transcribe(*args, **kwargs):
+        raise AssertionError("transcribe_audio should not run when canonical live reuse is available")
+
+    _install(
+        "backend.processing.transcribe",
+        transcribe_audio=_unexpected_transcribe,
+        release_model_cache=lambda: None,
+    )
+    _install(
+        "backend.processing.diarize",
+        diarize_audio=lambda *a, **k: None,
+        release_pipeline_cache=lambda: None,
+    )
+    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: None)
+    _install(
+        "backend.processing.embedding",
+        cosine_similarity=lambda *a, **k: 0.0,
+        merge_embeddings=lambda *a, **k: None,
+        find_matching_global_speaker=lambda *a, **k: None,
+        AUTO_UPDATE_THRESHOLD=0.8,
+    )
+    _install(
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=lambda *a, **k: [],
+    )
+    _install(
+        "backend.utils.audio",
+        get_audio_duration=lambda *a, **k: 60.0,
+        convert_to_mp3=lambda *a, **k: None,
+        convert_to_proxy_mp3=lambda *a, **k: None,
+    )
+
+    def _fake_build_transcription_result_from_segments(segments):
+        captured["segments"] = list(segments)
+        raise _StopPipeline()
+
+    _install(
+        "backend.utils.live_transcript",
+        apply_live_authority_to_segments=lambda live, combined: combined,
+        build_transcription_result_from_segments=_fake_build_transcription_result_from_segments,
+        merge_reusable_segments=lambda primary, additional: list(primary) + list(additional),
+        map_final_speakers_to_live_labels=lambda *a, **k: {},
+    )
+    _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
+    _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr(
+        tasks_module,
+        "build_reusable_live_segments",
+        lambda *a, **k: [
+            {
+                "id": "canon-live-1",
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello",
+                "segment_source": "live",
+            }
+        ],
+    )
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_window_manifests", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "collect_pending_chunk_spans", lambda *a, **k: [])
+
+    task = tasks_module.process_recording_task
+    monkeypatch.setattr(task, "_session", fake_session, raising=False)
+    monkeypatch.setattr(task, "update_state", lambda *a, **k: None, raising=False)
+
+    with pytest.raises(_StopPipeline):
+        task.run(501, False, None)
+
+    assert captured["segments"][0]["id"] == "canon-live-1"
+
+
+def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.worker import tasks as tasks_module
+
+    fake_run = SimpleNamespace(id=91, status="running", completed_at=None, error_summary=None)
+
+    class _FakeSession:
+        def __init__(self):
+            self.added = []
+
+        def add(self, obj):
+            self.added.append(obj)
+
+    session = _FakeSession()
+    recording = SimpleNamespace(id=601)
+
+    monkeypatch.setattr(tasks_module, "ensure_processing_run", lambda *a, **k: fake_run)
+    monkeypatch.setattr(
+        tasks_module,
+        "_load_recording_audio_window_manifests",
+        lambda *a, **k: [
+            SimpleNamespace(
+                id=11,
+                status="pending",
+                window_start_ms=1000,
+                window_end_ms=3000,
+                chunk_start_sequence=1,
+                chunk_end_sequence=3,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_load_recording_audio_chunks",
+        lambda *a, **k: [
+            SimpleNamespace(sequence_no=1, absolute_start_ms=1000, absolute_end_ms=2000),
+            SimpleNamespace(sequence_no=2, absolute_start_ms=2000, absolute_end_ms=2500),
+            SimpleNamespace(sequence_no=3, absolute_start_ms=2500, absolute_end_ms=3000),
+        ],
+    )
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True if key == "enable_asr_window_result_ledger" else default,
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "get_recording_asr_window_result",
+        lambda *a, **k: SimpleNamespace(
+            status="completed",
+            span_start_ms=1000,
+            result_payload={
+                "segments": [
+                    {"start": 0.0, "end": 0.75, "speaker": "LIVE_01", "text": "hello"}
+                ]
+            },
+        ),
+    )
+
+    def _unexpected_transcribe(*args, **kwargs):
+        raise AssertionError("transcribe_audio should not run for a completed catch-up ledger span")
+
+    segments, window_ids, catch_up_run = tasks_module._build_catch_up_segments(
+        session=session,
+        recording=recording,
+        processed_audio_path="/tmp/recording.wav",
+        merged_config={"transcription_backend": "whisper", "whisper_model_size": "base"},
+        transcribe_audio=_unexpected_transcribe,
+        extract_audio_clip=lambda *a, **k: None,
+        temp_files=[],
+        log=tasks_module.logger,
+    )
+
+    assert segments == [
+        {
+            "start": 1.0,
+            "end": 1.75,
+            "speaker": "LIVE_01",
+            "text": "hello",
+            "segment_source": "catch_up",
+        }
+    ]
+    assert window_ids == {11}
+    assert catch_up_run is fake_run
+
+
+def test_build_catch_up_segments_reruns_only_uncovered_spans(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.worker import tasks as tasks_module
+
+    fake_run = SimpleNamespace(id=92, status="running", completed_at=None, error_summary=None)
+    transcribe_calls: list[str] = []
+
+    class _FakeSession:
+        def __init__(self):
+            self.added = []
+
+        def add(self, obj):
+            self.added.append(obj)
+
+    session = _FakeSession()
+    recording = SimpleNamespace(id=602)
+
+    monkeypatch.setattr(tasks_module, "ensure_processing_run", lambda *a, **k: fake_run)
+    monkeypatch.setattr(
+        tasks_module,
+        "_load_recording_audio_window_manifests",
+        lambda *a, **k: [
+            SimpleNamespace(
+                id=21,
+                status="pending",
+                window_start_ms=0,
+                window_end_ms=1000,
+                chunk_start_sequence=1,
+                chunk_end_sequence=1,
+            ),
+            SimpleNamespace(
+                id=22,
+                status="pending",
+                window_start_ms=2000,
+                window_end_ms=3000,
+                chunk_start_sequence=3,
+                chunk_end_sequence=3,
+            ),
+        ],
+    )
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(
+        tasks_module,
+        "collect_pending_chunk_spans",
+        lambda *a, **k: [
+            SimpleNamespace(start_sequence=1, end_sequence=1, start_ms=0, end_ms=1000),
+            SimpleNamespace(start_sequence=3, end_sequence=3, start_ms=2000, end_ms=3000),
+        ],
+    )
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True if key == "enable_asr_window_result_ledger" else default,
+    )
+
+    def _fake_lookup(*args, **kwargs):
+        if kwargs["chunk_start_sequence"] == 1:
+            return SimpleNamespace(
+                status="completed",
+                span_start_ms=0,
+                result_payload={
+                    "segments": [
+                        {"start": 0.0, "end": 0.6, "speaker": "LIVE_01", "text": "done"}
+                    ]
+                },
+            )
+        if kwargs["chunk_start_sequence"] == 3:
+            return SimpleNamespace(
+                status="failed",
+                span_start_ms=2000,
+                result_payload={"error": "boom"},
+            )
+        return None
+
+    monkeypatch.setattr(tasks_module, "get_recording_asr_window_result", _fake_lookup)
+    monkeypatch.setattr(tasks_module, "start_recording_asr_window_result", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "complete_recording_asr_window_result", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "fail_recording_asr_window_result", lambda *a, **k: None)
+
+    def _fake_extract_audio_clip(*args, **kwargs):
+        pass
+
+    def _fake_transcribe(path, config=None):
+        transcribe_calls.append(path)
+        return {
+            "text": "retry",
+            "segments": [
+                {"start": 0.1, "end": 0.7, "speaker": "LIVE_02", "text": "retry"}
+            ],
+        }
+
+    segments, window_ids, catch_up_run = tasks_module._build_catch_up_segments(
+        session=session,
+        recording=recording,
+        processed_audio_path="/tmp/recording.wav",
+        merged_config={"transcription_backend": "whisper", "whisper_model_size": "base"},
+        transcribe_audio=_fake_transcribe,
+        extract_audio_clip=_fake_extract_audio_clip,
+        temp_files=[],
+        log=tasks_module.logger,
+    )
+
+    assert len(transcribe_calls) == 1
+    assert transcribe_calls[0].endswith("catch_up_602_3_3.wav")
+    assert segments == [
+        {
+            "start": 0.0,
+            "end": 0.6,
+            "speaker": "LIVE_01",
+            "text": "done",
+            "segment_source": "catch_up",
+        },
+        {
+            "start": 2.1,
+            "end": 2.7,
+            "speaker": "LIVE_02",
+            "text": "retry",
+            "segment_source": "catch_up",
+        },
+    ]
+    assert window_ids == {21, 22}
+    assert catch_up_run is fake_run

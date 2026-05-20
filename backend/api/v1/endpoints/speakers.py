@@ -1,4 +1,5 @@
 import re
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
@@ -31,6 +32,8 @@ from backend.services.recording_identity_service import (
 )
 from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
 from backend.utils.canonical_pipeline import (
+    apply_compatibility_segment_replace,
+    build_transcript_segments_for_read,
     record_recording_speaker_corrections,
     recording_ready_for_canonical_backfill,
 )
@@ -55,6 +58,53 @@ async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_
 
 def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
+
+
+def _copy_transcript_segments(raw_segments) -> list[dict]:
+    if isinstance(raw_segments, str):
+        try:
+            raw_segments = json.loads(raw_segments)
+        except json.JSONDecodeError:
+            return []
+    return [dict(segment) for segment in (raw_segments or []) if isinstance(segment, dict)]
+
+
+async def _load_segments_for_speaker_work(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    transcript: Transcript | None,
+) -> list[dict]:
+    if transcript is None:
+        return []
+    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        return await db.run_sync(
+            lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
+        )
+    return _copy_transcript_segments(getattr(transcript, "segments", None))
+
+
+async def _persist_segments_for_speaker_work(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    transcript: Transcript | None,
+    segments: list[dict],
+) -> None:
+    if transcript is None:
+        return
+    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        await db.run_sync(
+            lambda sync_session: apply_compatibility_segment_replace(
+                sync_session,
+                recording_id=recording.id,
+                segments=segments,
+            )
+        )
+        return
+    transcript.segments = segments
+    flag_modified(transcript, "segments")
+    db.add(transcript)
 
 
 def _serialize_recording_speakers(
@@ -318,26 +368,35 @@ async def update_recording_speaker(
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
-    if transcript and transcript.segments:
-        segments_updated = False
-        new_segments = []
-        for segment in transcript.segments:
-            segment_copy = dict(segment)
-            current_speaker = segment_copy.get("speaker")
-            
-            # If the segment uses one of the old names (or the new name), revert to label
-            if current_speaker in old_names:
-                segment_copy["speaker"] = update.diarization_label
-                segments_updated = True
-            
-            new_segments.append(segment_copy)
-        
-        if segments_updated:
-            transcript.segments = new_segments
-            flag_modified(transcript, "segments")
-            db.add(transcript)
+    segments_updated = False
+    if transcript:
+        transcript_segments = await _load_segments_for_speaker_work(
+            db,
+            recording=recording,
+            transcript=transcript,
+        )
+        if transcript_segments:
+            new_segments = []
+            for segment in transcript_segments:
+                segment_copy = dict(segment)
+                current_speaker = segment_copy.get("speaker")
+                
+                # If the segment uses one of the old names (or the new name), revert to label
+                if current_speaker in old_names:
+                    segment_copy["speaker"] = update.diarization_label
+                    segments_updated = True
+                
+                new_segments.append(segment_copy)
 
-    segments_repaired = segments_updated if transcript and transcript.segments else False
+            if segments_updated:
+                await _persist_segments_for_speaker_work(
+                    db,
+                    recording=recording,
+                    transcript=transcript,
+                    segments=new_segments,
+                )
+
+    segments_repaired = segments_updated
 
     if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
         event_type = (
@@ -534,24 +593,34 @@ async def _merge_local_speakers(
             source_aliases.add(gs.name)
 
     # 2. Update Transcript Segments
+    recording = await db.get(Recording, recording_id)
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
 
-    if transcript and transcript.segments:
-        segments_updated = False
-        new_segments = []
-        for segment in transcript.segments:
-            segment_copy = dict(segment)
-            if segment_copy.get("speaker") in source_aliases:
-                segment_copy["speaker"] = target_label
-                segments_updated = True
-            new_segments.append(segment_copy)
-        
-        if segments_updated:
-            transcript.segments = new_segments
-            flag_modified(transcript, "segments")
-            db.add(transcript)
+    if recording is not None and transcript is not None:
+        transcript_segments = await _load_segments_for_speaker_work(
+            db,
+            recording=recording,
+            transcript=transcript,
+        )
+        if transcript_segments:
+            segments_updated = False
+            new_segments = []
+            for segment in transcript_segments:
+                segment_copy = dict(segment)
+                if segment_copy.get("speaker") in source_aliases:
+                    segment_copy["speaker"] = target_label
+                    segments_updated = True
+                new_segments.append(segment_copy)
+
+            if segments_updated:
+                await _persist_segments_for_speaker_work(
+                    db,
+                    recording=recording,
+                    transcript=transcript,
+                    segments=new_segments,
+                )
 
     # 3. Merge embeddings
     if source_speaker.embedding and target_speaker.embedding:
@@ -965,11 +1034,16 @@ async def split_speaker(
         result = await db.execute(stmt)
         transcript = result.scalar_one_or_none()
         
-        if transcript and transcript.segments:
+        transcript_segments = await _load_segments_for_speaker_work(
+            db,
+            recording=rec,
+            transcript=transcript,
+        )
+        if transcript and transcript_segments:
             new_trans_segments = []
             segments_modified = False
             
-            for t_seg in transcript.segments:
+            for t_seg in transcript_segments:
                 # Check if this segment overlaps significantly with any selected segment
                 is_selected = False
                 t_start = t_seg['start']
@@ -994,9 +1068,12 @@ async def split_speaker(
                 new_trans_segments.append(seg_copy)
             
             if segments_modified:
-                transcript.segments = new_trans_segments
-                flag_modified(transcript, "segments")
-                db.add(transcript)
+                await _persist_segments_for_speaker_work(
+                    db,
+                    recording=rec,
+                    transcript=transcript,
+                    segments=new_trans_segments,
+                )
         
         # Create RecordingSpeaker entry for the new label
         # Check if one already exists (unlikely given timestamp, but safe)
@@ -1076,7 +1153,12 @@ async def split_speaker(
         valid_labels = {rs.diarization_label for rs in original_rss}
         
         remaining_seg_tuples = []
-        for t_seg in transcript.segments:
+        transcript_segments = await _load_segments_for_speaker_work(
+            db,
+            recording=rec,
+            transcript=transcript,
+        )
+        for t_seg in transcript_segments:
             if t_seg.get("speaker") in valid_labels:
                 remaining_seg_tuples.append((t_seg['start'], t_seg['end']))
         
@@ -1185,18 +1267,29 @@ async def delete_recording_speaker(
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
 
-    if transcript and transcript.segments:
-        updated_segments = []
-        changed = False
-        for segment in transcript.segments:
-            if segment.get("speaker") == diarization_label:
-                segment["speaker"] = "UNKNOWN"
-                changed = True
-            updated_segments.append(segment)
-        
-        if changed:
-            transcript.segments = updated_segments
-            db.add(transcript)
+    if transcript is not None:
+        transcript_segments = await _load_segments_for_speaker_work(
+            db,
+            recording=recording,
+            transcript=transcript,
+        )
+        if transcript_segments:
+            updated_segments = []
+            changed = False
+            for segment in transcript_segments:
+                segment_copy = dict(segment)
+                if segment_copy.get("speaker") == diarization_label:
+                    segment_copy["speaker"] = "UNKNOWN"
+                    changed = True
+                updated_segments.append(segment_copy)
+
+            if changed:
+                await _persist_segments_for_speaker_work(
+                    db,
+                    recording=recording,
+                    transcript=transcript,
+                    segments=updated_segments,
+                )
 
     # 3. Delete RecordingSpeaker entry
     statement = select(RecordingSpeaker).where(
@@ -1257,14 +1350,19 @@ async def extract_voiceprint(
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
     
-    if not transcript or not transcript.segments:
+    transcript_segments = await _load_segments_for_speaker_work(
+        db,
+        recording=recording,
+        transcript=transcript,
+    )
+    if not transcript or not transcript_segments:
         raise HTTPException(status_code=400, detail="No transcript segments found for this recording")
     
     # Find segments belonging to this speaker (match by diarization_label or resolved name)
     speaker_segments = []
     speaker_name = rec_speaker.name or diarization_label
     
-    for seg in transcript.segments:
+    for seg in transcript_segments:
         seg_speaker = seg.get("speaker", "")
         if seg_speaker == diarization_label or seg_speaker == speaker_name:
             speaker_segments.append((seg["start"], seg["end"]))
@@ -1521,7 +1619,12 @@ async def extract_all_voiceprints(
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
     
-    if not transcript or not transcript.segments:
+    transcript_segments = await _load_segments_for_speaker_work(
+        db,
+        recording=recording,
+        transcript=transcript,
+    )
+    if not transcript or not transcript_segments:
         raise HTTPException(status_code=400, detail="No transcript segments found")
     
     # 4. Get all global speakers for matching
@@ -1538,7 +1641,7 @@ async def extract_all_voiceprints(
         
         # Find segments for this speaker
         speaker_segments = []
-        for seg in transcript.segments:
+        for seg in transcript_segments:
             seg_speaker = seg.get("speaker", "")
             if seg_speaker == rec_speaker.diarization_label or seg_speaker == speaker_name:
                 speaker_segments.append((seg["start"], seg["end"]))
@@ -1807,7 +1910,12 @@ async def split_local_speaker(
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
     
-    if transcript and transcript.segments:
+    transcript_segments = await _load_segments_for_speaker_work(
+        db,
+        recording=recording,
+        transcript=transcript,
+    )
+    if transcript and transcript_segments:
         segments_to_move = set()
         for s in request.segments:
             segments_to_move.add((s.recording_id, s.start, s.end))
@@ -1815,7 +1923,7 @@ async def split_local_speaker(
         new_segments = []
         segments_updated = False
         
-        for segment in transcript.segments:
+        for segment in transcript_segments:
             seg_copy = dict(segment)
             matches = False
             for r_id, start, end in segments_to_move:
@@ -1830,9 +1938,12 @@ async def split_local_speaker(
             new_segments.append(seg_copy)
             
         if segments_updated:
-            transcript.segments = new_segments
-            flag_modified(transcript, "segments")
-            db.add(transcript)
+            await _persist_segments_for_speaker_work(
+                db,
+                recording=recording,
+                transcript=transcript,
+                segments=new_segments,
+            )
             
     await db.commit()
     

@@ -1019,6 +1019,306 @@ def replace_utterances_from_segments(
     return utterances
 
 
+def finalize_utterances_from_segments(
+    session,
+    *,
+    recording_id: int,
+    segments: Sequence[dict[str, Any]],
+    reused_live_asr: bool = False,
+    trigger_source: str = "system",
+    idempotency_key: str | None = None,
+) -> list[TranscriptUtterance]:
+    transcript = _load_transcript(session, recording_id)
+    recording = session.get(Recording, recording_id)
+    if transcript is None or recording is None:
+        return []
+
+    run_idempotency_key = idempotency_key or _processing_run_idempotency_key(
+        run_kind=ProcessingRunKind.FINALIZE,
+        source="finalize",
+        segments=segments,
+        state_override=TranscriptUtteranceState.FINALIZED,
+        reused_live_asr=reused_live_asr,
+    )
+    existing_processing_run = session.execute(
+        select(ProcessingRun)
+        .where(ProcessingRun.recording_id == recording_id)
+        .where(ProcessingRun.idempotency_key == run_idempotency_key)
+    ).scalar_one_or_none()
+    if existing_processing_run is not None:
+        return list_active_utterances(session, recording_id)
+
+    processing_run = ensure_processing_run(
+        session,
+        recording_id=recording_id,
+        run_kind=ProcessingRunKind.FINALIZE,
+        trigger_source=trigger_source,
+        reused_live_asr=reused_live_asr,
+        span_start_ms=_segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0)),
+        span_end_ms=_segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0)),
+        idempotency_key=run_idempotency_key,
+    )
+
+    recording_speakers = ensure_recording_speaker_aliases(
+        session,
+        recording_id,
+        source_run_id=processing_run.id,
+    )
+    active_utterances = list_active_utterances(session, recording_id)
+    exact_matches: dict[tuple[int, int], list[TranscriptUtterance]] = defaultdict(list)
+    for utterance in active_utterances:
+        exact_matches[(utterance.start_ms, utterance.end_ms)].append(utterance)
+
+    overlap_groups = _build_overlap_groups(segments)
+    projection_segments: list[dict[str, Any]] = []
+    utterances: list[TranscriptUtterance] = []
+    new_boundary_utterances: list[TranscriptUtterance] = []
+    matched_utterance_ids: set[int] = set()
+
+    for index, segment in enumerate(segments):
+        start_ms = _segment_to_ms(segment.get("start", 0.0))
+        end_ms = _segment_to_ms(segment.get("end", 0.0))
+        boundary_key = (start_ms, end_ms)
+        matched_utterance = None
+        while exact_matches.get(boundary_key):
+            candidate = exact_matches[boundary_key].pop(0)
+            if candidate.id not in matched_utterance_ids:
+                matched_utterance = candidate
+                break
+
+        resolved_speaker = None
+        if matched_utterance is None or not matched_utterance.manual_speaker_locked:
+            resolved_speaker = _resolve_recording_speaker_for_value(
+                session,
+                recording_id=recording_id,
+                recording=recording,
+                speaker_value=str(segment.get("speaker") or UNKNOWN_SPEAKER),
+                recording_speakers=recording_speakers,
+                source_run_id=processing_run.id,
+                source_segment=segment,
+            )
+            if resolved_speaker is not None:
+                _touch_recording_speaker_bounds(resolved_speaker, segment)
+                session.add(resolved_speaker)
+
+        if matched_utterance is not None:
+            matched_utterance_ids.add(matched_utterance.id)
+            old_values = {
+                "start_ms": matched_utterance.start_ms,
+                "end_ms": matched_utterance.end_ms,
+                "text": matched_utterance.text,
+                "speaker": matched_utterance.speaker_label,
+                "state": matched_utterance.state.value if hasattr(matched_utterance.state, "value") else str(matched_utterance.state),
+                "revision": matched_utterance.revision,
+            }
+            old_text_locked = bool(matched_utterance.manual_text_locked)
+            old_speaker_locked = bool(matched_utterance.manual_speaker_locked)
+
+            effective_segment = dict(segment)
+            effective_segment["segment_source"] = matched_utterance.source_kind or str(segment.get("segment_source") or "finalize")
+            effective_segment["text"] = matched_utterance.text if old_text_locked else str(segment.get("text", "") or "")
+            effective_segment["text_manually_edited"] = old_text_locked or bool(segment.get("text_manually_edited") is True)
+
+            if old_speaker_locked:
+                current_speaker = (
+                    session.get(RecordingSpeaker, matched_utterance.recording_speaker_id)
+                    if matched_utterance.recording_speaker_id is not None
+                    else None
+                )
+                effective_segment["speaker"] = (
+                    current_speaker.diarization_label
+                    if current_speaker is not None
+                    else str(matched_utterance.speaker_label or UNKNOWN_SPEAKER)
+                )
+                recording_speaker = current_speaker
+            else:
+                recording_speaker = resolved_speaker
+                effective_segment["speaker"] = (
+                    recording_speaker.diarization_label
+                    if recording_speaker is not None
+                    else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+                )
+            effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(segment.get("speaker_manually_edited") is True)
+
+            effective_text = str(effective_segment.get("text", "") or "")
+            effective_speaker_label = (
+                recording_speaker.diarization_label
+                if recording_speaker is not None
+                else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
+            )
+            effective_recording_speaker_id = recording_speaker.id if recording_speaker is not None else None
+            effective_manual_text_locked = bool(effective_segment.get("text_manually_edited") is True)
+            effective_manual_speaker_locked = bool(effective_segment.get("speaker_manually_edited") is True)
+            effective_text_confidence = _to_optional_float(segment.get("text_confidence"))
+            if effective_text_confidence is None:
+                effective_text_confidence = matched_utterance.text_confidence
+            effective_speaker_confidence = _to_optional_float(segment.get("speaker_confidence"))
+            if effective_speaker_confidence is None:
+                effective_speaker_confidence = matched_utterance.speaker_confidence
+
+            changed = any(
+                (
+                    matched_utterance.sort_key != _sort_key_for_index(index),
+                    matched_utterance.text != effective_text,
+                    matched_utterance.speaker_label != effective_speaker_label,
+                    matched_utterance.recording_speaker_id != effective_recording_speaker_id,
+                    bool(matched_utterance.manual_text_locked) != effective_manual_text_locked,
+                    bool(matched_utterance.manual_speaker_locked) != effective_manual_speaker_locked,
+                    matched_utterance.state != TranscriptUtteranceState.FINALIZED,
+                    matched_utterance.processing_run_id != processing_run.id,
+                    matched_utterance.overlap_group_id != overlap_groups.get(index, {}).get("group_id"),
+                    int(matched_utterance.overlap_rank or 0) != overlap_groups.get(index, {}).get("rank", 0),
+                    matched_utterance.text_confidence != effective_text_confidence,
+                    matched_utterance.speaker_confidence != effective_speaker_confidence,
+                )
+            )
+
+            matched_utterance.sort_key = _sort_key_for_index(index)
+            matched_utterance.text = effective_text
+            matched_utterance.speaker_label = effective_speaker_label
+            matched_utterance.recording_speaker_id = effective_recording_speaker_id
+            matched_utterance.manual_text_locked = effective_manual_text_locked
+            matched_utterance.manual_speaker_locked = effective_manual_speaker_locked
+            matched_utterance.text_confidence = effective_text_confidence
+            matched_utterance.speaker_confidence = effective_speaker_confidence
+            matched_utterance.state = TranscriptUtteranceState.FINALIZED
+            matched_utterance.processing_run_id = processing_run.id
+            matched_utterance.overlap_group_id = overlap_groups.get(index, {}).get("group_id")
+            matched_utterance.overlap_rank = overlap_groups.get(index, {}).get("rank", 0)
+            if changed:
+                matched_utterance.revision += 1
+                session.add(matched_utterance)
+                session.flush()
+                _append_utterance_event(
+                    session,
+                    utterance=matched_utterance,
+                    processing_run_id=processing_run.id,
+                    event_type="finalize",
+                    source="finalize",
+                    old_values=old_values,
+                    new_values={
+                        "start_ms": matched_utterance.start_ms,
+                        "end_ms": matched_utterance.end_ms,
+                        "text": matched_utterance.text,
+                        "speaker": matched_utterance.speaker_label,
+                        "state": TranscriptUtteranceState.FINALIZED.value,
+                    },
+                    resulting_revision=matched_utterance.revision,
+                )
+                _record_manual_lock_events(
+                    session,
+                    utterance=matched_utterance,
+                    old_text_locked=old_text_locked,
+                    old_speaker_locked=old_speaker_locked,
+                    source="finalize",
+                    processing_run_id=processing_run.id,
+                )
+            utterances.append(matched_utterance)
+            effective_segment["revision"] = matched_utterance.revision
+            projection_segments.append(
+                _build_projection_segment(
+                    matched_utterance,
+                    source_segment=effective_segment,
+                    recording_speaker=recording_speaker,
+                    overlap_labels=_projection_overlap_labels(index, segments, overlap_groups, recording_speakers),
+                )
+            )
+            continue
+
+        recording_speaker = resolved_speaker
+        utterance = TranscriptUtterance(
+            public_id=str(segment.get("id") or uuid4()),
+            recording_id=recording_id,
+            sort_key=_sort_key_for_index(index),
+            start_ms=start_ms,
+            end_ms=end_ms,
+            text=str(segment.get("text", "") or ""),
+            speaker_label=(recording_speaker.diarization_label if recording_speaker else str(segment.get("speaker") or UNKNOWN_SPEAKER)),
+            recording_speaker_id=recording_speaker.id if recording_speaker else None,
+            state=TranscriptUtteranceState.FINALIZED,
+            source_kind=str(segment.get("segment_source") or "finalize"),
+            processing_run_id=processing_run.id,
+            revision=int(segment.get("revision") or 1),
+            overlap_group_id=overlap_groups.get(index, {}).get("group_id"),
+            overlap_rank=overlap_groups.get(index, {}).get("rank", 0),
+            manual_text_locked=bool(segment.get("text_manually_edited") is True),
+            manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+            text_confidence=_to_optional_float(segment.get("text_confidence")),
+            speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
+        )
+        session.add(utterance)
+        session.flush()
+        _append_utterance_event(
+            session,
+            utterance=utterance,
+            processing_run_id=processing_run.id,
+            event_type="finalize",
+            source="finalize",
+            old_values=None,
+            new_values={
+                "start_ms": utterance.start_ms,
+                "end_ms": utterance.end_ms,
+                "text": utterance.text,
+                "speaker": utterance.speaker_label,
+                "state": TranscriptUtteranceState.FINALIZED.value,
+            },
+            resulting_revision=utterance.revision,
+        )
+        _record_manual_lock_events(
+            session,
+            utterance=utterance,
+            old_text_locked=False,
+            old_speaker_locked=False,
+            source="finalize",
+            processing_run_id=processing_run.id,
+        )
+        utterances.append(utterance)
+        new_boundary_utterances.append(utterance)
+        projection_segments.append(
+            _build_projection_segment(
+                utterance,
+                source_segment=segment,
+                recording_speaker=recording_speaker,
+                overlap_labels=_projection_overlap_labels(index, segments, overlap_groups, recording_speakers),
+            )
+        )
+
+    previous_boundary_utterances: list[TranscriptUtterance] = []
+    for utterance in active_utterances:
+        if utterance.id in matched_utterance_ids:
+            continue
+        previous_boundary_utterances.append(utterance)
+        old_state = utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+        utterance.state = TranscriptUtteranceState.SUPERSEDED
+        session.add(utterance)
+        session.flush()
+        _append_utterance_event(
+            session,
+            utterance=utterance,
+            processing_run_id=processing_run.id,
+            event_type="supersede",
+            source="finalize",
+            old_values={"state": old_state},
+            new_values={"state": TranscriptUtteranceState.SUPERSEDED.value},
+            resulting_revision=utterance.revision,
+        )
+
+    transcript.segments = projection_segments
+    transcript.text = " ".join(segment.get("text", "") for segment in projection_segments).strip()
+    flag_modified(transcript, "segments")
+    session.add(transcript)
+
+    _append_boundary_revision_events(
+        session,
+        previous_utterances=previous_boundary_utterances,
+        new_utterances=new_boundary_utterances,
+        processing_run_id=processing_run.id,
+        source="finalize",
+    )
+
+    return utterances
+
+
 def append_utterances_from_segments(
     session,
     *,
@@ -1565,6 +1865,76 @@ def serialize_canonical_utterances(
             }
         )
     return payloads
+
+
+def _normalize_transcript_segments(raw_segments: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_segments, str):
+        try:
+            raw_segments = json.loads(raw_segments)
+        except json.JSONDecodeError:
+            return []
+
+    if not isinstance(raw_segments, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for segment in raw_segments:
+        if isinstance(segment, dict):
+            normalized.append(dict(segment))
+    return normalized
+
+
+def build_transcript_segments_for_read(
+    session,
+    recording_id: int,
+    *,
+    transcript: Transcript | None = None,
+) -> list[dict[str, Any]]:
+    transcript = transcript if transcript is not None else _load_transcript(session, recording_id)
+    fallback_segments = _normalize_transcript_segments(
+        getattr(transcript, "segments", None) if transcript is not None else None
+    )
+
+    if transcript is None or not hasattr(session, "execute"):
+        return fallback_segments
+
+    try:
+        canonical_segments = serialize_canonical_utterances(session, recording_id)
+    except Exception:
+        return fallback_segments
+
+    if canonical_segments:
+        return [dict(segment) for segment in canonical_segments]
+    return fallback_segments
+
+
+def build_transcript_text_for_read(
+    session,
+    recording_id: int,
+    *,
+    transcript: Transcript | None = None,
+    segments: Sequence[dict[str, Any]] | None = None,
+) -> str:
+    effective_segments = [dict(segment) for segment in segments] if segments is not None else build_transcript_segments_for_read(
+        session,
+        recording_id,
+        transcript=transcript,
+    )
+    if effective_segments:
+        return " ".join(str(segment.get("text", "") or "") for segment in effective_segments).strip()
+
+    transcript = transcript if transcript is not None else _load_transcript(session, recording_id)
+    return str(getattr(transcript, "text", "") or "") if transcript is not None else ""
+
+
+def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, Any]]:
+    reusable_segments: list[dict[str, Any]] = []
+    for payload in serialize_canonical_utterances(session, recording_id):
+        source_kind = str(payload.get("segment_source") or "")
+        if source_kind not in {"live", "catch_up"} and payload.get("provisional") is not True:
+            continue
+        reusable_segments.append(dict(payload))
+    return reusable_segments
 
 
 def refresh_transcript_projection_from_canonical(

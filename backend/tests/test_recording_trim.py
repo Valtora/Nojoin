@@ -16,6 +16,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.api.v1.endpoints import recordings as recordings_module
+from backend.api.v1.endpoints import transcripts as transcripts_module
 from backend.api.v1.endpoints.transcripts import (
     _format_transcript_text,
     filter_segments_for_trim,
@@ -146,16 +148,48 @@ CREATE TABLE recording_speakers (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     recording_id INTEGER NOT NULL,
+    public_id VARCHAR(36),
     global_speaker_id INTEGER,
     diarization_label VARCHAR(255),
     local_name VARCHAR(255),
     name VARCHAR(255),
+    speaker_status VARCHAR(32),
+    speaker_kind VARCHAR(32),
     processing_run_id INTEGER,
     last_speaker_correction_event_id INTEGER,
     last_diarization_window_result_id INTEGER,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    identity_confidence FLOAT,
+    identity_locked BOOLEAN,
     snippet_start FLOAT,
     snippet_end FLOAT,
-    voice_snippet_path VARCHAR(1024)
+    voice_snippet_path VARCHAR(1024),
+    embedding JSON,
+    color VARCHAR(32),
+    merged_into_id INTEGER
+)
+"""
+
+TAGS_SCHEMA = """
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    color VARCHAR(32),
+    user_id INTEGER,
+    parent_id INTEGER
+)
+"""
+
+RECORDING_TAGS_SCHEMA = """
+CREATE TABLE recording_tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL
 )
 """
 
@@ -185,6 +219,8 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
+        await connection.execute(text(TAGS_SCHEMA))
+        await connection.execute(text(RECORDING_TAGS_SCHEMA))
 
     try:
         yield session_maker
@@ -248,6 +284,38 @@ async def _insert_recording(
                 "duration": duration_seconds,
                 "status": status,
                 "user_id": user_id,
+            },
+        )
+        await session.commit()
+
+
+async def _insert_transcript(
+    session_maker: sessionmaker,
+    *,
+    recording_id: int,
+    text_value: str,
+    segments_json: str,
+) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO transcripts (
+                    id, created_at, updated_at, recording_id, text, segments,
+                    notes, user_notes, notes_status, transcript_status,
+                    meeting_edge_status
+                ) VALUES (
+                    :id, :now, :now, :recording_id, :text_value, :segments_json,
+                    NULL, NULL, 'completed', 'completed', 'idle'
+                )
+                """
+            ),
+            {
+                "id": recording_id,
+                "now": "2026-05-16 00:00:00",
+                "recording_id": recording_id,
+                "text_value": text_value,
+                "segments_json": segments_json,
             },
         )
         await session.commit()
@@ -417,3 +485,72 @@ def test_export_text_omits_out_of_trim_segment():
         filter_segments_for_trim(segments, None, None), speaker_map
     )
     assert "trailing dead air" in full_output
+
+
+@pytest.mark.anyio
+async def test_export_endpoint_uses_canonical_segments_before_trim(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=409, public_id="rec-409")
+    await _insert_transcript(
+        test_session_maker,
+        recording_id=409,
+        text_value="stale projection",
+        segments_json="[]",
+    )
+    await client.patch(
+        "/api/v1/recordings/rec-409/trim",
+        json={"trim_start_s": None, "trim_end_s": 20.0},
+    )
+    monkeypatch.setattr(
+        transcripts_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [
+            {"start": 0.0, "end": 5.0, "text": "inside one", "speaker": "SPEAKER_00"},
+            {"start": 5.0, "end": 10.0, "text": "inside two", "speaker": "SPEAKER_00"},
+            {"start": 100.0, "end": 110.0, "text": "trailing dead air", "speaker": "SPEAKER_00"},
+        ],
+    )
+
+    response = await client.get(
+        "/api/v1/transcripts/rec-409/export",
+        params={"content_type": "transcript", "export_format": "txt"},
+    )
+
+    assert response.status_code == 200
+    assert "inside one" in response.text
+    assert "inside two" in response.text
+    assert "trailing dead air" not in response.text
+
+
+@pytest.mark.anyio
+async def test_recording_detail_uses_canonical_segments_for_transcript_payload(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=410, public_id="rec-410")
+    await _insert_transcript(
+        test_session_maker,
+        recording_id=410,
+        text_value="stale projection",
+        segments_json="[]",
+    )
+    monkeypatch.setattr(
+        recordings_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [
+            {"start": 0.0, "end": 3.0, "text": "canonical detail", "speaker": "SPEAKER_00"}
+        ],
+    )
+
+    response = await client.get("/api/v1/recordings/rec-410")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transcript"]["text"] == "canonical detail"
+    assert body["transcript"]["segments"] == [
+        {"start": 0.0, "end": 3.0, "text": "canonical detail", "speaker": "SPEAKER_00"}
+    ]

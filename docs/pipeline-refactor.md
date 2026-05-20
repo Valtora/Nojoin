@@ -203,9 +203,10 @@ Current state truth audit:
 - [x] Phase 1 canonical utterance, event, provenance, and compatibility projection primitives already exist.
 - [x] Phase 2 durable chunk ingest, rolling window manifests, catch-up span collection, and catch-up diarization persistence already exist.
 - [x] `live_transcribe.py` now writes provisional live output into canonical utterances first and refreshes `Transcript.segments` as a compatibility projection.
-- [ ] `process_recording_task` still builds live reuse input from raw segment arrays and only writes canonical utterances after final segment construction.
-- [ ] Meeting Edge and several transcript and speaker compatibility flows still treat `Transcript.segments` as a working source of truth.
+- [x] `process_recording_task` now reads reusable live and catch-up work from canonical utterances first and finalizes through canonical reconciliation instead of rebuilding canonical state only after final segment construction.
+- [x] Meeting Edge and the Phase 3-critical internal consumers now read canonical utterances first with projection fallback; only legacy compatibility wrappers and projection refresh paths remain intentionally segment-based.
 - [x] A dedicated persisted live ASR result ledger now exists and is applied through the current Alembic head.
+- [x] Catch-up recovery now reuses completed ASR ledger spans by exact span and config match, reruns only failed or missing spans, and keeps pending diarization windows promotable even when no new ASR is required.
 - [x] Normal imports remain intentionally out of scope for the first Phase 3 cutover.
 
 Approved implementation decisions:
@@ -263,67 +264,68 @@ Waterfall checkpoints:
     - [x] Preserve existing public IDs and revisions when only text or speaker changes.
     - [x] Leave full correction-scope propagation and broader speaker workflow cleanup for Phase 5.
 
-- [ ] Checkpoint 3.4: Make final processing consume canonical live utterances.
-  - [ ] Objective: convert finalization from segment-array reuse into canonical utterance promotion plus targeted gap filling.
-  - [ ] Why this order: only after live writes and manual locks are canonical can finalization trust live utterances as reusable work instead of rebuilding from raw segment JSON.
-  - [ ] Likely files and modules: `backend/worker/tasks.py`, `backend/utils/live_transcript.py`, `backend/utils/canonical_pipeline.py`, `backend/tests/test_reprocess.py`.
-  - [ ] Data model and API implications: finalization should read active utterances by stable ID and time overlap, reuse eligible live utterances directly, run ASR only for missing spans or explicit engine override, and preserve public IDs unless boundary changes require supersession.
-  - [ ] Migration and compatibility: keep `Transcript.segments` as a projected final transcript representation so downstream APIs and exports remain stable while the worker cutover lands.
-  - [ ] Test strategy: prove a fully covered normal live recording reaches finalization without rerunning ASR on already processed spans, and prove explicit engine override still forces rerun when requested.
-  - [ ] Rollback and risk: high risk because it changes the main worker path; keep a feature flag that reverts finalization to legacy segment-array reuse if canonical promotion produces regressions.
-  - [ ] Implementation checklist:
-    - [ ] Replace raw `live_segments_for_reuse` dependence with canonical utterance queries plus projection only where external serializers still require it.
-    - [ ] Promote eligible `provisional` utterances to `stable` when the span is sealed and to `finalized` only during finalization.
-    - [ ] Preserve manual text and speaker locks when reconciling final spans.
-    - [ ] Record finalize provenance showing whether live ASR was reused, partially reused, or rerun.
-    - [ ] Use split and merge supersession events when final boundary changes require new utterance shapes.
+- [x] Checkpoint 3.4: Make final processing consume canonical live utterances.
+  - [x] Objective: convert finalization from segment-array reuse into canonical utterance promotion plus targeted gap filling.
+  - [x] Why this order: only after live writes and manual locks are canonical can finalization trust live utterances as reusable work instead of rebuilding from raw segment JSON.
+  - [x] Likely files and modules: `backend/worker/tasks.py`, `backend/utils/live_transcript.py`, `backend/utils/canonical_pipeline.py`, `backend/tests/test_reprocess.py`.
+  - [x] Data model and API implications: finalization should read active utterances by stable ID and time overlap, reuse eligible live utterances directly, run ASR only for missing spans or explicit engine override, and preserve public IDs unless boundary changes require supersession.
+  - [x] Migration and compatibility: keep `Transcript.segments` as a projected final transcript representation so downstream APIs and exports remain stable while the worker cutover lands.
+  - [x] Test strategy: prove a fully covered normal live recording reaches finalization without rerunning ASR on already processed spans, and prove explicit engine override still forces rerun when requested.
+  - [x] Rollback and risk: high risk because it changes the main worker path; keep a feature flag that reverts finalization to legacy segment-array reuse if canonical promotion produces regressions.
+  - [x] Implementation checklist:
+    - [x] Replace raw `live_segments_for_reuse` dependence with canonical utterance queries plus projection only where external serializers still require it.
+    - [x] Promote eligible `provisional` utterances to `stable` when the span is sealed and to `finalized` only during finalization.
+    - [x] Preserve manual text and speaker locks when reconciling final spans.
+    - [x] Record finalize provenance showing whether live ASR was reused, partially reused, or rerun.
+    - [x] Use split and merge supersession events when final boundary changes require new utterance shapes.
 
-- [ ] Checkpoint 3.5: Make catch-up and resume truly span-aware and idempotent.
-  - [ ] Objective: use the persisted ASR ledger to process only missing or failed spans during catch-up and recovery.
-  - [ ] Why this order: once finalization trusts canonical live utterances, the system can distinguish covered spans from missing spans and stop rerunning ASR blindly.
-  - [ ] Likely files and modules: `backend/utils/audio_windows.py`, `backend/worker/tasks.py`, `backend/processing/live_transcribe.py`, `backend/tests/test_live_transcription.py`, `backend/tests/test_reprocess.py`.
-  - [ ] Data model and API implications: persist engine choice, model, config hash, span coverage, failure state, and produced utterance linkage for every live or catch-up ASR pass; no public API change is needed.
-  - [ ] Migration and compatibility: treat older manifest rows as legacy coverage hints rather than trying to fully backfill historical ASR result rows before rollout.
-  - [ ] Test strategy: add retry-no-op tests, worker restart resume tests, partial failure catch-up tests, and duplicate-upload tests proving one ASR pass per covered span in the normal path.
-  - [ ] Rollback and risk: moderate risk if span identity is underspecified; do not enable by default until Checkpoint 3.1 contract tests are stable.
-  - [ ] Implementation checklist:
-    - [ ] Skip completed ASR ledger spans unless the user explicitly requests reprocess or changes engine or config.
-    - [ ] Preserve failed span rows so catch-up can retry without losing history.
-    - [ ] Reuse sealed live utterances during catch-up instead of reconstructing raw segment arrays.
-    - [ ] Ensure catch-up fills only uncovered spans before final promotion.
-    - [ ] Surface enough status for processing progress and operational debugging.
+- [x] Checkpoint 3.5: Make catch-up and resume truly span-aware and idempotent.
+  - [x] Objective: use the persisted ASR ledger to process only missing or failed spans during catch-up and recovery.
+  - [x] Why this order: once finalization trusts canonical live utterances, the system can distinguish covered spans from missing spans and stop rerunning ASR blindly.
+  - [x] Likely files and modules: `backend/utils/asr_window_results.py`, `backend/worker/tasks.py`, `backend/tests/test_asr_window_results.py`, `backend/tests/test_reprocess.py`.
+  - [x] Data model and API implications: persist engine choice, model, config hash, span coverage, failure state, and reusable catch-up segment payloads for each ASR pass; live rows still carry produced utterance linkage directly, and no public API change is needed.
+  - [x] Migration and compatibility: older manifest rows remain legacy coverage hints; completed catch-up ledger rows without reusable segment payloads still fall back to rerun instead of requiring a historical backfill.
+  - [x] Test strategy: add exact-match retry-no-op tests, worker recovery tests for completed catch-up rows, partial failure catch-up tests, and keep the focused live/canonical regression suites green.
+  - [x] Rollback and risk: moderate risk if span identity is underspecified; exact span-plus-config matching keeps the reuse rule narrow enough to fall back to rerun safely when payloads are missing.
+  - [x] Implementation checklist:
+    - [x] Skip completed ASR ledger spans unless the user explicitly requests reprocess or changes engine or config.
+    - [x] Preserve failed span rows so catch-up can retry without losing history.
+    - [x] Reuse sealed live utterances during catch-up instead of reconstructing raw segment arrays.
+    - [x] Ensure catch-up fills only uncovered spans before final promotion.
+    - [x] Surface enough status for processing progress and operational debugging.
 
-- [ ] Checkpoint 3.6: Cut internal readers over to canonical-first transcript reads.
-  - [ ] Objective: remove the remaining hidden source-of-truth split by moving internal live readers to canonical utterances first and projection fallback second.
-  - [ ] Why this order: internal readers should only move after canonical live writes and finalization promotion are already trustworthy.
-  - [ ] Likely files and modules: `backend/worker/tasks.py`, `backend/api/v1/endpoints/speakers.py`, `backend/api/v1/endpoints/transcripts.py`, `backend/models/recording_public.py`.
-  - [ ] Data model and API implications: no public API contract change; internal readers should query canonical utterances and serialize projection output only where older response shapes still need it.
-  - [ ] Migration and compatibility: keep projection fallback in place until Meeting Edge and speaker maintenance flows are proven against canonical data in staging and regression tests.
-  - [ ] Test strategy: Meeting Edge regression tests, speaker rename and merge regression tests, transcript export and trim checks, and compatibility endpoint smoke tests.
-  - [ ] Rollback and risk: low to moderate because this is mostly a read-path cutover; keep projection fallback until confidence is high.
-  - [ ] Implementation checklist:
-    - [ ] Move Meeting Edge refresh to canonical-first transcript reads with projection fallback.
-    - [ ] Audit remaining `Transcript.segments` mutations and remove or wrap the Phase 3-critical ones.
-    - [ ] Leave non-critical compatibility-only reads in place only when they are intentionally projection-based.
-    - [ ] Record any residual segment-only dependencies that are intentionally deferred to later phases.
+- [x] Checkpoint 3.6: Cut internal readers over to canonical-first transcript reads.
+  - [x] Objective: remove the remaining hidden source-of-truth split by moving internal live readers to canonical utterances first and projection fallback second.
+  - [x] Why this order: internal readers should only move after canonical live writes and finalization promotion are already trustworthy.
+  - [x] Likely files and modules: `backend/worker/tasks.py`, `backend/api/v1/endpoints/speakers.py`, `backend/api/v1/endpoints/transcripts.py`, `backend/models/recording_public.py`.
+  - [x] Data model and API implications: no public API contract change; internal readers should query canonical utterances and serialize projection output only where older response shapes still need it.
+  - [x] Migration and compatibility: keep projection fallback in place until Meeting Edge and speaker maintenance flows are proven against canonical data in staging and regression tests.
+  - [x] Test strategy: Meeting Edge regression tests, speaker rename and merge regression tests, transcript export and trim checks, and compatibility endpoint smoke tests.
+  - [x] Rollback and risk: low to moderate because this is mostly a read-path cutover; keep projection fallback until confidence is high.
+  - [x] Implementation checklist:
+    - [x] Move Meeting Edge refresh to canonical-first transcript reads with projection fallback.
+    - [x] Audit remaining `Transcript.segments` mutations and remove or wrap the Phase 3-critical ones.
+    - [x] Leave non-critical compatibility-only reads in place only when they are intentionally projection-based.
+    - [x] Record any residual segment-only dependencies that are intentionally deferred to later phases.
+  - Residual deferred dependencies: legacy transcript compatibility wrappers that still accept segment-index edits, projection refresh and write paths that intentionally maintain `Transcript.segments`, and normal import cutover remain deferred to later phases.
 
 Checkpoint dependency chain:
 
-- [ ] Checkpoint 3.1 must land before Checkpoints 3.2 and 3.5.
-- [ ] Checkpoint 3.2 must land before every later Phase 3 checkpoint.
-- [ ] Checkpoint 3.3 must land before Checkpoint 3.4.
-- [ ] Checkpoint 3.4 must land before Checkpoint 3.6 becomes the default read path.
-- [ ] Checkpoint 3.5 can begin once Checkpoint 3.2 is stable, but it must complete before the final Phase 3 exit gate is considered met.
+- [x] Checkpoint 3.1 must land before Checkpoints 3.2 and 3.5.
+- [x] Checkpoint 3.2 must land before every later Phase 3 checkpoint.
+- [x] Checkpoint 3.3 must land before Checkpoint 3.4.
+- [x] Checkpoint 3.4 must land before Checkpoint 3.6 becomes the default read path.
+- [x] Checkpoint 3.5 can begin once Checkpoint 3.2 is stable, but it must complete before the final Phase 3 exit gate is considered met.
 
 Validation matrix:
 
-- [ ] Live ingest correctness: in-order uploads, out-of-order uploads, carry-over, forced emission, and long-monologue splitting still match or beat baseline behavior.
-- [ ] Canonical correctness: live utterances receive immutable IDs, correct state transitions, correct provenance, and correct supersession behavior.
+- [x] Live ingest correctness: in-order uploads, out-of-order uploads, carry-over, forced emission, and long-monologue splitting still match or beat baseline behavior.
+- [x] Canonical correctness: live utterances receive immutable IDs, correct state transitions, correct provenance, and correct supersession behavior.
 - [x] Manual edit preservation: text and speaker edits made during live recording survive later live revisions, catch-up, and finalization.
-- [ ] Finalization reuse: normal live recordings do not rerun ASR for already covered spans; explicit engine override still triggers rerun.
-- [ ] Resume and catch-up: worker restarts, failed live windows, and duplicate uploads process only missing spans.
-- [ ] Compatibility: transcript response shapes, export flows, and compatibility edit endpoints remain stable while `Transcript.segments` is projection-only.
-- [ ] Internal consumers: Meeting Edge and other Phase 3-critical readers succeed against canonical-first reads with projection fallback.
+- [x] Finalization reuse: normal live recordings do not rerun ASR for already covered spans; explicit engine override still triggers rerun.
+- [x] Resume and catch-up: worker restarts, failed live windows, and duplicate uploads process only missing spans.
+- [x] Compatibility: transcript response shapes, export flows, and compatibility edit endpoints remain stable while `Transcript.segments` is projection-only.
+- [x] Internal consumers: Meeting Edge and other Phase 3-critical readers succeed against canonical-first reads with projection fallback.
 - [ ] Metrics: ASR invocation count, finalization duration, and manual edit preservation remain at or better than the recorded baseline.
 
 Out of scope for this phase:
@@ -335,6 +337,8 @@ Out of scope for this phase:
 Exit gate:
 
 - [ ] Normal live recordings complete with one ASR pass per covered audio span, catch-up runs only for missing or failed spans, finalization promotes canonical live utterances instead of rebuilding from segment arrays, and `Transcript.segments` remains only a compatibility projection.
+  - Automated coverage is now green for live ingest ordering and chunk handling, canonical utterance state and provenance behavior, catch-up and finalization reuse, compatibility projection stability, and canonical-first internal readers.
+  - Remaining gap before closing the exit gate: baseline-style metrics comparison and a realistic full-recording validation run.
 
 ## Phase 4: Rolling Pyannote Diarization and Backward Reconciliation
 

@@ -87,6 +87,100 @@ def _lookup_recording_asr_window_result(session, *, recording_id: int, idempoten
         return None
 
 
+def _normalize_json_field(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value
+
+
+def get_recording_asr_window_result(
+    session,
+    *,
+    recording_id: int,
+    source_kind: str,
+    span_start_ms: int,
+    span_end_ms: int,
+    config: dict[str, Any] | None = None,
+    chunk_start_sequence: int | None = None,
+    chunk_end_sequence: int | None = None,
+    transcription_backend: str | None = None,
+    model_name: str | None = None,
+    config_hash: str | None = None,
+) -> RecordingAsrWindowResult | None:
+    normalized_config = dict(config or {})
+    normalized_backend = str(transcription_backend or normalized_config.get("transcription_backend") or "whisper")
+    normalized_model_name = model_name or get_transcription_model_name(normalized_config)
+    normalized_config_hash = config_hash or build_recording_asr_window_result_config_hash(normalized_config)
+    normalized_idempotency_key = build_recording_asr_window_result_idempotency_key(
+        source_kind=str(source_kind or "live"),
+        span_start_ms=int(min(span_start_ms, span_end_ms)),
+        span_end_ms=int(max(span_start_ms, span_end_ms)),
+        chunk_start_sequence=chunk_start_sequence,
+        chunk_end_sequence=chunk_end_sequence,
+        transcription_backend=normalized_backend,
+        model_name=normalized_model_name,
+        config_hash=normalized_config_hash,
+    )
+    return _lookup_recording_asr_window_result(
+        session,
+        recording_id=recording_id,
+        idempotency_key=normalized_idempotency_key,
+    )
+
+
+def get_reusable_catch_up_segments(
+    result: RecordingAsrWindowResult | None,
+) -> list[dict[str, Any]] | None:
+    if result is None:
+        return None
+
+    status_value = getattr(result.status, "value", result.status)
+    if status_value != RecordingAsrWindowResultStatus.COMPLETED.value:
+        return None
+
+    payload = _normalize_json_field(result.result_payload)
+    if not isinstance(payload, dict) or "segments" not in payload:
+        return None
+
+    raw_segments = payload.get("segments")
+    if not isinstance(raw_segments, list):
+        return []
+
+    base_start_s = int(result.span_start_ms) / 1000.0
+    segments: list[dict[str, Any]] = []
+    for raw_segment in raw_segments:
+        if not isinstance(raw_segment, dict):
+            continue
+        text = str(raw_segment.get("text", "") or "").strip()
+        if not text:
+            continue
+        start = base_start_s + float(raw_segment.get("start", 0.0) or 0.0)
+        end = base_start_s + float(raw_segment.get("end", 0.0) or 0.0)
+        if end <= start:
+            continue
+        segments.append(
+            {
+                "start": start,
+                "end": end,
+                "speaker": str(raw_segment.get("speaker") or "UNKNOWN"),
+                "text": text,
+                "segment_source": "catch_up",
+            }
+        )
+
+    segments.sort(
+        key=lambda segment: (
+            float(segment.get("start", 0.0)),
+            float(segment.get("end", 0.0)),
+            str(segment.get("text", "")),
+        )
+    )
+    return segments
+
+
 def upsert_recording_asr_window_result(
     session,
     *,

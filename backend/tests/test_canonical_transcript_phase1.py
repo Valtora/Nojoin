@@ -1446,6 +1446,72 @@ async def test_recording_speaker_rename_records_correction_event_and_alias(
 
 
 @pytest.mark.anyio
+async def test_recording_speaker_merge_repairs_canonical_segments_when_projection_is_empty(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+
+    replace_response = await client.put(
+        "/api/v1/transcripts/canon-rec/segments",
+        json={
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 0.5,
+                    "speaker": "SPEAKER_00",
+                    "text": "first",
+                    "segment_source": "legacy",
+                },
+                {
+                    "start": 0.5,
+                    "end": 1.0,
+                    "speaker": "SPEAKER_01",
+                    "text": "second",
+                    "segment_source": "legacy",
+                },
+            ]
+        },
+    )
+    assert replace_response.status_code == 200
+
+    utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert utterances_response.status_code == 200
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text("UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1")
+        )
+        await session.commit()
+
+    merge_response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/merge",
+        json={
+            "source_speaker_label": "SPEAKER_00",
+            "target_speaker_label": "SPEAKER_01",
+        },
+    )
+
+    assert merge_response.status_code == 200
+
+    updated_utterances = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert updated_utterances.status_code == 200
+    assert [item["speaker"] for item in updated_utterances.json()["utterances"]] == [
+        "SPEAKER_01",
+        "SPEAKER_01",
+    ]
+
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+        ).scalar_one()
+        assert [segment["speaker"] for segment in transcript.segments] == [
+            "SPEAKER_01",
+            "SPEAKER_01",
+        ]
+
+
+@pytest.mark.anyio
 async def test_recording_speaker_link_to_global_records_correction_event_and_alias(
     client: AsyncClient,
     test_session_maker: sessionmaker,
@@ -1614,6 +1680,265 @@ async def test_finalize_run_records_finalize_event_and_provenance(
         assert finalize_row[1] is not None
         assert finalize_row[2] is not None
         assert finalize_row[3].lower() == "finalized"
+
+
+@pytest.mark.anyio
+async def test_finalize_utterances_from_segments_reuses_live_public_id_when_boundaries_match(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        finalize_utterances_from_segments,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello live",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello live",
+                        "segment_source": "finalize",
+                    }
+                ],
+                reused_live_asr=True,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT public_id, state, source_kind, processing_run_id, revision FROM transcript_utterances WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED'"
+                )
+            )
+        ).one()
+        processing_run_row = (
+            await session.execute(
+                text(
+                    "SELECT run_kind, reused_live_asr FROM processing_runs WHERE recording_id = 1 AND UPPER(run_kind) = 'FINALIZE' ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).one()
+
+        assert utterance_row[0] == "live-utt-1"
+        assert utterance_row[1].lower() == "finalized"
+        assert utterance_row[2] == "live"
+        assert utterance_row[3] is not None
+        assert utterance_row[4] == 2
+        assert processing_run_row[0].lower() == "finalize"
+        assert bool(processing_run_row[1]) is True
+
+
+@pytest.mark.anyio
+async def test_finalize_utterances_from_segments_preserves_manual_text_lock(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        finalize_utterances_from_segments,
+        update_utterance_text,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello live",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_text(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                text="manual text",
+                actor_user_id=1,
+                source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "model text",
+                        "segment_source": "finalize",
+                    }
+                ],
+                reused_live_asr=True,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT public_id, text, manual_text_locked, state FROM transcript_utterances WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "live-utt-1"
+        assert utterance_row[1] == "manual text"
+        assert bool(utterance_row[2]) is True
+        assert utterance_row[3].lower() == "finalized"
+        assert transcript_segments[0]["text"] == "manual text"
+        assert transcript_segments[0]["text_manually_edited"] is True
+
+
+@pytest.mark.anyio
+async def test_finalize_utterances_from_segments_supersedes_boundary_changes(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        finalize_utterances_from_segments,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello there",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "start": 0.0,
+                        "end": 0.5,
+                        "speaker": "LIVE_01",
+                        "text": "hello",
+                        "segment_source": "finalize",
+                    },
+                    {
+                        "start": 0.5,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "there",
+                        "segment_source": "finalize",
+                    },
+                ],
+                reused_live_asr=True,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        old_state = (
+            await session.execute(
+                text(
+                    "SELECT state FROM transcript_utterances WHERE public_id = 'live-utt-1' ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).scalar_one()
+        active_rows = (
+            await session.execute(
+                text(
+                    "SELECT public_id, state FROM transcript_utterances WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED' ORDER BY sort_key"
+                )
+            )
+        ).all()
+        split_count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterance_events WHERE recording_id = 1 AND event_type = 'split'"
+                )
+            )
+        ).scalar_one()
+
+        assert old_state.lower() == "superseded"
+        assert len(active_rows) == 2
+        assert all(public_id != "live-utt-1" for public_id, _state in active_rows)
+        assert all(state.lower() == "finalized" for _public_id, state in active_rows)
+        assert split_count == 2
 
 
 @pytest.mark.anyio

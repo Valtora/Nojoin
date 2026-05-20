@@ -333,3 +333,65 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
         }
     finally:
         verification_engine.dispose()
+
+
+def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_infer_speakers_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "openai",
+            "openai_api_key": "sk-openai-valid",
+            "openai_model": "gpt-test",
+        },
+        transcript_segments=[],
+    )
+    captured: dict[str, Any] = {}
+    canonical_segments = [
+        {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00", "text": "Canonical intro."},
+        {"start": 1.0, "end": 2.5, "speaker": "SPEAKER_01", "text": "Canonical rollout plan."},
+    ]
+
+    class FakeLLM:
+        def infer_speakers(
+            self,
+            transcript: str,
+            prompt_template: str | None = None,
+            timeout: int = 60,
+            user_notes: str | None = None,
+            meeting_context=None,
+        ) -> dict[str, str]:
+            captured["transcript"] = transcript
+            return {"SPEAKER_00": "Alex", "SPEAKER_01": "Dana"}
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setattr(
+        tasks_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [dict(segment) for segment in canonical_segments],
+    )
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            speaker_rows = session.exec(
+                text(
+                    "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                )
+            ).all()
+
+        assert dict(speaker_rows) == {
+            "SPEAKER_00": "Alex",
+            "SPEAKER_01": "Dana",
+        }
+        assert "SPEAKER_00 - Canonical intro." in captured["transcript"]
+        assert "SPEAKER_01 - Canonical rollout plan." in captured["transcript"]
+    finally:
+        verification_engine.dispose()

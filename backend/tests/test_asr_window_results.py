@@ -6,6 +6,8 @@ from sqlmodel import Session, select
 from backend.models.pipeline import RecordingAsrWindowResult, RecordingAsrWindowResultStatus
 from backend.utils.asr_window_results import (
     complete_recording_asr_window_result,
+    get_recording_asr_window_result,
+    get_reusable_catch_up_segments,
     fail_recording_asr_window_result,
     get_transcription_model_name,
     start_recording_asr_window_result,
@@ -145,3 +147,63 @@ def test_asr_window_result_can_transition_from_failed_to_completed_retry():
         assert row.error_summary is None
         assert row.error_payload is None
         assert row.result_payload == {"segment_count": 3, "text_chars": 48}
+
+
+def test_get_recording_asr_window_result_rehydrates_reusable_catch_up_segments():
+    with _make_session() as session:
+        complete_recording_asr_window_result(
+            session,
+            recording_id=12,
+            source_kind="catch_up",
+            span_start_ms=5000,
+            span_end_ms=9000,
+            chunk_start_sequence=5,
+            chunk_end_sequence=7,
+            config={
+                "transcription_backend": "whisper",
+                "whisper_model_size": "base",
+                "processing_device": "cpu",
+            },
+            result_payload={
+                "segment_count": 2,
+                "text_chars": 22,
+                "segments": [
+                    {"start": 0.0, "end": 0.8, "speaker": "LIVE_01", "text": "hello"},
+                    {"start": 1.1, "end": 1.6, "speaker": "LIVE_01", "text": "again"},
+                ],
+            },
+        )
+        session.commit()
+
+        row = get_recording_asr_window_result(
+            session,
+            recording_id=12,
+            source_kind="catch_up",
+            span_start_ms=5000,
+            span_end_ms=9000,
+            chunk_start_sequence=5,
+            chunk_end_sequence=7,
+            config={
+                "transcription_backend": "whisper",
+                "whisper_model_size": "base",
+                "processing_device": "cpu",
+            },
+        )
+
+        assert row is not None
+        assert get_reusable_catch_up_segments(row) == [
+            {
+                "start": 5.0,
+                "end": 5.8,
+                "speaker": "LIVE_01",
+                "text": "hello",
+                "segment_source": "catch_up",
+            },
+            {
+                "start": 6.1,
+                "end": 6.6,
+                "speaker": "LIVE_01",
+                "text": "again",
+                "segment_source": "catch_up",
+            },
+        ]

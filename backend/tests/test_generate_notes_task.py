@@ -300,3 +300,64 @@ def test_generate_notes_task_marks_missing_model_as_error(
         assert row[2] == "No model selected for anthropic"
     finally:
         verification_engine.dispose()
+
+
+def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_notes_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "anthropic",
+            "anthropic_api_key": "sk-ant-valid",
+            "anthropic_model": "claude-test",
+        },
+        transcript_segments=[],
+    )
+    captured: dict[str, Any] = {}
+    canonical_segments = [
+        {"start": 0.0, "end": 1.5, "speaker": "SPEAKER_00", "text": "Canonical hello."},
+        {"start": 1.5, "end": 3.0, "speaker": "SPEAKER_00", "text": "Canonical follow up."},
+    ]
+
+    class FakeLLM:
+        def generate_meeting_notes(
+            self,
+            transcript: str,
+            speaker_mapping: dict[str, str],
+            prompt_template: str | None = None,
+            timeout: int = 60,
+            user_notes: str | None = None,
+            meeting_context=None,
+        ) -> str:
+            captured["transcript"] = transcript
+            captured["speaker_mapping"] = speaker_mapping
+            return "# Canonical Notes"
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        tasks_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [dict(segment) for segment in canonical_segments],
+    )
+    monkeypatch.setattr(
+        "backend.processing.llm_services.get_llm_backend",
+        lambda *args, **kwargs: FakeLLM(),
+    )
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_generate_notes_task(engine)
+
+        with Session(verification_engine) as session:
+            row = session.exec(
+                text("SELECT notes, notes_status FROM transcripts WHERE id = 1")
+            ).one()
+
+        assert row[0] == "# Canonical Notes"
+        assert row[1] == "completed"
+        assert "Canonical hello." in captured["transcript"]
+        assert "Canonical follow up." in captured["transcript"]
+    finally:
+        verification_engine.dispose()

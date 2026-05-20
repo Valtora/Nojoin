@@ -157,14 +157,16 @@ def serialize_transcript(
     transcript: Transcript,
     *,
     recording_public_id: str,
+    segments_override: Optional[list[dict]] = None,
+    text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
     return TranscriptPublicRead(
         id=transcript.id,
         created_at=transcript.created_at,
         updated_at=transcript.updated_at,
         recording_id=recording_public_id,
-        text=transcript.text,
-        segments=transcript.segments,
+        text=transcript.text if text_override is None else text_override,
+        segments=transcript.segments if segments_override is None else segments_override,
         notes=transcript.notes,
         user_notes=transcript.user_notes,
         meeting_edge_focus=transcript.meeting_edge_focus,
@@ -223,12 +225,16 @@ def serialize_recording(
     include_tags: bool = False,
     include_calendar_event: bool = False,
     calendar_event: Optional[CalendarEvent] = None,
+    transcript_segments_override: Optional[list[dict]] = None,
+    transcript_text_override: Optional[str] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
         transcript = serialize_transcript(
             recording.transcript,
             recording_public_id=recording.public_id,
+            segments_override=transcript_segments_override,
+            text_override=transcript_text_override,
         )
 
     speakers: list[RecordingSpeakerPublicRead] = []

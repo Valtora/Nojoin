@@ -77,9 +77,16 @@ from backend.utils.time import utc_now
 from backend.utils.asr_window_results import (
     complete_recording_asr_window_result,
     fail_recording_asr_window_result,
+    get_recording_asr_window_result,
+    get_reusable_catch_up_segments,
     start_recording_asr_window_result,
 )
-from backend.utils.canonical_pipeline import ensure_processing_run, replace_utterances_from_segments
+from backend.utils.canonical_pipeline import (
+    build_transcript_segments_for_read,
+    build_reusable_live_segments,
+    ensure_processing_run,
+    finalize_utterances_from_segments,
+)
 from backend.processing.text_embedding import get_text_embedding_service
 
 if TYPE_CHECKING:
@@ -359,19 +366,38 @@ def _build_catch_up_segments(
 ) -> tuple[list[dict], set[int], ProcessingRun | None]:
     manifest_rows = _load_recording_audio_window_manifests(session, recording.id)
     chunk_rows = _load_recording_audio_chunks(session, recording.id)
-    pending_spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
-    if not pending_spans:
-        return [], set(), None
-
-    pending_window_ids = {
-        int(row.id)
+    raw_pending_spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
+    pending_manifest_rows = [
+        row
         for row in manifest_rows
         if row.id is not None
-        and str(row.status or "") not in {
+        and str(getattr(row, "status", "") or "") not in {
             WINDOW_STATUS_LIVE_PROCESSED,
             WINDOW_STATUS_CATCH_UP_PROCESSED,
         }
+    ]
+    pending_window_ids = {
+        int(row.id)
+        for row in pending_manifest_rows
     }
+    if not raw_pending_spans and not pending_window_ids:
+        return [], set(), None
+
+    span_start_ms = min(
+        [int(row.window_start_ms) for row in pending_manifest_rows]
+        or [span.start_ms for span in raw_pending_spans],
+        default=0,
+    )
+    span_end_ms = max(
+        [int(row.window_end_ms) for row in pending_manifest_rows]
+        or [span.end_ms for span in raw_pending_spans],
+        default=0,
+    )
+    catch_up_idempotency_parts = (
+        ",".join(f"{span.start_sequence}-{span.end_sequence}" for span in raw_pending_spans)
+        if raw_pending_spans
+        else f"windows:{','.join(str(window_id) for window_id in sorted(pending_window_ids))}"
+    )
     catch_up_run = ensure_processing_run(
         session,
         recording_id=recording.id,
@@ -379,12 +405,13 @@ def _build_catch_up_segments(
         status=ProcessingRunStatus.RUNNING,
         trigger_source="worker",
         transcription_backend=merged_config.get("transcription_backend"),
-        span_start_ms=min(span.start_ms for span in pending_spans),
-        span_end_ms=max(span.end_ms for span in pending_spans),
+        span_start_ms=span_start_ms,
+        span_end_ms=span_end_ms,
         idempotency_key=(
             "catch_up:"
             f"{recording.id}:"
-            f"{','.join(f'{span.start_sequence}-{span.end_sequence}' for span in pending_spans)}"
+            f"{_final_asr_config_hash(merged_config)}:"
+            f"{catch_up_idempotency_parts}"
         ),
     )
     catch_up_run.status = ProcessingRunStatus.RUNNING
@@ -394,12 +421,52 @@ def _build_catch_up_segments(
 
     catch_up_segments: list[dict] = []
     status_counts = count_manifest_statuses(manifest_rows)
+    ledger_enabled = bool(config_manager.get("enable_asr_window_result_ledger", True))
+    pending_spans: list = []
+    reused_span_count = 0
+    reused_segment_count = 0
+    legacy_payload_gap_count = 0
+
+    for span in raw_pending_spans:
+        existing_result = None
+        reusable_segments = None
+        if ledger_enabled:
+            existing_result = get_recording_asr_window_result(
+                session,
+                recording_id=recording.id,
+                source_kind="catch_up",
+                span_start_ms=span.start_ms,
+                span_end_ms=span.end_ms,
+                chunk_start_sequence=span.start_sequence,
+                chunk_end_sequence=span.end_sequence,
+                config=merged_config,
+                config_hash=_final_asr_config_hash(merged_config),
+            )
+            reusable_segments = get_reusable_catch_up_segments(existing_result)
+
+        if reusable_segments is not None:
+            reused_span_count += 1
+            reused_segment_count += len(reusable_segments)
+            catch_up_segments.extend(reusable_segments)
+            continue
+
+        if ledger_enabled and existing_result is not None:
+            status_value = getattr(existing_result.status, "value", existing_result.status)
+            if status_value == "completed":
+                legacy_payload_gap_count += 1
+
+        pending_spans.append(span)
+
     record_pipeline_metric(
         stage="catch_up_detected",
         recording_id=recording.id,
         payload={
             "pending_window_count": len(pending_window_ids),
-            "pending_span_count": len(pending_spans),
+            "pending_span_count": len(raw_pending_spans),
+            "rerun_span_count": len(pending_spans),
+            "reused_span_count": reused_span_count,
+            "reused_segment_count": reused_segment_count,
+            "legacy_payload_gap_count": legacy_payload_gap_count,
             "window_status_counts": status_counts,
         },
         log=log,
@@ -430,7 +497,7 @@ def _build_catch_up_segments(
             },
             log=log,
         ) as metric:
-            if config_manager.get("enable_asr_window_result_ledger", True):
+            if ledger_enabled:
                 start_recording_asr_window_result(
                     session,
                     recording_id=recording.id,
@@ -446,7 +513,7 @@ def _build_catch_up_segments(
             try:
                 result = transcribe_audio(clip_path, config=merged_config)
             except Exception as exc:
-                if config_manager.get("enable_asr_window_result_ledger", True):
+                if ledger_enabled:
                     fail_recording_asr_window_result(
                         session,
                         recording_id=recording.id,
@@ -464,7 +531,37 @@ def _build_catch_up_segments(
                 raise
             metric["payload"]["segment_count"] = len((result or {}).get("segments", []))
 
-        if config_manager.get("enable_asr_window_result_ledger", True):
+        result_segments: list[dict] = []
+        for segment in (result or {}).get("segments", []):
+            text = str(segment.get("text", "")).strip()
+            if not text:
+                continue
+
+            relative_start = float(segment.get("start", 0.0) or 0.0)
+            relative_end = float(segment.get("end", 0.0) or 0.0)
+            if relative_end <= relative_start:
+                continue
+
+            result_segments.append(
+                {
+                    "start": relative_start,
+                    "end": relative_end,
+                    "speaker": str(segment.get("speaker") or "UNKNOWN"),
+                    "text": text,
+                    "segment_source": "catch_up",
+                }
+            )
+            catch_up_segments.append(
+                {
+                    "start": span.start_ms / 1000.0 + relative_start,
+                    "end": span.start_ms / 1000.0 + relative_end,
+                    "speaker": str(segment.get("speaker") or "UNKNOWN"),
+                    "text": text,
+                    "segment_source": "catch_up",
+                }
+            )
+
+        if ledger_enabled:
             if result is None:
                 fail_recording_asr_window_result(
                     session,
@@ -493,24 +590,19 @@ def _build_catch_up_segments(
                     config=merged_config,
                     config_hash=_final_asr_config_hash(merged_config),
                     result_payload={
-                        "segment_count": len((result or {}).get("segments", [])),
+                        "segment_count": len(result_segments),
                         "text_chars": len((result or {}).get("text") or ""),
+                        "segments": result_segments,
                     },
                 )
 
-        for segment in (result or {}).get("segments", []):
-            text = str(segment.get("text", "")).strip()
-            if not text:
-                continue
-            catch_up_segments.append(
-                {
-                    "start": span.start_ms / 1000.0 + float(segment.get("start", 0.0)),
-                    "end": span.start_ms / 1000.0 + float(segment.get("end", 0.0)),
-                    "speaker": str(segment.get("speaker") or "UNKNOWN"),
-                    "text": text,
-                    "segment_source": "catch_up",
-                }
-            )
+    catch_up_segments.sort(
+        key=lambda segment: (
+            float(segment.get("start", 0.0)),
+            float(segment.get("end", 0.0)),
+            str(segment.get("text", "")),
+        )
+    )
 
     return catch_up_segments, pending_window_ids, catch_up_run
 
@@ -662,7 +754,7 @@ def _run_catch_up_diarization_windows(
         row
         for row in manifest_rows
         if row.id is not None
-        and str(row.status or "") not in {
+        and str(getattr(row, "status", "") or "") not in {
             WINDOW_STATUS_LIVE_PROCESSED,
             WINDOW_STATUS_CATCH_UP_PROCESSED,
         }
@@ -986,7 +1078,11 @@ def refresh_meeting_edge_task(self, recording_id: int):
 
         segments = [
             dict(segment)
-            for segment in (transcript.segments or [])
+            for segment in build_transcript_segments_for_read(
+                session,
+                recording_id,
+                transcript=transcript,
+            )
             if str(segment.get("text", "")).strip()
         ]
         focus_text = transcript.meeting_edge_focus
@@ -1181,16 +1277,19 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     merged_config = llm_config.merged_config
     live_segments_for_reuse = []
     if engine_override is None:
-        initial_transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        ).first()
-        if initial_transcript and initial_transcript.segments:
-            live_segments_for_reuse = [
-                dict(segment)
-                for segment in initial_transcript.segments
-                if segment.get("segment_source") in {"live", "catch_up"}
-                or segment.get("provisional") is True
-            ]
+        if config_manager.get("enable_canonical_transcript_writes", True):
+            live_segments_for_reuse = build_reusable_live_segments(session, recording.id)
+        if not live_segments_for_reuse:
+            initial_transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording.id)
+            ).first()
+            if initial_transcript and initial_transcript.segments:
+                live_segments_for_reuse = [
+                    dict(segment)
+                    for segment in initial_transcript.segments
+                    if segment.get("segment_source") in {"live", "catch_up"}
+                    or segment.get("provisional") is True
+                ]
     
     # Platform/Device detection for UX
     import torch
@@ -1344,11 +1443,16 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         transcription_result = None
         reused_live_transcript_segments = []
         if live_segments_for_reuse and engine_override is None:
-            pending_spans = collect_pending_chunk_spans(
-                _load_recording_audio_window_manifests(session, recording.id),
-                _load_recording_audio_chunks(session, recording.id),
-            )
-            if pending_spans:
+            pending_manifest_rows = [
+                row
+                for row in _load_recording_audio_window_manifests(session, recording.id)
+                if row.id is not None
+                    and str(getattr(row, "status", "") or "") not in {
+                    WINDOW_STATUS_LIVE_PROCESSED,
+                    WINDOW_STATUS_CATCH_UP_PROCESSED,
+                }
+            ]
+            if pending_manifest_rows:
                 from backend.utils.audio import extract_audio_clip
 
                 self.update_state(state='PROCESSING', meta={'progress': 45, 'stage': 'Catch-up'})
@@ -1956,14 +2060,10 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         transcript.segments = updated_segments
         session.add(transcript)
         if config_manager.get("enable_canonical_transcript_writes", True):
-            replace_utterances_from_segments(
+            finalize_utterances_from_segments(
                 session,
                 recording_id=recording.id,
                 segments=[dict(segment) for segment in updated_segments],
-                run_kind=ProcessingRunKind.FINALIZE,
-                source="finalize",
-                force=True,
-                state_override=TranscriptUtteranceState.FINALIZED,
                 reused_live_asr=bool(reused_live_transcript_segments),
                 trigger_source="worker",
             )
@@ -2368,14 +2468,19 @@ def generate_notes_task(self, recording_id: int):
             _mark_notes_generation_error(session, recording, transcript, missing_llm_config)
             return
 
-        if not transcript.segments:
+        segments = build_transcript_segments_for_read(
+            session,
+            recording_id,
+            transcript=transcript,
+        )
+        if not segments:
             _mark_notes_generation_error(session, recording, transcript, "Transcript is empty")
             return
 
         # Build Speaker Map and Transcript Text
         speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
         speaker_map = build_recording_speaker_map(speakers)
-        transcript_text = format_segments_for_llm(transcript.segments, speaker_map)
+        transcript_text = format_segments_for_llm(segments, speaker_map)
 
         # Call LLM Service
         llm = _llm_backend_from_config(llm_config)
@@ -2485,7 +2590,12 @@ def infer_speakers_task(self, recording_id: int):
 
         # Fetch transcript
         transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
-        if not transcript or not transcript.segments:
+        segments = build_transcript_segments_for_read(
+            session,
+            recording_id,
+            transcript=transcript,
+        )
+        if not transcript or not segments:
             logger.error(f"No transcript found for recording {recording_id}.")
             _complete_speaker_inference_task(session, recording)
             return
@@ -2496,7 +2606,7 @@ def infer_speakers_task(self, recording_id: int):
 
         # Prepare transcript for LLM
         transcript_for_llm = ""
-        for seg in transcript.segments:
+        for seg in segments:
             start = seg.get('start', 0)
             end = seg.get('end', 0)
             def fmt(ts):
@@ -2727,7 +2837,12 @@ def index_transcript_task(self, recording_id: int):
         return
 
     transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
-    if not transcript or not transcript.segments:
+    segments = build_transcript_segments_for_read(
+        session,
+        recording_id,
+        transcript=transcript,
+    )
+    if not transcript or not segments:
         return
 
     try:
@@ -2749,7 +2864,7 @@ def index_transcript_task(self, recording_id: int):
         # Chunks the transcript segments.
         # Grouping small segments improves embedding quality.
         
-        segments = transcript.segments
+        segments = [dict(segment) for segment in segments]
         
         temp_chunk_text = ""
         temp_chunk_start = 0

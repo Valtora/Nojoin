@@ -63,6 +63,7 @@ from backend.utils.speaker_assignment import (
 )
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
+    build_transcript_segments_for_read,
     build_transient_utterance_payloads_from_segments,
     ensure_canonical_backfill,
     get_canonical_transcript_revision,
@@ -622,7 +623,9 @@ async def export_content(
     # Apply the non-destructive trim window (display/export only). The stored
     # transcript segments and recording duration are never mutated.
     segments = filter_segments_for_trim(
-        transcript.segments or [],
+        await db.run_sync(
+            lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
+        ),
         recording.trim_start_s,
         recording.trim_end_s,
     )
