@@ -74,6 +74,11 @@ from backend.utils.recording_storage import (
 )
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
+from backend.utils.asr_window_results import (
+    complete_recording_asr_window_result,
+    fail_recording_asr_window_result,
+    start_recording_asr_window_result,
+)
 from backend.utils.canonical_pipeline import ensure_processing_run, replace_utterances_from_segments
 from backend.processing.text_embedding import get_text_embedding_service
 
@@ -108,6 +113,21 @@ MEETING_EDGE_STATUS_IDLE = "idle"
 MEETING_EDGE_STATUS_UPDATING = "updating"
 MEETING_EDGE_STATUS_READY = "ready"
 MEETING_EDGE_STATUS_ERROR = "error"
+
+
+def _final_asr_config_hash(merged_config: dict) -> str:
+    return hashlib.sha256(
+        "|".join(
+            [
+                str(merged_config.get("transcription_backend", "whisper")),
+                str(merged_config.get("whisper_model_size", "turbo")),
+                str(merged_config.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
+                str(merged_config.get("canary_model", "nemo-canary-1b-v2")),
+                str(merged_config.get("processing_device", "auto")),
+                str(bool(merged_config.get("use_gpu", True))),
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _paths_point_to_same_media(path_a: str | None, path_b: str | None) -> bool:
@@ -410,8 +430,73 @@ def _build_catch_up_segments(
             },
             log=log,
         ) as metric:
-            result = transcribe_audio(clip_path, config=merged_config)
+            if config_manager.get("enable_asr_window_result_ledger", True):
+                start_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    processing_run_id=catch_up_run.id if catch_up_run else None,
+                    source_kind="catch_up",
+                    span_start_ms=span.start_ms,
+                    span_end_ms=span.end_ms,
+                    chunk_start_sequence=span.start_sequence,
+                    chunk_end_sequence=span.end_sequence,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                )
+            try:
+                result = transcribe_audio(clip_path, config=merged_config)
+            except Exception as exc:
+                if config_manager.get("enable_asr_window_result_ledger", True):
+                    fail_recording_asr_window_result(
+                        session,
+                        recording_id=recording.id,
+                        processing_run_id=catch_up_run.id if catch_up_run else None,
+                        source_kind="catch_up",
+                        span_start_ms=span.start_ms,
+                        span_end_ms=span.end_ms,
+                        chunk_start_sequence=span.start_sequence,
+                        chunk_end_sequence=span.end_sequence,
+                        config=merged_config,
+                        config_hash=_final_asr_config_hash(merged_config),
+                        error_summary=str(exc).strip()[:500] or "Catch-up ASR invocation failed.",
+                        error_payload={"error_type": exc.__class__.__name__},
+                    )
+                raise
             metric["payload"]["segment_count"] = len((result or {}).get("segments", []))
+
+        if config_manager.get("enable_asr_window_result_ledger", True):
+            if result is None:
+                fail_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    processing_run_id=catch_up_run.id if catch_up_run else None,
+                    source_kind="catch_up",
+                    span_start_ms=span.start_ms,
+                    span_end_ms=span.end_ms,
+                    chunk_start_sequence=span.start_sequence,
+                    chunk_end_sequence=span.end_sequence,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                    error_summary="Catch-up ASR returned no result.",
+                    error_payload={"error_type": "empty_result"},
+                )
+            else:
+                complete_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    processing_run_id=catch_up_run.id if catch_up_run else None,
+                    source_kind="catch_up",
+                    span_start_ms=span.start_ms,
+                    span_end_ms=span.end_ms,
+                    chunk_start_sequence=span.start_sequence,
+                    chunk_end_sequence=span.end_sequence,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                    result_payload={
+                        "segment_count": len((result or {}).get("segments", [])),
+                        "text_chars": len((result or {}).get("text") or ""),
+                    },
+                )
 
         for segment in (result or {}).get("segments", []):
             text = str(segment.get("text", "")).strip()
@@ -1366,7 +1451,62 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 },
                 log=logger,
             ) as metric:
-                transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
+                asr_source_kind = "reprocess" if engine_override else "finalize"
+                span_end_ms = int(round(float(recording.duration_seconds or 0.0) * 1000.0))
+                if config_manager.get("enable_asr_window_result_ledger", True):
+                    start_recording_asr_window_result(
+                        session,
+                        recording_id=recording.id,
+                        source_kind=asr_source_kind,
+                        span_start_ms=0,
+                        span_end_ms=span_end_ms,
+                        config=merged_config,
+                        config_hash=_final_asr_config_hash(merged_config),
+                    )
+                try:
+                    transcription_result = transcribe_audio(processed_audio_path, config=merged_config)
+                except Exception as exc:
+                    if config_manager.get("enable_asr_window_result_ledger", True):
+                        fail_recording_asr_window_result(
+                            session,
+                            recording_id=recording.id,
+                            source_kind=asr_source_kind,
+                            span_start_ms=0,
+                            span_end_ms=span_end_ms,
+                            config=merged_config,
+                            config_hash=_final_asr_config_hash(merged_config),
+                            error_summary=str(exc).strip()[:500] or "Final ASR invocation failed.",
+                            error_payload={"error_type": exc.__class__.__name__},
+                        )
+                    raise
+                if config_manager.get("enable_asr_window_result_ledger", True):
+                    if transcription_result is None:
+                        fail_recording_asr_window_result(
+                            session,
+                            recording_id=recording.id,
+                            source_kind=asr_source_kind,
+                            span_start_ms=0,
+                            span_end_ms=span_end_ms,
+                            config=merged_config,
+                            config_hash=_final_asr_config_hash(merged_config),
+                            error_summary="Final ASR returned no result.",
+                            error_payload={"error_type": "empty_result"},
+                        )
+                    else:
+                        complete_recording_asr_window_result(
+                            session,
+                            recording_id=recording.id,
+                            source_kind=asr_source_kind,
+                            span_start_ms=0,
+                            span_end_ms=span_end_ms,
+                            config=merged_config,
+                            config_hash=_final_asr_config_hash(merged_config),
+                            result_payload={
+                                "segment_count": len((transcription_result or {}).get("segments", [])),
+                                "text_chars": len((transcription_result or {}).get("text") or ""),
+                                "engine_override": bool(engine_override),
+                            },
+                        )
                 metric["payload"]["segment_count"] = len(
                     (transcription_result or {}).get("segments", [])
                 )

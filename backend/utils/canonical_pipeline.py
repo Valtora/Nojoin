@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
@@ -64,6 +64,16 @@ def list_active_utterances(session, recording_id: int) -> list[TranscriptUtteran
     statement = (
         select(TranscriptUtterance)
         .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
+        .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
+    )
+    return list(session.execute(statement).scalars().all())
+
+
+def list_utterances_for_processing_run(session, processing_run_id: int) -> list[TranscriptUtterance]:
+    statement = (
+        select(TranscriptUtterance)
+        .where(TranscriptUtterance.processing_run_id == processing_run_id)
         .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
         .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
     )
@@ -343,15 +353,61 @@ def ensure_recording_speaker_aliases_for_speaker(
         key = (alias_type.value, alias_value)
         if key in existing:
             continue
-        session.add(
-            RecordingSpeakerAlias(
-                recording_speaker_id=recording_speaker.id,
-                alias_type=alias_type,
-                alias_value=alias_value,
-                source_run_id=source_run_id,
-                active=True,
-            )
+        _ensure_recording_speaker_alias(
+            session,
+            recording_speaker_id=recording_speaker.id,
+            alias_type=alias_type,
+            alias_value=alias_value,
+            source_run_id=source_run_id,
+            active=True,
         )
+
+
+def _ensure_recording_speaker_alias(
+    session,
+    *,
+    recording_speaker_id: int,
+    alias_type: RecordingSpeakerAliasType,
+    alias_value: str,
+    source_run_id: int | None = None,
+    active: bool = True,
+    valid_from_ms: int | None = None,
+    valid_to_ms: int | None = None,
+    confidence: float | None = None,
+) -> RecordingSpeakerAlias:
+    existing_rows = session.execute(
+        select(RecordingSpeakerAlias)
+        .where(RecordingSpeakerAlias.recording_speaker_id == recording_speaker_id)
+        .where(RecordingSpeakerAlias.alias_type == alias_type)
+        .where(RecordingSpeakerAlias.alias_value == alias_value)
+    ).scalars().all()
+
+    for row in existing_rows:
+        if (
+            bool(row.active) == bool(active)
+            and row.valid_from_ms == valid_from_ms
+            and row.valid_to_ms == valid_to_ms
+        ):
+            if source_run_id is not None and row.source_run_id is None:
+                row.source_run_id = source_run_id
+                session.add(row)
+            if confidence is not None and row.confidence is None:
+                row.confidence = confidence
+                session.add(row)
+            return row
+
+    alias_row = RecordingSpeakerAlias(
+        recording_speaker_id=recording_speaker_id,
+        alias_type=alias_type,
+        alias_value=alias_value,
+        source_run_id=source_run_id,
+        active=active,
+        valid_from_ms=valid_from_ms,
+        valid_to_ms=valid_to_ms,
+        confidence=confidence,
+    )
+    session.add(alias_row)
+    return alias_row
 
 
 def ensure_recording_speaker_aliases(
@@ -417,19 +473,59 @@ def merge_recording_speaker_aliases(
         alias_key = (alias_type_value, alias_row.alias_value)
         if alias_key in existing_target_keys:
             continue
-        session.add(
-            RecordingSpeakerAlias(
-                recording_speaker_id=target_speaker.id,
-                alias_type=alias_row.alias_type,
-                alias_value=alias_row.alias_value,
-                source_run_id=alias_row.source_run_id or source_run_id,
-                active=bool(alias_row.active),
-                valid_from_ms=alias_row.valid_from_ms,
-                valid_to_ms=alias_row.valid_to_ms,
-                confidence=alias_row.confidence,
-            )
+        _ensure_recording_speaker_alias(
+            session,
+            recording_speaker_id=target_speaker.id,
+            alias_type=alias_row.alias_type,
+            alias_value=alias_row.alias_value,
+            source_run_id=alias_row.source_run_id or source_run_id,
+            active=bool(alias_row.active),
+            valid_from_ms=alias_row.valid_from_ms,
+            valid_to_ms=alias_row.valid_to_ms,
+            confidence=alias_row.confidence,
         )
         existing_target_keys.add(alias_key)
+
+
+def _live_alias_values_for_speaker(session, recording_speaker: RecordingSpeaker) -> set[str]:
+    values: set[str] = set()
+    if recording_speaker.diarization_label and recording_speaker.diarization_label.startswith("LIVE_"):
+        values.add(recording_speaker.diarization_label)
+
+    alias_rows = session.execute(
+        select(RecordingSpeakerAlias.alias_value)
+        .where(RecordingSpeakerAlias.recording_speaker_id == recording_speaker.id)
+        .where(RecordingSpeakerAlias.alias_type == RecordingSpeakerAliasType.LIVE_LABEL)
+        .where(RecordingSpeakerAlias.active.is_(True))
+    ).all()
+    values.update(str(alias_value) for (alias_value,) in alias_rows if alias_value)
+    return values
+
+
+def _preserve_live_label_continuity(
+    session,
+    *,
+    source_speaker: RecordingSpeaker | None,
+    target_speaker: RecordingSpeaker,
+    scope: SpeakerCorrectionScope,
+    anchor_start_ms: int,
+) -> None:
+    if source_speaker is None or source_speaker.id == target_speaker.id:
+        return
+    if scope in {SpeakerCorrectionScope.UTTERANCE_ONLY, SpeakerCorrectionScope.MERGE_INTO_SPEAKER}:
+        return
+
+    valid_from_ms = anchor_start_ms if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD else None
+    for alias_value in _live_alias_values_for_speaker(session, source_speaker):
+        _ensure_recording_speaker_alias(
+            session,
+            recording_speaker_id=target_speaker.id,
+            alias_type=RecordingSpeakerAliasType.LIVE_LABEL,
+            alias_value=alias_value,
+            source_run_id=target_speaker.processing_run_id or source_speaker.processing_run_id,
+            active=True,
+            valid_from_ms=valid_from_ms,
+        )
 
 
 def _resolve_active_recording_speaker(
@@ -465,7 +561,40 @@ def _find_matching_recording_speaker(
     recording_speakers: list[RecordingSpeaker],
     value: str,
     source_run_id: int | None,
+    segment_start_ms: int | None = None,
 ) -> RecordingSpeaker | None:
+    speaker_ids = [speaker.id for speaker in recording_speakers]
+    if speaker_ids and segment_start_ms is not None:
+        alias_rows = session.execute(
+            select(RecordingSpeakerAlias)
+            .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
+            .where(RecordingSpeakerAlias.active.is_(True))
+            .where(RecordingSpeakerAlias.alias_value == value)
+            .where(
+                or_(
+                    RecordingSpeakerAlias.valid_from_ms.is_(None),
+                    RecordingSpeakerAlias.valid_from_ms <= segment_start_ms,
+                )
+            )
+            .where(
+                or_(
+                    RecordingSpeakerAlias.valid_to_ms.is_(None),
+                    RecordingSpeakerAlias.valid_to_ms > segment_start_ms,
+                )
+            )
+            .order_by(func.coalesce(RecordingSpeakerAlias.valid_from_ms, -1).desc(), RecordingSpeakerAlias.id.desc())
+        ).scalars().all()
+        speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
+        for alias_row in alias_rows:
+            alias_speaker = speakers_by_id.get(alias_row.recording_speaker_id)
+            if alias_speaker is None:
+                alias_speaker = session.get(RecordingSpeaker, alias_row.recording_speaker_id)
+            if alias_speaker is None or alias_speaker.recording_id != recording_id:
+                continue
+            resolved = _resolve_active_recording_speaker(session, alias_speaker)
+            _apply_source_run_provenance(session, resolved, source_run_id)
+            return resolved
+
     for recording_speaker in recording_speakers:
         if recording_speaker.diarization_label == value:
             resolved = _resolve_active_recording_speaker(session, recording_speaker)
@@ -487,7 +616,6 @@ def _find_matching_recording_speaker(
             _apply_source_run_provenance(session, resolved, source_run_id)
             return resolved
 
-    speaker_ids = [speaker.id for speaker in recording_speakers]
     if not speaker_ids:
         return None
 
@@ -891,6 +1019,140 @@ def replace_utterances_from_segments(
     return utterances
 
 
+def append_utterances_from_segments(
+    session,
+    *,
+    recording_id: int,
+    segments: Sequence[dict[str, Any]],
+    run_kind: ProcessingRunKind,
+    source: str,
+    state_override: TranscriptUtteranceState | None = None,
+    trigger_source: str = "system",
+    idempotency_key: str | None = None,
+    config_hash: str | None = None,
+    transcription_backend: str | None = None,
+    model_metadata: dict[str, Any] | None = None,
+    span_start_ms: int | None = None,
+    span_end_ms: int | None = None,
+    reused_live_asr: bool = False,
+) -> list[TranscriptUtterance]:
+    transcript = _load_transcript(session, recording_id)
+    recording = session.get(Recording, recording_id)
+    if transcript is None or recording is None or not segments:
+        return []
+
+    run_idempotency_key = idempotency_key or _processing_run_idempotency_key(
+        run_kind=run_kind,
+        source=source,
+        segments=segments,
+        state_override=state_override,
+        reused_live_asr=reused_live_asr,
+    )
+    existing_processing_run = session.execute(
+        select(ProcessingRun)
+        .where(ProcessingRun.recording_id == recording_id)
+        .where(ProcessingRun.idempotency_key == run_idempotency_key)
+    ).scalar_one_or_none()
+    if existing_processing_run is not None:
+        return list_utterances_for_processing_run(session, existing_processing_run.id)
+
+    processing_run = ensure_processing_run(
+        session,
+        recording_id=recording_id,
+        run_kind=run_kind,
+        trigger_source=trigger_source,
+        reused_live_asr=reused_live_asr,
+        config_hash=config_hash,
+        transcription_backend=transcription_backend,
+        model_metadata=model_metadata,
+        span_start_ms=(
+            span_start_ms
+            if span_start_ms is not None
+            else _segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0))
+        ),
+        span_end_ms=(
+            span_end_ms
+            if span_end_ms is not None
+            else _segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0))
+        ),
+        idempotency_key=run_idempotency_key,
+    )
+
+    recording_speakers = ensure_recording_speaker_aliases(
+        session,
+        recording_id,
+        source_run_id=processing_run.id,
+    )
+    next_sort_index = len(list_active_utterances(session, recording_id))
+    overlap_groups = _build_overlap_groups(segments)
+    utterances: list[TranscriptUtterance] = []
+
+    for offset, segment in enumerate(segments):
+        recording_speaker = _resolve_recording_speaker_for_value(
+            session,
+            recording_id=recording_id,
+            recording=recording,
+            speaker_value=str(segment.get("speaker") or UNKNOWN_SPEAKER),
+            recording_speakers=recording_speakers,
+            source_run_id=processing_run.id,
+            source_segment=segment,
+        )
+        if recording_speaker is not None:
+            _touch_recording_speaker_bounds(recording_speaker, segment)
+            session.add(recording_speaker)
+
+        utterance = TranscriptUtterance(
+            public_id=str(segment.get("id") or uuid4()),
+            recording_id=recording_id,
+            sort_key=_sort_key_for_index(next_sort_index + offset),
+            start_ms=_segment_to_ms(segment.get("start", 0.0)),
+            end_ms=_segment_to_ms(segment.get("end", 0.0)),
+            text=str(segment.get("text", "") or ""),
+            speaker_label=(recording_speaker.diarization_label if recording_speaker else str(segment.get("speaker") or UNKNOWN_SPEAKER)),
+            recording_speaker_id=recording_speaker.id if recording_speaker else None,
+            state=state_override or _state_for_segment(recording, segment),
+            source_kind=str(segment.get("segment_source") or source),
+            processing_run_id=processing_run.id,
+            revision=int(segment.get("revision") or 1),
+            overlap_group_id=overlap_groups.get(offset, {}).get("group_id"),
+            overlap_rank=overlap_groups.get(offset, {}).get("rank", 0),
+            manual_text_locked=bool(segment.get("text_manually_edited") is True),
+            manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+            text_confidence=_to_optional_float(segment.get("text_confidence")),
+            speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
+            confidence_payload=(dict(segment.get("confidence_payload")) if isinstance(segment.get("confidence_payload"), dict) else None),
+        )
+        session.add(utterance)
+        session.flush()
+        _append_utterance_event(
+            session,
+            utterance=utterance,
+            processing_run_id=processing_run.id,
+            event_type=_creation_event_type(source=source, state=utterance.state),
+            source=source,
+            old_values=None,
+            new_values={
+                "start_ms": utterance.start_ms,
+                "end_ms": utterance.end_ms,
+                "text": utterance.text,
+                "speaker": utterance.speaker_label,
+            },
+            resulting_revision=utterance.revision,
+        )
+        _record_manual_lock_events(
+            session,
+            utterance=utterance,
+            old_text_locked=False,
+            old_speaker_locked=False,
+            source=source,
+            processing_run_id=processing_run.id,
+        )
+        utterances.append(utterance)
+
+    refresh_transcript_projection_from_canonical(session, recording_id)
+    return utterances
+
+
 def update_utterance_text(
     session,
     *,
@@ -991,6 +1253,7 @@ def update_utterance_speaker(
     current_key = utterance.recording_speaker_id or utterance.speaker_label
     target_key = target_speaker.id
     source_recording_speaker_id = utterance.recording_speaker_id
+    source_speaker = session.get(RecordingSpeaker, source_recording_speaker_id) if source_recording_speaker_id else None
     target_utterances = _select_utterances_for_scope(
         session,
         recording_id=recording_id,
@@ -1056,8 +1319,15 @@ def update_utterance_speaker(
             updated_segments[projection_index]["state"] = target_utterance.state.value
             updated_segments[projection_index]["updated_at"] = target_utterance.updated_at.isoformat()
 
+    _preserve_live_label_continuity(
+        session,
+        source_speaker=source_speaker,
+        target_speaker=target_speaker,
+        scope=scope,
+        anchor_start_ms=utterance.start_ms,
+    )
+
     if scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER and source_recording_speaker_id and source_recording_speaker_id != target_key:
-        source_speaker = session.get(RecordingSpeaker, source_recording_speaker_id)
         if source_speaker is not None:
             source_speaker.merged_into_id = target_key
             source_speaker.speaker_status = "merged"
@@ -1119,15 +1389,6 @@ def apply_compatibility_segment_replace(
         projection_segments: list[dict[str, Any]] = []
         for index, segment in enumerate(segments):
             utterance = active_by_public_id[str(segment.get("id"))]
-            recording_speaker = _resolve_recording_speaker_for_value(
-                session,
-                recording_id=recording_id,
-                recording=recording,
-                speaker_value=str(segment.get("speaker") or UNKNOWN_SPEAKER),
-                recording_speakers=recording_speakers,
-                source_run_id=None,
-                source_segment=segment,
-            )
             old_values = {
                 "start_ms": utterance.start_ms,
                 "end_ms": utterance.end_ms,
@@ -1137,49 +1398,115 @@ def apply_compatibility_segment_replace(
             }
             old_text_locked = bool(utterance.manual_text_locked)
             old_speaker_locked = bool(utterance.manual_speaker_locked)
-            utterance.sort_key = _sort_key_for_index(index)
-            utterance.start_ms = _segment_to_ms(segment.get("start", 0.0))
-            utterance.end_ms = _segment_to_ms(segment.get("end", 0.0))
-            utterance.text = str(segment.get("text", "") or "")
-            utterance.recording_speaker_id = recording_speaker.id if recording_speaker else None
-            utterance.speaker_label = recording_speaker.diarization_label if recording_speaker else str(segment.get("speaker") or UNKNOWN_SPEAKER)
-            utterance.manual_text_locked = bool(segment.get("text_manually_edited") is True)
-            utterance.manual_speaker_locked = bool(segment.get("speaker_manually_edited") is True)
-            utterance.revision += 1
-            utterance.overlap_group_id = None
-            utterance.overlap_rank = 0
-            utterance.state = _state_for_segment(recording, segment)
-            session.add(utterance)
-            session.flush()
-            new_values = {
-                "start_ms": utterance.start_ms,
-                "end_ms": utterance.end_ms,
-                "text": utterance.text,
-                "speaker": utterance.speaker_label,
-            }
-            _append_utterance_event(
-                session,
-                utterance=utterance,
-                event_type=_compatibility_replace_event_type(old_values, new_values),
-                source="api",
-                old_values=old_values,
-                new_values=new_values,
-                resulting_revision=utterance.revision,
+            effective_segment = dict(segment)
+            effective_segment["text"] = utterance.text if old_text_locked else str(segment.get("text", "") or "")
+            effective_segment["text_manually_edited"] = old_text_locked or bool(segment.get("text_manually_edited") is True)
+
+            if old_speaker_locked:
+                recording_speaker = (
+                    session.get(RecordingSpeaker, utterance.recording_speaker_id)
+                    if utterance.recording_speaker_id is not None
+                    else None
+                )
+                effective_segment["speaker"] = (
+                    recording_speaker.diarization_label
+                    if recording_speaker is not None
+                    else str(utterance.speaker_label or UNKNOWN_SPEAKER)
+                )
+            else:
+                recording_speaker = _resolve_recording_speaker_for_value(
+                    session,
+                    recording_id=recording_id,
+                    recording=recording,
+                    speaker_value=str(segment.get("speaker") or UNKNOWN_SPEAKER),
+                    recording_speakers=recording_speakers,
+                    source_run_id=None,
+                    source_segment=segment,
+                )
+                effective_segment["speaker"] = (
+                    recording_speaker.diarization_label
+                    if recording_speaker is not None
+                    else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+                )
+            effective_segment["speaker_manually_edited"] = (
+                old_speaker_locked or bool(segment.get("speaker_manually_edited") is True)
             )
-            _record_manual_lock_events(
-                session,
-                utterance=utterance,
-                old_text_locked=old_text_locked,
-                old_speaker_locked=old_speaker_locked,
-                source="api",
+
+            effective_sort_key = _sort_key_for_index(index)
+            effective_start_ms = _segment_to_ms(segment.get("start", 0.0))
+            effective_end_ms = _segment_to_ms(segment.get("end", 0.0))
+            effective_text = str(effective_segment.get("text", "") or "")
+            effective_recording_speaker_id = recording_speaker.id if recording_speaker else None
+            effective_speaker_label = (
+                recording_speaker.diarization_label
+                if recording_speaker is not None
+                else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
             )
+            effective_manual_text_locked = bool(effective_segment.get("text_manually_edited") is True)
+            effective_manual_speaker_locked = bool(effective_segment.get("speaker_manually_edited") is True)
+            effective_state = _state_for_segment(recording, effective_segment)
+
+            changed = any(
+                (
+                    utterance.sort_key != effective_sort_key,
+                    utterance.start_ms != effective_start_ms,
+                    utterance.end_ms != effective_end_ms,
+                    utterance.text != effective_text,
+                    utterance.recording_speaker_id != effective_recording_speaker_id,
+                    utterance.speaker_label != effective_speaker_label,
+                    bool(utterance.manual_text_locked) != effective_manual_text_locked,
+                    bool(utterance.manual_speaker_locked) != effective_manual_speaker_locked,
+                    utterance.state != effective_state,
+                    utterance.overlap_group_id is not None,
+                    int(utterance.overlap_rank or 0) != 0,
+                )
+            )
+
+            if changed:
+                utterance.sort_key = effective_sort_key
+                utterance.start_ms = effective_start_ms
+                utterance.end_ms = effective_end_ms
+                utterance.text = effective_text
+                utterance.recording_speaker_id = effective_recording_speaker_id
+                utterance.speaker_label = effective_speaker_label
+                utterance.manual_text_locked = effective_manual_text_locked
+                utterance.manual_speaker_locked = effective_manual_speaker_locked
+                utterance.revision += 1
+                utterance.overlap_group_id = None
+                utterance.overlap_rank = 0
+                utterance.state = effective_state
+                session.add(utterance)
+                session.flush()
+                new_values = {
+                    "start_ms": utterance.start_ms,
+                    "end_ms": utterance.end_ms,
+                    "text": utterance.text,
+                    "speaker": utterance.speaker_label,
+                }
+                _append_utterance_event(
+                    session,
+                    utterance=utterance,
+                    event_type=_compatibility_replace_event_type(old_values, new_values),
+                    source="api",
+                    old_values=old_values,
+                    new_values=new_values,
+                    resulting_revision=utterance.revision,
+                )
+                _record_manual_lock_events(
+                    session,
+                    utterance=utterance,
+                    old_text_locked=old_text_locked,
+                    old_speaker_locked=old_speaker_locked,
+                    source="api",
+                )
             utterances.append(utterance)
+            effective_segment["revision"] = utterance.revision
             projection_segments.append(
                 _build_projection_segment(
                     utterance,
-                    source_segment=segment,
+                    source_segment=effective_segment,
                     recording_speaker=recording_speaker,
-                    overlap_labels=list(segment.get("overlapping_speakers") or []),
+                    overlap_labels=list(effective_segment.get("overlapping_speakers") or []),
                 )
             )
 
@@ -1238,6 +1565,25 @@ def serialize_canonical_utterances(
             }
         )
     return payloads
+
+
+def refresh_transcript_projection_from_canonical(
+    session,
+    recording_id: int,
+) -> list[dict[str, Any]]:
+    transcript = _load_transcript(session, recording_id)
+    if transcript is None:
+        return []
+
+    projection_segments = serialize_canonical_utterances(session, recording_id)
+    transcript.segments = projection_segments
+    transcript.text = " ".join(
+        str(segment.get("text", "") or "")
+        for segment in projection_segments
+    ).strip()
+    flag_modified(transcript, "segments")
+    session.add(transcript)
+    return projection_segments
 
 
 def build_transient_utterance_payloads_from_segments(transcript: Transcript | None) -> list[dict[str, Any]]:
@@ -1376,6 +1722,7 @@ def _resolve_recording_speaker_for_value(
         recording_speakers=recording_speakers,
         value=cleaned_value,
         source_run_id=source_run_id,
+        segment_start_ms=_segment_to_ms(source_segment.get("start", 0.0)),
     )
     if existing_speaker is not None:
         return existing_speaker

@@ -24,6 +24,7 @@ from backend.models.companion_pairing import CompanionPairing
 from backend.models.companion_pairing_request import CompanionPairingRequest
 from backend.models.pipeline import (
     RecordingAudioChunk,
+    RecordingAsrWindowResult,
     RecordingAudioWindowManifest,
     ProcessingRun,
     TranscriptUtterance,

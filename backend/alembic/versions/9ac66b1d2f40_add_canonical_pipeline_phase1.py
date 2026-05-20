@@ -22,7 +22,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-processing_run_kind_enum = sa.Enum(
+processing_run_kind_enum = postgresql.ENUM(
     "live",
     "catch_up",
     "finalize",
@@ -30,24 +30,27 @@ processing_run_kind_enum = sa.Enum(
     "import",
     "backfill",
     name="processingrunkind",
+    create_type=False,
 )
-processing_run_status_enum = sa.Enum(
+processing_run_status_enum = postgresql.ENUM(
     "pending",
     "running",
     "completed",
     "failed",
     "cancelled",
     name="processingrunstatus",
+    create_type=False,
 )
-transcript_utterance_state_enum = sa.Enum(
+transcript_utterance_state_enum = postgresql.ENUM(
     "provisional",
     "stable",
     "superseded",
     "finalized",
     "deleted",
     name="transcriptutterancestate",
+    create_type=False,
 )
-recording_speaker_alias_type_enum = sa.Enum(
+recording_speaker_alias_type_enum = postgresql.ENUM(
     "diarization_label",
     "live_label",
     "manual_label",
@@ -55,15 +58,17 @@ recording_speaker_alias_type_enum = sa.Enum(
     "global_name",
     "import_label",
     name="recordingspeakeraliastype",
+    create_type=False,
 )
-speaker_correction_scope_enum = sa.Enum(
+speaker_correction_scope_enum = postgresql.ENUM(
     "utterance_only",
     "speaker_everywhere_in_recording",
     "from_this_utterance_forward",
     "merge_into_speaker",
     name="speakercorrectionscope",
+    create_type=False,
 )
-speaker_correction_event_type_enum = sa.Enum(
+speaker_correction_event_type_enum = postgresql.ENUM(
     "rename",
     "assign_utterance",
     "assign_recording_speaker",
@@ -72,6 +77,7 @@ speaker_correction_event_type_enum = sa.Enum(
     "link_global_speaker",
     "promote_global_speaker",
     name="speakercorrectioneventtype",
+    create_type=False,
 )
 
 

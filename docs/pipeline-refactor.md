@@ -196,30 +196,145 @@ Exit gate:
 
 ## Phase 3: Unified Live ASR Pipeline
 
-Purpose: make live transcription the authoritative transcription source for normal recordings.
+Purpose: make live transcription the authoritative transcription source for normal live recordings by writing live ASR into canonical utterances first, keeping `Transcript.segments` as a compatibility projection, and letting finalization promote or fill gaps instead of rerunning normal ASR end to end.
 
-- [ ] Replace append-only provisional segment writes with stable utterance writes.
-  - [ ] Assign immutable utterance IDs when live ASR creates text.
-  - [ ] Store source window, chunk range, text confidence if available, and ASR engine metadata.
-  - [ ] Mark utterances as provisional, stable, superseded, or finalized.
-  - [ ] Preserve manual text edits across automated revisions.
-- [ ] Improve live VAD and ASR boundary handling.
-  - [ ] Keep rolling context windows for ASR acoustic run-up.
-  - [ ] Avoid duplicate transcription at chunk boundaries.
-  - [ ] Tune forced emission for the new quality-first latency posture.
-  - [ ] Prevent long monologues from creating unusably large utterances.
-- [ ] Make ASR idempotent and resumable.
-  - [ ] Key ASR results by recording, chunk/window range, engine, model, and config hash.
-  - [ ] Skip already processed windows unless explicitly reprocessed.
-  - [ ] Record errors without losing the ability to catch up later.
-- [ ] Update final processing to consume live ASR output.
-  - [ ] Build transcription results from stable utterances, not raw list-index JSON.
-  - [ ] Run ASR only for missing spans or explicit engine override.
-  - [ ] Track finalization evidence showing whether ASR was reused or rerun.
+Current state truth audit:
+
+- [x] Phase 1 canonical utterance, event, provenance, and compatibility projection primitives already exist.
+- [x] Phase 2 durable chunk ingest, rolling window manifests, catch-up span collection, and catch-up diarization persistence already exist.
+- [x] `live_transcribe.py` now writes provisional live output into canonical utterances first and refreshes `Transcript.segments` as a compatibility projection.
+- [ ] `process_recording_task` still builds live reuse input from raw segment arrays and only writes canonical utterances after final segment construction.
+- [ ] Meeting Edge and several transcript and speaker compatibility flows still treat `Transcript.segments` as a working source of truth.
+- [x] A dedicated persisted live ASR result ledger now exists and is applied through the current Alembic head.
+- [x] Normal imports remain intentionally out of scope for the first Phase 3 cutover.
+
+Approved implementation decisions:
+
+- Use a dedicated `RecordingAsrWindowResult` ledger keyed by recording, audio span, engine, model, and config hash.
+- Mark utterances `provisional` on first live emission, `stable` once the span is sealed and no longer subject to carry-buffer rewrite, and `finalized` only during finalization.
+- Preserve utterance public IDs across finalization unless boundaries change; use split and merge supersession events when boundaries change.
+- Move Meeting Edge to canonical-first reads in Phase 3 with projection fallback.
+- Limit Phase 3 speaker-correction scope to manual lock preservation and live-label alias continuity; broader correction propagation remains a Phase 5 concern.
+- Keep imported recordings compatible with the new model but defer direct import cutover until a later phase.
+
+Waterfall checkpoints:
+
+- [x] Checkpoint 3.1: Persist live ASR results as a first-class ledger.
+  - [x] Objective: define the authoritative persisted unit of live ASR work before changing write paths.
+  - [x] Why this order: retries, catch-up, and finalization all need the same span identity and idempotency contract before live utterance writes can safely move off segment JSON.
+  - [x] Likely files and modules: `backend/models/pipeline.py`, `backend/alembic/versions/*`, `backend/utils/audio_windows.py`, `backend/processing/live_transcribe.py`, `backend/worker/tasks.py`.
+  - [x] Data model and API implications: add `RecordingAsrWindowResult` with recording id, window or span bounds, chunk range, engine, model, config hash, status, error payload, processing run reference, and produced utterance references; do not change public transcript APIs in this checkpoint.
+  - [x] Migration and compatibility: additive migration only; do not backfill legacy recordings up front; keep `Transcript.segments` as the outward compatibility projection.
+  - [x] Test strategy: add migration tests, idempotency-key tests, task retry tests, and status-transition tests for pending, completed, failed, and superseded ASR results.
+  - [x] Rollback and risk: guard writes and reads behind a feature flag so the system can fall back to legacy segment-only live behavior if the new ledger causes regressions.
+  - [x] Implementation checklist:
+    - [x] Add the `RecordingAsrWindowResult` model and migration.
+    - [x] Define lookup helpers keyed by recording, span, engine, model, and config hash.
+    - [x] Record retry-safe status transitions and error payloads without deleting failed work history.
+    - [x] Document how this ledger interacts with `ProcessingRun` and durable window manifests.
+
+- [x] Checkpoint 3.2: Write live ASR output directly into canonical provisional utterances.
+  - [x] Objective: make live ASR create canonical utterances and events at first emission instead of appending provisional segment dicts.
+  - [x] Why this order: Phase 3 cannot claim live transcription is authoritative until the live path writes canonical utterances first and projection second.
+  - [x] Likely files and modules: `backend/processing/live_transcribe.py`, `backend/utils/canonical_pipeline.py`, `backend/models/pipeline.py`, `backend/tests/test_live_transcription.py`.
+  - [x] Data model and API implications: create a live `ProcessingRun`, persist utterance public IDs immediately, populate source span, chunk range, confidence fields, engine metadata, overlap information, and provenance on each emitted utterance, and project canonical state back into `Transcript.segments` for compatibility readers.
+  - [x] Migration and compatibility: keep the existing transcript payload shape unchanged by treating `Transcript.segments` as a projection refreshed from canonical utterances after each live update.
+  - [x] Test strategy: extend live transcription tests to prove canonical utterances are created once per emitted span, retries are idempotent, out-of-order uploads do not duplicate utterances, and projection output matches the current live transcript response shape.
+  - [x] Rollback and risk: this is the highest-risk live checkpoint; keep the legacy append path available behind a flag until latency and live ordering behavior match baseline.
+  - [x] Implementation checklist:
+    - [x] Replace direct append-only writes to `Transcript.segments` with canonical utterance creation and event recording.
+    - [x] Create a live `ProcessingRun` and attach emitted utterances to the correct run and ASR ledger rows.
+    - [x] Set utterance state to `provisional` on first emission.
+    - [x] Preserve overlap metadata and emitted ordering without relying on list indices.
+    - [x] Refresh `Transcript.segments` from canonical projection after each live write.
+
+- [x] Checkpoint 3.3: Canonicalize live manual edits and speaker label continuity.
+  - [x] Objective: ensure manual text edits, manual speaker edits, and live speaker labels survive later live revisions and finalization.
+  - [x] Why this order: finalization cannot safely promote live utterances if manual edits and live-label identity are still stored only as mutable segment flags.
+  - [x] Likely files and modules: `backend/utils/canonical_pipeline.py`, `backend/api/v1/endpoints/transcripts.py`, `backend/api/v1/endpoints/speakers.py`, `backend/processing/live_transcribe.py`, `backend/tests/test_canonical_transcript_phase1.py`, `backend/tests/test_live_transcript_reuse.py`.
+  - [x] Data model and API implications: route compatibility edit endpoints through canonical helpers whenever an utterance ID exists, persist `manual_text_locked` and `manual_speaker_locked`, and durably register live speaker labels through `RecordingSpeakerAlias`; do not add broader correction-scope automation in this phase.
+  - [x] Migration and compatibility: legacy index-based edit endpoints remain available as wrappers, but they stop being direct sources of truth when canonical data is present.
+  - [x] Test strategy: add live-edit tests proving a text or speaker correction made during upload survives later live ASR revisions, catch-up, and finalization; extend alias tests for `LIVE_XX` continuity.
+  - [x] Rollback and risk: moderate risk of projection drift if any endpoint still mutates `Transcript.segments` directly; audit and flag remaining direct writes before enabling this checkpoint by default.
+  - [x] Implementation checklist:
+    - [x] Route compatibility transcript edit wrappers through canonical text and speaker update helpers.
+    - [x] Preserve `speaker_manually_edited` and `text_manually_edited` as projection output derived from canonical lock fields.
+    - [x] Register live speaker labels in alias tables at creation time.
+    - [x] Preserve existing public IDs and revisions when only text or speaker changes.
+    - [x] Leave full correction-scope propagation and broader speaker workflow cleanup for Phase 5.
+
+- [ ] Checkpoint 3.4: Make final processing consume canonical live utterances.
+  - [ ] Objective: convert finalization from segment-array reuse into canonical utterance promotion plus targeted gap filling.
+  - [ ] Why this order: only after live writes and manual locks are canonical can finalization trust live utterances as reusable work instead of rebuilding from raw segment JSON.
+  - [ ] Likely files and modules: `backend/worker/tasks.py`, `backend/utils/live_transcript.py`, `backend/utils/canonical_pipeline.py`, `backend/tests/test_reprocess.py`.
+  - [ ] Data model and API implications: finalization should read active utterances by stable ID and time overlap, reuse eligible live utterances directly, run ASR only for missing spans or explicit engine override, and preserve public IDs unless boundary changes require supersession.
+  - [ ] Migration and compatibility: keep `Transcript.segments` as a projected final transcript representation so downstream APIs and exports remain stable while the worker cutover lands.
+  - [ ] Test strategy: prove a fully covered normal live recording reaches finalization without rerunning ASR on already processed spans, and prove explicit engine override still forces rerun when requested.
+  - [ ] Rollback and risk: high risk because it changes the main worker path; keep a feature flag that reverts finalization to legacy segment-array reuse if canonical promotion produces regressions.
+  - [ ] Implementation checklist:
+    - [ ] Replace raw `live_segments_for_reuse` dependence with canonical utterance queries plus projection only where external serializers still require it.
+    - [ ] Promote eligible `provisional` utterances to `stable` when the span is sealed and to `finalized` only during finalization.
+    - [ ] Preserve manual text and speaker locks when reconciling final spans.
+    - [ ] Record finalize provenance showing whether live ASR was reused, partially reused, or rerun.
+    - [ ] Use split and merge supersession events when final boundary changes require new utterance shapes.
+
+- [ ] Checkpoint 3.5: Make catch-up and resume truly span-aware and idempotent.
+  - [ ] Objective: use the persisted ASR ledger to process only missing or failed spans during catch-up and recovery.
+  - [ ] Why this order: once finalization trusts canonical live utterances, the system can distinguish covered spans from missing spans and stop rerunning ASR blindly.
+  - [ ] Likely files and modules: `backend/utils/audio_windows.py`, `backend/worker/tasks.py`, `backend/processing/live_transcribe.py`, `backend/tests/test_live_transcription.py`, `backend/tests/test_reprocess.py`.
+  - [ ] Data model and API implications: persist engine choice, model, config hash, span coverage, failure state, and produced utterance linkage for every live or catch-up ASR pass; no public API change is needed.
+  - [ ] Migration and compatibility: treat older manifest rows as legacy coverage hints rather than trying to fully backfill historical ASR result rows before rollout.
+  - [ ] Test strategy: add retry-no-op tests, worker restart resume tests, partial failure catch-up tests, and duplicate-upload tests proving one ASR pass per covered span in the normal path.
+  - [ ] Rollback and risk: moderate risk if span identity is underspecified; do not enable by default until Checkpoint 3.1 contract tests are stable.
+  - [ ] Implementation checklist:
+    - [ ] Skip completed ASR ledger spans unless the user explicitly requests reprocess or changes engine or config.
+    - [ ] Preserve failed span rows so catch-up can retry without losing history.
+    - [ ] Reuse sealed live utterances during catch-up instead of reconstructing raw segment arrays.
+    - [ ] Ensure catch-up fills only uncovered spans before final promotion.
+    - [ ] Surface enough status for processing progress and operational debugging.
+
+- [ ] Checkpoint 3.6: Cut internal readers over to canonical-first transcript reads.
+  - [ ] Objective: remove the remaining hidden source-of-truth split by moving internal live readers to canonical utterances first and projection fallback second.
+  - [ ] Why this order: internal readers should only move after canonical live writes and finalization promotion are already trustworthy.
+  - [ ] Likely files and modules: `backend/worker/tasks.py`, `backend/api/v1/endpoints/speakers.py`, `backend/api/v1/endpoints/transcripts.py`, `backend/models/recording_public.py`.
+  - [ ] Data model and API implications: no public API contract change; internal readers should query canonical utterances and serialize projection output only where older response shapes still need it.
+  - [ ] Migration and compatibility: keep projection fallback in place until Meeting Edge and speaker maintenance flows are proven against canonical data in staging and regression tests.
+  - [ ] Test strategy: Meeting Edge regression tests, speaker rename and merge regression tests, transcript export and trim checks, and compatibility endpoint smoke tests.
+  - [ ] Rollback and risk: low to moderate because this is mostly a read-path cutover; keep projection fallback until confidence is high.
+  - [ ] Implementation checklist:
+    - [ ] Move Meeting Edge refresh to canonical-first transcript reads with projection fallback.
+    - [ ] Audit remaining `Transcript.segments` mutations and remove or wrap the Phase 3-critical ones.
+    - [ ] Leave non-critical compatibility-only reads in place only when they are intentionally projection-based.
+    - [ ] Record any residual segment-only dependencies that are intentionally deferred to later phases.
+
+Checkpoint dependency chain:
+
+- [ ] Checkpoint 3.1 must land before Checkpoints 3.2 and 3.5.
+- [ ] Checkpoint 3.2 must land before every later Phase 3 checkpoint.
+- [ ] Checkpoint 3.3 must land before Checkpoint 3.4.
+- [ ] Checkpoint 3.4 must land before Checkpoint 3.6 becomes the default read path.
+- [ ] Checkpoint 3.5 can begin once Checkpoint 3.2 is stable, but it must complete before the final Phase 3 exit gate is considered met.
+
+Validation matrix:
+
+- [ ] Live ingest correctness: in-order uploads, out-of-order uploads, carry-over, forced emission, and long-monologue splitting still match or beat baseline behavior.
+- [ ] Canonical correctness: live utterances receive immutable IDs, correct state transitions, correct provenance, and correct supersession behavior.
+- [x] Manual edit preservation: text and speaker edits made during live recording survive later live revisions, catch-up, and finalization.
+- [ ] Finalization reuse: normal live recordings do not rerun ASR for already covered spans; explicit engine override still triggers rerun.
+- [ ] Resume and catch-up: worker restarts, failed live windows, and duplicate uploads process only missing spans.
+- [ ] Compatibility: transcript response shapes, export flows, and compatibility edit endpoints remain stable while `Transcript.segments` is projection-only.
+- [ ] Internal consumers: Meeting Edge and other Phase 3-critical readers succeed against canonical-first reads with projection fallback.
+- [ ] Metrics: ASR invocation count, finalization duration, and manual edit preservation remain at or better than the recorded baseline.
+
+Out of scope for this phase:
+
+- [ ] Full backward-looking speaker reconciliation across rolling diarization windows remains Phase 4.
+- [ ] Broad user correction scopes and speaker identity propagation remain Phase 5.
+- [ ] Import-specific pipeline cutover remains Phase 6 or later as long as imports remain compatible with the canonical projection model.
 
 Exit gate:
 
-- [ ] Normal live recordings reach finalization with one ASR pass per processed audio span.
+- [ ] Normal live recordings complete with one ASR pass per covered audio span, catch-up runs only for missing or failed spans, finalization promotes canonical live utterances instead of rebuilding from segment arrays, and `Transcript.segments` remains only a compatibility projection.
 
 ## Phase 4: Rolling Pyannote Diarization and Backward Reconciliation
 

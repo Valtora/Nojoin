@@ -9,17 +9,30 @@ import logging
 import os
 import re
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlmodel import select
 
 from backend.celery_app import celery_app
-from backend.models.pipeline import RecordingAudioWindowManifest
+from backend.models.pipeline import (
+    ProcessingRunKind,
+    RecordingAudioWindowManifest,
+    TranscriptUtteranceState,
+)
 from backend.processing.pipeline_metrics import pipeline_metric_timer, record_pipeline_metric
+from backend.utils.asr_window_results import (
+    build_recording_asr_window_result_config_hash,
+    complete_recording_asr_window_result,
+    fail_recording_asr_window_result,
+    get_transcription_model_name,
+    start_recording_asr_window_result,
+)
 from backend.utils.audio_windows import (
     WINDOW_STATUS_LIVE_PROCESSED,
     infer_resume_state_from_manifests,
     mark_audio_windows_processed,
 )
+from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
 
@@ -46,6 +59,42 @@ LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
 _STATE_FILENAME = "state.json"
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
+
+
+def _persist_asr_window_result_best_effort(mutator) -> None:
+    from backend.core.db import get_sync_session
+
+    session = get_sync_session()
+    try:
+        mutator(session)
+        if hasattr(session, "commit"):
+            session.commit()
+    except Exception:
+        if hasattr(session, "rollback"):
+            session.rollback()
+        logger.warning("Failed to persist ASR window result", exc_info=True)
+    finally:
+        session.close()
+
+
+def _build_live_utterance_public_id(
+    *,
+    recording_id: int,
+    span_start_ms: int,
+    span_end_ms: int,
+    speaker_label: str,
+    text: str,
+) -> str:
+    payload = "|".join(
+        [
+            str(recording_id),
+            str(int(span_start_ms)),
+            str(int(span_end_ms)),
+            str(speaker_label or "UNKNOWN"),
+            str(text or ""),
+        ]
+    )
+    return str(uuid5(NAMESPACE_URL, f"live-utterance:{payload}"))
 
 
 def _load_recording_audio_window_manifests(session, recording_id: int) -> list[RecordingAudioWindowManifest]:
@@ -776,6 +825,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
 
         # --- Transcribe each completed speech region ---
         new_segments = []
+        pending_asr_completions: list[dict[str, Any]] = []
+        live_config_hash = build_recording_asr_window_result_config_hash(live_config)
+        live_model_name = get_transcription_model_name(live_config)
         for sp in complete:
             start_sample = int(sp["start"] * LIVE_SAMPLE_RATE)
             end_sample = int(sp["end"] * LIVE_SAMPLE_RATE)
@@ -791,6 +843,23 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 left_context = left_context[:0]
             clip = torch.cat([left_context, region])
             prefix_s = left_context.numel() / LIVE_SAMPLE_RATE
+            region_start_ms = int(round((combined_abs_start + sp["start"]) * 1000.0))
+            region_end_ms = int(round((combined_abs_start + sp["end"]) * 1000.0))
+            ledger_enabled = bool(config_manager.get("enable_asr_window_result_ledger", True))
+
+            if ledger_enabled:
+                _persist_asr_window_result_best_effort(
+                    lambda ledger_session: start_recording_asr_window_result(
+                        ledger_session,
+                        recording_id=recording_id,
+                        source_kind="live",
+                        span_start_ms=region_start_ms,
+                        span_end_ms=region_end_ms,
+                        chunk_start_sequence=run[0],
+                        chunk_end_sequence=run[-1],
+                        config=live_config,
+                    )
+                )
 
             clip_path = str(live_dir / "clip.wav")
             region_path = str(live_dir / f"speaker_region_{sp['start']:.3f}_{sp['end']:.3f}.wav")
@@ -817,7 +886,25 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     },
                     log=logger,
                 ) as metric:
-                    result = transcribe_audio(clip_path, config=live_config)
+                    try:
+                        result = transcribe_audio(clip_path, config=live_config)
+                    except Exception as exc:
+                        if ledger_enabled:
+                            _persist_asr_window_result_best_effort(
+                                lambda ledger_session: fail_recording_asr_window_result(
+                                    ledger_session,
+                                    recording_id=recording_id,
+                                    source_kind="live",
+                                    span_start_ms=region_start_ms,
+                                    span_end_ms=region_end_ms,
+                                    chunk_start_sequence=run[0],
+                                    chunk_end_sequence=run[-1],
+                                    config=live_config,
+                                    error_summary=str(exc).strip()[:500] or "Live ASR invocation failed.",
+                                    error_payload={"error_type": exc.__class__.__name__},
+                                )
+                            )
+                        raise
                     metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
                 speaker_label = "UNKNOWN"
                 session = get_sync_session()
@@ -858,19 +945,73 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         pass
 
             if not result:
+                if ledger_enabled:
+                    _persist_asr_window_result_best_effort(
+                        lambda ledger_session: fail_recording_asr_window_result(
+                            ledger_session,
+                            recording_id=recording_id,
+                            source_kind="live",
+                            span_start_ms=region_start_ms,
+                            span_end_ms=region_end_ms,
+                            chunk_start_sequence=run[0],
+                            chunk_end_sequence=run[-1],
+                            config=live_config,
+                            error_summary="Live ASR returned no result.",
+                            error_payload={"error_type": "empty_result"},
+                        )
+                    )
                 continue
             text = _strip_repetition(_extract_region_text(result, prefix_s))
             if not text:
+                if ledger_enabled:
+                    _persist_asr_window_result_best_effort(
+                        lambda ledger_session: fail_recording_asr_window_result(
+                            ledger_session,
+                            recording_id=recording_id,
+                            source_kind="live",
+                            span_start_ms=region_start_ms,
+                            span_end_ms=region_end_ms,
+                            chunk_start_sequence=run[0],
+                            chunk_end_sequence=run[-1],
+                            config=live_config,
+                            error_summary="Live ASR produced no emitted text.",
+                            error_payload={"error_type": "empty_emitted_text"},
+                        )
+                    )
                 continue
+
+            segment_public_id = _build_live_utterance_public_id(
+                recording_id=recording_id,
+                span_start_ms=region_start_ms,
+                span_end_ms=region_end_ms,
+                speaker_label=speaker_label,
+                text=text,
+            )
 
             new_segments.append(
                 {
+                    "id": segment_public_id,
                     "start": combined_abs_start + sp["start"],
                     "end": combined_abs_start + sp["end"],
                     "speaker": speaker_label,
                     "text": text,
                     "provisional": True,
                     "segment_source": "live",
+                }
+            )
+            pending_asr_completions.append(
+                {
+                    "public_id": segment_public_id,
+                    "span_start_ms": region_start_ms,
+                    "span_end_ms": region_end_ms,
+                    "result_payload": {
+                        "sequence": sequence,
+                        "run": list(run),
+                        "segment_count": len((result or {}).get("segments", [])),
+                        "text_chars": len((result or {}).get("text") or ""),
+                        "emitted_text_chars": len(text or ""),
+                        "prefix_ms": int(round(prefix_s * 1000.0)),
+                    },
                 }
             )
             if speaker_label != "UNKNOWN":
@@ -917,26 +1058,55 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             recording = session.get(Recording, recording_id)
             if recording and recording.status == RecordingStatus.UPLOADING:
                 if new_segments:
-                    from sqlalchemy.orm.attributes import flag_modified
+                    created_utterances = []
+                    created_public_ids: set[str] = set()
+                    use_canonical_live_writes = bool(
+                        config_manager.get("enable_canonical_transcript_writes", True)
+                    ) and hasattr(session, "exec") and hasattr(session, "execute")
 
-                    transcript = recording.transcript
-                    if transcript is not None:
-                        transcript.segments = (transcript.segments or []) + new_segments
-                        flag_modified(transcript, "segments")
-                        session.add(transcript)
-
-                        user_settings = getattr(
-                            getattr(recording, "user", None),
-                            "settings",
-                            None,
+                    if use_canonical_live_writes:
+                        created_utterances = append_utterances_from_segments(
+                            session,
+                            recording_id=recording_id,
+                            segments=new_segments,
+                            run_kind=ProcessingRunKind.LIVE,
+                            source="live",
+                            state_override=TranscriptUtteranceState.PROVISIONAL,
+                            trigger_source="worker",
+                            config_hash=live_config_hash,
+                            transcription_backend=str(live_config.get("transcription_backend") or "whisper"),
+                            model_metadata={
+                                "model_name": live_model_name,
+                                "chunk_start_sequence": run[0],
+                                "chunk_end_sequence": run[-1],
+                                "trigger_sequence": sequence,
+                            },
+                            span_start_ms=min(item["span_start_ms"] for item in pending_asr_completions),
+                            span_end_ms=max(item["span_end_ms"] for item in pending_asr_completions),
                         )
-                        if user_settings is None and getattr(recording, "user_id", None):
-                            from backend.models.user import User
+                    else:
+                        from sqlalchemy.orm.attributes import flag_modified
 
-                            user = session.get(User, recording.user_id)
-                            user_settings = getattr(user, "settings", None) if user else None
+                        transcript = recording.transcript
+                        if transcript is not None:
+                            transcript.segments = (transcript.segments or []) + new_segments
+                            flag_modified(transcript, "segments")
+                            session.add(transcript)
 
-                        should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
+                    created_public_ids = {utterance.public_id for utterance in created_utterances}
+
+                    user_settings = getattr(
+                        getattr(recording, "user", None),
+                        "settings",
+                        None,
+                    )
+                    if user_settings is None and getattr(recording, "user_id", None):
+                        from backend.models.user import User
+
+                        user = session.get(User, recording.user_id)
+                        user_settings = getattr(user, "settings", None) if user else None
+
+                    should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
 
                 manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
                 updated_manifest_rows = mark_audio_windows_processed(
@@ -948,6 +1118,29 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     session.add(manifest_row)
 
                 session.commit()
+
+                if new_segments and ledger_enabled:
+                    for pending_result in pending_asr_completions:
+                        produced_ids = (
+                            [pending_result["public_id"]]
+                            if pending_result["public_id"] in created_public_ids
+                            else None
+                        )
+                        _persist_asr_window_result_best_effort(
+                            lambda ledger_session, pending_result=pending_result, produced_ids=produced_ids: complete_recording_asr_window_result(
+                                ledger_session,
+                                recording_id=recording_id,
+                                source_kind="live",
+                                span_start_ms=pending_result["span_start_ms"],
+                                span_end_ms=pending_result["span_end_ms"],
+                                chunk_start_sequence=run[0],
+                                chunk_end_sequence=run[-1],
+                                config=live_config,
+                                config_hash=live_config_hash,
+                                result_payload=pending_result["result_payload"],
+                                produced_utterance_public_ids=produced_ids,
+                            )
+                        )
 
                 if new_segments:
                     record_pipeline_metric(
@@ -1017,6 +1210,22 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             exc,
             exc_info=True,
         )
+        if 'pending_asr_completions' in locals() and config_manager.get("enable_asr_window_result_ledger", True):
+            for pending_result in pending_asr_completions:
+                _persist_asr_window_result_best_effort(
+                    lambda ledger_session, pending_result=pending_result: fail_recording_asr_window_result(
+                        ledger_session,
+                        recording_id=recording_id,
+                        source_kind="live",
+                        span_start_ms=pending_result["span_start_ms"],
+                        span_end_ms=pending_result["span_end_ms"],
+                        chunk_start_sequence=run[0] if 'run' in locals() and run else None,
+                        chunk_end_sequence=run[-1] if 'run' in locals() and run else None,
+                        config=live_config if 'live_config' in locals() else None,
+                        error_summary=str(exc).strip()[:500] or "Live utterance persistence failed.",
+                        error_payload={"error_type": exc.__class__.__name__},
+                    )
+                )
         # Best-effort advance: if the live dir vanished (recording finalized
         # mid-run) there is nothing left to advance — the final pipeline owns
         # the transcript now.

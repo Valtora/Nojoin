@@ -34,6 +34,7 @@ validate_config_value = config_manager.validate_config_value
 def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
+    assert DEFAULT_SYSTEM_CONFIG["enable_asr_window_result_ledger"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
     assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
 
@@ -68,6 +69,13 @@ def test_validate_config_value_enable_live_transcription():
     assert validate_config_value("enable_live_transcription", True) is True
     assert validate_config_value("enable_live_transcription", False) is True
     assert validate_config_value("enable_live_transcription", "yes") is False
+
+
+def test_validate_config_value_enable_asr_window_result_ledger():
+    """enable_asr_window_result_ledger is validated as a boolean."""
+    assert validate_config_value("enable_asr_window_result_ledger", True) is True
+    assert validate_config_value("enable_asr_window_result_ledger", False) is True
+    assert validate_config_value("enable_asr_window_result_ledger", "yes") is False
 
 
 def test_default_user_settings_enable_meeting_edge_by_default():
