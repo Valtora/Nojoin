@@ -8,18 +8,28 @@ import json
 import logging
 import os
 import re
+from datetime import timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from sqlalchemy import or_
 from sqlmodel import select
 
 from backend.celery_app import celery_app
 from backend.models.pipeline import (
+    DiarizationWindowResult,
+    ProcessingRun,
     ProcessingRunKind,
+    ProcessingRunStatus,
+    RecordingAudioChunk,
     RecordingAudioWindowManifest,
     TranscriptUtteranceState,
 )
-from backend.processing.pipeline_metrics import pipeline_metric_timer, record_pipeline_metric
+from backend.processing.pipeline_metrics import (
+    pipeline_metric_timer,
+    record_pipeline_metric,
+    rolling_diarization_window_timer,
+)
 from backend.utils.asr_window_results import (
     build_recording_asr_window_result_config_hash,
     complete_recording_asr_window_result,
@@ -28,13 +38,25 @@ from backend.utils.asr_window_results import (
     start_recording_asr_window_result,
 )
 from backend.utils.audio_windows import (
+    WINDOW_STATUS_FAILED,
+    WINDOW_STATUS_LIVE_PROCESSING,
     WINDOW_STATUS_LIVE_PROCESSED,
     infer_resume_state_from_manifests,
     mark_audio_windows_processed,
 )
-from backend.utils.canonical_pipeline import append_utterances_from_segments
+from backend.utils.canonical_pipeline import (
+    append_utterances_from_segments,
+    ensure_processing_run,
+    reconcile_diarization_window_result,
+)
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.rolling_diarization import (
+    build_rolling_diarization_config_hash,
+    build_window_speaker_metadata,
+    get_rolling_diarization_model_name,
+    persist_diarization_window_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +131,468 @@ def _load_recording_audio_window_manifests(session, recording_id: int) -> list[R
         ).all()
     except Exception:
         return []
+
+
+def _load_recording_audio_chunks(session, recording_id: int) -> list[RecordingAudioChunk]:
+    if not hasattr(session, "exec"):
+        return []
+
+    try:
+        return session.exec(
+            select(RecordingAudioChunk)
+            .where(RecordingAudioChunk.recording_id == recording_id)
+            .order_by(RecordingAudioChunk.sequence_no)
+        ).all()
+    except Exception:
+        return []
+
+
+def _build_audio_window_clip(
+    *,
+    manifest_row: RecordingAudioWindowManifest,
+    chunk_rows: list[RecordingAudioChunk],
+    clip_path: str,
+) -> bool:
+    import torch
+    import silero_vad
+
+    from backend.processing.vad import safe_read_audio
+
+    window_start_s = float(manifest_row.window_start_ms) / 1000.0
+    window_end_s = float(manifest_row.window_end_ms) / 1000.0
+    relevant_chunks = [
+        row
+        for row in chunk_rows
+        if int(row.sequence_no) >= int(manifest_row.chunk_start_sequence)
+        and int(row.sequence_no) <= int(manifest_row.chunk_end_sequence)
+    ]
+    if not relevant_chunks:
+        return False
+
+    parts = []
+    for chunk_row in relevant_chunks:
+        chunk_audio = safe_read_audio(str(chunk_row.storage_path), sampling_rate=LIVE_SAMPLE_RATE)
+        chunk_start_s = float(chunk_row.absolute_start_ms) / 1000.0
+        chunk_end_s = float(chunk_row.absolute_end_ms) / 1000.0
+        overlap_start_s = max(window_start_s, chunk_start_s)
+        overlap_end_s = min(window_end_s, chunk_end_s)
+        if overlap_end_s <= overlap_start_s:
+            continue
+        start_sample = int(round((overlap_start_s - chunk_start_s) * LIVE_SAMPLE_RATE))
+        end_sample = int(round((overlap_end_s - chunk_start_s) * LIVE_SAMPLE_RATE))
+        if end_sample <= start_sample:
+            continue
+        parts.append(chunk_audio[start_sample:end_sample])
+
+    if not parts:
+        return False
+
+    clip_audio = torch.cat(parts)
+    clip_tensor = clip_audio if clip_audio.ndim > 1 else clip_audio.unsqueeze(0)
+    silero_vad.save_audio(clip_path, clip_tensor, sampling_rate=LIVE_SAMPLE_RATE)
+    return True
+
+
+def _select_live_rolling_diarization_manifests(
+    session,
+    *,
+    recording_id: int,
+    up_to_sequence: int,
+    config_hash: str,
+    max_windows_per_pass: int,
+    manifest_rows: list[RecordingAudioWindowManifest] | None = None,
+    processing_run_status_by_id: dict[int, str] | None = None,
+) -> list[RecordingAudioWindowManifest]:
+    manifest_rows = list(manifest_rows) if manifest_rows is not None else _load_recording_audio_window_manifests(session, recording_id)
+    completed_window_indexes = {
+        int(window_index)
+        for window_index in session.exec(
+            select(DiarizationWindowResult.window_index)
+            .where(DiarizationWindowResult.recording_id == recording_id)
+            .where(DiarizationWindowResult.config_hash == config_hash)
+            .where(DiarizationWindowResult.status == "completed")
+        ).all()
+    }
+
+    processing_run_status_by_id = dict(processing_run_status_by_id or {})
+    if not processing_run_status_by_id:
+        processing_run_ids = {
+            int(row.processing_run_id)
+            for row in manifest_rows
+            if getattr(row, "processing_run_id", None) is not None
+        }
+        processing_run_status_by_id = _load_live_rolling_processing_run_statuses(
+            session,
+            processing_run_ids=processing_run_ids,
+        )
+
+    eligible_rows = [
+        row
+        for row in manifest_rows
+        if row.id is not None
+        and int(row.chunk_end_sequence) <= int(up_to_sequence)
+        and (not bool(row.is_partial) or bool(row.is_sealed))
+        and int(row.window_index) not in completed_window_indexes
+        and _live_rolling_manifest_is_claimable(
+            row,
+            processing_run_status_by_id=processing_run_status_by_id,
+        )
+    ]
+    eligible_rows.sort(key=lambda row: int(row.window_index))
+    return eligible_rows[: max(int(max_windows_per_pass), 1)]
+
+
+def _live_rolling_manifest_is_claimable(
+    manifest_row,
+    *,
+    processing_run_status_by_id: dict[int, str],
+) -> bool:
+    status_value = str(getattr(manifest_row, "status", "pending") or "pending")
+    if status_value == WINDOW_STATUS_LIVE_PROCESSED:
+        return False
+    if status_value != WINDOW_STATUS_LIVE_PROCESSING:
+        return True
+
+    processing_run_id = getattr(manifest_row, "processing_run_id", None)
+    if processing_run_id is None:
+        return True
+
+    run_status = processing_run_status_by_id.get(int(processing_run_id))
+    return run_status in {
+        None,
+        ProcessingRunStatus.COMPLETED.value,
+        ProcessingRunStatus.FAILED.value,
+        ProcessingRunStatus.CANCELLED.value,
+    }
+
+
+def _load_live_rolling_processing_run_statuses(
+    session,
+    *,
+    processing_run_ids: set[int],
+) -> dict[int, str]:
+    if not processing_run_ids or not hasattr(session, "exec"):
+        return {}
+
+    try:
+        rows = session.exec(
+            select(ProcessingRun.id, ProcessingRun.status).where(
+                ProcessingRun.id.in_(sorted(processing_run_ids))
+            )
+        ).all()
+    except Exception:
+        return {}
+
+    return {
+        int(run_id): (status.value if hasattr(status, "value") else str(status))
+        for run_id, status in rows
+    }
+
+
+def _load_lockable_live_rolling_diarization_manifests(
+    session,
+    *,
+    recording_id: int,
+) -> list[RecordingAudioWindowManifest]:
+    if not hasattr(session, "exec"):
+        return _load_recording_audio_window_manifests(session, recording_id)
+
+    try:
+        return session.exec(
+            select(RecordingAudioWindowManifest)
+            .where(RecordingAudioWindowManifest.recording_id == recording_id)
+            .order_by(RecordingAudioWindowManifest.window_index)
+            .with_for_update(skip_locked=True)
+        ).all()
+    except Exception:
+        return _load_recording_audio_window_manifests(session, recording_id)
+
+
+def _claim_live_rolling_diarization_manifests(
+    session,
+    *,
+    recording_id: int,
+    up_to_sequence: int,
+    config_hash: str,
+    max_windows_per_pass: int,
+    processing_run_id: int | None = None,
+) -> list[RecordingAudioWindowManifest]:
+    manifest_rows = _load_lockable_live_rolling_diarization_manifests(
+        session,
+        recording_id=recording_id,
+    )
+    processing_run_status_by_id = _load_live_rolling_processing_run_statuses(
+        session,
+        processing_run_ids={
+            int(row.processing_run_id)
+            for row in manifest_rows
+            if getattr(row, "processing_run_id", None) is not None
+        },
+    )
+    claimed_rows = _select_live_rolling_diarization_manifests(
+        session,
+        recording_id=recording_id,
+        up_to_sequence=up_to_sequence,
+        config_hash=config_hash,
+        max_windows_per_pass=max_windows_per_pass,
+        manifest_rows=manifest_rows,
+        processing_run_status_by_id=processing_run_status_by_id,
+    )
+
+    for manifest_row in claimed_rows:
+        manifest_row.status = WINDOW_STATUS_LIVE_PROCESSING
+        manifest_row.processing_run_id = processing_run_id
+        manifest_row.last_error = None
+        session.add(manifest_row)
+
+    return claimed_rows
+
+
+def _count_active_live_rolling_diarization_runs(session) -> int:
+    if not hasattr(session, "exec"):
+        return 0
+
+    from backend.utils.time import utc_now
+
+    stale_cutoff = utc_now() - timedelta(minutes=15)
+    try:
+        return len(
+            session.exec(
+                select(ProcessingRun.id)
+                .where(ProcessingRun.run_kind == ProcessingRunKind.ROLLING_DIARIZATION)
+                .where(ProcessingRun.status == ProcessingRunStatus.RUNNING)
+                .where(
+                    or_(
+                        ProcessingRun.updated_at.is_(None),
+                        ProcessingRun.updated_at >= stale_cutoff,
+                    )
+                )
+            ).all()
+        )
+    except Exception:
+        return 0
+
+
+def _run_live_rolling_diarization_pass(
+    *,
+    recording_id: int,
+    up_to_sequence: int,
+    user_id: int | None,
+    merged_config: dict[str, Any],
+    live_dir,
+) -> dict[str, int]:
+    from backend.core.db import get_sync_session
+    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+    from backend.processing.diarize import diarize_audio
+    from backend.utils.time import utc_now
+
+    summary = {
+        "processed_window_count": 0,
+        "matched_turn_count": 0,
+        "updated_utterance_count": 0,
+        "preserved_manual_lock_count": 0,
+    }
+    if not config_manager.get("enable_rolling_diarization", True):
+        return summary
+    if not bool(merged_config.get("enable_diarization", True)):
+        return summary
+
+    rolling_run = None
+    temp_clip_paths: list[str] = []
+    session = get_sync_session()
+    try:
+        target_window_ms = int(config_manager.get("rolling_diarization_window_ms", 20_000))
+        hop_ms = int(config_manager.get("rolling_diarization_hop_ms", 5_000))
+        config_hash = build_rolling_diarization_config_hash(
+            merged_config,
+            target_window_ms=target_window_ms,
+            hop_ms=hop_ms,
+        )
+        max_windows_per_pass = int(
+            config_manager.get("rolling_diarization_max_windows_per_pass", 2)
+        )
+        max_active_runs = int(
+            config_manager.get("rolling_diarization_max_active_runs", 1)
+        )
+        if _count_active_live_rolling_diarization_runs(session) >= max_active_runs:
+            logger.info(
+                "Skipping rolling diarization pass for recording %s: active run cap reached",
+                recording_id,
+            )
+            return summary
+
+        eligible_manifest_rows = _claim_live_rolling_diarization_manifests(
+            session,
+            recording_id=recording_id,
+            up_to_sequence=up_to_sequence,
+            config_hash=config_hash,
+            max_windows_per_pass=max_windows_per_pass,
+        )
+        if not eligible_manifest_rows:
+            return summary
+
+        chunk_rows = _load_recording_audio_chunks(session, recording_id)
+        if not chunk_rows:
+            return summary
+
+        rolling_run = ensure_processing_run(
+            session,
+            recording_id=recording_id,
+            run_kind=ProcessingRunKind.ROLLING_DIARIZATION,
+            status=ProcessingRunStatus.RUNNING,
+            trigger_source="worker",
+            diarization_backend="pyannote",
+            config_hash=config_hash,
+            span_start_ms=min(int(row.window_start_ms) for row in eligible_manifest_rows),
+            span_end_ms=max(int(row.window_end_ms) for row in eligible_manifest_rows),
+            idempotency_key=(
+                f"rolling_diarization:{recording_id}:{config_hash}:"
+                f"{int(eligible_manifest_rows[0].window_index)}:"
+                f"{int(eligible_manifest_rows[-1].window_index)}"
+            ),
+        )
+        rolling_run.status = ProcessingRunStatus.RUNNING
+        rolling_run.completed_at = None
+        rolling_run.error_summary = None
+        session.add(rolling_run)
+        for manifest_row in eligible_manifest_rows:
+            manifest_row.processing_run_id = rolling_run.id
+            session.add(manifest_row)
+        session.commit()
+
+        recording_speakers = session.exec(
+            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+        ).all()
+        global_speakers = []
+        if user_id is not None:
+            global_speakers = session.exec(
+                select(GlobalSpeaker).where(GlobalSpeaker.user_id == user_id)
+            ).all()
+
+        device_str = str(merged_config.get("processing_device", "auto"))
+        hf_token = merged_config.get("hf_token")
+
+        for manifest_row in eligible_manifest_rows:
+            clip_path = os.path.join(
+                str(live_dir),
+                f"rolling_diarization_{recording_id}_{int(manifest_row.window_index)}.wav",
+            )
+            temp_clip_paths.append(clip_path)
+
+            speaker_metadata_by_key: dict[str, dict[str, Any]] = {}
+            diarization_result = None
+            error_message = None
+            with rolling_diarization_window_timer(
+                recording_id=recording_id,
+                window_start_s=float(manifest_row.window_start_ms) / 1000.0,
+                window_end_s=float(manifest_row.window_end_ms) / 1000.0,
+                window_index=int(manifest_row.window_index),
+                model=get_rolling_diarization_model_name(),
+                device=device_str,
+                config_hash=config_hash,
+                payload={
+                    "chunk_start_sequence": int(manifest_row.chunk_start_sequence),
+                    "chunk_end_sequence": int(manifest_row.chunk_end_sequence),
+                },
+                log=logger,
+            ) as metric:
+                if not _build_audio_window_clip(
+                    manifest_row=manifest_row,
+                    chunk_rows=chunk_rows,
+                    clip_path=clip_path,
+                ):
+                    error_message = "Rolling diarization window audio could not be assembled"
+                    metric["payload"]["result_available"] = False
+                else:
+                    diarization_result = diarize_audio(clip_path, config=merged_config)
+                    metric["payload"]["result_available"] = diarization_result is not None
+                    if diarization_result is None:
+                        error_message = "Rolling diarization returned no result"
+                    else:
+                        speaker_metadata_by_key = build_window_speaker_metadata(
+                            diarization_result=diarization_result,
+                            audio_path=clip_path,
+                            device_str=device_str,
+                            hf_token=hf_token,
+                            recording_speakers=recording_speakers,
+                            global_speakers=global_speakers,
+                        )
+                        metric["payload"]["speaker_count"] = len(speaker_metadata_by_key)
+
+                window_result = persist_diarization_window_result(
+                    session,
+                    recording_id=recording_id,
+                    manifest_row=manifest_row,
+                    processing_run_id=rolling_run.id,
+                    diarization_result=diarization_result,
+                    config_hash=config_hash,
+                    device=device_str,
+                    model_name=get_rolling_diarization_model_name(),
+                    error_message=error_message,
+                    speaker_metadata_by_key=speaker_metadata_by_key,
+                )
+                if error_message is None:
+                    manifest_row.status = WINDOW_STATUS_LIVE_PROCESSED
+                    manifest_row.last_error = None
+                    reconciliation_summary = reconcile_diarization_window_result(
+                        session,
+                        recording_id=recording_id,
+                        window_result_id=window_result.id,
+                        processing_run_id=rolling_run.id,
+                    )
+                    summary["matched_turn_count"] += reconciliation_summary["matched_turn_count"]
+                    summary["updated_utterance_count"] += reconciliation_summary["updated_utterance_count"]
+                    summary["preserved_manual_lock_count"] += reconciliation_summary[
+                        "preserved_manual_lock_count"
+                    ]
+                    metric["payload"]["matched_turn_count"] = reconciliation_summary[
+                        "matched_turn_count"
+                    ]
+                    metric["payload"]["updated_utterance_count"] = reconciliation_summary[
+                        "updated_utterance_count"
+                    ]
+                    metric["payload"]["preserved_manual_lock_count"] = reconciliation_summary[
+                        "preserved_manual_lock_count"
+                    ]
+                else:
+                    manifest_row.status = WINDOW_STATUS_FAILED
+                    manifest_row.last_error = error_message
+                manifest_row.processing_run_id = rolling_run.id
+                session.add(manifest_row)
+
+            summary["processed_window_count"] += 1
+            session.commit()
+
+        rolling_run.status = ProcessingRunStatus.COMPLETED
+        rolling_run.completed_at = utc_now()
+        rolling_run.metrics = dict(summary)
+        session.add(rolling_run)
+        session.commit()
+        return summary
+    except Exception as exc:
+        if hasattr(session, "rollback"):
+            session.rollback()
+        if rolling_run is not None:
+            rolling_run.status = ProcessingRunStatus.FAILED
+            rolling_run.completed_at = utc_now()
+            rolling_run.error_summary = str(exc).strip()[:500] or "Rolling diarization failed."
+            session.add(rolling_run)
+            session.commit()
+        logger.warning(
+            "Rolling diarization pass failed for recording %s: %s",
+            recording_id,
+            exc,
+            exc_info=True,
+        )
+        return summary
+    finally:
+        for clip_path in temp_clip_paths:
+            if os.path.exists(clip_path):
+                try:
+                    os.remove(clip_path)
+                except OSError:
+                    pass
+        session.close()
 
 
 def read_live_state(live_dir) -> dict:
@@ -491,14 +975,33 @@ def _extract_region_text(result: dict, prefix_s: float) -> str:
     The clip handed to the engine is `left_context ++ region`; `prefix_s` is the
     length of the left-context run-up. Segment/word timestamps are clip-relative.
     """
+    kept_segments = _extract_region_segment_payloads(result, prefix_s)
+    return re.sub(
+        r"\s+",
+        " ",
+        " ".join(str(segment.get("text", "") or "").strip() for segment in kept_segments),
+    ).strip()
+
+
+def _extract_region_segment_payloads(result: dict, prefix_s: float) -> list[dict[str, Any]]:
+    """Return the ASR segment payloads that belong to the region after prefix_s.
+
+    The returned segment and word timings are region-relative, not clip-relative.
+    """
     EPS = 0.10
     segments = result.get("segments") or []
     if not segments:
-        if prefix_s <= 0:
-            return (result.get("text") or "").strip()
-        return ""
+        if prefix_s <= 0 and (result.get("text") or "").strip():
+            return [
+                {
+                    "start": 0.0,
+                    "end": 0.0,
+                    "text": (result.get("text") or "").strip(),
+                }
+            ]
+        return []
 
-    kept: list[str] = []
+    kept: list[dict[str, Any]] = []
     for seg in segments:
         start = float(seg.get("start", 0.0))
         end = float(seg.get("end", 0.0))
@@ -510,23 +1013,109 @@ def _extract_region_text(result: dict, prefix_s: float) -> str:
             continue
         if start >= prefix_s - EPS:
             # Entirely within the region.
-            kept.append(seg_text)
+            kept_segment = {
+                "start": max(0.0, start - prefix_s),
+                "end": max(0.0, end - prefix_s),
+                "text": seg_text,
+            }
+            words = seg.get("words") or []
+            kept_words = []
+            for word in words:
+                word_text = str(word.get("word") or "").strip()
+                if not word_text:
+                    continue
+                word_start = float(word.get("start", 0.0))
+                word_end = float(word.get("end", word_start))
+                kept_words.append(
+                    {
+                        "start": max(0.0, word_start - prefix_s),
+                        "end": max(0.0, word_end - prefix_s),
+                        "word": word_text,
+                    }
+                )
+            if kept_words:
+                kept_segment["words"] = kept_words
+            kept.append(kept_segment)
             continue
         # Straddles the prefix boundary.
         words = seg.get("words")
         if words:
-            region_words = [
-                (w.get("word") or "")
-                for w in words
-                if float(w.get("start", 0.0)) >= prefix_s - EPS
-            ]
-            joined = " ".join(p.strip() for p in region_words if p.strip())
+            kept_words = []
+            for word in words:
+                word_text = str(word.get("word") or "").strip()
+                if not word_text:
+                    continue
+                word_start = float(word.get("start", 0.0))
+                word_end = float(word.get("end", word_start))
+                if word_end <= prefix_s + EPS:
+                    continue
+                kept_words.append(
+                    {
+                        "start": max(0.0, word_start - prefix_s),
+                        "end": max(0.0, word_end - prefix_s),
+                        "word": word_text,
+                    }
+                )
+            joined = " ".join(word["word"] for word in kept_words)
             if joined:
-                kept.append(joined)
+                kept.append(
+                    {
+                        "start": kept_words[0]["start"],
+                        "end": kept_words[-1]["end"],
+                        "text": joined,
+                        "words": kept_words,
+                    }
+                )
         elif (start + end) / 2 >= prefix_s:
-            kept.append(seg_text)
+            kept.append(
+                {
+                    "start": 0.0,
+                    "end": max(0.0, end - prefix_s),
+                    "text": seg_text,
+                }
+            )
 
-    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+    return kept
+
+
+def _build_live_confidence_payload(
+    *,
+    region_segment_payloads: list[dict[str, Any]],
+    region_start_ms: int,
+    region_end_ms: int,
+) -> dict[str, Any]:
+    absolute_segments: list[dict[str, Any]] = []
+    has_word_timestamps = False
+
+    for segment in region_segment_payloads:
+        absolute_segment = {
+            "start_ms": int(region_start_ms + round(float(segment.get("start", 0.0)) * 1000.0)),
+            "end_ms": int(region_start_ms + round(float(segment.get("end", 0.0)) * 1000.0)),
+            "text": str(segment.get("text", "") or ""),
+        }
+        words = []
+        for word in segment.get("words") or []:
+            word_text = str(word.get("word") or "").strip()
+            if not word_text:
+                continue
+            words.append(
+                {
+                    "start_ms": int(region_start_ms + round(float(word.get("start", 0.0)) * 1000.0)),
+                    "end_ms": int(region_start_ms + round(float(word.get("end", 0.0)) * 1000.0)),
+                    "word": word_text,
+                }
+            )
+        if words:
+            has_word_timestamps = True
+            absolute_segment["words"] = words
+        absolute_segments.append(absolute_segment)
+
+    return {
+        "utterance_start_ms": int(region_start_ms),
+        "utterance_end_ms": int(region_end_ms),
+        "asr_segments": absolute_segments,
+        "asr_word_timestamps_available": has_word_timestamps,
+    }
 
 
 def _strip_repetition(text: str) -> str:
@@ -961,6 +1550,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         )
                     )
                 continue
+            region_segment_payloads = _extract_region_segment_payloads(result, prefix_s)
             text = _strip_repetition(_extract_region_text(result, prefix_s))
             if not text:
                 if ledger_enabled:
@@ -997,6 +1587,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     "text": text,
                     "provisional": True,
                     "segment_source": "live",
+                    "confidence_payload": _build_live_confidence_payload(
+                        region_segment_payloads=region_segment_payloads,
+                        region_start_ms=region_start_ms,
+                        region_end_ms=region_end_ms,
+                    ),
                 }
             )
             pending_asr_completions.append(
@@ -1163,6 +1758,15 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     )
         finally:
             session.close()
+
+            if 'run' in locals() and run and 'merged_config' in locals():
+                _run_live_rolling_diarization_pass(
+                    recording_id=recording_id,
+                    up_to_sequence=run[-1],
+                    user_id=user_id,
+                    merged_config=merged_config,
+                    live_dir=live_dir,
+                )
 
             if should_dispatch_meeting_edge:
                 try:

@@ -35,8 +35,13 @@ def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
     assert DEFAULT_SYSTEM_CONFIG["enable_asr_window_result_ledger"] is True
+    assert DEFAULT_SYSTEM_CONFIG["enable_rolling_diarization"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
     assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
+    assert DEFAULT_SYSTEM_CONFIG["rolling_diarization_window_ms"] == 20_000
+    assert DEFAULT_SYSTEM_CONFIG["rolling_diarization_hop_ms"] == 5_000
+    assert DEFAULT_SYSTEM_CONFIG["rolling_diarization_max_windows_per_pass"] == 2
+    assert DEFAULT_SYSTEM_CONFIG["rolling_diarization_max_active_runs"] == 1
 
 
 def test_live_transcription_keys_survive_reload(tmp_path):
@@ -76,6 +81,25 @@ def test_validate_config_value_enable_asr_window_result_ledger():
     assert validate_config_value("enable_asr_window_result_ledger", True) is True
     assert validate_config_value("enable_asr_window_result_ledger", False) is True
     assert validate_config_value("enable_asr_window_result_ledger", "yes") is False
+
+
+def test_validate_config_value_enable_rolling_diarization():
+    """enable_rolling_diarization is validated as a boolean."""
+    assert validate_config_value("enable_rolling_diarization", True) is True
+    assert validate_config_value("enable_rolling_diarization", False) is True
+    assert validate_config_value("enable_rolling_diarization", "yes") is False
+
+
+def test_validate_config_value_rolling_diarization_window_settings():
+    """Rolling diarization window knobs must be positive integers."""
+    assert validate_config_value("rolling_diarization_window_ms", 20_000) is True
+    assert validate_config_value("rolling_diarization_hop_ms", 5_000) is True
+    assert validate_config_value("rolling_diarization_max_windows_per_pass", 2) is True
+    assert validate_config_value("rolling_diarization_max_active_runs", 1) is True
+    assert validate_config_value("rolling_diarization_window_ms", 0) is False
+    assert validate_config_value("rolling_diarization_hop_ms", -1) is False
+    assert validate_config_value("rolling_diarization_max_windows_per_pass", 0) is False
+    assert validate_config_value("rolling_diarization_max_active_runs", 0) is False
 
 
 def test_default_user_settings_enable_meeting_edge_by_default():
@@ -803,6 +827,187 @@ def test_infer_resume_state_from_manifest_rows():
     assert resumed_state == {"next_expected": 5, "buffer_abs_start": 5.5}
 
 
+def test_select_live_rolling_diarization_manifests_skips_completed_windows_and_unsealed_tail(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _select_live_rolling_diarization_manifests
+
+    manifest_rows = [
+        SimpleNamespace(id=1, window_index=0, chunk_end_sequence=4, is_partial=False, is_sealed=False),
+        SimpleNamespace(id=2, window_index=1, chunk_end_sequence=5, is_partial=False, is_sealed=False),
+        SimpleNamespace(id=3, window_index=2, chunk_end_sequence=6, is_partial=True, is_sealed=False),
+        SimpleNamespace(id=4, window_index=3, chunk_end_sequence=6, is_partial=True, is_sealed=True),
+    ]
+
+    class _ExecResult:
+        def all(self):
+            return [1]
+
+    class _Session:
+        def exec(self, *args, **kwargs):
+            return _ExecResult()
+
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._load_recording_audio_window_manifests",
+        lambda session, recording_id: manifest_rows,
+    )
+
+    selected_rows = _select_live_rolling_diarization_manifests(
+        _Session(),
+        recording_id=1,
+        up_to_sequence=6,
+        config_hash="rolling-cfg-1",
+        max_windows_per_pass=3,
+    )
+
+    assert [row.window_index for row in selected_rows] == [0, 3]
+
+
+def test_select_live_rolling_diarization_manifests_skips_active_claims_and_reclaims_failed_runs(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _select_live_rolling_diarization_manifests
+
+    manifest_rows = [
+        SimpleNamespace(
+            id=1,
+            window_index=0,
+            chunk_end_sequence=4,
+            is_partial=False,
+            is_sealed=False,
+            status="live_processing",
+            processing_run_id=11,
+        ),
+        SimpleNamespace(
+            id=2,
+            window_index=1,
+            chunk_end_sequence=4,
+            is_partial=False,
+            is_sealed=False,
+            status="live_processing",
+            processing_run_id=12,
+        ),
+        SimpleNamespace(
+            id=3,
+            window_index=2,
+            chunk_end_sequence=4,
+            is_partial=False,
+            is_sealed=False,
+            status="failed",
+            processing_run_id=None,
+        ),
+    ]
+
+    class _ExecResult:
+        def all(self):
+            return []
+
+    class _Session:
+        def exec(self, *args, **kwargs):
+            return _ExecResult()
+
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._load_recording_audio_window_manifests",
+        lambda session, recording_id: manifest_rows,
+    )
+
+    selected_rows = _select_live_rolling_diarization_manifests(
+        _Session(),
+        recording_id=1,
+        up_to_sequence=4,
+        config_hash="rolling-cfg-1",
+        max_windows_per_pass=3,
+        processing_run_status_by_id={11: "running", 12: "failed"},
+    )
+
+    assert [row.window_index for row in selected_rows] == [1, 2]
+
+
+def test_claim_live_rolling_diarization_manifests_marks_rows_in_flight(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _claim_live_rolling_diarization_manifests
+
+    manifest_rows = [
+        SimpleNamespace(
+            id=10,
+            window_index=0,
+            chunk_end_sequence=4,
+            is_partial=False,
+            is_sealed=False,
+            status="pending",
+            processing_run_id=None,
+            last_error="old",
+        ),
+        SimpleNamespace(
+            id=11,
+            window_index=1,
+            chunk_end_sequence=4,
+            is_partial=False,
+            is_sealed=False,
+            status="pending",
+            processing_run_id=None,
+            last_error=None,
+        ),
+    ]
+
+    class _ExecResult:
+        def all(self):
+            return []
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *args, **kwargs):
+            return _ExecResult()
+
+        def add(self, row):
+            self.added.append(row)
+
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._load_lockable_live_rolling_diarization_manifests",
+        lambda session, recording_id: manifest_rows,
+    )
+
+    session = _Session()
+    claimed_rows = _claim_live_rolling_diarization_manifests(
+        session,
+        recording_id=1,
+        up_to_sequence=4,
+        config_hash="rolling-cfg-1",
+        max_windows_per_pass=1,
+        processing_run_id=77,
+    )
+
+    assert [row.window_index for row in claimed_rows] == [0]
+    assert manifest_rows[0].status == "live_processing"
+    assert manifest_rows[0].processing_run_id == 77
+    assert manifest_rows[0].last_error is None
+    assert manifest_rows[1].status == "pending"
+
+
+def test_count_active_live_rolling_diarization_runs_ignores_stale_rows():
+    from backend.processing.live_transcribe import _count_active_live_rolling_diarization_runs
+
+    class _ExecResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return list(self._rows)
+
+    class _Session:
+        def exec(self, *args, **kwargs):
+            return _ExecResult([(1,), (2,)])
+
+    assert _count_active_live_rolling_diarization_runs(_Session()) == 2
+
+
 def test_build_diarization_window_payload_offsets_turns_to_absolute_time():
     from backend.worker.tasks import _build_diarization_window_payload
 
@@ -1341,6 +1546,85 @@ def test_extract_region_text_straddle_with_words():
         ]
     }
     assert _extract_region_text(result, prefix_s=2.0) == "after after"
+
+
+def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
+    from backend.processing.live_transcribe import (
+        _build_live_confidence_payload,
+        _extract_region_segment_payloads,
+    )
+
+    result = {
+        "segments": [
+            {
+                "start": 1.0,
+                "end": 3.0,
+                "text": "before before after after",
+                "words": [
+                    {"start": 1.0, "end": 1.5, "word": "before"},
+                    {"start": 1.5, "end": 2.0, "word": "before"},
+                    {"start": 2.2, "end": 2.6, "word": "after"},
+                    {"start": 2.6, "end": 3.0, "word": "after"},
+                ],
+            },
+            {
+                "start": 3.2,
+                "end": 4.0,
+                "text": "tail",
+                "words": [
+                    {"start": 3.2, "end": 3.5, "word": "tail"},
+                ],
+            },
+        ]
+    }
+
+    region_segments = _extract_region_segment_payloads(result, prefix_s=2.0)
+
+    assert len(region_segments) == 2
+    assert region_segments[0]["text"] == "after after"
+    assert region_segments[0]["start"] == pytest.approx(0.2)
+    assert region_segments[0]["end"] == pytest.approx(1.0)
+    assert region_segments[0]["words"] == [
+        {"start": pytest.approx(0.2), "end": pytest.approx(0.6), "word": "after"},
+        {"start": pytest.approx(0.6), "end": pytest.approx(1.0), "word": "after"},
+    ]
+    assert region_segments[1]["text"] == "tail"
+    assert region_segments[1]["start"] == pytest.approx(1.2)
+    assert region_segments[1]["end"] == pytest.approx(2.0)
+    assert region_segments[1]["words"] == [
+        {"start": pytest.approx(1.2), "end": pytest.approx(1.5), "word": "tail"},
+    ]
+
+    confidence_payload = _build_live_confidence_payload(
+        region_segment_payloads=region_segments,
+        region_start_ms=5_000,
+        region_end_ms=7_000,
+    )
+
+    assert confidence_payload == {
+        "utterance_start_ms": 5_000,
+        "utterance_end_ms": 7_000,
+        "asr_segments": [
+            {
+                "start_ms": 5_200,
+                "end_ms": 6_000,
+                "text": "after after",
+                "words": [
+                    {"start_ms": 5_200, "end_ms": 5_600, "word": "after"},
+                    {"start_ms": 5_600, "end_ms": 6_000, "word": "after"},
+                ],
+            },
+            {
+                "start_ms": 6_200,
+                "end_ms": 7_000,
+                "text": "tail",
+                "words": [
+                    {"start_ms": 6_200, "end_ms": 6_500, "word": "tail"},
+                ],
+            },
+        ],
+        "asr_word_timestamps_available": True,
+    }
 
 
 def test_extract_region_text_straddle_without_words_midpoint():

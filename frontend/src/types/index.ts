@@ -104,6 +104,7 @@ export interface TranscriptSegment {
   end: number;
   text: string;
   speaker: string;
+  speaker_state?: "provisional" | "stable" | "manual_override" | string;
   overlapping_speakers?: string[];
   provisional?: boolean;
   segment_source?: "live" | string;

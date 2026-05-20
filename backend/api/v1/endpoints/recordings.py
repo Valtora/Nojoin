@@ -256,7 +256,14 @@ async def _sync_recording_audio_window_manifests(
         .scalars()
         .all()
     )
-    window_specs = build_audio_window_specs(chunk_rows, seal_tail=seal_tail)
+    target_window_ms = int(config_manager.get("rolling_diarization_window_ms", 20_000))
+    hop_ms = int(config_manager.get("rolling_diarization_hop_ms", 5_000))
+    window_specs = build_audio_window_specs(
+        chunk_rows,
+        target_window_ms=target_window_ms,
+        hop_ms=hop_ms,
+        seal_tail=seal_tail,
+    )
     applied_rows = apply_audio_window_specs(
         recording_id=recording_id,
         existing_rows=manifest_rows,

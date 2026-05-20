@@ -862,6 +862,80 @@ def test_process_recording_task_prefers_canonical_live_segments_for_reuse(monkey
     assert captured["segments"][0]["id"] == "canon-live-1"
 
 
+def test_build_final_diarization_plan_skips_confident_live_reuse():
+    from backend.worker import tasks as tasks_module
+
+    plan = tasks_module._build_final_diarization_plan(
+        live_segments_for_reuse=[
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "segment_source": "live",
+                "speaker_state": "stable",
+                "speaker_confidence": 0.91,
+                "overlapping_speakers": [],
+            }
+        ],
+        reused_live_transcript_segments=[
+            {"start": 0.0, "end": 1.0, "text": "hello"}
+        ],
+        engine_override=None,
+    )
+
+    assert plan == {
+        "should_run": False,
+        "reason": "confident_live_reuse",
+        "low_confidence_spans": [],
+    }
+
+
+def test_build_final_diarization_plan_runs_for_low_confidence_live_spans():
+    from backend.worker import tasks as tasks_module
+
+    plan = tasks_module._build_final_diarization_plan(
+        live_segments_for_reuse=[
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "segment_source": "live",
+                "speaker_state": "stable",
+                "speaker_confidence": 0.94,
+                "overlapping_speakers": [],
+            },
+            {
+                "start": 2.0,
+                "end": 2.5,
+                "speaker": "LIVE_02",
+                "segment_source": "live",
+                "speaker_state": "provisional",
+                "speaker_confidence": 0.48,
+                "overlapping_speakers": [],
+            },
+            {
+                "start": 2.6,
+                "end": 3.0,
+                "speaker": "LIVE_02",
+                "segment_source": "live",
+                "speaker_state": "provisional",
+                "speaker_confidence": 0.41,
+                "overlapping_speakers": [],
+            },
+        ],
+        reused_live_transcript_segments=[
+            {"start": 0.0, "end": 3.0, "text": "hello provisional span"}
+        ],
+        engine_override=None,
+    )
+
+    assert plan["should_run"] is True
+    assert plan["reason"] == "low_confidence_spans"
+    assert plan["low_confidence_spans"] == [
+        {"start_ms": 1000, "end_ms": 4000, "segment_count": 2}
+    ]
+
+
 def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):
     from types import SimpleNamespace
 

@@ -24,6 +24,7 @@ def generate_pipeline_public_id() -> str:
 
 class ProcessingRunKind(str, Enum):
     LIVE = "live"
+    ROLLING_DIARIZATION = "rolling_diarization"
     CATCH_UP = "catch_up"
     FINALIZE = "finalize"
     REPROCESS = "reprocess"

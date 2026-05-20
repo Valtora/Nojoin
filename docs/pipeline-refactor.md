@@ -328,12 +328,6 @@ Validation matrix:
 - [x] Internal consumers: Meeting Edge and other Phase 3-critical readers succeed against canonical-first reads with projection fallback.
 - [ ] Metrics: ASR invocation count, finalization duration, and manual edit preservation remain at or better than the recorded baseline.
 
-Out of scope for this phase:
-
-- [ ] Full backward-looking speaker reconciliation across rolling diarization windows remains Phase 4.
-- [ ] Broad user correction scopes and speaker identity propagation remain Phase 5.
-- [ ] Import-specific pipeline cutover remains Phase 6 or later as long as imports remain compatible with the canonical projection model.
-
 Exit gate:
 
 - [ ] Normal live recordings complete with one ASR pass per covered audio span, catch-up runs only for missing or failed spans, finalization promotes canonical live utterances instead of rebuilding from segment arrays, and `Transcript.segments` remains only a compatibility projection.
@@ -344,36 +338,36 @@ Exit gate:
 
 Purpose: introduce high-quality live diarization that can revise earlier speaker assignments as context improves.
 
-- [ ] Add a rolling diarization scheduler.
-  - [ ] Run Pyannote over configurable windows, for example 20-60 seconds with overlap.
-  - [ ] Separate upload chunk duration from diarization window duration.
-  - [ ] Use worker concurrency limits to protect GPU and CPU resources.
-  - [ ] Persist window inputs, outputs, model version, device, and config hash.
-- [ ] Map window-local Pyannote speakers to canonical recording speakers.
-  - [ ] Use temporal continuity across overlapping windows.
-  - [ ] Use voice embeddings aggregated over multiple clean speech spans.
-  - [ ] Use global speaker voiceprints when available.
-  - [ ] Avoid creating new speakers until enough evidence exists.
-  - [ ] Keep low-confidence labels provisional rather than churning identities.
-- [ ] Reconcile diarization with transcript utterances.
-  - [ ] Align diarization turns to ASR utterances by time overlap.
-  - [ ] Support utterance splitting when one ASR utterance spans multiple speakers.
-  - [ ] Support utterance merging when diarization confirms a continuous same-speaker turn.
-  - [ ] Preserve text order and manual text edits during speaker-only revisions.
-  - [ ] Represent overlapping speakers without hiding primary utterances.
-- [ ] Apply backward-looking revisions.
-  - [ ] Revisit recent windows when new overlapping context arrives.
-  - [ ] Revisit older windows when a user correction or stronger voiceprint resolves identity.
-  - [ ] Mark automated revisions with provenance and confidence.
-  - [ ] Never override a manual speaker edit unless the user explicitly changes that scope.
-- [ ] Define stabilization rules.
-  - [ ] Decide when a live speaker label becomes stable.
-  - [ ] Decide when a diarization window no longer needs routine reprocessing.
-  - [ ] Keep finalization able to run a full-recording diarization check only for low-confidence spans.
+- [x] Add a rolling diarization scheduler.
+  - [x] Run Pyannote over configurable windows, for example 20-60 seconds with overlap.
+  - [x] Separate upload chunk duration from diarization window duration.
+  - [x] Use worker concurrency limits to protect GPU and CPU resources.
+  - [x] Persist window inputs, outputs, model version, device, and config hash.
+- [x] Map window-local Pyannote speakers to canonical recording speakers.
+  - [x] Use temporal continuity across overlapping windows.
+  - [x] Use voice embeddings aggregated over multiple clean speech spans.
+  - [x] Use global speaker voiceprints when available.
+  - [x] Avoid creating new speakers until enough evidence exists.
+  - [x] Keep low-confidence labels provisional rather than churning identities.
+- [x] Reconcile diarization with transcript utterances.
+  - [x] Align diarization turns to ASR utterances by time overlap.
+  - [x] Support utterance splitting when one ASR utterance spans multiple speakers.
+  - [x] Support utterance merging when diarization confirms a continuous same-speaker turn.
+  - [x] Preserve text order and manual text edits during speaker-only revisions.
+  - [x] Represent overlapping speakers without hiding primary utterances.
+- [x] Apply backward-looking revisions.
+  - [x] Revisit recent windows when new overlapping context arrives.
+  - [x] Revisit older windows when a user correction or stronger voiceprint resolves identity.
+  - [x] Mark automated revisions with provenance and confidence.
+  - [x] Never override a manual speaker edit unless the user explicitly changes that scope.
+- [x] Define stabilization rules.
+  - [x] Decide when a live speaker label becomes stable.
+  - [x] Decide when a diarization window no longer needs routine reprocessing.
+  - [x] Keep finalization able to run a full-recording diarization check only for low-confidence spans.
 
 Exit gate:
 
-- [ ] Rolling diarization can improve earlier live speaker assignments in fixtures without losing manual corrections.
+- [x] Rolling diarization can improve earlier live speaker assignments in fixtures without losing manual corrections.
 
 ## Phase 5: Speaker Identity, User Corrections, and Name Inference
 
@@ -590,54 +584,3 @@ Purpose: surface regressions at the system level before considering the refactor
 Exit gate:
 
 - [ ] Whole-system acceptance criteria pass and the refactor is ready for release review.
-
-## Implementation Dependency Order
-
-- [ ] Phase 0 must complete before schema or pipeline changes begin.
-- [ ] Phase 1 must complete before migrations or API implementation begin.
-- [ ] Phase 2 must complete before rolling diarization can be reliable.
-- [ ] Phase 3 must complete before final processing can stop rerunning normal ASR.
-- [ ] Phase 4 must complete before backward-looking speaker correction is considered real.
-- [ ] Phase 5 must complete before live user corrections are trusted as future speaker identity.
-- [ ] Phase 6 must complete before finalization latency improvements are claimed.
-- [ ] Phase 7 must complete before users can safely operate the new model.
-- [ ] Phase 8 and Phase 9 must complete before release readiness.
-- [ ] Phase 10 must complete before merging or releasing the refactor.
-
-## Key Risks and Decisions
-
-- [ ] Decide whether transcript utterances become relational rows now or whether JSONB remains the write model with stable IDs added.
-- [ ] Decide how much automatic speaker-name inference can apply without user confirmation.
-- [ ] Decide default rolling diarization latency profile.
-- [ ] Decide whether full-recording final diarization remains an optional validation pass or is disabled by default after successful rolling diarization.
-- [ ] Decide how long uploaded chunks are retained after finalization for audit, retry, and storage management.
-- [ ] Decide whether live transcript updates remain polling-based or move to a streaming/event channel.
-- [ ] Decide GPU scheduling limits for concurrent live diarization jobs.
-
-## Likely Code Areas
-
-- [ ] `backend/processing/live_transcribe.py`
-- [ ] `backend/processing/diarize.py`
-- [ ] `backend/processing/embedding.py`
-- [ ] `backend/processing/embedding_core.py`
-- [ ] `backend/utils/live_transcript.py`
-- [ ] `backend/utils/speaker_assignment.py`
-- [ ] `backend/worker/tasks.py`
-- [ ] `backend/api/v1/endpoints/recordings.py`
-- [ ] `backend/api/v1/endpoints/transcripts.py`
-- [ ] `backend/api/v1/endpoints/speakers.py`
-- [ ] `backend/models/transcript.py`
-- [ ] `backend/models/speaker.py`
-- [ ] `backend/models/recording.py`
-- [ ] `backend/alembic/versions/`
-- [ ] `frontend/src/app/(dashboard)/recordings/[id]/page.tsx`
-- [ ] `frontend/src/components/TranscriptView.tsx`
-- [ ] `frontend/src/components/SpeakerAssignmentPopover.tsx`
-- [ ] `frontend/src/lib/api.ts`
-- [ ] `frontend/src/types/index.ts`
-- [ ] `frontend/src/components/settings/`
-- [ ] `companion/src-tauri/src/audio.rs`
-- [ ] `companion/src-tauri/src/uploader.rs`
-- [ ] `backend/tests/test_live_transcription.py`
-- [ ] `backend/tests/test_live_transcript_reuse.py`
-- [ ] `backend/tests/test_speaker_assignment.py`

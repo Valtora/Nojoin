@@ -166,6 +166,66 @@ CREATE TABLE processing_runs (
 )
 """
 
+RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA = """
+CREATE TABLE recording_audio_window_manifests (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    window_index INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    target_window_ms INTEGER NOT NULL,
+    hop_ms INTEGER NOT NULL,
+    window_start_ms INTEGER NOT NULL,
+    window_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER NOT NULL,
+    chunk_end_sequence INTEGER NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    is_partial BOOLEAN NOT NULL,
+    is_sealed BOOLEAN NOT NULL,
+    processing_run_id INTEGER,
+    last_error TEXT
+)
+"""
+
+DIARIZATION_WINDOW_RESULTS_SCHEMA = """
+CREATE TABLE diarization_window_results (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    processing_run_id INTEGER,
+    window_index INTEGER NOT NULL,
+    window_start_ms INTEGER NOT NULL,
+    window_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER,
+    chunk_end_sequence INTEGER,
+    model_name VARCHAR(255),
+    model_version VARCHAR(255),
+    device VARCHAR(255),
+    config_hash VARCHAR(255),
+    status VARCHAR(32) NOT NULL,
+    raw_payload JSON
+)
+"""
+
+DIARIZATION_WINDOW_TURNS_SCHEMA = """
+CREATE TABLE diarization_window_turns (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    window_result_id INTEGER NOT NULL,
+    local_speaker_key VARCHAR(255) NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    confidence FLOAT,
+    matched_recording_speaker_id INTEGER,
+    metadata_payload JSON
+)
+"""
+
 TRANSCRIPT_UTTERANCES_SCHEMA = """
 CREATE TABLE transcript_utterances (
     id INTEGER PRIMARY KEY,
@@ -286,6 +346,9 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(PROCESSING_RUNS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
+        await connection.execute(text(DIARIZATION_WINDOW_RESULTS_SCHEMA))
+        await connection.execute(text(DIARIZATION_WINDOW_TURNS_SCHEMA))
         await connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
         await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
@@ -2104,8 +2167,1677 @@ async def test_append_utterances_from_segments_live_retry_is_idempotent(
 
         assert processing_run_count == 1
         assert utterance_count == 1
+
+
+@pytest.mark.anyio
+async def test_persist_diarization_window_result_records_model_and_speaker_metadata(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import RecordingAudioWindowManifest
+    from backend.utils.rolling_diarization import persist_diarization_window_result
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_audio_window_manifests (
+                    id, created_at, updated_at, public_id, recording_id,
+                    window_index, source_kind, target_window_ms, hop_ms,
+                    window_start_ms, window_end_ms, chunk_start_sequence,
+                    chunk_end_sequence, status, is_partial, is_sealed,
+                    processing_run_id, last_error
+                ) VALUES (
+                    11, :now, :now, 'manifest-public-11', 1,
+                    0, 'companion', 20000, 5000,
+                    0, 20000, 1,
+                    10, 'live_processed', 0, 0,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    class _Segment:
+        def __init__(self, start: float, end: float):
+            self.start = start
+            self.end = end
+
+    class _Annotation:
+        def itertracks(self, yield_label=False):
+            assert yield_label is True
+            yield _Segment(0.0, 0.8), "A", "SPEAKER_00"
+            yield _Segment(0.8, 1.6), "B", "SPEAKER_01"
+
+    async with test_session_maker() as session:
+        manifest_row = await session.get(RecordingAudioWindowManifest, 11)
+        await session.run_sync(
+            lambda sync_session: persist_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                manifest_row=manifest_row,
+                processing_run_id=None,
+                diarization_result=_Annotation(),
+                config_hash="rolling-cfg-1",
+                device="cpu",
+                model_name="pyannote/speaker-diarization-community-1",
+                speaker_metadata_by_key={
+                    "SPEAKER_00": {
+                        "best_recording_speaker_id": 7,
+                        "best_recording_speaker_score": 0.91,
+                    }
+                },
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        result_row = (
+            await session.execute(
+                text(
+                    "SELECT model_name, model_version, device, config_hash, status, raw_payload "
+                    "FROM diarization_window_results WHERE recording_id = 1 AND window_index = 0"
+                )
+            )
+        ).one()
+        turn_rows = (
+            await session.execute(
+                text(
+                    "SELECT local_speaker_key, start_ms, end_ms, metadata_payload "
+                    "FROM diarization_window_turns ORDER BY id"
+                )
+            )
+        ).all()
+
+        raw_payload = json.loads(result_row[5]) if isinstance(result_row[5], str) else result_row[5]
+        first_turn_payload = json.loads(turn_rows[0][3]) if isinstance(turn_rows[0][3], str) else turn_rows[0][3]
+
+        assert result_row[0] == "pyannote/speaker-diarization-community-1"
+        assert result_row[1] == "community-1"
+        assert result_row[2] == "cpu"
+        assert result_row[3] == "rolling-cfg-1"
+        assert result_row[4] == "completed"
+        assert raw_payload["speaker_metadata"]["SPEAKER_00"]["best_recording_speaker_id"] == 7
+        assert len(turn_rows) == 2
+        assert turn_rows[0][0] == "SPEAKER_00"
+        assert first_turn_payload["track"] == "A"
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_revises_earlier_live_speaker_assignment(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "earlier speaker guess",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    30, :now, :now, 'window-public-30', 1,
+                    NULL, -1, 0,
+                    15000, 1, 8,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-0', 'completed',
+                    '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    40, :now, :now, 30,
+                    'SPEAKER_99', 0, 1000, 0.92,
+                    2, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    31, :now, :now, 'window-public-31', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-1', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 0.91,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    41, :now, :now, 31,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=31,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 1
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, speaker_confidence, last_diarization_window_result_id, text "
+                    "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_02"
+        assert utterance_row[1] >= 0.55
+        assert utterance_row[2] == 31
+        assert utterance_row[3] == "earlier speaker guess"
+        assert transcript_segments[0]["speaker"] == "LIVE_02"
+        assert transcript_segments[0]["text"] == "earlier speaker guess"
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_merges_adjacent_live_utterances_for_continuous_same_speaker_turn(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 0.5,
+                        "speaker": "LIVE_01",
+                        "text": "hello",
+                        "provisional": True,
+                        "segment_source": "live",
+                    },
+                    {
+                        "id": "live-utt-2",
+                        "start": 0.5,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "there",
+                        "provisional": True,
+                        "segment_source": "live",
+                    },
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    40, :now, :now, 'window-public-40', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-merge', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    51, :now, :now, 40,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=40,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 1
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        utterance_rows = (
+            await session.execute(
+                text(
+                    "SELECT public_id, state, speaker_label, text FROM transcript_utterances WHERE recording_id = 1 ORDER BY id"
+                )
+            )
+        ).all()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        merge_count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterance_events WHERE recording_id = 1 AND event_type = 'merge'"
+                )
+            )
+        ).scalar_one()
+
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        active_rows = [row for row in utterance_rows if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value]
+
+        assert len(active_rows) == 1
+        assert active_rows[0][2] == "LIVE_02"
+        assert active_rows[0][3] == "hello there"
+        assert len(transcript_segments) == 1
+        assert transcript_segments[0]["speaker"] == "LIVE_02"
+        assert transcript_segments[0]["text"] == "hello there"
+        assert merge_count == 1
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_splits_live_utterance_from_word_timestamps(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.2,
+                        "speaker": "LIVE_01",
+                        "text": "hello there general kenobi",
+                        "provisional": True,
+                        "segment_source": "live",
+                        "confidence_payload": {
+                            "asr_segments": [
+                                {
+                                    "start_ms": 0,
+                                    "end_ms": 1200,
+                                    "text": "hello there general kenobi",
+                                    "words": [
+                                        {"start_ms": 0, "end_ms": 300, "word": "hello"},
+                                        {"start_ms": 300, "end_ms": 600, "word": "there"},
+                                        {"start_ms": 600, "end_ms": 900, "word": "general"},
+                                        {"start_ms": 900, "end_ms": 1200, "word": "kenobi"},
+                                    ],
+                                }
+                            ],
+                            "asr_word_timestamps_available": True,
+                        },
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        live_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    600, 1200, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    39, :now, :now, 'window-public-39', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-split', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": int(live_speaker_id),
+                                "best_recording_speaker_score": 0.97,
+                            },
+                            "SPEAKER_01": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 0.96,
+                            },
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES
+                    (49, :now, :now, 39, 'SPEAKER_00', 0, 600, NULL, NULL, NULL),
+                    (50, :now, :now, 39, 'SPEAKER_01', 600, 1200, NULL, NULL, NULL)
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=39,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 2
+        assert summary["updated_utterance_count"] == 2
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        utterance_rows = (
+            await session.execute(
+                text(
+                    "SELECT public_id, state, speaker_label, text, confidence_payload "
+                    "FROM transcript_utterances WHERE recording_id = 1 ORDER BY id"
+                )
+            )
+        ).all()
+        split_count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterance_events "
+                    "WHERE recording_id = 1 AND event_type = 'split'"
+                )
+            )
+        ).scalar_one()
+
+        active_rows = [row for row in utterance_rows if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value]
+        original_row = next(row for row in utterance_rows if row[0] == "live-utt-1")
+        first_payload = json.loads(active_rows[0][4]) if isinstance(active_rows[0][4], str) else active_rows[0][4]
+        second_payload = json.loads(active_rows[1][4]) if isinstance(active_rows[1][4], str) else active_rows[1][4]
+
+        assert str(original_row[1]).lower() == TranscriptUtteranceState.SUPERSEDED.value
+        assert [segment["speaker"] for segment in transcript_segments] == ["LIVE_01", "LIVE_02"]
+        assert [segment["text"] for segment in transcript_segments] == ["hello there", "general kenobi"]
+        assert [row[2] for row in active_rows] == ["LIVE_01", "LIVE_02"]
+        assert [row[3] for row in active_rows] == ["hello there", "general kenobi"]
+        assert first_payload["rolling_diarization"]["split_from_public_id"] == "live-utt-1"
+        assert second_payload["rolling_diarization"]["split_from_public_id"] == "live-utt-1"
+        assert first_payload["asr_segments"][0]["words"][0]["word"] == "hello"
+        assert second_payload["asr_segments"][0]["words"][0]["word"] == "general"
+        assert split_count == 2
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_projects_overlapping_speakers_without_hiding_primary_utterance(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+        serialize_canonical_utterances,
+        update_utterance_text,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "primary words stay visible",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_text(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                text="manual text survives overlap fallback",
+                actor_user_id=1,
+                source="test",
+            )
+        )
+        live_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    400, 900, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    60, :now, :now, 'window-public-60', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-overlap', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": int(live_speaker_id),
+                                "best_recording_speaker_score": 1.0,
+                            },
+                            "SPEAKER_01": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 1.0,
+                            },
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES
+                    (61, :now, :now, 60, 'SPEAKER_00', 0, 1000, NULL, NULL, NULL),
+                    (62, :now, :now, 60, 'SPEAKER_01', 400, 900, NULL, NULL, NULL)
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=60,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 2
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        serialized_segments = await session.run_sync(
+            lambda sync_session: serialize_canonical_utterances(sync_session, 1)
+        )
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, text, manual_text_locked, confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        confidence_payload = json.loads(utterance_row[3]) if isinstance(utterance_row[3], str) else utterance_row[3]
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == "manual text survives overlap fallback"
+        assert bool(utterance_row[2]) is True
+        assert len(transcript_segments) == 1
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
+        assert transcript_segments[0]["text"] == "manual text survives overlap fallback"
+        assert transcript_segments[0]["overlapping_speakers"] == ["LIVE_02"]
+        assert serialized_segments[0]["overlapping_speakers"] == ["LIVE_02"]
+        assert confidence_payload["rolling_diarization"]["overlapping_recording_speaker_ids"] == [2]
+        assert confidence_payload["rolling_diarization"]["overlapping_speakers"] == ["LIVE_02"]
+
+
+@pytest.mark.anyio
+async def test_record_recording_speaker_corrections_replays_completed_windows_after_global_link(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+        record_recording_speaker_corrections,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "UNKNOWN",
+                        "text": "identity resolves later",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, user_id, name, embedding,
+                    is_voiceprint_locked, color, title, company, email,
+                    phone_number, notes, description
+                ) VALUES (
+                    7, :now, :now, 1, 'Dana', NULL,
+                    0, NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    41, :now, :now, 'window-public-41', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-global', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_global_speaker_id": 7,
+                                    "best_global_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    52, :now, :now, 41,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=41,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 0
+        assert summary["updated_utterance_count"] == 0
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = 2"
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=1,
+                target_recording_speaker_ids=[2],
+                actor_user_id=1,
+                event_type=SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=7,
+                payload={"matched_global_speaker": True},
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, last_diarization_window_result_id, confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        replay_event_count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterance_events "
+                    "WHERE recording_id = 1 AND source = 'speaker_identity_replay'"
+                )
+            )
+        ).scalar_one()
+        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+
+        assert utterance_row[0] == "LIVE_02"
+        assert utterance_row[1] == 41
+        assert confidence_payload["rolling_diarization"]["matched_recording_speaker_id"] == 2
+        assert replay_event_count == 1
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_preserves_manual_speaker_lock(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "manual speaker stays",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_speaker(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                new_speaker_name="LIVE_01",
+                diarization_label="LIVE_01",
+                source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    32, :now, :now, 'window-public-32', 1,
+                    NULL, 1, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-1', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 0.93,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    42, :now, :now, 32,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=32,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 1
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, manual_speaker_locked, last_diarization_window_result_id "
+                    "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_01"
+        assert bool(utterance_row[1]) is True
+        assert utterance_row[2] == 32
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
         assert len(transcript_segments) == 1
         assert transcript_segments[0]["id"] == "live-utt-1"
+
+
+@pytest.mark.anyio
+async def test_phase4_exit_gate_rolling_diarization_updates_earlier_live_assignments_without_losing_manual_corrections(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "earlier guess changes",
+                        "provisional": True,
+                        "segment_source": "live",
+                    },
+                    {
+                        "id": "live-utt-2",
+                        "start": 1.0,
+                        "end": 2.0,
+                        "speaker": "LIVE_01",
+                        "text": "manual speaker stays",
+                        "provisional": True,
+                        "segment_source": "live",
+                    },
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_speaker(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-2",
+                new_speaker_name="LIVE_01",
+                diarization_label="LIVE_01",
+                source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 2000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    42, :now, :now, 'window-public-42', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-exit-gate', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 1.0,
+                            },
+                            "SPEAKER_01": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 1.0,
+                            },
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES
+                    (53, :now, :now, 42, 'SPEAKER_00', 0, 1000, NULL, NULL, NULL),
+                    (54, :now, :now, 42, 'SPEAKER_01', 1000, 2000, NULL, NULL, NULL)
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=42,
+                source="test",
+            )
+        )
+        await session.commit()
+
+    assert summary["matched_turn_count"] == 2
+    assert summary["updated_utterance_count"] == 1
+    assert summary["preserved_manual_lock_count"] == 1
+
+    async with test_session_maker() as session:
+        utterance_rows = (
+            await session.execute(
+                text(
+                    "SELECT public_id, speaker_label, manual_speaker_locked "
+                    "FROM transcript_utterances WHERE recording_id = 1 ORDER BY sort_key"
+                )
+            )
+        ).all()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_rows[0][0] == "live-utt-1"
+        assert utterance_rows[0][1] == "LIVE_02"
+        assert bool(utterance_rows[0][2]) is False
+        assert utterance_rows[1][0] == "live-utt-2"
+        assert utterance_rows[1][1] == "LIVE_01"
+        assert bool(utterance_rows[1][2]) is True
+        assert [segment["speaker"] for segment in transcript_segments] == ["LIVE_02", "LIVE_01"]
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_marks_live_speaker_stable_after_repeated_windows(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "stable speaker now",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    33, :now, :now, 'window-public-33', 1,
+                    NULL, -1, 0,
+                    15000, 1, 8,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-0', 'completed',
+                    '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    43, :now, :now, 33,
+                    'SPEAKER_00', 0, 1000, 0.92,
+                    :speaker_id, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00", "speaker_id": speaker_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    34, :now, :now, 'window-public-34', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-1', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": int(speaker_id),
+                                "best_recording_speaker_score": 0.93,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    44, :now, :now, 34,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=34,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, confidence_payload FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        confidence_payload = json.loads(utterance_row[1]) if isinstance(utterance_row[1], str) else utterance_row[1]
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_01"
+        assert confidence_payload["rolling_diarization"]["speaker_state"] == "stable"
+        assert confidence_payload["rolling_diarization"]["supporting_window_count"] == 2
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
+        assert transcript_segments[0]["speaker_state"] == "stable"
+
+
+@pytest.mark.anyio
+async def test_reconcile_diarization_window_result_keeps_stable_live_speaker_without_repeated_conflicting_windows(
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.models.speaker import RecordingSpeaker
+    from backend.utils import canonical_pipeline
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "stable speaker resists flip",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        stable_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    36, :now, :now, 'window-public-36', 1,
+                    NULL, -1, 0,
+                    15000, 1, 8,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-0', 'completed',
+                    '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    46, :now, :now, 36,
+                    'SPEAKER_00', 0, 1000, 0.92,
+                    :speaker_id, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00", "speaker_id": stable_speaker_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    37, :now, :now, 'window-public-37', 1,
+                    NULL, 0, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-1', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": int(stable_speaker_id),
+                                "best_recording_speaker_score": 0.93,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    47, :now, :now, 37,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    38, :now, :now, 'window-public-38', 1,
+                    NULL, 1, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-2', 'completed',
+                    '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    48, :now, :now, 38,
+                    'SPEAKER_99', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=37,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 0
+
+    def _force_conflicting_match(*args, **kwargs):
+        session = args[0]
+        conflicting_speaker = session.get(RecordingSpeaker, 2)
+        assert conflicting_speaker is not None
+        return conflicting_speaker, 1.0, {"provisional": False, "forced": True}
+
+    monkeypatch.setattr(canonical_pipeline, "_match_window_local_speaker", _force_conflicting_match)
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=38,
+                source="test",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 0
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, last_diarization_window_result_id, confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == 38
+        assert confidence_payload["rolling_diarization"]["speaker_state"] == "stable"
+        assert confidence_payload["rolling_diarization"]["applied_recording_speaker_id"] == int(stable_speaker_id)
+        assert confidence_payload["rolling_diarization"]["candidate_recording_speaker_id"] == 2
+        assert confidence_payload["rolling_diarization"]["candidate_rejected"] is True
+        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "stable_speaker_requires_repeated_evidence"
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
+        assert transcript_segments[0]["speaker_state"] == "stable"
 
 
 @pytest.mark.anyio

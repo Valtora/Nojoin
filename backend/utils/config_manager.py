@@ -83,6 +83,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "web_app_url": "https://localhost:14443", # Default Web App URL
     "enable_canonical_transcript_writes": True,
     "enable_asr_window_result_ledger": True,
+    "enable_rolling_diarization": True,
     "recordings_directory": "recordings",  # Relative to user data directory
     "processing_device": _get_default_device(), # Default to GPU if available
     "default_input_device_index": None, # None means system default
@@ -96,6 +97,10 @@ DEFAULT_SYSTEM_CONFIG = {
     "live_forced_max_s": 8.0,
     "live_max_segment_s": 20.0,
     "live_speech_pad_ms": 300,
+    "rolling_diarization_window_ms": 20_000,
+    "rolling_diarization_hop_ms": 5_000,
+    "rolling_diarization_max_windows_per_pass": 2,
+    "rolling_diarization_max_active_runs": 1,
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,
@@ -263,10 +268,12 @@ class ConfigManager:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
-        if key in {"enable_live_transcription", "enable_meeting_edge", "enable_canonical_transcript_writes", "enable_asr_window_result_ledger"}:
+        if key in {"enable_live_transcription", "enable_meeting_edge", "enable_canonical_transcript_writes", "enable_asr_window_result_ledger", "enable_rolling_diarization"}:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:
             return isinstance(value, (int, float)) and float(value) > 0
+        if key in {"rolling_diarization_window_ms", "rolling_diarization_hop_ms", "rolling_diarization_max_windows_per_pass", "rolling_diarization_max_active_runs"}:
+            return isinstance(value, int) and value > 0
         if key == "live_speech_pad_ms":
             return isinstance(value, int) and value >= 0
         if key == "theme" and value not in APP_THEMES:

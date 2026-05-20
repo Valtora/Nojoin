@@ -82,10 +82,18 @@ from backend.utils.asr_window_results import (
     start_recording_asr_window_result,
 )
 from backend.utils.canonical_pipeline import (
+    ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
+    ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL,
     build_transcript_segments_for_read,
     build_reusable_live_segments,
     ensure_processing_run,
     finalize_utterances_from_segments,
+)
+from backend.utils.rolling_diarization import (
+    build_diarization_window_payload,
+    build_rolling_diarization_config_hash,
+    get_rolling_diarization_model_name,
+    persist_diarization_window_result,
 )
 from backend.processing.text_embedding import get_text_embedding_service
 
@@ -97,6 +105,9 @@ if TYPE_CHECKING:
     import torch
 
 logger = logging.getLogger(__name__)
+
+FINAL_DIARIZATION_SPAN_PADDING_MS = 1000
+FINAL_DIARIZATION_BRIDGE_GAP_MS = 1500
 
 # Suppress specific warnings in the worker process
 warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
@@ -351,6 +362,102 @@ def _load_recording_audio_window_manifests(
         .where(RecordingAudioWindowManifest.recording_id == recording_id)
         .order_by(RecordingAudioWindowManifest.window_index)
     ).all()
+
+
+def _to_optional_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _segment_requires_final_diarization_check(segment: dict) -> bool:
+    speaker_label = str(segment.get("speaker") or "").strip().upper()
+    speaker_state = str(segment.get("speaker_state") or "").strip().lower()
+    speaker_confidence = _to_optional_float(segment.get("speaker_confidence"))
+
+    if segment.get("provisional") is True:
+        return True
+    if speaker_label == "UNKNOWN":
+        return True
+    if speaker_state == ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL:
+        return True
+    if speaker_state == "" and str(segment.get("segment_source") or "") in {"live", "catch_up"}:
+        return True
+    if speaker_confidence is not None and speaker_confidence < ROLLING_DIARIZATION_CONFIDENCE_FLOOR:
+        return True
+    if list(segment.get("overlapping_speakers") or []):
+        return True
+    return False
+
+
+def _collect_low_confidence_diarization_spans(
+    live_segments_for_reuse: Sequence[dict],
+) -> list[dict[str, int]]:
+    spans: list[dict[str, int]] = []
+    for segment in live_segments_for_reuse:
+        if not _segment_requires_final_diarization_check(segment):
+            continue
+
+        start_ms = max(
+            0,
+            int(round(float(segment.get("start", 0.0)) * 1000.0)) - FINAL_DIARIZATION_SPAN_PADDING_MS,
+        )
+        end_ms = max(
+            start_ms,
+            int(round(float(segment.get("end", 0.0)) * 1000.0)) + FINAL_DIARIZATION_SPAN_PADDING_MS,
+        )
+
+        if spans and start_ms <= (int(spans[-1]["end_ms"]) + FINAL_DIARIZATION_BRIDGE_GAP_MS):
+            spans[-1]["end_ms"] = max(int(spans[-1]["end_ms"]), end_ms)
+            spans[-1]["segment_count"] = int(spans[-1].get("segment_count", 0)) + 1
+            continue
+
+        spans.append(
+            {
+                "start_ms": int(start_ms),
+                "end_ms": int(end_ms),
+                "segment_count": 1,
+            }
+        )
+    return spans
+
+
+def _build_final_diarization_plan(
+    *,
+    live_segments_for_reuse: Sequence[dict],
+    reused_live_transcript_segments: Sequence[dict],
+    engine_override: dict | None,
+) -> dict[str, object]:
+    if engine_override:
+        return {
+            "should_run": True,
+            "reason": "engine_override",
+            "low_confidence_spans": [],
+        }
+
+    if not reused_live_transcript_segments or not live_segments_for_reuse:
+        return {
+            "should_run": True,
+            "reason": "no_live_reuse",
+            "low_confidence_spans": [],
+        }
+
+    low_confidence_spans = _collect_low_confidence_diarization_spans(live_segments_for_reuse)
+    if low_confidence_spans:
+        return {
+            "should_run": True,
+            "reason": "low_confidence_spans",
+            "low_confidence_spans": low_confidence_spans,
+        }
+
+    return {
+        "should_run": False,
+        "reason": "confident_live_reuse",
+        "low_confidence_spans": [],
+    }
 
 
 def _build_catch_up_segments(
@@ -653,14 +760,11 @@ def _build_diarization_window_payload(
 
 
 def _catch_up_diarization_config_hash(merged_config: dict) -> str:
-    digest_source = "|".join(
-        [
-            str(merged_config.get("processing_device", "auto")),
-            str(bool(merged_config.get("enable_diarization", True))),
-            str(bool(merged_config.get("use_gpu", True))),
-        ]
+    return build_rolling_diarization_config_hash(
+        merged_config,
+        target_window_ms=int(merged_config.get("rolling_diarization_window_ms", 20_000)),
+        hop_ms=int(merged_config.get("rolling_diarization_hop_ms", 5_000)),
     )
-    return hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
 
 
 def _persist_catch_up_diarization_window(
@@ -674,67 +778,17 @@ def _persist_catch_up_diarization_window(
     device: str,
     error_message: str | None = None,
 ) -> DiarizationWindowResult:
-    existing_result = session.exec(
-        select(DiarizationWindowResult)
-        .where(DiarizationWindowResult.recording_id == recording_id)
-        .where(DiarizationWindowResult.window_index == manifest_row.window_index)
-        .where(DiarizationWindowResult.processing_run_id == processing_run_id)
-    ).first()
-
-    if existing_result is None:
-        existing_result = DiarizationWindowResult(
-            recording_id=recording_id,
-            processing_run_id=processing_run_id,
-            window_index=manifest_row.window_index,
-            window_start_ms=manifest_row.window_start_ms,
-            window_end_ms=manifest_row.window_end_ms,
-            chunk_start_sequence=manifest_row.chunk_start_sequence,
-            chunk_end_sequence=manifest_row.chunk_end_sequence,
-        )
-    else:
-        existing_turn_rows = session.exec(
-            select(DiarizationWindowTurn).where(
-                DiarizationWindowTurn.window_result_id == existing_result.id
-            )
-        ).all()
-        for turn_row in existing_turn_rows:
-            session.delete(turn_row)
-
-    payload, turn_payloads = _build_diarization_window_payload(
-        diarization_result,
-        window_start_ms=int(manifest_row.window_start_ms),
-        window_end_ms=int(manifest_row.window_end_ms),
+    return persist_diarization_window_result(
+        session,
+        recording_id=recording_id,
+        manifest_row=manifest_row,
+        processing_run_id=processing_run_id,
+        diarization_result=diarization_result,
+        config_hash=_catch_up_diarization_config_hash(merged_config),
+        device=device,
+        model_name=get_rolling_diarization_model_name(),
+        error_message=error_message,
     )
-    if error_message:
-        payload["error"] = error_message
-
-    existing_result.processing_run_id = processing_run_id
-    existing_result.window_start_ms = manifest_row.window_start_ms
-    existing_result.window_end_ms = manifest_row.window_end_ms
-    existing_result.chunk_start_sequence = manifest_row.chunk_start_sequence
-    existing_result.chunk_end_sequence = manifest_row.chunk_end_sequence
-    existing_result.model_name = "pyannote/speaker-diarization-community-1"
-    existing_result.device = device
-    existing_result.config_hash = _catch_up_diarization_config_hash(merged_config)
-    existing_result.status = "failed" if error_message else "completed"
-    existing_result.raw_payload = payload
-    session.add(existing_result)
-    session.flush()
-
-    for turn_payload in turn_payloads:
-        session.add(
-            DiarizationWindowTurn(
-                window_result_id=existing_result.id,
-                local_speaker_key=str(turn_payload["local_speaker_key"]),
-                start_ms=int(turn_payload["start_ms"]),
-                end_ms=int(turn_payload["end_ms"]),
-                confidence=None,
-                matched_recording_speaker_id=None,
-                metadata_payload={"track": str(turn_payload["track"])} if turn_payload.get("track") else None,
-            )
-        )
-
-    return existing_result
 
 
 def _run_catch_up_diarization_windows(
@@ -1618,8 +1672,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
         diarization_result = None
+        final_diarization_plan = _build_final_diarization_plan(
+            live_segments_for_reuse=live_segments_for_reuse,
+            reused_live_transcript_segments=reused_live_transcript_segments,
+            engine_override=engine_override,
+        )
         
-        if enable_diarization:
+        if enable_diarization and final_diarization_plan["should_run"] is True:
             self.update_state(state='PROCESSING', meta={'progress': 70, 'stage': 'Diarization'})
             recording.processing_step = f"Determining who said what...{device_suffix}"
             recording.processing_progress = 70
@@ -1633,6 +1692,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 payload={
                     "input_path": processed_audio_path,
                     "enabled": True,
+                    "reason": str(final_diarization_plan["reason"]),
+                    "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
+                    "low_confidence_spans": list(final_diarization_plan["low_confidence_spans"]),
                 },
                 log=logger,
             ) as metric:
@@ -1654,6 +1716,21 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     )
                 except Exception as e:
                     logger.warning(f"Phantom speaker filter failed, continuing with unfiltered result: {e}")
+        elif enable_diarization:
+            logger.info(
+                "Skipping final full-recording diarization for recording %s (reason=%s)",
+                recording_id,
+                final_diarization_plan["reason"],
+            )
+            record_pipeline_metric(
+                stage="final_diarization_skipped",
+                recording_id=recording_id,
+                payload={
+                    "reason": str(final_diarization_plan["reason"]),
+                    "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
+                },
+                log=logger,
+            )
         else:
             logger.info("Diarization disabled, skipping speaker separation.")
 
