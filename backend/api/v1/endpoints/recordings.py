@@ -21,10 +21,11 @@ from backend.models.recording_public import RecordingPublicRead, RecordingsCalen
 from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
 from backend.models.user import User
-from backend.models.pipeline import RecordingAudioChunk
+from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
+from backend.utils.audio_windows import apply_audio_window_specs, build_audio_window_specs
 from backend.processing.llm_services import get_llm_backend
 from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.processing.pipeline_metrics import record_pipeline_metric
@@ -211,6 +212,73 @@ async def _sync_recording_audio_chunks_from_directory(
             existing_by_idempotency[row.idempotency_key] = row
 
     return synced_rows
+
+
+async def _list_recording_audio_chunks(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    source_kind: str | None = None,
+) -> list[RecordingAudioChunk]:
+    statement = select(RecordingAudioChunk).where(
+        RecordingAudioChunk.recording_id == recording_id
+    )
+    if source_kind is not None:
+        statement = statement.where(RecordingAudioChunk.source_kind == source_kind)
+    statement = statement.order_by(RecordingAudioChunk.sequence_no)
+    return list((await db.execute(statement)).scalars().all())
+
+
+async def _sync_recording_audio_window_manifests(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    source_kind: str,
+    seal_tail: bool,
+) -> list[RecordingAudioWindowManifest]:
+    chunk_rows = await _list_recording_audio_chunks(
+        db,
+        recording_id=recording_id,
+        source_kind=source_kind,
+    )
+    if not chunk_rows:
+        return []
+
+    manifest_rows = list(
+        (
+            await db.execute(
+                select(RecordingAudioWindowManifest)
+                .where(RecordingAudioWindowManifest.recording_id == recording_id)
+                .order_by(RecordingAudioWindowManifest.window_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    window_specs = build_audio_window_specs(chunk_rows, seal_tail=seal_tail)
+    applied_rows = apply_audio_window_specs(
+        recording_id=recording_id,
+        existing_rows=manifest_rows,
+        window_specs=window_specs,
+    )
+    for row in applied_rows:
+        db.add(row)
+    return applied_rows
+
+
+def _find_missing_chunk_sequences(chunk_rows: list[RecordingAudioChunk]) -> list[int]:
+    if not chunk_rows:
+        return []
+
+    missing_sequences: list[int] = []
+    expected_sequence = int(chunk_rows[0].sequence_no)
+    for row in chunk_rows:
+        sequence_no = int(row.sequence_no)
+        while expected_sequence < sequence_no:
+            missing_sequences.append(expected_sequence)
+            expected_sequence += 1
+        expected_sequence = sequence_no + 1
+    return missing_sequences
 
 
 async def _mark_recording_audio_chunks_ready_for_cleanup(
@@ -548,6 +616,12 @@ async def upload_segment(
             source_kind="companion",
             suffix=".wav",
         )
+        await _sync_recording_audio_window_manifests(
+            db,
+            recording_id=recording.id,
+            source_kind="companion",
+            seal_tail=False,
+        )
         await db.commit()
     except Exception as e:
         try:
@@ -643,24 +717,36 @@ async def finalize_upload(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
 
-    chunk_rows = await _sync_recording_audio_chunks_from_directory(
+    await _sync_recording_audio_chunks_from_directory(
         db,
         recording_id=recording.id,
         source_kind="companion",
         suffix=".wav",
     )
+    await _sync_recording_audio_window_manifests(
+        db,
+        recording_id=recording.id,
+        source_kind="companion",
+        seal_tail=True,
+    )
+    chunk_rows = await _list_recording_audio_chunks(
+        db,
+        recording_id=recording.id,
+        source_kind="companion",
+    )
     if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
+
+    missing_sequences = _find_missing_chunk_sequences(chunk_rows)
+    if missing_sequences:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording upload is still in progress; finalize after all segment uploads complete.",
+        )
 
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_wavs(segment_paths, recording.audio_path)
-
-        await _mark_recording_audio_chunks_ready_for_cleanup(
-            db,
-            chunk_rows=chunk_rows,
-            upload_status="finalized",
-        )
 
         # Set duration
         recording.duration_seconds = get_audio_duration(recording.audio_path)
@@ -899,6 +985,12 @@ async def upload_chunked_segment(
             source_kind="import",
             suffix=".part",
         )
+        await _sync_recording_audio_window_manifests(
+            db,
+            recording_id=recording.id,
+            source_kind="import",
+            seal_tail=False,
+        )
         await db.commit()
     except Exception as e:
         try:
@@ -931,24 +1023,36 @@ async def finalize_chunked_import(
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(status_code=400, detail="Recording is not in uploading state")
 
-    chunk_rows = await _sync_recording_audio_chunks_from_directory(
+    await _sync_recording_audio_chunks_from_directory(
         db,
         recording_id=recording.id,
         source_kind="import",
         suffix=".part",
     )
+    await _sync_recording_audio_window_manifests(
+        db,
+        recording_id=recording.id,
+        source_kind="import",
+        seal_tail=True,
+    )
+    chunk_rows = await _list_recording_audio_chunks(
+        db,
+        recording_id=recording.id,
+        source_kind="import",
+    )
     if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
+
+    missing_sequences = _find_missing_chunk_sequences(chunk_rows)
+    if missing_sequences:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording upload is still in progress; finalize after all segment uploads complete.",
+        )
 
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
-
-        await _mark_recording_audio_chunks_ready_for_cleanup(
-            db,
-            chunk_rows=chunk_rows,
-            upload_status="finalized",
-        )
         
         # Get file stats
         file_stats = os.stat(recording.audio_path)

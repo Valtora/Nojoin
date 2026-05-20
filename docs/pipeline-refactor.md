@@ -165,28 +165,34 @@ Exit gate:
 
 Purpose: make uploaded audio chunks a reliable source for live catch-up, rolling diarization, and final promotion.
 
-- [ ] Update backend upload persistence.
-  - [ ] Store chunk metadata with sequence, start time, duration, sample rate, channel information, checksum, and upload status.
-  - [ ] Keep uploaded chunks available until finalization and catch-up complete.
-  - [ ] Replace temp-dir deletion assumptions with lifecycle-managed cleanup.
-  - [ ] Make chunk ingestion idempotent for retries.
-- [ ] Build a server-side rolling audio window assembler.
-  - [ ] Assemble contiguous chunks by sequence.
-  - [ ] Support overlapping analysis windows independent of Companion upload cadence.
-  - [ ] Track absolute recording time for every window.
-  - [ ] Persist window manifests so live workers can resume after failure.
-- [ ] Keep Companion upload cadence flexible.
-  - [ ] Preserve small chunk uploads for reliability and responsiveness.
-  - [ ] Add configuration for target chunk duration only if backend windowing needs it.
-  - [ ] Confirm stop/finalize waits for all successful uploads before final processing begins.
-- [ ] Add catch-up behavior.
-  - [ ] Detect uploaded chunks that were not processed live.
-  - [ ] Queue catch-up ASR and diarization before final promotion.
-  - [ ] Surface catch-up progress in processing status.
+- [x] Update backend upload persistence.
+  - [x] Store chunk metadata with sequence, start time, duration, sample rate, channel information, checksum, and upload status.
+  - [x] Keep uploaded chunks available until finalization and catch-up complete.
+  - [x] Replace temp-dir deletion assumptions with lifecycle-managed cleanup.
+  - [x] Make chunk ingestion idempotent for retries.
+- [x] Build a server-side rolling audio window assembler.
+  - [x] Assemble contiguous chunks by sequence.
+  - [x] Support overlapping analysis windows independent of Companion upload cadence.
+  - [x] Track absolute recording time for every window.
+  - [x] Persist window manifests so live workers can resume after failure.
+- [x] Keep Companion upload cadence flexible.
+  - [x] Preserve small chunk uploads for reliability and responsiveness.
+  - [x] No target chunk duration override is currently needed because backend windowing is decoupled from upload cadence.
+  - [x] Confirm stop/finalize waits for all successful uploads before final processing begins.
+- [x] Add catch-up behavior.
+  - [x] Detect uploaded chunks that were not processed live.
+  - [x] Queue catch-up ASR and diarization before final promotion.
+  - [x] Surface catch-up progress in processing status.
+
+Checkpoint update:
+
+- [x] Catch-up ASR now runs against pending durable window spans before live transcript reuse.
+- [x] Catch-up diarization now persists window results and turns for pending durable manifests before final promotion.
+- [x] Transcript reconciliation against persisted diarization windows remains a later Phase 4 concern, not a Phase 2 blocker.
 
 Exit gate:
 
-- [ ] A live recording can be stopped, catch up any missed chunks, and finalize from durable chunk metadata without relying on deleted temp state.
+- [x] A live recording can be stopped, catch up any missed chunks, and finalize from durable chunk metadata without relying on deleted temp state.
 
 ## Phase 3: Unified Live ASR Pipeline
 

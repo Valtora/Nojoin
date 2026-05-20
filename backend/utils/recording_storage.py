@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlmodel import select
@@ -14,6 +14,10 @@ from backend.utils.time import utc_now
 
 
 RECORDING_UPLOAD_RETENTION_HOURS = 24
+
+
+def chunk_cleanup_deadline() -> datetime:
+    return utc_now() + timedelta(hours=RECORDING_UPLOAD_RETENTION_HOURS)
 
 
 def recordings_root_dir(*, create: bool = True) -> Path:
@@ -188,6 +192,27 @@ def cleanup_recording_audio_chunks(
         session.commit()
 
     return cleaned_count
+
+
+def mark_recording_audio_chunks_ready_for_cleanup(
+    session,
+    *,
+    recording_id: int,
+    upload_status: str = "finalized",
+) -> int:
+    rows = session.exec(
+        select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+    ).all()
+    if not rows:
+        return 0
+
+    deadline = chunk_cleanup_deadline()
+    for row in rows:
+        row.upload_status = upload_status
+        row.cleanup_eligible_at = deadline
+        session.add(row)
+
+    return len(rows)
 
 
 def move_recording_upload_to_failed(

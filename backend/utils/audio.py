@@ -235,6 +235,41 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
             except OSError:
                 pass
         return False
+
+
+def extract_audio_clip(
+    input_path: str,
+    output_path: str,
+    *,
+    start_seconds: float,
+    end_seconds: float,
+) -> None:
+    """Extract a PCM WAV subclip from an audio file using ffmpeg."""
+    ensure_ffmpeg_in_path()
+
+    duration_seconds = max(float(end_seconds) - float(start_seconds), 0.0)
+    if duration_seconds <= 0.0:
+        raise RuntimeError("Clip duration must be positive")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{float(start_seconds):.3f}",
+        "-t",
+        f"{duration_seconds:.3f}",
+        "-i",
+        input_path,
+        "-acodec",
+        "pcm_s16le",
+        output_path,
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.decode() if e.stderr else "Unknown ffmpeg error"
+        raise RuntimeError(f"Failed to extract audio clip: {error_msg}")
     except Exception as e:
         logger.error(f"Unexpected error converting to proxy MP3: {str(e)}")
         # Cleanup temp file

@@ -14,6 +14,7 @@ from backend.utils.recording_storage import (
     cleanup_recording_audio_chunks,
     cleanup_stale_recording_artifacts,
     delete_recording_artifacts,
+    mark_recording_audio_chunks_ready_for_cleanup,
     recording_upload_temp_dir,
     recordings_failed_dir,
 )
@@ -171,3 +172,57 @@ def test_cleanup_recording_audio_chunks_deletes_eligible_files_and_marks_rows(
     assert not chunk_path.exists()
     assert cleaned_row[0] == "cleaned"
     assert cleaned_row[1] is None
+
+
+def test_mark_recording_audio_chunks_ready_for_cleanup_sets_deadline_without_deleting(
+    storage_root: Path,
+) -> None:
+    chunk_path = recording_upload_temp_dir(402, create=True) / "0.wav"
+    chunk_path.write_bytes(b"segment")
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+        connection.execute(
+            text(
+                """
+                INSERT INTO recording_audio_chunks (
+                    id, created_at, updated_at, public_id, recording_id,
+                    sequence_no, source_kind, absolute_start_ms, absolute_end_ms,
+                    duration_ms, sample_rate_hz, channel_count, byte_size,
+                    sha256, storage_path, upload_status, idempotency_key,
+                    received_at, cleanup_eligible_at
+                ) VALUES (
+                    1, :created_at, :updated_at, 'chunk-public-id', 402,
+                    0, 'companion', 0, 500,
+                    500, 16000, 1, 7,
+                    'abc', :storage_path, 'received', 'companion:0:abc',
+                    :received_at, NULL
+                )
+                """
+            ),
+            {
+                "created_at": "2026-05-19 00:00:00",
+                "updated_at": "2026-05-19 00:00:00",
+                "storage_path": str(chunk_path),
+                "received_at": "2026-05-19 00:00:00",
+            },
+        )
+
+    with Session(engine) as session:
+        updated_count = mark_recording_audio_chunks_ready_for_cleanup(
+            session,
+            recording_id=402,
+            upload_status="finalized",
+        )
+        session.commit()
+        row = session.execute(
+            text(
+                "SELECT upload_status, cleanup_eligible_at FROM recording_audio_chunks WHERE id = 1"
+            )
+        ).one()
+
+    assert updated_count == 1
+    assert chunk_path.exists()
+    assert row[0] == "finalized"
+    assert row[1] is not None

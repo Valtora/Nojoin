@@ -9,8 +9,8 @@ leak between tests can never silently pass.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -28,7 +28,7 @@ from backend.services.companion_pairing_service import (
     ActiveCompanionPairingAuth,
     CompanionCredentialExchangeResult,
     CompanionExchangeUser,
-    PreparedCompanionPairingPayload,
+    CreatedCompanionPairingRequest,
 )
 from backend.utils import rate_limit
 
@@ -85,17 +85,14 @@ def app(monkeypatch, fake_user):
 
     # Stub out the pairing service so endpoints exercise the full request path
     # but never touch the database or remote services.
-    async def fake_prepare_companion_pairing(db, *, current_user, pairing_code, paired_web_origin, tls_fingerprint):
-        return PreparedCompanionPairingPayload(
-            pairing_code=pairing_code,
-            companion_credential_secret="secret",
-            api_protocol="https",
-            api_host="localhost",
-            api_port=8443,
-            tls_fingerprint=None,
-            local_control_secret="local-secret",
-            local_control_secret_version=1,
-            backend_pairing_id="pair-1",
+    async def fake_create_companion_pairing_request(db, *, current_user, paired_web_origin):
+        return CreatedCompanionPairingRequest(
+            request_id="request-1",
+            launch_url="nojoin://pair?request_id=request-1&request_secret=secret",
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            backend_origin="https://localhost:8443",
+            replacement=False,
         )
 
     async def fake_exchange_companion_credential(db, *, pairing_session_id, companion_credential_secret):
@@ -119,10 +116,10 @@ def app(monkeypatch, fake_user):
     async def fake_cancel_pending_companion_pairings(db, *, current_user):
         return 1
 
-    async def fake_publish_explicit_disconnect(user_id):
-        return None
+    async def fake_cancel_companion_pairing_request(db, *, current_user, request_id):
+        return 1
 
-    def fake_resolve_tls_fingerprint():
+    async def fake_publish_explicit_disconnect(user_id):
         return None
 
     def fake_create_local_control_token(**kwargs):
@@ -131,17 +128,17 @@ def app(monkeypatch, fake_user):
     def fake_create_access_token(*args, **kwargs):
         return "fake-access-token"
 
-    monkeypatch.setattr(login, "prepare_companion_pairing", fake_prepare_companion_pairing)
+    monkeypatch.setattr(login, "create_companion_pairing_request", fake_create_companion_pairing_request)
     monkeypatch.setattr(login, "exchange_companion_credential", fake_exchange_companion_credential)
     monkeypatch.setattr(login, "get_active_companion_pairing_auth", fake_get_active_companion_pairing_auth)
     monkeypatch.setattr(login, "revoke_companion_pairings", fake_revoke_companion_pairings)
+    monkeypatch.setattr(login, "cancel_companion_pairing_request", fake_cancel_companion_pairing_request)
     monkeypatch.setattr(login, "cancel_pending_companion_pairings", fake_cancel_pending_companion_pairings)
     monkeypatch.setattr(
         login.companion_frontend_events,
         "publish_explicit_disconnect",
         fake_publish_explicit_disconnect,
     )
-    monkeypatch.setattr(login, "resolve_tls_fingerprint", fake_resolve_tls_fingerprint)
     monkeypatch.setattr(login.security, "create_local_control_token", fake_create_local_control_token)
     monkeypatch.setattr(login.security, "create_access_token", fake_create_access_token)
 
@@ -193,20 +190,17 @@ def _headers(ip: str, **extra: str) -> dict[str, str]:
 @pytest.mark.anyio
 async def test_companion_pairing_prepare_is_rate_limited(client: AsyncClient) -> None:
     ip = _ip()
-    body: dict[str, Any] = {"pairing_code": "ABC123"}
     limit = login.COMPANION_PAIRING_PREPARE_RATE_LIMIT
 
     for _ in range(limit):
         response = await client.post(
             "/api/v1/login/companion-pairing",
-            json=body,
             headers=_headers(ip),
         )
         assert response.status_code == 200, response.text
 
     blocked = await client.post(
         "/api/v1/login/companion-pairing",
-        json=body,
         headers=_headers(ip),
     )
     assert blocked.status_code == 429
@@ -214,7 +208,7 @@ async def test_companion_pairing_prepare_is_rate_limited(client: AsyncClient) ->
 
 
 # ---------------------------------------------------------------------------
-# /login/companion-pairing  (revoke / disconnect / cancel-pending share a bucket)
+# /login/companion-pairing  (revoke / disconnect / cancel-request share a bucket)
 # ---------------------------------------------------------------------------
 
 
@@ -223,7 +217,7 @@ async def test_companion_pairing_mutation_endpoints_share_a_bucket(client: Async
     ip = _ip()
     limit = login.COMPANION_PAIRING_MUTATION_RATE_LIMIT
 
-    # Spend the budget across all three mutation endpoints.
+    # Spend the budget across the current pairing management endpoints.
     spent = 0
     while spent < limit:
         if spent % 3 == 0:
@@ -238,13 +232,13 @@ async def test_companion_pairing_mutation_endpoints_share_a_bucket(client: Async
             )
         else:
             response = await client.delete(
-                "/api/v1/login/companion-pairing/pending",
+                "/api/v1/login/companion-pairing/requests/request-1",
                 headers=_headers(ip),
             )
         assert response.status_code == 200, response.text
         spent += 1
 
-    # Hitting any of the three after exhaustion must 429.
+    # Hitting any of the shared-bucket endpoints after exhaustion must 429.
     blocked = await client.post(
         "/api/v1/login/companion-pairing/disconnect",
         headers=_headers(ip),

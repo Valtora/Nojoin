@@ -2,6 +2,7 @@ from backend.utils.live_transcript import (
     apply_live_authority_to_segments,
     build_transcription_result_from_segments,
     map_final_speakers_to_live_labels,
+    merge_reusable_segments,
 )
 
 
@@ -90,3 +91,22 @@ def test_map_final_speakers_to_live_labels_uses_duration_majority():
     )
 
     assert mapping == {"SPEAKER_00": "LIVE_02"}
+
+
+def test_merge_reusable_segments_deduplicates_overlapping_rows():
+    merged = merge_reusable_segments(
+        [
+            {"start": 0, "end": 1, "speaker": "LIVE_01", "text": "hello"},
+            {"start": 2, "end": 3, "speaker": "LIVE_02", "text": "world"},
+        ],
+        [
+            {"start": 2, "end": 3, "speaker": "UNKNOWN", "text": "world"},
+            {"start": 3, "end": 4, "speaker": "UNKNOWN", "text": "again"},
+        ],
+    )
+
+    assert merged == [
+        {"start": 0, "end": 1, "speaker": "LIVE_01", "text": "hello"},
+        {"start": 2, "end": 3, "speaker": "LIVE_02", "text": "world"},
+        {"start": 3, "end": 4, "speaker": "UNKNOWN", "text": "again"},
+    ]

@@ -43,6 +43,30 @@ def build_transcription_result_from_segments(
     )
 
 
+def merge_reusable_segments(
+    primary_segments: list[dict[str, Any]],
+    additional_segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged_segments: list[dict[str, Any]] = [dict(segment) for segment in primary_segments]
+    seen_keys = {_segment_merge_key(segment) for segment in merged_segments}
+
+    for segment in additional_segments:
+        segment_key = _segment_merge_key(segment)
+        if segment_key in seen_keys:
+            continue
+        merged_segments.append(dict(segment))
+        seen_keys.add(segment_key)
+
+    merged_segments.sort(
+        key=lambda segment: (
+            float(segment.get("start", 0.0)),
+            float(segment.get("end", 0.0)),
+            str(segment.get("text", "")),
+        )
+    )
+    return merged_segments
+
+
 def apply_live_authority_to_segments(
     live_segments: list[dict[str, Any]],
     combined_segments: list[dict[str, Any]],
@@ -117,3 +141,11 @@ def map_final_speakers_to_live_labels(
         mapping[final_label] = best_live_label
 
     return mapping
+
+
+def _segment_merge_key(segment: dict[str, Any]) -> tuple[float, float, str]:
+    return (
+        round(float(segment.get("start", 0.0)), 3),
+        round(float(segment.get("end", 0.0)), 3),
+        str(segment.get("text", "")).strip(),
+    )

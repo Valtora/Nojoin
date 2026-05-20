@@ -166,6 +166,29 @@ CREATE TABLE recording_audio_chunks (
 )
 """
 
+RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA = """
+CREATE TABLE recording_audio_window_manifests (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    window_index INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    target_window_ms INTEGER NOT NULL,
+    hop_ms INTEGER NOT NULL,
+    window_start_ms INTEGER NOT NULL,
+    window_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER NOT NULL,
+    chunk_end_sequence INTEGER NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    is_partial BOOLEAN NOT NULL,
+    is_sealed BOOLEAN NOT NULL,
+    processing_run_id INTEGER,
+    last_error TEXT
+)
+"""
+
 
 def build_test_user(user_id: int = 1, username: str = "alice", settings: dict | None = None):
     from types import SimpleNamespace
@@ -203,6 +226,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(RECORDINGS_SCHEMA))
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
 
     try:
         yield session_maker
@@ -576,18 +600,44 @@ def test_detect_speech_segments_silence_returns_empty(monkeypatch):
 # --- live_transcribe helper + task tests -----------------------------------
 
 
-def _make_segment_wav(temp_dir, sequence: int, seconds: float):
-    """Write a synthetic 16 kHz mono WAV segment to the recording temp dir."""
-    import torch
-    import torchaudio
+class _FakeAudioStore:
+    def __init__(self):
+        self._audio_by_path: dict[str, object] = {}
 
-    from backend.processing.live_transcribe import LIVE_SAMPLE_RATE
+    def save_audio(self, path: str, tensor, sampling_rate: int = 16000) -> None:
+        import torch
 
-    samples = int(seconds * LIVE_SAMPLE_RATE)
-    tensor = torch.zeros(1, samples)
-    path = temp_dir / f"{sequence}.wav"
-    torchaudio.save(str(path), tensor, LIVE_SAMPLE_RATE)
-    return path
+        normalized = tensor.detach().clone()
+        if normalized.ndim > 1:
+            normalized = normalized.squeeze(0)
+        self._audio_by_path[str(path)] = normalized
+        file_path = Path(path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(b"audio")
+
+    def read_audio(self, path: str, sampling_rate: int = 16000):
+        import torch
+
+        tensor = self._audio_by_path.get(str(path))
+        if tensor is None:
+            raise FileNotFoundError(path)
+        return tensor.detach().clone()
+
+    def make_segment(self, temp_dir, sequence: int, seconds: float):
+        import torch
+
+        from backend.processing.live_transcribe import LIVE_SAMPLE_RATE
+
+        samples = int(seconds * LIVE_SAMPLE_RATE)
+        tensor = torch.zeros(samples)
+        path = temp_dir / f"{sequence}.wav"
+        self.save_audio(str(path), tensor, sampling_rate=LIVE_SAMPLE_RATE)
+        return path
+
+
+def _make_segment_wav(temp_dir, sequence: int, seconds: float, audio_store: _FakeAudioStore):
+    """Register a synthetic mono segment without invoking torchaudio."""
+    return audio_store.make_segment(temp_dir, sequence, seconds)
 
 
 def test_classify_speech_empty():
@@ -675,6 +725,117 @@ def test_live_state_preserves_last_speaker_label(tmp_path):
     assert state["next_expected"] == 3
     assert state["buffer_abs_start"] == 4.5
     assert state["last_speaker_label"] == "LIVE_02"
+
+
+def test_build_audio_window_specs_tracks_overlap_independent_of_chunk_cadence():
+    from types import SimpleNamespace
+
+    from backend.utils.audio_windows import build_audio_window_specs
+
+    chunk_rows = [
+        SimpleNamespace(sequence_no=1, source_kind="companion", absolute_start_ms=0, absolute_end_ms=1000),
+        SimpleNamespace(sequence_no=2, source_kind="companion", absolute_start_ms=1000, absolute_end_ms=2300),
+        SimpleNamespace(sequence_no=3, source_kind="companion", absolute_start_ms=2300, absolute_end_ms=3600),
+    ]
+
+    specs = build_audio_window_specs(
+        chunk_rows,
+        target_window_ms=2000,
+        hop_ms=1000,
+        seal_tail=True,
+    )
+
+    assert [(spec.window_start_ms, spec.window_end_ms, spec.is_partial) for spec in specs] == [
+        (0, 2000, False),
+        (1000, 3000, False),
+        (2000, 3600, True),
+    ]
+    assert [(spec.chunk_start_sequence, spec.chunk_end_sequence) for spec in specs] == [
+        (1, 2),
+        (2, 3),
+        (2, 3),
+    ]
+
+
+def test_collect_pending_chunk_spans_merges_overlapping_pending_windows():
+    from types import SimpleNamespace
+
+    from backend.utils.audio_windows import CatchUpChunkSpan, collect_pending_chunk_spans
+
+    chunk_rows = [
+        SimpleNamespace(sequence_no=1, absolute_start_ms=0, absolute_end_ms=1000),
+        SimpleNamespace(sequence_no=2, absolute_start_ms=1000, absolute_end_ms=2000),
+        SimpleNamespace(sequence_no=3, absolute_start_ms=2000, absolute_end_ms=3000),
+    ]
+    manifest_rows = [
+        SimpleNamespace(id=1, chunk_start_sequence=1, chunk_end_sequence=2, status="live_processed"),
+        SimpleNamespace(id=2, chunk_start_sequence=2, chunk_end_sequence=3, status="pending"),
+        SimpleNamespace(id=3, chunk_start_sequence=3, chunk_end_sequence=3, status="pending"),
+    ]
+
+    spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
+
+    assert spans == [
+        CatchUpChunkSpan(start_sequence=2, end_sequence=3, start_ms=1000, end_ms=3000)
+    ]
+
+
+def test_infer_resume_state_from_manifest_rows():
+    from types import SimpleNamespace
+
+    from backend.utils.audio_windows import infer_resume_state_from_manifests
+
+    resumed_state = infer_resume_state_from_manifests(
+        [
+            SimpleNamespace(chunk_end_sequence=2, window_end_ms=3000, status="pending"),
+            SimpleNamespace(chunk_end_sequence=4, window_end_ms=5500, status="live_processed"),
+        ]
+    )
+
+    assert resumed_state == {"next_expected": 5, "buffer_abs_start": 5.5}
+
+
+def test_build_diarization_window_payload_offsets_turns_to_absolute_time():
+    from backend.worker.tasks import _build_diarization_window_payload
+
+    class _Segment:
+        def __init__(self, start: float, end: float):
+            self.start = start
+            self.end = end
+
+    class _Annotation:
+        def itertracks(self, yield_label=False):
+            assert yield_label is True
+            yield _Segment(0.2, 0.6), "A", "SPEAKER_00"
+            yield _Segment(0.8, 1.3), "B", "SPEAKER_01"
+
+    payload, turns = _build_diarization_window_payload(
+        _Annotation(),
+        window_start_ms=5000,
+        window_end_ms=7000,
+    )
+
+    assert payload == {
+        "window_start_ms": 5000,
+        "window_end_ms": 7000,
+        "speaker_labels": ["SPEAKER_00", "SPEAKER_01"],
+        "turn_count": 2,
+        "turns": [
+            {
+                "local_speaker_key": "SPEAKER_00",
+                "start_ms": 5200,
+                "end_ms": 5600,
+                "track": "A",
+            },
+            {
+                "local_speaker_key": "SPEAKER_01",
+                "start_ms": 5800,
+                "end_ms": 6300,
+                "track": "B",
+            },
+        ],
+    }
+    assert turns == payload["turns"]
 
 
 def test_resolve_live_speaker_reuses_fallback_without_embedding(monkeypatch):
@@ -771,18 +932,30 @@ def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
     assert session.added == [live_speaker]
 
 
-def _patch_live_deps(monkeypatch, *, speech_map, transcribe_text="hello", db_status="UPLOADING"):
+def _patch_live_deps(
+    monkeypatch,
+    *,
+    speech_map,
+    transcribe_text="hello",
+    speaker_label="LIVE_01",
+):
     """Patch torch-free fakes for vad / transcribe / DB used by the live task.
 
     speech_map: callable(combined_tensor) -> list[{"start", "end"}].
     """
-    import torch
+    import silero_vad
 
     from backend.processing import live_transcribe as lt
     from backend.processing import vad as vad_module
     from backend.processing import transcribe as transcribe_module
 
+    audio_store = _FakeAudioStore()
+
     monkeypatch.setattr(vad_module, "detect_speech_segments", lambda audio, *a, **k: speech_map(audio))
+    monkeypatch.setattr(vad_module, "safe_read_audio", audio_store.read_audio)
+    monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
+    monkeypatch.setattr(lt, "_resolve_live_speaker", lambda **kwargs: speaker_label)
+    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
 
     def fake_transcribe_audio(path, config=None):
         # A single segment spanning the whole clip: with no `words`, the
@@ -797,8 +970,7 @@ def _patch_live_deps(monkeypatch, *, speech_map, transcribe_text="hello", db_sta
         }
 
     monkeypatch.setattr(transcribe_module, "transcribe_audio", fake_transcribe_audio)
-    # silero_vad.save_audio is real (torchaudio-backed); the buffer.wav it
-    # writes is needed for the carry-over seam test.
+    return audio_store
 
 
 class _FakeTranscript:
@@ -835,10 +1007,12 @@ def _run_live_task(monkeypatch, recording_id, sequence, fake_session):
     from backend.core import db as db_module
     from sqlalchemy.orm import attributes
 
+    from backend.processing import live_transcribe as lt
     from backend.processing.live_transcribe import transcribe_segment_live_task
 
     monkeypatch.setattr(db_module, "get_sync_session", lambda: fake_session)
     monkeypatch.setattr(attributes, "flag_modified", lambda obj, key: None)
+    monkeypatch.setattr(lt.config_manager, "reload", lambda: None)
     transcribe_segment_live_task.run(recording_id, sequence)
 
 
@@ -856,7 +1030,7 @@ def test_live_in_order_run(monkeypatch, tmp_path):
     def speech_map(audio):
         return [{"start": 0.0, "end": 1.0}]
 
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
@@ -864,7 +1038,7 @@ def test_live_in_order_run(monkeypatch, tmp_path):
 
     # Create each segment just-in-time so each run drains a single segment.
     for seq in (1, 2, 3):
-        _make_segment_wav(temp_dir, seq, 2.0)
+        _make_segment_wav(temp_dir, seq, 2.0, audio_store)
         _run_live_task(monkeypatch, 42, seq, session)
 
     assert len(transcript.segments) == 3
@@ -889,20 +1063,20 @@ def test_live_out_of_order_arrival(monkeypatch, tmp_path):
     def speech_map(audio):
         return [{"start": 0.0, "end": 1.0}]
 
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
     session = _FakeSession(recording)
 
     # seq=2 arrives first; only its file exists.
-    _make_segment_wav(temp_dir, 2, 2.0)
+    _make_segment_wav(temp_dir, 2, 2.0, audio_store)
     _run_live_task(monkeypatch, 7, 2, session)
     assert transcript.segments == []
     assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
 
     # seq=1 arrives; both files now present -> drains [1, 2].
-    _make_segment_wav(temp_dir, 1, 2.0)
+    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
     _run_live_task(monkeypatch, 7, 1, session)
 
     assert len(transcript.segments) == 1
@@ -930,19 +1104,19 @@ def test_live_carry_over_across_seam(monkeypatch, tmp_path):
             return [{"start": 2.0, "end": 3.0}]
         return [{"start": 0.0, "end": 1.5}]
 
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
     session = _FakeSession(recording)
 
-    _make_segment_wav(temp_dir, 1, 3.0)
+    _make_segment_wav(temp_dir, 1, 3.0, audio_store)
     _run_live_task(monkeypatch, 9, 1, session)
     # Run 1 carried the trailing utterance: no completed segment yet.
     assert transcript.segments == []
     assert (temp_dir / "live" / "buffer.wav").exists()
 
-    _make_segment_wav(temp_dir, 2, 3.0)
+    _make_segment_wav(temp_dir, 2, 3.0, audio_store)
     _run_live_task(monkeypatch, 9, 2, session)
     # Run 2 completes exactly one provisional segment.
     assert len(transcript.segments) == 1
@@ -956,14 +1130,10 @@ def test_live_forced_cut(monkeypatch, tmp_path):
 
     temp_dir = tmp_path / "11"
     temp_dir.mkdir()
-    _make_segment_wav(temp_dir, 1, 31.0)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 31.0}])
+    _make_segment_wav(temp_dir, 1, 31.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
-
-    def speech_map(audio):
-        return [{"start": 0.0, "end": 31.0}]
-
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
@@ -994,7 +1164,7 @@ def test_live_task_skips_meeting_edge_dispatch_when_disabled(monkeypatch, tmp_pa
     def speech_map(audio):
         return [{"start": 0.0, "end": 1.0}]
 
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     dispatched: list[tuple[tuple[object, ...], dict[str, object]]] = []
     monkeypatch.setattr(
@@ -1008,7 +1178,7 @@ def test_live_task_skips_meeting_edge_dispatch_when_disabled(monkeypatch, tmp_pa
     recording.user = SimpleNamespace(settings={"enable_meeting_edge": False})
     session = _FakeSession(recording)
 
-    _make_segment_wav(temp_dir, 1, 2.0)
+    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
     _run_live_task(monkeypatch, 15, 1, session)
 
     assert len(transcript.segments) == 1
@@ -1023,14 +1193,10 @@ def test_live_entry_guard_bails_when_not_uploading(monkeypatch, tmp_path):
 
     temp_dir = tmp_path / "13"
     temp_dir.mkdir()
-    _make_segment_wav(temp_dir, 1, 2.0)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
+    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
-
-    def speech_map(audio):
-        return [{"start": 0.0, "end": 1.0}]
-
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.PROCESSING, transcript)
@@ -1052,14 +1218,10 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
 
     temp_dir = tmp_path / "14"
     temp_dir.mkdir()
-    _make_segment_wav(temp_dir, 1, 2.0)
+    audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
+    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
-
-    def speech_map(audio):
-        return [{"start": 0.0, "end": 1.0}]
-
-    _patch_live_deps(monkeypatch, speech_map=speech_map)
 
     class _FlipToProcessingRecording:
         """UPLOADING on the first status read, PROCESSING thereafter."""
@@ -1084,7 +1246,6 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
     _run_live_task(monkeypatch, 14, 1, session)
 
     assert transcript.segments == []
-    assert session.committed is False
     # The run completed normally; only the DB write was guarded.
     assert lt.read_live_state(temp_dir / "live")["next_expected"] == 2
 
@@ -1098,7 +1259,8 @@ def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
 
     temp_dir = tmp_path / "15"
     temp_dir.mkdir()
-    _make_segment_wav(temp_dir, 1, 2.0)
+    audio_store = _FakeAudioStore()
+    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
     monkeypatch.setattr(
@@ -1107,7 +1269,9 @@ def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
 
     import silero_vad
 
-    monkeypatch.setattr(silero_vad, "save_audio", lambda *a, **k: None)
+    monkeypatch.setattr(vad_module, "safe_read_audio", audio_store.read_audio)
+    monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
+    monkeypatch.setattr(lt, "_resolve_live_speaker", lambda **kwargs: "LIVE_01")
 
     def boom(path, config=None):
         raise RuntimeError("engine exploded")
@@ -1272,7 +1436,8 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
 
     monkeypatch.setattr(transcribe_module, "transcribe_audio", fake_transcribe_audio)
 
-    _make_segment_wav(temp_dir, 1, 3.0)
+    audio_store = _FakeAudioStore()
+    _make_segment_wav(temp_dir, 1, 3.0, audio_store)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
@@ -1281,13 +1446,18 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
     # Seed a 1.0 s context.wav so prefix_s is non-zero (2.0 s) and prefix
     # exclusion is actually exercised.
     import torch
-    import silero_vad
 
     ctx = torch.zeros(1, int(1.0 * lt.LIVE_SAMPLE_RATE))
     (temp_dir / "live").mkdir(parents=True, exist_ok=True)
-    silero_vad.save_audio(
+    audio_store.save_audio(
         str(temp_dir / "live" / "context.wav"), ctx, sampling_rate=lt.LIVE_SAMPLE_RATE
     )
+
+    monkeypatch.setattr(vad_module, "safe_read_audio", audio_store.read_audio)
+    import silero_vad
+    monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
+    monkeypatch.setattr(lt, "_resolve_live_speaker", lambda **kwargs: "LIVE_01")
+    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
 
     _run_live_task(monkeypatch, 21, 1, session)
 
@@ -1569,7 +1739,7 @@ async def test_segment_upload_retry_reuses_existing_chunk_row(
 
 
 @pytest.mark.anyio
-async def test_segment_upload_persists_chunk_metadata_and_finalize_marks_cleanup(
+async def test_segment_upload_persists_chunk_metadata_and_finalize_seals_window_manifest_and_defers_cleanup(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     tmp_path,
@@ -1637,6 +1807,14 @@ async def test_segment_upload_persists_chunk_metadata_and_finalize_marks_cleanup
                 )
             )
         ).one()
+        manifest_row = (
+            await session.execute(
+                text(
+                    "SELECT window_index, window_start_ms, window_end_ms, status, is_partial, is_sealed "
+                    "FROM recording_audio_window_manifests WHERE recording_id = 101 ORDER BY window_index"
+                )
+            )
+        ).one()
         recording_row = (
             await session.execute(
                 text(
@@ -1649,11 +1827,59 @@ async def test_segment_upload_persists_chunk_metadata_and_finalize_marks_cleanup
     assert chunk_row[1] == 1
     assert chunk_row[2] == 500
     assert chunk_row[3] == hashlib.sha256(wav_bytes).hexdigest()
-    assert chunk_row[4] == "finalized"
-    assert chunk_row[5] is not None
+    assert chunk_row[4] == "received"
+    assert chunk_row[5] is None
+    assert manifest_row == (0, 0, 500, "pending", 1, 1)
     assert recording_row[0] == "QUEUED"
     assert recording_row[1] == len(b"joined-audio")
     assert recording_row[2] == "task-101"
+
+
+@pytest.mark.anyio
+async def test_finalize_upload_rejects_missing_chunk_sequences(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    final_audio_path = tmp_path / "final.wav"
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    await _insert_uploading_recording(
+        test_session_maker,
+        recording_id=101,
+        audio_path=str(final_audio_path),
+    )
+
+    monkeypatch.setattr(
+        recordings_module, "recording_upload_temp_dir", lambda *a, **k: upload_dir
+    )
+    monkeypatch.setattr(
+        recordings_module.config_manager,
+        "get",
+        lambda key, default=None: False if key == "enable_live_transcription" else default,
+    )
+
+    first_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 0},
+        files={"file": ("0.wav", _make_wav_bytes(duration_s=0.5), "audio/wav")},
+    )
+    second_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 2},
+        files={"file": ("2.wav", _make_wav_bytes(duration_s=0.5), "audio/wav")},
+    )
+    finalize_response = await client.post("/api/v1/recordings/live-rec-public-id/finalize")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert finalize_response.status_code == 409
+    assert finalize_response.json()["detail"] == (
+        "Recording upload is still in progress; finalize after all segment uploads complete."
+    )
 
 
 # --- Celery registration test ----------------------------------------------

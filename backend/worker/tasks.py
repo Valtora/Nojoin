@@ -18,7 +18,16 @@ from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
-from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
+from backend.models.pipeline import (
+    DiarizationWindowResult,
+    DiarizationWindowTurn,
+    ProcessingRun,
+    ProcessingRunKind,
+    ProcessingRunStatus,
+    RecordingAudioChunk,
+    RecordingAudioWindowManifest,
+    TranscriptUtteranceState,
+)
 from backend.models.speaker import RecordingSpeaker, GlobalSpeaker
 from backend.models.tag import RecordingTag
 from backend.models.user import User
@@ -50,10 +59,22 @@ from backend.utils.meeting_notes import (
     meeting_event_context_from_calendar_event,
 )
 from backend.models.calendar import CalendarEvent
-from backend.utils.recording_storage import cleanup_recording_audio_chunks, cleanup_stale_recording_artifacts
+from backend.utils.audio_windows import (
+    WINDOW_STATUS_FAILED,
+    WINDOW_STATUS_LIVE_PROCESSED,
+    WINDOW_STATUS_CATCH_UP_PROCESSED,
+    collect_pending_chunk_spans,
+    count_manifest_statuses,
+    mark_audio_windows_processed,
+)
+from backend.utils.recording_storage import (
+    cleanup_recording_audio_chunks,
+    cleanup_stale_recording_artifacts,
+    mark_recording_audio_chunks_ready_for_cleanup,
+)
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
-from backend.utils.canonical_pipeline import replace_utterances_from_segments
+from backend.utils.canonical_pipeline import ensure_processing_run, replace_utterances_from_segments
 from backend.processing.text_embedding import get_text_embedding_service
 
 if TYPE_CHECKING:
@@ -284,6 +305,344 @@ def _should_refresh_meeting_edge(
 
 def _format_recording_timestamp(seconds: float) -> str:
     return time.strftime("%H:%M:%S", time.gmtime(max(float(seconds), 0.0)))
+
+
+def _load_recording_audio_chunks(session, recording_id: int) -> list[RecordingAudioChunk]:
+    return session.exec(
+        select(RecordingAudioChunk)
+        .where(RecordingAudioChunk.recording_id == recording_id)
+        .order_by(RecordingAudioChunk.sequence_no)
+    ).all()
+
+
+def _load_recording_audio_window_manifests(
+    session,
+    recording_id: int,
+) -> list[RecordingAudioWindowManifest]:
+    return session.exec(
+        select(RecordingAudioWindowManifest)
+        .where(RecordingAudioWindowManifest.recording_id == recording_id)
+        .order_by(RecordingAudioWindowManifest.window_index)
+    ).all()
+
+
+def _build_catch_up_segments(
+    *,
+    session,
+    recording: Recording,
+    processed_audio_path: str,
+    merged_config: dict,
+    transcribe_audio,
+    extract_audio_clip,
+    temp_files: list[str],
+    log: logging.Logger,
+) -> tuple[list[dict], set[int], ProcessingRun | None]:
+    manifest_rows = _load_recording_audio_window_manifests(session, recording.id)
+    chunk_rows = _load_recording_audio_chunks(session, recording.id)
+    pending_spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
+    if not pending_spans:
+        return [], set(), None
+
+    pending_window_ids = {
+        int(row.id)
+        for row in manifest_rows
+        if row.id is not None
+        and str(row.status or "") not in {
+            WINDOW_STATUS_LIVE_PROCESSED,
+            WINDOW_STATUS_CATCH_UP_PROCESSED,
+        }
+    }
+    catch_up_run = ensure_processing_run(
+        session,
+        recording_id=recording.id,
+        run_kind=ProcessingRunKind.CATCH_UP,
+        status=ProcessingRunStatus.RUNNING,
+        trigger_source="worker",
+        transcription_backend=merged_config.get("transcription_backend"),
+        span_start_ms=min(span.start_ms for span in pending_spans),
+        span_end_ms=max(span.end_ms for span in pending_spans),
+        idempotency_key=(
+            "catch_up:"
+            f"{recording.id}:"
+            f"{','.join(f'{span.start_sequence}-{span.end_sequence}' for span in pending_spans)}"
+        ),
+    )
+    catch_up_run.status = ProcessingRunStatus.RUNNING
+    catch_up_run.completed_at = None
+    catch_up_run.error_summary = None
+    session.add(catch_up_run)
+
+    catch_up_segments: list[dict] = []
+    status_counts = count_manifest_statuses(manifest_rows)
+    record_pipeline_metric(
+        stage="catch_up_detected",
+        recording_id=recording.id,
+        payload={
+            "pending_window_count": len(pending_window_ids),
+            "pending_span_count": len(pending_spans),
+            "window_status_counts": status_counts,
+        },
+        log=log,
+    )
+
+    for span in pending_spans:
+        clip_path = os.path.join(
+            os.path.dirname(processed_audio_path),
+            f"catch_up_{recording.id}_{span.start_sequence}_{span.end_sequence}.wav",
+        )
+        extract_audio_clip(
+            processed_audio_path,
+            clip_path,
+            start_seconds=span.start_ms / 1000.0,
+            end_seconds=span.end_ms / 1000.0,
+        )
+        temp_files.append(clip_path)
+
+        with pipeline_metric_timer(
+            stage="catch_up_asr_span",
+            recording_id=recording.id,
+            payload={
+                "start_sequence": span.start_sequence,
+                "end_sequence": span.end_sequence,
+                "span_start_ms": span.start_ms,
+                "span_end_ms": span.end_ms,
+                "engine": merged_config.get("transcription_backend"),
+            },
+            log=log,
+        ) as metric:
+            result = transcribe_audio(clip_path, config=merged_config)
+            metric["payload"]["segment_count"] = len((result or {}).get("segments", []))
+
+        for segment in (result or {}).get("segments", []):
+            text = str(segment.get("text", "")).strip()
+            if not text:
+                continue
+            catch_up_segments.append(
+                {
+                    "start": span.start_ms / 1000.0 + float(segment.get("start", 0.0)),
+                    "end": span.start_ms / 1000.0 + float(segment.get("end", 0.0)),
+                    "speaker": str(segment.get("speaker") or "UNKNOWN"),
+                    "text": text,
+                    "segment_source": "catch_up",
+                }
+            )
+
+    return catch_up_segments, pending_window_ids, catch_up_run
+
+
+def _build_diarization_window_payload(
+    diarization_result,
+    *,
+    window_start_ms: int,
+    window_end_ms: int,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    turn_payloads: list[dict[str, object]] = []
+    speaker_labels: set[str] = set()
+
+    if diarization_result is not None and hasattr(diarization_result, "itertracks"):
+        for segment, track, label in diarization_result.itertracks(yield_label=True):
+            start_ms = window_start_ms + int(round(float(segment.start) * 1000.0))
+            end_ms = window_start_ms + int(round(float(segment.end) * 1000.0))
+            if end_ms <= start_ms:
+                continue
+            label_value = str(label)
+            speaker_labels.add(label_value)
+            turn_payloads.append(
+                {
+                    "local_speaker_key": label_value,
+                    "start_ms": start_ms,
+                    "end_ms": end_ms,
+                    "track": str(track),
+                }
+            )
+
+    turn_payloads.sort(
+        key=lambda payload: (
+            int(payload["start_ms"]),
+            int(payload["end_ms"]),
+            str(payload["local_speaker_key"]),
+        )
+    )
+    return (
+        {
+            "window_start_ms": int(window_start_ms),
+            "window_end_ms": int(window_end_ms),
+            "speaker_labels": sorted(speaker_labels),
+            "turn_count": len(turn_payloads),
+            "turns": turn_payloads,
+        },
+        turn_payloads,
+    )
+
+
+def _catch_up_diarization_config_hash(merged_config: dict) -> str:
+    digest_source = "|".join(
+        [
+            str(merged_config.get("processing_device", "auto")),
+            str(bool(merged_config.get("enable_diarization", True))),
+            str(bool(merged_config.get("use_gpu", True))),
+        ]
+    )
+    return hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
+
+
+def _persist_catch_up_diarization_window(
+    session,
+    *,
+    recording_id: int,
+    manifest_row: RecordingAudioWindowManifest,
+    processing_run_id: int | None,
+    diarization_result,
+    merged_config: dict,
+    device: str,
+    error_message: str | None = None,
+) -> DiarizationWindowResult:
+    existing_result = session.exec(
+        select(DiarizationWindowResult)
+        .where(DiarizationWindowResult.recording_id == recording_id)
+        .where(DiarizationWindowResult.window_index == manifest_row.window_index)
+        .where(DiarizationWindowResult.processing_run_id == processing_run_id)
+    ).first()
+
+    if existing_result is None:
+        existing_result = DiarizationWindowResult(
+            recording_id=recording_id,
+            processing_run_id=processing_run_id,
+            window_index=manifest_row.window_index,
+            window_start_ms=manifest_row.window_start_ms,
+            window_end_ms=manifest_row.window_end_ms,
+            chunk_start_sequence=manifest_row.chunk_start_sequence,
+            chunk_end_sequence=manifest_row.chunk_end_sequence,
+        )
+    else:
+        existing_turn_rows = session.exec(
+            select(DiarizationWindowTurn).where(
+                DiarizationWindowTurn.window_result_id == existing_result.id
+            )
+        ).all()
+        for turn_row in existing_turn_rows:
+            session.delete(turn_row)
+
+    payload, turn_payloads = _build_diarization_window_payload(
+        diarization_result,
+        window_start_ms=int(manifest_row.window_start_ms),
+        window_end_ms=int(manifest_row.window_end_ms),
+    )
+    if error_message:
+        payload["error"] = error_message
+
+    existing_result.processing_run_id = processing_run_id
+    existing_result.window_start_ms = manifest_row.window_start_ms
+    existing_result.window_end_ms = manifest_row.window_end_ms
+    existing_result.chunk_start_sequence = manifest_row.chunk_start_sequence
+    existing_result.chunk_end_sequence = manifest_row.chunk_end_sequence
+    existing_result.model_name = "pyannote/speaker-diarization-community-1"
+    existing_result.device = device
+    existing_result.config_hash = _catch_up_diarization_config_hash(merged_config)
+    existing_result.status = "failed" if error_message else "completed"
+    existing_result.raw_payload = payload
+    session.add(existing_result)
+    session.flush()
+
+    for turn_payload in turn_payloads:
+        session.add(
+            DiarizationWindowTurn(
+                window_result_id=existing_result.id,
+                local_speaker_key=str(turn_payload["local_speaker_key"]),
+                start_ms=int(turn_payload["start_ms"]),
+                end_ms=int(turn_payload["end_ms"]),
+                confidence=None,
+                matched_recording_speaker_id=None,
+                metadata_payload={"track": str(turn_payload["track"])} if turn_payload.get("track") else None,
+            )
+        )
+
+    return existing_result
+
+
+def _run_catch_up_diarization_windows(
+    *,
+    session,
+    recording: Recording,
+    processed_audio_path: str,
+    merged_config: dict,
+    diarize_audio,
+    extract_audio_clip,
+    processing_run_id: int | None,
+    temp_files: list[str],
+    log: logging.Logger,
+) -> tuple[set[int], set[int]]:
+    manifest_rows = _load_recording_audio_window_manifests(session, recording.id)
+    pending_manifest_rows = [
+        row
+        for row in manifest_rows
+        if row.id is not None
+        and str(row.status or "") not in {
+            WINDOW_STATUS_LIVE_PROCESSED,
+            WINDOW_STATUS_CATCH_UP_PROCESSED,
+        }
+    ]
+    if not pending_manifest_rows:
+        return set(), set()
+
+    completed_window_ids: set[int] = set()
+    failed_window_ids: set[int] = set()
+    device = str(merged_config.get("processing_device", "auto"))
+
+    for manifest_row in pending_manifest_rows:
+        clip_path = os.path.join(
+            os.path.dirname(processed_audio_path),
+            f"catch_up_diarize_{recording.id}_{manifest_row.window_index}.wav",
+        )
+        extract_audio_clip(
+            processed_audio_path,
+            clip_path,
+            start_seconds=float(manifest_row.window_start_ms) / 1000.0,
+            end_seconds=float(manifest_row.window_end_ms) / 1000.0,
+        )
+        temp_files.append(clip_path)
+
+        with pipeline_metric_timer(
+            stage="catch_up_diarization_window",
+            recording_id=recording.id,
+            payload={
+                "window_index": int(manifest_row.window_index),
+                "window_start_ms": int(manifest_row.window_start_ms),
+                "window_end_ms": int(manifest_row.window_end_ms),
+                "chunk_start_sequence": int(manifest_row.chunk_start_sequence),
+                "chunk_end_sequence": int(manifest_row.chunk_end_sequence),
+            },
+            log=log,
+        ) as metric:
+            diarization_result = diarize_audio(clip_path, config=merged_config)
+            metric["payload"]["result_available"] = diarization_result is not None
+
+        error_message = None
+        if diarization_result is None:
+            error_message = "Catch-up diarization returned no result"
+
+        _persist_catch_up_diarization_window(
+            session,
+            recording_id=recording.id,
+            manifest_row=manifest_row,
+            processing_run_id=processing_run_id,
+            diarization_result=diarization_result,
+            merged_config=merged_config,
+            device=device,
+            error_message=error_message,
+        )
+
+        manifest_row.processing_run_id = processing_run_id
+        if error_message:
+            manifest_row.status = WINDOW_STATUS_FAILED
+            manifest_row.last_error = error_message
+            failed_window_ids.add(int(manifest_row.id))
+        else:
+            manifest_row.last_error = None
+            completed_window_ids.add(int(manifest_row.id))
+        session.add(manifest_row)
+
+    return completed_window_ids, failed_window_ids
 
 
 def _build_automatic_meeting_intelligence_transcript(
@@ -699,10 +1058,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     from backend.processing.embedding_core import extract_embeddings
     from backend.processing.embedding import cosine_similarity, merge_embeddings, find_matching_global_speaker, AUTO_UPDATE_THRESHOLD
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
-    from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
+    from backend.utils.audio import convert_to_mp3, convert_to_proxy_mp3, get_audio_duration
     from backend.utils.live_transcript import (
         apply_live_authority_to_segments,
         build_transcription_result_from_segments,
+        merge_reusable_segments,
         map_final_speakers_to_live_labels,
     )
 
@@ -711,6 +1071,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
     start_time = time.time()
     session = self.session
     temp_files = []
+    catch_up_run: ProcessingRun | None = None
+    catch_up_processed_window_ids: set[int] = set()
+    catch_up_failed_window_ids: set[int] = set()
     
     recording = session.get(Recording, recording_id)
     if not recording:
@@ -740,7 +1103,8 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             live_segments_for_reuse = [
                 dict(segment)
                 for segment in initial_transcript.segments
-                if segment.get("segment_source") == "live" or segment.get("provisional") is True
+                if segment.get("segment_source") in {"live", "catch_up"}
+                or segment.get("provisional") is True
             ]
     
     # Platform/Device detection for UX
@@ -853,6 +1217,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 transcript.segments = []
                 transcript.transcript_status = "completed"
 
+                mark_recording_audio_chunks_ready_for_cleanup(
+                    session,
+                    recording_id=recording.id,
+                    upload_status="finalized",
+                )
                 auto_link_recording(session, recording)
                 session.add(transcript)
                 session.add(recording)
@@ -889,6 +1258,79 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
 
         transcription_result = None
         reused_live_transcript_segments = []
+        if live_segments_for_reuse and engine_override is None:
+            pending_spans = collect_pending_chunk_spans(
+                _load_recording_audio_window_manifests(session, recording.id),
+                _load_recording_audio_chunks(session, recording.id),
+            )
+            if pending_spans:
+                from backend.utils.audio import extract_audio_clip
+
+                self.update_state(state='PROCESSING', meta={'progress': 45, 'stage': 'Catch-up'})
+                recording.processing_step = f"Catching up live audio...{device_suffix}"
+                recording.processing_progress = 45
+                session.add(recording)
+                session.commit()
+
+                catch_up_segments, pending_catch_up_window_ids, catch_up_run = _build_catch_up_segments(
+                    session=session,
+                    recording=recording,
+                    processed_audio_path=processed_audio_path,
+                    merged_config=merged_config,
+                    transcribe_audio=transcribe_audio,
+                    extract_audio_clip=extract_audio_clip,
+                    temp_files=temp_files,
+                    log=logger,
+                )
+                live_segments_for_reuse = merge_reusable_segments(
+                    live_segments_for_reuse,
+                    catch_up_segments,
+                )
+                record_pipeline_metric(
+                    stage="catch_up_segments_prepared",
+                    recording_id=recording_id,
+                    payload={
+                        "segment_count": len(catch_up_segments),
+                        "window_count": len(pending_catch_up_window_ids),
+                    },
+                    log=logger,
+                )
+
+                if merged_config.get("enable_diarization", True):
+                    self.update_state(state='PROCESSING', meta={'progress': 48, 'stage': 'Catch-up diarization'})
+                    recording.processing_step = f"Catching up speaker windows...{device_suffix}"
+                    recording.processing_progress = 48
+                    session.add(recording)
+                    session.commit()
+
+                    (
+                        catch_up_processed_window_ids,
+                        catch_up_failed_window_ids,
+                    ) = _run_catch_up_diarization_windows(
+                        session=session,
+                        recording=recording,
+                        processed_audio_path=processed_audio_path,
+                        merged_config=merged_config,
+                        diarize_audio=diarize_audio,
+                        extract_audio_clip=extract_audio_clip,
+                        processing_run_id=catch_up_run.id if catch_up_run else None,
+                        temp_files=temp_files,
+                        log=logger,
+                    )
+                else:
+                    catch_up_processed_window_ids = set(pending_catch_up_window_ids)
+
+                record_pipeline_metric(
+                    stage="catch_up_diarization_recorded",
+                    recording_id=recording_id,
+                    payload={
+                        "processed_window_count": len(catch_up_processed_window_ids),
+                        "failed_window_count": len(catch_up_failed_window_ids),
+                    },
+                    status="error" if catch_up_failed_window_ids else "ok",
+                    log=logger,
+                )
+
         if live_segments_for_reuse and engine_override is None:
             transcription_result, reused_live_transcript_segments = (
                 build_transcription_result_from_segments(live_segments_for_reuse)
@@ -1105,6 +1547,29 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             session.add(transcript)
         
         session.commit()
+
+        if catch_up_run is not None or catch_up_processed_window_ids or catch_up_failed_window_ids:
+            manifest_rows = _load_recording_audio_window_manifests(session, recording.id)
+            updated_manifest_rows = mark_audio_windows_processed(
+                manifest_rows,
+                window_ids=catch_up_processed_window_ids,
+                status=WINDOW_STATUS_CATCH_UP_PROCESSED,
+                processing_run_id=catch_up_run.id if catch_up_run else None,
+            )
+            for manifest_row in updated_manifest_rows:
+                session.add(manifest_row)
+            if catch_up_run is not None:
+                if catch_up_failed_window_ids:
+                    catch_up_run.status = ProcessingRunStatus.FAILED
+                    catch_up_run.error_summary = (
+                        f"{len(catch_up_failed_window_ids)} catch-up diarization window(s) failed"
+                    )
+                else:
+                    catch_up_run.status = ProcessingRunStatus.COMPLETED
+                    catch_up_run.error_summary = None
+                catch_up_run.completed_at = utc_now()
+                session.add(catch_up_run)
+            session.commit()
         # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
         
         # Save Speakers & Embeddings
@@ -1387,6 +1852,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         )
 
         # Update Recording Status
+        mark_recording_audio_chunks_ready_for_cleanup(
+            session,
+            recording_id=recording.id,
+            upload_status="finalized",
+        )
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         recording.processing_completed_at = utc_now()
@@ -1432,6 +1902,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         logger.error(f"Audio processing error for {recording_id}: {e}", exc_info=True)
         recording = session.get(Recording, recording_id)
         if recording:
+            if catch_up_run is not None:
+                catch_up_run.status = ProcessingRunStatus.FAILED
+                catch_up_run.error_summary = str(e)
+                catch_up_run.completed_at = utc_now()
+                session.add(catch_up_run)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Error: {str(e)}"
             recording.processing_completed_at = None
@@ -1450,6 +1925,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
         recording = session.get(Recording, recording_id)
         if recording:
+            if catch_up_run is not None:
+                catch_up_run.status = ProcessingRunStatus.FAILED
+                catch_up_run.error_summary = str(e)
+                catch_up_run.completed_at = utc_now()
+                session.add(catch_up_run)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"System Error: {str(e)}"
             recording.processing_completed_at = None

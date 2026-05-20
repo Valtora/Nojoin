@@ -10,8 +10,16 @@ import os
 import re
 from typing import Any
 
+from sqlmodel import select
+
 from backend.celery_app import celery_app
+from backend.models.pipeline import RecordingAudioWindowManifest
 from backend.processing.pipeline_metrics import pipeline_metric_timer, record_pipeline_metric
+from backend.utils.audio_windows import (
+    WINDOW_STATUS_LIVE_PROCESSED,
+    infer_resume_state_from_manifests,
+    mark_audio_windows_processed,
+)
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
 
@@ -38,6 +46,20 @@ LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
 _STATE_FILENAME = "state.json"
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
+
+
+def _load_recording_audio_window_manifests(session, recording_id: int) -> list[RecordingAudioWindowManifest]:
+    if not hasattr(session, "exec"):
+        return []
+
+    try:
+        return session.exec(
+            select(RecordingAudioWindowManifest)
+            .where(RecordingAudioWindowManifest.recording_id == recording_id)
+            .order_by(RecordingAudioWindowManifest.window_index)
+        ).all()
+    except Exception:
+        return []
 
 
 def read_live_state(live_dir) -> dict:
@@ -572,6 +594,26 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     live_dir.mkdir(parents=True, exist_ok=True)
 
     state = read_live_state(live_dir)
+    session = get_sync_session()
+    try:
+        manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
+        resumed_state = infer_resume_state_from_manifests(manifest_rows)
+        if resumed_state and int(resumed_state["next_expected"]) > int(state["next_expected"]):
+            state["next_expected"] = int(resumed_state["next_expected"])
+            state["buffer_abs_start"] = float(resumed_state["buffer_abs_start"])
+            record_pipeline_metric(
+                stage="live_state_resumed_from_manifest",
+                recording_id=recording_id,
+                payload={
+                    "sequence": sequence,
+                    "next_expected": state["next_expected"],
+                    "buffer_abs_start": round(float(state["buffer_abs_start"]), 3),
+                },
+                log=logger,
+            )
+    finally:
+        session.close()
+
     next_expected = state["next_expected"]
     buffer_abs_start = state["buffer_abs_start"]
 
@@ -868,39 +910,20 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             except OSError:
                 pass
 
-        # --- Persist provisional segments (race-guarded) ---
-        if new_segments:
-            from sqlalchemy.orm.attributes import flag_modified
+        # --- Persist provisional segments and processed manifest coverage ---
+        should_dispatch_meeting_edge = False
+        session = get_sync_session()
+        try:
+            recording = session.get(Recording, recording_id)
+            if recording and recording.status == RecordingStatus.UPLOADING:
+                if new_segments:
+                    from sqlalchemy.orm.attributes import flag_modified
 
-            should_dispatch_meeting_edge = False
-            session = get_sync_session()
-            try:
-                recording = session.get(Recording, recording_id)
-                if recording and recording.status == RecordingStatus.UPLOADING:
                     transcript = recording.transcript
                     if transcript is not None:
                         transcript.segments = (transcript.segments or []) + new_segments
                         flag_modified(transcript, "segments")
                         session.add(transcript)
-                        session.commit()
-                        record_pipeline_metric(
-                            stage="live_segments_persisted",
-                            recording_id=recording_id,
-                            payload={
-                                "sequence": sequence,
-                                "segment_count": len(new_segments),
-                                "first_segment_start_s": round(
-                                    min(segment["start"] for segment in new_segments),
-                                    3,
-                                ),
-                                "last_segment_end_s": round(
-                                    max(segment["end"] for segment in new_segments),
-                                    3,
-                                ),
-                                "last_speaker_label": state.get("last_speaker_label"),
-                            },
-                            log=logger,
-                        )
 
                         user_settings = getattr(
                             getattr(recording, "user", None),
@@ -914,8 +937,39 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             user_settings = getattr(user, "settings", None) if user else None
 
                         should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
-            finally:
-                session.close()
+
+                manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
+                updated_manifest_rows = mark_audio_windows_processed(
+                    manifest_rows,
+                    up_to_sequence=run[-1],
+                    status=WINDOW_STATUS_LIVE_PROCESSED,
+                )
+                for manifest_row in updated_manifest_rows:
+                    session.add(manifest_row)
+
+                session.commit()
+
+                if new_segments:
+                    record_pipeline_metric(
+                        stage="live_segments_persisted",
+                        recording_id=recording_id,
+                        payload={
+                            "sequence": sequence,
+                            "segment_count": len(new_segments),
+                            "first_segment_start_s": round(
+                                min(segment["start"] for segment in new_segments),
+                                3,
+                            ),
+                            "last_segment_end_s": round(
+                                max(segment["end"] for segment in new_segments),
+                                3,
+                            ),
+                            "last_speaker_label": state.get("last_speaker_label"),
+                        },
+                        log=logger,
+                    )
+        finally:
+            session.close()
 
             if should_dispatch_meeting_edge:
                 try:

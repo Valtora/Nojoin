@@ -107,6 +107,56 @@ class RecordingAudioChunk(BaseDBModel, table=True):
     cleanup_eligible_at: Optional[datetime] = None
 
 
+class RecordingAudioWindowManifest(BaseDBModel, table=True):
+    __tablename__ = "recording_audio_window_manifests"
+    __table_args__ = (
+        UniqueConstraint(
+            "recording_id",
+            "window_index",
+            name="uq_recording_audio_window_manifests_recording_window",
+        ),
+    )
+
+    public_id: str = Field(
+        default_factory=generate_pipeline_public_id,
+        sa_column=Column(
+            String(36),
+            unique=True,
+            index=True,
+            nullable=False,
+            default=generate_pipeline_public_id,
+        ),
+    )
+    recording_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("recordings.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    window_index: int = Field(sa_column=Column(BigInteger, nullable=False))
+    source_kind: str = Field(default="companion")
+    target_window_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    hop_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    window_start_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    window_end_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    chunk_start_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
+    chunk_end_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
+    status: str = Field(default="pending")
+    is_partial: bool = Field(default=False)
+    is_sealed: bool = Field(default=False)
+    processing_run_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("processing_runs.id", ondelete="SET NULL"),
+            index=True,
+        ),
+    )
+    last_error: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+
 class ProcessingRun(BaseDBModel, table=True):
     __tablename__ = "processing_runs"
     __table_args__ = (

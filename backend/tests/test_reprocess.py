@@ -367,7 +367,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
 
     # Stop the pipeline right after the transcription stage by raising from a
     # later mocked call; we only need to observe what transcribe_audio saw.
-    class _StopPipeline(Exception):
+    class _StopPipeline(BaseException):
         pass
 
     def fake_transcribe_audio(path, config=None):
@@ -423,7 +423,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",
-        lambda key, default=None: default,
+        lambda key, default=None: True if key == "keep_models_loaded" else default,
     )
 
     fake_session = _FakeSession()
@@ -491,3 +491,188 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
 
     assert captured["config"]["transcription_backend"] == "parakeet"
     assert captured["config"]["parakeet_model"] == "v3"
+
+
+def test_process_recording_task_runs_catch_up_diarization_before_promotion(monkeypatch):
+    """Pending live manifests trigger catch-up diarization before final promotion continues."""
+    from types import SimpleNamespace
+
+    from backend.models.recording import RecordingStatus
+    from backend.worker import tasks as tasks_module
+
+    captured: dict = {}
+
+    class _StopPipeline(BaseException):
+        pass
+
+    base_config = {
+        "transcription_backend": "whisper",
+        "whisper_model_size": "base",
+        "enable_vad": False,
+        "enable_diarization": True,
+    }
+
+    class _FakeLlmConfig:
+        merged_config = dict(base_config)
+
+    monkeypatch.setattr(
+        tasks_module, "resolve_llm_config", lambda *a, **k: _FakeLlmConfig()
+    )
+
+    class _FakeTranscript:
+        segments = [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello",
+                "segment_source": "live",
+            }
+        ]
+
+    class _ExecResult:
+        def first(self):
+            return _FakeTranscript()
+
+    class _FakeRecording:
+        id = 401
+        status = RecordingStatus.PROCESSED
+        user_id = None
+        audio_path = "/tmp/recording.wav"
+        proxy_path = None
+        duration_seconds = 60.0
+        processing_started_at = None
+        processing_completed_at = None
+        processing_progress = 0
+        processing_step = ""
+
+    class _FakeSession:
+        def get(self, model, recording_id):
+            return _FakeRecording()
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def refresh(self, obj):
+            pass
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True if key == "keep_models_loaded" else default,
+    )
+
+    fake_session = _FakeSession()
+
+    import sys
+    import types
+
+    def _install(module_name: str, **attrs):
+        mod = types.ModuleType(module_name)
+        for name, value in attrs.items():
+            setattr(mod, name, value)
+        monkeypatch.setitem(sys.modules, module_name, mod)
+
+    _install(
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 10.0),
+    )
+    _install(
+        "backend.processing.audio_preprocessing",
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: "/tmp/recording_vad.wav",
+        validate_audio_file=lambda *a, **k: None,
+        cleanup_temp_file=lambda *a, **k: None,
+        repair_audio_file=lambda *a, **k: None,
+    )
+    _install(
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {"text": "hello", "segments": [{"start": 0.0, "end": 1.0, "text": "hello"}]},
+        release_model_cache=lambda: None,
+    )
+    _install(
+        "backend.processing.diarize",
+        diarize_audio=lambda *a, **k: None,
+        release_pipeline_cache=lambda: None,
+    )
+    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: None)
+    _install(
+        "backend.processing.embedding",
+        cosine_similarity=lambda *a, **k: 0.0,
+        merge_embeddings=lambda *a, **k: None,
+        find_matching_global_speaker=lambda *a, **k: None,
+        AUTO_UPDATE_THRESHOLD=0.8,
+    )
+    _install(
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=lambda *a, **k: [],
+    )
+    _install(
+        "backend.utils.audio",
+        get_audio_duration=lambda *a, **k: 60.0,
+        convert_to_mp3=lambda *a, **k: None,
+        convert_to_proxy_mp3=lambda *a, **k: None,
+        extract_audio_clip=lambda *a, **k: None,
+    )
+    _install(
+        "backend.utils.live_transcript",
+        apply_live_authority_to_segments=lambda live, combined: combined,
+        build_transcription_result_from_segments=lambda segments: ({"text": "hello", "segments": []}, []),
+        merge_reusable_segments=lambda primary, additional: list(primary) + list(additional),
+        map_final_speakers_to_live_labels=lambda *a, **k: {},
+    )
+    _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
+    _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr(
+        tasks_module,
+        "_load_recording_audio_window_manifests",
+        lambda *a, **k: [SimpleNamespace(id=11)],
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_load_recording_audio_chunks",
+        lambda *a, **k: [],
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "collect_pending_chunk_spans",
+        lambda *a, **k: [SimpleNamespace(window_id=11)],
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_build_catch_up_segments",
+        lambda **kwargs: ([], {11}, SimpleNamespace(id=91, status="running")),
+    )
+
+    def fake_run_catch_up_diarization_windows(**kwargs):
+        captured["processing_run_id"] = kwargs["processing_run_id"]
+        captured["recording_id"] = kwargs["recording"].id
+        raise _StopPipeline()
+
+    monkeypatch.setattr(
+        tasks_module,
+        "_run_catch_up_diarization_windows",
+        fake_run_catch_up_diarization_windows,
+    )
+
+    task = tasks_module.process_recording_task
+    monkeypatch.setattr(task, "_session", fake_session, raising=False)
+    monkeypatch.setattr(task, "update_state", lambda *a, **k: None, raising=False)
+
+    with pytest.raises(_StopPipeline):
+        task.run(401, False, None)
+
+    assert captured == {"processing_run_id": 91, "recording_id": 401}

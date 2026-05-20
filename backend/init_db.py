@@ -14,6 +14,7 @@ from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
 from backend.models.pipeline import (
     RecordingAudioChunk,
+    RecordingAudioWindowManifest,
     ProcessingRun,
     TranscriptUtterance,
     TranscriptUtteranceEvent,
