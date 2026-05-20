@@ -2127,7 +2127,7 @@ async def infer_speakers_for_recording(
     db.add(recording)
     await db.commit()
     
-    return {"status": "queued", "message": "Speaker inference started in background."}
+    return {"status": "queued", "message": "Speaker suggestion refresh started in background."}
 
 @router.post("/{recording_id}/cancel", response_model=RecordingPublicRead)
 async def cancel_processing(

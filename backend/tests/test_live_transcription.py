@@ -168,6 +168,7 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
+    speaker_name_suggestions JSON,
     notes_status VARCHAR(32) NOT NULL,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT
@@ -1143,6 +1144,199 @@ def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
     assert label == "LIVE_01"
     assert live_speaker.embedding == [0.2, 0.3]
     assert session.added == [live_speaker]
+
+
+def test_analyze_window_speakers_prefers_clean_non_overlapping_spans(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.utils.rolling_diarization import analyze_window_speakers
+
+    captured_segments = []
+
+    class _DiarizationResult:
+        def itertracks(self, yield_label=False):
+            turns = [
+                (SimpleNamespace(start=0.0, end=0.8), "A", "SPEAKER_00"),
+                (SimpleNamespace(start=0.3, end=0.9), "B", "SPEAKER_01"),
+                (SimpleNamespace(start=1.0, end=2.2), "A", "SPEAKER_00"),
+            ]
+            return iter(turns)
+
+    monkeypatch.setattr(
+        "backend.processing.embedding_core.extract_embedding_for_segments",
+        lambda _audio_path, segments, **_kwargs: (
+            captured_segments.append(list(segments)) or [0.3, 0.4]
+        ),
+    )
+
+    metadata_by_key, embeddings_by_key = analyze_window_speakers(
+        diarization_result=_DiarizationResult(),
+        audio_path="/tmp/window.wav",
+        device_str="cpu",
+        hf_token=None,
+        recording_speakers=[],
+        global_speakers=[],
+        window_start_ms=5_000,
+    )
+
+    assert captured_segments == [[(1.0, 2.2)]]
+    assert embeddings_by_key["SPEAKER_00"] == [0.3, 0.4]
+    assert metadata_by_key["SPEAKER_00"]["clean_segment_count"] == 1
+    assert metadata_by_key["SPEAKER_00"]["source_spans_ms"] == [
+        {"start_ms": 6_000, "end_ms": 7_200}
+    ]
+    assert metadata_by_key["SPEAKER_01"]["embedding_available"] is False
+    assert metadata_by_key["SPEAKER_01"]["clean_segment_count"] == 0
+
+
+def test_apply_live_voiceprint_learning_respects_locked_global_voiceprints(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _apply_live_voiceprint_learning
+
+    recording_speaker = SimpleNamespace(
+        id=7,
+        embedding=[0.1, 0.2],
+        global_speaker_id=9,
+        merged_into_id=None,
+        identity_confidence=0.2,
+    )
+    global_speaker = SimpleNamespace(
+        id=9,
+        embedding=[0.6, 0.7],
+        is_voiceprint_locked=True,
+    )
+    window_result = SimpleNamespace(
+        id=12,
+        raw_payload={
+            "speaker_metadata": {
+                "SPEAKER_00": {
+                    "matched_recording_speaker_id": 7,
+                    "best_global_speaker_id": 9,
+                    "best_global_speaker_score": 0.96,
+                    "match_confidence": 0.82,
+                    "clean_duration_ms": 2_200,
+                    "clean_segment_count": 2,
+                    "source_spans_ms": [{"start_ms": 1_000, "end_ms": 3_200}],
+                }
+            }
+        },
+    )
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def get(self, model, entity_id):
+            if model.__name__ == "RecordingSpeaker":
+                return recording_speaker if entity_id == 7 else None
+            if model.__name__ == "GlobalSpeaker":
+                return global_speaker if entity_id == 9 else None
+            return None
+
+        def add(self, obj):
+            self.added.append(obj)
+
+    recorded_metrics = []
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda *args, **kwargs: recorded_metrics.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.cosine_similarity",
+        lambda *args, **kwargs: 0.9,
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.merge_embeddings",
+        lambda *_args, **_kwargs: [0.2, 0.3],
+    )
+
+    summary = _apply_live_voiceprint_learning(
+        session=_Session(),
+        recording_id=42,
+        window_result=window_result,
+        speaker_embeddings_by_key={"SPEAKER_00": [0.3, 0.4]},
+    )
+
+    assert summary == {
+        "recording_speaker_update_count": 1,
+        "global_speaker_update_count": 0,
+    }
+    assert recording_speaker.embedding == [0.2, 0.3]
+    assert recording_speaker.identity_confidence == 0.96
+    assert global_speaker.embedding == [0.6, 0.7]
+
+    voiceprint_update = window_result.raw_payload["speaker_metadata"]["SPEAKER_00"][
+        "voiceprint_update"
+    ]
+    assert voiceprint_update["applied"] is True
+    assert voiceprint_update["global_applied"] is False
+    assert voiceprint_update["global_reason"] == "global_voiceprint_locked"
+    assert voiceprint_update["source_spans_ms"] == [{"start_ms": 1_000, "end_ms": 3_200}]
+    assert recorded_metrics
+
+
+def test_apply_live_voiceprint_learning_rejects_low_similarity_updates(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _apply_live_voiceprint_learning
+
+    recording_speaker = SimpleNamespace(
+        id=7,
+        embedding=[0.1, 0.2],
+        global_speaker_id=None,
+        merged_into_id=None,
+        identity_confidence=0.3,
+    )
+    window_result = SimpleNamespace(
+        id=13,
+        raw_payload={
+            "speaker_metadata": {
+                "SPEAKER_00": {
+                    "matched_recording_speaker_id": 7,
+                    "match_confidence": 0.76,
+                    "clean_duration_ms": 2_400,
+                    "clean_segment_count": 2,
+                    "source_spans_ms": [{"start_ms": 2_000, "end_ms": 4_400}],
+                }
+            }
+        },
+    )
+
+    class _Session:
+        def get(self, model, entity_id):
+            if model.__name__ == "RecordingSpeaker" and entity_id == 7:
+                return recording_speaker
+            return None
+
+        def add(self, _obj):
+            return None
+
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.cosine_similarity",
+        lambda *args, **kwargs: 0.2,
+    )
+
+    summary = _apply_live_voiceprint_learning(
+        session=_Session(),
+        recording_id=99,
+        window_result=window_result,
+        speaker_embeddings_by_key={"SPEAKER_00": [0.4, 0.5]},
+    )
+
+    assert summary == {
+        "recording_speaker_update_count": 0,
+        "global_speaker_update_count": 0,
+    }
+    assert recording_speaker.embedding == [0.1, 0.2]
+    assert recording_speaker.identity_confidence == 0.3
+    assert window_result.raw_payload["speaker_metadata"]["SPEAKER_00"][
+        "voiceprint_update"
+    ]["reason"] == "recording_drift_guard_rejected"
 
 
 def _patch_live_deps(

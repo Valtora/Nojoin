@@ -59,6 +59,7 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle',
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
+    speaker_name_suggestions JSON,
     notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT
@@ -225,7 +226,7 @@ def test_build_automatic_meeting_intelligence_transcript_keeps_unresolved_labels
     assert "Speaker 1" not in transcript
 
 
-def test_run_automatic_meeting_intelligence_stage_updates_speakers_title_and_notes(
+def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and_notes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,10 +278,16 @@ def test_run_automatic_meeting_intelligence_stage_updates_speakers_title_and_not
                 select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
             ).all()
             names_by_label = {speaker.diarization_label: speaker.name for speaker in speakers}
+            suggestions = transcript.speaker_name_suggestions
 
         assert result is not None
-        assert names_by_label["SPEAKER_00"] == "Alex"
+        assert names_by_label["SPEAKER_00"] == "Speaker 1"
         assert names_by_label["SPEAKER_01"] == "Dana"
+        assert len(suggestions) == 1
+        assert suggestions[0]["diarization_label"] == "SPEAKER_00"
+        assert suggestions[0]["suggested_name"] == "Alex"
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
         assert recording.status == "PROCESSED"
         assert recording.processing_step == "Generating meeting notes... (CPU)"

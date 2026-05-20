@@ -2,7 +2,7 @@ from backend.utils.config_manager import config_manager
 import logging
 import json
 import re
-from typing import Dict, Tuple, List, Generator, Any, Optional
+from typing import Dict, Tuple, List, Generator, Any, Optional, Sequence
 # Lazy imports for LLM providers to avoid heavy dependencies in API
 # import openai
 # import anthropic
@@ -29,11 +29,41 @@ from backend.utils.meeting_edge import (
     get_default_meeting_edge_prompt_template,
     parse_meeting_edge_response as parse_meeting_edge_payload,
 )
+from backend.utils.speaker_name_suggestions import (
+    SpeakerInferenceResult,
+    parse_speaker_inference_response,
+)
 import os
 
 logger = logging.getLogger(__name__)
 
+
+def build_eligible_speaker_labels_prompt_section(
+    eligible_labels: Optional[Sequence[str]],
+) -> str:
+    labels = [str(label).strip() for label in eligible_labels or () if str(label).strip()]
+    if not labels:
+        return "All unresolved diarization labels in the transcript are eligible."
+
+    lines = ["Only return suggestions for these diarization labels:"]
+    lines.extend(f"- {label}" for label in labels)
+    return "\n".join(lines)
+
 class LLMBackend:
+    def infer_speaker_suggestions(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
+        """
+        Infer evidence-backed name suggestions for unresolved diarization labels.
+        """
+        raise NotImplementedError
+
     def infer_speakers(
         self,
         transcript: str,
@@ -41,12 +71,21 @@ class LLMBackend:
         timeout: int = 60,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
     ) -> Dict[str, str]:
         """
         Infer the most likely real names or roles for each speaker label in the transcript.
         Returns a mapping from diarization label to inferred name/role.
         """
-        raise NotImplementedError
+        result = self.infer_speaker_suggestions(
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        )
+        return result.mapping
 
     def list_models(self) -> List[str]:
         """
@@ -151,6 +190,54 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
         return """
 You are an expert meeting assistant. Analyze the diarized meeting transcript below, where speakers are labeled generically (e.g., 'Speaker 1', 'SPEAKER_00').\n\nFirst, infer the most likely real names or roles for each speaker, based on context, introductions, or references in the transcript. Use the user-authored notes as supplemental context when they mention attendee names, roles, or who said what. If a real name is not clear, suggest a likely role (e.g., 'Project Manager', 'Client', 'Engineer') or keep the generic label. Be conservative: only use a real name or role if it is clearly stated or strongly implied. If the user notes conflict with the transcript, prefer the transcript.\n\nOutput a Markdown table mapping each diarization label to the inferred name or role. Only output the table and nothing else.\n\n# User Notes Context\n{user_notes_section}\n\n# Meeting Context\n{meeting_context_section}\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
 
+        @staticmethod
+        def get_default_speaker_suggestion_prompt_template():
+                return """
+You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels.
+
+# Critical Rules
+- Return valid JSON only. Do not include Markdown, commentary, or code fences unless the client asks for them.
+- Only include suggestions for the eligible diarization labels listed below.
+- Omit a label entirely if the transcript evidence is weak or ambiguous.
+- Each suggestion must include at least one direct evidence span quoted from the transcript.
+- Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
+- Be conservative. If you are unsure, omit the suggestion instead of guessing.
+- `confidence` must be between 0.0 and 1.0.
+
+# Eligible Diarization Labels
+{eligible_labels_section}
+
+# User Notes Context
+{user_notes_section}
+
+# Meeting Context
+{meeting_context_section}
+
+# Required JSON Schema
+{{
+    "suggestions": [
+        {{
+            "diarization_label": "SPEAKER_00",
+            "suggested_name": "Alex Johnson",
+            "confidence": 0.93,
+            "rationale": "The speaker says 'I'm Alex' and the attendee list contains Alex Johnson.",
+            "signals": ["self_introduction", "meeting_attendee_exact"],
+            "evidence_spans": [
+                {{
+                    "quote": "Hi everyone, I'm Alex from product.",
+                    "reason": "self_introduction",
+                    "start_seconds": 0.0,
+                    "end_seconds": 3.2
+                }}
+            ]
+        }}
+    ]
+}}
+
+# Transcript
+{transcript}
+"""
+
     @staticmethod
     def get_default_notes_prompt_template():
         return """You are an expert meeting intelligence assistant. Your task is to generate comprehensive, high-quality meeting notes from the provided transcript. Use the speaker mapping to refer to participants by their inferred names/roles instead of generic labels.
@@ -251,6 +338,10 @@ Now generate the meeting notes following the exact format specified above. Be co
         return LLMBackend.get_default_title_prompt_template()
 
     @staticmethod
+    def get_speaker_suggestion_prompt_template() -> str:
+        return LLMBackend.get_default_speaker_suggestion_prompt_template()
+
+    @staticmethod
     def get_automatic_meeting_intelligence_prompt_template() -> str:
         return get_default_automatic_meeting_intelligence_prompt_template()
 
@@ -340,6 +431,23 @@ Now generate the meeting notes following the exact format specified above. Be co
         )
 
     @staticmethod
+    def build_speaker_suggestion_prompt(
+        prompt_template: str,
+        transcript: str,
+        eligible_labels: Optional[Sequence[str]] = None,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+    ) -> str:
+        return prompt_template.format(
+            transcript=transcript,
+            eligible_labels_section=build_eligible_speaker_labels_prompt_section(
+                eligible_labels
+            ),
+            user_notes_section=build_user_notes_prompt_section(user_notes),
+            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
+        )
+
+    @staticmethod
     def build_automatic_meeting_intelligence_prompt(
         request: AutomaticMeetingIntelligenceRequest,
         prompt_template: str = None,
@@ -372,6 +480,16 @@ Now generate the meeting notes following the exact format specified above. Be co
         return finalise_automatic_meeting_intelligence_payload(
             result,
             request.user_notes,
+        )
+
+    @staticmethod
+    def parse_speaker_inference_result(
+        response_text: str,
+        allowed_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
+        return parse_speaker_inference_response(
+            response_text,
+            allowed_labels=allowed_labels,
         )
 
     @staticmethod
@@ -505,21 +623,28 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API error (list models): {e}")
             return []
 
-    def infer_speakers(
+    def infer_speaker_suggestions(
         self,
         transcript: str,
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
-    ) -> Dict[str, str]:
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
         """
-        Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
+        Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
         if prompt_template is None:
-            prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
+            prompt_template = self.get_speaker_suggestion_prompt_template()
+        prompt = self.build_speaker_suggestion_prompt(
+            prompt_template,
+            transcript,
+            eligible_labels,
+            user_notes,
+            meeting_context,
+        )
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
@@ -528,11 +653,28 @@ class GeminiLLMBackend(LLMBackend):
                 contents=prompt,
             )
             text = self._extract_text_from_response(response)
-            mapping = self.parse_mapping_table(text)
-            return mapping
+            return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:
-            logger.error(f"Gemini API error (speaker mapping): {e}")
-            raise RuntimeError(f"Gemini API error (speaker mapping): {e}")
+            logger.error(f"Gemini API error (speaker suggestions): {e}")
+            raise RuntimeError(f"Gemini API error (speaker suggestions): {e}")
+
+    def infer_speakers(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> Dict[str, str]:
+        return self.infer_speaker_suggestions(
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        ).mapping
 
     def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
@@ -758,21 +900,28 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (list models): {e}")
             return []
 
-    def infer_speakers(
+    def infer_speaker_suggestions(
         self,
         transcript: str,
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
-    ) -> Dict[str, str]:
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
         """
-        Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
+        Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
         if prompt_template is None:
-            prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
+            prompt_template = self.get_speaker_suggestion_prompt_template()
+        prompt = self.build_speaker_suggestion_prompt(
+            prompt_template,
+            transcript,
+            eligible_labels,
+            user_notes,
+            meeting_context,
+        )
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
@@ -788,14 +937,31 @@ class OpenAILLMBackend(LLMBackend):
                 if chunk.choices[0].delta.content:
                     text_chunks.append(chunk.choices[0].delta.content)
             text = "".join(text_chunks)
-            mapping = self.parse_mapping_table(text)
-            return mapping
+            return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (speaker mapping): Invalid model {self.model}. {e}")
+                logger.error(f"OpenAI API error (speaker suggestions): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
-            logger.error(f"OpenAI API error (speaker mapping): {e}")
-            raise RuntimeError(f"OpenAI API error (speaker mapping): {e}")
+            logger.error(f"OpenAI API error (speaker suggestions): {e}")
+            raise RuntimeError(f"OpenAI API error (speaker suggestions): {e}")
+
+    def infer_speakers(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> Dict[str, str]:
+        return self.infer_speaker_suggestions(
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        ).mapping
 
     def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
@@ -1087,21 +1253,28 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (list models): {e}")
             return []
 
-    def infer_speakers(
+    def infer_speaker_suggestions(
         self,
         transcript: str,
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
-    ) -> Dict[str, str]:
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
         """
-        Run speaker inference on the transcript and return a mapping from diarization label to inferred name/role.
+        Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
         if prompt_template is None:
-            prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
+            prompt_template = self.get_speaker_suggestion_prompt_template()
+        prompt = self.build_speaker_suggestion_prompt(
+            prompt_template,
+            transcript,
+            eligible_labels,
+            user_notes,
+            meeting_context,
+        )
         if not self.model:
             raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
@@ -1112,11 +1285,28 @@ class AnthropicLLMBackend(LLMBackend):
                 temperature=0.2,
             )
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
-            mapping = self.parse_mapping_table(text)
-            return mapping
+            return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:
-            logger.error(f"Anthropic API error (speaker mapping): {e}")
-            raise RuntimeError(f"Anthropic API error (speaker mapping): {e}")
+            logger.error(f"Anthropic API error (speaker suggestions): {e}")
+            raise RuntimeError(f"Anthropic API error (speaker suggestions): {e}")
+
+    def infer_speakers(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> Dict[str, str]:
+        return self.infer_speaker_suggestions(
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        ).mapping
 
     def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         """
@@ -1361,17 +1551,24 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (list models): {e}")
             return []
 
-    def infer_speakers(
+    def infer_speaker_suggestions(
         self,
         transcript: str,
         prompt_template: str = None,
         timeout: int = 60,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
-    ) -> Dict[str, str]:
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
         if prompt_template is None:
-            prompt_template = self.get_speaker_prompt_template()
-        prompt = self.build_speaker_prompt(prompt_template, transcript, user_notes, meeting_context)
+            prompt_template = self.get_speaker_suggestion_prompt_template()
+        prompt = self.build_speaker_suggestion_prompt(
+            prompt_template,
+            transcript,
+            eligible_labels,
+            user_notes,
+            meeting_context,
+        )
         if not self.model:
             raise ValueError("No Ollama model configured. Please select a model in Settings.")
         
@@ -1385,10 +1582,28 @@ class OllamaLLMBackend(LLMBackend):
             resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
-            return self.parse_mapping_table(text)
+            return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:
-            logger.error(f"Ollama API error (speaker mapping): {e}")
-            raise RuntimeError(f"Ollama API error (speaker mapping): {e}")
+            logger.error(f"Ollama API error (speaker suggestions): {e}")
+            raise RuntimeError(f"Ollama API error (speaker suggestions): {e}")
+
+    def infer_speakers(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> Dict[str, str]:
+        return self.infer_speaker_suggestions(
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        ).mapping
 
     def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
         if prompt_template is None:

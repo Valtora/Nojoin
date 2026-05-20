@@ -11,6 +11,11 @@ from sqlmodel import Session
 
 import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
+from backend.utils.speaker_name_suggestions import (
+    SpeakerInferenceResult,
+    SpeakerInferenceSuggestion,
+    SpeakerSuggestionEvidenceSpan,
+)
 
 
 BASE_SCHEMA = """
@@ -71,6 +76,7 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle',
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
+    speaker_name_suggestions JSON,
     notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT
@@ -239,19 +245,38 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
     captured: dict[str, Any] = {}
 
     class FakeLLM:
-        def infer_speakers(
+        def infer_speaker_suggestions(
             self,
             transcript: str,
             prompt_template: str | None = None,
             timeout: int = 60,
             user_notes: str | None = None,
             meeting_context=None,
-        ) -> dict[str, str]:
+            eligible_labels=None,
+        ) -> SpeakerInferenceResult:
             captured["transcript"] = transcript
             captured["timeout"] = timeout
             captured["user_notes"] = user_notes
             captured["meeting_context"] = meeting_context
-            return {"SPEAKER_00": "Alex", "SPEAKER_01": "Dana"}
+            captured["eligible_labels"] = tuple(eligible_labels or ())
+            return SpeakerInferenceResult(
+                (
+                    SpeakerInferenceSuggestion(
+                        diarization_label="SPEAKER_00",
+                        suggested_name="Alex",
+                        confidence=0.92,
+                        rationale="The speaker introduces themselves as Alex.",
+                        evidence_spans=(
+                            SpeakerSuggestionEvidenceSpan(
+                                quote="Hello team.",
+                                reason="self_introduction",
+                                start_seconds=0.0,
+                                end_seconds=1.5,
+                            ),
+                        ),
+                    ),
+                )
+            )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
@@ -273,18 +298,31 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
                     "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
 
         assert row[0] == "PROCESSED"
         assert row[1] == "Completed"
         assert row[2] == 100
         assert dict(speaker_rows) == {
-            "SPEAKER_00": "Alex",
+            "SPEAKER_00": "Speaker 1",
             "SPEAKER_01": "Dana",
         }
+        assert len(suggestions) == 1
+        assert suggestions[0]["diarization_label"] == "SPEAKER_00"
+        assert suggestions[0]["suggested_name"] == "Alex"
+        assert suggestions[0]["status"] == "pending"
         assert "SPEAKER_00 - Hello team." in captured["transcript"]
         assert "SPEAKER_01 - The rollout is on Friday." in captured["transcript"]
         assert captured["user_notes"] == "Remember the launch date"
         assert captured["timeout"] == 60
+        assert captured["eligible_labels"] == ("SPEAKER_00",)
     finally:
         verification_engine.dispose()
 
@@ -324,6 +362,14 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
                     "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
 
         assert recording_row[0] == "PROCESSED"
         assert recording_row[1] == "Completed"
@@ -331,6 +377,64 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
             "SPEAKER_00": "Speaker 1",
             "SPEAKER_01": "Dana",
         }
+        assert suggestions in (None, [])
+    finally:
+        verification_engine.dispose()
+
+
+def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_infer_speakers_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "openai",
+        },
+        transcript_segments=[
+            {
+                "start": 0.0,
+                "end": 2.2,
+                "speaker": "SPEAKER_00",
+                "text": "Hi everyone, I'm Alex from product.",
+            },
+            {
+                "start": 2.2,
+                "end": 4.0,
+                "speaker": "SPEAKER_01",
+                "text": "The rollout is on Friday.",
+            },
+        ],
+    )
+
+    def fail_if_called(_config):
+        raise AssertionError("LLM backend should not be created when deterministic evidence is sufficient")
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", fail_if_called)
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
+
+        assert len(suggestions) == 1
+        assert suggestions[0]["diarization_label"] == "SPEAKER_00"
+        assert suggestions[0]["suggested_name"] == "Alex"
+        assert suggestions[0]["source"] == "deterministic_rule"
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["evidence_spans"][0]["reason"] == "self_introduction"
     finally:
         verification_engine.dispose()
 
@@ -355,16 +459,34 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
     ]
 
     class FakeLLM:
-        def infer_speakers(
+        def infer_speaker_suggestions(
             self,
             transcript: str,
             prompt_template: str | None = None,
             timeout: int = 60,
             user_notes: str | None = None,
             meeting_context=None,
-        ) -> dict[str, str]:
+            eligible_labels=None,
+        ) -> SpeakerInferenceResult:
             captured["transcript"] = transcript
-            return {"SPEAKER_00": "Alex", "SPEAKER_01": "Dana"}
+            return SpeakerInferenceResult(
+                (
+                    SpeakerInferenceSuggestion(
+                        diarization_label="SPEAKER_00",
+                        suggested_name="Alex",
+                        confidence=0.87,
+                        rationale="The canonical transcript suggests Alex.",
+                        evidence_spans=(
+                            SpeakerSuggestionEvidenceSpan(
+                                quote="Canonical intro.",
+                                reason="transcript_name_mention",
+                                start_seconds=0.0,
+                                end_seconds=1.0,
+                            ),
+                        ),
+                    ),
+                )
+            )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
@@ -386,11 +508,22 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
                     "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
 
         assert dict(speaker_rows) == {
-            "SPEAKER_00": "Alex",
+            "SPEAKER_00": "Speaker 1",
             "SPEAKER_01": "Dana",
         }
+        assert len(suggestions) == 1
+        assert suggestions[0]["diarization_label"] == "SPEAKER_00"
+        assert suggestions[0]["suggested_name"] == "Alex"
         assert "SPEAKER_00 - Canonical intro." in captured["transcript"]
         assert "SPEAKER_01 - Canonical rollout plan." in captured["transcript"]
     finally:

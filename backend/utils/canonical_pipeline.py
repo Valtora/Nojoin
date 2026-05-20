@@ -30,6 +30,7 @@ from backend.models.pipeline import (
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
+from backend.processing.embedding import merge_embeddings
 from backend.utils.speaker_assignment import matches_speaker_name, reconcile_segment_assignment
 from backend.utils.time import utc_now
 
@@ -1770,6 +1771,222 @@ def update_utterance_speaker(
         )
 
     return utterance, target_speaker
+
+
+def update_recording_speaker_identity(
+    session,
+    *,
+    recording_id: int,
+    diarization_label: str,
+    new_speaker_name: str,
+    target_global_speaker_id: int | None = None,
+    actor_user_id: int | None = None,
+    merge_global_embedding_alpha: float | None = None,
+    event_type: SpeakerCorrectionEventType | None = None,
+    source: str = "api",
+) -> list[RecordingSpeaker]:
+    recording = session.get(Recording, recording_id)
+    if recording is None:
+        raise LookupError("Recording not found")
+
+    if recording_ready_for_canonical_backfill(recording.status):
+        ensure_canonical_backfill(session, recording_id)
+
+    recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
+    matching_speakers = [
+        recording_speaker
+        for recording_speaker in recording_speakers
+        if recording_speaker.diarization_label == diarization_label and not recording_speaker.merged_into_id
+    ]
+    if not matching_speakers:
+        raise LookupError(f"Speaker '{diarization_label}' not found in recording")
+
+    old_display_names = {
+        recording_speaker.id: _recording_speaker_display_name(session, recording_speaker)
+        for recording_speaker in matching_speakers
+    }
+
+    target_global_speaker = None
+    if target_global_speaker_id is not None:
+        target_global_speaker = session.execute(
+            select(GlobalSpeaker)
+            .where(GlobalSpeaker.id == target_global_speaker_id)
+            .where(GlobalSpeaker.user_id == recording.user_id)
+        ).scalar_one_or_none()
+        if target_global_speaker is None:
+            raise LookupError("Global speaker not found")
+
+    for recording_speaker in matching_speakers:
+        if target_global_speaker is not None:
+            recording_speaker.global_speaker_id = target_global_speaker.id
+            recording_speaker.global_speaker = target_global_speaker
+            recording_speaker.local_name = None
+            if merge_global_embedding_alpha is not None and recording_speaker.embedding:
+                if target_global_speaker.embedding:
+                    target_global_speaker.embedding = merge_embeddings(
+                        target_global_speaker.embedding,
+                        recording_speaker.embedding,
+                        alpha=merge_global_embedding_alpha,
+                    )
+                else:
+                    target_global_speaker.embedding = list(recording_speaker.embedding)
+                session.add(target_global_speaker)
+        else:
+            recording_speaker.global_speaker_id = None
+            recording_speaker.global_speaker = None
+            recording_speaker.local_name = new_speaker_name
+
+        recording_speaker.name = None
+        recording_speaker.identity_confidence = 1.0
+        recording_speaker.identity_locked = True
+        ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
+        session.add(recording_speaker)
+
+    effective_event_type = event_type or (
+        SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
+        if target_global_speaker is not None
+        else SpeakerCorrectionEventType.RENAME
+    )
+    record_recording_speaker_corrections(
+        session,
+        recording_id=recording_id,
+        target_recording_speaker_ids=[recording_speaker.id for recording_speaker in matching_speakers],
+        actor_user_id=actor_user_id,
+        event_type=effective_event_type,
+        scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+        target_global_speaker_id=(target_global_speaker.id if target_global_speaker is not None else None),
+        payload_by_speaker_id={
+            recording_speaker.id: {
+                "old_name": old_display_names.get(recording_speaker.id),
+                "new_name": (
+                    target_global_speaker.name if target_global_speaker is not None else new_speaker_name
+                ),
+                "matched_global_speaker": target_global_speaker is not None,
+                "source": source,
+            }
+            for recording_speaker in matching_speakers
+        },
+    )
+
+    if list_active_utterances(session, recording_id):
+        refresh_transcript_projection_from_canonical(session, recording_id)
+
+    return matching_speakers
+
+
+def merge_recording_speakers_by_label(
+    session,
+    *,
+    recording_id: int,
+    source_diarization_label: str,
+    target_diarization_label: str,
+    actor_user_id: int | None = None,
+    source: str = "api",
+) -> tuple[RecordingSpeaker, RecordingSpeaker]:
+    recording = session.get(Recording, recording_id)
+    if recording is None:
+        raise LookupError("Recording not found")
+
+    if source_diarization_label == target_diarization_label:
+        raise ValueError("Cannot merge speaker into itself")
+
+    if recording_ready_for_canonical_backfill(recording.status):
+        ensure_canonical_backfill(session, recording_id)
+
+    recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
+    source_matches = [
+        recording_speaker
+        for recording_speaker in recording_speakers
+        if recording_speaker.diarization_label == source_diarization_label
+    ]
+    target_matches = [
+        recording_speaker
+        for recording_speaker in recording_speakers
+        if recording_speaker.diarization_label == target_diarization_label
+    ]
+
+    source_speaker = (
+        _resolve_active_recording_speaker(session, source_matches[0]) if source_matches else None
+    )
+    target_speaker = (
+        _resolve_active_recording_speaker(session, target_matches[0]) if target_matches else None
+    )
+
+    if source_speaker is None:
+        raise LookupError(f"Source speaker '{source_diarization_label}' not found")
+    if target_speaker is None:
+        raise LookupError(f"Target speaker '{target_diarization_label}' not found")
+    if source_speaker.id == target_speaker.id:
+        raise ValueError("Cannot merge speaker into itself")
+
+    if source_speaker.embedding:
+        if target_speaker.embedding:
+            target_speaker.embedding = merge_embeddings(
+                target_speaker.embedding,
+                source_speaker.embedding,
+                alpha=0.5,
+            )
+        else:
+            target_speaker.embedding = list(source_speaker.embedding)
+        session.add(target_speaker)
+
+    source_utterances = [
+        utterance
+        for utterance in list_active_utterances(session, recording_id)
+        if (utterance.recording_speaker_id or utterance.speaker_label) == source_speaker.id
+    ]
+    if not source_utterances:
+        source_utterances = [
+            utterance
+            for utterance in list_active_utterances(session, recording_id)
+            if (utterance.recording_speaker_id or utterance.speaker_label)
+            == source_speaker.diarization_label
+        ]
+
+    if source_utterances:
+        update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=source_utterances[0].public_id,
+            new_speaker_name=_recording_speaker_display_name(session, target_speaker),
+            diarization_label=target_speaker.diarization_label,
+            scope=SpeakerCorrectionScope.MERGE_INTO_SPEAKER,
+            actor_user_id=actor_user_id,
+            source=source,
+        )
+    else:
+        source_speaker.merged_into_id = target_speaker.id
+        source_speaker.speaker_status = "merged"
+        merge_recording_speaker_aliases(
+            session,
+            source_speaker=source_speaker,
+            target_speaker=target_speaker,
+        )
+        _append_speaker_correction_event(
+            session,
+            recording_id=recording_id,
+            actor_user_id=actor_user_id,
+            source_recording_speaker_id=source_speaker.id,
+            target_recording_speaker_id=target_speaker.id,
+            target_global_speaker_id=target_speaker.global_speaker_id,
+            event_type=SpeakerCorrectionEventType.MERGE_SPEAKERS,
+            scope=SpeakerCorrectionScope.MERGE_INTO_SPEAKER,
+            effective_from_ms=source_speaker.first_seen_ms,
+            payload={
+                "new_speaker_name": _recording_speaker_display_name(session, target_speaker),
+                "diarization_label": target_speaker.diarization_label,
+                "target_public_id": target_speaker.public_id,
+            },
+            update_source_provenance=True,
+        )
+
+    source_speaker.embedding = None
+    session.add(source_speaker)
+
+    if list_active_utterances(session, recording_id):
+        refresh_transcript_projection_from_canonical(session, recording_id)
+
+    return source_speaker, target_speaker
 
 
 def apply_compatibility_segment_replace(

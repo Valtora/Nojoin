@@ -597,7 +597,7 @@ export default function Sidebar() {
       await inferSpeakers(id);
       addNotification({
         message:
-          "Speaker inference started. The speaker names will be updated shortly.",
+          "Speaker inference started. Review the suggested names when they are ready.",
         type: "success",
       });
       // Dispatch event to notify other components (like the detail page)

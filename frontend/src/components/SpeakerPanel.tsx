@@ -3,6 +3,7 @@
 import {
   RecordingSpeaker,
   RecordingId,
+  SpeakerNameSuggestion,
   TranscriptSegment,
   VoiceprintExtractResult,
   BatchVoiceprintResponse,
@@ -15,6 +16,8 @@ import {
   User,
   UserCheck,
   Loader2,
+  Check,
+  X,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import ContextMenu from "./ContextMenu";
@@ -28,6 +31,8 @@ import {
   deleteRecordingSpeaker,
   extractVoiceprint,
   promoteToGlobalSpeaker,
+  acceptSpeakerNameSuggestion,
+  rejectSpeakerNameSuggestion,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import {
@@ -49,6 +54,7 @@ interface SpeakerPanelEntry {
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
+  speakerNameSuggestions?: SpeakerNameSuggestion[];
   segments: TranscriptSegment[];
   onPlaySegment: (time: number, end?: number) => void;
   recordingId: RecordingId;
@@ -65,6 +71,7 @@ interface SpeakerPanelProps {
 
 export default function SpeakerPanel({
   speakers,
+  speakerNameSuggestions = [],
   segments,
   onPlaySegment,
   recordingId,
@@ -101,6 +108,9 @@ export default function SpeakerPanel({
     useState<SpeakerPanelEntry | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resolvingSuggestionId, setResolvingSuggestionId] = useState<
+    string | null
+  >(null);
 
   // Voiceprint State
   const [extractingVoiceprint, setExtractingVoiceprint] = useState<
@@ -143,6 +153,14 @@ export default function SpeakerPanel({
 
     return counts;
   }, [segments]);
+
+  const pendingSuggestions = useMemo(
+    () =>
+      speakerNameSuggestions.filter(
+        (suggestion) => suggestion.status === "pending",
+      ),
+    [speakerNameSuggestions],
+  );
 
   const speakerEntries = useMemo(() => {
     const groupedSpeakers = new Map<string, RecordingSpeaker[]>();
@@ -416,6 +434,52 @@ export default function SpeakerPanel({
     }
   };
 
+  const handleAcceptSuggestion = async (suggestion: SpeakerNameSuggestion) => {
+    setResolvingSuggestionId(suggestion.id);
+    try {
+      await acceptSpeakerNameSuggestion(
+        recordingId,
+        suggestion.diarization_label,
+      );
+      addNotification({
+        type: "success",
+        message: `Accepted suggestion: ${suggestion.suggested_name}.`,
+      });
+      onRefresh();
+    } catch (e) {
+      console.error("Failed to accept speaker suggestion", e);
+      addNotification({
+        type: "error",
+        message: "Failed to accept speaker suggestion.",
+      });
+    } finally {
+      setResolvingSuggestionId(null);
+    }
+  };
+
+  const handleRejectSuggestion = async (suggestion: SpeakerNameSuggestion) => {
+    setResolvingSuggestionId(suggestion.id);
+    try {
+      await rejectSpeakerNameSuggestion(
+        recordingId,
+        suggestion.diarization_label,
+      );
+      addNotification({
+        type: "success",
+        message: `Rejected suggestion for ${suggestion.diarization_label}.`,
+      });
+      onRefresh();
+    } catch (e) {
+      console.error("Failed to reject speaker suggestion", e);
+      addNotification({
+        type: "error",
+        message: "Failed to reject speaker suggestion.",
+      });
+    } finally {
+      setResolvingSuggestionId(null);
+    }
+  };
+
   const handleVoiceprintModalComplete = () => {
     onRefresh();
   };
@@ -487,6 +551,9 @@ export default function SpeakerPanel({
             }
 
             const entryLabelSet = new Set(entry.labels);
+            const entrySuggestions = pendingSuggestions.filter((suggestion) =>
+              entryLabelSet.has(suggestion.diarization_label),
+            );
             const isSpeakerActive = segments.some(
               (segment) =>
                 entryLabelSet.has(segment.speaker) &&
@@ -501,70 +568,128 @@ export default function SpeakerPanel({
             return (
               <div
                 key={entry.key}
-                className="relative group flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
+                className="relative group p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="relative shrink-0">
-                    <div className="relative">
-                      <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
-                        {entry.hasVoiceprint ? (
-                          <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
-                        ) : (
-                          <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
-                        )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="relative shrink-0">
+                      <div className="relative">
+                        <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
+                          {entry.hasVoiceprint ? (
+                            <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
+                          ) : (
+                            <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                          )}
+                        </div>
+                        <div className="absolute -bottom-1 -right-1">
+                          <InlineColorPicker
+                            selectedColor={selectedColor}
+                            onColorSelect={(colorKey) => {
+                              entry.labels.forEach((label) => {
+                                onColorChange(label, colorKey);
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="absolute -bottom-1 -right-1">
-                        <InlineColorPicker
-                          selectedColor={selectedColor}
-                          onColorSelect={(colorKey) => {
-                            entry.labels.forEach((label) => {
-                              onColorChange(label, colorKey);
-                            });
-                          }}
-                        />
-                      </div>
+                      {/* Extracting indicator */}
+                      {extractingVoiceprint === speaker.diarization_label && (
+                        <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                          <Loader2 className="w-2 h-2 text-white animate-spin" />
+                        </div>
+                      )}
                     </div>
-                    {/* Extracting indicator */}
-                    {extractingVoiceprint === speaker.diarization_label && (
-                      <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
-                        <Loader2 className="w-2 h-2 text-white animate-spin" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {isRenaming ? (
-                      <input
-                        autoFocus
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onBlur={handleRenameSubmit}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRenameSubmit();
-                          if (e.key === "Escape") setRenamingSpeaker(null);
-                        }}
-                        className="w-full text-sm font-medium bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none"
-                      />
-                    ) : (
-                      <>
-                        <p
-                          className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
-                          title="Double-click to rename"
-                          onDoubleClick={() => handleRenameStart(entry)}
-                        >
-                          {entry.displayName}
-                        </p>
-                        {entry.members.length > 1 && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                            {entry.members.length} linked labels
+                    <div className="min-w-0 flex-1">
+                      {isRenaming ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={handleRenameSubmit}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameSubmit();
+                            if (e.key === "Escape") setRenamingSpeaker(null);
+                          }}
+                          className="w-full text-sm font-medium bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none"
+                        />
+                      ) : (
+                        <>
+                          <p
+                            className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                            title="Double-click to rename"
+                            onDoubleClick={() => handleRenameStart(entry)}
+                          >
+                            {entry.displayName}
                           </p>
-                        )}
-                      </>
-                    )}
+                          {entry.members.length > 1 && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              {entry.members.length} linked labels
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {entrySuggestions.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          {entrySuggestions.map((suggestion) => {
+                            const primaryEvidence = suggestion.evidence_spans[0];
+                            const isResolving = resolvingSuggestionId === suggestion.id;
+
+                            return (
+                              <div
+                                key={suggestion.id}
+                                className="rounded-md border border-amber-200 bg-amber-50/80 px-2 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-semibold">
+                                      Suggestion: {suggestion.suggested_name}
+                                    </p>
+                                    <p className="text-[11px] opacity-80">
+                                      {Math.round(suggestion.confidence * 100)}% confidence
+                                      {entrySuggestions.length > 1
+                                        ? ` • ${suggestion.diarization_label}`
+                                        : ""}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleAcceptSuggestion(suggestion)}
+                                      disabled={isResolving}
+                                    >
+                                      <Check className="h-3 w-3" />
+                                      Accept
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-[11px] font-medium text-amber-950 ring-1 ring-inset ring-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-transparent dark:text-amber-100 dark:ring-amber-700 dark:hover:bg-amber-900/40"
+                                      onClick={() => handleRejectSuggestion(suggestion)}
+                                      disabled={isResolving}
+                                    >
+                                      <X className="h-3 w-3" />
+                                      Reject
+                                    </button>
+                                  </div>
+                                </div>
+                                {suggestion.rationale && (
+                                  <p className="mt-1 opacity-85">{suggestion.rationale}</p>
+                                )}
+                                {primaryEvidence?.quote && (
+                                  <p className="mt-1 italic opacity-80">
+                                    “{primaryEvidence.quote}”
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0 self-start">
                   <button
                     className={`p-1.5 rounded-full transition-colors ${
                       isSpeakerActive && isPlaying
@@ -593,6 +718,7 @@ export default function SpeakerPanel({
                       <ArrowRightToLine className="w-3 h-3 fill-current" />
                     </button>
                   )}
+                  </div>
                 </div>
               </div>
             );

@@ -40,6 +40,34 @@ class RecordingSpeakerPublicRead(PublicModel):
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 
+class SpeakerNameSuggestionEvidenceRead(PublicModel):
+    quote: str
+    reason: str
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
+
+
+class SpeakerNameSuggestionRead(PublicModel):
+    id: str
+    diarization_label: str
+    recording_speaker_id: Optional[int] = None
+    suggested_name: str
+    suggested_global_speaker_id: Optional[int] = None
+    confidence: float
+    status: str
+    origin: str
+    source: str
+    provider: Optional[str] = None
+    rationale: Optional[str] = None
+    evidence_spans: list[SpeakerNameSuggestionEvidenceRead] = Field(default_factory=list)
+    signals: list[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: Optional[datetime] = None
+    resolution_reason: Optional[str] = None
+    resolution_actor_user_id: Optional[int] = None
+
+
 class TranscriptPublicRead(PublicModel):
     id: int
     created_at: datetime
@@ -53,6 +81,7 @@ class TranscriptPublicRead(PublicModel):
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
     meeting_edge_error_message: Optional[str] = None
+    speaker_name_suggestions: list[SpeakerNameSuggestionRead] = Field(default_factory=list)
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -173,6 +202,11 @@ def serialize_transcript(
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,
         meeting_edge_error_message=transcript.meeting_edge_error_message,
+        speaker_name_suggestions=[
+            SpeakerNameSuggestionRead.model_validate(item)
+            for item in (transcript.speaker_name_suggestions or [])
+            if isinstance(item, dict)
+        ],
         notes_status=transcript.notes_status,
         transcript_status=transcript.transcript_status,
         error_message=transcript.error_message,

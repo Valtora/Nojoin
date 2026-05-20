@@ -61,6 +61,7 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
+    speaker_name_suggestions JSON,
     notes_status VARCHAR(32) NOT NULL,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT
@@ -490,6 +491,54 @@ async def _seed_uploading_recording(
         await session.commit()
 
 
+async def _set_transcript_speaker_suggestions(
+    session_maker: sessionmaker,
+    suggestions: list[dict[str, object]],
+) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET speaker_name_suggestions = :suggestions WHERE recording_id = 1"
+            ),
+            {"suggestions": json.dumps(suggestions)},
+        )
+        await session.commit()
+
+
+def _build_pending_speaker_suggestion(
+    *,
+    diarization_label: str,
+    suggested_name: str,
+) -> dict[str, object]:
+    return {
+        "id": f"suggestion-{diarization_label.lower()}",
+        "diarization_label": diarization_label,
+        "recording_speaker_id": 1,
+        "suggested_name": suggested_name,
+        "suggested_global_speaker_id": None,
+        "confidence": 0.91,
+        "status": "pending",
+        "origin": "manual_retry",
+        "source": "llm",
+        "provider": "openai",
+        "rationale": "The speaker introduces themselves by name.",
+        "evidence_spans": [
+            {
+                "quote": "hello there",
+                "reason": "self_introduction",
+                "start_seconds": 0.0,
+                "end_seconds": 1.2,
+            }
+        ],
+        "signals": ["self_introduction"],
+        "created_at": "2026-05-19T00:00:00+00:00",
+        "updated_at": "2026-05-19T00:00:00+00:00",
+        "resolved_at": None,
+        "resolution_reason": None,
+        "resolution_actor_user_id": None,
+    }
+
+
 @pytest.mark.anyio
 async def test_get_utterances_backfills_processed_transcript(
     client: AsyncClient,
@@ -517,6 +566,107 @@ async def test_get_utterances_backfills_processed_transcript(
         ).scalar_one()
         assert count == 1
         assert last_event_id is not None
+
+
+@pytest.mark.anyio
+async def test_manual_recording_speaker_rename_supersedes_pending_suggestion(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+    await _set_transcript_speaker_suggestions(
+        test_session_maker,
+        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+    )
+
+    utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert utterances_response.status_code == 200
+
+    response = await client.put(
+        "/api/v1/speakers/recordings/canon-rec",
+        json={
+            "diarization_label": "SPEAKER_00",
+            "global_speaker_name": "Jordan",
+        },
+    )
+
+    assert response.status_code == 200
+
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+        ).scalar_one()
+
+    assert transcript.speaker_name_suggestions[0]["status"] == "superseded"
+    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "manual_name_change"
+    assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
+
+
+@pytest.mark.anyio
+async def test_accept_recording_speaker_suggestion_updates_identity_and_marks_accepted(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+    await _set_transcript_speaker_suggestions(
+        test_session_maker,
+        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+    )
+
+    utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert utterances_response.status_code == 200
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_00/suggestions/accept"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+        ).scalar_one()
+        speaker_row = (
+            await session.execute(
+                text(
+                    "SELECT local_name, name FROM recording_speakers WHERE recording_id = 1 AND diarization_label = 'SPEAKER_00'"
+                )
+            )
+        ).one()
+
+    assert transcript.speaker_name_suggestions[0]["status"] == "accepted"
+    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "accepted_by_user"
+    assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
+    assert speaker_row[0] == "Alex" or speaker_row[1] == "Alex"
+
+
+@pytest.mark.anyio
+async def test_reject_recording_speaker_suggestion_marks_rejected(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+    await _set_transcript_speaker_suggestions(
+        test_session_maker,
+        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_00/suggestions/reject"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+        ).scalar_one()
+
+    assert transcript.speaker_name_suggestions[0]["status"] == "rejected"
+    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "rejected_by_user"
+    assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
 
 
 @pytest.mark.anyio
@@ -1509,6 +1659,48 @@ async def test_recording_speaker_rename_records_correction_event_and_alias(
 
 
 @pytest.mark.anyio
+async def test_recording_speaker_rename_repairs_projection_when_projection_is_empty(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+
+    initial_utterances = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert initial_utterances.status_code == 200
+    assert initial_utterances.json()["utterances"]
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text("UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1")
+        )
+        await session.commit()
+
+    response = await client.put(
+        "/api/v1/speakers/recordings/canon-rec",
+        json={
+            "diarization_label": "SPEAKER_00",
+            "global_speaker_name": "Alex",
+        },
+    )
+
+    assert response.status_code == 200
+
+    utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert utterances_response.status_code == 200
+    utterance_speakers = [
+        item["speaker"] for item in utterances_response.json()["utterances"]
+    ]
+
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+        ).scalar_one()
+
+        assert transcript.segments
+        assert [segment["speaker"] for segment in transcript.segments] == utterance_speakers
+
+
+@pytest.mark.anyio
 async def test_recording_speaker_merge_repairs_canonical_segments_when_projection_is_empty(
     client: AsyncClient,
     test_session_maker: sessionmaker,
@@ -1637,6 +1829,73 @@ async def test_recording_speaker_link_to_global_records_correction_event_and_ali
         assert speaker_row[1] is None
         assert speaker_row[2] is not None
         assert ("global_name", "Jane Doe") in normalized_alias_rows
+
+
+@pytest.mark.anyio
+async def test_global_speaker_merge_records_recording_speaker_relink_event(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, user_id, name, embedding,
+                    is_voiceprint_locked, color, description
+                ) VALUES
+                    (7, :now, :now, 1, 'Alice', NULL, 0, NULL, NULL),
+                    (8, :now, :now, 1, 'Jane Doe', NULL, 0, NULL, NULL)
+                """
+            ),
+            {"now": "2026-05-19 00:00:00"},
+        )
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET global_speaker_id = 7, local_name = NULL, name = NULL WHERE diarization_label = 'SPEAKER_00'"
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/speakers/merge",
+        json={
+            "source_speaker_id": 7,
+            "target_speaker_id": 8,
+        },
+    )
+
+    assert response.status_code == 200
+
+    async with test_session_maker() as session:
+        speaker_row = (
+            await session.execute(
+                text(
+                    "SELECT global_speaker_id, local_name, last_speaker_correction_event_id FROM recording_speakers WHERE diarization_label = 'SPEAKER_00'"
+                )
+            )
+        ).one()
+        event_row = (
+            await session.execute(
+                text(
+                    "SELECT event_type, target_global_speaker_id FROM speaker_correction_events ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).one()
+        source_exists = (
+            await session.execute(
+                text("SELECT COUNT(*) FROM global_speakers WHERE id = 7")
+            )
+        ).scalar_one()
+
+        assert speaker_row[0] == 8
+        assert speaker_row[1] is None
+        assert speaker_row[2] is not None
+        assert event_row[0].lower() == "link_global_speaker"
+        assert event_row[1] == 8
+        assert source_exists == 0
 
 
 @pytest.mark.anyio

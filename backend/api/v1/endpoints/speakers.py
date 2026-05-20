@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from pydantic import BaseModel, ConfigDict
@@ -34,10 +35,18 @@ from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectio
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
     build_transcript_segments_for_read,
+    merge_recording_speakers_by_label,
     record_recording_speaker_corrections,
     recording_ready_for_canonical_backfill,
+    update_recording_speaker_identity,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.speaker_name_suggestions import (
+    SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+    SPEAKER_SUGGESTION_STATUS_REJECTED,
+    resolve_pending_transcript_speaker_suggestion,
+    supersede_pending_transcript_speaker_suggestions,
+)
 from backend.celery_app import celery_app
 
 router = APIRouter()
@@ -116,6 +125,34 @@ def _serialize_recording_speakers(
         serialize_recording_speaker(speaker, recording_public_id=recording_public_id)
         for speaker in speakers
     ]
+
+
+async def _mark_pending_speaker_suggestions_superseded(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    diarization_labels: list[str],
+    actor_user_id: int | None,
+    reason: str,
+) -> int:
+    transcript = (
+        await db.execute(select(Transcript).where(Transcript.recording_id == recording_id))
+    ).scalar_one_or_none()
+    if transcript is None:
+        return 0
+
+    changed = supersede_pending_transcript_speaker_suggestions(
+        transcript,
+        diarization_labels=diarization_labels,
+        reason=reason,
+        actor_user_id=actor_user_id,
+    )
+    if not changed:
+        return 0
+
+    flag_modified(transcript, "speaker_name_suggestions")
+    db.add(transcript)
+    return len(changed)
 
 class SpeakerUpdate(BaseModel):
     diarization_label: str
@@ -311,6 +348,58 @@ async def update_recording_speaker(
     statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
+
+    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        try:
+            await db.run_sync(
+                lambda sync_session: update_recording_speaker_identity(
+                    sync_session,
+                    recording_id=recording.id,
+                    diarization_label=update.diarization_label,
+                    new_speaker_name=update.global_speaker_name,
+                    target_global_speaker_id=(global_speaker.id if global_speaker is not None else None),
+                    actor_user_id=current_user.id,
+                    merge_global_embedding_alpha=(0.3 if global_speaker is not None else None),
+                    source="api",
+                )
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        superseded_suggestion_count = await _mark_pending_speaker_suggestions_superseded(
+            db,
+            recording_id=recording.id,
+            diarization_labels=[update.diarization_label],
+            actor_user_id=current_user.id,
+            reason="manual_name_change",
+        )
+        await db.commit()
+        refreshed_result = await db.execute(
+            select(RecordingSpeaker)
+            .where(RecordingSpeaker.recording_id == recording.id)
+            .where(RecordingSpeaker.diarization_label == update.diarization_label)
+            .options(selectinload(RecordingSpeaker.global_speaker))
+        )
+        refreshed_speakers = refreshed_result.scalars().all()
+
+        record_pipeline_metric(
+            stage="speaker_correction_applied",
+            recording_id=recording.id,
+            payload={
+                "correction_kind": "recording_speaker_rename",
+                "diarization_label": update.diarization_label,
+                "new_name": update.global_speaker_name,
+                "matched_global_speaker": global_speaker is not None,
+                "segments_repaired": True,
+                "superseded_suggestion_count": superseded_suggestion_count,
+            },
+            log=logger,
+        )
+
+        return _serialize_recording_speakers(
+            refreshed_speakers,
+            recording_public_id=recording.public_id,
+        )
         
     # 3. Update RecordingSpeakers
     stmt = select(RecordingSpeaker).where(
@@ -396,6 +485,20 @@ async def update_recording_speaker(
                     segments=new_segments,
                 )
 
+        superseded_suggestion_count = len(
+            supersede_pending_transcript_speaker_suggestions(
+                transcript,
+                diarization_labels=[update.diarization_label],
+                reason="manual_name_change",
+                actor_user_id=current_user.id,
+            )
+        )
+        if superseded_suggestion_count:
+            flag_modified(transcript, "speaker_name_suggestions")
+            db.add(transcript)
+    else:
+        superseded_suggestion_count = 0
+
     segments_repaired = segments_updated
 
     if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
@@ -435,6 +538,7 @@ async def update_recording_speaker(
             "new_name": update.global_speaker_name,
             "matched_global_speaker": global_speaker is not None,
             "segments_repaired": segments_repaired,
+            "superseded_suggestion_count": superseded_suggestion_count,
         },
         log=logger,
     )
@@ -444,6 +548,103 @@ async def update_recording_speaker(
         recording_speakers,
         recording_public_id=recording.public_id,
     )
+
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/suggestions/accept", response_model=dict)
+async def accept_recording_speaker_suggestion(
+    recording_id: str,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = (
+        await db.execute(select(Transcript).where(Transcript.recording_id == recording.id))
+    ).scalar_one_or_none()
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    suggestion = resolve_pending_transcript_speaker_suggestion(
+        transcript,
+        diarization_label=diarization_label,
+        resolution=SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+        actor_user_id=current_user.id,
+        reason="accepted_by_user",
+    )
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="Pending speaker suggestion not found")
+
+    flag_modified(transcript, "speaker_name_suggestions")
+    db.add(transcript)
+
+    await update_recording_speaker(
+        recording_id,
+        SpeakerUpdate(
+            diarization_label=diarization_label,
+            global_speaker_name=str(suggestion.get("suggested_name", "")).strip(),
+        ),
+        db,
+        current_user,
+    )
+
+    record_pipeline_metric(
+        stage="speaker_name_suggestion_resolved",
+        recording_id=recording.id,
+        payload={
+            "diarization_label": diarization_label,
+            "resolution": SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+            "suggested_name": suggestion.get("suggested_name"),
+            "origin": suggestion.get("origin"),
+            "source": suggestion.get("source"),
+            "provider": suggestion.get("provider"),
+        },
+        log=logger,
+    )
+    return {"ok": True}
+
+
+@router.post("/recordings/{recording_id}/speakers/{diarization_label}/suggestions/reject", response_model=dict)
+async def reject_recording_speaker_suggestion(
+    recording_id: str,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = (
+        await db.execute(select(Transcript).where(Transcript.recording_id == recording.id))
+    ).scalar_one_or_none()
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    suggestion = resolve_pending_transcript_speaker_suggestion(
+        transcript,
+        diarization_label=diarization_label,
+        resolution=SPEAKER_SUGGESTION_STATUS_REJECTED,
+        actor_user_id=current_user.id,
+        reason="rejected_by_user",
+    )
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="Pending speaker suggestion not found")
+
+    flag_modified(transcript, "speaker_name_suggestions")
+    db.add(transcript)
+    await db.commit()
+
+    record_pipeline_metric(
+        stage="speaker_name_suggestion_resolved",
+        recording_id=recording.id,
+        payload={
+            "diarization_label": diarization_label,
+            "resolution": SPEAKER_SUGGESTION_STATUS_REJECTED,
+            "suggested_name": suggestion.get("suggested_name"),
+            "origin": suggestion.get("origin"),
+            "source": suggestion.get("source"),
+            "provider": suggestion.get("provider"),
+        },
+        log=logger,
+    )
+    return {"ok": True}
 
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/promote", response_model=RecordingSpeakerPublicRead)
 async def promote_speaker_to_global(
@@ -491,57 +692,80 @@ async def promote_speaker_to_global(
     existing_global = result.scalar_one_or_none()
     
     if existing_global:
-        # Already exists, just link to it
-        recording_speaker.global_speaker_id = existing_global.id
-        recording_speaker.local_name = None
-        recording_speaker.name = None
-        
-        # Merge embeddings
-        if recording_speaker.embedding:
-            if existing_global.embedding:
-                existing_global.embedding = merge_embeddings(existing_global.embedding, recording_speaker.embedding, alpha=0.5)
-            else:
-                existing_global.embedding = recording_speaker.embedding
-            db.add(existing_global)
+        target_global_speaker_id = existing_global.id
     else:
-        # Create new global speaker
         global_speaker = GlobalSpeaker(
             name=speaker_name,
             embedding=recording_speaker.embedding,
             user_id=current_user.id
         )
         db.add(global_speaker)
-        await db.flush()  # Get the ID
-        
-        # Link the recording speaker
-        recording_speaker.global_speaker_id = global_speaker.id
-        recording_speaker.local_name = None
-        recording_speaker.name = None
-    
-    db.add(recording_speaker)
+        await db.flush()
+        target_global_speaker_id = global_speaker.id
 
     if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
-        event_type = (
-            SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
-            if existing_global is not None
-            else SpeakerCorrectionEventType.PROMOTE_GLOBAL_SPEAKER
-        )
-        await db.run_sync(
-            lambda sync_session: record_recording_speaker_corrections(
-                sync_session,
-                recording_id=recording.id,
-                target_recording_speaker_ids=[recording_speaker.id],
-                actor_user_id=current_user.id,
-                event_type=event_type,
-                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
-                target_global_speaker_id=recording_speaker.global_speaker_id,
-                payload={
-                    "old_name": speaker_name,
-                    "new_name": speaker_name,
-                    "created_global_speaker": existing_global is None,
-                },
+        try:
+            await db.run_sync(
+                lambda sync_session: update_recording_speaker_identity(
+                    sync_session,
+                    recording_id=recording.id,
+                    diarization_label=diarization_label,
+                    new_speaker_name=speaker_name,
+                    target_global_speaker_id=target_global_speaker_id,
+                    actor_user_id=current_user.id,
+                    merge_global_embedding_alpha=(0.5 if existing_global is not None else None),
+                    event_type=(
+                        SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
+                        if existing_global is not None
+                        else SpeakerCorrectionEventType.PROMOTE_GLOBAL_SPEAKER
+                    ),
+                    source="api",
+                )
             )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        await _mark_pending_speaker_suggestions_superseded(
+            db,
+            recording_id=recording.id,
+            diarization_labels=[diarization_label],
+            actor_user_id=current_user.id,
+            reason="speaker_promoted_to_global",
         )
+        await db.commit()
+        refreshed_result = await db.execute(
+            select(RecordingSpeaker)
+            .where(RecordingSpeaker.recording_id == recording.id)
+            .where(RecordingSpeaker.diarization_label == diarization_label)
+            .options(selectinload(RecordingSpeaker.global_speaker))
+        )
+        refreshed_recording_speaker = refreshed_result.scalar_one_or_none()
+        if refreshed_recording_speaker is None:
+            raise HTTPException(status_code=404, detail="Speaker not found in this recording")
+
+        return serialize_recording_speaker(
+            refreshed_recording_speaker,
+            recording_public_id=recording.public_id,
+        )
+
+    recording_speaker.global_speaker_id = target_global_speaker_id
+    recording_speaker.local_name = None
+    recording_speaker.name = None
+    db.add(recording_speaker)
+
+    transcript = (
+        await db.execute(select(Transcript).where(Transcript.recording_id == recording.id))
+    ).scalar_one_or_none()
+    if transcript is not None:
+        changed = supersede_pending_transcript_speaker_suggestions(
+            transcript,
+            diarization_labels=[diarization_label],
+            reason="speaker_promoted_to_global",
+            actor_user_id=current_user.id,
+        )
+        if changed:
+            flag_modified(transcript, "speaker_name_suggestions")
+            db.add(transcript)
 
     await db.commit()
     await db.refresh(recording_speaker)
@@ -555,12 +779,30 @@ async def _merge_local_speakers(
     db: AsyncSession,
     recording_id: int,
     source_label: str,
-    target_label: str
+    target_label: str,
+    actor_user_id: int | None = None,
 ):
     """
     Helper to merge two local speakers (by diarization label) within a single recording.
     Updates transcript segments, merges embeddings, and deletes source recording speaker.
     """
+    recording = await db.get(Recording, recording_id)
+    if recording is not None and _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+        try:
+            await db.run_sync(
+                lambda sync_session: merge_recording_speakers_by_label(
+                    sync_session,
+                    recording_id=recording_id,
+                    source_diarization_label=source_label,
+                    target_diarization_label=target_label,
+                    actor_user_id=actor_user_id,
+                    source="api",
+                )
+            )
+        except (LookupError, ValueError):
+            return
+        return
+
     # 1. Find the source and target speaker entries
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
@@ -593,7 +835,6 @@ async def _merge_local_speakers(
             source_aliases.add(gs.name)
 
     # 2. Update Transcript Segments
-    recording = await db.get(Recording, recording_id)
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
@@ -683,13 +924,34 @@ async def merge_speakers(
             # COLLISION: Target exists in this recording.
             # Merges the local speakers to prevent duplicates in the meeting view.
             if rs.id != target_rs.id: # Sanity check
-                await _merge_local_speakers(db, rs.recording_id, rs.diarization_label, target_rs.diarization_label)
+                await _merge_local_speakers(
+                    db,
+                    rs.recording_id,
+                    rs.diarization_label,
+                    target_rs.diarization_label,
+                    actor_user_id=current_user.id,
+                )
         else:
-            # No collision: Just reassign
-            rs.global_speaker_id = target.id
-            rs.name = target.name
-            rs.local_name = None 
-            db.add(rs)
+            recording = await db.get(Recording, rs.recording_id)
+            if recording is not None and _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+                await db.run_sync(
+                    lambda sync_session: update_recording_speaker_identity(
+                        sync_session,
+                        recording_id=rs.recording_id,
+                        diarization_label=rs.diarization_label,
+                        new_speaker_name=target.name,
+                        target_global_speaker_id=target.id,
+                        actor_user_id=current_user.id,
+                        merge_global_embedding_alpha=None,
+                        source="api",
+                    )
+                )
+            else:
+                # No collision: Just reassign
+                rs.global_speaker_id = target.id
+                rs.name = target.name
+                rs.local_name = None 
+                db.add(rs)
         
     # 3. Merge embeddings
     if source.embedding and target.embedding:
@@ -1234,7 +1496,19 @@ async def merge_recording_speakers(
         db, 
         recording.id,
         merge_data.source_speaker_label, 
-        merge_data.target_speaker_label
+        merge_data.target_speaker_label,
+        actor_user_id=current_user.id,
+    )
+
+    await _mark_pending_speaker_suggestions_superseded(
+        db,
+        recording_id=recording.id,
+        diarization_labels=[
+            merge_data.source_speaker_label,
+            merge_data.target_speaker_label,
+        ],
+        actor_user_id=current_user.id,
+        reason="manual_speaker_merge",
     )
 
     # 5. Flush and Commit
@@ -1290,6 +1564,16 @@ async def delete_recording_speaker(
                     transcript=transcript,
                     segments=updated_segments,
                 )
+
+        suggestion_changes = supersede_pending_transcript_speaker_suggestions(
+            transcript,
+            diarization_labels=[diarization_label],
+            reason="speaker_deleted",
+            actor_user_id=current_user.id,
+        )
+        if suggestion_changes:
+            flag_modified(transcript, "speaker_name_suggestions")
+            db.add(transcript)
 
     # 3. Delete RecordingSpeaker entry
     statement = select(RecordingSpeaker).where(

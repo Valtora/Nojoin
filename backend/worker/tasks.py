@@ -11,6 +11,7 @@ import requests.exceptions
 from typing import TYPE_CHECKING, Sequence
 from celery import Task
 from celery.signals import worker_ready
+from sqlalchemy import inspect
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
@@ -57,6 +58,13 @@ from backend.utils.meeting_notes import (
     build_recording_speaker_map,
     format_segments_for_llm,
     meeting_event_context_from_calendar_event,
+)
+from backend.utils.speaker_name_suggestions import (
+    SpeakerInferenceResult,
+    build_mapping_based_speaker_suggestions,
+    build_persisted_speaker_suggestion,
+    detect_rule_based_speaker_suggestions,
+    persist_transcript_speaker_suggestions,
 )
 from backend.models.calendar import CalendarEvent
 from backend.utils.audio_windows import (
@@ -211,6 +219,115 @@ def _complete_speaker_inference_task(
     recording.processing_step = "Completed"
     session.add(recording)
     session.commit()
+
+
+def _build_exact_global_speaker_name_map(
+    session,
+    *,
+    user_id: int | None,
+    suggested_names: Sequence[str],
+) -> dict[str, int]:
+    cleaned_names = sorted({name.strip() for name in suggested_names if str(name).strip()})
+    if not user_id or not cleaned_names:
+        return {}
+
+    bind = session.get_bind()
+    if bind is not None and not inspect(bind).has_table("global_speakers"):
+        logger.debug(
+            "Skipping exact global speaker matching for recording suggestions because the global_speakers table is unavailable.",
+        )
+        return {}
+
+    global_speakers = session.exec(
+        select(GlobalSpeaker)
+        .where(GlobalSpeaker.user_id == user_id)
+        .where(GlobalSpeaker.name.in_(cleaned_names))
+    ).all()
+    return {
+        str(speaker.name).strip(): int(speaker.id)
+        for speaker in global_speakers
+        if speaker.id is not None and speaker.name
+    }
+
+
+def _build_persisted_speaker_name_suggestions(
+    session,
+    *,
+    recording: Recording,
+    speakers: Sequence[RecordingSpeaker],
+    inference_result: SpeakerInferenceResult,
+    origin: str,
+    provider: str | None,
+) -> list[dict[str, object]]:
+    speakers_by_label = {speaker.diarization_label: speaker for speaker in speakers}
+    exact_global_name_map = _build_exact_global_speaker_name_map(
+        session,
+        user_id=recording.user_id,
+        suggested_names=[
+            suggestion.suggested_name for suggestion in inference_result.suggestions
+        ],
+    )
+
+    persisted: list[dict[str, object]] = []
+    for suggestion in inference_result.suggestions:
+        speaker = speakers_by_label.get(suggestion.diarization_label)
+        if speaker is None:
+            continue
+        if speaker.merged_into_id or speaker.local_name or speaker.global_speaker_id:
+            logger.info(
+                "Skipping speaker suggestion for trusted or merged label %s",
+                suggestion.diarization_label,
+            )
+            continue
+
+        persisted.append(
+            build_persisted_speaker_suggestion(
+                suggestion,
+                origin=origin,
+                provider=provider,
+                recording_speaker_id=speaker.id,
+                suggested_global_speaker_id=exact_global_name_map.get(
+                    suggestion.suggested_name
+                ),
+            )
+        )
+
+    return persisted
+
+
+def _persist_generated_speaker_name_suggestions(
+    session,
+    *,
+    recording: Recording,
+    transcript: Transcript,
+    speakers: Sequence[RecordingSpeaker],
+    inference_result: SpeakerInferenceResult,
+    origin: str,
+    provider: str | None,
+    replaced_reason: str,
+) -> int:
+    if not inference_result.suggestions:
+        return 0
+
+    persisted = _build_persisted_speaker_name_suggestions(
+        session,
+        recording=recording,
+        speakers=speakers,
+        inference_result=inference_result,
+        origin=origin,
+        provider=provider,
+    )
+    if not persisted:
+        return 0
+
+    persist_transcript_speaker_suggestions(
+        transcript,
+        persisted,
+        replaced_reason=replaced_reason,
+    )
+    flag_modified(transcript, "speaker_name_suggestions")
+    session.add(transcript)
+    return len(persisted)
 
 
 def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
@@ -921,23 +1038,55 @@ def _apply_automatic_meeting_intelligence_result(
     transcript: Transcript,
     speakers: Sequence[RecordingSpeaker],
     result: AutomaticMeetingIntelligenceResult,
+    *,
+    meeting_context: MeetingEventContext | None,
+    provider: str | None,
 ) -> None:
-    speakers_by_label = {speaker.diarization_label: speaker for speaker in speakers}
+    segments = [
+        dict(segment)
+        for segment in (transcript.segments or [])
+        if isinstance(segment, dict)
+    ]
+    eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
+    rule_based_result = detect_rule_based_speaker_suggestions(
+        segments,
+        eligible_labels,
+        meeting_context,
+    )
+    llm_mapping = {
+        label: inferred_name
+        for label, inferred_name in result.speaker_mapping.items()
+        if label not in rule_based_result.mapping
+    }
+    llm_result = build_mapping_based_speaker_suggestions(
+        llm_mapping,
+        segments=segments,
+        eligible_labels=eligible_labels,
+        meeting_context=meeting_context,
+        source="llm",
+    )
 
-    for label, inferred_name in result.speaker_mapping.items():
-        speaker = speakers_by_label.get(label)
-        if speaker is None:
-            continue
-        if speaker.merged_into_id or speaker.local_name or speaker.global_speaker_id:
-            logger.info(
-                "Skipping automatic speaker rename for trusted or merged label %s",
-                label,
-            )
-            continue
-
-        if speaker.name != inferred_name:
-            speaker.name = inferred_name
-            session.add(speaker)
+    suggestion_count = 0
+    suggestion_count += _persist_generated_speaker_name_suggestions(
+        session,
+        recording=recording,
+        transcript=transcript,
+        speakers=speakers,
+        inference_result=rule_based_result,
+        origin="automatic_meeting_intelligence",
+        provider=None,
+        replaced_reason="automatic_meeting_intelligence_refresh",
+    )
+    suggestion_count += _persist_generated_speaker_name_suggestions(
+        session,
+        recording=recording,
+        transcript=transcript,
+        speakers=speakers,
+        inference_result=llm_result,
+        origin="automatic_meeting_intelligence",
+        provider=provider,
+        replaced_reason="automatic_meeting_intelligence_refresh",
+    )
 
     recording.name = result.title
     transcript.notes = result.notes_markdown
@@ -946,6 +1095,17 @@ def _apply_automatic_meeting_intelligence_result(
     session.add(recording)
     session.add(transcript)
     session.commit()
+    record_pipeline_metric(
+        stage="speaker_name_suggestions_generated",
+        recording_id=recording.id,
+        payload={
+            "origin": "automatic_meeting_intelligence",
+            "suggestion_count": suggestion_count,
+            "rule_based_count": len(rule_based_result.suggestions),
+            "llm_count": len(llm_result.suggestions),
+        },
+        log=logger,
+    )
     update_recording_status(session, recording.id)
 
 
@@ -1004,7 +1164,40 @@ def _run_automatic_meeting_intelligence_stage(
     device_suffix: str,
 ) -> AutomaticMeetingIntelligenceResult | None:
     cleaned_transcript = transcript_text.strip()
+    meeting_context = _resolve_meeting_event_context(session, recording)
+    deterministic_result = detect_rule_based_speaker_suggestions(
+        [
+            dict(segment)
+            for segment in (transcript.segments or [])
+            if isinstance(segment, dict)
+        ],
+        unresolved_speakers,
+        meeting_context,
+    )
     if not cleaned_transcript:
+        suggestion_count = _persist_generated_speaker_name_suggestions(
+            session,
+            recording=recording,
+            transcript=transcript,
+            speakers=speakers,
+            inference_result=deterministic_result,
+            origin="automatic_meeting_intelligence",
+            provider=None,
+            replaced_reason="automatic_meeting_intelligence_refresh",
+        )
+        if suggestion_count:
+            session.commit()
+            record_pipeline_metric(
+                stage="speaker_name_suggestions_generated",
+                recording_id=recording.id,
+                payload={
+                    "origin": "automatic_meeting_intelligence",
+                    "suggestion_count": suggestion_count,
+                    "rule_based_count": len(deterministic_result.suggestions),
+                    "llm_count": 0,
+                },
+                log=logger,
+            )
         logger.info(
             "Skipping automatic meeting intelligence for recording %s: transcript is empty",
             recording.id,
@@ -1018,6 +1211,29 @@ def _run_automatic_meeting_intelligence_stage(
             recording.id,
             missing_llm_config,
         )
+        suggestion_count = _persist_generated_speaker_name_suggestions(
+            session,
+            recording=recording,
+            transcript=transcript,
+            speakers=speakers,
+            inference_result=deterministic_result,
+            origin="automatic_meeting_intelligence",
+            provider=None,
+            replaced_reason="automatic_meeting_intelligence_refresh",
+        )
+        if suggestion_count:
+            session.commit()
+            record_pipeline_metric(
+                stage="speaker_name_suggestions_generated",
+                recording_id=recording.id,
+                payload={
+                    "origin": "automatic_meeting_intelligence",
+                    "suggestion_count": suggestion_count,
+                    "rule_based_count": len(deterministic_result.suggestions),
+                    "llm_count": 0,
+                },
+                log=logger,
+            )
         return None
 
     request = AutomaticMeetingIntelligenceRequest(
@@ -1025,7 +1241,7 @@ def _run_automatic_meeting_intelligence_stage(
         unresolved_speakers=tuple(unresolved_speakers),
         user_notes=transcript.user_notes,
         prefer_short_titles=prefer_short_titles,
-        meeting_context=_resolve_meeting_event_context(session, recording),
+        meeting_context=meeting_context,
     )
 
     if task is not None:
@@ -1058,6 +1274,8 @@ def _run_automatic_meeting_intelligence_stage(
             transcript,
             speakers,
             result,
+            meeting_context=meeting_context,
+            provider=llm_config.provider,
         )
         logger.info(
             "Generated unified meeting intelligence for recording %s",
@@ -2648,25 +2866,9 @@ def infer_speakers_task(self, recording_id: int):
             logger.error(f"Recording {recording_id} not found.")
             return
 
-        # Fetch user settings for provider resolution.
-        user_settings = {}
-        if recording.user_id:
-            user = session.get(User, recording.user_id)
-            if user and user.settings:
-                user_settings = user.settings
-        llm_config = resolve_llm_config(session, user_settings)
-        missing_llm_config = llm_config.missing_configuration_message()
-        if missing_llm_config:
-            logger.warning(
-                "Cannot infer speakers for recording %s: %s",
-                recording_id,
-                missing_llm_config,
-            )
-            _complete_speaker_inference_task(session, recording)
-            return
-
-        # Fetch transcript
-        transcript = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+        transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        ).first()
         segments = build_transcript_segments_for_read(
             session,
             recording_id,
@@ -2677,48 +2879,120 @@ def infer_speakers_task(self, recording_id: int):
             _complete_speaker_inference_task(session, recording)
             return
 
+        speakers = session.exec(
+            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+        ).all()
+        eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
+        meeting_context = _resolve_meeting_event_context(session, recording)
+
+        suggestion_count = 0
+        rule_based_result = detect_rule_based_speaker_suggestions(
+            segments,
+            eligible_labels,
+            meeting_context,
+        )
+        suggestion_count += _persist_generated_speaker_name_suggestions(
+            session,
+            recording=recording,
+            transcript=transcript,
+            speakers=speakers,
+            inference_result=rule_based_result,
+            origin="manual_retry",
+            provider=None,
+            replaced_reason="manual_retry_refresh",
+        )
+
+        # Fetch user settings for provider resolution.
+        user_settings = {}
+        if recording.user_id:
+            user = session.get(User, recording.user_id)
+            if user and user.settings:
+                user_settings = user.settings
+        llm_config = resolve_llm_config(session, user_settings)
+        missing_llm_config = llm_config.missing_configuration_message()
+        remaining_labels = [
+            label for label in eligible_labels if label not in rule_based_result.mapping
+        ]
+        if missing_llm_config and remaining_labels:
+            logger.warning(
+                "Cannot infer speakers for recording %s: %s",
+                recording_id,
+                missing_llm_config,
+            )
+            if suggestion_count:
+                session.commit()
+                record_pipeline_metric(
+                    stage="speaker_name_suggestions_generated",
+                    recording_id=recording_id,
+                    payload={
+                        "origin": "manual_retry",
+                        "suggestion_count": suggestion_count,
+                        "rule_based_count": len(rule_based_result.suggestions),
+                        "llm_count": 0,
+                    },
+                    log=logger,
+                )
+            _complete_speaker_inference_task(session, recording)
+            return
+
         # Update status (optional, but good for UI feedback if we had a specific status for this)
         # For now, we just log it.
         logger.info(f"Starting independent speaker inference for recording {recording_id}")
 
-        # Prepare transcript for LLM
-        transcript_for_llm = ""
-        for seg in segments:
-            start = seg.get('start', 0)
-            end = seg.get('end', 0)
-            def fmt(ts):
-                h = int(ts // 3600)
-                m = int((ts % 3600) // 60)
-                s = ts % 60
-                return f"{h:02}.{m:02}.{s:05.2f}s"
-            
-            diarization_label = seg.get('speaker', 'Unknown')
-            text = seg.get('text', '')
-            transcript_for_llm += f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
+        llm_result = SpeakerInferenceResult()
+        if remaining_labels and not missing_llm_config:
+            transcript_for_llm = ""
+            for seg in segments:
+                start = seg.get("start", 0)
+                end = seg.get("end", 0)
 
-        # Run inference
-        backend = _llm_backend_from_config(llm_config)
-        inferred_mapping = backend.infer_speakers(
-            transcript_for_llm,
-            user_notes=transcript.user_notes,
-            meeting_context=_resolve_meeting_event_context(session, recording),
-        )
-        logger.info(f"LLM Inferred Mapping: {inferred_mapping}")
+                def fmt(ts):
+                    h = int(ts // 3600)
+                    m = int((ts % 3600) // 60)
+                    s = ts % 60
+                    return f"{h:02}.{m:02}.{s:05.2f}s"
 
-        # Update speakers in DB
-        speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
-        
-        updated_count = 0
-        for s in speakers:
-            label = s.diarization_label
-            inferred_name = inferred_mapping.get(label)
-            if inferred_name and inferred_name != s.name:
-                s.name = inferred_name
-                session.add(s)
-                updated_count += 1
-        
+                diarization_label = seg.get("speaker", "Unknown")
+                text = seg.get("text", "")
+                transcript_for_llm += (
+                    f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
+                )
+
+            backend = _llm_backend_from_config(llm_config)
+            llm_result = backend.infer_speaker_suggestions(
+                transcript_for_llm,
+                user_notes=transcript.user_notes,
+                meeting_context=meeting_context,
+                eligible_labels=remaining_labels,
+            )
+            suggestion_count += _persist_generated_speaker_name_suggestions(
+                session,
+                recording=recording,
+                transcript=transcript,
+                speakers=speakers,
+                inference_result=llm_result,
+                origin="manual_retry",
+                provider=llm_config.provider,
+                replaced_reason="manual_retry_refresh",
+            )
+
         session.commit()
-        logger.info(f"Updated {updated_count} speakers for recording {recording_id}")
+        record_pipeline_metric(
+            stage="speaker_name_suggestions_generated",
+            recording_id=recording_id,
+            payload={
+                "origin": "manual_retry",
+                "suggestion_count": suggestion_count,
+                "rule_based_count": len(rule_based_result.suggestions),
+                "llm_count": len(llm_result.suggestions),
+            },
+            log=logger,
+        )
+        logger.info(
+            "Stored %s speaker suggestions for recording %s",
+            suggestion_count,
+            recording_id,
+        )
 
         _complete_speaker_inference_task(session, recording)
 

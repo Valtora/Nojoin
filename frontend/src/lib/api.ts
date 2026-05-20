@@ -405,6 +405,24 @@ export const updateSpeakerColor = async (
   );
 };
 
+export const acceptSpeakerNameSuggestion = async (
+  recordingId: RecordingId,
+  diarizationLabel: string,
+): Promise<void> => {
+  await api.post(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/accept`,
+  );
+};
+
+export const rejectSpeakerNameSuggestion = async (
+  recordingId: RecordingId,
+  diarizationLabel: string,
+): Promise<void> => {
+  await api.post(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/reject`,
+  );
+};
+
 export const updateTranscriptSegmentSpeaker = async (
   recordingId: RecordingId,
   segmentIndex: number,
@@ -414,6 +432,19 @@ export const updateTranscriptSegmentSpeaker = async (
     new_speaker_name: assignment.name,
     global_speaker_id: assignment.globalSpeakerId,
     diarization_label: assignment.diarizationLabel,
+  });
+};
+
+export const updateTranscriptUtteranceSpeaker = async (
+  recordingId: RecordingId,
+  utteranceId: string,
+  assignment: TranscriptSpeakerAssignment,
+): Promise<void> => {
+  await api.patch(`/transcripts/${recordingId}/utterances/${utteranceId}/speaker`, {
+    new_speaker_name: assignment.name,
+    global_speaker_id: assignment.globalSpeakerId,
+    diarization_label: assignment.diarizationLabel,
+    scope: assignment.scope,
   });
 };
 

@@ -5,6 +5,7 @@ import {
   getSettings,
   updateSpeaker,
   updateTranscriptSegmentSpeaker,
+  updateTranscriptUtteranceSpeaker,
   updateTranscriptSegmentText,
   findAndReplace,
   renameRecording,
@@ -609,6 +610,11 @@ export default function RecordingPage({ params }: PageProps) {
     const nextAssignment = {
       ...assignment,
       name: assignment.name.trim(),
+      scope:
+        assignment.scope ||
+        (segment.speaker.startsWith("LIVE_")
+          ? "from_this_utterance_forward"
+          : "speaker_everywhere_in_recording"),
     };
 
     if (!nextAssignment.name) {
@@ -639,7 +645,15 @@ export default function RecordingPage({ params }: PageProps) {
 
     pushToHistory(`Change speaker segment ${index}`);
     try {
-      await updateTranscriptSegmentSpeaker(recording.id, index, nextAssignment);
+      if (segment.id) {
+        await updateTranscriptUtteranceSpeaker(
+          recording.id,
+          segment.id,
+          nextAssignment,
+        );
+      } else {
+        await updateTranscriptSegmentSpeaker(recording.id, index, nextAssignment);
+      }
       router.refresh();
       const updated = await getRecording(recording.id);
       setRecording(updated);
@@ -1270,6 +1284,9 @@ export default function RecordingPage({ params }: PageProps) {
                 <Panel defaultSize={100 - chatPanelHeight} minSize={20}>
                   <SpeakerPanel
                     speakers={recording.speakers || []}
+                    speakerNameSuggestions={
+                      recording.transcript?.speaker_name_suggestions || []
+                    }
                     segments={recording.transcript?.segments || []}
                     onPlaySegment={handlePlaySegment}
                     recordingId={recording.id}

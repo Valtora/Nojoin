@@ -21,6 +21,7 @@ class Transcript(BaseDBModel, table=True):
     meeting_edge_status: str = Field(default="idle")
     meeting_edge_error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_source_signature: Optional[str] = Field(default=None, sa_column=Column(Text))
+    speaker_name_suggestions: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSONB))
     notes_status: str = Field(default="pending") # pending, generating, completed, error
     transcript_status: str = Field(default="pending") # pending, processing, completed, error
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))

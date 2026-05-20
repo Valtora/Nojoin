@@ -210,7 +210,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       await inferSpeakers(recording.id);
       addNotification({
         message:
-          "Speaker inference started. The speaker names will be updated shortly.",
+          "Speaker inference started. Review the suggested names when they are ready.",
         type: "success",
       });
       window.dispatchEvent(

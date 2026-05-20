@@ -91,19 +91,63 @@ export interface RecordingSpeaker extends BaseDBModel {
   merged_into_id?: number | null;
 }
 
+export type SpeakerNameSuggestionStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "superseded";
+
+export interface SpeakerNameSuggestionEvidence {
+  quote: string;
+  reason: string;
+  start_seconds?: number | null;
+  end_seconds?: number | null;
+}
+
+export interface SpeakerNameSuggestion {
+  id: string;
+  diarization_label: string;
+  recording_speaker_id?: number | null;
+  suggested_name: string;
+  suggested_global_speaker_id?: number | null;
+  confidence: number;
+  status: SpeakerNameSuggestionStatus;
+  origin: string;
+  source: string;
+  provider?: string | null;
+  rationale?: string | null;
+  evidence_spans: SpeakerNameSuggestionEvidence[];
+  signals: string[];
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string | null;
+  resolution_reason?: string | null;
+  resolution_actor_user_id?: number | null;
+}
+
+export type SpeakerCorrectionScope =
+  | "utterance_only"
+  | "speaker_everywhere_in_recording"
+  | "from_this_utterance_forward"
+  | "merge_into_speaker";
+
 export interface TranscriptSpeakerAssignment {
   name: string;
   globalSpeakerId?: number;
   diarizationLabel?: string;
+  scope: SpeakerCorrectionScope;
 }
 
 export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 
 export interface TranscriptSegment {
+  id?: string;
   start: number;
   end: number;
   text: string;
   speaker: string;
+  recording_speaker_id?: number;
+  revision?: number;
   speaker_state?: "provisional" | "stable" | "manual_override" | string;
   overlapping_speakers?: string[];
   provisional?: boolean;
@@ -138,6 +182,7 @@ export interface Transcript extends BaseDBModel {
   meeting_edge_payload?: MeetingEdgePayload | null;
   meeting_edge_status?: string;
   meeting_edge_error_message?: string | null;
+  speaker_name_suggestions?: SpeakerNameSuggestion[];
   notes_status?: string; // pending, generating, completed, error
   transcript_status?: string; // pending, processing, completed, error
   error_message?: string;

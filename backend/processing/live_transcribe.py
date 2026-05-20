@@ -53,7 +53,7 @@ from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.rolling_diarization import (
     build_rolling_diarization_config_hash,
-    build_window_speaker_metadata,
+    analyze_window_speakers,
     get_rolling_diarization_model_name,
     persist_diarization_window_result,
 )
@@ -76,6 +76,9 @@ LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.45
 LIVE_NEW_SPEAKER_THRESHOLD = 0.35
 LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
 LIVE_MIN_EMBEDDING_DURATION_S = 0.5
+LIVE_VOICEPRINT_MIN_CLEAN_DURATION_S = 1.5
+LIVE_RECORDING_SPEAKER_VOICEPRINT_ALPHA = 0.20
+LIVE_GLOBAL_SPEAKER_VOICEPRINT_ALPHA = 0.10
 LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
 
 _STATE_FILENAME = "state.json"
@@ -391,6 +394,8 @@ def _run_live_rolling_diarization_pass(
         "matched_turn_count": 0,
         "updated_utterance_count": 0,
         "preserved_manual_lock_count": 0,
+        "voiceprint_update_count": 0,
+        "global_voiceprint_update_count": 0,
     }
     if not config_manager.get("enable_rolling_diarization", True):
         return summary
@@ -480,6 +485,7 @@ def _run_live_rolling_diarization_pass(
             temp_clip_paths.append(clip_path)
 
             speaker_metadata_by_key: dict[str, dict[str, Any]] = {}
+            speaker_embeddings_by_key: dict[str, list[float]] = {}
             diarization_result = None
             error_message = None
             with rolling_diarization_window_timer(
@@ -509,13 +515,14 @@ def _run_live_rolling_diarization_pass(
                     if diarization_result is None:
                         error_message = "Rolling diarization returned no result"
                     else:
-                        speaker_metadata_by_key = build_window_speaker_metadata(
+                        speaker_metadata_by_key, speaker_embeddings_by_key = analyze_window_speakers(
                             diarization_result=diarization_result,
                             audio_path=clip_path,
                             device_str=device_str,
                             hf_token=hf_token,
                             recording_speakers=recording_speakers,
                             global_speakers=global_speakers,
+                            window_start_ms=int(manifest_row.window_start_ms),
                         )
                         metric["payload"]["speaker_count"] = len(speaker_metadata_by_key)
 
@@ -553,6 +560,24 @@ def _run_live_rolling_diarization_pass(
                     ]
                     metric["payload"]["preserved_manual_lock_count"] = reconciliation_summary[
                         "preserved_manual_lock_count"
+                    ]
+                    voiceprint_summary = _apply_live_voiceprint_learning(
+                        session=session,
+                        recording_id=recording_id,
+                        window_result=window_result,
+                        speaker_embeddings_by_key=speaker_embeddings_by_key,
+                    )
+                    summary["voiceprint_update_count"] += voiceprint_summary[
+                        "recording_speaker_update_count"
+                    ]
+                    summary["global_voiceprint_update_count"] += voiceprint_summary[
+                        "global_speaker_update_count"
+                    ]
+                    metric["payload"]["voiceprint_update_count"] = voiceprint_summary[
+                        "recording_speaker_update_count"
+                    ]
+                    metric["payload"]["global_voiceprint_update_count"] = voiceprint_summary[
+                        "global_speaker_update_count"
                     ]
                 else:
                     manifest_row.status = WINDOW_STATUS_FAILED
@@ -966,6 +991,187 @@ def _resolve_live_speaker(
     session.add(live_speaker)
     session.flush()
     return _record_resolution(live_speaker.diarization_label, "new_live_speaker")
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_live_voiceprint_learning(
+    *,
+    session,
+    recording_id: int,
+    window_result,
+    speaker_embeddings_by_key: dict[str, list[float]],
+) -> dict[str, int]:
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+    from backend.processing.embedding import (
+        AUTO_UPDATE_THRESHOLD,
+        DRIFT_GUARD_THRESHOLD,
+        cosine_similarity,
+        merge_embeddings,
+    )
+
+    summary = {
+        "recording_speaker_update_count": 0,
+        "global_speaker_update_count": 0,
+    }
+
+    raw_payload = dict(getattr(window_result, "raw_payload", {}) or {})
+    speaker_metadata_by_key = {
+        str(local_speaker_key): dict(metadata or {})
+        for local_speaker_key, metadata in (raw_payload.get("speaker_metadata") or {}).items()
+    }
+
+    for local_speaker_key, metadata in speaker_metadata_by_key.items():
+        update_payload: dict[str, Any] = {
+            "source_kind": "rolling_diarization_window",
+            "window_result_id": int(window_result.id),
+            "source_spans_ms": list(metadata.get("source_spans_ms") or []),
+            "clean_segment_count": int(metadata.get("clean_segment_count") or 0),
+            "clean_duration_ms": int(metadata.get("clean_duration_ms") or 0),
+            "applied": False,
+            "global_applied": False,
+        }
+
+        embedding = speaker_embeddings_by_key.get(local_speaker_key)
+        if not embedding:
+            update_payload["reason"] = "embedding_unavailable"
+            metadata["voiceprint_update"] = update_payload
+            continue
+
+        if update_payload["clean_duration_ms"] < int(LIVE_VOICEPRINT_MIN_CLEAN_DURATION_S * 1000.0):
+            update_payload["reason"] = "insufficient_clean_duration"
+            metadata["voiceprint_update"] = update_payload
+            continue
+
+        matched_recording_speaker_id = metadata.get("matched_recording_speaker_id")
+        try:
+            matched_recording_speaker_id = int(matched_recording_speaker_id)
+        except (TypeError, ValueError):
+            matched_recording_speaker_id = None
+
+        if matched_recording_speaker_id is None:
+            update_payload["reason"] = "no_matched_recording_speaker"
+            metadata["voiceprint_update"] = update_payload
+            continue
+
+        recording_speaker = session.get(RecordingSpeaker, matched_recording_speaker_id)
+        if recording_speaker is None or getattr(recording_speaker, "merged_into_id", None):
+            update_payload["reason"] = "recording_speaker_unavailable"
+            metadata["voiceprint_update"] = update_payload
+            continue
+
+        confidence_candidates = [
+            _coerce_float(metadata.get("match_confidence")),
+            _coerce_float(metadata.get("best_recording_speaker_score")),
+            _coerce_float(metadata.get("best_global_speaker_score")),
+        ]
+        duration_confidence = min(
+            update_payload["clean_duration_ms"] / 5000.0,
+            1.0,
+        )
+        confidence_candidates.append(duration_confidence)
+        confidence = max(
+            candidate for candidate in confidence_candidates if candidate is not None
+        )
+        update_payload["confidence"] = round(float(confidence), 4)
+        update_payload["target_recording_speaker_id"] = int(recording_speaker.id)
+
+        recording_similarity = None
+        if getattr(recording_speaker, "embedding", None):
+            recording_similarity = cosine_similarity(recording_speaker.embedding, embedding)
+            update_payload["recording_similarity"] = round(float(recording_similarity), 4)
+            if recording_similarity < DRIFT_GUARD_THRESHOLD:
+                update_payload["reason"] = "recording_drift_guard_rejected"
+                metadata["voiceprint_update"] = update_payload
+                continue
+            recording_speaker.embedding = merge_embeddings(
+                recording_speaker.embedding,
+                embedding,
+                alpha=LIVE_RECORDING_SPEAKER_VOICEPRINT_ALPHA,
+                drift_guard=True,
+            )
+        else:
+            recording_speaker.embedding = list(embedding)
+
+        existing_identity_confidence = _coerce_float(
+            getattr(recording_speaker, "identity_confidence", None)
+        ) or 0.0
+        recording_speaker.identity_confidence = max(existing_identity_confidence, confidence)
+        session.add(recording_speaker)
+        summary["recording_speaker_update_count"] += 1
+        update_payload["applied"] = True
+
+        global_speaker_id = getattr(recording_speaker, "global_speaker_id", None)
+        if global_speaker_id is not None:
+            global_speaker = session.get(GlobalSpeaker, int(global_speaker_id))
+            if global_speaker is None:
+                update_payload["global_reason"] = "global_speaker_unavailable"
+            elif getattr(global_speaker, "is_voiceprint_locked", False):
+                update_payload["global_reason"] = "global_voiceprint_locked"
+            else:
+                global_similarity = None
+                if getattr(global_speaker, "embedding", None):
+                    global_similarity = cosine_similarity(global_speaker.embedding, embedding)
+                    update_payload["global_similarity"] = round(float(global_similarity), 4)
+                    if global_similarity < DRIFT_GUARD_THRESHOLD:
+                        update_payload["global_reason"] = "global_drift_guard_rejected"
+                    else:
+                        best_global_speaker_id = metadata.get("best_global_speaker_id")
+                        best_global_score = _coerce_float(metadata.get("best_global_speaker_score"))
+                        if (
+                            best_global_speaker_id is not None
+                            and int(best_global_speaker_id) == int(global_speaker.id)
+                            and best_global_score is not None
+                            and best_global_score < AUTO_UPDATE_THRESHOLD
+                        ):
+                            update_payload["global_reason"] = "below_auto_update_threshold"
+                        else:
+                            global_speaker.embedding = merge_embeddings(
+                                global_speaker.embedding,
+                                embedding,
+                                alpha=LIVE_GLOBAL_SPEAKER_VOICEPRINT_ALPHA,
+                                drift_guard=True,
+                            )
+                            session.add(global_speaker)
+                            summary["global_speaker_update_count"] += 1
+                            update_payload["global_applied"] = True
+                else:
+                    global_speaker.embedding = list(embedding)
+                    session.add(global_speaker)
+                    summary["global_speaker_update_count"] += 1
+                    update_payload["global_applied"] = True
+
+        metadata["voiceprint_update"] = update_payload
+
+        record_pipeline_metric(
+            stage="live_voiceprint_learned",
+            recording_id=recording_id,
+            payload={
+                "window_result_id": int(window_result.id),
+                "local_speaker_key": local_speaker_key,
+                **update_payload,
+            },
+            log=logger,
+        )
+
+    raw_payload["speaker_metadata"] = speaker_metadata_by_key
+    window_result.raw_payload = raw_payload
+    try:
+        flag_modified(window_result, "raw_payload")
+    except Exception:
+        pass
+    session.add(window_result)
+
+    return summary
 
 
 def _extract_region_text(result: dict, prefix_s: float) -> str:

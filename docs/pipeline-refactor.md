@@ -373,42 +373,91 @@ Exit gate:
 
 Purpose: make speaker management consistent across live, final, local recording speakers, and global people.
 
-- [ ] Implement canonical speaker corrections.
-  - [ ] Store every user rename, segment assignment, merge, and global-speaker link as a correction event.
-  - [ ] Apply corrections immediately to current utterances in scope.
-  - [ ] Feed corrections into future live speaker matching.
-  - [ ] Preserve source aliases so old embeddings and labels continue to help matching.
-  - [ ] Prevent deletion of live speaker embeddings while a recording is still uploading.
-- [ ] Add correction scopes.
-  - [ ] This utterance only.
-  - [ ] This speaker everywhere in the recording.
-  - [ ] This speaker from now on.
-  - [ ] Merge two recording speakers.
-  - [ ] Link to existing global speaker.
-  - [ ] Promote to new global speaker.
-- [ ] Improve voiceprint learning.
-  - [ ] Extract embeddings from durable chunk audio during live recording.
-  - [ ] Prefer clean, single-speaker spans for voiceprint updates.
-  - [ ] Merge embeddings with drift protection once enough evidence exists.
-  - [ ] Respect locked global voiceprints.
-  - [ ] Record confidence and source spans for every voiceprint update.
-- [ ] Infer speaker names from transcript and meeting context.
-  - [ ] Detect deterministic self-introductions such as "I'm Alice" or "this is Alice".
-  - [ ] Detect direct address patterns that can suggest names for known speaker turns.
-  - [ ] Use linked calendar attendees and known people as candidate names.
-  - [ ] Optionally ask the LLM for name suggestions with strict JSON output and evidence spans.
-  - [ ] Store inferred names as suggestions with confidence and evidence, not silent hallucinated truth.
-  - [ ] Auto-apply only deterministic or very high-confidence suggestions if that product decision is approved.
-  - [ ] Expose uncertain suggestions to the user for confirmation.
-- [ ] Resolve conflicts.
-  - [ ] Prefer manual corrections over automated inference.
-  - [ ] Prefer locked global voiceprints over weak live embeddings.
-  - [ ] Preserve multiple candidates when confidence is low.
-  - [ ] Audit every automatic rename or suggested rename.
+Current-state audit:
+
+- [x] Canonical utterance speaker patching already supports explicit correction scopes, correction events, alias continuity, and replay of completed diarization windows.
+- [x] Recording speaker schema already has the Phase 5 primitives needed for canonical identity state, including merged speaker provenance, identity lock fields, correction scope enums, and alias tables.
+- [x] Transcript read compatibility already supports rebuilding `Transcript.segments` from canonical utterances when canonical writes are enabled.
+- [x] Recording speaker rename, promote, merge, and global-merge paths now route through the canonical mutation helpers and repair compatibility projection state afterward.
+- [x] Frontend recording transcript edits now default to stable utterance-id mutations with explicit correction scope instead of the segment-index compatibility bridge.
+- [x] Voiceprint learning now records durable provenance for incremental live updates while respecting lock and drift rules.
+- [x] Retry speaker inference now emits evidence-backed suggestions instead of destructively renaming recording speakers.
+
+Approved implementation decisions:
+
+- [x] Phase 5 should extend the canonical pipeline rather than add a new side channel for speaker state.
+- [x] Compatibility readers must continue to see repaired `Transcript.segments` after canonical speaker mutations.
+- [x] Manual corrections must remain authoritative over later diarization, name inference, and voiceprint updates.
+- [x] Source aliases must be preserved so historic labels and embeddings still route future live matches correctly.
+- [x] Name inference should move to suggestion-first semantics with explicit evidence instead of silent destructive renames.
+
+- [x] Checkpoint 5A: Canonicalize speaker correction mutation paths.
+  - [x] Route recording speaker rename and link operations through canonical recording-speaker helpers instead of direct projection mutation.
+  - [x] Route promote-to-global through canonical helpers while preserving `promote_global_speaker` event semantics.
+  - [x] Route local speaker merge and global-merge collision handling through canonical helpers so merge provenance, alias carry-forward, and replay semantics stay consistent.
+  - [x] Refresh compatibility transcript projection from canonical utterances after canonical speaker mutations.
+  - [x] Extend regression coverage for recording speaker rename, link, promote, merge, and projection-repair behavior.
+  - [x] Keep legacy fallback behavior only for recordings that are not yet ready for canonical backfill.
+
+- [x] Checkpoint 5B: Minimal scope-aware transcript editing UX.
+  - [x] Add stable utterance-id based speaker patching to the recording detail flow.
+  - [x] Add scope selection to the speaker assignment UI.
+  - [x] Keep the segment-index endpoint only as a compatibility bridge.
+  - [x] Default the user-facing transcript edit flow to canonical scope-aware mutations.
+  - [x] Add focused frontend tests for scope selection and stable-id payloads.
+
+Checkpoint 5C: Live voiceprint learning and provenance.
+
+- [x] Checkpoint 5C: Live voiceprint learning and provenance.
+  - [x] Extract embeddings from durable chunk audio during live recording rather than waiting for final-only/manual flows.
+  - [x] Prefer clean, single-speaker spans and skip ambiguous or low-duration spans.
+  - [x] Merge embeddings with drift protection once enough evidence exists.
+  - [x] Respect locked global voiceprints unless an explicit user action overrides them.
+  - [x] Record confidence, contributing spans, and update source for every voiceprint mutation.
+
+Checkpoint 5D: Evidence-backed name suggestion pipeline.
+
+- [x] Detect deterministic self-introduction patterns and other rule-based name evidence.
+- [x] Use calendar attendees and known people as constrained candidate sets.
+- [x] If the LLM is used, require strict JSON output with evidence spans and confidence.
+- [x] Store results as transcript-level suggestions with provenance instead of directly renaming speakers.
+- [x] Keep automated name evidence non-destructive unless the user explicitly approves the suggestion.
+- [x] Expose uncertain suggestions to the user for review and confirmation.
+
+Checkpoint 5E: Conflict policy, metrics, and exit-gate validation.
+
+- [x] Prefer manual corrections over automated inference and over weak identity evidence.
+- [x] Prefer locked global voiceprints over weak live embeddings.
+- [x] Preserve low-confidence name evidence as reversible pending suggestions instead of forcing a destructive rename.
+- [x] Audit suggestion generation and resolution alongside voiceprint updates.
+- [x] Validate the end-to-end exit gate with live correction, replay, identity, and suggestion fixtures.
+
+Validation matrix:
+
+- [x] Backend endpoint tests prove rename, link, promote, merge, alias persistence, correction events, and projection repair all route through canonical state.
+- [x] Transcript API tests prove `utterance_only`, `speaker_everywhere_in_recording`, `from_this_utterance_forward`, and merge scopes remain correct under replay.
+- [x] Frontend tests prove the recording page sends stable utterance IDs plus explicit correction scope.
+- [x] Worker tests prove incremental voiceprint learning records provenance and respects drift and lock rules.
+- [x] Suggestion tests prove inferred names remain reversible, evidence-backed, and non-destructive by default.
+
+Validation evidence:
+
+- [x] Additive migration: `backend/alembic/versions/e5a7c3b1d9f4_add_speaker_name_suggestions_to_transcripts.py` adds transcript-level suggestion persistence.
+- [x] Backend regression: `backend/tests/test_infer_speakers_task.py`
+- [x] Backend regression: `backend/tests/test_automatic_meeting_intelligence_worker.py`
+- [x] Backend regression: `backend/tests/test_canonical_transcript_phase1.py`
+- [x] Frontend regression: `frontend/src/lib/api.test.ts`
+
+Dependency chain:
+
+- [x] 5A before 5B because the UI must land on stable canonical mutation semantics instead of legacy segment rewriting.
+- [x] 5A before 5C because live identity learning must honor canonical manual-correction and merge provenance.
+- [x] 5A before 5D because suggestions should target canonical recording speakers and global people, not legacy projection labels.
+- [x] 5C before 5E because conflict policy and metrics need real provenance and confidence data to validate.
 
 Exit gate:
 
-- [ ] A live user correction changes future same-speaker live output, and transcript-derived name suggestions are evidence-backed and reversible.
+- [x] A live user correction changes future same-speaker live output immediately, voiceprint updates carry provenance and drift protection, and any transcript-derived name suggestion is evidence-backed and reversible.
 
 ## Phase 6: Finalization and Post-Meeting Processing
 

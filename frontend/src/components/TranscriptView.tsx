@@ -5,6 +5,7 @@ import {
   RecordingSpeaker,
   GlobalSpeaker,
   RecordingId,
+  SpeakerCorrectionScope,
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useRef, useEffect, useState } from "react";
@@ -68,6 +69,13 @@ const formatTime = (seconds: number) => {
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
+
+const getDefaultSpeakerCorrectionScope = (
+  speakerLabel: string,
+): SpeakerCorrectionScope =>
+  speakerLabel.startsWith("LIVE_")
+    ? "from_this_utterance_forward"
+    : "speaker_everywhere_in_recording";
 
 export default function TranscriptView({
   segments,
@@ -344,7 +352,10 @@ export default function TranscriptView({
     if (editValue.trim() && !isSubmitting) {
       setIsSubmitting(true);
       try {
-        await onUpdateSegmentSpeaker(index, { name: editValue.trim() });
+        await onUpdateSegmentSpeaker(index, {
+          name: editValue.trim(),
+          scope: getDefaultSpeakerCorrectionScope(segments[index].speaker),
+        });
       } finally {
         setIsSubmitting(false);
         setEditingSegmentSpeakerIndex(null);

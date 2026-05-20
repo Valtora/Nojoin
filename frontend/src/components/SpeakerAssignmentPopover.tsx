@@ -1,6 +1,11 @@
 "use client";
 
-import { GlobalSpeaker, RecordingSpeaker, TranscriptSpeakerAssignment } from "@/types";
+import {
+  GlobalSpeaker,
+  RecordingSpeaker,
+  SpeakerCorrectionScope,
+  TranscriptSpeakerAssignment,
+} from "@/types";
 import { Search, User, Plus } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -42,8 +47,21 @@ export default function SpeakerAssignmentPopover({
 }: SpeakerAssignmentPopoverProps) {
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const defaultScope = useMemo<SpeakerCorrectionScope>(
+    () =>
+      currentSpeakerLabel.startsWith("LIVE_")
+        ? "from_this_utterance_forward"
+        : "speaker_everywhere_in_recording",
+    [currentSpeakerLabel],
+  );
+  const [selectedScope, setSelectedScope] =
+    useState<SpeakerCorrectionScope>(defaultScope);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSelectedScope(defaultScope);
+  }, [defaultScope]);
 
   useEffect(() => {
     if (targetElement) {
@@ -164,12 +182,34 @@ export default function SpeakerAssignmentPopover({
     if (e.key === "Enter") {
       e.preventDefault();
       if (search.trim()) {
-        onSelect({ name: search.trim() });
+        onSelect({ name: search.trim(), scope: selectedScope });
       }
     } else if (e.key === "Escape") {
       onClose();
     }
   };
+
+  const scopeOptions: Array<{
+    value: SpeakerCorrectionScope;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: "utterance_only",
+      label: "This utterance",
+      description: "Change only this line.",
+    },
+    {
+      value: "speaker_everywhere_in_recording",
+      label: "Whole recording",
+      description: "Apply to every matching turn in this recording.",
+    },
+    {
+      value: "from_this_utterance_forward",
+      label: "From here forward",
+      description: "Update this point onward and future live matches.",
+    },
+  ];
 
   if (!targetElement) return null;
 
@@ -197,6 +237,36 @@ export default function SpeakerAssignmentPopover({
         </div>
       </div>
 
+      <div className="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/70">
+        <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+          Apply change to
+        </div>
+        <div className="grid gap-1">
+          {scopeOptions.map((option) => {
+            const isSelected = selectedScope === option.value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => setSelectedScope(option.value)}
+                className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                  isSelected
+                    ? "border-orange-400 bg-orange-50 text-orange-700 dark:border-orange-500 dark:bg-orange-950/50 dark:text-orange-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+                }`}
+              >
+                <div className="text-sm font-medium">{option.label}</div>
+                <div className="text-[11px] leading-4 opacity-80">
+                  {option.description}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="max-h-60 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
         {filteredAvailable.length > 0 && (
@@ -219,6 +289,7 @@ export default function SpeakerAssignmentPopover({
                     onSelect({
                       name: option.displayName,
                       diarizationLabel: representativeLabel,
+                      scope: selectedScope,
                     })
                   }
                   className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
@@ -248,7 +319,11 @@ export default function SpeakerAssignmentPopover({
               <button
                 key={s.id}
                 onClick={() =>
-                  onSelect({ name: s.name, globalSpeakerId: s.id })
+                  onSelect({
+                    name: s.name,
+                    globalSpeakerId: s.id,
+                    scope: selectedScope,
+                  })
                 }
                 className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
               >
@@ -270,7 +345,9 @@ export default function SpeakerAssignmentPopover({
           ) && (
             <div className="px-2 py-1 border-t border-gray-100 dark:border-gray-700 mt-1 pt-2">
               <button
-                onClick={() => onSelect({ name: search.trim() })}
+                onClick={() =>
+                  onSelect({ name: search.trim(), scope: selectedScope })
+                }
                 className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center gap-2"
               >
                 <Plus className="w-3 h-3" />
