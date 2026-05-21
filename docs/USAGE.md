@@ -118,6 +118,11 @@ Supported formats include:
 
 Imported files enter the same processing pipeline as live recordings.
 
+The import flow now stages durable chunk and rolling-window metadata for the
+assembled import file before background processing begins, so imports and live
+recordings share the same catch-up and finalization model even though imports
+skip the in-flight live transcript UI.
+
 ## Processing, Transcripts, and Retry Processing
 
 Once uploaded, recordings are processed asynchronously.

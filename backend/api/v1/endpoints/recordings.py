@@ -1,6 +1,7 @@
 import logging
 import hashlib
 import os
+import shutil
 from pathlib import Path
 from typing import List, Optional, Any
 import wave
@@ -125,6 +126,11 @@ def _build_recording_audio_chunk_fields(
     duration_ms = 0
     if storage_path.suffix.lower() == ".wav":
         sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(storage_path)
+    if duration_ms <= 0:
+        try:
+            duration_ms = int(round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0))
+        except Exception:
+            duration_ms = 0
 
     sha256 = _sha256_for_path(storage_path)
     byte_size = storage_path.stat().st_size
@@ -150,28 +156,13 @@ def _build_recording_audio_chunk_fields(
     }
 
 
-async def _sync_recording_audio_chunks_from_directory(
+async def _sync_recording_audio_chunks_from_entries(
     db: AsyncSession,
     *,
     recording_id: int,
     source_kind: str,
-    suffix: str,
+    disk_entries: list[tuple[int, Path]],
 ) -> list[RecordingAudioChunk]:
-    temp_dir = recording_upload_temp_dir(recording_id, create=False)
-    if not temp_dir.exists():
-        return []
-
-    disk_entries: list[tuple[int, Path]] = []
-    for filename in os.listdir(temp_dir):
-        if not filename.endswith(suffix):
-            continue
-        try:
-            sequence = int(os.path.splitext(filename)[0])
-        except ValueError:
-            continue
-        disk_entries.append((sequence, temp_dir / filename))
-    disk_entries.sort(key=lambda item: item[0])
-
     if not disk_entries:
         return []
 
@@ -180,16 +171,20 @@ async def _sync_recording_audio_chunks_from_directory(
             select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
         )
     ).scalars().all()
-    existing_by_sequence = {row.sequence_no: row for row in existing_rows}
+    existing_by_sequence = {
+        row.sequence_no: row
+        for row in existing_rows
+        if row.source_kind == source_kind
+    }
     existing_by_idempotency = {
         row.idempotency_key: row
         for row in existing_rows
-        if row.idempotency_key
+        if row.source_kind == source_kind and row.idempotency_key
     }
 
     synced_rows: list[RecordingAudioChunk] = []
     absolute_start_ms = 0
-    for sequence, storage_path in disk_entries:
+    for sequence, storage_path in sorted(disk_entries, key=lambda item: item[0]):
         fields = _build_recording_audio_chunk_fields(
             sequence=sequence,
             source_kind=source_kind,
@@ -213,6 +208,97 @@ async def _sync_recording_audio_chunks_from_directory(
             existing_by_idempotency[row.idempotency_key] = row
 
     return synced_rows
+
+
+async def _sync_recording_audio_chunks_from_directory(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    source_kind: str,
+    suffix: str,
+) -> list[RecordingAudioChunk]:
+    temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        return []
+
+    disk_entries: list[tuple[int, Path]] = []
+    for filename in os.listdir(temp_dir):
+        if not filename.endswith(suffix):
+            continue
+        try:
+            sequence = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        disk_entries.append((sequence, temp_dir / filename))
+    disk_entries.sort(key=lambda item: item[0])
+
+    return await _sync_recording_audio_chunks_from_entries(
+        db,
+        recording_id=recording_id,
+        source_kind=source_kind,
+        disk_entries=disk_entries,
+    )
+
+
+def _stage_import_audio_chunk(
+    *,
+    recording_id: int,
+    audio_path: str,
+    sequence: int = 0,
+) -> Path:
+    source_path = Path(audio_path)
+    suffix = source_path.suffix or ".bin"
+    staged_path = recording_upload_temp_dir(recording_id, create=True) / f"{sequence}{suffix}"
+
+    if staged_path.exists():
+        try:
+            if staged_path.samefile(source_path):
+                return staged_path
+        except OSError:
+            pass
+        staged_path.unlink()
+
+    try:
+        os.link(source_path, staged_path)
+    except OSError:
+        shutil.copy2(source_path, staged_path)
+
+    return staged_path
+
+
+async def _bootstrap_import_audio_windows(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    audio_path: str,
+) -> list[RecordingAudioWindowManifest]:
+    await db.execute(
+        delete(RecordingAudioChunk)
+        .where(RecordingAudioChunk.recording_id == recording_id)
+        .where(RecordingAudioChunk.source_kind == "import")
+    )
+    await db.execute(
+        delete(RecordingAudioWindowManifest)
+        .where(RecordingAudioWindowManifest.recording_id == recording_id)
+        .where(RecordingAudioWindowManifest.source_kind == "import")
+    )
+
+    staged_path = _stage_import_audio_chunk(
+        recording_id=recording_id,
+        audio_path=audio_path,
+    )
+    await _sync_recording_audio_chunks_from_entries(
+        db,
+        recording_id=recording_id,
+        source_kind="import",
+        disk_entries=[(0, staged_path)],
+    )
+    return await _sync_recording_audio_window_manifests(
+        db,
+        recording_id=recording_id,
+        source_kind="import",
+        seal_tail=True,
+    )
 
 
 async def _list_recording_audio_chunks(
@@ -893,6 +979,13 @@ async def import_audio(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
+
+    await _bootstrap_import_audio_windows(
+        db,
+        recording_id=recording.id,
+        audio_path=file_path,
+    )
+    await db.commit()
     
     # Trigger processing task
     task = process_recording_task.delay(recording.id)
@@ -990,14 +1083,8 @@ async def upload_chunked_segment(
         await _sync_recording_audio_chunks_from_directory(
             db,
             recording_id=recording.id,
-            source_kind="import",
+            source_kind="import_part",
             suffix=".part",
-        )
-        await _sync_recording_audio_window_manifests(
-            db,
-            recording_id=recording.id,
-            source_kind="import",
-            seal_tail=False,
         )
         await db.commit()
     except Exception as e:
@@ -1034,19 +1121,13 @@ async def finalize_chunked_import(
     await _sync_recording_audio_chunks_from_directory(
         db,
         recording_id=recording.id,
-        source_kind="import",
+        source_kind="import_part",
         suffix=".part",
-    )
-    await _sync_recording_audio_window_manifests(
-        db,
-        recording_id=recording.id,
-        source_kind="import",
-        seal_tail=True,
     )
     chunk_rows = await _list_recording_audio_chunks(
         db,
         recording_id=recording.id,
-        source_kind="import",
+        source_kind="import_part",
     )
     if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
@@ -1071,6 +1152,22 @@ async def finalize_chunked_import(
             recording.duration_seconds = get_audio_duration(recording.audio_path)
         except Exception as e:
             logger.warning(f"Failed to get duration: {e}")
+
+        await db.execute(
+            delete(RecordingAudioChunk)
+            .where(RecordingAudioChunk.recording_id == recording.id)
+            .where(RecordingAudioChunk.source_kind == "import_part")
+        )
+        await db.execute(
+            delete(RecordingAudioWindowManifest)
+            .where(RecordingAudioWindowManifest.recording_id == recording.id)
+            .where(RecordingAudioWindowManifest.source_kind == "import_part")
+        )
+        await _bootstrap_import_audio_windows(
+            db,
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+        )
         
     except Exception as e:
         failed_root: Path | None = None

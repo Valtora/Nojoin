@@ -133,11 +133,13 @@ window, the lane emits the current speech region and starts a new live segment.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
-reuses the live transcript text for the normal final pass, runs diarisation and
-speaker reconciliation, preserves authoritative user edits, and replaces the
-provisional markers with the finalized transcript. A different transcription
-engine is reserved for explicit manual reprocessing after the user changes the
-transcription engine in Settings.
+promotes canonical live and catch-up transcript state first, fills only missing
+durable spans, replays completed rolling diarisation windows when that is
+sufficient, preserves authoritative user edits, and only falls back to a
+whole-recording ASR or diarisation rerun when coverage is missing,
+confidence remains too low, or the user explicitly requests reprocessing with a
+different engine. A different transcription engine is reserved for explicit
+manual reprocessing after the user changes the transcription engine in Settings.
 
 ## Calendar Flow
 

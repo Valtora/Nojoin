@@ -463,30 +463,38 @@ Exit gate:
 
 Purpose: turn final processing into promotion and enrichment instead of repeating the whole pipeline.
 
-- [ ] Redesign `process_recording_task` around promotion.
-  - [ ] Verify all uploaded chunks are present or accounted for.
-  - [ ] Run catch-up ASR only for unprocessed spans.
-  - [ ] Run catch-up diarization only for unprocessed or low-confidence spans.
-  - [ ] Promote stable live utterances to final transcript state.
-  - [ ] Remove provisional markers only after reconciliation succeeds.
-- [ ] Keep final diarization efficient and targeted.
-  - [ ] Run full-recording Pyannote only when live diarization failed, confidence is low, or explicit reprocess requests it.
-  - [ ] Otherwise run reconciliation and quality checks against rolling diarization results.
-  - [ ] Preserve manual speaker and text edits by stable ID and time overlap.
-- [ ] Preserve downstream enrichment.
-  - [ ] Extract or finalize speaker voiceprints.
-  - [ ] Run deterministic speaker resolution against global people.
-  - [ ] Run meeting title inference.
-  - [ ] Run note generation and meeting intelligence.
-  - [ ] Keep manual notes and Meeting Edge focus available to the final LLM prompts.
-- [ ] Support imports through the unified pipeline.
-  - [ ] Treat imports as batch chunk ingestion.
-  - [ ] Generate utterances and diarization windows through the same storage model.
-  - [ ] Skip live UI states but preserve the same final transcript behavior.
+- [x] Redesign `process_recording_task` around promotion.
+  - [x] Verify all uploaded chunks are present or accounted for.
+  - [x] Run catch-up ASR only for unprocessed spans.
+  - [x] Run catch-up diarization only for unprocessed or low-confidence spans.
+  - [x] Promote stable live utterances to final transcript state.
+  - [x] Remove provisional markers only after reconciliation succeeds.
+- [x] Keep final diarization efficient and targeted.
+  - [x] Run full-recording Pyannote only when live diarization failed, confidence is low, or explicit reprocess requests it.
+  - [x] Otherwise run reconciliation and quality checks against rolling diarization results.
+  - [x] Preserve manual speaker and text edits by stable ID and time overlap.
+- [x] Preserve downstream enrichment.
+  - [x] Extract or finalize speaker voiceprints.
+  - [x] Run deterministic speaker resolution against global people.
+  - [x] Run meeting title inference.
+  - [x] Run note generation and meeting intelligence.
+  - [x] Keep manual notes and Meeting Edge focus available to the final LLM prompts.
+- [x] Support imports through the unified pipeline.
+  - [x] Treat imports as batch chunk ingestion.
+  - [x] Generate utterances and diarization windows through the same storage model.
+  - [x] Skip live UI states but preserve the same final transcript behavior.
+
+Implementation status:
+
+- [x] Finalization now widens durable catch-up beyond preexisting live reuse, so any recording with pending durable manifests can reuse span-level ASR work before considering a whole-recording rerun.
+- [x] When completed rolling diarization windows already exist for live-covered audio, finalization can promote canonical utterances first and replay those windows against the finalized utterances instead of forcing a new whole-recording Pyannote pass.
+- [x] One-shot and chunked imports now bootstrap durable `RecordingAudioChunk` and `RecordingAudioWindowManifest` rows for the assembled import file before worker processing begins.
 
 Exit gate:
 
 - [ ] Finalization is faster for successful live recordings and functionally equivalent or better for imports and failed-live recordings.
+  - Automated worker and import coverage now exercises promotion-oriented finalization, durable catch-up reuse without live prerequisites, completed-window replay decisions, and durable import chunk/window bootstrap.
+  - Manual full live-recording validation is intentionally deferred until Phase 7 lands the supporting transcript and speaker UX needed to observe and verify the new steady-state behavior end to end.
 
 ## Phase 7: Frontend Transcript and Speaker UX
 
