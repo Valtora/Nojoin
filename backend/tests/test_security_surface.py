@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
 
@@ -497,6 +497,68 @@ async def test_detailed_system_health_returns_component_status_for_authenticated
 
 
 @pytest.mark.anyio
+async def test_admin_health_requires_authentication() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_admin_user] = _unauthorized_user
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+        response = await client.get("/api/v1/system/admin-health")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_admin_health_returns_readiness_payload_for_admin(monkeypatch) -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_admin_user] = lambda: SimpleNamespace(
+        id=1,
+        role="admin",
+        is_superuser=False,
+    )
+
+    async def fake_admin_health_status(_db):
+        return {
+            "status": "warning",
+            "version": "2.1.0",
+            "summary": {
+                "pipeline_status": "degraded",
+                "message": "Core transcription is ready, but some processing capabilities are in fallback mode.",
+                "blocking_reasons": [],
+                "degraded_reasons": [
+                    "Speaker diarization will fall back until its prerequisites are ready.",
+                ],
+            },
+            "checks": {
+                "database": {"status": "ok", "label": "Connected"},
+                "worker": {"status": "ok", "label": "Active"},
+                "queue": {"status": "ok", "label": "Reachable"},
+                "ffmpeg": {"status": "ok", "label": "Ready"},
+                "transcription_model": {"status": "ok", "label": "Ready"},
+                "diarization": {"status": "warning", "label": "Fallback active"},
+                "device": {"status": "warning", "label": "CPU fallback"},
+                "optional_ai": {"status": "info", "label": "Not configured"},
+            },
+            "download": {
+                "in_progress": False,
+                "status": None,
+                "stage": None,
+                "message": None,
+                "progress": None,
+            },
+        }
+
+    monkeypatch.setattr(system, "get_admin_health_status", fake_admin_health_status)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+        response = await client.get("/api/v1/system/admin-health")
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["pipeline_status"] == "degraded"
+    assert response.json()["checks"]["device"]["label"] == "CPU fallback"
+    assert response.json()["checks"]["diarization"]["status"] == "warning"
+
+
+@pytest.mark.anyio
 async def test_task_status_hides_internal_failure_details() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
@@ -546,17 +608,20 @@ async def test_cors_preflight_uses_explicit_allowlists() -> None:
 async def test_operational_system_endpoints_require_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user
+    app.dependency_overrides[get_current_admin_user] = _unauthorized_user
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         status = await client.get("/api/v1/system/status")
         download_progress = await client.get("/api/v1/system/download-progress")
         models_status = await client.get("/api/v1/system/models/status")
         companion_releases = await client.get("/api/v1/system/companion-releases")
+        admin_health = await client.get("/api/v1/system/admin-health")
 
     assert status.status_code == 401
     assert download_progress.status_code == 401
     assert models_status.status_code == 401
     assert companion_releases.status_code == 401
+    assert admin_health.status_code == 401
 
 
 @pytest.mark.anyio

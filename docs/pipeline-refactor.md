@@ -500,72 +500,77 @@ Exit gate:
 
 Purpose: make live revisions understandable and give users precise control over speaker identity.
 
-- [ ] Move transcript editing from list indices to stable utterance IDs.
-  - [ ] Update API client methods.
-  - [ ] Update undo and redo history.
-  - [ ] Update find and replace.
-  - [ ] Update export flows.
-  - [ ] Update playback and trim interactions.
-- [ ] Display live revision state.
-  - [ ] Provisional text state.
-  - [ ] Provisional speaker state.
-  - [ ] Stable speaker state.
-  - [ ] Manual speaker override state.
-  - [ ] Low-confidence speaker state.
-  - [ ] Recently revised speaker assignment state.
-- [ ] Add speaker correction workflows.
-  - [ ] Rename this speaker everywhere.
-  - [ ] Assign only this utterance.
-  - [ ] Apply this speaker from now on.
-  - [ ] Merge speakers.
-  - [ ] Link to a global speaker.
-  - [ ] Confirm or reject inferred speaker name suggestions.
-- [ ] Improve overlapping speech presentation.
-  - [ ] Show parallel speaker turns without hiding provisional unknown speech.
-  - [ ] Avoid layout jumps when rolling diarization revises recent turns.
-  - [ ] Keep text readable on narrow viewports.
-- [ ] Handle backward-looking updates safely.
-  - [ ] Preserve scroll position when older utterances change.
-  - [ ] Highlight revisions briefly without creating noisy UI.
-  - [ ] Avoid clobbering text currently being edited.
-  - [ ] Resolve edit conflicts with a clear local-state policy.
+- [x] Move transcript editing from list indices to stable utterance IDs.
+  - [x] Update API client methods.
+  - [x] Update undo and redo history.
+  - [x] Update find and replace.
+  - [x] Update export flows.
+  - [x] Update playback and trim interactions.
+- [x] Display live revision state.
+  - [x] Provisional text state.
+  - [x] Provisional speaker state.
+  - [x] Stable speaker state.
+  - [x] Manual speaker override state.
+  - [x] Low-confidence speaker state.
+  - [x] Recently revised speaker assignment state.
+- [x] Add speaker correction workflows.
+  - [x] Rename this speaker everywhere.
+  - [x] Assign only this utterance.
+  - [x] Apply this speaker from now on.
+  - [x] Merge speakers.
+  - [x] Link to a global speaker.
+  - [x] Confirm or reject inferred speaker name suggestions.
+- [x] Improve overlapping speech presentation.
+  - [x] Show parallel speaker turns without hiding provisional unknown speech.
+  - [x] Avoid layout jumps when rolling diarization revises recent turns.
+  - [x] Keep text readable on narrow viewports.
+- [x] Handle backward-looking updates safely.
+  - [x] Preserve scroll position when older utterances change.
+  - [x] Highlight revisions briefly without creating noisy UI.
+  - [x] Avoid clobbering text currently being edited.
+  - [x] Resolve edit conflicts with a clear local-state policy.
+
+## Phase 8: Operational Readiness and Admin Health
+
+Purpose: make pipeline readiness, degraded-mode behavior, and model availability obvious to operators while keeping a single balanced processing profile and avoiding a model-tuning console or duplicate logging surface.
+
+- [x] Add a lightweight Admin Health Dashboard.
+  - [x] Confirm configured transcription model presence and worker readiness.
+  - [x] Confirm Pyannote model access, download state, and cache readiness.
+  - [x] Confirm Hugging Face token presence and validation state when diarization requires it.
+  - [x] Confirm device availability and active execution mode, for example GPU-ready or CPU fallback.
+  - [x] Confirm worker queue reachability so operators can see whether live and final jobs can run.
+  - [x] Confirm FFmpeg availability so missing audio-processing dependencies are surfaced before recordings fail.
+- [x] Expose current fallback and degraded-mode state.
+  - [x] Show when diarization is unavailable and which fallback behavior is currently in effect.
+  - [x] Show when acceleration is unavailable and the pipeline is running in slower CPU mode.
+  - [x] Show when optional AI enhancement is disabled separately from core transcription and diarization readiness.
+  - [x] Keep degraded-state messaging explicit so failures are diagnosed before or during recording rather than buried in task output.
+- [x] Add lightweight processing-health summaries.
+  - [x] Show whether core processing is ready, degraded, or blocked.
+  - [x] Show whether required models, dependencies, and workers are ready before recording starts.
+  - [x] Show active model-download progress when readiness is pending on cached assets.
+  - [x] Keep the summary status-oriented and read-only rather than a live metrics console.
+- [x] Add targeted readiness checks with concise remediation hints.
+  - [x] Distinguish missing credentials, missing model artifacts, unavailable device access, unavailable workers, queue failures, and missing FFmpeg dependencies.
+  - [x] Provide a short operator-facing next action for each failed readiness check.
+  - [x] Keep the check surface intentionally small and focused on availability, not pipeline tuning.
+- [x] Explicitly keep tuning and extra logging out of scope for this phase.
+  - [x] Keep a single balanced processing profile rather than adding runtime quality or latency profile controls to the admin UI.
+  - [x] Do not expose advanced admin controls for diarization window length, hop size, confidence thresholds, minimum voiceprint duration, forced-emission timing, or default final-diarization behavior.
+  - [x] Do not expand raw operational logging beyond the existing container logs and structured pipeline metrics already emitted by the backend.
+  - [x] Do not duplicate low-level pipeline metrics in the UI when operator needs are satisfied by health status and existing logs.
+
+Implementation status:
+
+- [x] Administration now exposes a read-only Admin Health Dashboard backed by consolidated backend readiness checks for database, queue, worker, FFmpeg, transcription model cache, diarization prerequisites, device state, and optional AI configuration.
+- [x] The dashboard reports overall readiness as ready, degraded, or blocked and surfaces active model-download progress when assets are still being prepared.
 
 Exit gate:
 
-- [ ] Users can understand and control live speaker identity while automated revisions continue in the background.
-
-## Phase 8: Settings, Operations, and Failure Modes
-
-Purpose: expose the right operational controls without turning normal setup into model-tuning work.
-
-- [ ] Add quality and latency profiles.
-  - [ ] Low latency.
-  - [ ] Balanced.
-  - [ ] High accuracy.
-  - [ ] Custom advanced settings.
-- [ ] Expose advanced live pipeline settings for admins.
-  - [ ] Rolling diarization window length.
-  - [ ] Rolling diarization hop size.
-  - [ ] Minimum speaker confidence for stable labels.
-  - [ ] Minimum speech duration for voiceprints.
-  - [ ] Live ASR forced emission timing.
-  - [ ] Whether full final diarization runs by default.
-- [ ] Improve model readiness checks.
-  - [ ] Hugging Face token validity.
-  - [ ] Pyannote model access.
-  - [ ] Device availability.
-  - [ ] Worker queue availability.
-  - [ ] Clear fallback state when diarization cannot run.
-- [ ] Add operational logging and admin visibility.
-  - [ ] Live pipeline stages.
-  - [ ] Rolling diarization queue depth.
-  - [ ] Per-recording ASR and diarization invocation counts.
-  - [ ] Catch-up work remaining.
-  - [ ] Finalization promotion summary.
-
-Exit gate:
-
-- [ ] Operators can diagnose live pipeline quality, latency, and fallback behavior from settings and logs.
+- [x] Operators can open the Admin Health Dashboard and immediately see whether required models, credentials, workers, dependencies, and execution devices are ready for live and final processing.
+- [x] Operators can tell when the pipeline is running in a degraded fallback mode and which capability is unavailable.
+- [x] The Phase 8 admin surface remains lightweight and status-oriented rather than a tuning console or a replacement for existing logs.
 
 ## Phase 9: Migration, Compatibility, and Documentation
 

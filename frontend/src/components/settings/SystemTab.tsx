@@ -1,17 +1,167 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  Fragment,
+  type ComponentType,
+} from "react";
 import { Popover, Transition } from "@headlessui/react";
 // import axios from "axios"; // Not used anymore
 import {
+  Activity,
+  AlertTriangle,
+  Cpu,
+  Database,
   Download,
+  HardDrive,
+  Loader2,
   Terminal,
   Play,
   Trash2,
   Settings,
   Pause,
   Check,
+  Server,
+  Sparkles,
 } from "lucide-react";
-import api, { API_BASE_URL } from "@/lib/api";
+import api, { API_BASE_URL, getAdminHealth } from "@/lib/api";
 import { useNavigationStore } from "@/lib/store";
+import type { AdminHealthCheckStatus, AdminHealthStatus } from "@/types";
+
+import SettingsCallout from "./SettingsCallout";
+import SettingsPanel from "./SettingsPanel";
+
+const HEALTH_REFRESH_INTERVAL_MS = 30_000;
+
+type HealthCardKey = keyof AdminHealthStatus["checks"];
+type HealthIcon = ComponentType<{ className?: string }>;
+
+const HEALTH_CARDS: Array<{
+  key: HealthCardKey;
+  title: string;
+  icon: HealthIcon;
+}> = [
+  { key: "database", title: "Database", icon: Database },
+  { key: "queue", title: "Queue", icon: Server },
+  { key: "worker", title: "Worker", icon: Activity },
+  { key: "ffmpeg", title: "FFmpeg", icon: Terminal },
+  { key: "transcription_model", title: "Transcription", icon: HardDrive },
+  { key: "diarization", title: "Diarization", icon: Activity },
+  { key: "device", title: "Device", icon: Cpu },
+  { key: "optional_ai", title: "Optional AI", icon: Sparkles },
+];
+
+const STATUS_STYLES: Record<
+  AdminHealthCheckStatus,
+  {
+    badge: string;
+    dot: string;
+    iconSurface: string;
+    iconColor: string;
+  }
+> = {
+  ok: {
+    badge:
+      "bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-300",
+    dot: "bg-green-500",
+    iconSurface: "bg-green-100 dark:bg-green-500/10",
+    iconColor: "text-green-600 dark:text-green-300",
+  },
+  warning: {
+    badge:
+      "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300",
+    dot: "bg-amber-500",
+    iconSurface: "bg-amber-100 dark:bg-amber-500/10",
+    iconColor: "text-amber-600 dark:text-amber-300",
+  },
+  error: {
+    badge: "bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-300",
+    dot: "bg-red-500",
+    iconSurface: "bg-red-100 dark:bg-red-500/10",
+    iconColor: "text-red-600 dark:text-red-300",
+  },
+  disabled: {
+    badge:
+      "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+    dot: "bg-gray-500",
+    iconSurface: "bg-gray-100 dark:bg-gray-800",
+    iconColor: "text-gray-600 dark:text-gray-300",
+  },
+  info: {
+    badge:
+      "bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-300",
+    dot: "bg-blue-500",
+    iconSurface: "bg-blue-100 dark:bg-blue-500/10",
+    iconColor: "text-blue-600 dark:text-blue-300",
+  },
+  unknown: {
+    badge:
+      "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+    dot: "bg-gray-500",
+    iconSurface: "bg-gray-100 dark:bg-gray-800",
+    iconColor: "text-gray-600 dark:text-gray-300",
+  },
+};
+
+const SUMMARY_TONES = {
+  ready: "success",
+  degraded: "warning",
+  blocked: "error",
+} as const;
+
+const SUMMARY_TITLES = {
+  ready: "Pipeline ready",
+  degraded: "Pipeline degraded",
+  blocked: "Pipeline blocked",
+} as const;
+
+function formatCheckMeta(
+  key: HealthCardKey,
+  check: AdminHealthStatus["checks"][HealthCardKey],
+): string[] {
+  const items: string[] = [];
+
+  if (key === "transcription_model") {
+    if (typeof check.backend === "string") {
+      items.push(`Backend: ${check.backend}`);
+    }
+    if (typeof check.configured_model === "string") {
+      items.push(`Model: ${check.configured_model}`);
+    }
+  }
+
+  if (key === "device") {
+    if (typeof check.requested_device === "string") {
+      items.push(`Requested: ${check.requested_device}`);
+    }
+    if (typeof check.active_device === "string") {
+      items.push(`Active: ${check.active_device}`);
+    }
+    if (typeof check.gpu_name === "string" && check.gpu_name.length > 0) {
+      items.push(check.gpu_name);
+    }
+  }
+
+  if (key === "diarization") {
+    if (typeof check.pyannote_downloaded === "boolean") {
+      items.push(
+        `Pyannote: ${check.pyannote_downloaded ? "cached" : "missing"}`,
+      );
+    }
+    if (typeof check.embedding_downloaded === "boolean") {
+      items.push(
+        `Embedding: ${check.embedding_downloaded ? "cached" : "missing"}`,
+      );
+    }
+    if (typeof check.token_valid === "boolean") {
+      items.push(`HF token: ${check.token_valid ? "valid" : "invalid"}`);
+    } else if (check.token_configured === false) {
+      items.push("HF token: missing");
+    }
+  }
+
+  return items;
+}
 
 export default function SystemTab() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -21,6 +171,9 @@ export default function SystemTab() {
   const [logFilter, setLogFilter] = useState("");
   const [logLevel, setLogLevel] = useState("ALL");
   const [autoScroll, setAutoScroll] = useState(true);
+  const [adminHealth, setAdminHealth] = useState<AdminHealthStatus | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -85,6 +238,43 @@ export default function SystemTab() {
 
     setFilteredLogs(result);
   }, [logs, logFilter, logLevel]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshAdminHealth = async () => {
+      try {
+        const nextHealth = await getAdminHealth();
+        if (cancelled) {
+          return;
+        }
+
+        setAdminHealth(nextHealth);
+        setHealthError(null);
+      } catch (error) {
+        console.error("Failed to load admin health dashboard", error);
+        if (!cancelled) {
+          setHealthError(
+            "Unable to refresh operational readiness right now. Existing data may be stale.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setHealthLoading(false);
+        }
+      }
+    };
+
+    void refreshAdminHealth();
+    const intervalId = window.setInterval(() => {
+      void refreshAdminHealth();
+    }, HEALTH_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -285,8 +475,151 @@ export default function SystemTab() {
     );
   };
 
+  const summaryTone = adminHealth
+    ? SUMMARY_TONES[adminHealth.summary.pipeline_status]
+    : "neutral";
+  const summaryTitle = adminHealth
+    ? SUMMARY_TITLES[adminHealth.summary.pipeline_status]
+    : "Operational readiness";
+  const summaryReasons = adminHealth
+    ? [
+        ...adminHealth.summary.blocking_reasons,
+        ...adminHealth.summary.degraded_reasons,
+      ]
+    : [];
+
   return (
-    <div className="animate-in fade-in duration-500">
+    <div className="animate-in fade-in duration-500 space-y-4">
+      {adminHealth ? (
+        <SettingsCallout tone={summaryTone} title={summaryTitle}>
+          <div className="space-y-2">
+            <p>{adminHealth.summary.message}</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] opacity-80">
+              <span>Server {adminHealth.version}</span>
+              <span aria-hidden="true">/</span>
+              <span>{adminHealth.summary.pipeline_status}</span>
+            </div>
+            {summaryReasons.length > 0 && (
+              <ul className="space-y-1 text-xs leading-5 opacity-90">
+                {summaryReasons.map((reason) => (
+                  <li key={reason} className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </SettingsCallout>
+      ) : healthLoading ? (
+        <SettingsCallout
+          tone="neutral"
+          title="Operational readiness"
+          message="Checking worker status, queue reachability, model readiness, and fallback state."
+        />
+      ) : null}
+
+      {healthError && (
+        <SettingsCallout
+          tone="warning"
+          title="Health data may be stale"
+          message={healthError}
+        />
+      )}
+
+      {adminHealth?.download.in_progress && (
+        <SettingsPanel variant="subtle" className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                Model download in progress
+              </div>
+              <p className="mt-1 text-xs contrast-helper">
+                {adminHealth.download.message ||
+                  "Model assets are still being prepared for the pipeline."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                {typeof adminHealth.download.progress === "number"
+                  ? `${Math.min(adminHealth.download.progress, 100)}%`
+                  : "Running"}
+              </span>
+            </div>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+            <div
+              className="h-full rounded-full bg-orange-500 transition-all"
+              style={{
+                width: `${Math.min(adminHealth.download.progress ?? 10, 100)}%`,
+              }}
+            />
+          </div>
+        </SettingsPanel>
+      )}
+
+      {adminHealth && (
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          {HEALTH_CARDS.map(({ key, title, icon: Icon }) => {
+            const check = adminHealth.checks[key];
+            const styles = STATUS_STYLES[check.status as AdminHealthCheckStatus];
+            const meta = formatCheckMeta(key, check);
+
+            return (
+              <SettingsPanel key={key} variant="meta" className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] contrast-helper">
+                      {title}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                      {check.label}
+                    </div>
+                  </div>
+                  <div
+                    className={`rounded-full p-2 ${styles.iconSurface}`}
+                    aria-hidden="true"
+                  >
+                    <Icon className={`h-4 w-4 ${styles.iconColor}`} />
+                  </div>
+                </div>
+
+                <div>
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium ${styles.badge}`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${styles.dot}`} />
+                    {check.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+
+                {meta.length > 0 && (
+                  <div className="flex flex-wrap gap-2 text-xs contrast-helper">
+                    {meta.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-sm contrast-helper">{check.detail}</p>
+
+                {check.action && (
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                    {check.action}
+                  </p>
+                )}
+              </SettingsPanel>
+            );
+          })}
+        </div>
+      )}
+
       <div className="bg-[#0d1117] rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[600px]">
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-gray-800">

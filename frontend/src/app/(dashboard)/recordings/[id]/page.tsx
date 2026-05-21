@@ -3,14 +3,15 @@
 import {
   getRecording,
   getSettings,
+  getTranscriptUtterances,
   updateSpeaker,
   updateTranscriptSegmentSpeaker,
   updateTranscriptUtteranceSpeaker,
   updateTranscriptSegmentText,
+  updateTranscriptUtteranceText,
   findAndReplace,
   renameRecording,
   updateRecordingTrim,
-  updateTranscriptSegments,
   getGlobalSpeakers,
   updateSpeakerColor,
   generateNotes,
@@ -54,6 +55,17 @@ import {
   getRecordingSpeakerDisplayName,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
+import {
+  diffTranscriptSegments,
+  sortTranscriptSegments,
+  type TranscriptSegmentChange,
+} from "@/lib/transcriptSegments";
+import {
+  applyTranscriptDelta,
+  createLocalTranscriptState,
+  flushDeferredTranscriptState,
+  type LocalTranscriptState,
+} from "@/lib/transcriptState";
 
 const isDemoRecording = (recording: Recording) =>
   recording.name === "Welcome to Nojoin";
@@ -91,11 +103,14 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-// History Stack Item
-interface HistoryItem {
-  segments: TranscriptSegment[];
+interface TranscriptHistoryItem {
+  patches: TranscriptSegmentChange[];
   description: string;
 }
+
+const cloneTranscriptSegments = (segments: TranscriptSegment[]): TranscriptSegment[] => {
+  return JSON.parse(JSON.stringify(segments)) as TranscriptSegment[];
+};
 
 export default function RecordingPage({ params }: PageProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
@@ -105,13 +120,20 @@ export default function RecordingPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
   const { addNotification } = useNotificationStore();
   const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
 
   // Undo/Redo State
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [future, setFuture] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<TranscriptHistoryItem[]>([]);
+  const [future, setFuture] = useState<TranscriptHistoryItem[]>([]);
   const [isUndoing, setIsUndoing] = useState(false);
+  const [transcriptState, setTranscriptState] = useState<LocalTranscriptState | null>(
+    null,
+  );
+  const [activeTranscriptEditId, setActiveTranscriptEditId] = useState<
+    string | null
+  >(null);
 
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
@@ -143,18 +165,169 @@ export default function RecordingPage({ params }: PageProps) {
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
 
+  const transcriptSegments = useMemo(
+    () => transcriptState?.segments || recording?.transcript?.segments || [],
+    [recording?.transcript?.segments, transcriptState?.segments],
+  );
+  const deferredTranscriptUtteranceIds = useMemo(
+    () => Object.keys(transcriptState?.deferredById || {}),
+    [transcriptState?.deferredById],
+  );
+
   const globalSpeakerById = useMemo(
     () => buildGlobalSpeakerById(globalSpeakers),
     [globalSpeakers],
   );
 
-  const getSpeakerDisplayName = (speaker: RecordingSpeaker | undefined) => {
-    if (!speaker) {
-      return "";
+  const getSpeakerDisplayName = useCallback(
+    (speaker: RecordingSpeaker | undefined) => {
+      if (!speaker) {
+        return "";
+      }
+
+      return getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
+    },
+    [globalSpeakerById],
+  );
+
+  useEffect(() => {
+    transcriptStateRef.current = transcriptState;
+  }, [transcriptState]);
+
+  useEffect(() => {
+    if (!recording) {
+      return;
     }
 
-    return getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
-  };
+    setTranscriptState((prev) => {
+      if (prev && prev.recordingId === recording.id && prev.revision > 0) {
+        return prev;
+      }
+
+      return createLocalTranscriptState(
+        recording.id,
+        recording.transcript?.segments || [],
+        prev?.recordingId === recording.id ? prev.revision : 0,
+        prev?.recordingId === recording.id ? prev.deferredById : {},
+      );
+    });
+  }, [recording]);
+
+  const findRecordingSpeakerByValue = useCallback(
+    (value: string | undefined) => {
+      if (!value || !recording?.speakers) {
+        return undefined;
+      }
+
+      return recording.speakers.find(
+        (speaker) =>
+          speaker.diarization_label === value ||
+          speaker.local_name === value ||
+          speaker.name === value ||
+          speaker.global_speaker?.name === value,
+      );
+    },
+    [recording?.speakers],
+  );
+
+  const buildSpeakerAssignmentFromSegment = useCallback(
+    (segment: TranscriptSegment): TranscriptSpeakerAssignment => {
+      const matchedSpeaker = findRecordingSpeakerByValue(segment.speaker);
+
+      return {
+        name: matchedSpeaker ? getSpeakerDisplayName(matchedSpeaker) : segment.speaker,
+        diarizationLabel: matchedSpeaker?.diarization_label,
+        globalSpeakerId: matchedSpeaker
+          ? getResolvedGlobalSpeakerId(matchedSpeaker)
+          : undefined,
+        scope: "utterance_only",
+      };
+    },
+    [findRecordingSpeakerByValue, getSpeakerDisplayName],
+  );
+
+  const pushTranscriptHistory = useCallback(
+    (
+      description: string,
+      previousSegments: TranscriptSegment[],
+      nextSegments: TranscriptSegment[],
+    ) => {
+      const patches = diffTranscriptSegments(previousSegments, nextSegments);
+
+      if (patches.length === 0) {
+        return;
+      }
+
+      setHistory((prev) => [...prev, { patches, description }]);
+      setFuture([]);
+    },
+    [],
+  );
+
+  const syncTranscriptState = useCallback(
+    async (mode: "full" | "delta" = "delta") => {
+      if (!recording) {
+        return null;
+      }
+
+      const currentTranscriptState = transcriptStateRef.current;
+      const afterRevision =
+        mode === "delta" && currentTranscriptState?.recordingId === recording.id
+          ? currentTranscriptState.revision
+          : undefined;
+      const transcriptDelta = await getTranscriptUtterances(
+        recording.id,
+        afterRevision,
+      );
+
+      let nextSegments: TranscriptSegment[] = [];
+
+      setTranscriptState((prev) => {
+        const nextState = applyTranscriptDelta({
+          currentState: prev,
+          recordingId: recording.id,
+          fallbackSegments: recording.transcript?.segments || [],
+          delta: transcriptDelta,
+          mode,
+          activeEditUtteranceId: activeTranscriptEditId,
+        });
+        nextSegments = nextState.segments;
+        return nextState;
+      });
+
+      setRecording((prev) => {
+        if (!prev || prev.id !== recording.id) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          speakers: transcriptDelta.speakers,
+        };
+      });
+
+      return {
+        revision: transcriptDelta.revision,
+        segments: nextSegments,
+        speakers: transcriptDelta.speakers,
+      };
+    },
+    [activeTranscriptEditId, recording],
+  );
+
+  useEffect(() => {
+    if (activeTranscriptEditId !== null) {
+      return;
+    }
+
+    setTranscriptState((prev) => {
+      if (!prev || Object.keys(prev.deferredById).length === 0) {
+        return prev;
+      }
+
+      return flushDeferredTranscriptState(prev);
+    });
+  }, [activeTranscriptEditId]);
 
   const fetchRecording = useCallback(async () => {
     try {
@@ -181,9 +354,34 @@ export default function RecordingPage({ params }: PageProps) {
     }
   }, [params, isEditingTitle]);
 
+  const refreshRecordingView = useCallback(async () => {
+    await fetchRecording();
+
+    if (!recording?.id) {
+      return;
+    }
+
+    await syncTranscriptState("full").catch((e) => {
+      console.error("Failed to refresh transcript state:", e);
+    });
+  }, [fetchRecording, recording?.id, syncTranscriptState]);
+
   useEffect(() => {
     fetchRecording();
   }, [fetchRecording]);
+
+  useEffect(() => {
+    if (!recording?.id) {
+      return;
+    }
+
+    syncTranscriptState("full").catch((e) => {
+      console.error("Failed to load transcript utterances:", e);
+    });
+    // syncTranscriptState intentionally runs once per recording load; later
+    // delta polling and explicit mutation refreshes keep this state current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording?.id]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -263,6 +461,23 @@ export default function RecordingPage({ params }: PageProps) {
     return () => clearInterval(interval);
   }, [params, recording, isEditingTitle, addNotification, router]);
 
+  useEffect(() => {
+    if (!recording || !shouldPollRecordingUpdates(recording)) {
+      return;
+    }
+
+    const pollIntervalMs =
+      recording.status === RecordingStatus.UPLOADING ? 1000 : 3000;
+
+    const interval = setInterval(() => {
+      syncTranscriptState("delta").catch((e) => {
+        console.error("Transcript polling failed", e);
+      });
+    }, pollIntervalMs);
+
+    return () => clearInterval(interval);
+  }, [recording, syncTranscriptState]);
+
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {
     const handleUpdate = (e: Event) => {
@@ -276,14 +491,14 @@ export default function RecordingPage({ params }: PageProps) {
           if (!isEditingTitle) setTitleValue(customEvent.detail.name);
         } else {
           // Force refresh for other updates (like status change or speaker inference)
-          getRecording(recording.id).then(setRecording).catch(console.error);
+          refreshRecordingView().catch(console.error);
         }
       }
     };
 
     window.addEventListener("recording-updated", handleUpdate);
     return () => window.removeEventListener("recording-updated", handleUpdate);
-  }, [recording, isEditingTitle]);
+  }, [recording, isEditingTitle, refreshRecordingView]);
 
   // Listen for tour events to switch panels
   useEffect(() => {
@@ -304,10 +519,10 @@ export default function RecordingPage({ params }: PageProps) {
 
   // Initialize speaker colors
   useEffect(() => {
-    if (!recording?.transcript?.segments) return;
+    if (!recording) return;
 
     const newColors = { ...speakerColors };
-    const segments = recording.transcript.segments;
+    const segments = transcriptSegments;
 
     // Create a map of name -> diarization_label to handle legacy transcripts
     const nameToLabel: Record<string, string> = {};
@@ -371,7 +586,7 @@ export default function RecordingPage({ params }: PageProps) {
     });
     setSpeakerColors(newColors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording]);
+  }, [recording, transcriptSegments]);
 
   // Player Handlers
   const handleTimeUpdate = () => {
@@ -449,72 +664,66 @@ export default function RecordingPage({ params }: PageProps) {
   };
 
   // History Management
-  const pushToHistory = useCallback(
-    (description: string) => {
-      if (!recording?.transcript?.segments) return;
+  const applyTranscriptHistory = useCallback(
+    async (patches: TranscriptSegmentChange[], direction: "undo" | "redo") => {
+      if (!recording) {
+        return;
+      }
 
-      // Deep copy segments
-      const segmentsSnapshot = JSON.parse(
-        JSON.stringify(recording.transcript.segments),
-      );
+      for (const patch of patches) {
+        const targetSegment = direction === "undo" ? patch.before : patch.after;
+        if (!targetSegment.id) {
+          continue;
+        }
 
-      setHistory((prev) => [
-        ...prev,
-        { segments: segmentsSnapshot, description },
-      ]);
-      setFuture([]); // Clear redo stack on new action
+        const currentSegment = transcriptStateRef.current?.segments.find(
+          (segment) => segment.id === targetSegment.id,
+        );
+        if (!currentSegment) {
+          continue;
+        }
+
+        if (
+          patch.changedFields.includes("text") &&
+          currentSegment.text !== targetSegment.text
+        ) {
+          await updateTranscriptUtteranceText(
+            recording.id,
+            targetSegment.id,
+            targetSegment.text,
+            currentSegment.revision,
+          );
+        }
+
+        if (
+          patch.changedFields.includes("speaker") &&
+          currentSegment.speaker !== targetSegment.speaker
+        ) {
+          await updateTranscriptUtteranceSpeaker(
+            recording.id,
+            targetSegment.id,
+            buildSpeakerAssignmentFromSegment(targetSegment),
+          );
+        }
+      }
     },
-    [recording],
+    [buildSpeakerAssignmentFromSegment, recording],
   );
 
-  // Helper to push both transcript and notes history for unified operations
-  const pushBothHistories = useCallback(
-    (description: string) => {
-      if (!recording?.transcript?.segments) return;
+  const handleUndo = async () => {
+    if (history.length === 0 || !recording || isUndoing) return;
 
-      // Push transcript history
-      const segmentsSnapshot = JSON.parse(
-        JSON.stringify(recording.transcript.segments),
-      );
-      setHistory((prev) => [
-        ...prev,
-        { segments: segmentsSnapshot, description },
-      ]);
-      setFuture([]);
-
-      // Always push notes history, even if notes is null/empty
-      setNotesHistory((prev) => [...prev, recording.transcript?.notes ?? null]);
-      setNotesFuture([]);
-    },
-    [recording],
-  );
-
-  const handleUndo = () => {
-    if (history.length === 0 || !recording || !recording.transcript) return;
+    const previousState = history[history.length - 1];
 
     setIsUndoing(true);
     try {
-      const previousState = history[history.length - 1];
-      const currentSegments = JSON.parse(
-        JSON.stringify(recording.transcript.segments),
-      );
-
-      // Push current state to future
-      setFuture((prev) => [
-        { segments: currentSegments, description: "Undo" },
-        ...prev,
-      ]);
-
-      // Restore previous state
-      updateTranscriptSegments(recording.id, previousState.segments).then(
-        () => {
-          // Update local state
-          setHistory((prev) => prev.slice(0, -1));
-          getRecording(recording.id).then(setRecording).catch(console.error);
-        },
-      );
+      await applyTranscriptHistory(previousState.patches, "undo");
+      await syncTranscriptState("full");
+      setHistory((prev) => prev.slice(0, -1));
+      setFuture((prev) => [previousState, ...prev]);
     } catch (e) {
       console.error("Undo failed", e);
+      await syncTranscriptState("full").catch(() => undefined);
       alert("Undo failed.");
     } finally {
       setIsUndoing(false);
@@ -522,31 +731,19 @@ export default function RecordingPage({ params }: PageProps) {
   };
 
   const handleRedo = async () => {
-    if (future.length === 0 || !recording?.transcript?.segments || isUndoing)
-      return;
+    if (future.length === 0 || !recording || isUndoing) return;
+
+    const nextState = future[0];
 
     setIsUndoing(true);
     try {
-      const nextState = future[0];
-      const currentSegments = JSON.parse(
-        JSON.stringify(recording.transcript.segments),
-      );
-
-      // Push current state to history
-      setHistory((prev) => [
-        ...prev,
-        { segments: currentSegments, description: "Redo" },
-      ]);
-
-      // Restore next state
-      await updateTranscriptSegments(recording.id, nextState.segments);
-
-      // Update local state
+      await applyTranscriptHistory(nextState.patches, "redo");
+      await syncTranscriptState("full");
       setFuture((prev) => prev.slice(1));
-      const updated = await getRecording(recording.id);
-      setRecording(updated);
+      setHistory((prev) => [...prev, nextState]);
     } catch (e) {
       console.error("Redo failed", e);
+      await syncTranscriptState("full").catch(() => undefined);
       alert("Redo failed.");
     } finally {
       setIsUndoing(false);
@@ -556,42 +753,11 @@ export default function RecordingPage({ params }: PageProps) {
   // Transcript Handlers
   const handleRenameSpeaker = async (label: string, newName: string) => {
     if (!recording) return;
-    const previousDisplayName = speakerMap[label] || label;
-    // Note: Global speaker rename is not currently undoable via segment history
-    // as it affects the global speaker table, not just segments.
     try {
       await updateSpeaker(recording.id, label, newName);
-      setRecording((prev) => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          speakers: (prev.speakers || []).map((speaker) =>
-            speaker.diarization_label === label
-              ? {
-                  ...speaker,
-                  local_name: newName,
-                  name: undefined,
-                  global_speaker_id: undefined,
-                  global_speaker: undefined,
-                }
-              : speaker,
-          ),
-          transcript: prev.transcript
-            ? {
-                ...prev.transcript,
-                segments: (prev.transcript.segments || []).map((segment) =>
-                  segment.speaker === previousDisplayName
-                    ? { ...segment, speaker: label }
-                    : segment,
-                ),
-              }
-            : prev.transcript,
-        };
-      });
-      router.refresh();
       const updated = await getRecording(recording.id);
       setRecording(updated);
+      await syncTranscriptState("full");
     } catch (error) {
       console.error("Failed to rename speaker:", error);
       alert("Failed to rename speaker. Please try again.");
@@ -599,13 +765,12 @@ export default function RecordingPage({ params }: PageProps) {
   };
 
   const handleUpdateSegmentSpeaker = async (
-    index: number,
+    segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => {
     if (!recording) return;
 
-    const segment = recording.transcript?.segments?.[index];
-    if (!segment) return;
+    const previousSegments = cloneTranscriptSegments(transcriptSegments);
 
     const nextAssignment = {
       ...assignment,
@@ -643,7 +808,6 @@ export default function RecordingPage({ params }: PageProps) {
       return;
     }
 
-    pushToHistory(`Change speaker segment ${index}`);
     try {
       if (segment.id) {
         await updateTranscriptUtteranceSpeaker(
@@ -651,26 +815,99 @@ export default function RecordingPage({ params }: PageProps) {
           segment.id,
           nextAssignment,
         );
+        const syncResult = await syncTranscriptState("delta");
+        if (syncResult?.segments) {
+          pushTranscriptHistory(
+            `Change speaker ${segment.id}`,
+            previousSegments,
+            syncResult.segments,
+          );
+        }
       } else {
-        await updateTranscriptSegmentSpeaker(recording.id, index, nextAssignment);
+        const segmentIndex = transcriptSegments.indexOf(segment);
+        if (segmentIndex === -1) {
+          return;
+        }
+
+        await updateTranscriptSegmentSpeaker(
+          recording.id,
+          segmentIndex,
+          nextAssignment,
+        );
+        const updated = await getRecording(recording.id);
+        setRecording(updated);
+        const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
+        setTranscriptState({
+          recordingId: updated.id,
+          revision:
+            transcriptStateRef.current?.recordingId === updated.id
+              ? transcriptStateRef.current.revision
+              : 0,
+          segments: nextSegments,
+          deferredById: {},
+        });
+        pushTranscriptHistory(
+          `Change speaker ${segmentIndex}`,
+          previousSegments,
+          nextSegments,
+        );
       }
-      router.refresh();
-      const updated = await getRecording(recording.id);
-      setRecording(updated);
     } catch (error) {
       console.error("Failed to update segment speaker:", error);
       alert("Failed to update segment speaker. Please try again.");
     }
   };
 
-  const handleUpdateSegmentText = async (index: number, text: string) => {
+  const handleUpdateSegmentText = async (
+    segment: TranscriptSegment,
+    text: string,
+  ) => {
     if (!recording) return;
-    pushToHistory(`Edit text segment ${index}`);
+
+    const previousSegments = cloneTranscriptSegments(transcriptSegments);
+
     try {
-      await updateTranscriptSegmentText(recording.id, index, text);
-      router.refresh();
+      if (segment.id) {
+        await updateTranscriptUtteranceText(
+          recording.id,
+          segment.id,
+          text,
+          segment.revision,
+        );
+        const syncResult = await syncTranscriptState("delta");
+        if (syncResult?.segments) {
+          pushTranscriptHistory(
+            `Edit text ${segment.id}`,
+            previousSegments,
+            syncResult.segments,
+          );
+        }
+        return;
+      }
+
+      const segmentIndex = transcriptSegments.indexOf(segment);
+      if (segmentIndex === -1) {
+        return;
+      }
+
+      await updateTranscriptSegmentText(recording.id, segmentIndex, text);
       const updated = await getRecording(recording.id);
       setRecording(updated);
+      const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
+      setTranscriptState({
+        recordingId: updated.id,
+        revision:
+          transcriptStateRef.current?.recordingId === updated.id
+            ? transcriptStateRef.current.revision
+            : 0,
+        segments: nextSegments,
+        deferredById: {},
+      });
+      pushTranscriptHistory(
+        `Edit text ${segmentIndex}`,
+        previousSegments,
+        nextSegments,
+      );
     } catch (error) {
       console.error("Failed to update segment text:", error);
       alert("Failed to update segment text.");
@@ -684,14 +921,13 @@ export default function RecordingPage({ params }: PageProps) {
   ) => {
     if (!recording) return;
 
-    // Push both transcript and notes to history since this affects both
-    pushBothHistories(`Global Replace "${find}" with "${replace}"`);
-
     try {
       await findAndReplace(recording.id, find, replace, options);
 
-      router.refresh();
-      const updated = await getRecording(recording.id);
+      const [updated] = await Promise.all([
+        getRecording(recording.id),
+        syncTranscriptState("full"),
+      ]);
       setRecording(updated);
     } catch (error) {
       console.error("Failed to find and replace:", error);
@@ -1032,12 +1268,10 @@ export default function RecordingPage({ params }: PageProps) {
         <div
           className={`absolute inset-0 flex flex-col ${activePanel === "transcript" ? "z-10 visible" : "z-0 invisible"}`}
         >
-          {recording &&
-          recording.transcript?.segments &&
-          recording.transcript.segments.length > 0 ? (
+          {recording && transcriptSegments.length > 0 ? (
             <TranscriptView
               recordingId={recording.id}
-              segments={recording.transcript.segments}
+              segments={transcriptSegments}
               currentTime={currentTime}
               onPlaySegment={handlePlaySegment}
               isPlaying={isPlaying}
@@ -1058,6 +1292,8 @@ export default function RecordingPage({ params }: PageProps) {
               onExport={() => setShowExportModal(true)}
               trimStartS={recording.trim_start_s}
               trimEndS={recording.trim_end_s}
+              onActiveEditUtteranceChange={setActiveTranscriptEditId}
+              pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
@@ -1149,8 +1385,8 @@ export default function RecordingPage({ params }: PageProps) {
     recording.status === RecordingStatus.PROCESSING ||
     recording.status === RecordingStatus.QUEUED;
   const hasLiveTranscriptSegments =
-    Boolean(recording.transcript?.segments?.length) &&
-    recording.transcript?.segments?.some(
+    Boolean(transcriptSegments.length) &&
+    transcriptSegments.some(
       (segment) => segment.provisional === true || segment.segment_source === "live",
     );
 
@@ -1193,7 +1429,7 @@ export default function RecordingPage({ params }: PageProps) {
                   <div className="flex-1 min-h-0">
                     <TranscriptView
                       recordingId={recording.id}
-                      segments={recording.transcript?.segments || []}
+                      segments={transcriptSegments}
                       currentTime={currentTime}
                       onPlaySegment={handlePlaySegment}
                       isPlaying={isPlaying}
@@ -1218,6 +1454,8 @@ export default function RecordingPage({ params }: PageProps) {
                       emptyStateDescription="Live transcript text will appear as Nojoin detects speech."
                       trimStartS={recording.trim_start_s}
                       trimEndS={recording.trim_end_s}
+                      onActiveEditUtteranceChange={setActiveTranscriptEditId}
+                      pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
                     />
                   </div>
                 </div>
@@ -1287,7 +1525,7 @@ export default function RecordingPage({ params }: PageProps) {
                     speakerNameSuggestions={
                       recording.transcript?.speaker_name_suggestions || []
                     }
-                    segments={recording.transcript?.segments || []}
+                    segments={transcriptSegments}
                     onPlaySegment={handlePlaySegment}
                     recordingId={recording.id}
                     speakerColors={speakerColors}
@@ -1296,7 +1534,7 @@ export default function RecordingPage({ params }: PageProps) {
                     isPlaying={isPlaying}
                     onPause={handlePause}
                     onResume={handleResume}
-                    onRefresh={fetchRecording}
+                    onRefresh={refreshRecordingView}
                     globalSpeakers={globalSpeakers}
                     onSpeakerRenamed={async (oldName, newName) => {
                       if (recording?.transcript?.notes) {

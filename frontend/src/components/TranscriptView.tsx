@@ -8,7 +8,7 @@ import {
   SpeakerCorrectionScope,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { useRef, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Play,
   Pause,
@@ -23,6 +23,7 @@ import {
   Radio,
 } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
+import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import Fuse from "fuse.js";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -40,10 +41,13 @@ interface TranscriptViewProps {
   globalSpeakers: GlobalSpeaker[];
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (
-    index: number,
+    segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
-  onUpdateSegmentText: (index: number, text: string) => void | Promise<void>;
+  onUpdateSegmentText: (
+    segment: TranscriptSegment,
+    text: string,
+  ) => void | Promise<void>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -62,6 +66,8 @@ interface TranscriptViewProps {
   emptyStateDescription?: string;
   trimStartS?: number | null;
   trimEndS?: number | null;
+  onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
+  pendingRemoteUtteranceIds?: string[];
 }
 
 const formatTime = (seconds: number) => {
@@ -104,20 +110,28 @@ export default function TranscriptView({
   emptyStateDescription,
   trimStartS,
   trimEndS,
+  onActiveEditUtteranceChange,
+  pendingRemoteUtteranceIds = [],
 }: TranscriptViewProps) {
   const activeSegmentRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<{
+    segmentId: string;
+    offset: number;
+    orderIndex: number;
+  } | null>(null);
   const { addNotification } = useNotificationStore();
 
   // Editing State
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
-  const [editingSegmentSpeakerIndex, setEditingSegmentSpeakerIndex] = useState<
-    number | null
+  const [editingSegmentSpeakerId, setEditingSegmentSpeakerId] = useState<
+    string | null
   >(null);
-  const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   // Popover State
   const [activePopover, setActivePopover] = useState<{
-    index: number;
+    segmentId: string;
     target: HTMLElement;
   } | null>(null);
 
@@ -136,10 +150,48 @@ export default function TranscriptView({
 
   // Search Matches State
   const [matches, setMatches] = useState<
-    { segmentIndex: number; startIndex: number; length: number }[]
+    {
+      segmentId: string;
+      orderIndex: number;
+      startIndex: number;
+      length: number;
+    }[]
   >([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
   const prevFindTextRef = useRef(findText);
+  const pendingRemoteUtteranceIdSet = useMemo(
+    () => new Set(pendingRemoteUtteranceIds),
+    [pendingRemoteUtteranceIds],
+  );
+  const exportDisabled = Boolean(
+    editingSpeaker || editingSegmentSpeakerId || editingTextId || isSubmitting,
+  );
+  const exportTitle = exportDisabled
+    ? "Finish the current transcript edit before exporting"
+    : "Export";
+
+  useEffect(() => {
+    if (!onActiveEditUtteranceChange) {
+      return;
+    }
+
+    const activeEditKey = editingTextId || editingSegmentSpeakerId;
+    if (!activeEditKey) {
+      onActiveEditUtteranceChange(null);
+      return;
+    }
+
+    const activeSegment = segments.find((segment, index) => {
+      return getTranscriptSegmentKey(segment, index) === activeEditKey;
+    });
+
+    onActiveEditUtteranceChange(activeSegment?.id || null);
+  }, [
+    editingSegmentSpeakerId,
+    editingTextId,
+    onActiveEditUtteranceChange,
+    segments,
+  ]);
 
   // Calculate matches when findText or segments change
   useEffect(() => {
@@ -150,7 +202,8 @@ export default function TranscriptView({
     }
 
     const newMatches: {
-      segmentIndex: number;
+      segmentId: string;
+      orderIndex: number;
       startIndex: number;
       length: number;
     }[] = [];
@@ -171,8 +224,10 @@ export default function TranscriptView({
           result.matches.forEach((match) => {
             if (match.key === "text" && match.indices) {
               match.indices.forEach((range) => {
+                const segment = segments[result.refIndex];
                 newMatches.push({
-                  segmentIndex: result.refIndex,
+                  segmentId: getTranscriptSegmentKey(segment, result.refIndex),
+                  orderIndex: result.refIndex,
                   startIndex: range[0],
                   length: range[1] - range[0] + 1,
                 });
@@ -184,8 +239,8 @@ export default function TranscriptView({
 
       // Sort matches by segmentIndex then startIndex
       newMatches.sort((a, b) => {
-        if (a.segmentIndex !== b.segmentIndex)
-          return a.segmentIndex - b.segmentIndex;
+        if (a.orderIndex !== b.orderIndex)
+          return a.orderIndex - b.orderIndex;
         return a.startIndex - b.startIndex;
       });
     } else if (useRegex) {
@@ -200,7 +255,8 @@ export default function TranscriptView({
 
           while ((match = regex.exec(segment.text)) !== null) {
             newMatches.push({
-              segmentIndex: sIndex,
+              segmentId: getTranscriptSegmentKey(segment, sIndex),
+              orderIndex: sIndex,
               startIndex: match.index,
               length: match[0].length,
             });
@@ -223,7 +279,8 @@ export default function TranscriptView({
           const index = text.indexOf(search, pos);
           if (index === -1) break;
           newMatches.push({
-            segmentIndex: sIndex,
+            segmentId: getTranscriptSegmentKey(segment, sIndex),
+            orderIndex: sIndex,
             startIndex: index,
             length: search.length,
           });
@@ -255,7 +312,7 @@ export default function TranscriptView({
   useEffect(() => {
     if (currentMatchIndex >= 0 && matches[currentMatchIndex]) {
       const match = matches[currentMatchIndex];
-      const element = document.getElementById(`segment-${match.segmentIndex}`);
+      const element = document.getElementById(`segment-${match.segmentId}`);
       if (element) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -274,12 +331,10 @@ export default function TranscriptView({
     );
   };
 
-  const renderHighlightedText = (text: string, segmentIndex: number) => {
+  const renderHighlightedText = (text: string, segmentId: string) => {
     if (!findText || !showSearch || matches.length === 0) return text;
 
-    const segmentMatches = matches.filter(
-      (m) => m.segmentIndex === segmentIndex,
-    );
+    const segmentMatches = matches.filter((m) => m.segmentId === segmentId);
     if (segmentMatches.length === 0) return text;
 
     let lastIndex = 0;
@@ -295,7 +350,7 @@ export default function TranscriptView({
       const isCurrent = matches[currentMatchIndex] === match;
       parts.push(
         <mark
-          key={`${segmentIndex}-${match.startIndex}`}
+          key={`${segmentId}-${match.startIndex}`}
           className={`${isCurrent ? "bg-orange-400 text-white" : "bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100"} rounded-sm px-0.5`}
         >
           {text.substring(match.startIndex, match.startIndex + match.length)}
@@ -324,6 +379,47 @@ export default function TranscriptView({
   const activeSegmentIndex = segments.findIndex(
     (s) => currentTime >= s.start && currentTime < s.end,
   );
+  const activeSegmentKey =
+    activeSegmentIndex >= 0
+      ? getTranscriptSegmentKey(segments[activeSegmentIndex], activeSegmentIndex)
+      : null;
+
+  const isRecentlyUpdatedSegment = useCallback((segment: TranscriptSegment) => {
+    return (
+      typeof segment.updated_at === "string" &&
+      Date.now() - new Date(segment.updated_at).getTime() < 15000
+    );
+  }, []);
+
+  const updateScrollAnchor = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const segmentElements = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
+    );
+    if (segmentElements.length === 0) {
+      scrollAnchorRef.current = null;
+      return;
+    }
+
+    const firstVisible =
+      segmentElements.find(
+        (element) => element.offsetTop + element.offsetHeight > container.scrollTop,
+      ) || segmentElements[segmentElements.length - 1];
+    const segmentId = firstVisible?.dataset.segmentId;
+    if (!firstVisible || !segmentId) {
+      return;
+    }
+
+    scrollAnchorRef.current = {
+      segmentId,
+      offset: firstVisible.offsetTop - container.scrollTop,
+      orderIndex: Number(firstVisible.dataset.orderIndex ?? 0),
+    };
+  }, []);
 
   useEffect(() => {
     if (activeSegmentRef.current) {
@@ -332,7 +428,41 @@ export default function TranscriptView({
         block: "center",
       });
     }
-  }, [activeSegmentIndex]);
+  }, [activeSegmentKey]);
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    const anchor = scrollAnchorRef.current;
+    if (!container || !anchor) {
+      return;
+    }
+
+    const segmentElements = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
+    );
+    if (segmentElements.length === 0) {
+      return;
+    }
+
+    const anchorElement =
+      segmentElements.find((element) => element.dataset.segmentId === anchor.segmentId) ||
+      segmentElements.find(
+        (element) => Number(element.dataset.orderIndex ?? -1) >= anchor.orderIndex,
+      ) ||
+      segmentElements[segmentElements.length - 1];
+    if (!anchorElement) {
+      return;
+    }
+
+    const nextScrollTop = Math.max(0, anchorElement.offsetTop - anchor.offset);
+    if (Math.abs(container.scrollTop - nextScrollTop) > 1) {
+      container.scrollTop = nextScrollTop;
+    }
+  }, [segments]);
+
+  useEffect(() => {
+    updateScrollAnchor();
+  }, [segments, updateScrollAnchor]);
 
   const handleSpeakerRenameSubmit = async () => {
     if (editingSpeaker && editValue.trim()) {
@@ -348,47 +478,47 @@ export default function TranscriptView({
     }
   };
 
-  const handleSegmentSpeakerSubmit = async (index: number) => {
+  const handleSegmentSpeakerSubmit = async (segment: TranscriptSegment) => {
     if (editValue.trim() && !isSubmitting) {
       setIsSubmitting(true);
       try {
-        await onUpdateSegmentSpeaker(index, {
+        await onUpdateSegmentSpeaker(segment, {
           name: editValue.trim(),
-          scope: getDefaultSpeakerCorrectionScope(segments[index].speaker),
+          scope: getDefaultSpeakerCorrectionScope(segment.speaker),
         });
       } finally {
         setIsSubmitting(false);
-        setEditingSegmentSpeakerIndex(null);
+        setEditingSegmentSpeakerId(null);
       }
     } else if (!editValue.trim()) {
-      setEditingSegmentSpeakerIndex(null);
+      setEditingSegmentSpeakerId(null);
     }
   };
 
   const handleTextClick = (
-    index: number,
-    text: string,
+    segment: TranscriptSegment,
+    segmentId: string,
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
-    if (readOnly || (segments[index]?.provisional === true && !allowProvisionalEdits)) return;
-    setEditingTextIndex(index);
-    setEditValue(text);
+    if (readOnly || (segment.provisional === true && !allowProvisionalEdits)) return;
+    setEditingTextId(segmentId);
+    setEditValue(segment.text);
     setEditingSpeaker(null);
-    setEditingSegmentSpeakerIndex(null);
+    setEditingSegmentSpeakerId(null);
   };
 
-  const handleTextSubmit = async (index: number) => {
-    if (editValue !== segments[index].text && !isSubmitting) {
+  const handleTextSubmit = async (segment: TranscriptSegment) => {
+    if (editValue !== segment.text && !isSubmitting) {
       setIsSubmitting(true);
       try {
-        await onUpdateSegmentText(index, editValue);
+        await onUpdateSegmentText(segment, editValue);
       } finally {
         setIsSubmitting(false);
-        setEditingTextIndex(null);
+        setEditingTextId(null);
       }
     } else {
-      setEditingTextIndex(null);
+      setEditingTextId(null);
     }
   };
 
@@ -423,7 +553,10 @@ export default function TranscriptView({
       return;
 
     const match = matches[currentMatchIndex];
-    const segment = segments[match.segmentIndex];
+    const segment = segments[match.orderIndex];
+    if (!segment) {
+      return;
+    }
 
     // Calculate new text
     const prefix = segment.text.substring(0, match.startIndex);
@@ -432,7 +565,7 @@ export default function TranscriptView({
 
     setIsSubmitting(true);
     try {
-      await onUpdateSegmentText(match.segmentIndex, newText);
+      await onUpdateSegmentText(segment, newText);
     } catch (e) {
       console.error("Failed to replace text", e);
     } finally {
@@ -443,17 +576,19 @@ export default function TranscriptView({
   const handleKeyDown = (
     e: React.KeyboardEvent,
     type: "segmentSpeaker" | "text",
-    indexOrLabel: number | string,
+    segment: TranscriptSegment,
   ) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (type === "segmentSpeaker")
-        handleSegmentSpeakerSubmit(indexOrLabel as number);
-      else if (type === "text") handleTextSubmit(indexOrLabel as number);
+      if (type === "segmentSpeaker") {
+        handleSegmentSpeakerSubmit(segment);
+      } else if (type === "text") {
+        handleTextSubmit(segment);
+      }
     } else if (e.key === "Escape") {
       setEditingSpeaker(null);
-      setEditingSegmentSpeakerIndex(null);
-      setEditingTextIndex(null);
+      setEditingSegmentSpeakerId(null);
+      setEditingTextId(null);
     }
   };
 
@@ -463,6 +598,7 @@ export default function TranscriptView({
   const indexedSegments = segments.map((segment, index) => ({
     segment,
     index,
+    segmentId: getTranscriptSegmentKey(segment, index),
   }));
 
   const speakerFilteredSegments = hasKnownSpeakers
@@ -483,6 +619,24 @@ export default function TranscriptView({
           ({ segment }) =>
             segment.end > trimLowerBound && segment.start < trimUpperBound,
         );
+
+  const speakerDisplayOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    let nextIndex = 0;
+
+    displaySegments.forEach(({ segment }) => {
+      [segment.speaker, ...(segment.overlapping_speakers || [])].forEach(
+        (speakerLabel) => {
+          if (!order.has(speakerLabel)) {
+            order.set(speakerLabel, nextIndex);
+            nextIndex += 1;
+          }
+        },
+      );
+    });
+
+    return order;
+  }, [displaySegments]);
 
   // --- Grouping Logic ---
   const trackGroups: {
@@ -535,15 +689,28 @@ export default function TranscriptView({
   if (currentGroup) trackGroups.push(currentGroup);
 
   const renderSegmentContent = (item: typeof displaySegments[0]) => {
-    const { segment, index: originalIndex } = item;
+    const { segment, segmentId } = item;
     const isActive = currentTime >= segment.start && currentTime < segment.end;
     const isProvisional = segment.provisional === true;
     const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
     const speakerName = speakerMap[segment.speaker] || segment.speaker;
     const isEditingSpeaker = editingSpeaker === segment.speaker;
-    const isEditingSegmentSpeaker =
-      editingSegmentSpeakerIndex === originalIndex;
-    const isEditingText = editingTextIndex === originalIndex;
+    const isEditingSegmentSpeaker = editingSegmentSpeakerId === segmentId;
+    const isEditingText = editingTextId === segmentId;
+    const isSpeakerLowConfidence =
+      typeof segment.speaker_confidence === "number" &&
+      segment.speaker_confidence < 0.6 &&
+      !segment.speaker_manually_edited;
+    const isRecentlyUpdated = isRecentlyUpdatedSegment(segment);
+    const hasPendingRemoteUpdate =
+      typeof segment.id === "string" && pendingRemoteUtteranceIdSet.has(segment.id);
+    const isStableSpeaker =
+      !isProvisional &&
+      !isSpeakerLowConfidence &&
+      !segment.speaker_manually_edited &&
+      segment.speaker_state !== "manual_override" &&
+      (segment.speaker_state === "stable" ||
+        (segment.state === "stable" && !segment.speaker_state));
 
     const bubbleColor = isActive
       ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
@@ -553,12 +720,14 @@ export default function TranscriptView({
 
     return (
       <div
-        key={originalIndex}
+        key={segmentId}
         ref={isActive ? activeSegmentRef : null}
+        data-segment-id={segmentId}
+        data-order-index={item.index}
         className="flex flex-col mb-3 last:mb-0"
       >
         {/* Speaker Label */}
-        <div className="flex items-baseline space-x-2 mb-1">
+        <div className="flex flex-wrap items-baseline gap-2 mb-1">
           {isEditingSpeaker ? (
             <input
               autoFocus
@@ -579,10 +748,8 @@ export default function TranscriptView({
               type="text"
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              onBlur={() => handleSegmentSpeakerSubmit(originalIndex)}
-              onKeyDown={(e) =>
-                handleKeyDown(e, "segmentSpeaker", originalIndex)
-              }
+              onBlur={() => handleSegmentSpeakerSubmit(segment)}
+              onKeyDown={(e) => handleKeyDown(e, "segmentSpeaker", segment)}
               onClick={(e) => e.stopPropagation()}
               className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
@@ -592,11 +759,11 @@ export default function TranscriptView({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (isSegmentReadOnly) return;
-                  if (activePopover?.index === originalIndex) {
+                  if (activePopover?.segmentId === segmentId) {
                     setActivePopover(null);
                   } else {
                     setActivePopover({
-                      index: originalIndex,
+                      segmentId,
                       target: e.currentTarget,
                     });
                   }
@@ -625,7 +792,7 @@ export default function TranscriptView({
                 {speakerName}
               </button>
 
-              {activePopover?.index === originalIndex && !isSegmentReadOnly && (
+              {activePopover?.segmentId === segmentId && !isSegmentReadOnly && (
                 <SpeakerAssignmentPopover
                   availableSpeakers={speakers}
                   globalSpeakers={globalSpeakers}
@@ -633,7 +800,7 @@ export default function TranscriptView({
                   speakerColors={speakerColors}
                   targetElement={activePopover.target}
                   onSelect={(assignment) => {
-                    onUpdateSegmentSpeaker(originalIndex, assignment);
+                    onUpdateSegmentSpeaker(segment, assignment);
                     setActivePopover(null);
                   }}
                   onClose={() => setActivePopover(null)}
@@ -641,11 +808,55 @@ export default function TranscriptView({
               )}
             </div>
           )}
+
+          <div className="flex flex-wrap items-center gap-1">
+            {segment.provisional && (
+              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+                Provisional text
+              </span>
+            )}
+            {segment.speaker_state === "provisional" && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                Provisional speaker
+              </span>
+            )}
+            {isStableSpeaker && (
+              <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
+                Stable speaker
+              </span>
+            )}
+            {(segment.speaker_manually_edited ||
+              segment.speaker_state === "manual_override") && (
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                Manual speaker
+              </span>
+            )}
+            {segment.text_manually_edited && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-300">
+                Manual text
+              </span>
+            )}
+            {isSpeakerLowConfidence && (
+              <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+                Low confidence
+              </span>
+            )}
+            {isRecentlyUpdated && !isEditingText && !isEditingSegmentSpeaker && (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Revised
+              </span>
+            )}
+            {hasPendingRemoteUpdate && (
+              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                Pending update
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Transcript Text */}
         <div
-          id={`segment-${originalIndex}`}
+          id={`segment-${segmentId}`}
           className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
             isEditingText ? "ring-2 ring-blue-500" : ""
           } ${
@@ -659,8 +870,8 @@ export default function TranscriptView({
               autoFocus
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              onBlur={() => handleTextSubmit(originalIndex)}
-              onKeyDown={(e) => handleKeyDown(e, "text", originalIndex)}
+              onBlur={() => handleTextSubmit(segment)}
+              onKeyDown={(e) => handleKeyDown(e, "text", segment)}
               className="w-full bg-transparent resize-none outline-none text-gray-900 dark:text-white leading-relaxed"
               rows={Math.max(2, Math.ceil(editValue.length / 80))}
             />
@@ -671,10 +882,10 @@ export default function TranscriptView({
                   ? ""
                   : "cursor-text hover:text-gray-900 dark:hover:text-white"
               }`}
-              onClick={(e) => handleTextClick(originalIndex, segment.text, e)}
+              onClick={(e) => handleTextClick(segment, segmentId, e)}
               title={isSegmentReadOnly ? undefined : "Click to edit text"}
             >
-              {renderHighlightedText(segment.text, originalIndex)}
+              {renderHighlightedText(segment.text, segmentId)}
             </p>
           )}
         </div>
@@ -708,8 +919,10 @@ export default function TranscriptView({
             <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
             <button
               onClick={onExport}
+              disabled={exportDisabled}
+              aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
               className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              title="Export"
+              title={exportTitle}
             >
               <Download className="w-4 h-4" />
             </button>
@@ -887,7 +1100,12 @@ export default function TranscriptView({
         )}
       </div>
 
-      <div className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0">
+      <div
+        ref={scrollContainerRef}
+        data-testid="transcript-scroll-region"
+        className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0"
+        onScroll={updateScrollAnchor}
+      >
         {trackGroups.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
             <div className="flex max-w-sm flex-col items-center text-center">
@@ -907,14 +1125,25 @@ export default function TranscriptView({
         ) : trackGroups.map((group, groupIndex) => {
           const isGroupActive =
             currentTime >= group.start && currentTime < group.end;
-          
-          const involvedSpeakers = Array.from(group.involved).sort((a,b) => 
-            (speakerMap[a] || a).localeCompare(speakerMap[b] || b)
+          const groupKey = group.items.map((item) => item.segmentId).join("|");
+          const groupHasRecentRevision = group.items.some(({ segment }) =>
+            isRecentlyUpdatedSegment(segment),
           );
+          
+          const involvedSpeakers = Array.from(group.involved).sort((left, right) => {
+            const leftOrder = speakerDisplayOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
+            const rightOrder = speakerDisplayOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
+
+            if (leftOrder !== rightOrder) {
+              return leftOrder - rightOrder;
+            }
+
+            return (speakerMap[left] || left).localeCompare(speakerMap[right] || right);
+          });
 
           return (
             <div
-              key={groupIndex}
+              key={groupKey || groupIndex}
               className={`flex gap-3 px-2 group ${isGroupActive ? "opacity-100" : "opacity-90"} transition-opacity`}
             >
               {/* Timestamp & Play Control */}
@@ -953,11 +1182,28 @@ export default function TranscriptView({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 {involvedSpeakers.length > 1 ? (
-                  <div className="flex flex-col md:flex-row gap-3 md:gap-4 w-full border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20 p-3 md:p-4 rounded-xl shadow-[inset_0_1px_4px_rgba(0,0,0,0.02)] dark:shadow-[inset_0_1px_4px_rgba(0,0,0,0.2)]">
+                  <div className="grid gap-3 md:gap-4 w-full border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20 p-3 md:p-4 rounded-xl shadow-[inset_0_1px_4px_rgba(0,0,0,0.02)] dark:shadow-[inset_0_1px_4px_rgba(0,0,0,0.2)] md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
                      {involvedSpeakers.map(speaker => {
                          const speakerItems = group.items.filter(item => item.segment.speaker === speaker);
+                     const laneColorKey = speakerColors[speaker] || "gray";
+                     const laneColor = getColorByKey(laneColorKey);
+                         const laneMinHeightRem = groupHasRecentRevision
+                           ? Math.max(7, speakerItems.length * 4.5)
+                           : undefined;
                          return (
-                             <div key={speaker} className="flex-1 min-w-0 flex flex-col">
+                             <div
+                               key={speaker}
+                               data-testid={`overlap-lane-${speaker}`}
+                               className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-white/70 dark:bg-gray-900/40`}
+                             >
+                         <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${laneColor.text} border-b border-black/5 dark:border-white/5`}>
+                           {speakerMap[speaker] || speaker}
+                         </div>
+                                 <div
+                                   data-testid={`overlap-lane-body-${speaker}`}
+                                   className="p-3 flex-1 min-w-0"
+                                   style={laneMinHeightRem ? { minHeight: `${laneMinHeightRem}rem` } : undefined}
+                                 >
                                  {speakerItems.length > 0 ? (
                                      speakerItems.map(item => renderSegmentContent(item))
                                  ) : (
@@ -968,6 +1214,7 @@ export default function TranscriptView({
                                          </div>
                                      </div>
                                  )}
+                                       </div>
                              </div>
                          )
                      })}

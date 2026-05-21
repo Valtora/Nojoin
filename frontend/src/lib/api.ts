@@ -21,12 +21,14 @@ import {
   User,
   Invitation,
   DownloadProgress,
+  AdminHealthStatus,
   SystemModelStatus,
   VersionInfo,
   PeopleTag,
   SpeakerSegment,
   SegmentSelection,
   TranscriptSpeakerAssignment,
+  TranscriptUtteranceList,
   UserTask,
   ReprocessRequest,
   CalendarEventLink,
@@ -448,6 +450,23 @@ export const updateTranscriptUtteranceSpeaker = async (
   });
 };
 
+export const getTranscriptUtterances = async (
+  recordingId: RecordingId,
+  afterRevision?: number,
+): Promise<TranscriptUtteranceList> => {
+  const params = new URLSearchParams();
+
+  if (afterRevision !== undefined) {
+    params.set("after_revision", String(afterRevision));
+  }
+
+  const suffix = params.toString();
+  const response = await api.get<TranscriptUtteranceList>(
+    `/transcripts/${recordingId}/utterances${suffix ? `?${suffix}` : ""}`,
+  );
+  return response.data;
+};
+
 // Tags
 export const getTags = async (): Promise<Tag[]> => {
   const response = await api.get<Tag[]>("/tags/");
@@ -701,6 +720,18 @@ export const updateTranscriptSegmentText = async (
 ): Promise<void> => {
   await api.put(`/transcripts/${recordingId}/segments/${segmentIndex}/text`, {
     text,
+  });
+};
+
+export const updateTranscriptUtteranceText = async (
+  recordingId: RecordingId,
+  utteranceId: string,
+  text: string,
+  expectedRevision?: number,
+): Promise<void> => {
+  await api.patch(`/transcripts/${recordingId}/utterances/${utteranceId}/text`, {
+    text,
+    expected_revision: expectedRevision,
   });
 };
 
@@ -1236,6 +1267,11 @@ export const getModelsStatus = async (
   const response = await api.get<SystemModelStatus>(
     `/system/models/status?${params.toString()}`,
   );
+  return response.data;
+};
+
+export const getAdminHealth = async (): Promise<AdminHealthStatus> => {
+  const response = await api.get<AdminHealthStatus>("/system/admin-health");
   return response.data;
 };
 

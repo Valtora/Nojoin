@@ -27,6 +27,7 @@ vi.mock("axios", () => ({
 describe("transcript speaker API", () => {
   beforeEach(() => {
     patch.mockReset();
+    get.mockReset();
     post.mockReset();
   });
 
@@ -50,6 +51,42 @@ describe("transcript speaker API", () => {
     );
   });
 
+  it("fetches utterance deltas with an after_revision cursor", async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        recording_id: "rec-1",
+        revision: 9,
+        utterances: [],
+        tombstones: ["utt-1"],
+        speakers: [],
+      },
+    });
+
+    const { getTranscriptUtterances } = await import("./api");
+
+    const response = await getTranscriptUtterances("rec-1", 7);
+
+    expect(get).toHaveBeenCalledWith(
+      "/transcripts/rec-1/utterances?after_revision=7",
+    );
+    expect(response.revision).toBe(9);
+    expect(response.tombstones).toEqual(["utt-1"]);
+  });
+
+  it("patches utterance text by stable utterance id with the expected revision", async () => {
+    const { updateTranscriptUtteranceText } = await import("./api");
+
+    await updateTranscriptUtteranceText("rec-1", "utt-42", "Updated text", 3);
+
+    expect(patch).toHaveBeenCalledWith(
+      "/transcripts/rec-1/utterances/utt-42/text",
+      {
+        text: "Updated text",
+        expected_revision: 3,
+      },
+    );
+  });
+
   it("posts speaker suggestion acceptance by diarization label", async () => {
     const { acceptSpeakerNameSuggestion } = await import("./api");
 
@@ -68,5 +105,44 @@ describe("transcript speaker API", () => {
     expect(post).toHaveBeenCalledWith(
       "/speakers/recordings/rec-1/speakers/SPEAKER_00/suggestions/reject",
     );
+  });
+
+  it("fetches the admin health dashboard payload", async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        status: "ok",
+        version: "2.1.0",
+        summary: {
+          pipeline_status: "ready",
+          message: "Live and final processing prerequisites are ready.",
+          blocking_reasons: [],
+          degraded_reasons: [],
+        },
+        checks: {
+          database: { status: "ok", label: "Connected", detail: "ready" },
+          queue: { status: "ok", label: "Reachable", detail: "ready" },
+          worker: { status: "ok", label: "Active", detail: "ready" },
+          ffmpeg: { status: "ok", label: "Ready", detail: "ready" },
+          transcription_model: { status: "ok", label: "Ready", detail: "ready" },
+          diarization: { status: "ok", label: "Ready", detail: "ready" },
+          device: { status: "ok", label: "GPU ready", detail: "ready" },
+          optional_ai: { status: "info", label: "Not configured", detail: "optional" },
+        },
+        download: {
+          in_progress: false,
+          status: null,
+          stage: null,
+          message: null,
+          progress: null,
+        },
+      },
+    });
+
+    const { getAdminHealth } = await import("./api");
+
+    const response = await getAdminHealth();
+
+    expect(get).toHaveBeenCalledWith("/system/admin-health");
+    expect(response.summary.pipeline_status).toBe("ready");
   });
 });

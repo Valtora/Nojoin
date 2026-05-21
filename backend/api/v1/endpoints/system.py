@@ -31,7 +31,10 @@ from backend.api.services.release_service import (
     get_release_catalog,
     get_windows_installer_asset,
 )
-from backend.api.services.health_service import get_system_health_status
+from backend.api.services.health_service import (
+    get_admin_health_status,
+    get_system_health_status,
+)
 from backend.api.v1.endpoints.setup import (
     FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
     require_first_run_password,
@@ -269,6 +272,17 @@ async def get_system_health(
     Return authenticated system health detail.
     """
     return await get_system_health_status()
+
+
+@router.get("/admin-health")
+async def get_admin_health(
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    Return admin-only operational readiness state for the processing pipeline.
+    """
+    return await get_admin_health_status(db)
 
 @router.get("/status")
 async def get_system_status(

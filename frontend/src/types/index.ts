@@ -140,6 +140,36 @@ export interface TranscriptSpeakerAssignment {
 
 export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 
+export interface TranscriptUtterance {
+  id: string;
+  start: number;
+  end: number;
+  start_ms?: number;
+  end_ms?: number;
+  text: string;
+  speaker: string;
+  recording_speaker_id?: number;
+  state?: string;
+  revision: number;
+  speaker_state?: "provisional" | "stable" | "manual_override" | string;
+  overlapping_speakers?: string[];
+  provisional?: boolean;
+  segment_source?: "live" | string;
+  speaker_manually_edited?: boolean;
+  text_manually_edited?: boolean;
+  speaker_confidence?: number | null;
+  text_confidence?: number | null;
+  updated_at?: string | null;
+}
+
+export interface TranscriptUtteranceList {
+  recording_id: RecordingId;
+  revision: number;
+  utterances: TranscriptUtterance[];
+  tombstones: string[];
+  speakers: RecordingSpeaker[];
+}
+
 export interface TranscriptSegment {
   id?: string;
   start: number;
@@ -147,6 +177,7 @@ export interface TranscriptSegment {
   text: string;
   speaker: string;
   recording_speaker_id?: number;
+  state?: string;
   revision?: number;
   speaker_state?: "provisional" | "stable" | "manual_override" | string;
   overlapping_speakers?: string[];
@@ -154,6 +185,9 @@ export interface TranscriptSegment {
   segment_source?: "live" | string;
   speaker_manually_edited?: boolean;
   text_manually_edited?: boolean;
+  speaker_confidence?: number | null;
+  text_confidence?: number | null;
+  updated_at?: string | null;
 }
 
 export interface MeetingEdgeConcept {
@@ -497,6 +531,52 @@ export interface SystemModelStatus {
   pyannote: ModelStatusInfo;
   embedding: ModelStatusInfo;
   [key: string]: ModelStatusInfo;
+}
+
+export type AdminHealthCheckStatus =
+  | "ok"
+  | "warning"
+  | "error"
+  | "disabled"
+  | "info"
+  | "unknown";
+
+export interface AdminHealthCheck {
+  status: AdminHealthCheckStatus;
+  label: string;
+  detail: string;
+  action?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AdminHealthSummary {
+  pipeline_status: "ready" | "degraded" | "blocked";
+  message: string;
+  blocking_reasons: string[];
+  degraded_reasons: string[];
+}
+
+export interface AdminHealthStatus {
+  status: "ok" | "warning" | "error";
+  version: string;
+  summary: AdminHealthSummary;
+  checks: {
+    database: AdminHealthCheck;
+    queue: AdminHealthCheck;
+    worker: AdminHealthCheck;
+    ffmpeg: AdminHealthCheck;
+    transcription_model: AdminHealthCheck;
+    diarization: AdminHealthCheck;
+    device: AdminHealthCheck;
+    optional_ai: AdminHealthCheck;
+  };
+  download: {
+    in_progress: boolean;
+    status: string | null;
+    stage: string | null;
+    message: string | null;
+    progress: number | null;
+  };
 }
 
 export interface ReleaseAsset {
