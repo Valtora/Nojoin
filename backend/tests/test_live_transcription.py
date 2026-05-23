@@ -2369,6 +2369,98 @@ async def test_finalize_upload_rejects_missing_chunk_sequences(
     )
 
 
+@pytest.mark.anyio
+async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    final_audio_path = tmp_path / "final.wav"
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    await _insert_uploading_recording(
+        test_session_maker,
+        recording_id=101,
+        audio_path=str(final_audio_path),
+    )
+
+    monkeypatch.setattr(
+        recordings_module, "recording_upload_temp_dir", lambda *a, **k: upload_dir
+    )
+    monkeypatch.setattr(
+        recordings_module.config_manager,
+        "get",
+        lambda key, default=None: False if key == "enable_live_transcription" else default,
+    )
+
+    concatenated_paths: list[list[str]] = []
+    queued_recordings: list[int] = []
+
+    def fake_concatenate_wavs(paths: list[str], destination: str) -> None:
+        concatenated_paths.append(list(paths))
+        Path(destination).write_bytes(b"joined-audio")
+
+    real_list_recording_audio_chunks = recordings_module._list_recording_audio_chunks
+
+    async def fake_list_recording_audio_chunks(*args, **kwargs):
+        db = args[0]
+        rows = await real_list_recording_audio_chunks(*args, **kwargs)
+        await db.execute(
+            text(
+                "UPDATE recordings SET status = 'CANCELLED', processing_step = 'Cancelled by user' WHERE id = :recording_id"
+            ),
+            {"recording_id": kwargs.get("recording_id", args[1])},
+        )
+        await db.commit()
+        return rows
+
+    monkeypatch.setattr(recordings_module, "concatenate_wavs", fake_concatenate_wavs)
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(
+        recordings_module,
+        "_list_recording_audio_chunks",
+        fake_list_recording_audio_chunks,
+    )
+    monkeypatch.setattr(
+        recordings_module.process_recording_task,
+        "delay",
+        lambda recording_id: queued_recordings.append(recording_id),
+    )
+    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
+
+    wav_bytes = _make_wav_bytes(duration_s=0.5, sample_rate=16000)
+    upload_response = await client.post(
+        "/api/v1/recordings/live-rec-public-id/segment",
+        params={"sequence": 0},
+        files={"file": ("0.wav", wav_bytes, "audio/wav")},
+    )
+    finalize_response = await client.post("/api/v1/recordings/live-rec-public-id/finalize")
+
+    assert upload_response.status_code == 200
+    assert finalize_response.status_code == 409
+    assert finalize_response.json()["detail"] == (
+        "Recording is no longer accepting companion uploads"
+    )
+    assert queued_recordings == []
+    assert concatenated_paths == [[str(upload_dir / "0.wav")]]
+
+    async with test_session_maker() as session:
+        recording_row = (
+            await session.execute(
+                text(
+                    "SELECT status, file_size_bytes, celery_task_id FROM recordings WHERE id = 101"
+                )
+            )
+        ).one()
+
+    assert recording_row[0] == "CANCELLED"
+    assert recording_row[1] == len(b"joined-audio")
+    assert recording_row[2] is None
+
+
 # --- Celery registration test ----------------------------------------------
 
 

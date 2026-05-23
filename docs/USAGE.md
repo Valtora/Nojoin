@@ -136,6 +136,17 @@ Typical stages include:
 5. Diarisation.
 6. Merge, deterministic speaker resolution, and optional automatic AI enhancement.
 
+### Cancel Processing
+
+Use **Cancel Processing** from the recordings list or recording actions when a meeting is still uploading, queued, or processing.
+
+Cancel Processing:
+
+- Stops backend processing for that recording.
+- Closes the per-recording Companion upload or finalisation session for that meeting.
+- Returns the Companion to ready-state for the next meeting instead of waiting for stale upload retries to finish.
+- Leaves the recording marked `Cancelled` instead of silently requeueing more work.
+
 ### Processing ETA
 
 When Nojoin has enough historical timing data from prior completed processing runs, the UI shows an estimated time remaining.

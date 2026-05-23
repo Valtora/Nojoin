@@ -59,6 +59,11 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read,
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+COMPANION_UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting companion uploads"
+COMPANION_STATUS_UPDATES_CLOSED_DETAIL = (
+    "Recording is no longer accepting companion status updates"
+)
+
 
 def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
@@ -490,6 +495,22 @@ def get_ordinal_suffix(day: int) -> str:
     else:
         return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
 
+
+def _ensure_recording_accepts_companion_uploads(recording: Recording) -> None:
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
+        )
+
+
+def _ensure_recording_accepts_companion_status_updates(recording: Recording) -> None:
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail=COMPANION_STATUS_UPDATES_CLOSED_DETAIL,
+        )
+
 def generate_default_meeting_name() -> str:
     now = datetime.now()
     day_name = now.strftime("%A")
@@ -699,9 +720,8 @@ async def upload_segment(
     Upload a segment for a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
-    if recording.status != RecordingStatus.UPLOADING:
-        raise HTTPException(status_code=400, detail="Recording is not in uploading state")
+
+    _ensure_recording_accepts_companion_uploads(recording)
     
     recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
@@ -816,9 +836,8 @@ async def finalize_upload(
     Finalize the upload, concatenate segments, and trigger processing.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
-    if recording.status != RecordingStatus.UPLOADING:
-        raise HTTPException(status_code=400, detail="Recording is not in uploading state")
+
+    _ensure_recording_accepts_companion_uploads(recording)
 
     await _sync_recording_audio_chunks_from_directory(
         db,
@@ -852,7 +871,7 @@ async def finalize_upload(
         concatenate_wavs(segment_paths, recording.audio_path)
 
         # Set duration
-        recording.duration_seconds = get_audio_duration(recording.audio_path)
+        duration_seconds = get_audio_duration(recording.audio_path)
         
     except Exception as e:
         failed_root: Path | None = None
@@ -882,9 +901,21 @@ async def finalize_upload(
             exc=e,
         )
         
-    # Update recording status
     file_stats = os.stat(recording.audio_path)
+    await db.refresh(recording)
     recording.file_size_bytes = file_stats.st_size
+    recording.duration_seconds = duration_seconds
+
+    if recording.status != RecordingStatus.UPLOADING:
+        db.add(recording)
+        await db.commit()
+        await db.refresh(recording)
+        raise HTTPException(
+            status_code=409,
+            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
+        )
+
+    # Update recording status
     recording.status = RecordingStatus.QUEUED
     recording.processing_started_at = None
     recording.processing_completed_at = None
@@ -2199,7 +2230,9 @@ async def update_client_status(
     Update the client status (e.g. RECORDING, PAUSED) for a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    
+
+    _ensure_recording_accepts_companion_status_updates(recording)
+
     recording.client_status = status
     if upload_progress is not None:
         recording.upload_progress = upload_progress
@@ -2255,8 +2288,11 @@ async def cancel_processing(
             celery_app.control.revoke(recording.celery_task_id, terminate=True)
         except Exception:
             pass # Ignore if task is not found (maybe already finished or never started)
-            
+
+    recording.celery_task_id = None
     recording.status = RecordingStatus.CANCELLED
+    recording.client_status = ClientStatus.IDLE
+    recording.upload_progress = 0
     recording.processing_step = "Cancelled by user"
     recording.processing_progress = 0
     recording.processing_started_at = None

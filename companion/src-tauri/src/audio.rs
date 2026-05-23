@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::notifications;
 use crate::state::{recover_mutex_guard, AppState, AppStatus, AudioCommand};
-use crate::uploader;
+use crate::uploader::{self, UploadAttemptOutcome};
 use anyhow;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Device;
@@ -37,11 +37,12 @@ async fn wait_for_backend_reconnect(state: &Arc<AppState>, reason: &str) {
 #[derive(Debug, Default)]
 struct SegmentThreadOutcome {
     failed_upload_segments: Vec<i32>,
+    upload_aborted: bool,
 }
 
 impl SegmentThreadOutcome {
     fn upload_failure_reason(&self) -> Option<String> {
-        if self.failed_upload_segments.is_empty() {
+        if self.upload_aborted || self.failed_upload_segments.is_empty() {
             None
         } else {
             Some(format!(
@@ -60,6 +61,7 @@ impl SegmentThreadOutcome {
 enum SegmentUploadOutcome {
     Uploaded,
     Failed(i32),
+    Aborted,
 }
 
 const TARGET_SEGMENT_DURATION_SECS: u64 = 2;
@@ -362,7 +364,12 @@ pub fn run_audio_loop(
                 // Wait for the current segment to finish uploading
                 match join_recording_thread(&mut recording_handle) {
                     Ok(Some(outcome)) => {
-                        if let Some(reason) = outcome.upload_failure_reason() {
+                        if outcome.upload_aborted {
+                            info!(
+                                "Resetting local recording state after Nojoin closed the in-flight upload session."
+                            );
+                            reset_recording_state(&state);
+                        } else if let Some(reason) = outcome.upload_failure_reason() {
                             handle_terminal_recording_failure(&state, &app_handle, &reason);
                         }
                     }
@@ -377,6 +384,13 @@ pub fn run_audio_loop(
                 // Wait for the current segment to finish uploading
                 match join_recording_thread(&mut recording_handle) {
                     Ok(Some(outcome)) => {
+                        if outcome.upload_aborted {
+                            info!(
+                                "Skipping finalize because Nojoin already closed the in-flight upload session for this recording."
+                            );
+                            reset_recording_state(&state);
+                            continue;
+                        }
                         if let Some(reason) = outcome.upload_failure_reason() {
                             handle_terminal_recording_failure(&state, &app_handle, &reason);
                             continue;
@@ -456,11 +470,17 @@ pub fn run_audio_loop(
                                         eprintln!("Failed to delete short recording: {}", e);
                                         // Attempts finalization if delete fails.
                                         match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
-                                            Ok(refreshed_token) => {
+                                            Ok(UploadAttemptOutcome::Completed { refreshed_token }) => {
                                                 if let Some(new_token) = refreshed_token {
                                                     *recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                                                 }
                                                 println!("Recording finalized (after delete failed)")
+                                            }
+                                            Ok(UploadAttemptOutcome::Aborted) => {
+                                                info!(
+                                                    "Finalize became unnecessary for recording {} because Nojoin had already closed the upload session.",
+                                                    rec_id,
+                                                );
                                             }
                                             Err(e) => eprintln!("Failed to finalize: {}", e),
                                         }
@@ -469,11 +489,17 @@ pub fn run_audio_loop(
                             } else {
                                 // Sleep unnecessary; upload verified complete.
                                 match uploader::finalize_recording(&rec_id, &config, &recording_token).await {
-                                    Ok(refreshed_token) => {
+                                    Ok(UploadAttemptOutcome::Completed { refreshed_token }) => {
                                         if let Some(new_token) = refreshed_token {
                                             *recover_mutex_guard(state_finalize.current_recording_token.lock(), "current_recording_token") = Some(new_token.clone());
                                         }
                                         println!("Recording finalized")
+                                    }
+                                    Ok(UploadAttemptOutcome::Aborted) => {
+                                        info!(
+                                            "Finalize became unnecessary for recording {} because Nojoin had already closed the upload session.",
+                                            rec_id,
+                                        );
                                     }
                                     Err(e) => eprintln!("Failed to finalize: {}", e),
                                 }
@@ -925,7 +951,7 @@ fn run_mixing_loop(
             )
             .await
             {
-                Ok(refreshed_token) => {
+                Ok(UploadAttemptOutcome::Completed { refreshed_token }) => {
                     if let Some(new_token) = refreshed_token {
                         *recover_mutex_guard(
                             state_upload.current_recording_token.lock(),
@@ -935,6 +961,14 @@ fn run_mixing_loop(
                     info!("Segment {} uploaded successfully", seq);
                     cleanup_segment_file(&path_clone, "successful upload");
                     tx.send(SegmentUploadOutcome::Uploaded).ok();
+                }
+                Ok(UploadAttemptOutcome::Aborted) => {
+                    info!(
+                        "Stopping segment {} upload because Nojoin already closed the upload session.",
+                        seq,
+                    );
+                    cleanup_segment_file(&path_clone, "closed upload session");
+                    tx.send(SegmentUploadOutcome::Aborted).ok();
                 }
                 Err(e) => {
                     log::error!("Failed to upload segment {}: {}", seq, e);
@@ -1006,9 +1040,14 @@ fn run_mixing_loop(
 
         let mut completed_count = 0;
         let mut failed_segments = Vec::new();
+        let mut upload_aborted = false;
         while let Some(outcome) = upload_outcome_rx.recv().await {
             match outcome {
                 SegmentUploadOutcome::Uploaded => {
+                    if upload_aborted {
+                        continue;
+                    }
+
                     completed_count += 1;
                     let progress = if total_segments > 0 {
                         ((completed_count as f32 / total_segments as f32) * 20.0) as i32
@@ -1038,7 +1077,15 @@ fn run_mixing_loop(
                     }
                 }
                 SegmentUploadOutcome::Failed(sequence) => {
+                    if upload_aborted {
+                        continue;
+                    }
+
                     failed_segments.push(sequence);
+                }
+                SegmentUploadOutcome::Aborted => {
+                    upload_aborted = true;
+                    failed_segments.clear();
                 }
             }
         }
@@ -1051,6 +1098,7 @@ fn run_mixing_loop(
 
         SegmentThreadOutcome {
             failed_upload_segments: failed_segments,
+            upload_aborted,
         }
     });
     info!("All uploads completed.");
@@ -1097,6 +1145,7 @@ mod tests {
     fn segment_thread_outcome_reports_failed_upload_segments() {
         let outcome = SegmentThreadOutcome {
             failed_upload_segments: vec![2, 4, 7],
+            upload_aborted: false,
         };
 
         assert_eq!(

@@ -60,6 +60,8 @@ The Companion app is responsible for:
 6. Finalisation queues the recording for backend processing.
 7. The web client shows a live capture or processing status workspace while the job runs.
 
+If the user cancels a recording while that per-recording upload session is still active, the backend closes the upload session immediately. Subsequent Companion segment, finalize, upload-token refresh, and client-status calls are rejected as terminal session-closure responses so the Companion can abandon stale retries and return to ready-state for the next meeting.
+
 Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
 
 If browser-side local control degrades, the web client reports coarse state and directs the user to relaunch Companion or inspect Companion Settings for status.

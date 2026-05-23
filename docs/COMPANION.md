@@ -64,6 +64,7 @@ If Windows says no app is associated with `nojoin://`, or nothing appears after 
 - To move this machine to a different Nojoin deployment, start a fresh pairing request from the target Nojoin site in the browser.
 - The current backend stays active until the new pairing request succeeds.
 - If a recording is still active or an upload is still finishing, backend switching stays blocked until that work is done.
+- If you cancel a meeting from Nojoin while the Companion is still uploading or finalising it, that meeting's upload session closes immediately. The Companion drops the stale upload work and returns to its ready connected state for the next recording.
 - Use `Disconnect Current Backend` only when you intentionally want to remove the current pairing and return the app to an unpaired state.
 
 ## Common Companion States

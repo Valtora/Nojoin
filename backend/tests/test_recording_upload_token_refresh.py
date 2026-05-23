@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.api.deps import get_current_companion_bootstrap_user, get_db
+from backend.api.deps import (
+    get_current_companion_bootstrap_user,
+    get_current_recording_client_user,
+    get_db,
+)
 from backend.api.v1.api import api_router
 from backend.core import security
 
@@ -175,6 +179,7 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
 
     api_app.dependency_overrides[get_db] = override_get_db
     api_app.dependency_overrides[get_current_companion_bootstrap_user] = lambda: build_test_user()
+    api_app.dependency_overrides[get_current_recording_client_user] = lambda: build_test_user()
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
@@ -228,3 +233,28 @@ async def test_refresh_upload_token_rejects_completed_recordings(
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Recording is no longer accepting companion uploads"
+
+
+@pytest.mark.anyio
+async def test_update_client_status_rejects_cancelled_recordings(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    public_id = "3f19b672-47d0-4878-b4b7-eac69c8960ee"
+    await insert_recording(
+        test_session_maker,
+        recording_id=2026042217000002,
+        public_id=public_id,
+        user_id=1,
+        status="CANCELLED",
+    )
+
+    response = await client.put(
+        f"/api/v1/recordings/{public_id}/client_status",
+        params={"status": "UPLOADING", "upload_progress": 20},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Recording is no longer accepting companion status updates"
+    )

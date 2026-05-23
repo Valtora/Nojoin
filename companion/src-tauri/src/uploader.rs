@@ -13,7 +13,39 @@ struct RecordingUploadTokenResponse {
     upload_token: String,
 }
 
-async fn refresh_recording_upload_token(recording_id: &str, config: &Config) -> Result<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UploadAttemptOutcome {
+    Completed { refreshed_token: Option<String> },
+    Aborted,
+}
+
+enum UploadTokenRefreshOutcome {
+    Refreshed(String),
+    Aborted,
+}
+
+fn body_indicates_terminal_upload_state(body: &str) -> bool {
+    let normalized = body.to_ascii_lowercase();
+    [
+        "recording is no longer accepting companion uploads",
+        "recording is no longer accepting companion status updates",
+        "recording is not in uploading state",
+        "only in-flight companion uploads can be discarded",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+}
+
+fn response_indicates_terminal_upload_state(status: StatusCode, body: &str) -> bool {
+    matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE)
+        || matches!(status, StatusCode::BAD_REQUEST | StatusCode::CONFLICT)
+            && body_indicates_terminal_upload_state(body)
+}
+
+async fn refresh_recording_upload_token(
+    recording_id: &str,
+    config: &Config,
+) -> Result<UploadTokenRefreshOutcome> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
     let access_token = crate::companion_auth::exchange_access_token_for_config(config)
         .await
@@ -30,15 +62,25 @@ async fn refresh_recording_upload_token(recording_id: &str, config: &Config) -> 
         .send()
         .await?;
 
-    if !response.status().is_success() {
+    if response.status().is_success() {
+        let payload = response.json::<RecordingUploadTokenResponse>().await?;
+        return Ok(UploadTokenRefreshOutcome::Refreshed(payload.upload_token));
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if response_indicates_terminal_upload_state(status, &body) {
+        return Ok(UploadTokenRefreshOutcome::Aborted);
+    }
+
+    if !status.is_success() {
         return Err(anyhow::anyhow!(
             "Failed to refresh recording upload token: {}",
-            response.status()
+            status
         ));
     }
 
-    let payload = response.json::<RecordingUploadTokenResponse>().await?;
-    Ok(payload.upload_token)
+    unreachable!("successful responses are returned above")
 }
 
 pub async fn upload_segment(
@@ -47,7 +89,7 @@ pub async fn upload_segment(
     file_path: &Path,
     config: &Config,
     api_token: &str,
-) -> Result<Option<String>> {
+) -> Result<UploadAttemptOutcome> {
     // Allow invalid certs for self-signed SSL (development)
     let client = crate::tls::create_client(config.tls_fingerprint())?;
     let mut upload_token = api_token.to_string();
@@ -90,11 +132,25 @@ pub async fn upload_segment(
                         "Segment {} uploaded successfully for recording {}",
                         sequence, recording_id
                     );
-                    return Ok(refreshed_token);
-                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none()
-                {
+                    return Ok(UploadAttemptOutcome::Completed { refreshed_token });
+                }
+
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+
+                if response_indicates_terminal_upload_state(status, &body) {
+                    info!(
+                        "Stopping upload for recording {} segment {} because Nojoin closed the upload session ({}).",
+                        recording_id,
+                        sequence,
+                        status,
+                    );
+                    return Ok(UploadAttemptOutcome::Aborted);
+                }
+
+                if status == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
                     match refresh_recording_upload_token(recording_id, config).await {
-                        Ok(new_token) => {
+                        Ok(UploadTokenRefreshOutcome::Refreshed(new_token)) => {
                             info!(
                                 "Refreshed upload token for recording {} after a 401 while uploading segment {}.",
                                 recording_id,
@@ -103,6 +159,14 @@ pub async fn upload_segment(
                             upload_token = new_token.clone();
                             refreshed_token = Some(new_token);
                             continue;
+                        }
+                        Ok(UploadTokenRefreshOutcome::Aborted) => {
+                            info!(
+                                "Stopping upload for recording {} segment {} because the upload token refresh endpoint reported a closed upload session.",
+                                recording_id,
+                                sequence,
+                            );
+                            return Ok(UploadAttemptOutcome::Aborted);
                         }
                         Err(error) => {
                             warn!(
@@ -118,7 +182,7 @@ pub async fn upload_segment(
                         "Upload failed (attempt {}/{}): {}",
                         attempts,
                         MAX_ATTEMPTS,
-                        response.status()
+                        status
                     );
                 }
             }
@@ -147,7 +211,7 @@ pub async fn finalize_recording(
     recording_id: &str,
     config: &Config,
     api_token: &str,
-) -> Result<Option<String>> {
+) -> Result<UploadAttemptOutcome> {
     let client = crate::tls::create_client(config.tls_fingerprint())?;
     let mut upload_token = api_token.to_string();
     let mut refreshed_token = None;
@@ -172,11 +236,24 @@ pub async fn finalize_recording(
             Ok(response) => {
                 if response.status().is_success() {
                     info!("Recording {} finalized successfully", recording_id);
-                    return Ok(refreshed_token);
-                } else if response.status() == StatusCode::UNAUTHORIZED && refreshed_token.is_none()
-                {
+                    return Ok(UploadAttemptOutcome::Completed { refreshed_token });
+                }
+
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+
+                if response_indicates_terminal_upload_state(status, &body) {
+                    info!(
+                        "Stopping finalize for recording {} because Nojoin closed the upload session ({}).",
+                        recording_id,
+                        status,
+                    );
+                    return Ok(UploadAttemptOutcome::Aborted);
+                }
+
+                if status == StatusCode::UNAUTHORIZED && refreshed_token.is_none() {
                     match refresh_recording_upload_token(recording_id, config).await {
-                        Ok(new_token) => {
+                        Ok(UploadTokenRefreshOutcome::Refreshed(new_token)) => {
                             info!(
                                 "Refreshed upload token for recording {} after a 401 during finalize.",
                                 recording_id,
@@ -184,6 +261,13 @@ pub async fn finalize_recording(
                             upload_token = new_token.clone();
                             refreshed_token = Some(new_token);
                             continue;
+                        }
+                        Ok(UploadTokenRefreshOutcome::Aborted) => {
+                            info!(
+                                "Stopping finalize for recording {} because the upload token refresh endpoint reported a closed upload session.",
+                                recording_id,
+                            );
+                            return Ok(UploadAttemptOutcome::Aborted);
                         }
                         Err(error) => {
                             warn!(
@@ -198,7 +282,7 @@ pub async fn finalize_recording(
                         "Finalize failed (attempt {}/{}): {}",
                         attempts,
                         MAX_ATTEMPTS,
-                        response.status()
+                        status
                     );
                 }
             }
@@ -245,24 +329,50 @@ pub async fn update_client_status(
         .await?;
 
     if res.status() == StatusCode::UNAUTHORIZED {
-        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        let refresh_outcome = refresh_recording_upload_token(recording_id, config).await?;
+        let UploadTokenRefreshOutcome::Refreshed(new_token) = refresh_outcome else {
+            info!(
+                "Skipping client status update for recording {} because Nojoin closed the upload session.",
+                recording_id,
+            );
+            return Ok(None);
+        };
         upload_token = new_token.clone();
         let retry = client
             .put(&url)
             .header("Authorization", format!("Bearer {}", upload_token))
             .send()
             .await?;
-        if !retry.status().is_success() {
+        let retry_status = retry.status();
+        let retry_body = retry.text().await.unwrap_or_default();
+        if response_indicates_terminal_upload_state(retry_status, &retry_body) {
+            info!(
+                "Skipping client status update for recording {} because Nojoin closed the upload session after token refresh.",
+                recording_id,
+            );
+            return Ok(None);
+        }
+        if !retry_status.is_success() {
             return Err(anyhow::anyhow!(
                 "Failed to update status: {}",
-                retry.status()
+                retry_status
             ));
         }
         return Ok(Some(new_token));
     }
 
-    if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+    if response_indicates_terminal_upload_state(status, &body) {
+        info!(
+            "Skipping client status update for recording {} because Nojoin closed the upload session.",
+            recording_id,
+        );
+        return Ok(None);
+    }
+
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Failed to update status: {}", status));
     }
 
     Ok(None)
@@ -292,24 +402,50 @@ pub async fn update_status_with_progress(
         .await?;
 
     if res.status() == StatusCode::UNAUTHORIZED {
-        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        let refresh_outcome = refresh_recording_upload_token(recording_id, config).await?;
+        let UploadTokenRefreshOutcome::Refreshed(new_token) = refresh_outcome else {
+            info!(
+                "Skipping upload progress update for recording {} because Nojoin closed the upload session.",
+                recording_id,
+            );
+            return Ok(None);
+        };
         upload_token = new_token.clone();
         let retry = client
             .put(&url)
             .header("Authorization", format!("Bearer {}", upload_token))
             .send()
             .await?;
-        if !retry.status().is_success() {
+        let retry_status = retry.status();
+        let retry_body = retry.text().await.unwrap_or_default();
+        if response_indicates_terminal_upload_state(retry_status, &retry_body) {
+            info!(
+                "Skipping upload progress update for recording {} because Nojoin closed the upload session after token refresh.",
+                recording_id,
+            );
+            return Ok(None);
+        }
+        if !retry_status.is_success() {
             return Err(anyhow::anyhow!(
                 "Failed to update status: {}",
-                retry.status()
+                retry_status
             ));
         }
         return Ok(Some(new_token));
     }
 
-    if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to update status: {}", res.status()));
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+    if response_indicates_terminal_upload_state(status, &body) {
+        info!(
+            "Skipping upload progress update for recording {} because Nojoin closed the upload session.",
+            recording_id,
+        );
+        return Ok(None);
+    }
+
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Failed to update status: {}", status));
     }
 
     Ok(None)
@@ -335,17 +471,33 @@ pub async fn discard_recording(
         .await?;
 
     if res.status() == StatusCode::UNAUTHORIZED {
-        let new_token = refresh_recording_upload_token(recording_id, config).await?;
+        let refresh_outcome = refresh_recording_upload_token(recording_id, config).await?;
+        let UploadTokenRefreshOutcome::Refreshed(new_token) = refresh_outcome else {
+            info!(
+                "Discard for recording {} became unnecessary because Nojoin had already closed the upload session.",
+                recording_id,
+            );
+            return Ok(None);
+        };
         upload_token = new_token.clone();
         let retry = client
             .post(&url)
             .header("Authorization", format!("Bearer {}", upload_token))
             .send()
             .await?;
-        if !retry.status().is_success() {
+        let retry_status = retry.status();
+        let retry_body = retry.text().await.unwrap_or_default();
+        if response_indicates_terminal_upload_state(retry_status, &retry_body) {
+            info!(
+                "Discard for recording {} became unnecessary because Nojoin had already closed the upload session after token refresh.",
+                recording_id,
+            );
+            return Ok(None);
+        }
+        if !retry_status.is_success() {
             return Err(anyhow::anyhow!(
                 "Failed to delete recording: {}",
-                retry.status()
+                retry_status
             ));
         }
         info!(
@@ -355,10 +507,20 @@ pub async fn discard_recording(
         return Ok(Some(new_token));
     }
 
-    if !res.status().is_success() {
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+    if response_indicates_terminal_upload_state(status, &body) {
+        info!(
+            "Discard for recording {} became unnecessary because Nojoin had already closed the upload session.",
+            recording_id,
+        );
+        return Ok(None);
+    }
+
+    if !status.is_success() {
         return Err(anyhow::anyhow!(
             "Failed to delete recording: {}",
-            res.status()
+            status
         ));
     }
 
@@ -367,4 +529,43 @@ pub async fn discard_recording(
         recording_id
     );
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{body_indicates_terminal_upload_state, response_indicates_terminal_upload_state};
+    use reqwest::StatusCode;
+
+    #[test]
+    fn terminal_upload_markers_cover_closed_companion_sessions() {
+        assert!(body_indicates_terminal_upload_state(
+            r#"{"detail":"Recording is no longer accepting companion uploads"}"#,
+        ));
+        assert!(body_indicates_terminal_upload_state(
+            r#"{"detail":"Recording is no longer accepting companion status updates"}"#,
+        ));
+        assert!(body_indicates_terminal_upload_state(
+            r#"{"detail":"Recording is not in uploading state"}"#,
+        ));
+    }
+
+    #[test]
+    fn conflict_requires_terminal_upload_marker() {
+        assert!(response_indicates_terminal_upload_state(
+            StatusCode::CONFLICT,
+            r#"{"detail":"Recording is no longer accepting companion uploads"}"#,
+        ));
+        assert!(!response_indicates_terminal_upload_state(
+            StatusCode::CONFLICT,
+            r#"{"detail":"Recording upload is still in progress; finalize after all segment uploads complete."}"#,
+        ));
+    }
+
+    #[test]
+    fn not_found_is_treated_as_terminal_upload_abort() {
+        assert!(response_indicates_terminal_upload_state(
+            StatusCode::NOT_FOUND,
+            "",
+        ));
+    }
 }
