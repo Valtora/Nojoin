@@ -47,7 +47,11 @@ from backend.utils.llm_config import (
     ResolvedLLMConfig,
     resolve_llm_config,
 )
-from backend.utils.meeting_edge import MeetingEdgeRequest, serialize_meeting_edge_result
+from backend.utils.meeting_edge import (
+    MeetingEdgeRequest,
+    merge_meeting_edge_concept_history,
+    serialize_meeting_edge_result,
+)
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
@@ -1497,6 +1501,10 @@ def refresh_meeting_edge_task(self, recording_id: int):
                 "focus_hash": _hash_meeting_edge_text(focus_text),
                 "user_notes_hash": _hash_meeting_edge_text(user_notes),
             }
+        )
+        payload["concept_history"] = merge_meeting_edge_concept_history(
+            previous_payload,
+            payload,
         )
         _set_meeting_edge_state(
             session,

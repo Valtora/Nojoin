@@ -810,23 +810,14 @@ export default function TranscriptView({
           )}
 
           <div className="flex flex-wrap items-center gap-1">
-            {segment.provisional && (
-              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-                Provisional text
-              </span>
-            )}
-            {segment.speaker_state === "provisional" && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                Provisional speaker
-              </span>
-            )}
             {isStableSpeaker && (
               <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
                 Stable speaker
               </span>
             )}
-            {(segment.speaker_manually_edited ||
-              segment.speaker_state === "manual_override") && (
+            {!allowProvisionalEdits &&
+              (segment.speaker_manually_edited ||
+                segment.speaker_state === "manual_override") && (
               <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
                 Manual speaker
               </span>

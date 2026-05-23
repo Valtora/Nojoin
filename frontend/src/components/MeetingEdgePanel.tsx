@@ -137,8 +137,12 @@ function MeetingEdgePanel({
   const questions = payload?.questions ?? [];
   const points = payload?.points ?? [];
   const concepts = payload?.concepts ?? [];
+  const conceptHistory =
+    payload?.concept_history && payload.concept_history.length > 0
+      ? payload.concept_history
+      : concepts;
   const hasPayload = Boolean(
-    payload?.summary || questions.length || points.length || concepts.length,
+    payload?.summary || questions.length || points.length || conceptHistory.length,
   );
 
   const saveMessage =
@@ -229,25 +233,32 @@ function MeetingEdgePanel({
             </div>
           </div>
 
-          {concepts.length > 0 ? (
+          {conceptHistory.length > 0 ? (
             <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
-              <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                Quick context
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Quick context
+                </div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                  {conceptHistory.length} term{conceptHistory.length === 1 ? "" : "s"} tracked
+                </div>
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {concepts.map((concept, index) => (
-                  <div
-                    key={`${concept.term}-${index}`}
-                    className="rounded-xl border border-orange-100 bg-orange-50/60 px-3 py-3 dark:border-orange-500/10 dark:bg-orange-500/5"
-                  >
-                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {concept.term}
+              <div className="mt-3 max-h-[22rem] overflow-y-auto pr-1">
+                <div className="grid gap-3 md:grid-cols-2">
+                  {conceptHistory.map((concept, index) => (
+                    <div
+                      key={`${concept.term}-${index}`}
+                      className="rounded-xl border border-orange-100 bg-orange-50/60 px-3 py-3 dark:border-orange-500/10 dark:bg-orange-500/5"
+                    >
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {concept.term}
+                      </div>
+                      <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                        {concept.explanation}
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                      {concept.explanation}
-                    </p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           ) : null}

@@ -22,7 +22,7 @@ Return one valid JSON object with these keys:
 - `summary`: 1-2 sentences on what matters right now.
 - `questions`: 0-3 smart clarifying or high-leverage questions the user could ask next.
 - `points`: 0-3 overlooked points, risks, or considerations the user could raise.
-- `concepts`: 0-2 brief explanations of technical or domain terms that were actually mentioned and would help the user follow the discussion.
+- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion.
 
 # Critical Rules
 - Be tactful, professional, constructive, and non-manipulative.
@@ -30,6 +30,7 @@ Return one valid JSON object with these keys:
 - Prefer fewer items over weak items.
 - Align suggestions with the user's stated focus when provided.
 - Only explain concepts that were actually mentioned or clearly implied by the recent transcript.
+- Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
 - Keep each question, point, and explanation concise.
 - Return valid JSON only. Do not include prose before or after the JSON object.
 
@@ -125,7 +126,7 @@ class MeetingEdgeResult:
 
         questions = _normalize_string_items(self.questions, max_items=3)
         points = _normalize_string_items(self.points, max_items=3)
-        concepts = tuple(self.concepts[:2])
+        concepts = tuple(self.concepts)
 
         object.__setattr__(self, "summary", summary)
         object.__setattr__(self, "questions", questions)
@@ -186,6 +187,34 @@ def serialize_meeting_edge_result(result: MeetingEdgeResult) -> dict[str, Any]:
             for concept in result.concepts
         ],
     }
+
+
+def merge_meeting_edge_concept_history(
+    previous_payload: Mapping[str, Any] | None,
+    current_payload: Mapping[str, Any] | None,
+) -> list[dict[str, str]]:
+    concepts_by_key: dict[str, MeetingEdgeConcept] = {}
+    concept_order: list[str] = []
+
+    for concept in _read_concept_history_items(previous_payload):
+        concept_key = concept.term.casefold()
+        if concept_key not in concepts_by_key:
+            concept_order.append(concept_key)
+        concepts_by_key[concept_key] = concept
+
+    for concept in _read_serialized_concepts(current_payload, "concepts"):
+        concept_key = concept.term.casefold()
+        if concept_key not in concepts_by_key:
+            concept_order.append(concept_key)
+        concepts_by_key[concept_key] = concept
+
+    return [
+        {
+            "term": concepts_by_key[concept_key].term,
+            "explanation": concepts_by_key[concept_key].explanation,
+        }
+        for concept_key in concept_order
+    ]
 
 
 def build_rolling_summary_prompt_section(rolling_summary: str | None) -> str:
@@ -322,7 +351,7 @@ def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]
         raise MeetingEdgeContractError("concepts must be an array")
 
     concepts: list[MeetingEdgeConcept] = []
-    for item in value[:2]:
+    for item in value:
         if not isinstance(item, Mapping):
             raise MeetingEdgeContractError("Each concept must be an object")
         concepts.append(
@@ -331,5 +360,42 @@ def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]
                 explanation=_read_required_string(item, "explanation"),
             )
         )
+
+    return tuple(concepts)
+
+
+def _read_concept_history_items(
+    payload: Mapping[str, Any] | None,
+) -> tuple[MeetingEdgeConcept, ...]:
+    history = _read_serialized_concepts(payload, "concept_history")
+    if history:
+        return history
+    return _read_serialized_concepts(payload, "concepts")
+
+
+def _read_serialized_concepts(
+    payload: Mapping[str, Any] | None,
+    key: str,
+) -> tuple[MeetingEdgeConcept, ...]:
+    if not isinstance(payload, Mapping):
+        return ()
+
+    value = payload.get(key, [])
+    if value is None or not isinstance(value, list):
+        return ()
+
+    concepts: list[MeetingEdgeConcept] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            concepts.append(
+                MeetingEdgeConcept(
+                    term=_read_required_string(item, "term"),
+                    explanation=_read_required_string(item, "explanation"),
+                )
+            )
+        except MeetingEdgeContractError:
+            continue
 
     return tuple(concepts)

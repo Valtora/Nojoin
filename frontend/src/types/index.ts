@@ -200,6 +200,7 @@ export interface MeetingEdgePayload {
   questions: string[];
   points: string[];
   concepts: MeetingEdgeConcept[];
+  concept_history?: MeetingEdgeConcept[];
   generated_at?: string;
   source_segment_count?: number;
   source_word_count?: number;

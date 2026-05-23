@@ -6,6 +6,7 @@ from backend.utils.meeting_edge import (
     MeetingEdgeContractError,
     MeetingEdgeRequest,
     build_meeting_edge_prompt,
+    merge_meeting_edge_concept_history,
     parse_meeting_edge_response,
     serialize_meeting_edge_result,
 )
@@ -37,7 +38,9 @@ def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
       "questions": ["Who owns the final go-live decision?", "  "],
       "points": ["Flag the dependency on finance approval."],
       "concepts": [
-        {"term": "Go-live", "explanation": "The planned production launch date."}
+                {"term": "Go-live", "explanation": "The planned production launch date."},
+                {"term": "Rollback", "explanation": "The fallback path if the launch needs to be reversed."},
+                {"term": "Runbook", "explanation": "The step-by-step operational guide for the launch."}
       ]
     }
     ```
@@ -52,6 +55,14 @@ def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
         {
             "term": "Go-live",
             "explanation": "The planned production launch date.",
+        },
+        {
+            "term": "Rollback",
+            "explanation": "The fallback path if the launch needs to be reversed.",
+        },
+        {
+            "term": "Runbook",
+            "explanation": "The step-by-step operational guide for the launch.",
         }
     ]
 
@@ -64,3 +75,37 @@ def test_parse_meeting_edge_response_requires_at_least_one_signal_item() -> None
             '{"summary": "Budget came up.", "questions": [], "points": [], "concepts": []}',
             request=request,
         )
+
+
+def test_merge_meeting_edge_concept_history_preserves_prior_terms() -> None:
+    previous_payload = {
+        "concepts": [
+            {
+                "term": "Bit shifting",
+                "explanation": "Moving bits left or right to align place value.",
+            }
+        ]
+    }
+    current_payload = {
+        "concepts": [
+            {
+                "term": "Bit shifting",
+                "explanation": "Aligning place value while building partial products.",
+            },
+            {
+                "term": "Accumulator",
+                "explanation": "The higher-precision running sum of partial products.",
+            },
+        ]
+    }
+
+    assert merge_meeting_edge_concept_history(previous_payload, current_payload) == [
+        {
+            "term": "Bit shifting",
+            "explanation": "Aligning place value while building partial products.",
+        },
+        {
+            "term": "Accumulator",
+            "explanation": "The higher-precision running sum of partial products.",
+        },
+    ]
