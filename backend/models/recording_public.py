@@ -261,6 +261,7 @@ def serialize_recording(
     calendar_event: Optional[CalendarEvent] = None,
     transcript_segments_override: Optional[list[dict]] = None,
     transcript_text_override: Optional[str] = None,
+    speakers_override: Optional[list[RecordingSpeaker]] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -272,13 +273,18 @@ def serialize_recording(
         )
 
     speakers: list[RecordingSpeakerPublicRead] = []
-    if include_speakers and getattr(recording, "speakers", None):
+    source_speakers = (
+        speakers_override
+        if speakers_override is not None
+        else (getattr(recording, "speakers", None) if include_speakers else None)
+    )
+    if include_speakers and source_speakers:
         speakers = [
             serialize_recording_speaker(
                 speaker,
                 recording_public_id=recording.public_id,
             )
-            for speaker in recording.speakers
+            for speaker in source_speakers
             if not speaker.merged_into_id
         ]
 

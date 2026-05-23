@@ -93,6 +93,8 @@ Meeting Edge also includes a smaller guidance field where you can tell the assis
 
 While a meeting is recording, the live transcript pane is visible immediately. It shows a listening state until speech is detected, then provisional transcript segments appear as live utterances complete. Long continuous speech is force-emitted after roughly 8 seconds, so natural monologues do not wait for a 30-second cutoff. These segments use per-speaker colours and can be edited while the recording is still in flight. Live speaker names and live transcript edits are treated as authoritative and carried into final processing.
 
+When changing a speaker from an utterance, the speaker picker lets you choose whether the change applies only to that utterance or to the whole transcript. A whole-transcript change updates every utterance with that same speaker label, both earlier in the current recording and later as the live transcript continues.
+
 Live speaker labels are assigned by an online embedding matcher. Matching voice regions keep the same provisional `LIVE_XX` speaker identity, while very short or embedding-less regions reuse the most recent stable live speaker instead of creating a new speaker for every fragment.
 
 The normal stop-to-final workflow uses the same transcription engine for live and final transcription so Nojoin can reuse the live transcript rather than transcribing the meeting again from scratch. Final processing still performs diarisation, speaker reconciliation, voiceprint work when enabled, and meeting-intelligence generation.
@@ -222,6 +224,8 @@ Common workflows include:
 - Recalibrating voiceprints from better samples.
 
 Speakers with voiceprints display a fingerprint indicator in the UI.
+
+The Speaker Management panel shows speakers that own active transcript utterances. If a transient live or diarization label is manually corrected and no longer owns any utterances, Nojoin hides that orphaned label instead of leaving an empty duplicate row behind.
 
 ## Meeting Intelligence
 

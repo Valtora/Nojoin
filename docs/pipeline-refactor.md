@@ -17,7 +17,7 @@ This plan is intentionally waterfall-style. The phases are sequential design and
 - [ ] Live and final transcript segments use stable identifiers, not list indices, for edits, updates, undo, reconciliation, and frontend rendering.
 - [ ] User speaker edits are authoritative and immediately influence future live speaker assignment.
 - [ ] Speaker identity is represented as canonical recording speakers plus aliases, corrections, and confidence metadata rather than disposable labels.
-- [ ] Final processing preserves manual speaker and text edits even when diarization boundaries differ from live utterance boundaries.
+- [x] Final processing preserves manual speaker and text edits even when diarization boundaries differ from live utterance boundaries.
 - [ ] The system can recover from live worker failures by catching up from durable audio chunks.
 - [ ] Imported recordings use the same unified processing model in batch mode.
 - [ ] Increased latency is acceptable when it materially improves diarization quality and speaker stability.
@@ -381,6 +381,9 @@ Current-state audit:
 - [x] Transcript read compatibility already supports rebuilding `Transcript.segments` from canonical utterances when canonical writes are enabled.
 - [x] Recording speaker rename, promote, merge, and global-merge paths now route through the canonical mutation helpers and repair compatibility projection state afterward.
 - [x] Frontend recording transcript edits now default to stable utterance-id mutations with explicit correction scope instead of the segment-index compatibility bridge.
+- [x] Live transcript speaker assignment exposes an explicit choice between utterance-only reassignment and whole-transcript same-label correction; whole-transcript corrections still flow backward and forward across matching live labels.
+- [x] Public recording-speaker reads filter out non-merged speakers that own zero active canonical utterances, and canonical mutations refresh those speaker rows to inactive.
+- [x] Finalization inherits manual speaker locks by time overlap when final transcript boundaries replace live utterances, so named live speakers survive split/merge-style final boundary changes.
 - [x] Voiceprint learning now records durable provenance for incremental live updates while respecting lock and drift rules.
 - [x] Retry speaker inference now emits evidence-backed suggestions instead of destructively renaming recording speakers.
 
@@ -402,10 +405,10 @@ Approved implementation decisions:
 
 - [x] Checkpoint 5B: Minimal scope-aware transcript editing UX.
   - [x] Add stable utterance-id based speaker patching to the recording detail flow.
-  - [x] Add scope selection to the speaker assignment UI.
+  - [x] Expose utterance-only and whole-transcript speaker assignment as a two-option picker control.
   - [x] Keep the segment-index endpoint only as a compatibility bridge.
   - [x] Default the user-facing transcript edit flow to canonical scope-aware mutations.
-  - [x] Add focused frontend tests for scope selection and stable-id payloads.
+  - [x] Add focused frontend tests for utterance-only assignment, whole-transcript assignment, history assignment restoration, and stable-id payloads.
 
 Checkpoint 5C: Live voiceprint learning and provenance.
 

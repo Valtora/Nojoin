@@ -90,5 +90,7 @@ export const getRecordingSpeakerGroupKey = (
     return `global:${inferredGlobalSpeakerId}`;
   }
 
-  return `label:${speaker.diarization_label}`;
+  return `name:${normaliseSpeakerName(
+    getRecordingSpeakerDisplayName(speaker, globalSpeakerById),
+  )}`;
 };

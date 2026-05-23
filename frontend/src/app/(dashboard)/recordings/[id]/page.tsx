@@ -56,8 +56,12 @@ import {
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
 import {
+  buildRollingSpeakerCorrectionHistory,
+  buildSpeakerHistoryAssignment,
   diffTranscriptSegments,
+  extendRollingSpeakerHistoryWithSegments,
   sortTranscriptSegments,
+  type RollingSpeakerCorrectionHistory,
   type TranscriptSegmentChange,
 } from "@/lib/transcriptSegments";
 import {
@@ -106,6 +110,7 @@ interface PageProps {
 interface TranscriptHistoryItem {
   patches: TranscriptSegmentChange[];
   description: string;
+  rollingSpeakerCorrection?: RollingSpeakerCorrectionHistory;
 }
 
 const cloneTranscriptSegments = (segments: TranscriptSegment[]): TranscriptSegment[] => {
@@ -201,56 +206,27 @@ export default function RecordingPage({ params }: PageProps) {
 
     setTranscriptState((prev) => {
       if (prev && prev.recordingId === recording.id && prev.revision > 0) {
+        transcriptStateRef.current = prev;
         return prev;
       }
 
-      return createLocalTranscriptState(
+      const nextState = createLocalTranscriptState(
         recording.id,
         recording.transcript?.segments || [],
         prev?.recordingId === recording.id ? prev.revision : 0,
         prev?.recordingId === recording.id ? prev.deferredById : {},
       );
+      transcriptStateRef.current = nextState;
+      return nextState;
     });
   }, [recording]);
-
-  const findRecordingSpeakerByValue = useCallback(
-    (value: string | undefined) => {
-      if (!value || !recording?.speakers) {
-        return undefined;
-      }
-
-      return recording.speakers.find(
-        (speaker) =>
-          speaker.diarization_label === value ||
-          speaker.local_name === value ||
-          speaker.name === value ||
-          speaker.global_speaker?.name === value,
-      );
-    },
-    [recording?.speakers],
-  );
-
-  const buildSpeakerAssignmentFromSegment = useCallback(
-    (segment: TranscriptSegment): TranscriptSpeakerAssignment => {
-      const matchedSpeaker = findRecordingSpeakerByValue(segment.speaker);
-
-      return {
-        name: matchedSpeaker ? getSpeakerDisplayName(matchedSpeaker) : segment.speaker,
-        diarizationLabel: matchedSpeaker?.diarization_label,
-        globalSpeakerId: matchedSpeaker
-          ? getResolvedGlobalSpeakerId(matchedSpeaker)
-          : undefined,
-        scope: "utterance_only",
-      };
-    },
-    [findRecordingSpeakerByValue, getSpeakerDisplayName],
-  );
 
   const pushTranscriptHistory = useCallback(
     (
       description: string,
       previousSegments: TranscriptSegment[],
       nextSegments: TranscriptSegment[],
+      rollingSpeakerCorrection?: RollingSpeakerCorrectionHistory,
     ) => {
       const patches = diffTranscriptSegments(previousSegments, nextSegments);
 
@@ -258,14 +234,20 @@ export default function RecordingPage({ params }: PageProps) {
         return;
       }
 
-      setHistory((prev) => [...prev, { patches, description }]);
+      setHistory((prev) => [
+        ...prev,
+        { patches, description, rollingSpeakerCorrection },
+      ]);
       setFuture([]);
     },
     [],
   );
 
   const syncTranscriptState = useCallback(
-    async (mode: "full" | "delta" = "delta") => {
+    async (
+      mode: "full" | "delta" = "delta",
+      options: { deferActiveEdit?: boolean } = {},
+    ) => {
       if (!recording) {
         return null;
       }
@@ -280,20 +262,42 @@ export default function RecordingPage({ params }: PageProps) {
         afterRevision,
       );
 
-      let nextSegments: TranscriptSegment[] = [];
+      const latestTranscriptState = transcriptStateRef.current;
+      if (
+        mode === "delta" &&
+        latestTranscriptState?.recordingId === recording.id &&
+        transcriptDelta.revision < latestTranscriptState.revision
+      ) {
+        return {
+          revision: latestTranscriptState.revision,
+          segments: latestTranscriptState.segments,
+          speakers: transcriptDelta.speakers,
+        };
+      }
 
-      setTranscriptState((prev) => {
-        const nextState = applyTranscriptDelta({
-          currentState: prev,
-          recordingId: recording.id,
-          fallbackSegments: recording.transcript?.segments || [],
-          delta: transcriptDelta,
-          mode,
-          activeEditUtteranceId: activeTranscriptEditId,
-        });
-        nextSegments = nextState.segments;
-        return nextState;
+      const previousSegments = latestTranscriptState?.segments || [];
+      const nextState = applyTranscriptDelta({
+        currentState: latestTranscriptState,
+        recordingId: recording.id,
+        fallbackSegments: recording.transcript?.segments || [],
+        delta: transcriptDelta,
+        mode,
+        activeEditUtteranceId:
+          options.deferActiveEdit === false ? null : activeTranscriptEditId,
       });
+      const nextSegments = nextState.segments;
+      transcriptStateRef.current = nextState;
+      setTranscriptState(nextState);
+
+      if (mode === "delta" && nextSegments.length > 0) {
+        setHistory((currentHistory) =>
+          extendRollingSpeakerHistoryWithSegments(
+            currentHistory,
+            previousSegments,
+            nextSegments,
+          ),
+        );
+      }
 
       setRecording((prev) => {
         if (!prev || prev.id !== recording.id) {
@@ -702,12 +706,12 @@ export default function RecordingPage({ params }: PageProps) {
           await updateTranscriptUtteranceSpeaker(
             recording.id,
             targetSegment.id,
-            buildSpeakerAssignmentFromSegment(targetSegment),
+            buildSpeakerHistoryAssignment(targetSegment),
           );
         }
       }
     },
-    [buildSpeakerAssignmentFromSegment, recording],
+    [recording],
   );
 
   const handleUndo = async () => {
@@ -775,11 +779,7 @@ export default function RecordingPage({ params }: PageProps) {
     const nextAssignment = {
       ...assignment,
       name: assignment.name.trim(),
-      scope:
-        assignment.scope ||
-        (segment.speaker.startsWith("LIVE_")
-          ? "from_this_utterance_forward"
-          : "speaker_everywhere_in_recording"),
+      scope: assignment.scope || "speaker_everywhere_in_recording",
     };
 
     if (!nextAssignment.name) {
@@ -815,12 +815,24 @@ export default function RecordingPage({ params }: PageProps) {
           segment.id,
           nextAssignment,
         );
-        const syncResult = await syncTranscriptState("delta");
+        const syncResult = await syncTranscriptState("delta", {
+          deferActiveEdit: false,
+        });
         if (syncResult?.segments) {
+          const updatedSegment = syncResult.segments.find(
+            (nextSegment) => nextSegment.id === segment.id,
+          );
           pushTranscriptHistory(
             `Change speaker ${segment.id}`,
             previousSegments,
             syncResult.segments,
+            nextAssignment.scope === "speaker_everywhere_in_recording"
+              ? buildRollingSpeakerCorrectionHistory({
+                  previousSegments,
+                  sourceSegment: segment,
+                  updatedSegment,
+                })
+              : undefined,
           );
         }
       } else {
@@ -874,7 +886,9 @@ export default function RecordingPage({ params }: PageProps) {
           text,
           segment.revision,
         );
-        const syncResult = await syncTranscriptState("delta");
+        const syncResult = await syncTranscriptState("delta", {
+          deferActiveEdit: false,
+        });
         if (syncResult?.segments) {
           pushTranscriptHistory(
             `Edit text ${segment.id}`,
@@ -1445,8 +1459,8 @@ export default function RecordingPage({ params }: PageProps) {
                       speakerColors={speakerColors}
                       onUndo={handleUndo}
                       onRedo={handleRedo}
-                      canUndo={false}
-                      canRedo={false}
+                      canUndo={history.length > 0 && !isUndoing}
+                      canRedo={future.length > 0 && !isUndoing}
                       onExport={() => setShowExportModal(true)}
                       allowProvisionalEdits
                       disableSegmentPlayback

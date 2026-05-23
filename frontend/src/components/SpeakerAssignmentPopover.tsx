@@ -6,8 +6,8 @@ import {
   SpeakerCorrectionScope,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { Search, User, Plus } from "lucide-react";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { ArrowRightLeft, Search, User, Users, Plus } from "lucide-react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getColorByKey } from "@/lib/constants";
 import {
@@ -36,6 +36,23 @@ interface SpeakerAssignmentPopoverProps {
   targetElement: HTMLElement | null;
 }
 
+const POPOVER_MARGIN = 8;
+const POPOVER_GAP = 6;
+const POPOVER_WIDTH = 360;
+const ESTIMATED_POPOVER_HEIGHT = 340;
+const MIN_POPOVER_HEIGHT = 180;
+
+interface PopoverPosition {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
+const clamp = (value: number, min: number, max: number) => {
+  return Math.min(Math.max(value, min), max);
+};
+
 export default function SpeakerAssignmentPopover({
   availableSpeakers,
   globalSpeakers,
@@ -46,44 +63,16 @@ export default function SpeakerAssignmentPopover({
   targetElement,
 }: SpeakerAssignmentPopoverProps) {
   const [search, setSearch] = useState("");
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const defaultScope = useMemo<SpeakerCorrectionScope>(
-    () =>
-      currentSpeakerLabel.startsWith("LIVE_")
-        ? "from_this_utterance_forward"
-        : "speaker_everywhere_in_recording",
-    [currentSpeakerLabel],
-  );
+  const [position, setPosition] = useState<PopoverPosition>({
+    top: POPOVER_MARGIN,
+    left: POPOVER_MARGIN,
+    width: POPOVER_WIDTH,
+    maxHeight: ESTIMATED_POPOVER_HEIGHT,
+  });
   const [selectedScope, setSelectedScope] =
-    useState<SpeakerCorrectionScope>(defaultScope);
+    useState<SpeakerCorrectionScope>("utterance_only");
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setSelectedScope(defaultScope);
-  }, [defaultScope]);
-
-  useEffect(() => {
-    if (targetElement) {
-      const updatePosition = () => {
-        const rect = targetElement.getBoundingClientRect();
-        setPosition({
-          top: rect.bottom + window.scrollY,
-          left: rect.left + window.scrollX,
-        });
-      };
-
-      updatePosition();
-      // Re-calculates position on scroll and resize to keep the popover anchored.
-      window.addEventListener("resize", updatePosition);
-      window.addEventListener("scroll", updatePosition, true);
-
-      return () => {
-        window.removeEventListener("resize", updatePosition);
-        window.removeEventListener("scroll", updatePosition, true);
-      };
-    }
-  }, [targetElement]);
 
   useEffect(() => {
     // Focus input after a short delay to ensure render
@@ -178,6 +167,72 @@ export default function SpeakerAssignmentPopover({
       ),
   );
 
+  useLayoutEffect(() => {
+    if (!targetElement) {
+      return;
+    }
+
+    const updatePosition = () => {
+      const rect = targetElement.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const width = Math.min(
+        POPOVER_WIDTH,
+        Math.max(0, viewportWidth - POPOVER_MARGIN * 2),
+      );
+      const measuredHeight =
+        containerRef.current?.offsetHeight || ESTIMATED_POPOVER_HEIGHT;
+      const availableBelow = Math.max(
+        0,
+        viewportHeight - rect.bottom - POPOVER_GAP - POPOVER_MARGIN,
+      );
+      const availableAbove = Math.max(
+        0,
+        rect.top - POPOVER_GAP - POPOVER_MARGIN,
+      );
+      const placeAbove =
+        availableBelow < measuredHeight && availableAbove > availableBelow;
+      const availableHeight = placeAbove ? availableAbove : availableBelow;
+      const maxHeight = Math.min(
+        viewportHeight - POPOVER_MARGIN * 2,
+        Math.max(MIN_POPOVER_HEIGHT, availableHeight),
+      );
+      const renderedHeight = Math.min(measuredHeight, maxHeight);
+      const nextPosition = {
+        top: clamp(
+          placeAbove ? rect.top - POPOVER_GAP - renderedHeight : rect.bottom + POPOVER_GAP,
+          POPOVER_MARGIN,
+          Math.max(POPOVER_MARGIN, viewportHeight - renderedHeight - POPOVER_MARGIN),
+        ),
+        left: clamp(
+          rect.left,
+          POPOVER_MARGIN,
+          Math.max(POPOVER_MARGIN, viewportWidth - width - POPOVER_MARGIN),
+        ),
+        width,
+        maxHeight,
+      };
+
+      setPosition((current) =>
+        current.top === nextPosition.top &&
+        current.left === nextPosition.left &&
+        current.width === nextPosition.width &&
+        current.maxHeight === nextPosition.maxHeight
+          ? current
+          : nextPosition,
+      );
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [filteredAvailable.length, filteredGlobal.length, search, targetElement]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -192,22 +247,17 @@ export default function SpeakerAssignmentPopover({
   const scopeOptions: Array<{
     value: SpeakerCorrectionScope;
     label: string;
-    description: string;
+    Icon: typeof ArrowRightLeft;
   }> = [
     {
       value: "utterance_only",
       label: "This utterance",
-      description: "Change only this line.",
+      Icon: ArrowRightLeft,
     },
     {
       value: "speaker_everywhere_in_recording",
-      label: "Whole recording",
-      description: "Apply to every matching turn in this recording.",
-    },
-    {
-      value: "from_this_utterance_forward",
-      label: "From here forward",
-      description: "Update this point onward and future live matches.",
+      label: "Whole transcript",
+      Icon: Users,
     },
   ];
 
@@ -216,11 +266,12 @@ export default function SpeakerAssignmentPopover({
   return createPortal(
     <div
       ref={containerRef}
-      className="absolute z-9999 mt-1 w-64 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-9999 flex flex-col overflow-hidden rounded-lg border-2 border-gray-300 bg-white/95 shadow-2xl backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100 dark:border-gray-600 dark:bg-gray-800/95"
       style={{
         top: position.top,
         left: position.left,
-        minWidth: "200px",
+        width: position.width,
+        maxHeight: position.maxHeight,
       }}
     >
       <div className="p-2 border-b border-gray-100 dark:border-gray-700">
@@ -237,37 +288,30 @@ export default function SpeakerAssignmentPopover({
         </div>
       </div>
 
-      <div className="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/70">
-        <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-          Apply change to
-        </div>
-        <div className="grid gap-1">
-          {scopeOptions.map((option) => {
-            const isSelected = selectedScope === option.value;
+      <div className="grid grid-cols-2 gap-1 border-b border-gray-100 bg-gray-50/80 p-2 dark:border-gray-700 dark:bg-gray-900/70">
+        {scopeOptions.map(({ value, label, Icon }) => {
+          const isSelected = selectedScope === value;
 
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => setSelectedScope(option.value)}
-                className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                  isSelected
-                    ? "border-orange-400 bg-orange-50 text-orange-700 dark:border-orange-500 dark:bg-orange-950/50 dark:text-orange-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
-                }`}
-              >
-                <div className="text-sm font-medium">{option.label}</div>
-                <div className="text-[11px] leading-4 opacity-80">
-                  {option.description}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => setSelectedScope(value)}
+              className={`flex min-h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors ${
+                isSelected
+                  ? "border-orange-400 bg-orange-50 text-orange-700 dark:border-orange-500 dark:bg-orange-950/50 dark:text-orange-300"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="max-h-60 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
         {filteredAvailable.length > 0 && (
           <div className="px-2 py-1">
@@ -285,6 +329,7 @@ export default function SpeakerAssignmentPopover({
               return (
                 <button
                   key={option.key}
+                  type="button"
                   onClick={() =>
                     onSelect({
                       name: option.displayName,
@@ -292,12 +337,12 @@ export default function SpeakerAssignmentPopover({
                       scope: selectedScope,
                     })
                   }
-                  className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                 >
-                  <div className={`w-2 h-2 rounded-full ${colorOption.dot}`} />
+                  <div className={`h-2 w-2 rounded-full ${colorOption.dot}`} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{option.displayName}</div>
-                    <div className="text-[11px] text-gray-400 truncate">
+                    <div className="truncate text-[11px] text-gray-400">
                       {option.isGlobalLinked
                         ? "Linked to People library"
                         : "Recording only"}
@@ -318,6 +363,7 @@ export default function SpeakerAssignmentPopover({
             {filteredGlobal.map((s) => (
               <button
                 key={s.id}
+                type="button"
                 onClick={() =>
                   onSelect({
                     name: s.name,
@@ -325,9 +371,9 @@ export default function SpeakerAssignmentPopover({
                     scope: selectedScope,
                   })
                 }
-                className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
               >
-                <User className="w-3 h-3 text-gray-400" />
+                <User className="h-3 w-3 text-gray-400" />
                 <span className="truncate">{s.name}</span>
               </button>
             ))}
@@ -346,7 +392,10 @@ export default function SpeakerAssignmentPopover({
             <div className="px-2 py-1 border-t border-gray-100 dark:border-gray-700 mt-1 pt-2">
               <button
                 onClick={() =>
-                  onSelect({ name: search.trim(), scope: selectedScope })
+                  onSelect({
+                    name: search.trim(),
+                    scope: selectedScope,
+                  })
                 }
                 className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center gap-2"
               >

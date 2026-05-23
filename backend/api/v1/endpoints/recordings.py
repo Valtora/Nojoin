@@ -54,7 +54,11 @@ from backend.utils.recording_storage import (
     recordings_root_dir,
 )
 from backend.services.recording_identity_service import get_recording_by_public_id, get_recordings_by_public_ids
-from backend.utils.canonical_pipeline import build_transcript_segments_for_read, build_transcript_text_for_read
+from backend.utils.canonical_pipeline import (
+    build_transcript_segments_for_read,
+    build_transcript_text_for_read,
+    filter_recording_speakers_for_public_read,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1703,6 +1707,7 @@ async def get_recording(
 
     transcript_segments_override: list[dict] | None = None
     transcript_text_override: str | None = None
+    speakers_override = None
     if recording.transcript is not None:
         transcript_segments_override = await db.run_sync(
             lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
@@ -1712,6 +1717,13 @@ async def get_recording(
                 sync_session,
                 recording.id,
                 segments=transcript_segments_override,
+            )
+        )
+        speakers_override = await db.run_sync(
+            lambda sync_session: filter_recording_speakers_for_public_read(
+                sync_session,
+                recording.id,
+                recording.speakers,
             )
         )
 
@@ -1728,6 +1740,7 @@ async def get_recording(
         calendar_event=linked_event,
         transcript_segments_override=transcript_segments_override,
         transcript_text_override=transcript_text_override,
+        speakers_override=speakers_override,
     )
 
 @router.get("/{recording_id}/info")

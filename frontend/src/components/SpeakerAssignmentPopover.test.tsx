@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import type { RecordingSpeaker } from "@/types";
 
-function createTargetElement() {
+function createTargetElement(rectOverrides: Partial<DOMRect> = {}) {
   const target = document.createElement("button");
   target.getBoundingClientRect = () =>
     ({
@@ -17,6 +17,7 @@ function createTargetElement() {
       x: 20,
       y: 10,
       toJSON: () => ({}),
+      ...rectOverrides,
     }) as DOMRect;
   document.body.appendChild(target);
   return target;
@@ -43,7 +44,7 @@ function buildSpeaker(overrides: Partial<RecordingSpeaker>): RecordingSpeaker {
 }
 
 describe("SpeakerAssignmentPopover", () => {
-  it("includes the selected scope when assigning an existing recording speaker", () => {
+  it("uses utterance scope by default and can switch to whole transcript", () => {
     const onSelect = vi.fn();
     const targetElement = createTargetElement();
 
@@ -62,19 +63,32 @@ describe("SpeakerAssignmentPopover", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /From here forward/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Dana/i }));
+    expect(screen.getByRole("button", { name: /This utterance/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByText("Dana").closest("button") as HTMLButtonElement);
 
     expect(onSelect).toHaveBeenCalledWith({
       name: "Dana",
       diarizationLabel: "SPEAKER_01",
-      scope: "from_this_utterance_forward",
+      scope: "utterance_only",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Whole transcript/i }));
+    fireEvent.click(screen.getByText("Dana").closest("button") as HTMLButtonElement);
+
+    expect(onSelect).toHaveBeenLastCalledWith({
+      name: "Dana",
+      diarizationLabel: "SPEAKER_01",
+      scope: "speaker_everywhere_in_recording",
     });
 
     targetElement.remove();
   });
 
-  it("defaults live speaker edits to from-this-utterance-forward for new local names", () => {
+  it("does not expose from-here-forward scope for live speaker edits", () => {
     const onSelect = vi.fn();
     const targetElement = createTargetElement();
 
@@ -92,10 +106,10 @@ describe("SpeakerAssignmentPopover", () => {
       />,
     );
 
-    const fromHereForwardButton = screen.getByRole("button", {
-      name: /From here forward/i,
-    });
-    expect(fromHereForwardButton).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.queryByRole("button", { name: /From here forward/i }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Whole transcript/i }));
 
     fireEvent.change(screen.getByPlaceholderText("Search or add..."), {
       target: { value: "Alex" },
@@ -104,9 +118,65 @@ describe("SpeakerAssignmentPopover", () => {
 
     expect(onSelect).toHaveBeenCalledWith({
       name: "Alex",
-      scope: "from_this_utterance_forward",
+      scope: "speaker_everywhere_in_recording",
     });
 
+    targetElement.remove();
+  });
+
+  it("flips above the target when opened near the bottom of the viewport", () => {
+    const onSelect = vi.fn();
+    const targetElement = createTargetElement({
+      top: 720,
+      bottom: 750,
+      y: 720,
+    });
+    const originalInnerHeight = window.innerHeight;
+    const originalInnerWidth = window.innerWidth;
+
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 768,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    });
+
+    render(
+      <SpeakerAssignmentPopover
+        availableSpeakers={[]}
+        globalSpeakers={[
+          {
+            id: 1,
+            name: "Simon Whistler",
+            created_at: "2026-05-20T00:00:00Z",
+            updated_at: "2026-05-20T00:00:00Z",
+          },
+        ]}
+        currentSpeakerLabel="SPEAKER_00"
+        onSelect={onSelect}
+        onClose={() => {}}
+        speakerColors={{}}
+        targetElement={targetElement}
+      />,
+    );
+
+    const popover = screen.getByPlaceholderText("Search or add...")
+      .closest("div.fixed") as HTMLDivElement;
+
+    expect(Number.parseFloat(popover.style.top)).toBeLessThan(720);
+    expect(popover.style.width).toBe("360px");
+    expect(Number.parseFloat(popover.style.maxHeight)).toBeLessThanOrEqual(752);
+
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: originalInnerHeight,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: originalInnerWidth,
+    });
     targetElement.remove();
   });
 });

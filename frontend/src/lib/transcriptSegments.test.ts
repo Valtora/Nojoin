@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRollingSpeakerCorrectionHistory,
+  buildSpeakerHistoryAssignment,
   diffTranscriptSegments,
+  extendRollingSpeakerHistoryWithSegments,
   getTranscriptSegmentKey,
   mergeTranscriptUtteranceDelta,
   transcriptSegmentFromUtterance,
@@ -155,6 +158,152 @@ describe("transcriptSegments", () => {
 
     expect(changes).toHaveLength(1);
     expect(changes[0]?.changedFields).toEqual(["text", "speaker"]);
+  });
+
+  it("builds utterance-scoped speaker assignments from historical labels", () => {
+    expect(
+      buildSpeakerHistoryAssignment({
+        speaker: "MANUAL_1234abcd",
+      }),
+    ).toEqual({
+      name: "MANUAL_1234abcd",
+      diarizationLabel: "MANUAL_1234abcd",
+      scope: "utterance_only",
+    });
+  });
+
+  it("extends a rolling speaker correction with later live segments for a newly introduced target", () => {
+    const firstBefore = {
+      id: "utt-1",
+      start: 0,
+      end: 1,
+      text: "hello",
+      speaker: "LIVE_01",
+      recording_speaker_id: 1,
+      revision: 1,
+    };
+    const firstAfter = {
+      ...firstBefore,
+      speaker: "MANUAL_1234abcd",
+      recording_speaker_id: 9,
+      revision: 2,
+    };
+    const rollingSpeakerCorrection = buildRollingSpeakerCorrectionHistory({
+      previousSegments: [firstBefore],
+      sourceSegment: firstBefore,
+      updatedSegment: firstAfter,
+    });
+    const history = [
+      {
+        description: "Change speaker utt-1",
+        rollingSpeakerCorrection,
+        patches: [
+          {
+            before: firstBefore,
+            after: firstAfter,
+            changedFields: ["speaker" as const],
+          },
+        ],
+      },
+    ];
+    const laterSegment = {
+      id: "utt-2",
+      start: 2,
+      end: 3,
+      text: "later",
+      speaker: "MANUAL_1234abcd",
+      recording_speaker_id: 9,
+      revision: 1,
+      provisional: true,
+      segment_source: "live",
+    };
+
+    const extended = extendRollingSpeakerHistoryWithSegments(
+      history,
+      [firstAfter],
+      [firstAfter, laterSegment],
+    );
+
+    expect(extended[0]?.patches).toHaveLength(2);
+    expect(extended[0]?.patches[1]).toMatchObject({
+      before: {
+        id: "utt-2",
+        speaker: "LIVE_01",
+        recording_speaker_id: 1,
+      },
+      after: {
+        id: "utt-2",
+        speaker: "MANUAL_1234abcd",
+        recording_speaker_id: 9,
+      },
+      changedFields: ["speaker"],
+    });
+  });
+
+  it("does not roll speaker history when the target speaker already existed", () => {
+    const sourceBefore = {
+      id: "utt-1",
+      start: 0,
+      end: 1,
+      text: "hello",
+      speaker: "LIVE_01",
+      recording_speaker_id: 1,
+      revision: 1,
+    };
+    const existingTarget = {
+      id: "utt-existing",
+      start: 1,
+      end: 2,
+      text: "target",
+      speaker: "LIVE_02",
+      recording_speaker_id: 2,
+      revision: 1,
+    };
+    const sourceAfter = {
+      ...sourceBefore,
+      speaker: "LIVE_02",
+      recording_speaker_id: 2,
+      revision: 2,
+    };
+    const rollingSpeakerCorrection = buildRollingSpeakerCorrectionHistory({
+      previousSegments: [sourceBefore, existingTarget],
+      sourceSegment: sourceBefore,
+      updatedSegment: sourceAfter,
+    });
+    const history = [
+      {
+        description: "Change speaker utt-1",
+        rollingSpeakerCorrection,
+        patches: [
+          {
+            before: sourceBefore,
+            after: sourceAfter,
+            changedFields: ["speaker" as const],
+          },
+        ],
+      },
+    ];
+
+    const extended = extendRollingSpeakerHistoryWithSegments(
+      history,
+      [sourceAfter, existingTarget],
+      [
+        sourceAfter,
+        existingTarget,
+        {
+          id: "utt-2",
+          start: 2,
+          end: 3,
+          text: "later",
+          speaker: "LIVE_02",
+          recording_speaker_id: 2,
+          revision: 1,
+        },
+      ],
+    );
+
+    expect(rollingSpeakerCorrection?.targetPreexisted).toBe(true);
+    expect(extended[0]?.patches).toHaveLength(1);
   });
 
   it("builds deterministic legacy keys when no stable id is present", () => {

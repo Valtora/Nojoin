@@ -119,7 +119,7 @@ describe("TranscriptView", () => {
     positionMap.clear();
   });
 
-  it("shows a stable-speaker badge and disables export while a local edit is open", () => {
+  it("disables export while a local edit is open", () => {
     renderTranscriptView([
       buildSegment({
         id: "utt-stable",
@@ -129,7 +129,7 @@ describe("TranscriptView", () => {
       }),
     ]);
 
-    expect(screen.getByText("Stable speaker")).toBeInTheDocument();
+    expect(screen.queryByText("Stable speaker")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Export transcript" }),
     ).toBeEnabled();

@@ -70,6 +70,7 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transient_utterance_payloads_from_segments,
     ensure_canonical_backfill,
+    filter_recording_speakers_for_public_read,
     get_canonical_transcript_revision,
     list_active_utterances,
     recording_ready_for_canonical_backfill,
@@ -177,7 +178,7 @@ class TranscriptUtteranceSpeakerPatch(BaseModel):
     new_speaker_name: str
     global_speaker_id: Optional[int] = None
     diarization_label: Optional[str] = None
-    scope: SpeakerCorrectionScope = SpeakerCorrectionScope.UTTERANCE_ONLY
+    scope: SpeakerCorrectionScope = SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING
     expected_revision: Optional[int] = None
 
 
@@ -737,6 +738,13 @@ async def get_transcript_utterances(
             .options(selectinload(RecordingSpeaker.global_speaker))
         )
         speakers = speakers_result.scalars().all()
+        speakers = await db.run_sync(
+            lambda sync_session: filter_recording_speakers_for_public_read(
+                sync_session,
+                recording.id,
+                speakers,
+            )
+        )
 
         return TranscriptUtteranceListRead(
             recording_id=recording.public_id,
@@ -749,7 +757,6 @@ async def get_transcript_utterances(
                     recording_public_id=recording.public_id,
                 )
                 for speaker in speakers
-                if not speaker.merged_into_id
             ],
         )
 
@@ -780,6 +787,13 @@ async def get_transcript_utterances(
         .options(selectinload(RecordingSpeaker.global_speaker))
     )
     speakers = speakers_result.scalars().all()
+    speakers = await db.run_sync(
+        lambda sync_session: filter_recording_speakers_for_public_read(
+            sync_session,
+            recording.id,
+            speakers,
+        )
+    )
 
     return TranscriptUtteranceListRead(
         recording_id=recording.public_id,
@@ -792,7 +806,6 @@ async def get_transcript_utterances(
                 recording_public_id=recording.public_id,
             )
             for speaker in speakers
-            if not speaker.merged_into_id
         ],
     )
 

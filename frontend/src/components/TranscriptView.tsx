@@ -5,7 +5,6 @@ import {
   RecordingSpeaker,
   GlobalSpeaker,
   RecordingId,
-  SpeakerCorrectionScope,
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -75,13 +74,6 @@ const formatTime = (seconds: number) => {
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
-
-const getDefaultSpeakerCorrectionScope = (
-  speakerLabel: string,
-): SpeakerCorrectionScope =>
-  speakerLabel.startsWith("LIVE_")
-    ? "from_this_utterance_forward"
-    : "speaker_everywhere_in_recording";
 
 export default function TranscriptView({
   segments,
@@ -484,7 +476,7 @@ export default function TranscriptView({
       try {
         await onUpdateSegmentSpeaker(segment, {
           name: editValue.trim(),
-          scope: getDefaultSpeakerCorrectionScope(segment.speaker),
+          scope: "utterance_only",
         });
       } finally {
         setIsSubmitting(false);
@@ -704,14 +696,6 @@ export default function TranscriptView({
     const isRecentlyUpdated = isRecentlyUpdatedSegment(segment);
     const hasPendingRemoteUpdate =
       typeof segment.id === "string" && pendingRemoteUtteranceIdSet.has(segment.id);
-    const isStableSpeaker =
-      !isProvisional &&
-      !isSpeakerLowConfidence &&
-      !segment.speaker_manually_edited &&
-      segment.speaker_state !== "manual_override" &&
-      (segment.speaker_state === "stable" ||
-        (segment.state === "stable" && !segment.speaker_state));
-
     const bubbleColor = isActive
       ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
       : getSpeakerColor(segment.speaker);
@@ -810,18 +794,6 @@ export default function TranscriptView({
           )}
 
           <div className="flex flex-wrap items-center gap-1">
-            {isStableSpeaker && (
-              <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
-                Stable speaker
-              </span>
-            )}
-            {!allowProvisionalEdits &&
-              (segment.speaker_manually_edited ||
-                segment.speaker_state === "manual_override") && (
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                Manual speaker
-              </span>
-            )}
             {segment.text_manually_edited && (
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-300">
                 Manual text
