@@ -237,7 +237,7 @@ function MeetingEdgePanel({
             <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Quick context
+                  Technical Context
                 </div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
                   {conceptHistory.length} term{conceptHistory.length === 1 ? "" : "s"} tracked
