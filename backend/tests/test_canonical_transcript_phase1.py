@@ -15,6 +15,10 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.transcript import Transcript
+from backend.utils.canonical_pipeline import (
+    list_pending_startup_cutover_recording_ids,
+    process_startup_cutover_recording,
+)
 
 
 RECORDINGS_SCHEMA = """
@@ -39,6 +43,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
     user_id INTEGER,
@@ -392,7 +397,9 @@ async def _seed_processed_recording(
     session_maker: sessionmaker,
     public_id: str = "canon-rec",
     *,
+    recording_id: int = 1,
     segment_id: str | None = None,
+    pipeline_generation: str | None = "unified",
 ) -> None:
     async with session_maker() as session:
         await session.execute(
@@ -401,14 +408,20 @@ async def _seed_processed_recording(
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
                     audio_path, status, upload_progress, processing_progress,
-                    is_archived, is_deleted, user_id
+                    pipeline_generation, is_archived, is_deleted, user_id
                 ) VALUES (
-                    1, :now, :now, 'Canonical meeting', :public_id, 'meeting-uid-1',
-                    '/tmp/canon.wav', 'PROCESSED', 0, 100, 0, 0, 1
+                    :recording_id, :now, :now, 'Canonical meeting', :public_id, :meeting_uid,
+                    '/tmp/canon.wav', 'PROCESSED', 0, 100, :pipeline_generation, 0, 0, 1
                 )
                 """
             ),
-            {"now": "2026-05-19 00:00:00", "public_id": public_id},
+            {
+                "now": "2026-05-19 00:00:00",
+                "recording_id": recording_id,
+                "meeting_uid": f"meeting-uid-{recording_id}",
+                "public_id": public_id,
+                "pipeline_generation": pipeline_generation,
+            },
         )
         await session.execute(
             text(
@@ -418,13 +431,14 @@ async def _seed_processed_recording(
                     notes, user_notes, meeting_edge_status, notes_status,
                     transcript_status
                 ) VALUES (
-                    1, :now, :now, 1, 'hello there', :segments,
+                    :recording_id, :now, :now, :recording_id, 'hello there', :segments,
                     NULL, NULL, 'idle', 'pending', 'completed'
                 )
                 """
             ),
             {
                 "now": "2026-05-19 00:00:00",
+                "recording_id": recording_id,
                 "segments": (
                     '[{"id": "' + segment_id + '", "start": 0.0, "end": 1.2, "speaker": "SPEAKER_00", "text": "hello there", "segment_source": "legacy"}]'
                     if segment_id
@@ -441,14 +455,18 @@ async def _seed_processed_recording(
                     embedding, merged_into_id, speaker_status, speaker_kind,
                     first_seen_ms, last_seen_ms, identity_confidence, identity_locked
                 ) VALUES (
-                    1, :now, :now, 'speaker-public-1', 1,
+                    :recording_id, :now, :now, :speaker_public_id, :recording_id,
                     NULL, 'SPEAKER_00', NULL, 'Speaker 1',
                     NULL, NULL, 'active', 'automated',
                     NULL, NULL, NULL, 0
                 )
                 """
             ),
-            {"now": "2026-05-19 00:00:00"},
+            {
+                "now": "2026-05-19 00:00:00",
+                "recording_id": recording_id,
+                "speaker_public_id": f"speaker-public-{recording_id}",
+            },
         )
         await session.commit()
 
@@ -464,10 +482,10 @@ async def _seed_uploading_recording(
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
                     audio_path, status, upload_progress, processing_progress,
-                    is_archived, is_deleted, user_id
+                    pipeline_generation, is_archived, is_deleted, user_id
                 ) VALUES (
                     1, :now, :now, 'Live meeting', :public_id, 'meeting-uid-live',
-                    '/tmp/live.wav', 'UPLOADING', 50, 10, 0, 0, 1
+                    '/tmp/live.wav', 'UPLOADING', 50, 10, 'unified', 0, 0, 1
                 )
                 """
             ),
@@ -566,6 +584,241 @@ async def test_get_utterances_backfills_processed_transcript(
         ).scalar_one()
         assert count == 1
         assert last_event_id is not None
+
+
+@pytest.mark.anyio
+async def test_legacy_recording_remains_readable_but_blocks_transcript_mutation(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        segment_id="legacy-segment-1",
+        pipeline_generation="legacy_backfilled",
+    )
+
+    read_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert read_response.status_code == 200
+    assert len(read_response.json()["utterances"]) == 1
+
+    mutate_response = await client.patch(
+        "/api/v1/transcripts/canon-rec/utterances/legacy-segment-1/text",
+        json={"text": "updated text", "expected_revision": 1},
+    )
+
+    assert mutate_response.status_code == 409
+    assert "must be reprocessed" in mutate_response.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_legacy_reprocess_required_recording_remains_readable(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        segment_id="legacy-segment-reprocess-required",
+        pipeline_generation="legacy_reprocess_required",
+    )
+
+    response = await client.get("/api/v1/transcripts/canon-rec/utterances")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["utterances"]) == 1
+    assert body["utterances"][0]["speaker"] == "SPEAKER_00"
+
+    async with test_session_maker() as session:
+        generation = (
+            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+        ).scalar_one()
+
+    assert generation == "legacy_reprocess_required"
+
+
+@pytest.mark.anyio
+async def test_legacy_recording_blocks_recording_speaker_mutation(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        pipeline_generation="legacy_backfilled",
+    )
+
+    response = await client.put(
+        "/api/v1/speakers/recordings/canon-rec",
+        json={
+            "diarization_label": "SPEAKER_00",
+            "global_speaker_name": "Jordan",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "must be reprocessed" in response.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_startup_cutover_backfills_pending_legacy_recording(
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        pipeline_generation=None,
+    )
+
+    async with test_session_maker() as session:
+        pending_ids = await session.run_sync(
+            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+        )
+        assert pending_ids == [1]
+
+        outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=1,
+            )
+        )
+        await session.commit()
+
+        generation = (
+            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+        ).scalar_one()
+        utterance_count = (
+            await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"))
+        ).scalar_one()
+
+    assert outcome == "backfilled"
+    assert generation == "legacy_backfilled"
+    assert utterance_count == 1
+
+
+@pytest.mark.anyio
+async def test_startup_cutover_is_idempotent_after_partial_completion(
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        pipeline_generation=None,
+    )
+
+    async with test_session_maker() as session:
+        first_outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=1,
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        second_outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=1,
+            )
+        )
+        await session.commit()
+
+        generation = (
+            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+        ).scalar_one()
+        utterance_count = (
+            await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"))
+        ).scalar_one()
+        processing_run_count = (
+            await session.execute(text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 1"))
+        ).scalar_one()
+
+    assert first_outcome == "backfilled"
+    assert second_outcome == "already_backfilled"
+    assert generation == "legacy_backfilled"
+    assert utterance_count == 1
+    assert processing_run_count == 1
+
+
+@pytest.mark.anyio
+async def test_startup_cutover_resumes_remaining_recordings_after_restart(
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_processed_recording(
+        test_session_maker,
+        public_id="canon-rec-1",
+        recording_id=1,
+        pipeline_generation=None,
+    )
+    await _seed_processed_recording(
+        test_session_maker,
+        public_id="canon-rec-2",
+        recording_id=2,
+        pipeline_generation=None,
+    )
+
+    async with test_session_maker() as session:
+        pending_before_restart = await session.run_sync(
+            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+        )
+        first_outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=1,
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        pending_after_restart = await session.run_sync(
+            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+        )
+        second_outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=2,
+            )
+        )
+        await session.commit()
+
+        generations = (
+            await session.execute(text("SELECT id, pipeline_generation FROM recordings ORDER BY id"))
+        ).all()
+
+    assert pending_before_restart == [1, 2]
+    assert first_outcome == "backfilled"
+    assert pending_after_restart == [2]
+    assert second_outcome == "backfilled"
+    assert generations == [
+        (1, "legacy_backfilled"),
+        (2, "legacy_backfilled"),
+    ]
+
+
+@pytest.mark.anyio
+async def test_startup_cutover_marks_inflight_legacy_recording_reprocess_required(
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(text("UPDATE recordings SET pipeline_generation = NULL WHERE id = 1"))
+        await session.commit()
+
+        outcome = await session.run_sync(
+            lambda sync_session: process_startup_cutover_recording(
+                sync_session,
+                recording_id=1,
+            )
+        )
+        await session.commit()
+
+        generation, status_value = (
+            await session.execute(
+                text("SELECT pipeline_generation, status FROM recordings WHERE id = 1")
+            )
+        ).one()
+
+    assert outcome == "classified_inflight"
+    assert generation == "legacy_reprocess_required"
+    assert status_value == "ERROR"
 
 
 @pytest.mark.anyio

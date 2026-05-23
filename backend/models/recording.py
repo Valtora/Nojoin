@@ -31,6 +31,17 @@ class ClientStatus(str, Enum):
     IDLE = "IDLE"
 
 
+class RecordingPipelineGeneration(str, Enum):
+    UNIFIED = "unified"
+    LEGACY_BACKFILLED = "legacy_backfilled"
+    LEGACY_REPROCESS_REQUIRED = "legacy_reprocess_required"
+
+
+LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL = (
+    "This recording must be reprocessed before transcript or speaker edits are supported"
+)
+
+
 def generate_meeting_uid() -> str:
     return str(uuid4())
 
@@ -76,6 +87,10 @@ class Recording(BaseDBModel, table=True):
     processing_step: Optional[str] = Field(default=None)
     processing_started_at: Optional[datetime] = None
     processing_completed_at: Optional[datetime] = None
+    pipeline_generation: Optional[str] = Field(
+        default=RecordingPipelineGeneration.UNIFIED.value,
+        sa_column=Column(String(32), nullable=True, index=True),
+    )
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     
@@ -159,3 +174,14 @@ class RecordingInitResponse(SQLModel):
 class RecordingUploadTokenResponse(SQLModel):
     recording_id: str
     upload_token: str
+
+
+def recording_supports_unified_mutations(recording: Optional["Recording"]) -> bool:
+    if recording is None:
+        return False
+
+    generation = getattr(recording, "pipeline_generation", None)
+    if hasattr(generation, "value"):
+        generation = generation.value
+
+    return str(generation or "") == RecordingPipelineGeneration.UNIFIED.value

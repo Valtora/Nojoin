@@ -576,30 +576,50 @@ Exit gate:
 
 Purpose: land the refactor without stranding existing recordings or users.
 
-- [ ] Migrate existing data.
-  - [ ] Preserve existing `Transcript.segments` JSON for compatibility during migration.
-  - [ ] Backfill stable utterance IDs.
-  - [ ] Backfill speaker references to canonical recording speakers where possible.
-  - [ ] Preserve manual edit flags.
-  - [ ] Preserve global speaker links and voiceprints.
-- [ ] Maintain API compatibility during rollout.
-  - [ ] Continue returning the current transcript shape to older frontend code until the new UI is ready.
-  - [ ] Add new endpoints or response fields behind compatible contracts.
-  - [ ] Keep exports stable.
-- [ ] Update documentation.
-  - [ ] Architecture live pipeline section.
-  - [ ] User guide live transcription behavior.
-  - [ ] Admin/settings documentation.
-  - [ ] Development setup and test fixture instructions.
-  - [ ] Troubleshooting for Pyannote, Hugging Face access, GPU, and worker failures.
-- [ ] Prepare rollback and recovery notes.
-  - [ ] Schema rollback constraints.
-  - [ ] Data recovery from chunk store.
-  - [ ] Behavior when rolling diarization is disabled.
+- [x] Freeze the Phase 9 compatibility boundary before implementation.
+  - [x] Historical recordings are supported for view and explicit reprocess.
+  - [x] Historical recordings are not required to retain legacy transcript-edit and speaker-edit parity after cutover.
+  - [x] New recordings and explicitly reprocessed recordings are the only meetings that must be fully supported under the unified pipeline.
+- [x] Checkpoint 9A: Add a recording-generation marker and gate legacy mutations.
+  - [x] Add an additive recording-level marker that distinguishes `unified`, `legacy_backfilled`, and `legacy_reprocess_required` states.
+  - [x] Use that marker as the backend policy boundary instead of inferring editability from transcript JSON shape alone.
+  - [x] Keep read APIs working for legacy recordings.
+  - [x] Block transcript and speaker mutation endpoints for non-unified recordings with a clear reprocess-required response.
+- [x] Checkpoint 9B: Move the canonical cutover to container startup.
+  - [x] Keep schema changes in Alembic and `backend.startup_migrations`.
+  - [x] Add a second backend-only startup cutover step after Alembic, wired through `backend/entrypoint.sh`.
+  - [x] Make the cutover synchronous and blocking so the upgraded container does not become ready until the migration reaches a fixed point.
+  - [x] Keep this flow entirely backend-driven with no admin or frontend orchestration.
+- [x] Checkpoint 9C: Replace lazy backfill as the primary migration path.
+  - [x] Refactor canonical backfill helpers into a resumable batch sweep that iterates all legacy recordings.
+  - [x] Commit per recording rather than in one large transaction.
+  - [x] Use a container-safe lock so only one upgraded instance performs the cutover at a time.
+  - [x] Make reruns idempotent so container restarts resume cleanly.
+- [x] Checkpoint 9D: Classify hard legacy cases instead of preserving every legacy edit path.
+  - [x] Preserve existing `Transcript.segments` JSON for viewing and export compatibility.
+  - [x] Backfill stable utterance IDs, speaker references, manual edit flags, and existing global speaker links when canonicalization succeeds.
+  - [x] If a legacy recording cannot be canonicalized safely, classify it as `legacy_reprocess_required` rather than failing the whole deployment.
+  - [x] Preserve enough legacy state that classified recordings remain viewable and can be explicitly reprocessed through the unified worker path.
+- [x] Checkpoint 9E: Make reprocess the supported upgrade path for old meetings.
+  - [x] When a legacy recording is explicitly reprocessed, rebuild it entirely through the unified pipeline.
+  - [x] Flip successfully rebuilt legacy recordings to the `unified` marker.
+  - [x] Remove any remaining requirement for old transcript-index mutation wrappers to serve as a long-term compatibility bridge.
+- [x] Checkpoint 9F: Document the container-level cutover and additive rollback contract.
+  - [x] Deployment guide: upgraded containers may take longer to start because they run a blocking data cutover.
+  - [x] Architecture guide: document the backend-only startup cutover path and recording-generation boundary.
+  - [x] User guide: old meetings remain viewable and reprocessable, but may require reprocess before further transcript or speaker edits.
+  - [x] Development guide: explain how to run the cutover locally and how to seed or test legacy recordings.
+  - [x] Rollback notes: support code rollback only; canonical rows remain additive and are not reverted back into legacy-only state.
+- [x] Validate the Phase 9 cutover at the backend level.
+  - [x] Idempotent rerun after partial completion.
+  - [x] Resume after container restart.
+  - [x] Legacy read paths remain intact for backfilled and reprocess-required recordings.
+  - [x] Transcript and speaker mutation endpoints reject non-unified recordings.
+  - [x] Explicit reprocess promotes a legacy recording into the unified supported state.
 
 Exit gate:
 
-- [ ] Existing recordings, new live recordings, imports, exports, and docs all work against the new model.
+- [x] Upgraded containers run a blocking backend-only cutover after Alembic, legacy meetings remain viewable, non-unified meetings require explicit reprocess before further transcript or speaker edits, and successfully reprocessed or newly created meetings are fully supported under the unified model.
 
 ## Phase 10: Whole-System Verification and Release Readiness
 

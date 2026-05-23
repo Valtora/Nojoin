@@ -32,7 +32,11 @@ from docx.oxml.ns import qn
 
 from backend.api.deps import get_db, get_current_user
 from backend.api.error_handling import sanitized_http_exception
-from backend.models.recording import Recording
+from backend.models.recording import (
+    LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
+    Recording,
+    recording_supports_unified_mutations,
+)
 from backend.models.recording_public import (
     ChatMessagePublicRead,
     RecordingSpeakerPublicRead,
@@ -124,6 +128,12 @@ async def _get_recording_transcript(db: AsyncSession, recording_id: int) -> Tran
 
 def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
+
+
+def _require_recording_transcript_mutations_supported(recording: Recording) -> None:
+    if recording_supports_unified_mutations(recording):
+        return
+    raise HTTPException(status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
 
 
 def _find_segment_index_by_public_id(transcript: Transcript, utterance_id: str) -> int | None:
@@ -801,6 +811,8 @@ async def update_transcript_utterance_text(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
+    _require_recording_transcript_mutations_supported(recording)
+
     if not _canonical_transcript_writes_enabled():
         segment_index = _find_segment_index_by_public_id(transcript, utterance_id)
         if segment_index is None:
@@ -869,6 +881,8 @@ async def update_transcript_utterance_speaker(
         raise HTTPException(status_code=404, detail="Transcript not found")
     if not update.new_speaker_name.strip():
         raise HTTPException(status_code=400, detail="Speaker name cannot be empty")
+
+    _require_recording_transcript_mutations_supported(recording)
 
     if not _canonical_transcript_writes_enabled():
         segment_index = _find_segment_index_by_public_id(transcript, utterance_id)
@@ -965,6 +979,8 @@ async def update_segment_speaker(
     
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
+
+    _require_recording_transcript_mutations_supported(recording)
         
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -1302,6 +1318,8 @@ async def update_transcript_segment_text(
     
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
+
+    _require_recording_transcript_mutations_supported(recording)
         
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -1401,6 +1419,8 @@ async def find_and_replace(
     
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
+
+    _require_recording_transcript_mutations_supported(recording)
     
     find_text = replace_request.find_text
     replace_text = replace_request.replace_text
@@ -1454,6 +1474,8 @@ async def update_transcript_segments(
     
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
+
+    _require_recording_transcript_mutations_supported(recording)
 
     if _canonical_transcript_writes_enabled() and (any(segment.get("id") for segment in update.segments) or recording_ready_for_canonical_backfill(recording.status)):
         await db.run_sync(lambda sync_session: ensure_canonical_backfill(sync_session, recording.id))

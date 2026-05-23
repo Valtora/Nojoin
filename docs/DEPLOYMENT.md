@@ -195,8 +195,19 @@ location / {
 
 - Keep server and Companion app versions aligned.
 - When performing major upgrades, check release notes for breaking changes.
+- Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.
+- During that startup cutover, existing recordings are classified entirely on the backend. Successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalized safely are marked for explicit reprocess instead of being edited in place.
+- The supported rollback model for this cutover is code rollback only. Canonical rows created during startup migration are additive and are not converted back into legacy-only transcript state.
 - **Companion Security Upgrade**: Upgrading to a version that implements the signed browser-initiated pairing model will automatically clear out any legacy code-based connection state in the Companion app. You will need to perform a clean first-pair workflow from `Settings -> Companion` in Nojoin and approve the native prompt to continue using the Companion.
 - **Companion TOFU TLS Pinning**: The Companion now pins the backend certificate it first sees during pairing. Disconnecting the current backend from Companion Settings clears that saved trust and leaves the app ready for a clean new pairing.
+
+### Canonical Cutover Notes
+
+- The container entrypoint now runs Alembic first and then runs a second backend-only startup cutover pass before the API process starts serving traffic.
+- The startup cutover acquires a database-level lock so only one upgraded instance performs the legacy-recording sweep at a time.
+- Historical meetings from before the unified pipeline are supported for viewing and explicit reprocess. They are not guaranteed to preserve transcript-edit or speaker-edit parity without reprocessing.
+- For local recovery or debugging only, `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` skips the second startup cutover pass. Do not rely on that flag as a normal production rollout strategy.
+- `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` can reduce or increase the number of pending legacy recordings processed per sweep iteration during startup. The default is `100`.
 
 ## Database Migrations
 

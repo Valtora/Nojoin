@@ -164,6 +164,11 @@ Reprocessing:
 - Asks for confirmation before discarding the existing transcript.
 - Use this when you want a different transcription pass from the one used during live capture.
 
+For older meetings that predate the unified pipeline cutover, reprocess is also
+the supported way to move that recording onto the fully supported transcript and
+speaker-edit workflow. Until you do that, those older meetings remain viewable
+but may block further transcript or speaker edits.
+
 ## Transcript and Playback Workflow
 
 Within a processed recording you can:
@@ -173,6 +178,11 @@ Within a processed recording you can:
 - Click transcript text to seek playback.
 - Edit transcript text and speaker assignments.
 - Export transcript-only, notes-only, or combined text output.
+
+Historical recordings that were carried forward from before the unified
+pipeline may open in a read-only compatibility state. In that case, playback,
+transcript viewing, and export remain available, but transcript or speaker
+edits require explicit reprocess first.
 
 ### Trimming a Recording
 

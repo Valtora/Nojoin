@@ -17,7 +17,15 @@ from uuid import uuid4
 from backend.api.deps import get_current_companion_bootstrap_user, get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
 from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
-from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus, ClientStatus, RecordingUpdate, RecordingUploadTokenResponse
+from backend.models.recording import (
+    ClientStatus,
+    Recording,
+    RecordingInitResponse,
+    RecordingPipelineGeneration,
+    RecordingStatus,
+    RecordingUpdate,
+    RecordingUploadTokenResponse,
+)
 from backend.models.recording_public import RecordingPublicRead, RecordingsCalendarRead, serialize_recording
 from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
@@ -463,6 +471,7 @@ async def _requeue_for_processing(
     recording.processing_started_at = None
     recording.processing_completed_at = None
     recording.celery_task_id = None
+    recording.pipeline_generation = RecordingPipelineGeneration.UNIFIED.value
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

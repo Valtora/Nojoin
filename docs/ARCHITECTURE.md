@@ -94,8 +94,9 @@ runs:
    (`backend/processing/live_transcribe.py`).
 2. The task slices completed speech regions, transcribes them with the same
    engine selected by `transcription_backend` for final processing, assigns
-   provisional live speaker identities, and appends provisional segments to
-   `Transcript.segments` (each flagged `"provisional": True`). VAD regions
+   provisional live speaker identities, writes canonical provisional utterances
+   first, and refreshes `Transcript.segments` as a compatibility projection.
+   VAD regions
    are padded and each region clip is prepended with a short rolling audio
    context window (`live/context.wav`) so the engine has acoustic run-up and
    word edges are not clipped; the engine output is then sliced back to the
@@ -140,6 +141,27 @@ whole-recording ASR or diarisation rerun when coverage is missing,
 confidence remains too low, or the user explicitly requests reprocessing with a
 different engine. A different transcription engine is reserved for explicit
 manual reprocessing after the user changes the transcription engine in Settings.
+
+### Startup Canonical Cutover
+
+The unified pipeline now assumes a container-level startup cutover for older
+meetings rather than a frontend-driven migration workflow.
+
+1. `backend/entrypoint.sh` runs Alembic through `backend.startup_migrations`.
+2. The same entrypoint then runs `backend.startup_canonical_cutover` before the
+   API process starts.
+3. That cutover acquires a database advisory lock, sweeps any recordings whose
+   `pipeline_generation` marker is still unset, and classifies each one into a
+   backend-only compatibility state.
+4. Successfully canonicalized historical meetings are marked `legacy_backfilled`
+   and remain viewable through the compatibility projection.
+5. Historical meetings that were still in flight during upgrade or that cannot
+   be canonicalized safely are marked `legacy_reprocess_required` and normalized
+   for explicit reprocess instead of continuing to rely on legacy mutation
+   paths.
+6. Only meetings created or explicitly rebuilt through the unified pipeline are
+   marked `unified` and treated as fully supported for transcript and speaker
+   mutation flows.
 
 ## Calendar Flow
 

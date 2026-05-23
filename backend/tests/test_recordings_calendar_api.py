@@ -36,6 +36,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR,
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
     user_id INTEGER

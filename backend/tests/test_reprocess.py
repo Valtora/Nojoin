@@ -37,6 +37,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
     user_id INTEGER,
@@ -220,6 +221,7 @@ async def _insert_recording(
     public_id: str = "reprocess-rec-public-id",
     user_id: int = 1,
     status: str = "PROCESSED",
+    pipeline_generation: str = "unified",
 ) -> None:
     """Insert a single recording row into the test DB."""
     async with session_maker() as session:
@@ -229,10 +231,10 @@ async def _insert_recording(
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
                     audio_path, status, upload_progress, processing_progress,
-                    is_archived, is_deleted, user_id
+                    pipeline_generation, is_archived, is_deleted, user_id
                 ) VALUES (
                     :id, :now, :now, :name, :public_id, :meeting_uid,
-                    :audio_path, :status, 0, 100, 0, 0, :user_id
+                    :audio_path, :status, 0, 100, :pipeline_generation, 0, 0, :user_id
                 )
                 """
             ),
@@ -244,6 +246,7 @@ async def _insert_recording(
                 "meeting_uid": f"meeting-uid-{recording_id}",
                 "audio_path": "/tmp/recording.wav",
                 "status": status,
+                "pipeline_generation": pipeline_generation,
                 "user_id": user_id,
             },
         )
@@ -403,6 +406,38 @@ async def test_retry_still_dispatches_without_override(
     assert response.status_code == 200
     assert len(calls) == 1
     assert calls[0][0] == (206, True, None)
+
+
+@pytest.mark.anyio
+async def test_reprocess_promotes_legacy_recording_to_unified(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    await _insert_recording(
+        test_session_maker,
+        recording_id=207,
+        public_id="rec-207",
+        pipeline_generation="legacy_backfilled",
+    )
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-207/reprocess",
+        json={"transcription_backend": "whisper"},
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    async with test_session_maker() as session:
+        generation = (
+            await session.execute(
+                text("SELECT pipeline_generation FROM recordings WHERE id = 207")
+            )
+        ).scalar_one()
+
+    assert generation == "unified"
 
 
 # --- task unit test ---------------------------------------------------------

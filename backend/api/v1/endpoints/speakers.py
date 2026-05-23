@@ -3,6 +3,7 @@ import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -30,6 +31,11 @@ from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
+)
+from backend.models.recording import (
+    LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
+    RecordingPipelineGeneration,
+    recording_supports_unified_mutations,
 )
 from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
 from backend.utils.canonical_pipeline import (
@@ -67,6 +73,35 @@ async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_
 
 def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
+
+
+def _require_recording_speaker_mutations_supported(recording: Recording) -> None:
+    if recording_supports_unified_mutations(recording):
+        return
+    raise HTTPException(status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
+
+
+async def _require_recordings_support_speaker_mutations(
+    db: AsyncSession,
+    recording_ids: list[int],
+) -> None:
+    unique_ids = sorted({int(recording_id) for recording_id in recording_ids if recording_id is not None})
+    if not unique_ids:
+        return
+
+    result = await db.execute(
+        select(Recording.id)
+        .where(Recording.id.in_(unique_ids))
+        .where(
+            or_(
+                Recording.pipeline_generation.is_(None),
+                Recording.pipeline_generation != RecordingPipelineGeneration.UNIFIED.value,
+            )
+        )
+        .limit(1)
+    )
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
 
 
 def _copy_transcript_segments(raw_segments) -> list[dict]:
@@ -344,6 +379,8 @@ async def update_recording_speaker(
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
+    _require_recording_speaker_mutations_supported(recording)
+
     # 2. Check if a Global Speaker with this name already exists
     statement = select(GlobalSpeaker).where(GlobalSpeaker.name == update.global_speaker_name, GlobalSpeaker.user_id == current_user.id)
     result = await db.execute(statement)
@@ -558,6 +595,7 @@ async def accept_recording_speaker_suggestion(
     current_user: User = Depends(get_current_user),
 ):
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
     transcript = (
         await db.execute(select(Transcript).where(Transcript.recording_id == recording.id))
     ).scalar_one_or_none()
@@ -611,6 +649,7 @@ async def reject_recording_speaker_suggestion(
     current_user: User = Depends(get_current_user),
 ):
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
     transcript = (
         await db.execute(select(Transcript).where(Transcript.recording_id == recording.id))
     ).scalar_one_or_none()
@@ -663,6 +702,7 @@ async def promote_speaker_to_global(
     # 1. Find the recording speaker
     # Ensure recording belongs to user
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -787,6 +827,8 @@ async def _merge_local_speakers(
     Updates transcript segments, merges embeddings, and deletes source recording speaker.
     """
     recording = await db.get(Recording, recording_id)
+    if recording is not None and not recording_supports_unified_mutations(recording):
+        raise RuntimeError(LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
     if recording is not None and _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
         try:
             await db.run_sync(
@@ -910,6 +952,11 @@ async def merge_speakers(
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == source.id)
     result = await db.execute(stmt)
     source_recording_speakers = result.scalars().all()
+
+    await _require_recordings_support_speaker_mutations(
+        db,
+        [rs.recording_id for rs in source_recording_speakers],
+    )
     
     for rs in source_recording_speakers:
         # Check if target already has a speaker in this recording
@@ -994,6 +1041,12 @@ async def update_global_speaker(
         stmt = select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
         result = await db.execute(stmt)
         linked_speakers = result.scalars().all()
+
+        await _require_recordings_support_speaker_mutations(
+            db,
+            [rs.recording_id for rs in linked_speakers],
+        )
+
         for rs in linked_speakers:
             rs.name = speaker_in.name
             db.add(rs)
@@ -1044,6 +1097,14 @@ async def delete_global_speaker(
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
+
+    linked_result = await db.execute(
+        select(RecordingSpeaker.recording_id).where(RecordingSpeaker.global_speaker_id == speaker_id)
+    )
+    await _require_recordings_support_speaker_mutations(
+        db,
+        [recording_id for recording_id in linked_result.scalars().all()],
+    )
 
     await db.delete(speaker)
     await db.commit()
@@ -1272,6 +1333,11 @@ async def split_speaker(
     )
     recordings_by_public_id = {recording.public_id: recording for recording in recordings}
 
+    await _require_recordings_support_speaker_mutations(
+        db,
+        [recording.id for recording in recordings],
+    )
+
     # 3. Process each affected recording
     import time
     timestamp_suffix = int(time.time())
@@ -1464,6 +1530,7 @@ async def merge_recording_speakers(
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     # 2. Validate that source and target are different
     if merge_data.source_speaker_label == merge_data.target_speaker_label:
@@ -1535,6 +1602,7 @@ async def delete_recording_speaker(
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     # 2. Update Transcript Segments
     statement = select(Transcript).where(Transcript.recording_id == recording.id)
@@ -1617,6 +1685,7 @@ async def extract_voiceprint(
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
     
     # 2. Find the RecordingSpeaker
     statement = select(RecordingSpeaker).where(
@@ -1742,6 +1811,7 @@ async def apply_voiceprint_action(
     """
     # 1. Verify recording and speaker exist
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
     
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -1851,6 +1921,7 @@ async def delete_voiceprint(
     Does NOT affect the linked GlobalSpeaker's embedding.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -1881,6 +1952,7 @@ async def extract_all_voiceprints(
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
     
     # 2. Get all speakers without voiceprints
     statement = select(RecordingSpeaker).where(
@@ -2025,6 +2097,7 @@ async def update_speaker_color(
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     # 2. Find the RecordingSpeaker
     stmt = select(RecordingSpeaker).where(
@@ -2103,6 +2176,10 @@ async def scan_for_matches(
     recordings_updated = set()
 
     for cand in candidates:
+        recording = await db.get(Recording, cand.recording_id)
+        if recording is None or not recording_supports_unified_mutations(recording):
+            continue
+
         if not cand.embedding:
             continue
 
@@ -2151,6 +2228,7 @@ async def split_local_speaker(
     """
     # 1. Verify Recording and Speaker
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
 
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,

@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Column, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
 
@@ -20,6 +20,15 @@ if TYPE_CHECKING:
 
 def generate_pipeline_public_id() -> str:
     return str(uuid4())
+
+
+def _value_enum_type(enum_cls: type[Enum], *, name: str) -> SAEnum:
+    return SAEnum(
+        enum_cls,
+        name=name,
+        values_callable=lambda members: [member.value for member in members],
+        validate_strings=True,
+    )
 
 
 class ProcessingRunKind(str, Enum):
@@ -184,10 +193,16 @@ class ProcessingRun(BaseDBModel, table=True):
     )
     recording_id: int = Field(sa_column=Column(BigInteger, ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True))
     parent_run_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("processing_runs.id", ondelete="SET NULL")))
-    run_kind: ProcessingRunKind = Field(default=ProcessingRunKind.BACKFILL)
+    run_kind: ProcessingRunKind = Field(
+        default=ProcessingRunKind.BACKFILL,
+        sa_column=Column(_value_enum_type(ProcessingRunKind, name="processingrunkind"), nullable=False),
+    )
     trigger_source: str = Field(default="system")
     requested_by_user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL")))
-    status: ProcessingRunStatus = Field(default=ProcessingRunStatus.PENDING)
+    status: ProcessingRunStatus = Field(
+        default=ProcessingRunStatus.PENDING,
+        sa_column=Column(_value_enum_type(ProcessingRunStatus, name="processingrunstatus"), nullable=False),
+    )
     config_hash: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     transcription_backend: Optional[str] = None
     diarization_backend: Optional[str] = None
@@ -246,7 +261,13 @@ class RecordingAsrWindowResult(BaseDBModel, table=True):
     transcription_backend: str = Field(sa_column=Column(String(255), nullable=False))
     model_name: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     config_hash: str = Field(sa_column=Column(String(255), nullable=False))
-    status: RecordingAsrWindowResultStatus = Field(default=RecordingAsrWindowResultStatus.PENDING)
+    status: RecordingAsrWindowResultStatus = Field(
+        default=RecordingAsrWindowResultStatus.PENDING,
+        sa_column=Column(
+            _value_enum_type(RecordingAsrWindowResultStatus, name="recordingasrwindowresultstatus"),
+            nullable=False,
+        ),
+    )
     idempotency_key: str = Field(sa_column=Column(String(255), nullable=False, index=True))
     error_summary: Optional[str] = Field(default=None, sa_column=Column(Text))
     error_payload: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
@@ -276,7 +297,10 @@ class TranscriptUtterance(BaseDBModel, table=True):
     text: str = Field(sa_column=Column(Text, nullable=False))
     speaker_label: Optional[str] = Field(default=None, sa_column=Column(String(255), index=True))
     recording_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("recording_speakers.id", ondelete="SET NULL"), index=True))
-    state: TranscriptUtteranceState = Field(default=TranscriptUtteranceState.STABLE)
+    state: TranscriptUtteranceState = Field(
+        default=TranscriptUtteranceState.STABLE,
+        sa_column=Column(_value_enum_type(TranscriptUtteranceState, name="transcriptutterancestate"), nullable=False),
+    )
     source_kind: str = Field(default="legacy")
     processing_run_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("processing_runs.id", ondelete="SET NULL"), index=True))
     last_utterance_event_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("transcript_utterance_events.id", ondelete="SET NULL"), index=True))
@@ -309,7 +333,13 @@ class RecordingSpeakerAlias(BaseDBModel, table=True):
     __tablename__ = "recording_speaker_aliases"
 
     recording_speaker_id: int = Field(sa_column=Column(BigInteger, ForeignKey("recording_speakers.id", ondelete="CASCADE"), nullable=False, index=True))
-    alias_type: RecordingSpeakerAliasType = Field(default=RecordingSpeakerAliasType.DIARIZATION_LABEL)
+    alias_type: RecordingSpeakerAliasType = Field(
+        default=RecordingSpeakerAliasType.DIARIZATION_LABEL,
+        sa_column=Column(
+            _value_enum_type(RecordingSpeakerAliasType, name="recordingspeakeraliastype"),
+            nullable=False,
+        ),
+    )
     alias_value: str = Field(sa_column=Column(String(255), nullable=False, index=True))
     source_run_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("processing_runs.id", ondelete="SET NULL"), index=True))
     active: bool = Field(default=True)
@@ -337,8 +367,17 @@ class SpeakerCorrectionEvent(BaseDBModel, table=True):
     source_recording_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("recording_speakers.id", ondelete="SET NULL"), index=True))
     target_recording_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("recording_speakers.id", ondelete="SET NULL"), index=True))
     target_global_speaker_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("global_speakers.id", ondelete="SET NULL"), index=True))
-    event_type: SpeakerCorrectionEventType = Field(default=SpeakerCorrectionEventType.ASSIGN_UTTERANCE)
-    scope: SpeakerCorrectionScope = Field(default=SpeakerCorrectionScope.UTTERANCE_ONLY)
+    event_type: SpeakerCorrectionEventType = Field(
+        default=SpeakerCorrectionEventType.ASSIGN_UTTERANCE,
+        sa_column=Column(
+            _value_enum_type(SpeakerCorrectionEventType, name="speakercorrectioneventtype"),
+            nullable=False,
+        ),
+    )
+    scope: SpeakerCorrectionScope = Field(
+        default=SpeakerCorrectionScope.UTTERANCE_ONLY,
+        sa_column=Column(_value_enum_type(SpeakerCorrectionScope, name="speakercorrectionscope"), nullable=False),
+    )
     effective_from_ms: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     payload: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
 
