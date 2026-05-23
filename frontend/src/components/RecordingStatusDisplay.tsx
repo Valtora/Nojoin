@@ -1,10 +1,8 @@
 "use client";
 
 import { Loader2, Mic, Pause } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
@@ -42,39 +40,6 @@ function formatEta(seconds: number) {
   }
 
   return `${seconds}s remaining`;
-}
-
-function LiveRecordingTimer() {
-  const { companion, companionStatus, recordingDuration } = useServiceStatusStore();
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    setElapsedTime(recordingDuration);
-  }, [recordingDuration]);
-
-  useEffect(() => {
-    if (companion && companionStatus === "recording") {
-      timerRef.current = setInterval(() => {
-        setElapsedTime((current) => current + 1);
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [companion, companionStatus]);
-
-  return (
-    <div className="text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">
-      {formatClock(elapsedTime)}
-    </div>
-  );
 }
 
 interface RecordingStatusDisplayProps {
@@ -156,9 +121,7 @@ export default function RecordingStatusDisplay({
                 </div>
               </div>
 
-              {isActiveRecording ? (
-                <LiveRecordingTimer />
-              ) : progressValue !== null ? (
+              {!isActiveRecording && progressValue !== null ? (
                 <div className="flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center rounded-[1.5rem] border border-orange-200/70 bg-orange-50/85 px-4 py-3 text-center dark:border-orange-500/20 dark:bg-orange-500/10">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">
                     Progress
