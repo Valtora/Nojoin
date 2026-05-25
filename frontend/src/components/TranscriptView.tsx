@@ -844,14 +844,14 @@ export default function TranscriptView({
   return (
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-gray-50 dark:bg-gray-900/95 border-b-2 border-gray-200 dark:border-gray-700 shadow-md z-10 flex flex-col">
+      <div className="z-10 flex flex-col border-b-2 border-gray-200 bg-gray-50 shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
         {/* Row 1: Header & Global Actions */}
-        <div className="px-4 md:px-6 py-3 flex items-center justify-end gap-1 md:gap-2 overflow-x-auto">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               onClick={onUndo}
               disabled={!canUndo}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
@@ -859,17 +859,17 @@ export default function TranscriptView({
             <button
               onClick={onRedo}
               disabled={!canRedo}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
             </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <div className="mx-0.5 h-4 w-px bg-gray-300 dark:bg-gray-700 sm:mx-1" />
             <button
               onClick={onExport}
               disabled={exportDisabled}
               aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
               title={exportTitle}
             >
               <Download className="w-4 h-4" />
@@ -880,7 +880,7 @@ export default function TranscriptView({
                 setShowSearch(newState);
                 if (!newState) setShowReplace(false);
               }}
-              className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500"}`}
+              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showSearch && !showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-orange-500 dark:hover:bg-gray-800"}`}
               title="Search"
             >
               <Search className="w-4 h-4" />
@@ -895,7 +895,7 @@ export default function TranscriptView({
                   setShowSearch(true);
                 }
               }}
-              className={`p-2 rounded-md transition-colors ${showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500"}`}
+              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-orange-500 dark:hover:bg-gray-800"}`}
               title="Find & Replace"
             >
               <ArrowRightLeft className="w-4 h-4" />
@@ -905,8 +905,8 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-4 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
-            <div className="relative min-w-48 flex-[1_1_14rem]">
+          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-gray-400/30 px-2 pb-2 pt-2 duration-200 dark:border-gray-700/50 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-6">
+            <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 placeholder="Find..."
@@ -942,7 +942,7 @@ export default function TranscriptView({
               )}
             </div>
             {showReplace && (
-              <div className="relative min-w-48 flex-[1_1_14rem]">
+              <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
                 <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   placeholder="Replace..."
@@ -953,12 +953,12 @@ export default function TranscriptView({
               </div>
             )}
             {showReplace && (
-              <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-2">
+              <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-1.5 sm:gap-2">
                 {/* Settings Toggle */}
                 <div className="relative">
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700"}`}
+                    className={`rounded-md p-1.5 transition-colors ${showSettings ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"}`}
                     title="Advanced Search Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -1019,28 +1019,30 @@ export default function TranscriptView({
                   )}
                 </div>
 
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="mx-0.5 h-4 w-px bg-gray-300 dark:bg-gray-700 sm:mx-1" />
 
                 <button
                   onClick={nextMatch}
                   disabled={matches.length === 0}
-                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                  className="whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:px-3 sm:text-sm"
                 >
-                  Find Next
+                  <span className="sm:hidden">Next</span>
+                  <span className="hidden sm:inline">Find Next</span>
                 </button>
                 <button
                   onClick={handleReplaceCurrent}
                   disabled={matches.length === 0 || isSubmitting}
-                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                  className="whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:px-3 sm:text-sm"
                 >
                   Replace
                 </button>
                 <button
                   onClick={handleFindReplaceSubmit}
                   disabled={!findText || isSubmitting}
-                  className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                  className="whitespace-nowrap rounded-md bg-orange-600 px-2.5 py-1.5 text-xs text-white shadow-sm hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
-                  Replace All
+                  <span className="sm:hidden">All</span>
+                  <span className="hidden sm:inline">Replace All</span>
                 </button>
               </div>
             )}

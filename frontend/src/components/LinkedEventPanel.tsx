@@ -12,6 +12,7 @@ interface LinkedEventPanelProps {
   recordingId: RecordingId;
   linkedEvent?: CalendarEventLink | null;
   onLinkChanged?: () => void;
+  compact?: boolean;
 }
 
 function formatEventTime(event: CalendarEventLink): string {
@@ -32,6 +33,7 @@ export default function LinkedEventPanel({
   recordingId,
   linkedEvent,
   onLinkChanged,
+  compact = false,
 }: LinkedEventPanelProps) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [candidates, setCandidates] = useState<CalendarEventLink[]>([]);
@@ -80,14 +82,19 @@ export default function LinkedEventPanel({
     }
   };
 
+  const basePillClass = compact
+    ? "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium"
+    : "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium";
+  const dropdownWidthClass = compact ? "w-[min(18rem,calc(100vw-2rem))]" : "w-80";
+
   return (
     <div className="relative" ref={containerRef}>
       {linkedEvent ? (
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">
+        <div className={`${basePillClass} border-gray-300 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200`}>
           <Calendar className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate max-w-[16rem]">{linkedEvent.title}</span>
+          <span className={`truncate ${compact ? "max-w-[10rem]" : "max-w-[16rem]"}`}>{linkedEvent.title}</span>
           {formatEventTime(linkedEvent) && (
-            <span className="opacity-60">{formatEventTime(linkedEvent)}</span>
+            <span className={`opacity-60 ${compact ? "hidden" : ""}`}>{formatEventTime(linkedEvent)}</span>
           )}
           <button
             onClick={openPicker}
@@ -109,15 +116,15 @@ export default function LinkedEventPanel({
         <button
           onClick={openPicker}
           disabled={isSubmitting}
-          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-colors disabled:opacity-40"
+          className={`${basePillClass} border-dashed border-gray-300 text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-gray-200`}
         >
-          <CalendarPlus className="w-4 h-4 mr-1.5" />
+          <CalendarPlus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Link calendar event
         </button>
       )}
 
       {isPickerOpen && (
-        <div className="absolute z-20 mt-2 w-80 max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+        <div className={`absolute z-20 mt-2 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 ${dropdownWidthClass}`}>
           {isLoading ? (
             <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
               Loading calendar events...

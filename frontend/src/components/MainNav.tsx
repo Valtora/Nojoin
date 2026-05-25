@@ -350,6 +350,7 @@ export default function MainNav() {
   const [newTagName, setNewTagName] = useState("");
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
 
   // Modal states
   // const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
@@ -392,6 +393,17 @@ export default function MainNav() {
     window.addEventListener("tags-updated", handleTagsUpdated);
     return () => window.removeEventListener("tags-updated", handleTagsUpdated);
   }, [loadTags]);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
 
   // Handle resize
   useEffect(() => {
@@ -583,7 +595,7 @@ export default function MainNav() {
   };
 
   // Prevent hydration mismatch by using default state until mounted
-  const collapsed = mounted ? isNavCollapsed : false;
+  const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
   const isDashboardRoute = pathname === "/";
   const isRecordingsRoute =
     pathname === "/recordings" || pathname.startsWith("/recordings/");
@@ -712,11 +724,17 @@ export default function MainNav() {
 
       <aside
         id="main-nav"
-        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] h-screen md:sticky md:top-0 flex flex-col z-50 transition-all duration-300 ${
-          isMobileNavOpen ? "translate-x-0 fixed left-0 top-0 w-64 shadow-2xl" : "-translate-x-full fixed left-0 top-0 w-64 md:relative md:w-auto md:translate-x-0 md:shadow-none"
+        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-50 transition-all duration-300 md:sticky md:top-0 md:h-screen ${
+          isMobileNavOpen
+            ? "fixed inset-y-2 left-2 translate-x-0 rounded-[1.75rem] shadow-2xl md:inset-auto md:left-0 md:rounded-none md:shadow-none"
+            : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-[1.75rem] md:relative md:inset-auto md:left-0 md:translate-x-0 md:rounded-none md:shadow-none"
         }`}
-        style={window.innerWidth < 768 ? {} : {
-          width: collapsed ? `${COLLAPSED_WIDTH}px` : `${navWidth}px`,
+        style={{
+          width: isDesktop
+            ? collapsed
+              ? `${COLLAPSED_WIDTH}px`
+              : `${navWidth}px`
+            : "min(22rem, calc(100vw - 1rem))",
         }}
       >
         {/* Header with collapse toggle */}

@@ -19,6 +19,7 @@ interface AudioPlayerProps {
   onEnded?: () => void;
   onPlay?: () => void;
   onPause?: () => void;
+  compact?: boolean;
 }
 
 const formatTime = (seconds: number) => {
@@ -36,6 +37,7 @@ export default function AudioPlayer({
   onEnded,
   onPlay,
   onPause,
+  compact = false,
 }: AudioPlayerProps) {
   const [hasError, setHasError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -141,21 +143,41 @@ export default function AudioPlayer({
     recording.has_proxy === false &&
     recording.status !== RecordingStatus.UPLOADING &&
     !isDemo;
+  const shellClassName = compact
+    ? "w-full rounded-2xl border border-gray-300 bg-white px-3 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800/50"
+    : "w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm";
+  const compactMockContent = (
+    <div className="flex items-center gap-3 opacity-30 pointer-events-none filter blur-[1px]">
+      <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-400 text-white shadow-sm">
+        <Play className="ml-0.5 h-5 w-5 fill-current" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+          <div className="h-3 w-8 rounded bg-gray-200" />
+          <div className="h-2 flex-1 rounded-full bg-gray-200" />
+          <div className="h-3 w-8 rounded bg-gray-200" />
+        </div>
+      </div>
+      <div className="h-3 w-7 rounded bg-gray-200" />
+      <div className="h-5 w-5 rounded-full bg-gray-200" />
+    </div>
+  );
 
   // Render the "processing" disabled state if proxy is unavailable
   if (proxyUnavailable) {
     return (
       <div
         id="audio-player"
-        className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm relative overflow-hidden"
+        className={`${shellClassName} relative overflow-hidden`}
       >
         <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
-          <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-sm font-medium border border-blue-200 dark:border-blue-800 flex items-center gap-2">
+          <span className={`flex items-center gap-2 rounded-full border border-blue-200 bg-blue-100 px-3 py-1 font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
             Audio is being processed, please wait...
           </span>
         </div>
 
+        {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
           <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gray-400 text-white shadow-sm shrink-0 order-1">
@@ -171,6 +193,7 @@ export default function AudioPlayer({
              <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
           </div>
         </div>
+        )}
       </div>
     );
   }
@@ -179,17 +202,18 @@ export default function AudioPlayer({
     return (
       <div
         id="audio-player"
-        className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm relative overflow-hidden"
+        className={`${shellClassName} relative overflow-hidden`}
       >
         {/* Blurred background visual effect */}
         <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
-          <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1 rounded-full text-sm font-medium border border-orange-200 dark:border-orange-800 flex items-center gap-2">
+          <span className={`flex items-center gap-2 rounded-full border border-orange-200 bg-orange-100 px-3 py-1 font-medium text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-300 ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
             This meeting was imported with no audio
           </span>
         </div>
 
         {/* Disabled UI underneath for visual context */}
+        {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
           <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gray-400 text-white shadow-sm shrink-0 order-1">
@@ -205,6 +229,7 @@ export default function AudioPlayer({
              <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
           </div>
         </div>
+        )}
 
         {!isDemo && (
           <audio
@@ -221,7 +246,7 @@ export default function AudioPlayer({
   return (
     <div
       id="audio-player"
-      className="w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm"
+      className={shellClassName}
     >
       <audio
         ref={audioRef}
@@ -229,72 +254,124 @@ export default function AudioPlayer({
         preload="auto"
       />
 
-      {/* Play/Pause Button */}
-      <button
-        onClick={togglePlay}
-        className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm shrink-0 order-1"
-      >
-        {isPlaying ? (
-          <Pause className="w-5 h-5 fill-current" />
-        ) : (
-          <Play className="w-5 h-5 fill-current ml-0.5" />
-        )}
-      </button>
-
-      {/* Time & Progress */}
-      <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
-        <div className="flex justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-        <div className="w-full">
-          <input
-            type="range"
-            min={0}
-            max={duration || 100}
-            value={Math.min(currentTime, duration || 100)}
-            onChange={handleSeek}
-            className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-orange-500"
-          />
-        </div>
-      </div>
-
-      {/* Controls Group */}
-      <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
-        {/* Speed Toggle */}
-        <button
-          onClick={changePlaybackRate}
-          className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-orange-500 w-8 text-center"
-          title="Playback Speed"
-        >
-          {playbackRate}x
-        </button>
-
-        {/* Volume */}
-        <div className="flex items-center gap-2 group relative">
+      {compact ? (
+        <div className="flex items-center gap-3">
           <button
-            onClick={toggleMute}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            onClick={togglePlay}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700"
           >
-            {isMuted || volume === 0 ? (
-              <VolumeX className="w-5 h-5" />
+            {isPlaying ? (
+              <Pause className="h-5 w-5 fill-current" />
             ) : (
-              <Volume2 className="w-5 h-5" />
+              <Play className="ml-0.5 h-5 w-5 fill-current" />
             )}
           </button>
-          <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 ease-in-out">
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.1}
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className="w-20 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-500"
-            />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+              <span className="w-9 shrink-0 text-left">{formatTime(currentTime)}</span>
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={Math.min(currentTime, duration || 100)}
+                onChange={handleSeek}
+                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-gray-200 accent-orange-500 dark:bg-gray-700"
+              />
+              <span className="w-9 shrink-0 text-right">{formatTime(duration)}</span>
+            </div>
           </div>
+
+          <button
+            onClick={changePlaybackRate}
+            className="w-7 shrink-0 text-xs font-bold text-gray-600 hover:text-orange-500 dark:text-gray-300"
+            title="Playback Speed"
+          >
+            {playbackRate}x
+          </button>
+
+          <button
+            onClick={toggleMute}
+            className="shrink-0 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            title={isMuted || volume === 0 ? "Unmute" : "Mute"}
+          >
+            {isMuted || volume === 0 ? (
+              <VolumeX className="h-5 w-5" />
+            ) : (
+              <Volume2 className="h-5 w-5" />
+            )}
+          </button>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Play/Pause Button */}
+          <button
+            onClick={togglePlay}
+            className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-orange-600 text-white hover:bg-orange-700 transition-colors shadow-sm shrink-0 order-1"
+          >
+            {isPlaying ? (
+              <Pause className="w-5 h-5 fill-current" />
+            ) : (
+              <Play className="w-5 h-5 fill-current ml-0.5" />
+            )}
+          </button>
+
+          {/* Time & Progress */}
+          <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
+            <div className="flex justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+            <div className="w-full">
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={Math.min(currentTime, duration || 100)}
+                onChange={handleSeek}
+                className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-orange-500"
+              />
+            </div>
+          </div>
+
+          {/* Controls Group */}
+          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-gray-200 dark:border-gray-700 order-2 md:order-3">
+            {/* Speed Toggle */}
+            <button
+              onClick={changePlaybackRate}
+              className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-orange-500 w-8 text-center"
+              title="Playback Speed"
+            >
+              {playbackRate}x
+            </button>
+
+            {/* Volume */}
+            <div className="flex items-center gap-2 group relative">
+              <button
+                onClick={toggleMute}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="w-5 h-5" />
+                ) : (
+                  <Volume2 className="w-5 h-5" />
+                )}
+              </button>
+              <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 ease-in-out">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  className="w-20 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-500"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

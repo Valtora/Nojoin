@@ -11,9 +11,10 @@ interface RecordingTagEditorProps {
   recordingId: RecordingId;
   tags: Tag[];
   onTagsUpdated?: () => void;
+  compact?: boolean;
 }
 
-export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }: RecordingTagEditorProps) {
+export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, compact = false }: RecordingTagEditorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleRemoveTag = async (tagName: string) => {
@@ -34,7 +35,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }:
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className={`flex flex-wrap items-center ${compact ? "gap-2" : "mb-4 gap-3"}`}>
         {tags.map((tag) => {
           const color = getColorByKey(tag.color);
           const parentName = getParentName(tag.parent_id);
@@ -42,7 +43,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }:
           return (
             <span
               key={tag.id || tag.name}
-              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200"
+              className={`inline-flex items-center rounded-full border bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-gray-300"}`}
               title={parentName ? `Parent: ${parentName}` : undefined}
             >
               <span className={`w-2 h-2 rounded-full mr-2 ${color.dot}`} />
@@ -61,9 +62,9 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated }:
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+          className={`inline-flex items-center rounded-full border border-dashed text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-gray-200 ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-gray-300"}`}
         >
-          <Plus className="w-4 h-4 mr-1.5" />
+          <Plus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Add Tag
         </button>
       </div>

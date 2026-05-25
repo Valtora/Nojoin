@@ -13,6 +13,9 @@
   --contrast-icon-muted: #52525b;
   --contrast-border: #cbd5e1;
   --contrast-border-strong: #94a3b8;
+  --scrollbar-thumb: rgba(148, 163, 184, 0.42);
+  --scrollbar-thumb-hover: rgba(249, 115, 22, 0.52);
+  --scrollbar-track: transparent;
   --settings-tab-active-bg: #ffedd5;
   --settings-tab-active-border: #fdba74;
   --settings-tab-active-text: #9a3412;
@@ -28,6 +31,9 @@
   --contrast-icon-muted: #a1a1aa;
   --contrast-border: #4b5563;
   --contrast-border-strong: #6b7280;
+  --scrollbar-thumb: rgba(100, 116, 139, 0.52);
+  --scrollbar-thumb-hover: rgba(251, 146, 60, 0.68);
+  --scrollbar-track: transparent;
   --settings-tab-active-bg: rgba(249, 115, 22, 0.18);
   --settings-tab-active-border: rgba(251, 146, 60, 0.35);
   --settings-tab-active-text: #fed7aa;
@@ -48,7 +54,72 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+    background-color: var(--scrollbar-thumb);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
 @layer components {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+    background-color: var(--scrollbar-thumb);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .contrast-muted {
     color: var(--contrast-muted);
   }

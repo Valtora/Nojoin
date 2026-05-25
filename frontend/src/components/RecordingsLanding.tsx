@@ -4,8 +4,36 @@ import Link from "next/link";
 import { LifeBuoy, Waves } from "lucide-react";
 
 import AmbientWorkspace from "./AmbientWorkspace";
+import { useNavigationStore } from "@/lib/store";
+
+const LANDING_COPY = {
+  recordings: {
+    title: "Select a recording",
+    description:
+      "Choose a meeting from the list to review transcripts, notes, documents, and linked context.",
+    detail:
+      "If the list is empty, start a meeting or import audio to build your library.",
+  },
+  archived: {
+    title: "Select an archived recording",
+    description:
+      "Choose an archived meeting from the list to review its transcript, notes, and linked files.",
+    detail:
+      "Use filters to narrow older sessions and restore a recording when you need it back in the main library.",
+  },
+  deleted: {
+    title: "Select a deleted recording",
+    description:
+      "Choose an item from the list to inspect it before restoring or permanently deleting it.",
+    detail:
+      "The recordings list stays available here so review on smaller screens starts with browsing, not an automatic jump.",
+  },
+} as const;
 
 export default function RecordingsLanding() {
+  const currentView = useNavigationStore((state) => state.currentView);
+  const copy = LANDING_COPY[currentView];
+
   return (
     <AmbientWorkspace
       contentClassName="max-w-4xl gap-6"
@@ -22,16 +50,12 @@ export default function RecordingsLanding() {
           </div>
 
           <h1 className="mt-4 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
-            No recordings yet.
+            {copy.title}
           </h1>
 
           <div className="mt-6 space-y-3 text-base leading-7 text-gray-600 dark:text-gray-300">
-            <p>
-              Click the Start Meeting button to begin recording a meeting.
-            </p>
-            <p>
-              If you&apos;re not sure how to use Nojoin, go to the Help page in Settings for more information.
-            </p>
+            <p>{copy.description}</p>
+            <p>{copy.detail}</p>
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">

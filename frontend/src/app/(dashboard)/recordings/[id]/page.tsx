@@ -34,7 +34,7 @@ import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import Link from "next/link";
-import { Edit2, MessageSquare, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal, RefreshCw, X } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -164,6 +164,7 @@ export default function RecordingPage({ params }: PageProps) {
   // Mobile State
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [isMobileHeaderActionsOpen, setIsMobileHeaderActionsOpen] = useState(false);
 
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
@@ -393,6 +394,12 @@ export default function RecordingPage({ params }: PageProps) {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, [setActivePanel]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setIsMobileHeaderActionsOpen(false);
+    }
+  }, [isMobile]);
 
   useEffect(() => {
     if (!recording) return;
@@ -1115,77 +1122,173 @@ export default function RecordingPage({ params }: PageProps) {
     return map;
   }, [globalSpeakerById, recording?.speakers]);
 
+  const renderMobileHeaderActions = () => (
+    <div className="flex flex-wrap items-center gap-2">
+      <RecordingTagEditor
+        recordingId={recording!.id}
+        tags={recording!.tags || []}
+        compact
+        onTagsUpdated={() => {
+          getRecording(recording!.id)
+            .then(setRecording)
+            .catch(console.error);
+        }}
+      />
+      <LinkedEventPanel
+        recordingId={recording!.id}
+        linkedEvent={recording!.calendar_event}
+        compact
+        onLinkChanged={() => {
+          getRecording(recording!.id)
+            .then(setRecording)
+            .catch(console.error);
+        }}
+      />
+      {recording &&
+        (recording.status === RecordingStatus.PROCESSED ||
+          recording.status === RecordingStatus.ERROR) && (
+            <button
+              onClick={() => setShowReprocessDialog(true)}
+              className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              title="Reprocess this recording at higher quality"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Reprocess
+            </button>
+          )}
+    </div>
+  );
+
   // View Components
   const renderMainContent = () => (
     <div className="flex-1 flex flex-col min-h-0 h-full">
       {/* Header (Title, Tags, Audio Player) */}
-      <header className="p-4 pl-14 md:p-6 border-b-2 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10 shrink-0 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="min-w-0 flex-1">
-            {isEditingTitle ? (
-              <input
-                autoFocus
-                type="text"
-                value={titleValue}
-                onChange={(e) => setTitleValue(e.target.value)}
-                onBlur={handleTitleSubmit}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSubmit();
-                  if (e.key === "Escape") {
-                    setIsEditingTitle(false);
-                    setTitleValue(recording?.name || "");
-                  }
-                }}
-                className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
-              />
-            ) : (
-              <h1
-                className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white truncate mb-2 cursor-pointer hover:text-orange-600 dark:hover:text-orange-400 flex items-center gap-2 group"
-                onClick={() => setIsEditingTitle(true)}
-                title="Click to rename"
+      <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]" : "space-y-4 p-4 md:p-6"}`}>
+        {isMobile ? (
+          <>
+            <div className="flex items-start gap-3">
+              <button
+                onClick={() => router.push("/recordings")}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"
+                title="Back to Recordings"
               >
-                {recording?.name}
-                <Edit2 className="w-4 h-4 opacity-0 group-hover:opacity-50 transition-opacity" />
-              </h1>
-            )}
+                <ArrowLeft className="h-5 w-5" />
+              </button>
 
-            <div className="flex flex-col items-start gap-2">
-              <RecordingTagEditor
-                recordingId={recording!.id}
-                tags={recording!.tags || []}
-                onTagsUpdated={() => {
-                  getRecording(recording!.id)
-                    .then(setRecording)
-                    .catch(console.error);
-                }}
-              />
-              <LinkedEventPanel
-                recordingId={recording!.id}
-                linkedEvent={recording!.calendar_event}
-                onLinkChanged={() => {
-                  getRecording(recording!.id)
-                    .then(setRecording)
-                    .catch(console.error);
-                }}
-              />
+              <div className="min-w-0 flex-1 pt-0.5">
+                {isEditingTitle ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    value={titleValue}
+                    onChange={(e) => setTitleValue(e.target.value)}
+                    onBlur={handleTitleSubmit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleTitleSubmit();
+                      if (e.key === "Escape") {
+                        setIsEditingTitle(false);
+                        setTitleValue(recording?.name || "");
+                      }
+                    }}
+                    className="w-full border-b-2 border-orange-500 bg-transparent pb-1 text-xl font-bold text-gray-900 focus:outline-none dark:text-white"
+                  />
+                ) : (
+                  <h1
+                    className="flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group"
+                    onClick={() => setIsEditingTitle(true)}
+                    title="Click to rename"
+                  >
+                    <span className="min-w-0 break-words">{recording?.name}</span>
+                    <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                  </h1>
+                )}
+              </div>
+
+              <button
+                onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
+                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm transition-colors ${isMobileHeaderActionsOpen ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300" : "border-gray-200 bg-white/90 text-gray-700 hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                title={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </button>
             </div>
-          </div>
 
-          {recording &&
-            (recording.status === RecordingStatus.PROCESSED ||
-              recording.status === RecordingStatus.ERROR) && (
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setShowReprocessDialog(true)}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
-                  title="Reprocess this recording at higher quality"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Reprocess
-                </button>
+            {isMobileHeaderActionsOpen && (
+              <div className="rounded-2xl border border-orange-100 bg-orange-50/60 p-2.5 dark:border-orange-500/15 dark:bg-orange-500/5">
+                {renderMobileHeaderActions()}
               </div>
             )}
-        </div>
+          </>
+        ) : (
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0 flex-1">
+              {isEditingTitle ? (
+                <input
+                  autoFocus
+                  type="text"
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={handleTitleSubmit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTitleSubmit();
+                    if (e.key === "Escape") {
+                      setIsEditingTitle(false);
+                      setTitleValue(recording?.name || "");
+                    }
+                  }}
+                  className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
+                />
+              ) : (
+                <h1
+                  className="mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group md:text-2xl"
+                  onClick={() => setIsEditingTitle(true)}
+                  title="Click to rename"
+                >
+                  <span className="min-w-0 break-words md:truncate">
+                    {recording?.name}
+                  </span>
+                  <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                </h1>
+              )}
+
+              <div className="flex flex-col items-start gap-2">
+                <RecordingTagEditor
+                  recordingId={recording!.id}
+                  tags={recording!.tags || []}
+                  onTagsUpdated={() => {
+                    getRecording(recording!.id)
+                      .then(setRecording)
+                      .catch(console.error);
+                  }}
+                />
+                <LinkedEventPanel
+                  recordingId={recording!.id}
+                  linkedEvent={recording!.calendar_event}
+                  onLinkChanged={() => {
+                    getRecording(recording!.id)
+                      .then(setRecording)
+                      .catch(console.error);
+                  }}
+                />
+              </div>
+            </div>
+
+            {recording &&
+              (recording.status === RecordingStatus.PROCESSED ||
+                recording.status === RecordingStatus.ERROR) && (
+                  <div className="flex items-center gap-2 shrink-0 md:pt-1">
+                  <button
+                    onClick={() => setShowReprocessDialog(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                    title="Reprocess this recording at higher quality"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Reprocess
+                  </button>
+                </div>
+              )}
+          </div>
+        )}
 
         {/* Audio Player in Header */}
         {recording && 
@@ -1199,45 +1302,46 @@ export default function RecordingPage({ params }: PageProps) {
               onTimeUpdate={handleTimeUpdate}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              compact={isMobile}
             />
           )}
       </header>
 
       {/* Panel Tabs */}
-      <div className="bg-gray-50 dark:bg-gray-900 shrink-0 overflow-x-auto">
-        <div className="flex w-max min-w-full border-b-2 border-gray-200 dark:border-gray-700">
+      <div className="shrink-0 bg-gray-50 dark:bg-gray-900">
+        <div className="grid grid-cols-3 border-b-2 border-gray-200 dark:border-gray-700">
           <button
             id="tab-transcript"
             onClick={() => setActivePanel("transcript")}
-            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+            className={`flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
               activePanel === "transcript"
                 ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
                 : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
             }`}
           >
-            Transcript
+            <span className="truncate">Transcript</span>
           </button>
           <button
             id="tab-notes"
             onClick={() => setActivePanel("notes")}
-            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+            className={`flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
               activePanel === "notes"
                 ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
                 : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
             }`}
           >
-            Notes
+            <span className="truncate">Notes</span>
           </button>
           <button
             id="tab-documents"
             onClick={() => setActivePanel("documents")}
-            className={`flex items-center gap-2 px-4 md:px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-0.5 whitespace-nowrap ${
+            className={`flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
               activePanel === "documents"
                 ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
                 : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
             }`}
           >
-            Documents
+            <span className="truncate">Documents</span>
           </button>
         </div>
       </div>
@@ -1437,22 +1541,28 @@ export default function RecordingPage({ params }: PageProps) {
               </Panel>
           </PanelGroup>
         ) : isMobile ? (
-          <div className="h-full flex-1 flex flex-col min-w-0 relative">
-            {renderMainContent()}
+          <div className="flex h-full flex-1 min-w-0 flex-col bg-white dark:bg-gray-900">
+            <div className="min-h-0 flex-1">
+              {renderMainContent()}
+            </div>
 
-            {/* Mobile Chat FAB */}
-            <button
-              onClick={() => setIsMobileChatOpen(true)}
-              className="absolute bottom-6 right-6 w-14 h-14 bg-orange-600 hover:bg-orange-700 text-white rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-20"
-              title="Open Chat"
-            >
-              <MessageSquare className="w-6 h-6" />
-            </button>
+            {!isMobileChatOpen && (
+              <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-40">
+                <button
+                  onClick={() => setIsMobileChatOpen(true)}
+                  className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-950/20 transition-colors hover:bg-orange-700"
+                  title="Open Meeting Chat"
+                  aria-label="Open Meeting Chat"
+                >
+                  <MessageSquare className="h-6 w-6" />
+                </button>
+              </div>
+            )}
 
             {/* Mobile Chat Full-Screen Modal */}
             {isMobileChatOpen && (
-              <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col animate-in slide-in-from-bottom flex-1 h-dvh">
-                <header className="px-4 py-3 border-b-2 border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-950">
+              <div className="fixed inset-0 z-50 flex h-dvh flex-col bg-white animate-in slide-in-from-bottom dark:bg-gray-900">
+                <header className="flex shrink-0 items-center justify-between border-b-2 border-gray-200 bg-gray-50 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-gray-800 dark:bg-gray-950">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-orange-500" />
                     Meeting Chat

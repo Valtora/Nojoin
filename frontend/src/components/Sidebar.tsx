@@ -9,6 +9,7 @@ import {
   AlertCircle,
   HelpCircle,
   UploadCloud,
+  Menu,
   Search,
   Filter,
   X,
@@ -116,6 +117,7 @@ export default function Sidebar() {
     selectedTagIds,
     toggleTagFilter,
     clearTagFilters,
+    toggleMobileNav,
     selectionMode,
     selectedRecordingIds,
     toggleRecordingSelection,
@@ -421,26 +423,6 @@ export default function Sidebar() {
   useEffect(() => {
     clearSelection();
   }, [currentView, clearSelection]);
-
-  useEffect(() => {
-    if (
-      !mounted ||
-      currentView !== "recordings" ||
-      pathname !== "/recordings" ||
-      filteredRecordings.length === 0
-    ) {
-      return;
-    }
-
-    const latestRecording = filteredRecordings.reduce((latest, candidate) =>
-      new Date(candidate.created_at).getTime() >
-      new Date(latest.created_at).getTime()
-        ? candidate
-        : latest,
-    );
-
-    router.replace(`/recordings/${latestRecording.id}`);
-  }, [currentView, filteredRecordings, mounted, pathname, router]);
 
   // Handle resizing
   useEffect(() => {
@@ -779,6 +761,8 @@ export default function Sidebar() {
 
   // Prevent hydration mismatch
   const view = mounted ? currentView : "recordings";
+  const currentViewLabel =
+    view === "archived" ? "Archived" : view === "deleted" ? "Deleted" : "Recordings";
 
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
@@ -799,7 +783,26 @@ export default function Sidebar() {
       )}
 
       {/* Header */}
-      <div className="p-4 pl-14 md:pl-4 border-b border-orange-100/80 dark:border-gray-800/80">
+      <div className="p-4 border-b border-orange-100/80 dark:border-gray-800/80">
+        <div className="mb-3 flex items-center gap-3 md:hidden">
+          <button
+            type="button"
+            onClick={toggleMobileNav}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"
+            title="Open Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+              Library
+            </div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {currentViewLabel}
+            </div>
+          </div>
+        </div>
+
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs text-gray-500">
