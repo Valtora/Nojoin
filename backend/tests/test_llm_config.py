@@ -75,3 +75,24 @@ def test_merge_llm_config_prefers_user_meeting_edge_override() -> None:
     assert resolved.provider == "ollama"
     assert resolved.api_url == "http://localhost:11434"
     assert resolved.model == "qwen2.5:3b"
+
+
+def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settings() -> None:
+    resolved = _merge_llm_config(
+        base_config={
+            "llm_provider": "openai",
+            "openai_model": "gpt-4.1",
+            "openai_live_model": "gpt-4.1-mini",
+        },
+        system_keys={},
+        owner_settings={
+            "llm_provider": "anthropic",
+            "openai_live_model": "gpt-4.1-nano",
+            "anthropic_model": "claude-sonnet-4",
+        },
+        user_settings=None,
+        purpose=LLM_PURPOSE_MEETING_EDGE,
+    )
+
+    assert resolved.provider == "openai"
+    assert resolved.model == "gpt-4.1-mini"

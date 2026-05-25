@@ -10,6 +10,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
 from backend.utils.config_manager import (
     APP_THEMES,
+    INSTALL_WIDE_AI_SETTING_KEYS,
     SENSITIVE_KEYS,
     TRANSCRIPTION_BACKENDS,
     WHISPER_MODEL_SIZES,
@@ -98,6 +99,51 @@ class SettingsUpdate(BaseModel):
             return validate_timezone_name(value)
         return value
 
+
+def _has_configured_value(value: Any) -> bool:
+    return value is not None and value != ""
+
+
+def _apply_install_wide_ai_owner_fallback(
+    merged: dict[str, Any],
+    owner_settings: dict[str, Any] | None,
+) -> None:
+    if not owner_settings:
+        return
+
+    for field in INSTALL_WIDE_AI_SETTING_KEYS:
+        current_value = merged.get(field)
+        owner_value = owner_settings.get(field)
+        if _has_configured_value(current_value) or not _has_configured_value(owner_value):
+            continue
+        merged[field] = owner_value
+
+
+def _apply_default_user_settings(
+    merged: dict[str, Any],
+    default_user_settings: dict[str, Any],
+) -> None:
+    for key, value in default_user_settings.items():
+        current_value = merged.get(key)
+        if key in INSTALL_WIDE_AI_SETTING_KEYS and _has_configured_value(current_value):
+            continue
+        merged[key] = value
+
+
+def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
+    install_wide_updates = {
+        key: value
+        for key, value in update_data.items()
+        if key in INSTALL_WIDE_AI_SETTING_KEYS
+    }
+    if not install_wide_updates:
+        return
+
+    config_data = config_manager.get_all()
+    config_data.update(install_wide_updates)
+    config_manager.save_config(config_data)
+    config_manager.reload()
+
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """
     Merges system config, default user settings, and user-specific settings.
@@ -105,35 +151,21 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """
     # 1. Start with System Config (read-only for users)
     merged = config_manager.get_all()
-    
-    # 2. Apply Default User Settings
+
+    # 2. Load Default User Settings for missing user-scoped values.
     default_user_settings = get_default_user_settings()
-    merged.update(default_user_settings)
-    
+
     # 2.5 Apply Owner's System-Wide LLM Configuration Defaults
     from backend.models.user import User
     from sqlmodel import select
     result = await db.execute(select(User).where(User.role == "owner"))
     owner = result.scalar_one_or_none()
     owner_settings = getattr(owner, "settings", {}) if owner else {}
-    
-    system_fields = [
-        "llm_provider",
-        "gemini_model",
-        "gemini_live_model",
-        "openai_model",
-        "openai_live_model",
-        "anthropic_model",
-        "anthropic_live_model",
-        "ollama_model",
-        "ollama_live_model",
-        "ollama_api_url",
-    ]
-    for sys_field in system_fields:
-        if owner_settings and owner_settings.get(sys_field):
-            merged[sys_field] = owner_settings[sys_field]
+
+    _apply_install_wide_ai_owner_fallback(merged, owner_settings)
     
     # 3. Apply User Specific Settings
+    _apply_default_user_settings(merged, default_user_settings)
     sanitized_user_settings = _get_mutable_user_settings(user_settings)
     if sanitized_user_settings:
         merged.update(
@@ -204,6 +236,9 @@ async def _save_user_settings(
             log_message="Rejected settings update due to invalid value.",
             exc=e,
         )
+
+    if is_admin:
+        _persist_install_wide_ai_settings(update_data)
 
     current_settings.update(update_data)
     current_user.settings = current_settings

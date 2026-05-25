@@ -51,6 +51,20 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
     }
 )
 
+INSTALL_WIDE_AI_SETTING_KEYS = (
+    "llm_provider",
+    "enable_meeting_edge",
+    "gemini_model",
+    "gemini_live_model",
+    "openai_model",
+    "openai_live_model",
+    "anthropic_model",
+    "anthropic_live_model",
+    "ollama_model",
+    "ollama_live_model",
+    "ollama_api_url",
+)
+
 def _get_default_device():
     """Determine default processing device safely."""
     # Always default to 'auto' so the worker can decide at runtime based on availability.
@@ -177,8 +191,12 @@ def is_meeting_edge_enabled(settings: dict | None) -> bool:
     """Returns whether Meeting Edge is enabled for the given user settings."""
     defaults = get_default_user_settings()
     sanitized = strip_legacy_automatic_ai_settings(settings)
+    user_value = sanitized.get("enable_meeting_edge")
+    if user_value is not None:
+        return bool(user_value)
+
     return bool(
-        sanitized.get(
+        config_manager.get(
             "enable_meeting_edge",
             defaults.get("enable_meeting_edge", True),
         )

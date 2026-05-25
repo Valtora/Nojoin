@@ -108,6 +108,17 @@ export default function AISettings({
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
 
+  const persistSettingsUpdate = (updates: Settings) => {
+    onUpdate(updates);
+    if (!onPersist) {
+      return;
+    }
+
+    void onPersist(updates).catch((error) => {
+      console.error("Failed to persist AI settings update", error);
+    });
+  };
+
   const getProviderConnectionDetails = (provider: string) => {
     let rawKey = "";
     let url = "";
@@ -167,7 +178,19 @@ export default function AISettings({
       else updates.gemini_model = value;
     }
 
-    onUpdate(updates);
+    persistSettingsUpdate(updates);
+  };
+
+  const getModelOptionsForProvider = (kind: "main" | "live") => {
+    const selectedModel = getSelectedModelForProvider(kind);
+    if (!selectedModel) {
+      return availableModels;
+    }
+
+    return [
+      selectedModel,
+      ...availableModels.filter((model) => model !== selectedModel),
+    ];
   };
 
   useEffect(() => {
@@ -394,6 +417,8 @@ export default function AISettings({
   const showHFSection = isAdmin && (!hasSearch || showHF);
   const showTranscriptionSection = isAdmin && (!hasSearch || showTranscription);
   const showDependenciesSection = isAdmin && (!hasSearch || showDependencies);
+  const mainModelOptions = getModelOptionsForProvider("main");
+  const liveModelOptions = getModelOptionsForProvider("live");
 
   if (
     !showLLMSection &&
@@ -425,37 +450,7 @@ export default function AISettings({
           width="wide"
         >
           <div className="mx-auto max-w-3xl space-y-4">
-            {!isAdmin && (
-              <SettingsCallout
-                tone="info"
-                message="Credentials remain installation-managed. You can still change your preferred provider, model, Ollama endpoint, and AI title style."
-              />
-            )}
-
-            <SettingsCallout
-              tone="info"
-              title="Meeting Edge can use a lighter model"
-              message="Leave the Meeting Edge model blank to reuse the main AI model, or choose a faster lower-cost model just for the live Meeting Edge card."
-            />
-
             <SettingsPanel className="space-y-6">
-            <div className="flex items-start justify-between gap-4 rounded-2xl border border-orange-200/70 bg-orange-50/70 px-4 py-4 dark:border-orange-500/20 dark:bg-orange-500/10">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-gray-900 dark:text-white">
-                  Enable Meeting Edge
-                </div>
-                <p className="text-xs leading-5 contrast-helper">
-                  Turn off the live Meeting Edge card and skip its model calls during recordings to reduce API spend.
-                </p>
-              </div>
-              <Switch
-                checked={settings.enable_meeting_edge !== false}
-                onCheckedChange={(checked) =>
-                  onUpdate({ ...settings, enable_meeting_edge: checked })
-                }
-              />
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Provider */}
               <div>
@@ -556,34 +551,44 @@ export default function AISettings({
                   onChange={(e) =>
                     updateSelectedModelForProvider("main", e.target.value)
                   }
-                  disabled={availableModels.length === 0}
+                  disabled={mainModelOptions.length === 0}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 >
                   <option value="" disabled>
                     Select a model...
                   </option>
-                  {availableModels.map((model) => (
+                  {mainModelOptions.map((model) => (
                     <option key={model} value={model}>
                       {model}
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs contrast-helper">
-                  Used for full-meeting notes, speaker inference, titles, and chat.
-                </p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                  <Tooltip
-                    content="Optional separate model for Meeting Edge live meeting guidance."
-                    position="right"
-                  >
-                    <span className="flex items-center gap-1 cursor-help">
-                      Meeting Edge model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                    <Tooltip
+                      content="Optional separate model for Meeting Edge live meeting guidance. Leave it blank to reuse the main AI model."
+                      position="right"
+                    >
+                      <span className="flex items-center gap-1 cursor-help">
+                        Meeting Edge model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                      </span>
+                    </Tooltip>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Enable Meeting Edge
                     </span>
-                  </Tooltip>
-                </label>
+                    <Switch
+                      checked={settings.enable_meeting_edge !== false}
+                      onCheckedChange={(checked) =>
+                        onUpdate({ ...settings, enable_meeting_edge: checked })
+                      }
+                    />
+                  </div>
+                </div>
                 <select
                   value={getSelectedModelForProvider("live")}
                   onChange={(e) =>
@@ -591,20 +596,17 @@ export default function AISettings({
                   }
                   disabled={
                     settings.enable_meeting_edge === false ||
-                    availableModels.length === 0
+                    liveModelOptions.length === 0
                   }
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 >
                   <option value="">Use main model</option>
-                  {availableModels.map((model) => (
+                  {liveModelOptions.map((model) => (
                     <option key={`meeting-edge-${model}`} value={model}>
                       {model}
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs contrast-helper">
-                  Used only for the Meeting Edge card during active meetings. This is a good place to pick a lighter or cheaper model.
-                </p>
               </div>
             </div>
 
@@ -844,11 +846,6 @@ export default function AISettings({
           width="regular"
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-4">
-            <SettingsCallout
-              tone="info"
-              title="Live and final transcription use the same engine"
-              message="Normal recording reuses the live transcript during final processing. Change the engine here before manually reprocessing a meeting when you want a different transcription pass."
-            />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 <Tooltip

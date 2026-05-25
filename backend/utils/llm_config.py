@@ -74,7 +74,10 @@ def _merge_llm_config(
     if owner_settings:
         for field in SYSTEM_LLM_FIELDS:
             value = owner_settings.get(field)
-            if value:
+            current_value = merged.get(field)
+            if value is not None and value != "" and (
+                current_value is None or current_value == ""
+            ):
                 merged[field] = value
 
     if sanitized_user_settings:
