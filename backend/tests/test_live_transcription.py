@@ -2396,6 +2396,7 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
 
     concatenated_paths: list[list[str]] = []
     queued_recordings: list[int] = []
+    cancel_during_finalize = False
 
     def fake_concatenate_wavs(paths: list[str], destination: str) -> None:
         concatenated_paths.append(list(paths))
@@ -2406,11 +2407,17 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
     async def fake_list_recording_audio_chunks(*args, **kwargs):
         db = args[0]
         rows = await real_list_recording_audio_chunks(*args, **kwargs)
+        if not cancel_during_finalize:
+            return rows
         await db.execute(
             text(
                 "UPDATE recordings SET status = 'CANCELLED', processing_step = 'Cancelled by user' WHERE id = :recording_id"
             ),
-            {"recording_id": kwargs.get("recording_id", args[1])},
+            {
+                "recording_id": (
+                    kwargs["recording_id"] if "recording_id" in kwargs else args[1]
+                )
+            },
         )
         await db.commit()
         return rows
@@ -2435,6 +2442,7 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         params={"sequence": 0},
         files={"file": ("0.wav", wav_bytes, "audio/wav")},
     )
+    cancel_during_finalize = True
     finalize_response = await client.post("/api/v1/recordings/live-rec-public-id/finalize")
 
     assert upload_response.status_code == 200

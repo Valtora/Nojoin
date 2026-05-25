@@ -311,6 +311,21 @@ async def get_current_recording_client_user(
     token: Optional[str] = Depends(reusable_oauth2),
     recording_id: Optional[str] = None,
 ) -> User:
+    user, _ = await get_current_recording_client_details(
+        request,
+        db,
+        token,
+        recording_id,
+    )
+    return user
+
+
+async def get_current_recording_client_details(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(reusable_oauth2),
+    recording_id: Optional[str] = None,
+) -> tuple[User, dict[str, Any]]:
     actual_token, used_cookie_auth = _resolve_request_token(request, token)
 
     if not actual_token:
@@ -323,22 +338,30 @@ async def get_current_recording_client_user(
     if used_cookie_auth:
         enforce_trusted_browser_origin(request)
 
-    required_scopes = (
-        RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS
-        if recording_id is not None
-        else RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS
-    )
-    user, payload = await get_authenticated_token_details(
-        db,
-        actual_token,
-        allowed_token_types=RECORDING_CLIENT_TOKEN_TYPES,
-        required_scopes_by_type=required_scopes,
-    )
-    if recording_id is not None:
-        _validate_companion_recording_claim(payload, recording_id)
+        user, payload = await get_authenticated_token_details(
+            db,
+            actual_token,
+            allowed_token_types=STANDARD_USER_TOKEN_TYPES,
+            required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
+        )
+    else:
+        required_scopes = (
+            RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS
+            if recording_id is not None
+            else RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS
+        )
+        user, payload = await get_authenticated_token_details(
+            db,
+            actual_token,
+            allowed_token_types=RECORDING_CLIENT_TOKEN_TYPES,
+            required_scopes_by_type=required_scopes,
+        )
+        if recording_id is not None:
+            _validate_companion_recording_claim(payload, recording_id)
 
+    request.state.recording_client_payload = payload
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
-    return user
+    return user, payload
 
 
 async def get_current_companion_bootstrap_user(
@@ -346,6 +369,8 @@ async def get_current_companion_bootstrap_user(
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(reusable_oauth2),
 ) -> User:
+    # Deprecated during the browser-capture cutover. Retained for the legacy
+    # Companion upload-token refresh path until Phase E removes it.
     user, _ = await get_current_companion_bootstrap_details(
         request,
         db,

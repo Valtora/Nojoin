@@ -14,12 +14,19 @@ from sqlmodel import select
 import aiofiles
 from uuid import uuid4
 
-from backend.api.deps import get_current_companion_bootstrap_user, get_current_recording_client_user, get_db, get_current_user, get_current_user_stream
+from backend.api.deps import (
+    get_current_companion_bootstrap_user,
+    get_current_recording_client_user,
+    get_db,
+    get_current_user,
+    get_current_user_stream,
+)
 from backend.api.error_handling import sanitized_http_exception
 from backend.core import security
 from backend.models.recording import (
     ClientStatus,
     Recording,
+    RecordingCaptureLifecycleResponse,
     RecordingInitResponse,
     RecordingPipelineGeneration,
     RecordingStatus,
@@ -86,9 +93,54 @@ async def _get_owned_recording(
         user_id=user_id,
         options=options,
     )
-    if recording is None:
+    return _assert_recording_owner(recording, user_id)
+
+
+def _assert_recording_owner(recording: Recording | None, user_id: int) -> Recording:
+    if recording is None or recording.user_id != user_id:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
+
+
+async def _get_active_capture_recording_for_user(
+    db: AsyncSession,
+    user_id: int,
+) -> Recording | None:
+    query = (
+        select(Recording)
+        .where(Recording.user_id == user_id)
+        .where(Recording.status.in_([RecordingStatus.UPLOADING, RecordingStatus.PAUSED]))
+        .where(Recording.is_deleted == False)
+        .order_by(Recording.updated_at.desc())
+    )
+    result = await db.execute(query)
+    return result.scalars().first()
+
+
+def _get_last_uploaded_sequence(recording_id: int) -> int:
+    temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        return -1
+
+    last_sequence = -1
+    for entry in temp_dir.iterdir():
+        if not entry.is_file():
+            continue
+        try:
+            sequence = int(entry.stem)
+        except ValueError:
+            continue
+        last_sequence = max(last_sequence, sequence)
+    return last_sequence
+
+
+def _build_active_recording_conflict(recording: Recording) -> dict[str, str]:
+    return {
+        "code": "active_recording_exists",
+        "message": "Handle the existing active recording before starting a new one.",
+        "recording_id": recording.public_id,
+        "status": recording.status.value,
+    }
 
 
 def get_initial_proxy_path(file_path: str) -> Optional[str]:
@@ -320,7 +372,6 @@ async def _bootstrap_import_audio_windows(
 
 async def _list_recording_audio_chunks(
     db: AsyncSession,
-    *,
     recording_id: int,
     source_kind: str | None = None,
 ) -> list[RecordingAudioChunk]:
@@ -342,7 +393,7 @@ async def _sync_recording_audio_window_manifests(
 ) -> list[RecordingAudioWindowManifest]:
     chunk_rows = await _list_recording_audio_chunks(
         db,
-        recording_id=recording_id,
+        recording_id,
         source_kind=source_kind,
     )
     if not chunk_rows:
@@ -501,7 +552,7 @@ def get_ordinal_suffix(day: int) -> str:
 
 
 def _ensure_recording_accepts_companion_uploads(recording: Recording) -> None:
-    if recording.status != RecordingStatus.UPLOADING:
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,
             detail=COMPANION_UPLOAD_CLOSED_DETAIL,
@@ -509,10 +560,24 @@ def _ensure_recording_accepts_companion_uploads(recording: Recording) -> None:
 
 
 def _ensure_recording_accepts_companion_status_updates(recording: Recording) -> None:
-    if recording.status != RecordingStatus.UPLOADING:
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,
             detail=COMPANION_STATUS_UPDATES_CLOSED_DETAIL,
+        )
+
+
+def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
+    if recording.status == RecordingStatus.PAUSED:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording is paused. Resume or discard it before finalizing.",
+        )
+
+    if recording.status != RecordingStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
         )
 
 def generate_default_meeting_name() -> str:
@@ -667,13 +732,23 @@ async def batch_permanently_delete_recordings(
 
 @router.post("/init", response_model=RecordingInitResponse)
 async def init_upload(
+    request: Request,
     name: Optional[str] = Query(None, description="Name of the recording"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_recording_client_user),
 ):
     """
     Initialize a multipart upload.
     """
+    token_payload = getattr(request.state, "recording_client_payload", {})
+
+    active_recording = await _get_active_capture_recording_for_user(db, current_user.id)
+    if active_recording is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=_build_active_recording_conflict(active_recording),
+        )
+
     # Create a placeholder file path (will be used after finalization)
     unique_filename = f"{uuid4()}.wav"
     file_path = str(recordings_root_dir() / unique_filename)
@@ -698,18 +773,92 @@ async def init_upload(
 
     recording_upload_temp_dir(recording.id, create=True)
 
-    upload_token = security.create_access_token(
-        current_user.username,
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_RECORDING_SCOPE],
-        expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
-        extra_claims={"recording_public_id": recording.public_id},
-    )
+    upload_token: Optional[str] = None
+    if token_payload.get("token_type") == security.COMPANION_TOKEN_TYPE:
+        upload_token = security.create_access_token(
+            current_user.username,
+            token_type=security.COMPANION_TOKEN_TYPE,
+            scopes=[security.COMPANION_RECORDING_SCOPE],
+            expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
+            extra_claims={"recording_public_id": recording.public_id},
+        )
 
     return RecordingInitResponse(
         id=recording.public_id,
         name=recording.name,
         upload_token=upload_token,
+    )
+
+
+@router.post("/{recording_id}/pause", response_model=RecordingCaptureLifecycleResponse)
+async def pause_upload(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_recording_client_user),
+):
+    """
+    Pause an in-flight recording session while retaining uploaded chunks.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
+        raise HTTPException(status_code=409, detail=COMPANION_UPLOAD_CLOSED_DETAIL)
+
+    if recording.status != RecordingStatus.PAUSED:
+        recording.status = RecordingStatus.PAUSED
+        recording.client_status = ClientStatus.PAUSED
+        db.add(recording)
+        await db.commit()
+        await db.refresh(recording)
+
+        try:
+            record_pipeline_metric(
+                stage="recording_paused",
+                recording_id=recording.id,
+                payload={"public_id": recording.public_id},
+                log=logger,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to record pause metric for recording %s: %s",
+                recording.id,
+                exc,
+            )
+
+    return RecordingCaptureLifecycleResponse(
+        recording_id=recording.public_id,
+        status=recording.status,
+        last_sequence=_get_last_uploaded_sequence(recording.id),
+    )
+
+
+@router.post("/{recording_id}/resume", response_model=RecordingCaptureLifecycleResponse)
+async def resume_upload(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_recording_client_user),
+):
+    """
+    Resume a paused recording session.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if recording.status != RecordingStatus.PAUSED:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording is not paused",
+        )
+
+    recording.status = RecordingStatus.UPLOADING
+    recording.client_status = ClientStatus.UPLOADING
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    return RecordingCaptureLifecycleResponse(
+        recording_id=recording.public_id,
+        status=recording.status,
+        last_sequence=_get_last_uploaded_sequence(recording.id),
     )
 
 @router.post("/{recording_id}/segment")
@@ -841,7 +990,7 @@ async def finalize_upload(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    _ensure_recording_accepts_companion_uploads(recording)
+    _ensure_recording_can_finalize_upload(recording)
 
     await _sync_recording_audio_chunks_from_directory(
         db,
@@ -1358,6 +1507,8 @@ async def list_recordings_root(
     include_deleted: bool = Query(False, description="Include deleted recordings"),
     only_archived: bool = Query(False, description="Only show archived recordings"),
     only_deleted: bool = Query(False, description="Only show deleted recordings"),
+    status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
+    user_filter: Optional[str] = Query(None, alias="user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1368,6 +1519,7 @@ async def list_recordings_root(
         skip=skip, limit=limit, q=q, start_date=start_date, end_date=end_date,
         speaker_ids=speaker_ids, tag_ids=tag_ids, include_archived=include_archived,
         include_deleted=include_deleted, only_archived=only_archived, only_deleted=only_deleted,
+        status_filters=status_filters, user_filter=user_filter,
         db=db, current_user=current_user
     )
 
@@ -1384,6 +1536,8 @@ async def list_recordings(
     include_deleted: bool = Query(False, description="Include deleted recordings"),
     only_archived: bool = Query(False, description="Only show archived recordings"),
     only_deleted: bool = Query(False, description="Only show deleted recordings"),
+    status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
+    user_filter: Optional[str] = Query(None, alias="user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1391,7 +1545,13 @@ async def list_recordings(
     List all recordings with optional search and filtering.
     By default, excludes archived and deleted recordings.
     """
+    if user_filter is not None and user_filter != "me":
+        raise HTTPException(status_code=400, detail="Only user=me is supported")
+
     query = select(Recording).where(Recording.user_id == current_user.id).distinct()
+
+    if status_filters:
+        query = query.where(Recording.status.in_(list(status_filters)))
     
     # Archive/Delete filtering
     if only_deleted:
@@ -1825,7 +1985,7 @@ async def discard_companion_upload(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    if recording.status != RecordingStatus.UPLOADING:
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=400,
             detail="Only in-flight companion uploads can be discarded",
@@ -1838,7 +1998,16 @@ async def discard_companion_upload(
         logger=logger,
     )
 
-    await db.delete(recording)
+    await db.execute(
+        delete(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording.id)
+    )
+    await db.execute(
+        delete(RecordingAudioWindowManifest).where(
+            RecordingAudioWindowManifest.recording_id == recording.id
+        )
+    )
+    await db.execute(delete(Transcript).where(Transcript.recording_id == recording.id))
+    await db.execute(delete(Recording).where(Recording.id == recording.id))
     await db.commit()
 
     return {"ok": True}

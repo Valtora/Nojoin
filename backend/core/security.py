@@ -35,6 +35,8 @@ COMPANION_LOCAL_CONTROL_TOKEN_TYPE = "companion_local_control"
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 COMPANION_BOOTSTRAP_SCOPE = "companion:init"
+# Deprecated during the browser-capture cutover. Retained for legacy
+# Companion compatibility until the follow-up removal phase lands.
 COMPANION_RECORDING_SCOPE = "recordings:companion"
 COMPANION_PAIRING_ID_CLAIM = "companion_pairing_id"
 COMPANION_LOCAL_CONTROL_AUDIENCE = "nojoin-companion-local"

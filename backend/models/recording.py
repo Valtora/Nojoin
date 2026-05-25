@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class RecordingStatus(str, Enum):
     UPLOADING = "UPLOADING"
+    PAUSED = "PAUSED"
     RECORDED = "RECORDED"
     QUEUED = "QUEUED"
     PROCESSING = "PROCESSING"
@@ -166,7 +167,13 @@ class RecordingUpdate(SQLModel):
 class RecordingInitResponse(SQLModel):
     id: str
     name: str
-    upload_token: str
+    upload_token: Optional[str] = None
+
+
+class RecordingCaptureLifecycleResponse(SQLModel):
+    recording_id: str
+    status: RecordingStatus
+    last_sequence: int
 
 
 class RecordingUploadTokenResponse(SQLModel):
