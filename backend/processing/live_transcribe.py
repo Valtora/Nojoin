@@ -68,9 +68,14 @@ DEFAULT_FORCED_MAX = 8.0
 DEFAULT_MAX_SEGMENT_S = 20.0
 # Sample rate of the live audio buffer.
 LIVE_SAMPLE_RATE = 16000
-# Silence threshold (ms) for the live lane: longer than the batch default so
-# normal inter-phrase pauses do not fragment the live transcript.
-LIVE_MIN_SILENCE_MS = 700
+# Silence threshold (ms) for the live lane. Set tight enough that natural
+# Q&A handovers (e.g. a host's question followed immediately by a guest's
+# answer with a < 500 ms pause) cleave into separate live utterances rather
+# than arriving at reconciliation as one merged segment that absorbs both
+# speakers' words. The previous 700 ms value commonly produced cross-speaker
+# bleed at conversational transitions. Raise cautiously: lowering further
+# may fragment a single speaker's normal pauses into many short utterances.
+LIVE_MIN_SILENCE_MS = 320
 LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
 LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.45
 LIVE_NEW_SPEAKER_THRESHOLD = 0.35
@@ -78,6 +83,11 @@ LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
 LIVE_MIN_EMBEDDING_DURATION_S = 0.5
 LIVE_VOICEPRINT_MIN_CLEAN_DURATION_S = 1.5
 LIVE_RECORDING_SPEAKER_VOICEPRINT_ALPHA = 0.20
+# Utterances at least this long extract their identification embedding from a
+# centered sub-window rather than the full clip, so cross-speaker audio at
+# the utterance boundaries does not contaminate recording-speaker voiceprints.
+LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S = 2.0
+LIVE_EMBEDDING_CENTER_TRIM_RATIO = 0.15
 LIVE_GLOBAL_SPEAKER_VOICEPRINT_ALPHA = 0.10
 LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
 
@@ -788,10 +798,22 @@ def _resolve_live_speaker(
         duration = 0.0
 
     if duration >= LIVE_MIN_EMBEDDING_DURATION_S:
+        # For utterances long enough to safely trim, extract the embedding
+        # from a centered sub-window. This avoids feeding cross-speaker
+        # audio from boundary regions into recording-speaker voiceprints
+        # when the utterance straddles a speaker change.
+        if duration >= LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S:
+            trim_ratio = LIVE_EMBEDDING_CENTER_TRIM_RATIO
+            embedding_start = max(0.0, duration * trim_ratio)
+            embedding_end = max(embedding_start + LIVE_MIN_EMBEDDING_DURATION_S, duration * (1.0 - trim_ratio))
+            embedding_end = min(embedding_end, duration)
+        else:
+            embedding_start = 0.0
+            embedding_end = duration
         try:
             embedding = extract_embedding_for_segments(
                 audio_path,
-                [(0.0, duration)],
+                [(embedding_start, embedding_end)],
                 device_str=merged_config.get("processing_device", "auto"),
                 hf_token=merged_config.get("hf_token"),
             )
@@ -801,6 +823,8 @@ def _resolve_live_speaker(
                 recording_id=recording_id,
                 payload={
                     "duration_s": round(duration, 3),
+                    "embedding_window_start_s": round(embedding_start, 3),
+                    "embedding_window_end_s": round(embedding_end, 3),
                     "error": str(exc),
                 },
                 status="error",
@@ -811,6 +835,18 @@ def _resolve_live_speaker(
                 recording_id,
                 exc,
                 exc_info=True,
+            )
+        else:
+            record_pipeline_metric(
+                stage="live_speaker_embedding_window",
+                recording_id=recording_id,
+                payload={
+                    "duration_s": round(duration, 3),
+                    "embedding_window_start_s": round(embedding_start, 3),
+                    "embedding_window_end_s": round(embedding_end, 3),
+                    "centered": bool(duration >= LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S),
+                },
+                log=logger,
             )
 
     def _record_resolution(

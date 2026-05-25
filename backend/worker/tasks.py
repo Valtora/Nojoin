@@ -101,6 +101,7 @@ from backend.utils.canonical_pipeline import (
     ensure_processing_run,
     finalize_utterances_from_segments,
     reconcile_completed_diarization_windows,
+    refine_recording_utterances_via_segmentation,
 )
 from backend.utils.rolling_diarization import (
     build_diarization_window_payload,
@@ -2423,6 +2424,39 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     session,
                     recording.id,
                     transcript=transcript,
+                )
+
+            # Phase F4: frame-level segmentation safety net for utterances
+            # that span a speaker change but slipped through rolling
+            # diarization's coarser turn boundaries.
+            try:
+                with pipeline_metric_timer(
+                    stage="segmentation_refinement",
+                    recording_id=recording_id,
+                    payload={"input_path": processed_audio_path},
+                    log=logger,
+                ) as seg_metric:
+                    seg_summary = refine_recording_utterances_via_segmentation(
+                        session,
+                        recording_id=recording.id,
+                        audio_path=processed_audio_path,
+                        device_str=str(merged_config.get("processing_device", "auto")),
+                        hf_token=config_manager.get("hf_token"),
+                        source="finalize_segmentation_refinement",
+                    )
+                    seg_metric["payload"].update(seg_summary)
+                if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
+                    updated_segments = build_transcript_segments_for_read(
+                        session,
+                        recording.id,
+                        transcript=transcript,
+                    )
+            except Exception as seg_exc:
+                logger.warning(
+                    "Segmentation refinement pass failed for recording %s: %s",
+                    recording.id,
+                    seg_exc,
+                    exc_info=True,
                 )
 
         recording_speakers = session.exec(

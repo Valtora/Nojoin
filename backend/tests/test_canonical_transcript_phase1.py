@@ -4762,3 +4762,211 @@ async def test_identical_finalize_retry_is_idempotent(
 
         assert processing_run_count == 1
         assert active_utterance_count == 1
+
+def _make_turn(turn_id: int, start_ms: int, end_ms: int, speaker_id: int | None) -> Any:
+    from backend.models.pipeline import DiarizationWindowTurn
+
+    return DiarizationWindowTurn(
+        id=turn_id,
+        window_result_id=1,
+        local_speaker_key=f"SPEAKER_{turn_id:02d}",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        matched_recording_speaker_id=speaker_id,
+    )
+
+
+def _make_speaker(speaker_id: int, label: str) -> Any:
+    from backend.models.speaker import RecordingSpeaker
+
+    return RecordingSpeaker(
+        id=speaker_id,
+        recording_id=1,
+        diarization_label=label,
+    )
+
+
+def _make_utterance(
+    *,
+    start_ms: int,
+    end_ms: int,
+    text: str,
+    words: list[dict[str, int | str]] | None = None,
+    public_id: str = "utt-test-1",
+) -> Any:
+    from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
+
+    payload: dict[str, Any] = {}
+    if words is not None:
+        payload = {
+            "asr_segments": [
+                {
+                    "start_ms": start_ms,
+                    "end_ms": end_ms,
+                    "text": text,
+                    "words": words,
+                }
+            ],
+            "asr_word_timestamps_available": True,
+        }
+
+    return TranscriptUtterance(
+        id=1,
+        public_id=public_id,
+        recording_id=1,
+        sort_key="0001",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        text=text,
+        speaker_label="LIVE_01",
+        state=TranscriptUtteranceState.PROVISIONAL,
+        source_kind="live",
+        confidence_payload=payload or None,
+    )
+
+
+def test_word_level_split_tolerates_unmapped_middle_word() -> None:
+    """Phase D1: a single word without a matched turn must not abort the split."""
+    from backend.utils.canonical_pipeline import (
+        _build_split_replacement_segments_from_diarization,
+    )
+
+    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
+    # SPEAKER_00 covers 0-400ms (mapped to id=1), SPEAKER_01 covers 800-1200ms
+    # (mapped to id=2). The middle word at 500-700ms has no overlapping turn.
+    turn_rows = [
+        _make_turn(1, 0, 400, 1),
+        _make_turn(2, 800, 1200, 2),
+    ]
+    utterance = _make_utterance(
+        start_ms=0,
+        end_ms=1200,
+        text="hello cruel world",
+        words=[
+            {"start_ms": 0, "end_ms": 400, "word": "hello"},
+            {"start_ms": 500, "end_ms": 700, "word": "cruel"},
+            {"start_ms": 800, "end_ms": 1200, "word": "world"},
+        ],
+    )
+
+    segments = _build_split_replacement_segments_from_diarization(
+        utterance,
+        turn_rows=turn_rows,
+        recording_speakers_by_id=speakers,
+        window_result_id=99,
+    )
+
+    assert len(segments) == 2
+    assert [segment["speaker"] for segment in segments] == ["LIVE_01", "LIVE_02"]
+    # Middle word inherits a neighbour rather than aborting the split.
+    text_by_speaker = {segment["speaker"]: segment["text"] for segment in segments}
+    assert "hello" in text_by_speaker["LIVE_01"]
+    assert "world" in text_by_speaker["LIVE_02"]
+
+
+def test_turn_boundary_splitter_handles_utterance_without_word_timestamps() -> None:
+    """Phase D2: utterances missing word timestamps still split at turn boundaries."""
+    from backend.utils.canonical_pipeline import (
+        _build_turn_boundary_split_segments_from_diarization,
+    )
+
+    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
+    turn_rows = [
+        _make_turn(1, 0, 500, 1),
+        _make_turn(2, 500, 1000, 2),
+    ]
+    utterance = _make_utterance(
+        start_ms=0,
+        end_ms=1000,
+        text="one two three four",
+        words=None,
+    )
+
+    segments = _build_turn_boundary_split_segments_from_diarization(
+        utterance,
+        turn_rows=turn_rows,
+        recording_speakers_by_id=speakers,
+        window_result_id=42,
+    )
+
+    assert len(segments) == 2
+    assert [segment["speaker"] for segment in segments] == ["LIVE_01", "LIVE_02"]
+    # Proportional whitespace-token split: 4 words across two equal halves.
+    assert segments[0]["text"].split() == ["one", "two"]
+    assert segments[1]["text"].split() == ["three", "four"]
+    assert (
+        segments[0]["confidence_payload"]["rolling_diarization"]["split_strategy"]
+        == "diarization_turn_boundary"
+    )
+    assert (
+        segments[0]["confidence_payload"]["rolling_diarization"]["split_from_public_id"]
+        == utterance.public_id
+    )
+    assert segments[0]["confidence_payload"]["asr_word_timestamps_available"] is False
+
+
+def test_match_utterance_flags_boundary_and_dampens_confidence() -> None:
+    """Phase D3: ambiguous overlap flags is_boundary_utterance and dampens confidence."""
+    from backend.utils.canonical_pipeline import (
+        ROLLING_DIARIZATION_BOUNDARY_CONFIDENCE_DAMPENER,
+        _match_utterance_from_diarization_turns,
+    )
+
+    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
+    # 60/40 overlap split — top ratio 0.6, second ratio 0.4 — both ≥ 0.30.
+    turn_rows = [
+        _make_turn(1, 0, 600, 1),
+        _make_turn(2, 600, 1000, 2),
+    ]
+    utterance = _make_utterance(
+        start_ms=0,
+        end_ms=1000,
+        text="ambiguous boundary speech",
+        words=None,
+    )
+
+    matched, confidence, evidence = _match_utterance_from_diarization_turns(
+        utterance,
+        turn_rows=turn_rows,
+        recording_speakers_by_id=speakers,
+    )
+
+    assert matched is not None
+    assert int(matched.id) == 1
+    assert evidence["is_boundary_utterance"] is True
+    assert 2 in evidence["boundary_overlapping_recording_speaker_ids"]
+    raw_confidence = evidence["raw_confidence"]
+    assert confidence == round(raw_confidence * ROLLING_DIARIZATION_BOUNDARY_CONFIDENCE_DAMPENER, 4)
+    assert evidence.get("boundary_dampened") is True
+
+
+def test_match_utterance_does_not_dampen_when_overlap_is_clear() -> None:
+    """Phase D3 (negative): dominant overlap leaves confidence un-dampened."""
+    from backend.utils.canonical_pipeline import (
+        _match_utterance_from_diarization_turns,
+    )
+
+    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
+    # 90/10 overlap split — second ratio 0.1 < 0.30 ambiguity threshold.
+    turn_rows = [
+        _make_turn(1, 0, 900, 1),
+        _make_turn(2, 900, 1000, 2),
+    ]
+    utterance = _make_utterance(
+        start_ms=0,
+        end_ms=1000,
+        text="clearly speaker one",
+        words=None,
+    )
+
+    matched, confidence, evidence = _match_utterance_from_diarization_turns(
+        utterance,
+        turn_rows=turn_rows,
+        recording_speakers_by_id=speakers,
+    )
+
+    assert matched is not None
+    assert int(matched.id) == 1
+    assert evidence["is_boundary_utterance"] is False
+    assert evidence.get("boundary_dampened") is not True
+    assert confidence == 0.9

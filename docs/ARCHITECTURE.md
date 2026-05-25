@@ -77,8 +77,10 @@ The normal backend processing path is:
 5. Pyannote diarisation.
 6. Phantom speaker filtering.
 7. Merge, voiceprint extraction, and deterministic speaker resolution.
-8. Automatic meeting intelligence when an AI provider and model are configured.
-9. Persistence of unresolved speaker suggestions, meeting title, and Markdown meeting notes.
+8. Rolling diarisation window reconciliation: completed rolling windows captured during the live lane are replayed to apply speaker boundary corrections to provisional live utterances.
+9. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
+10. Automatic meeting intelligence when an AI provider and model are configured.
+11. Persistence of unresolved speaker suggestions, meeting title, and Markdown meeting notes.
 
 Manual user notes can be captured during recording or processing and are fed into both the automatic meeting-intelligence stage and the manual note-generation flow.
 
