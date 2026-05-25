@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
-import hashlib
 import os
+import secrets
 import shutil
 import time
 
@@ -22,7 +22,7 @@ from backend.utils.version import get_installed_version
 HF_VALIDATE_URL = "https://huggingface.co/api/whoami-v2"
 HF_VALIDATION_TTL_SECONDS = 300.0
 
-_hf_validation_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_hf_validation_cache: tuple[float, str, dict[str, Any]] | None = None
 
 
 def _build_component(
@@ -286,7 +286,10 @@ def _get_transcription_component(
 
 
 async def _validate_hf_token(token: str | None) -> dict[str, Any]:
+    global _hf_validation_cache
+
     if not token:
+        _hf_validation_cache = None
         return {
             "configured": False,
             "valid": None,
@@ -295,11 +298,17 @@ async def _validate_hf_token(token: str | None) -> dict[str, Any]:
             "action": "Add a Hugging Face token and accept the Pyannote model terms.",
         }
 
-    cache_key = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    cached = _hf_validation_cache.get(cache_key)
     now = time.monotonic()
-    if cached and now - cached[0] < HF_VALIDATION_TTL_SECONDS:
-        return cached[1]
+    cached = _hf_validation_cache
+    if cached is not None:
+        cached_at, cached_token, cached_result = cached
+        if now - cached_at < HF_VALIDATION_TTL_SECONDS and secrets.compare_digest(
+            cached_token,
+            token,
+        ):
+            return cached_result
+
+    _hf_validation_cache = None
 
     try:
         async with httpx.AsyncClient(timeout=4.0) as client:
@@ -341,7 +350,7 @@ async def _validate_hf_token(token: str | None) -> dict[str, Any]:
             "action": "Check outbound network access or validate the token manually.",
         }
 
-    _hf_validation_cache[cache_key] = (now, result)
+    _hf_validation_cache = (now, token, result)
     return result
 
 

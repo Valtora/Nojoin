@@ -222,6 +222,28 @@ def _verify_request_secret(secret: str, expected_hash: str) -> bool:
     return security.verify_companion_credential_secret(secret, expected_hash)
 
 
+def _maybe_upgrade_request_secret_hash(
+    row: CompanionPairingRequest,
+    secret: str,
+) -> bool:
+    if not security.companion_credential_hash_uses_legacy_format(row.request_secret_hash):
+        return False
+    row.request_secret_hash = security.hash_companion_credential_secret(secret)
+    return True
+
+
+def _maybe_upgrade_pairing_credential_hash(
+    row: CompanionPairing,
+    secret: str,
+) -> bool:
+    if not security.companion_credential_hash_uses_legacy_format(
+        row.companion_credential_hash
+    ):
+        return False
+    row.companion_credential_hash = security.hash_companion_credential_secret(secret)
+    return True
+
+
 def _serialize_request_status(
     row: CompanionPairingRequest,
 ) -> CompanionPairingRequestStatusView:
@@ -540,11 +562,14 @@ async def mark_companion_pairing_request_opened(
             status_code=404,
         )
 
-    if not _verify_request_secret(request_secret.strip(), row.request_secret_hash):
+    normalized_request_secret = request_secret.strip()
+    if not _verify_request_secret(normalized_request_secret, row.request_secret_hash):
         raise CompanionPairingStateError(
             "Companion pairing request secret is invalid.",
             status_code=401,
         )
+
+    hash_upgraded = _maybe_upgrade_request_secret_hash(row, normalized_request_secret)
 
     if _expire_request_if_needed(row):
         await _persist_request(db, row)
@@ -554,14 +579,18 @@ async def mark_companion_pairing_request_opened(
         )
 
     if row.status == CompanionPairingRequestStatus.COMPLETED.value:
+        if hash_upgraded:
+            await _persist_request(db, row)
         return _serialize_request_status(row)
     if row.status in TERMINAL_PAIRING_REQUEST_STATUSES:
+        if hash_upgraded:
+            await _persist_request(db, row)
         raise CompanionPairingStateError(
             row.status_detail or "Companion pairing request is no longer active.",
             status_code=409,
         )
 
-    changed = False
+    changed = hash_upgraded
     if row.opened_at is None:
         row.opened_at = utc_now()
         changed = True
@@ -592,11 +621,14 @@ async def reject_companion_pairing_request(
             status_code=404,
         )
 
-    if not _verify_request_secret(request_secret.strip(), row.request_secret_hash):
+    normalized_request_secret = request_secret.strip()
+    if not _verify_request_secret(normalized_request_secret, row.request_secret_hash):
         raise CompanionPairingStateError(
             "Companion pairing request secret is invalid.",
             status_code=401,
         )
+
+    _maybe_upgrade_request_secret_hash(row, normalized_request_secret)
 
     if _expire_request_if_needed(row):
         await _persist_request(db, row)
@@ -640,11 +672,14 @@ async def complete_companion_pairing_request(
             status_code=404,
         )
 
-    if not _verify_request_secret(request_secret.strip(), row.request_secret_hash):
+    normalized_request_secret = request_secret.strip()
+    if not _verify_request_secret(normalized_request_secret, row.request_secret_hash):
         raise CompanionPairingStateError(
             "Companion pairing request secret is invalid.",
             status_code=401,
         )
+
+    _maybe_upgrade_request_secret_hash(row, normalized_request_secret)
 
     normalized_fingerprint = tls_fingerprint.strip()
     if not normalized_fingerprint:
@@ -890,6 +925,11 @@ async def exchange_companion_credential(
             "Companion pairing credential is invalid. Pair again from Nojoin.",
             status_code=401,
         )
+
+    if _maybe_upgrade_pairing_credential_hash(pairing, companion_credential_secret):
+        db.add(pairing)
+        await db.commit()
+        await db.refresh(pairing)
 
     user_row = (
         await db.execute(

@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -11,8 +12,10 @@ from typing import Any, Optional, Union
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from cryptography.hazmat.primitives import hashes
 from jose import jwt
 
+from backend.core.encryption import _get_encryption_seed
 from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
 
@@ -21,6 +24,7 @@ password_hasher = PasswordHasher()
 logger = logging.getLogger(__name__)
 
 MIN_PASSWORD_LENGTH = 8
+COMPANION_CREDENTIAL_HASH_PREFIX = "hmac-sha256$"
 
 
 SESSION_TOKEN_TYPE = "session"
@@ -340,12 +344,41 @@ def generate_companion_credential_secret() -> str:
     return secrets.token_urlsafe(48)
 
 
+def _companion_credential_hmac_key() -> bytes:
+    installation_seed = _get_encryption_seed().encode("utf-8")
+    return hmac.new(
+        b"nojoin:companion-credential",
+        installation_seed,
+        hashlib.sha256,
+    ).digest()
+
+
+def _legacy_companion_credential_hash(secret: str) -> str:
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(secret.encode("utf-8"))
+    return digest.finalize().hex()
+
+
+def companion_credential_hash_uses_legacy_format(expected_hash: str | None) -> bool:
+    return bool(expected_hash) and not str(expected_hash).startswith(
+        COMPANION_CREDENTIAL_HASH_PREFIX
+    )
+
+
 def hash_companion_credential_secret(secret: str) -> str:
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    digest = hmac.new(
+        _companion_credential_hmac_key(),
+        secret.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{COMPANION_CREDENTIAL_HASH_PREFIX}{digest}"
 
 
 def verify_companion_credential_secret(secret: str, expected_hash: str) -> bool:
-    candidate_hash = hash_companion_credential_secret(secret)
+    if companion_credential_hash_uses_legacy_format(expected_hash):
+        candidate_hash = _legacy_companion_credential_hash(secret)
+    else:
+        candidate_hash = hash_companion_credential_secret(secret)
     return secrets.compare_digest(candidate_hash, expected_hash)
 
 

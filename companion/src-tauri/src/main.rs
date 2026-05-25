@@ -41,6 +41,8 @@ mod uploader;
 mod win_notifications;
 
 use config::{BackendConnection, Config, MachineLocalUpdate};
+#[cfg(windows)]
+use pairing_link::PairingBrowserFamily;
 use pairing_link::PairingLaunchRequest;
 use state::{
     pairing_block_message, recover_mutex_guard, AppState, AppStatus, LocalHttpsHealth,
@@ -70,9 +72,15 @@ impl LauncherOpenReason {
 enum ProcessMode {
     Normal {
         launched_from_autostart: bool,
-        pairing_link: Option<String>,
+        protocol_link: Option<String>,
     },
     UninstallCleanup,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NojoinProtocolAction {
+    Pairing(String),
+    FirefoxSupport,
 }
 
 enum LocalHttpsControllerCommand {
@@ -84,6 +92,7 @@ const SETTINGS_WINDOW_LABEL: &str = "settings";
 const MAIN_WINDOW_LABEL: &str = "main";
 const AUTOSTART_ARG: &str = "--autostart";
 const LOCAL_HTTPS_UNINSTALL_CLEANUP_ARG: &str = "--cleanup-local-https-on-uninstall";
+const NOJOIN_PROTOCOL_PREFIX: &str = "nojoin://";
 const PAIRING_LINK_PREFIX: &str = "nojoin://pair";
 #[cfg(windows)]
 const NOJOIN_PROTOCOL_REGISTRY_PATH: &str = "Software\\Classes\\nojoin";
@@ -992,44 +1001,144 @@ async fn enable_firefox_support(app: tauri::AppHandle) -> Result<String, String>
 
     #[cfg(windows)]
     {
-        info!("Firefox support setup requested from Companion Settings.");
         if !confirm_firefox_machine_root_install(&app) {
             warn!("Firefox support setup was canceled in the Companion confirmation dialog.");
             return Err("Firefox support setup was canceled.".to_string());
         }
 
-        info!("Firefox support setup confirmed; launching elevated installer task.");
-        match tauri::async_runtime::spawn_blocking(
-            local_https_identity::install_firefox_machine_root_support,
-        )
-        .await
-        {
-            Ok(Ok(())) => {
-                info!("Firefox support setup completed successfully.");
-            }
-            Ok(Err(error)) => {
-                error!("Firefox support setup failed: {}", error);
-                return Err(error);
-            }
-            Err(error) => {
-                error!(
-                    "Firefox support setup task failed before completion: {}",
-                    error
-                );
-                return Err(format!("Firefox support setup task failed: {}", error));
-            }
-        }
-
-        notifications::show_notification(
+        run_firefox_support_setup(
             &app,
-            "Firefox Support Enabled",
+            "Companion Settings",
             "Restart Firefox, then pair again from Nojoin using a fresh pairing request.",
-        );
+        )
+        .await?;
         Ok(
             "Firefox support was enabled for this Windows device. Restart Firefox, then start a fresh pairing request and try again."
                 .to_string(),
         )
     }
+}
+
+#[cfg(windows)]
+async fn run_firefox_support_setup(
+    app: &tauri::AppHandle,
+    trigger: &str,
+    success_notification_body: &str,
+) -> Result<(), String> {
+    info!("Firefox support setup requested from {}.", trigger);
+    info!("Firefox support setup confirmed; launching elevated installer task.");
+
+    match tauri::async_runtime::spawn_blocking(local_https_identity::install_firefox_machine_root_support)
+        .await
+    {
+        Ok(Ok(())) => {
+            info!("Firefox support setup completed successfully.");
+        }
+        Ok(Err(error)) => {
+            error!("Firefox support setup failed: {}", error);
+            return Err(error);
+        }
+        Err(error) => {
+            error!(
+                "Firefox support setup task failed before completion: {}",
+                error
+            );
+            return Err(format!("Firefox support setup task failed: {}", error));
+        }
+    }
+
+    notifications::show_notification(app, "Firefox Support Enabled", success_notification_body);
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn maybe_offer_firefox_support_for_pairing(
+    app: &tauri::AppHandle,
+    launch_request: &PairingLaunchRequest,
+) {
+    if launch_request.browser_family_hint != Some(PairingBrowserFamily::Firefox) {
+        return;
+    }
+
+    info!(
+        "Firefox pairing request detected; offering Firefox support setup before approval. request_id={}",
+        launch_request.request_id
+    );
+
+    let app_handle = app.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let prompt_message = "Firefox on Windows needs a one-time trust step before browser-side local controls can connect to Nojoin Companion.\n\nChoose Enable Now to install Firefox support before you approve this pairing request. Windows will show an administrator approval prompt next. You can skip this and continue pairing, but Firefox will stay temporarily disconnected until support is enabled.";
+
+    let scheduled = app.run_on_main_thread(move || {
+        if let Err(error) = open_settings_window(&app_handle) {
+            warn!(
+                "Failed to surface the settings window before showing the Firefox support prompt: {}",
+                error
+            );
+        }
+
+        let decision = app_handle
+            .dialog()
+            .message(prompt_message)
+            .title("Enable Firefox Support")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Enable Now".to_string(),
+                "Skip".to_string(),
+            ))
+            .blocking_show();
+        let _ = tx.send(decision);
+    });
+
+    if let Err(error) = scheduled {
+        warn!(
+            "Failed to schedule the Firefox support pairing prompt: {}",
+            error
+        );
+        return;
+    }
+
+    let enable_now = match rx.await {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("Failed to receive the Firefox support pairing prompt decision.");
+            return;
+        }
+    };
+
+    if !enable_now {
+        info!(
+            "Firefox support setup was skipped during pairing. request_id={}",
+            launch_request.request_id
+        );
+        return;
+    }
+
+    if let Err(error) = run_firefox_support_setup(
+        app,
+        "a Firefox pairing request",
+        "Finish the pairing flow, then restart Firefox so browser-side local controls can use the new Windows trust.",
+    )
+    .await
+    {
+        warn!(
+            "Firefox support setup failed during pairing. request_id={} error={}",
+            launch_request.request_id,
+            error
+        );
+        notifications::show_notification(
+            app,
+            "Firefox Support Incomplete",
+            "Pairing can continue, but Firefox local browser controls will remain unavailable until Firefox support is enabled.",
+        );
+    }
+}
+
+#[cfg(not(windows))]
+async fn maybe_offer_firefox_support_for_pairing(
+    _app: &tauri::AppHandle,
+    _launch_request: &PairingLaunchRequest,
+) {
 }
 
 #[tauri::command]
@@ -1890,10 +1999,31 @@ impl Drop for PairingRequestGuard {
     }
 }
 
-fn extract_pairing_link_arg(args: &[String]) -> Option<String> {
+fn extract_nojoin_link_arg(args: &[String]) -> Option<String> {
     args.iter()
         .map(|arg| arg.trim().trim_matches('"').to_string())
-        .find(|arg| arg.starts_with(PAIRING_LINK_PREFIX))
+        .find(|arg| arg.starts_with(NOJOIN_PROTOCOL_PREFIX))
+}
+
+fn parse_nojoin_protocol_action(raw_url: &str) -> Result<NojoinProtocolAction, String> {
+    let normalized = raw_url.trim().trim_matches('"');
+
+    if normalized.starts_with(PAIRING_LINK_PREFIX) {
+        return Ok(NojoinProtocolAction::Pairing(normalized.to_string()));
+    }
+
+    let parsed = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Invalid nojoin:// link: {}", error))?;
+
+    if parsed.scheme() != "nojoin" {
+        return Err("Nojoin protocol link must use the nojoin:// scheme.".to_string());
+    }
+
+    match parsed.host_str() {
+        Some("firefox-support") => Ok(NojoinProtocolAction::FirefoxSupport),
+        Some(host) => Err(format!("Unsupported nojoin:// target '{}'.", host)),
+        None => Err("Nojoin protocol link must target a known action.".to_string()),
+    }
 }
 
 fn backend_label_from_connection(backend: &BackendConnection) -> String {
@@ -2102,6 +2232,8 @@ async fn process_pairing_link(app: tauri::AppHandle, state: Arc<AppState>, raw_u
         return;
     }
 
+    maybe_offer_firefox_support_for_pairing(&app, &launch_request).await;
+
     let approved =
         match confirm_pairing_request(&app, &launch_request, previous_backend.as_ref()).await {
             Ok(approved) => approved,
@@ -2288,8 +2420,61 @@ async fn process_pairing_link(app: tauri::AppHandle, state: Arc<AppState>, raw_u
     refresh_tray_menu(&app, &state);
 }
 
-fn dispatch_pairing_link(app: &tauri::AppHandle, state: &Arc<AppState>, raw_url: String) {
-    tauri::async_runtime::spawn(process_pairing_link(app.clone(), state.clone(), raw_url));
+async fn process_firefox_support_link(app: tauri::AppHandle) {
+    #[cfg(not(windows))]
+    {
+        notifications::show_notification(
+            &app,
+            "Firefox Support Unavailable",
+            "Firefox support setup is only available on Windows.",
+        );
+        return;
+    }
+
+    #[cfg(windows)]
+    {
+        info!("Received nojoin://firefox-support link from the browser.");
+
+        if let Err(error) = open_settings_window(&app) {
+            warn!(
+                "Failed to open Settings before handling the Firefox support link: {}",
+                error
+            );
+        }
+
+        if !confirm_firefox_machine_root_install(&app) {
+            info!("Firefox support setup was canceled from the nojoin://firefox-support link.");
+            return;
+        }
+
+        if let Err(error) = run_firefox_support_setup(
+            &app,
+            "the nojoin://firefox-support link",
+            "Restart Firefox, then reload Nojoin to restore browser-side local controls.",
+        )
+        .await
+        {
+            notifications::show_notification(&app, "Firefox Support Failed", &error);
+        }
+    }
+}
+
+fn dispatch_nojoin_protocol_link(app: &tauri::AppHandle, state: &Arc<AppState>, raw_url: String) {
+    match parse_nojoin_protocol_action(&raw_url) {
+        Ok(NojoinProtocolAction::Pairing(pairing_link)) => {
+            tauri::async_runtime::spawn(process_pairing_link(
+                app.clone(),
+                state.clone(),
+                pairing_link,
+            ));
+        }
+        Ok(NojoinProtocolAction::FirefoxSupport) => {
+            tauri::async_runtime::spawn(process_firefox_support_link(app.clone()));
+        }
+        Err(error) => {
+            notifications::show_notification(app, "Unsupported Link", &error);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2379,6 +2564,22 @@ mod tests {
             "Upload queued until reconnect"
         );
     }
+
+    #[test]
+    fn parse_nojoin_protocol_action_accepts_firefox_support() {
+        assert_eq!(
+            parse_nojoin_protocol_action("nojoin://firefox-support").unwrap(),
+            NojoinProtocolAction::FirefoxSupport,
+        );
+    }
+
+    #[test]
+    fn parse_nojoin_protocol_action_accepts_pairing_links() {
+        assert_eq!(
+            parse_nojoin_protocol_action("nojoin://pair?request_id=abc").unwrap(),
+            NojoinProtocolAction::Pairing("nojoin://pair?request_id=abc".to_string()),
+        );
+    }
 }
 
 fn handle_process_mode() -> ProcessMode {
@@ -2394,7 +2595,7 @@ fn handle_process_mode() -> ProcessMode {
 
     ProcessMode::Normal {
         launched_from_autostart: args.iter().any(|arg| arg == AUTOSTART_ARG),
-        pairing_link: extract_pairing_link_arg(&args),
+        protocol_link: extract_nojoin_link_arg(&args),
     }
 }
 
@@ -2438,12 +2639,12 @@ fn main() {
         eprintln!("Failed to initialize logging: {}", e);
     }
 
-    let (launched_from_autostart, startup_pairing_link) = match handle_process_mode() {
+    let (launched_from_autostart, startup_protocol_link) = match handle_process_mode() {
         ProcessMode::UninstallCleanup => return,
         ProcessMode::Normal {
             launched_from_autostart,
-            pairing_link,
-        } => (launched_from_autostart, pairing_link),
+            protocol_link,
+        } => (launched_from_autostart, protocol_link),
     };
 
     info!("Starting Nojoin Companion (Tauri)...");
@@ -2454,8 +2655,8 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let state = app.state::<SharedAppState>().0.clone();
-            if let Some(pairing_link) = extract_pairing_link_arg(&args) {
-                dispatch_pairing_link(app, &state, pairing_link);
+            if let Some(protocol_link) = extract_nojoin_link_arg(&args) {
+                dispatch_nojoin_protocol_link(app, &state, protocol_link);
                 return;
             }
             if let Err(message) =
@@ -2652,8 +2853,8 @@ fn main() {
                 audio::run_audio_loop(state_audio, audio_rx, app_handle_audio);
             });
 
-            if let Some(pairing_link) = startup_pairing_link.clone() {
-                dispatch_pairing_link(app.handle(), &state, pairing_link);
+            if let Some(protocol_link) = startup_protocol_link.clone() {
+                dispatch_nojoin_protocol_link(app.handle(), &state, protocol_link);
             } else if let Err(message) =
                 maybe_open_startup_surface(app.handle(), &state, launched_from_autostart)
             {

@@ -342,9 +342,11 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
           if (clearAuthentication) {
             handleCompanionPairingEndedState();
           } else {
+            // The browser already obtained a backend-issued local control token,
+            // so pairing is still valid even if the loopback status probe fails.
             set((state) => ({
               companion: false,
-              companionAuthenticated: state.companionAuthenticated,
+              companionAuthenticated: true,
               companionLocalConnectionUnavailable: false,
               companionLocalHttpsStatus: null,
               companionUpdateAvailable: false,
@@ -361,7 +363,10 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         } else {
           set((state) => ({
             companion: false,
-            companionAuthenticated: state.companionAuthenticated,
+            companionAuthenticated:
+              error instanceof CompanionLocalConnectionError
+                ? true
+                : state.companionAuthenticated,
             companionLocalConnectionUnavailable:
               error instanceof CompanionLocalConnectionError,
             companionLocalHttpsStatus: null,

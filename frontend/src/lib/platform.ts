@@ -1,6 +1,7 @@
 const GITHUB_REPO = 'Valtora/Nojoin';
 
 export type Platform = 'windows' | 'unknown';
+export type BrowserFamily = 'firefox' | 'other';
 
 export function detectPlatform(): Platform {
   if (typeof window === 'undefined') {
@@ -22,6 +23,15 @@ export function detectPlatform(): Platform {
 export function getDownloadUrl(): string {
   // Direct to releases page where users can download the Windows installer
   return `https://github.com/${GITHUB_REPO}/releases/latest`;
+}
+
+export function detectBrowserFamily(): BrowserFamily {
+  if (typeof window === 'undefined') {
+    return 'other';
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  return userAgent.includes('firefox') ? 'firefox' : 'other';
 }
 
 export function getDownloadLabel(): string {

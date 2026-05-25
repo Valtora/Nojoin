@@ -8,6 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::backend_url::{validate_backend_target, ValidatedBackendTarget};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairingBrowserFamily {
+    Firefox,
+}
+
+impl PairingBrowserFamily {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "firefox" => Some(Self::Firefox),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairingLaunchRequest {
     pub request_id: String,
@@ -18,6 +32,7 @@ pub struct PairingLaunchRequest {
     pub expires_at_epoch: u64,
     pub backend_identity_key_id: String,
     pub backend_identity_public_key: String,
+    pub browser_family_hint: Option<PairingBrowserFamily>,
 }
 
 fn canonical_signature_message(fields: &[(&str, &str)]) -> Vec<u8> {
@@ -127,6 +142,9 @@ impl PairingLaunchRequest {
         let backend_identity_key_id = required_query_value(&query, "key_id")?.to_string();
         let backend_identity_public_key = required_query_value(&query, "public_key")?.to_string();
         let signature = required_query_value(&query, "signature")?;
+        let browser_family_hint = query
+            .get("browser")
+            .and_then(|value| PairingBrowserFamily::parse(value));
 
         verify_key_id(&backend_identity_key_id, &backend_identity_public_key)?;
         verify_signature(
@@ -156,6 +174,7 @@ impl PairingLaunchRequest {
                 expires_at_epoch: expires_at,
                 backend_identity_key_id,
                 backend_identity_public_key,
+                browser_family_hint,
             },
             backend_target,
         ))
@@ -172,6 +191,52 @@ impl PairingLaunchRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    fn build_signed_pairing_url(browser: Option<&str>) -> String {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_bytes = verifying_key.to_bytes();
+        let public_key = URL_SAFE_NO_PAD.encode(public_key_bytes);
+        let key_id = format!("{:x}", Sha256::digest(public_key_bytes));
+        let expires_at = "4102444800";
+
+        let fields = [
+            ("backend_origin", "https://nojoin.example.com"),
+            ("expires_at", expires_at),
+            ("key_id", &key_id[..16]),
+            ("replacement", "0"),
+            ("request_id", "request-1"),
+            ("request_secret", "secret-1"),
+            ("username", "alice"),
+            ("version", "1"),
+        ];
+        let signature = URL_SAFE_NO_PAD.encode(
+            signing_key
+                .sign(&canonical_signature_message(&fields))
+                .to_bytes(),
+        );
+
+        let mut url = Url::parse("nojoin://pair").unwrap();
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("version", "1");
+            query.append_pair("request_id", "request-1");
+            query.append_pair("request_secret", "secret-1");
+            query.append_pair("backend_origin", "https://nojoin.example.com");
+            query.append_pair("username", "alice");
+            query.append_pair("replacement", "0");
+            query.append_pair("expires_at", expires_at);
+            query.append_pair("key_id", &key_id[..16]);
+            query.append_pair("public_key", &public_key);
+            query.append_pair("signature", &signature);
+            if let Some(browser) = browser {
+                query.append_pair("browser", browser);
+            }
+        }
+
+        url.into()
+    }
 
     #[test]
     fn pairing_link_rejects_wrong_scheme() {
@@ -179,5 +244,21 @@ mod tests {
             .err()
             .unwrap();
         assert!(error.contains("nojoin:// scheme"));
+    }
+
+    #[test]
+    fn pairing_link_parses_firefox_browser_hint_without_affecting_signature() {
+        let (request, _) = PairingLaunchRequest::parse(&build_signed_pairing_url(Some("firefox")))
+            .unwrap();
+
+        assert_eq!(request.browser_family_hint, Some(PairingBrowserFamily::Firefox));
+    }
+
+    #[test]
+    fn pairing_link_ignores_unknown_browser_hint() {
+        let (request, _) = PairingLaunchRequest::parse(&build_signed_pairing_url(Some("safari")))
+            .unwrap();
+
+        assert_eq!(request.browser_family_hint, None);
     }
 }

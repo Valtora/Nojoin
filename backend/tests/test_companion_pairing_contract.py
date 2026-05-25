@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -471,6 +472,59 @@ async def test_exchange_rejects_invalid_companion_credential_after_completion(
     pairings = await fetch_pairings(test_session_maker)
     assert len(pairings) == 1
     assert pairings[0].status == "active"
+    assert security.verify_companion_credential_secret(
+        completion["companion_credential_secret"],
+        pairings[0].companion_credential_hash,
+    )
+
+
+@pytest.mark.anyio
+async def test_legacy_companion_hashes_still_verify_and_upgrade(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    request_payload = await create_pairing_request(client, override_current_user)
+    launch_request = parse_launch_request(request_payload)
+
+    async with test_session_maker() as session:
+        request_row = (
+            await session.execute(
+                select(CompanionPairingRequest).where(
+                    CompanionPairingRequest.request_id == launch_request["request_id"]
+                )
+            )
+        ).scalar_one()
+        request_row.request_secret_hash = hashlib.sha256(
+            launch_request["request_secret"].encode("utf-8")
+        ).hexdigest()
+        await session.commit()
+
+    completion = await complete_pairing_request(client, launch_request)
+
+    requests = await fetch_pairing_requests(test_session_maker)
+    assert requests[0].request_secret_hash.startswith(security.COMPANION_CREDENTIAL_HASH_PREFIX)
+
+    async with test_session_maker() as session:
+        pairing_row = (
+            await session.execute(
+                select(CompanionPairing).where(
+                    CompanionPairing.pairing_session_id == completion["backend_pairing_id"]
+                )
+            )
+        ).scalar_one()
+        pairing_row.companion_credential_hash = hashlib.sha256(
+            completion["companion_credential_secret"].encode("utf-8")
+        ).hexdigest()
+        await session.commit()
+
+    exchange = await exchange_pairing_credential(client, completion)
+    assert exchange.status_code == 200
+
+    pairings = await fetch_pairings(test_session_maker)
+    assert pairings[0].companion_credential_hash.startswith(
+        security.COMPANION_CREDENTIAL_HASH_PREFIX
+    )
     assert security.verify_companion_credential_secret(
         completion["companion_credential_secret"],
         pairings[0].companion_credential_hash,

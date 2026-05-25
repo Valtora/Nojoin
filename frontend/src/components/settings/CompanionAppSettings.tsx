@@ -18,6 +18,7 @@ import {
   getCompanionPairingRequestStatus,
 } from "@/lib/companionPairingApi";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { detectBrowserFamily, detectPlatform } from "@/lib/platform";
 import { fuzzyMatch } from "@/lib/searchUtils";
 
 import AudioSettings from "./AudioSettings";
@@ -68,6 +69,16 @@ interface PairingCardState {
   helperText: string;
   primaryActionLabel: string;
 }
+
+const appendPairingBrowserHint = (launchUrl: string) => {
+  if (detectBrowserFamily() !== "firefox" || /[?&]browser=/.test(launchUrl)) {
+    return launchUrl;
+  }
+
+  return `${launchUrl}${launchUrl.includes("?") ? "&" : "?"}browser=firefox`;
+};
+
+const FIREFOX_SUPPORT_PROTOCOL_URL = "nojoin://firefox-support";
 
 const buildConnectionStateCard = ({
   backendVersion,
@@ -753,6 +764,18 @@ export default function CompanionAppSettings({
     pairingAttemptState !== "declined" &&
     pairingAttemptState !== "expired" &&
     pairingAttemptState !== "failed";
+  const canTriggerFirefoxSupportFromBrowser =
+    detectPlatform() === "windows" &&
+    detectBrowserFamily() === "firefox" &&
+    companionAuthenticated &&
+    companionLocalConnectionUnavailable &&
+    !hasActivePendingRequest;
+  const connectionActionLabel = canTriggerFirefoxSupportFromBrowser
+    ? "Enable Firefox Support"
+    : connectionStateCard.primaryActionLabel;
+  const connectionActionMessage = canTriggerFirefoxSupportFromBrowser
+    ? "If Firefox on this Windows device is the browser that still cannot reconnect to Companion, trigger the native Firefox support flow directly here. Use the standard connection guidance if the Companion app itself is offline."
+    : connectionStateCard.primaryActionMessage;
   const pairingFeedbackMessage = pairingError || pairingNotice;
   const pairingFeedbackTone: CalloutTone = pairingError
     ? "error"
@@ -772,8 +795,8 @@ export default function CompanionAppSettings({
             ? "Disabled"
             : "Unavailable";
 
-  const openPairingLaunchUrl = (
-    request: CompanionPairingRequestCreateResponse,
+  const openCompanionProtocolUrl = (
+    protocolUrl: string,
     launchWindow?: Window | null,
   ) => {
     if (pairingLaunchCleanupTimerRef.current !== null) {
@@ -788,7 +811,7 @@ export default function CompanionAppSettings({
     if (targetWindow && !targetWindow.closed) {
       pairingLaunchWindowRef.current = targetWindow;
       try {
-        targetWindow.location.href = request.launch_url;
+        targetWindow.location.href = protocolUrl;
       } catch {
         closePairingLaunchWindow();
       }
@@ -815,10 +838,32 @@ export default function CompanionAppSettings({
     document.body.appendChild(launchFrame);
 
     pairingLaunchFrameRef.current = launchFrame;
-    launchFrame.src = request.launch_url;
+    launchFrame.src = protocolUrl;
     pairingLaunchCleanupTimerRef.current = window.setTimeout(() => {
       clearPairingLaunchArtifacts();
     }, 4000);
+  };
+
+  const openPairingLaunchUrl = (
+    request: CompanionPairingRequestCreateResponse,
+    launchWindow?: Window | null,
+  ) => {
+    openCompanionProtocolUrl(
+      appendPairingBrowserHint(request.launch_url),
+      launchWindow,
+    );
+  };
+
+  const launchFirefoxSupportRepair = () => {
+    addNotification({
+      type: "info",
+      message:
+        "Opening Nojoin Companion to enable Firefox support. Approve the Windows dialog, then restart Firefox.",
+    });
+    openCompanionProtocolUrl(
+      FIREFOX_SUPPORT_PROTOCOL_URL,
+      primePairingLaunchWindow(),
+    );
   };
 
   const handlePairCompanion = async () => {
@@ -929,14 +974,31 @@ export default function CompanionAppSettings({
                 Next step
               </div>
               <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
-                {connectionStateCard.primaryActionLabel}
+                {connectionActionLabel}
               </p>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {connectionStateCard.primaryActionMessage}
+                {connectionActionMessage}
               </p>
+              {canTriggerFirefoxSupportFromBrowser && (
+                <button
+                  type="button"
+                  onClick={launchFirefoxSupportRepair}
+                  className="mt-4 w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
+                >
+                  Enable Firefox Support
+                </button>
+              )}
             </SettingsPanel>
           }
         >
+
+          {canTriggerFirefoxSupportFromBrowser && (
+            <SettingsCallout
+              tone="info"
+              title="Firefox recovery"
+              message="If Chrome works on this device but Firefox still shows Companion as disconnected, use the button above to reopen the native Firefox support flow without going through Companion Settings first."
+            />
+          )}
 
           <div className="grid gap-3 md:grid-cols-3">
             <SettingsPanel variant="meta">
