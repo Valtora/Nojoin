@@ -1,10 +1,8 @@
 import logging
-import hashlib
 import os
 import shutil
 from pathlib import Path
-from typing import List, Optional, Any
-import wave
+from typing import Any, List, Optional
 from datetime import UTC, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -41,9 +39,9 @@ from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowMan
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
-from backend.utils.audio_windows import apply_audio_window_specs, build_audio_window_specs
 from backend.processing.llm_services import get_llm_backend
 from backend.processing.live_transcribe import transcribe_segment_live_task
+from backend.processing.segment_transcode import transcode_segment_task
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now
@@ -66,6 +64,15 @@ from backend.utils.canonical_pipeline import (
     build_transcript_text_for_read,
     filter_recording_speakers_for_public_read,
 )
+from backend.utils.recording_audio_sync import (
+    BROWSER_AUDIO_SEGMENT_SUFFIXES,
+    find_missing_chunk_sequences,
+    find_pending_recording_upload_sequences,
+    list_recording_audio_chunks,
+    sync_recording_audio_chunks_from_directory,
+    sync_recording_audio_chunks_from_entries,
+    sync_recording_audio_window_manifests,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -74,6 +81,14 @@ COMPANION_UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting companion upl
 COMPANION_STATUS_UPDATES_CLOSED_DETAIL = (
     "Recording is no longer accepting companion status updates"
 )
+UNSUPPORTED_SEGMENT_MEDIA_DETAIL = (
+    "Unsupported audio segment format. Use audio/wav, audio/webm, or audio/ogg with a matching filename suffix."
+)
+SEGMENT_CONTENT_TYPE_SUFFIXES = {
+    "audio/wav": ".wav",
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+}
 
 
 def _recording_has_proxy(recording: Recording) -> bool:
@@ -158,71 +173,20 @@ def _chunk_idempotency_key(*, source_kind: str, sequence: int, sha256: str) -> s
     return f"{source_kind}:{sequence}:{sha256}"
 
 
-def _sha256_for_path(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while True:
-            chunk = handle.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
+def _normalize_segment_content_type(content_type: str | None) -> str:
+    return str(content_type or "").split(";", 1)[0].strip().lower()
 
 
-def _read_wav_chunk_metadata(path: Path) -> tuple[int, int, int]:
-    try:
-        with wave.open(str(path), "rb") as wav_file:
-            sample_rate_hz = int(wav_file.getframerate() or 0)
-            channel_count = int(wav_file.getnchannels() or 0)
-            frame_count = int(wav_file.getnframes() or 0)
-    except (EOFError, OSError, wave.Error):
-        return 0, 0, 0
-
-    if sample_rate_hz <= 0:
-        return 0, channel_count, 0
-    duration_ms = int((frame_count / sample_rate_hz) * 1000)
-    return sample_rate_hz, channel_count, duration_ms
-
-
-def _build_recording_audio_chunk_fields(
-    *,
-    sequence: int,
-    source_kind: str,
-    storage_path: Path,
-) -> dict[str, Any]:
-    sample_rate_hz = 0
-    channel_count = 0
-    duration_ms = 0
-    if storage_path.suffix.lower() == ".wav":
-        sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(storage_path)
-    if duration_ms <= 0:
-        try:
-            duration_ms = int(round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0))
-        except Exception:
-            duration_ms = 0
-
-    sha256 = _sha256_for_path(storage_path)
-    byte_size = storage_path.stat().st_size
-    return {
-        "sequence_no": sequence,
-        "source_kind": source_kind,
-        "absolute_start_ms": 0,
-        "absolute_end_ms": duration_ms,
-        "duration_ms": duration_ms,
-        "sample_rate_hz": sample_rate_hz,
-        "channel_count": channel_count,
-        "byte_size": byte_size,
-        "sha256": sha256,
-        "storage_path": str(storage_path),
-        "upload_status": "received",
-        "idempotency_key": _chunk_idempotency_key(
-            source_kind=source_kind,
-            sequence=sequence,
-            sha256=sha256,
-        ),
-        "received_at": utc_now(),
-        "cleanup_eligible_at": None,
-    }
+def _resolve_segment_upload_suffix(file: UploadFile) -> str:
+    content_type = _normalize_segment_content_type(file.content_type)
+    filename_suffix = Path(file.filename or "").suffix.lower()
+    expected_suffix = SEGMENT_CONTENT_TYPE_SUFFIXES.get(content_type)
+    if expected_suffix is None or filename_suffix != expected_suffix:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=UNSUPPORTED_SEGMENT_MEDIA_DETAIL,
+        )
+    return expected_suffix
 
 
 async def _sync_recording_audio_chunks_from_entries(
@@ -232,51 +196,14 @@ async def _sync_recording_audio_chunks_from_entries(
     source_kind: str,
     disk_entries: list[tuple[int, Path]],
 ) -> list[RecordingAudioChunk]:
-    if not disk_entries:
-        return []
-
-    existing_rows = (
-        await db.execute(
-            select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
-        )
-    ).scalars().all()
-    existing_by_sequence = {
-        row.sequence_no: row
-        for row in existing_rows
-        if row.source_kind == source_kind
-    }
-    existing_by_idempotency = {
-        row.idempotency_key: row
-        for row in existing_rows
-        if row.source_kind == source_kind and row.idempotency_key
-    }
-
-    synced_rows: list[RecordingAudioChunk] = []
-    absolute_start_ms = 0
-    for sequence, storage_path in sorted(disk_entries, key=lambda item: item[0]):
-        fields = _build_recording_audio_chunk_fields(
-            sequence=sequence,
+    return await db.run_sync(
+        lambda session: sync_recording_audio_chunks_from_entries(
+            session,
+            recording_id=recording_id,
             source_kind=source_kind,
-            storage_path=storage_path,
+            disk_entries=disk_entries,
         )
-        row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(fields["idempotency_key"])
-
-        if row is None:
-            row = RecordingAudioChunk(recording_id=recording_id, **fields)
-        else:
-            for field_name, field_value in fields.items():
-                setattr(row, field_name, field_value)
-
-        row.absolute_start_ms = absolute_start_ms
-        row.absolute_end_ms = absolute_start_ms + row.duration_ms
-        absolute_start_ms = row.absolute_end_ms
-        db.add(row)
-        synced_rows.append(row)
-        existing_by_sequence[row.sequence_no] = row
-        if row.idempotency_key:
-            existing_by_idempotency[row.idempotency_key] = row
-
-    return synced_rows
+    )
 
 
 async def _sync_recording_audio_chunks_from_directory(
@@ -287,25 +214,14 @@ async def _sync_recording_audio_chunks_from_directory(
     suffix: str,
 ) -> list[RecordingAudioChunk]:
     temp_dir = recording_upload_temp_dir(recording_id, create=False)
-    if not temp_dir.exists():
-        return []
-
-    disk_entries: list[tuple[int, Path]] = []
-    for filename in os.listdir(temp_dir):
-        if not filename.endswith(suffix):
-            continue
-        try:
-            sequence = int(os.path.splitext(filename)[0])
-        except ValueError:
-            continue
-        disk_entries.append((sequence, temp_dir / filename))
-    disk_entries.sort(key=lambda item: item[0])
-
-    return await _sync_recording_audio_chunks_from_entries(
-        db,
-        recording_id=recording_id,
-        source_kind=source_kind,
-        disk_entries=disk_entries,
+    return await db.run_sync(
+        lambda session: sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=recording_id,
+            source_kind=source_kind,
+            suffix=suffix,
+            temp_dir=temp_dir,
+        )
     )
 
 
@@ -375,13 +291,13 @@ async def _list_recording_audio_chunks(
     recording_id: int,
     source_kind: str | None = None,
 ) -> list[RecordingAudioChunk]:
-    statement = select(RecordingAudioChunk).where(
-        RecordingAudioChunk.recording_id == recording_id
+    return await db.run_sync(
+        lambda session: list_recording_audio_chunks(
+            session,
+            recording_id,
+            source_kind=source_kind,
+        )
     )
-    if source_kind is not None:
-        statement = statement.where(RecordingAudioChunk.source_kind == source_kind)
-    statement = statement.order_by(RecordingAudioChunk.sequence_no)
-    return list((await db.execute(statement)).scalars().all())
 
 
 async def _sync_recording_audio_window_manifests(
@@ -391,56 +307,31 @@ async def _sync_recording_audio_window_manifests(
     source_kind: str,
     seal_tail: bool,
 ) -> list[RecordingAudioWindowManifest]:
-    chunk_rows = await _list_recording_audio_chunks(
-        db,
-        recording_id,
-        source_kind=source_kind,
-    )
-    if not chunk_rows:
-        return []
-
-    manifest_rows = list(
-        (
-            await db.execute(
-                select(RecordingAudioWindowManifest)
-                .where(RecordingAudioWindowManifest.recording_id == recording_id)
-                .order_by(RecordingAudioWindowManifest.window_index)
-            )
+    return await db.run_sync(
+        lambda session: sync_recording_audio_window_manifests(
+            session,
+            recording_id=recording_id,
+            source_kind=source_kind,
+            seal_tail=seal_tail,
         )
-        .scalars()
-        .all()
     )
-    target_window_ms = int(config_manager.get("rolling_diarization_window_ms", 20_000))
-    hop_ms = int(config_manager.get("rolling_diarization_hop_ms", 5_000))
-    window_specs = build_audio_window_specs(
-        chunk_rows,
-        target_window_ms=target_window_ms,
-        hop_ms=hop_ms,
-        seal_tail=seal_tail,
-    )
-    applied_rows = apply_audio_window_specs(
-        recording_id=recording_id,
-        existing_rows=manifest_rows,
-        window_specs=window_specs,
-    )
-    for row in applied_rows:
-        db.add(row)
-    return applied_rows
 
 
 def _find_missing_chunk_sequences(chunk_rows: list[RecordingAudioChunk]) -> list[int]:
-    if not chunk_rows:
-        return []
+    return find_missing_chunk_sequences(chunk_rows)
 
-    missing_sequences: list[int] = []
-    expected_sequence = int(chunk_rows[0].sequence_no)
-    for row in chunk_rows:
-        sequence_no = int(row.sequence_no)
-        while expected_sequence < sequence_no:
-            missing_sequences.append(expected_sequence)
-            expected_sequence += 1
-        expected_sequence = sequence_no + 1
-    return missing_sequences
+
+def _find_pending_transcode_sequences(
+    recording_id: int,
+    *,
+    chunk_rows: list[RecordingAudioChunk],
+) -> list[int]:
+    temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    return find_pending_recording_upload_sequences(
+        recording_id,
+        chunk_rows=chunk_rows,
+        temp_dir=temp_dir,
+    )
 
 
 async def _mark_recording_audio_chunks_ready_for_cleanup(
@@ -873,12 +764,13 @@ async def upload_segment(
     Upload a segment for a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    segment_suffix = _resolve_segment_upload_suffix(file)
 
     _ensure_recording_accepts_companion_uploads(recording)
     
     recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
-    filename = os.path.basename(f"{int(sequence)}.wav")
+    filename = os.path.basename(f"{int(sequence)}{segment_suffix}")
     segment_path = recording_temp_dir / filename
     content = b""
     
@@ -886,18 +778,19 @@ async def upload_segment(
         async with aiofiles.open(segment_path, 'wb') as out_file:
             content = await file.read()
             await out_file.write(content)
-        await _sync_recording_audio_chunks_from_directory(
-            db,
-            recording_id=recording.id,
-            source_kind="companion",
-            suffix=".wav",
-        )
-        await _sync_recording_audio_window_manifests(
-            db,
-            recording_id=recording.id,
-            source_kind="companion",
-            seal_tail=False,
-        )
+        if segment_suffix == ".wav":
+            await _sync_recording_audio_chunks_from_directory(
+                db,
+                recording_id=recording.id,
+                source_kind="companion",
+                suffix=".wav",
+            )
+            await _sync_recording_audio_window_manifests(
+                db,
+                recording_id=recording.id,
+                source_kind="companion",
+                seal_tail=False,
+            )
         await db.commit()
     except Exception as e:
         try:
@@ -935,12 +828,22 @@ async def upload_segment(
     # Dispatch the live transcription task. This is best-effort: a missed live
     # dispatch is non-fatal because the final processing pipeline is
     # authoritative, so a broker failure must not break the segment upload.
-    if config_manager.get("enable_live_transcription"):
+    if segment_suffix == ".wav" and config_manager.get("enable_live_transcription"):
         try:
             transcribe_segment_live_task.delay(recording.id, sequence)
         except Exception as e:
             logger.warning(
                 "Failed to dispatch live transcription task for recording %s segment %s: %s",
+                recording.id,
+                sequence,
+                e,
+            )
+    elif segment_suffix in BROWSER_AUDIO_SEGMENT_SUFFIXES:
+        try:
+            transcode_segment_task.delay(recording.id, sequence)
+        except Exception as e:
+            logger.warning(
+                "Failed to dispatch segment transcode task for recording %s segment %s: %s",
                 recording.id,
                 sequence,
                 e,
@@ -1009,6 +912,15 @@ async def finalize_upload(
         recording_id=recording.id,
         source_kind="companion",
     )
+    pending_transcode_sequences = _find_pending_transcode_sequences(
+        recording.id,
+        chunk_rows=chunk_rows,
+    )
+    if pending_transcode_sequences:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording upload is still in progress; finalize after all segment uploads complete.",
+        )
     if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
 

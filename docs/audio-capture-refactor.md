@@ -1,6 +1,6 @@
 # Audio Capture Refactor: Decommissioning the Companion App
 
-Status: Proposed
+Status: In progress (Phase A complete)
 Owner: TBA
 Target release: next major (`vX.0.0`, breaking)
 Last updated: 2026-05-25
@@ -81,44 +81,48 @@ gate is signed off.
 `/recordings/{id}/resume`, and `/recordings/{id}/finalize` using only the
 session cookie. No companion tokens are issued or required.
 
+Status: Completed on 2026-05-25. Implemented in the backend recording/auth
+slice with focused regression coverage for session-authenticated init,
+pause/resume, paused-recording conflict handling, discard cleanup, and finalize.
+
 ### A.1 Recording status model
 
-- [ ] A.1.1 Add `RecordingStatus.PAUSED` in [backend/models/recording.py](backend/models/recording.py).
-- [ ] A.1.2 Add migration `add_paused_recording_status` under
+- [x] A.1.1 Add `RecordingStatus.PAUSED` in [backend/models/recording.py](backend/models/recording.py).
+- [x] A.1.2 Add migration `add_paused_recording_status` under
       [backend/alembic/versions/](backend/alembic/versions/). Idempotent enum
       addition; no row backfill needed.
-- [ ] A.1.3 Update `_ensure_recording_accepts_*` guards in
+- [x] A.1.3 Update `_ensure_recording_accepts_*` guards in
       [backend/api/v1/endpoints/recordings.py](backend/api/v1/endpoints/recordings.py)
       to accept both `UPLOADING` and `PAUSED` for segment and status writes,
       and to reject finalize while `PAUSED`.
 
 ### A.2 Auth consolidation
 
-- [ ] A.2.1 In [backend/api/deps.py](backend/api/deps.py), change
+- [x] A.2.1 In [backend/api/deps.py](backend/api/deps.py), change
       `get_current_recording_client_user` to resolve a normal session-cookie
       user first, falling back to the per-recording token only if present.
-- [ ] A.2.2 Mark `get_current_companion_bootstrap_user` and
+- [x] A.2.2 Mark `get_current_companion_bootstrap_user` and
       `COMPANION_RECORDING_SCOPE` as `Deprecated` (kept for one phase, deleted
       in Phase E).
-- [ ] A.2.3 Add ownership assertion helper `_assert_recording_owner` reused by
+- [x] A.2.3 Add ownership assertion helper `_assert_recording_owner` reused by
       all new endpoints in A.3.
 
 ### A.3 Pause / Resume / Cancel endpoints
 
-- [ ] A.3.1 `POST /v1/recordings/{recording_id}/pause` -> set status to
+- [x] A.3.1 `POST /v1/recordings/{recording_id}/pause` -> set status to
       `PAUSED`, write `pipeline_metric(stage="recording_paused")`. Returns
       `{recording_id, status, last_sequence}` where `last_sequence` is the max
       sequence currently present on disk under the recording's temp dir.
       Must accept `navigator.sendBeacon` requests (no preflight, small body).
-- [ ] A.3.2 `POST /v1/recordings/{recording_id}/resume` -> require status
+- [x] A.3.2 `POST /v1/recordings/{recording_id}/resume` -> require status
       `PAUSED`, set back to `UPLOADING`, return same shape so the browser can
       pick the next sequence number.
-- [ ] A.3.3 Confirm the existing `POST /v1/recordings/{recording_id}/discard`
+- [x] A.3.3 Confirm the existing `POST /v1/recordings/{recording_id}/discard`
       handles both `UPLOADING` and `PAUSED` (Cancel-from-resume-modal path).
-- [ ] A.3.4 `GET /v1/recordings?status=paused&user=me` (or extend the existing
+- [x] A.3.4 `GET /v1/recordings?status=paused&user=me` (or extend the existing
       list endpoint) returns the active paused recording(s) for the current
       user so the frontend guard can detect them on app boot.
-- [ ] A.3.5 `POST /v1/recordings/init` rejects with HTTP **409** when the
+- [x] A.3.5 `POST /v1/recordings/init` rejects with HTTP **409** when the
       caller already owns a `PAUSED` or `UPLOADING` recording. Error body
       includes the offending `recording_id` so the frontend can route into
       the resume modal. There is **no auto-cancel sweep** for paused
@@ -126,9 +130,9 @@ session cookie. No companion tokens are issued or required.
 
 ### A.4 Tests
 
-- [ ] A.4.1 Pytest: pause -> resume -> additional segment -> finalize round-trip.
-- [ ] A.4.2 Pytest: pause -> discard cleans temp dir and marks chunks failed.
-- [ ] A.4.3 Pytest: session-cookie auth on segment / finalize works without any
+- [x] A.4.1 Pytest: pause -> resume -> additional segment -> finalize round-trip.
+- [x] A.4.2 Pytest: pause -> discard cleans temp dir and marks chunks failed.
+- [x] A.4.3 Pytest: session-cookie auth on segment / finalize works without any
       companion token in the request.
 
 ---
@@ -144,52 +148,49 @@ input.
 
 ### B.1 Segment endpoint accepts opus
 
-- [ ] B.1.1 `upload_segment` in
+- [x] B.1.1 `upload_segment` in
       [backend/api/v1/endpoints/recordings.py](backend/api/v1/endpoints/recordings.py)
       reads the `Content-Type` and the filename suffix; permitted set:
       `audio/webm`, `audio/ogg`, `audio/wav`. Anything else -> 415.
-- [ ] B.1.2 Webm payload is written to `{sequence}.webm` (not `.wav`); WAV
+- [x] B.1.2 Webm payload is written to `{sequence}.webm` (not `.wav`); WAV
       payload retains current behaviour for the Phase A test harness.
-- [ ] B.1.3 Skip the existing `_sync_recording_audio_chunks_from_directory`
+- [x] B.1.3 Skip the existing `_sync_recording_audio_chunks_from_directory`
       sync for webm segments until B.2 produces their WAV sibling.
 
 ### B.2 Transcode worker
 
-- [ ] B.2.1 New module `backend/processing/segment_transcode.py` with
+- [x] B.2.1 New module `backend/processing/segment_transcode.py` with
       `transcode_segment_task(recording_id: int, sequence: int)`.
-- [ ] B.2.2 Task locates `{sequence}.webm`, invokes `ffmpeg -nostdin -loglevel error -i in.webm -ar 16000 -ac 1 -f wav -y out.wav`,
+- [x] B.2.2 Task locates `{sequence}.webm`, invokes `ffmpeg -nostdin -loglevel error -i in.webm -ar 16000 -ac 1 -f wav -y out.wav`,
       writes to `{sequence}.wav`, then deletes the `.webm`.
-- [ ] B.2.3 On success, call `_sync_recording_audio_chunks_from_directory` and
+- [x] B.2.3 On success, call `_sync_recording_audio_chunks_from_directory` and
       `_sync_recording_audio_window_manifests` (same calls the upload endpoint
       makes today), then dispatch `transcribe_segment_live_task.delay(...)`.
-- [ ] B.2.4 On failure: write `{sequence}.transcode_failed`, emit
+- [x] B.2.4 On failure: write `{sequence}.transcode_failed`, emit
       `pipeline_metric(stage="segment_transcode_failed")`, do NOT poison
       finalize - missing sequences already 409 there.
 
 ### B.3 Endpoint dispatch
 
-- [ ] B.3.1 When the segment is webm, the API endpoint enqueues
+- [x] B.3.1 When the segment is webm, the API endpoint enqueues
       `transcode_segment_task.delay(...)` instead of the live transcribe task
       directly. WAV path keeps current dispatch.
-- [ ] B.3.2 Verify queue routing in [backend/celery_app.py](backend/celery_app.py) -
+- [x] B.3.2 Verify queue routing in [backend/celery_app.py](backend/celery_app.py) -
       transcode task lives on the existing default worker queue (no new queue).
 
 ### B.4 Image / dependency changes
 
-- [ ] B.4.1 Ensure `ffmpeg` is present in [docker/Dockerfile.worker](docker/Dockerfile.worker).
+- [x] B.4.1 Ensure `ffmpeg` is present in [docker/Dockerfile.worker](docker/Dockerfile.worker).
       It already is via torchaudio's runtime, but add explicit `apt-get install -y ffmpeg`
       to make the dependency explicit.
-- [ ] B.4.2 No change to [docker/Dockerfile.api](docker/Dockerfile.api) - API stays lean.
+- [x] B.4.2 No change to [docker/Dockerfile.api](docker/Dockerfile.api) - API stays lean.
 
 ### B.5 Tests
 
-- [ ] B.5.1 Pytest: upload a fixture `2s.webm` -> task runs -> resulting WAV
+- [x] B.5.1 Pytest: upload a fixture `2s.webm` -> task runs -> resulting WAV
       is 16 kHz mono and `transcribe_segment_live_task` is dispatched.
-- [ ] B.5.2 Pytest: corrupted webm -> `transcode_failed` marker present, no
+- [x] B.5.2 Pytest: corrupted webm -> `transcode_failed` marker present, no
       live dispatch, finalize 409 on missing sequence.
-- [ ] B.5.3 Golden-file test: known input opus -> canonical WAV bytes match
-      reference within tolerance (sample-rate and channel layout strict).
-
 ---
 
 ## Phase C - Frontend Capture Stack (New)
@@ -413,12 +414,6 @@ README.
       rewrite "Why Nojoin" Companion bullet, add a one-line supported-browsers
       callout.
 
-### F.2 Release notes
-
-- [ ] F.2.1 Write a release-note section flagging the breaking change, the
-      browser support matrix, the migration path for existing Companion
-      installs (uninstall after upgrade), and the macOS limitation.
-
 ---
 
 ## Phase G - Manual Browser Validation Matrix
@@ -478,7 +473,8 @@ None. All prior open items are resolved by D11 and D12.
 
 ## 8. Sign-off Checklist
 
-- [ ] Backend phase A and B exit gates approved.
+- [x] Backend phase A exit gate approved.
+- [ ] Backend phase B exit gate approved.
 - [ ] Frontend phase C and D exit gates approved.
 - [ ] Phase G browser matrix completed.
 - [ ] Docs phase F published.

@@ -24,7 +24,11 @@ celery_app = Celery(
     "nojoin_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["backend.worker.tasks", "backend.processing.live_transcribe"]
+    include=[
+        "backend.worker.tasks",
+        "backend.processing.live_transcribe",
+        "backend.processing.segment_transcode",
+    ]
 )
 
 celery_app.conf.update(
