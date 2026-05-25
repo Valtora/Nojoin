@@ -237,34 +237,6 @@ def _build_speaker_map(speakers) -> dict:
         speaker_map[rs.diarization_label] = name
     return speaker_map
 
-def filter_segments_for_trim(segments, trim_start_s, trim_end_s):
-    """Return only segments overlapping the trim window. NULL bound = unbounded.
-
-    Non-destructive: a boundary-straddling segment is partially inside the
-    window, so it is kept. The original segments list is never mutated.
-    """
-    if trim_start_s is None and trim_end_s is None:
-        return segments
-    start = trim_start_s if trim_start_s is not None else float("-inf")
-    end = trim_end_s if trim_end_s is not None else float("inf")
-    return [
-        s for s in segments
-        if s.get("end", 0) > start and s.get("start", 0) < end
-    ]
-
-
-def _effective_trimmed_duration(recording: Recording):
-    """The displayed duration once the trim offsets are applied.
-
-    Returns ``(trim_end ?? duration) - (trim_start ?? 0)``, or ``None`` when
-    the recording has no duration recorded.
-    """
-    if recording.duration_seconds is None:
-        return None
-    end = recording.trim_end_s if recording.trim_end_s is not None else recording.duration_seconds
-    start = recording.trim_start_s if recording.trim_start_s is not None else 0.0
-    return end - start
-
 
 def _format_transcript_text(segments, speaker_map: dict) -> str:
     """Format transcript segments as text."""
@@ -631,16 +603,10 @@ async def export_content(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    # Apply the non-destructive trim window (display/export only). The stored
-    # transcript segments and recording duration are never mutated.
-    segments = filter_segments_for_trim(
-        await db.run_sync(
-            lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
-        ),
-        recording.trim_start_s,
-        recording.trim_end_s,
+    segments = await db.run_sync(
+        lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
     )
-    effective_duration = _effective_trimmed_duration(recording)
+    effective_duration = recording.duration_seconds
 
     # 3. Handle Formats
     include_transcript = content_type in ["transcript", "both"]

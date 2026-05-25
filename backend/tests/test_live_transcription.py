@@ -136,8 +136,6 @@ CREATE TABLE recordings (
     proxy_path VARCHAR(1024),
     celery_task_id VARCHAR(255),
     duration_seconds FLOAT,
-    trim_start_s FLOAT,
-    trim_end_s FLOAT,
     file_size_bytes INTEGER,
     status VARCHAR(32) NOT NULL,
     client_status VARCHAR(32),
@@ -346,16 +344,16 @@ async def test_meeting_edge_focus_endpoint_persists_focus_and_dispatches_refresh
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
                     audio_path, proxy_path, celery_task_id, duration_seconds,
-                    trim_start_s, trim_end_s, file_size_bytes, status,
-                    client_status, upload_progress, processing_progress,
-                    processing_step, processing_started_at,
+                    file_size_bytes, status, client_status,
+                    upload_progress, processing_progress, processing_step,
+                    processing_started_at,
                     processing_completed_at, is_archived, is_deleted,
                     user_id, calendar_event_id
                 ) VALUES (
                     1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
                     'rec-public', 'meeting-public', '/tmp/audio.wav', NULL,
-                    NULL, 120.0, NULL, NULL, NULL, 'UPLOADING', NULL, 0, 0,
-                    NULL, NULL, NULL, 0, 0, 1, NULL
+                    NULL, 120.0, NULL, 'UPLOADING', NULL, 0, 0, NULL,
+                    NULL, NULL, 0, 0, 1, NULL
                 )
                 """
             )
@@ -412,16 +410,16 @@ async def test_meeting_edge_focus_endpoint_skips_refresh_when_feature_disabled(
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
                     audio_path, proxy_path, celery_task_id, duration_seconds,
-                    trim_start_s, trim_end_s, file_size_bytes, status,
-                    client_status, upload_progress, processing_progress,
-                    processing_step, processing_started_at,
+                    file_size_bytes, status, client_status,
+                    upload_progress, processing_progress, processing_step,
+                    processing_started_at,
                     processing_completed_at, is_archived, is_deleted,
                     user_id, calendar_event_id
                 ) VALUES (
                     2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
                     'rec-public-disabled', 'meeting-public-disabled', '/tmp/audio.wav', NULL,
-                    NULL, 120.0, NULL, NULL, NULL, 'UPLOADING', NULL, 0, 0,
-                    NULL, NULL, NULL, 0, 0, 1, NULL
+                    NULL, 120.0, NULL, 'UPLOADING', NULL, 0, 0, NULL,
+                    NULL, NULL, 0, 0, 1, NULL
                 )
                 """
             )

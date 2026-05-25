@@ -109,8 +109,6 @@ SCHEMA_STATEMENTS = [
         proxy_path VARCHAR,
         celery_task_id VARCHAR,
         duration_seconds FLOAT,
-        trim_start_s FLOAT,
-        trim_end_s FLOAT,
         file_size_bytes INTEGER,
         status VARCHAR NOT NULL,
         client_status VARCHAR,

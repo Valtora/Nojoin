@@ -197,21 +197,6 @@ pipeline may open in a read-only compatibility state. In that case, playback,
 transcript viewing, and export remain available, but transcript or speaker
 edits require explicit reprocess first.
 
-### Trimming a Recording
-
-If you forgot to stop a recording and it carries trailing dead air (or a slow
-start), you can trim it without altering the original audio.
-
-- From the audio player on a processed recording, move the playhead and use
-  **Set trim start** and **Set trim end** to mark the kept window.
-- The player slider, the transcript view, and exports then reflect only the
-  trimmed window.
-- **Clear trim** restores the full recording everywhere.
-
-Trimming is non-destructive: it stores two offsets and never re-encodes the
-audio or changes the transcript. The downloaded audio file remains the full,
-untrimmed recording.
-
 ## Speaker Management
 
 Nojoin maintains a global speaker library across recordings.

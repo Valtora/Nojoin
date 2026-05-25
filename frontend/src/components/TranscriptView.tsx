@@ -63,8 +63,6 @@ interface TranscriptViewProps {
   disableSegmentPlayback?: boolean;
   emptyStateTitle?: string;
   emptyStateDescription?: string;
-  trimStartS?: number | null;
-  trimEndS?: number | null;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
   pendingRemoteUtteranceIds?: string[];
 }
@@ -100,8 +98,6 @@ export default function TranscriptView({
   disableSegmentPlayback = false,
   emptyStateTitle = "No transcript segments",
   emptyStateDescription,
-  trimStartS,
-  trimEndS,
   onActiveEditUtteranceChange,
   pendingRemoteUtteranceIds = [],
 }: TranscriptViewProps) {
@@ -599,18 +595,7 @@ export default function TranscriptView({
           segment.speaker !== "UNKNOWN" || segment.provisional === true,
       )
     : indexedSegments;
-
-  // Apply the non-destructive trim window (display only). A NULL bound is
-  // unbounded that side; a boundary-straddling segment is kept.
-  const trimLowerBound = trimStartS ?? Number.NEGATIVE_INFINITY;
-  const trimUpperBound = trimEndS ?? Number.POSITIVE_INFINITY;
-  const displaySegments =
-    trimStartS == null && trimEndS == null
-      ? speakerFilteredSegments
-      : speakerFilteredSegments.filter(
-          ({ segment }) =>
-            segment.end > trimLowerBound && segment.start < trimUpperBound,
-        );
+  const displaySegments = speakerFilteredSegments;
 
   const speakerDisplayOrder = useMemo(() => {
     const order = new Map<string, number>();

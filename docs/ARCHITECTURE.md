@@ -86,7 +86,7 @@ Manual user notes can be captured during recording or processing and are fed int
 
 If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
 
-Recordings carry nullable `trim_start_s` / `trim_end_s` offsets; trimming is display- and export-only, so the source audio and stored transcript are never mutated.
+Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
 
 ### Live Transcription Lane
 

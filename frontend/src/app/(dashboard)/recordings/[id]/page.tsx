@@ -11,7 +11,6 @@ import {
   updateTranscriptUtteranceText,
   findAndReplace,
   renameRecording,
-  updateRecordingTrim,
   getGlobalSpeakers,
   updateSpeakerColor,
   generateNotes,
@@ -640,33 +639,6 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
-  // Non-destructive trim: persist the offsets and merge the result locally.
-  const handleTrimChange = async (
-    startS: number | null,
-    endS: number | null,
-  ) => {
-    if (!recording) return;
-    try {
-      const updated = await updateRecordingTrim(recording.id, startS, endS);
-      setRecording((prev) =>
-        prev
-          ? {
-              ...prev,
-              trim_start_s: updated.trim_start_s,
-              trim_end_s: updated.trim_end_s,
-            }
-          : updated,
-      );
-    } catch (e: any) {
-      console.error("Failed to update trim", e);
-      addNotification({
-        type: "error",
-        message:
-          e?.response?.data?.detail ?? "Failed to update the recording trim.",
-      });
-    }
-  };
-
   // History Management
   const applyTranscriptHistory = useCallback(
     async (patches: TranscriptSegmentChange[], direction: "undo" | "redo") => {
@@ -1227,13 +1199,6 @@ export default function RecordingPage({ params }: PageProps) {
               onTimeUpdate={handleTimeUpdate}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
-              trimStartS={recording.trim_start_s}
-              trimEndS={recording.trim_end_s}
-              onTrimChange={
-                recording.status === RecordingStatus.PROCESSED
-                  ? handleTrimChange
-                  : undefined
-              }
             />
           )}
       </header>
@@ -1304,8 +1269,6 @@ export default function RecordingPage({ params }: PageProps) {
               canUndo={history.length > 0 && !isUndoing}
               canRedo={future.length > 0 && !isUndoing}
               onExport={() => setShowExportModal(true)}
-              trimStartS={recording.trim_start_s}
-              trimEndS={recording.trim_end_s}
               onActiveEditUtteranceChange={setActiveTranscriptEditId}
               pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
             />
@@ -1466,8 +1429,6 @@ export default function RecordingPage({ params }: PageProps) {
                       disableSegmentPlayback
                       emptyStateTitle="Listening for speech"
                       emptyStateDescription="Live transcript text will appear as Nojoin detects speech."
-                      trimStartS={recording.trim_start_s}
-                      trimEndS={recording.trim_end_s}
                       onActiveEditUtteranceChange={setActiveTranscriptEditId}
                       pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
                     />
