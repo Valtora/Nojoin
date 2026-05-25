@@ -2091,9 +2091,7 @@ async def update_speaker_color(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Update the color for a speaker.
-    If the speaker is linked to a Global Speaker, updates the Global Speaker's color.
-    Otherwise, updates the Recording Speaker's color.
+    Update the color for a speaker within a single recording.
     """
     # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
@@ -2110,17 +2108,9 @@ async def update_speaker_color(
     if not recording_speaker:
         raise HTTPException(status_code=404, detail=f"Speaker {label} not found in recording")
 
-    # 3. Update color
-    if recording_speaker.global_speaker_id:
-        # Update Global Speaker
-        global_speaker = await db.get(GlobalSpeaker, recording_speaker.global_speaker_id)
-        if global_speaker:
-            global_speaker.color = update.color
-            db.add(global_speaker)
-    else:
-        # Update Recording Speaker
-        recording_speaker.color = update.color
-        db.add(recording_speaker)
+    # 3. Update the recording-local color only.
+    recording_speaker.color = update.color
+    db.add(recording_speaker)
         
     await db.commit()
     

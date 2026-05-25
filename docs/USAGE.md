@@ -91,7 +91,7 @@ Meeting Edge also includes a smaller guidance field where you can tell the assis
 
 ### Live Transcription
 
-While a meeting is recording, the live transcript pane is visible immediately. It shows a listening state until speech is detected, then provisional transcript segments appear as live utterances complete. Long continuous speech is force-emitted after roughly 8 seconds, so natural monologues do not wait for a 30-second cutoff. These segments use per-speaker colours and can be edited while the recording is still in flight. Live speaker names and live transcript edits are treated as authoritative and carried into final processing.
+While a meeting is recording, the live transcript pane is visible immediately. It shows a listening state until speech is detected, then provisional transcript segments appear as live utterances complete. Long continuous speech is force-emitted after roughly 8 seconds, so natural monologues do not wait for a 30-second cutoff. These segments use per-speaker colours and can be edited while the recording is still in flight. Recording-page speaker colours are scoped to the current meeting so Nojoin can maximize contrast between active speakers; People library avatar colours remain a separate visual preference. Live speaker names and live transcript edits are treated as authoritative and carried into final processing.
 
 When changing a speaker from an utterance, the speaker picker lets you choose whether the change applies only to that utterance or to the whole transcript. A whole-transcript change updates every utterance with that same speaker label, both earlier in the current recording and later as the live transcript continues.
 
@@ -211,6 +211,8 @@ Common workflows include:
 Speakers with voiceprints display a fingerprint indicator in the UI.
 
 The Speaker Management panel shows speakers that own active transcript utterances. If a transient live or diarization label is manually corrected and no longer owns any utterances, Nojoin hides that orphaned label instead of leaving an empty duplicate row behind.
+
+Speaker colours on a recording are local to that meeting. Changing a colour in the recording workspace does not change the avatar colour you use for the same person in the global People library.
 
 ## Meeting Intelligence
 

@@ -45,11 +45,11 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useRouter } from "next/navigation";
-import { COLOR_PALETTE } from "@/lib/constants";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import {
+  buildMeetingSpeakerColors,
   buildGlobalSpeakerById,
   getRecordingSpeakerDisplayName,
   getResolvedGlobalSpeakerId,
@@ -531,70 +531,13 @@ export default function RecordingPage({ params }: PageProps) {
   useEffect(() => {
     if (!recording) return;
 
-    const newColors = { ...speakerColors };
-    const segments = transcriptSegments;
-
-    // Create a map of name -> diarization_label to handle legacy transcripts
-    const nameToLabel: Record<string, string> = {};
-    if (recording.speakers) {
-      recording.speakers.forEach((s) => {
-        if (s.name) nameToLabel[s.name] = s.diarization_label;
-        if (s.local_name) nameToLabel[s.local_name] = s.diarization_label;
-        if (s.global_speaker?.name)
-          nameToLabel[s.global_speaker.name] = s.diarization_label;
-        // Also map label to itself
-        nameToLabel[s.diarization_label] = s.diarization_label;
-      });
-    }
-
-    // Get all unique speaker labels (diarization labels)
-    const speakerLabels = new Set<string>();
-    segments.forEach((s) => {
-      speakerLabels.add(s.speaker);
-    });
-
-    speakerLabels.forEach((label) => {
-      // Try to resolve to diarization_label
-      const diarizationLabel = nameToLabel[label] || label;
-
-      // Check if color is already set in recording speakers
-      const speaker = recording.speakers?.find(
-        (s) => s.diarization_label === diarizationLabel,
-      );
-      if (speaker) {
-        if (speaker.global_speaker?.color) {
-          newColors[label] = speaker.global_speaker.color;
-          // Also set for diarizationLabel if different
-          if (label !== diarizationLabel) {
-            newColors[diarizationLabel] = speaker.global_speaker.color;
-          }
-          return;
-        }
-        if (speaker.color) {
-          newColors[label] = speaker.color;
-          if (label !== diarizationLabel) {
-            newColors[diarizationLabel] = speaker.color;
-          }
-          return;
-        }
-      }
-
-      if (!newColors[label]) {
-        // Use a stable hash function to assign colors based on the label
-        let hash = 0;
-        for (let i = 0; i < label.length; i++) {
-          hash = label.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const index = Math.abs(hash) % COLOR_PALETTE.length;
-        newColors[label] = COLOR_PALETTE[index].key;
-
-        // Also set for diarizationLabel if different and not set
-        if (label !== diarizationLabel && !newColors[diarizationLabel]) {
-          newColors[diarizationLabel] = COLOR_PALETTE[index].key;
-        }
-      }
-    });
-    setSpeakerColors(newColors);
+    setSpeakerColors(
+      buildMeetingSpeakerColors({
+        segments: transcriptSegments,
+        speakers: recording.speakers,
+        existingColors: speakerColors,
+      }),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, transcriptSegments]);
 
