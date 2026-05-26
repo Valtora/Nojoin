@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
-def safe_read_audio(path: str, sampling_rate: int = 16000):
+def safe_read_audio(path: str, sampling_rate: int = 16000, preserve_channels: bool = False):
     """
     Reads audio using torchaudio with 'soundfile' backend to avoid torchcodec issues.
     Replicates silero_vad.read_audio functionality.
@@ -16,13 +16,19 @@ def safe_read_audio(path: str, sampling_rate: int = 16000):
 
     wav, sr = torchaudio.load(path, backend="soundfile")
     
-    if wav.size(0) > 1:
+    if wav.ndim == 1:
+        wav = wav.unsqueeze(0)
+
+    if not preserve_channels and wav.size(0) > 1:
         wav = wav.mean(dim=0, keepdim=True)
         
     if sr != sampling_rate:
         transform = torchaudio.transforms.Resample(orig_freq=sr, new_freq=sampling_rate)
         wav = transform(wav)
         
+    if preserve_channels:
+        return wav
+
     return wav.squeeze(0)
 
 def mute_non_speech_segments(

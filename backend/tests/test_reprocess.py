@@ -1160,6 +1160,7 @@ def test_build_final_diarization_plan_skips_confident_live_reuse():
         "should_run": False,
         "reason": "confident_live_reuse",
         "low_confidence_spans": [],
+        "completed_window_replay_available": False,
     }
 
 
@@ -1209,7 +1210,7 @@ def test_build_final_diarization_plan_runs_for_low_confidence_live_spans():
     ]
 
 
-def test_build_final_diarization_plan_prefers_completed_window_replay_for_live_context():
+def test_build_final_diarization_plan_runs_for_low_confidence_even_with_window_replay():
     from backend.worker import tasks as tasks_module
 
     plan = tasks_module._build_final_diarization_plan(
@@ -1232,10 +1233,25 @@ def test_build_final_diarization_plan_prefers_completed_window_replay_for_live_c
     )
 
     assert plan == {
-        "should_run": False,
-        "reason": "completed_window_replay",
+        "should_run": True,
+        "reason": "low_confidence_spans",
         "low_confidence_spans": [{"start_ms": 0, "end_ms": 2000, "segment_count": 1}],
+        "completed_window_replay_available": True,
     }
+
+
+def test_collect_ordered_final_speaker_labels_keeps_unknown_unresolved():
+    from backend.worker import tasks as tasks_module
+
+    labels = tasks_module._collect_ordered_final_speaker_labels(
+        [
+            {"speaker": "UNKNOWN", "overlapping_speakers": ["LIVE_01"]},
+            {"speaker": "LIVE_02", "overlapping_speakers": ["UNKNOWN", "LIVE_01"]},
+            {"speaker": "", "overlapping_speakers": []},
+        ]
+    )
+
+    assert labels == ["LIVE_01", "LIVE_02"]
 
 
 def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):

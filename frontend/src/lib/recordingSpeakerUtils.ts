@@ -50,6 +50,20 @@ const stableHash = (value: string): number => {
   return Math.abs(hash);
 };
 
+const getGenericSpeakerAliasesForLabel = (label: string): string[] => {
+  const liveMatch = label.match(/^LIVE_(\d+)$/);
+  if (liveMatch) {
+    return [`Speaker ${Number.parseInt(liveMatch[1], 10)}`];
+  }
+
+  const diarizationMatch = label.match(/^SPEAKER_(\d+)$/);
+  if (diarizationMatch) {
+    return [`Speaker ${Number.parseInt(diarizationMatch[1], 10) + 1}`];
+  }
+
+  return [];
+};
+
 const normalisePaletteColorKey = (
   color: string | null | undefined,
 ): MeetingColorKey | undefined => {
@@ -129,6 +143,7 @@ const getSpeakerAliases = (speaker: RecordingSpeaker): string[] => {
     speaker.name,
     speaker.local_name,
     speaker.global_speaker?.name,
+    ...getGenericSpeakerAliasesForLabel(speaker.diarization_label),
   ].filter((alias): alias is string => Boolean(alias));
 
   return Array.from(new Set(aliases));
@@ -257,6 +272,39 @@ export const getRecordingSpeakerDisplayName = (
     speaker.name ||
     speaker.diarization_label
   );
+};
+
+export const getRecordingSpeakerDisplayAliases = (
+  speaker: RecordingSpeaker,
+  globalSpeakerById: Map<number, GlobalSpeaker>,
+): string[] => {
+  const globalSpeakerId = getResolvedGlobalSpeakerId(speaker);
+  const aliases = [
+    speaker.diarization_label,
+    speaker.name,
+    speaker.local_name,
+    speaker.global_speaker?.name,
+    globalSpeakerId ? globalSpeakerById.get(globalSpeakerId)?.name : undefined,
+    ...getGenericSpeakerAliasesForLabel(speaker.diarization_label),
+  ].filter((alias): alias is string => Boolean(alias));
+
+  return Array.from(new Set(aliases));
+};
+
+export const buildRecordingSpeakerDisplayMap = (
+  speakers: RecordingSpeaker[] | undefined,
+  globalSpeakerById: Map<number, GlobalSpeaker>,
+): Record<string, string> => {
+  const speakerMap: Record<string, string> = {};
+
+  (speakers ?? []).forEach((speaker) => {
+    const displayName = getRecordingSpeakerDisplayName(speaker, globalSpeakerById);
+    getRecordingSpeakerDisplayAliases(speaker, globalSpeakerById).forEach((alias) => {
+      speakerMap[alias] = displayName;
+    });
+  });
+
+  return speakerMap;
 };
 
 export const buildUniqueGlobalSpeakerIdByName = (

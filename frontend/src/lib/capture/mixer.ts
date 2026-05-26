@@ -148,17 +148,15 @@ export const createCaptureMixer = async (
   const microphoneGainNode = context.createGain();
   microphoneGainNode.gain.value = 1;
 
-  const monoBus = context.createGain();
-  monoBus.channelCount = 1;
-  monoBus.channelCountMode = "explicit";
+  const sourceMerger = context.createChannelMerger(2);
 
   systemSource.connect(systemAnalyser);
   microphoneSource.connect(microphoneAnalyser);
   systemSource.connect(systemGainNode);
   microphoneSource.connect(microphoneGainNode);
-  systemGainNode.connect(monoBus);
-  microphoneGainNode.connect(monoBus);
-  monoBus.connect(mixedAnalyser);
+  systemGainNode.connect(sourceMerger, 0, 0);
+  microphoneGainNode.connect(sourceMerger, 0, 1);
+  sourceMerger.connect(mixedAnalyser);
   mixedAnalyser.connect(destination);
 
   const systemSamples = new Uint8Array(systemAnalyser.fftSize);
@@ -213,7 +211,7 @@ export const createCaptureMixer = async (
       microphoneAnalyser.disconnect();
       systemGainNode.disconnect();
       microphoneGainNode.disconnect();
-      monoBus.disconnect();
+      sourceMerger.disconnect();
       systemSource.disconnect();
       microphoneSource.disconnect();
       await context.close();

@@ -77,7 +77,9 @@ LIVE_SAMPLE_RATE = 16000
 # may fragment a single speaker's normal pauses into many short utterances.
 LIVE_MIN_SILENCE_MS = 320
 LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
-LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.45
+LIVE_SPEAKER_MATCH_MARGIN = 0.05
+LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.62
+LIVE_SPEAKER_SOFT_MATCH_MARGIN = 0.12
 LIVE_NEW_SPEAKER_THRESHOLD = 0.35
 LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
 LIVE_MIN_EMBEDDING_DURATION_S = 0.5
@@ -160,13 +162,124 @@ def _load_recording_audio_chunks(session, recording_id: int) -> list[RecordingAu
         return []
 
 
+def _ensure_channel_first(audio):
+    if audio.ndim == 1:
+        return audio.unsqueeze(0)
+    return audio
+
+
+def _expand_audio_channels(audio, target_channel_count: int):
+    import torch
+
+    audio = _ensure_channel_first(audio)
+    channel_count = int(audio.size(0))
+    if channel_count == target_channel_count:
+        return audio
+    if channel_count == 1 and target_channel_count > 1:
+        return audio.repeat(target_channel_count, 1)
+    if channel_count > target_channel_count:
+        return audio[:target_channel_count]
+    padding = audio[-1:, :].repeat(target_channel_count - channel_count, 1)
+    return torch.cat([audio, padding], dim=0)
+
+
+def _concat_live_audio_channels(parts: list):
+    import torch
+
+    if not parts:
+        return torch.zeros((1, 0))
+    normalized_parts = [_ensure_channel_first(part) for part in parts]
+    target_channel_count = max(int(part.size(0)) for part in normalized_parts)
+    return torch.cat(
+        [
+            _expand_audio_channels(part, target_channel_count)
+            for part in normalized_parts
+        ],
+        dim=1,
+    )
+
+
+def _mix_live_audio_channels(audio):
+    audio = _ensure_channel_first(audio)
+    if audio.size(0) == 1:
+        return audio.squeeze(0)
+    return audio.mean(dim=0)
+
+
+def _read_live_audio_channels(path: str):
+    from backend.processing.vad import safe_read_audio
+
+    return _ensure_channel_first(
+        safe_read_audio(path, sampling_rate=LIVE_SAMPLE_RATE, preserve_channels=True)
+    )
+
+
+def _analyze_live_source_channels(audio) -> dict[str, Any]:
+    import torch
+
+    audio = _ensure_channel_first(audio)
+    channel_count = int(audio.size(0))
+    sample_count = int(audio.size(1)) if audio.ndim > 1 else int(audio.numel())
+    payload: dict[str, Any] = {
+        "channel_count": channel_count,
+        "sample_count": sample_count,
+    }
+    if channel_count < 2 or sample_count <= 0:
+        return payload
+
+    rms = torch.sqrt(torch.mean(audio.float() * audio.float(), dim=1) + 1e-12)
+    total_rms = float(torch.sum(rms).item())
+    if total_rms <= 1e-8:
+        payload.update(
+            {
+                "channel_rms": [0.0 for _ in range(channel_count)],
+                "channel_shares": [0.0 for _ in range(channel_count)],
+                "source_overlap": False,
+            }
+        )
+        return payload
+
+    shares = [float(value.item()) / total_rms for value in rms]
+    primary_channel = int(torch.argmax(rms).item())
+    sorted_shares = sorted(shares, reverse=True)
+    primary_share = sorted_shares[0]
+    secondary_share = sorted_shares[1] if len(sorted_shares) > 1 else 0.0
+    source_name_by_channel = {0: "system", 1: "microphone"}
+    primary_source = source_name_by_channel.get(primary_channel, f"channel_{primary_channel}")
+    dominant_source = None
+    if primary_share >= 0.65 and (secondary_share <= 0.0 or primary_share / secondary_share >= 1.5):
+        dominant_source = primary_source
+
+    payload.update(
+        {
+            "channel_rms": [round(float(value.item()), 6) for value in rms],
+            "channel_shares": [round(share, 4) for share in shares],
+            "primary_channel": primary_channel,
+            "primary_source": primary_source,
+            "primary_share": round(primary_share, 4),
+            "secondary_share": round(secondary_share, 4),
+            "dominant_source": dominant_source,
+            "source_overlap": bool(secondary_share >= 0.25),
+        }
+    )
+    return payload
+
+
+def _source_channel_speaker_confidence(source_activity: dict[str, Any]) -> float | None:
+    if not source_activity.get("dominant_source"):
+        return None
+    primary_share = float(source_activity.get("primary_share") or 0.0)
+    if source_activity.get("source_overlap"):
+        return round(min(primary_share, 0.54), 4)
+    return round(max(primary_share, 0.65), 4)
+
+
 def _build_audio_window_clip(
     *,
     manifest_row: RecordingAudioWindowManifest,
     chunk_rows: list[RecordingAudioChunk],
     clip_path: str,
 ) -> bool:
-    import torch
     import silero_vad
 
     from backend.processing.vad import safe_read_audio
@@ -184,7 +297,11 @@ def _build_audio_window_clip(
 
     parts = []
     for chunk_row in relevant_chunks:
-        chunk_audio = safe_read_audio(str(chunk_row.storage_path), sampling_rate=LIVE_SAMPLE_RATE)
+        chunk_audio = safe_read_audio(
+            str(chunk_row.storage_path),
+            sampling_rate=LIVE_SAMPLE_RATE,
+            preserve_channels=True,
+        )
         chunk_start_s = float(chunk_row.absolute_start_ms) / 1000.0
         chunk_end_s = float(chunk_row.absolute_end_ms) / 1000.0
         overlap_start_s = max(window_start_s, chunk_start_s)
@@ -195,12 +312,13 @@ def _build_audio_window_clip(
         end_sample = int(round((overlap_end_s - chunk_start_s) * LIVE_SAMPLE_RATE))
         if end_sample <= start_sample:
             continue
-        parts.append(chunk_audio[start_sample:end_sample])
+        chunk_audio = _ensure_channel_first(chunk_audio)
+        parts.append(chunk_audio[:, start_sample:end_sample])
 
     if not parts:
         return False
 
-    clip_audio = torch.cat(parts)
+    clip_audio = _concat_live_audio_channels(parts)
     clip_tensor = clip_audio if clip_audio.ndim > 1 else clip_audio.unsqueeze(0)
     silero_vad.save_audio(clip_path, clip_tensor, sampling_rate=LIVE_SAMPLE_RATE)
     return True
@@ -774,12 +892,20 @@ def _resolve_live_speaker(
     audio_path: str,
     merged_config: dict,
     fallback_label: str | None = None,
+    preferred_label: str | None = None,
+    excluded_labels: list[str] | None = None,
 ) -> str:
     from sqlmodel import select
 
     from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
     from backend.processing.embedding import cosine_similarity, merge_embeddings
     from backend.processing.embedding_core import extract_embedding_for_segments
+
+    excluded_label_set = {str(label) for label in (excluded_labels or []) if label}
+    if fallback_label in excluded_label_set:
+        fallback_label = None
+    if preferred_label in excluded_label_set:
+        preferred_label = None
 
     existing_speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
@@ -788,6 +914,7 @@ def _resolve_live_speaker(
         speaker
         for speaker in existing_speakers
         if speaker.diarization_label.startswith("LIVE_")
+        and speaker.diarization_label not in excluded_label_set
     ]
     live_speaker_by_label = {speaker.diarization_label: speaker for speaker in live_speakers}
 
@@ -858,6 +985,7 @@ def _resolve_live_speaker(
         match_kind: str,
         *,
         score: float | None = None,
+        second_best_score: float | None = None,
         global_score: float | None = None,
     ) -> str:
         payload: dict[str, Any] = {
@@ -866,10 +994,15 @@ def _resolve_live_speaker(
             "duration_s": round(duration, 3),
             "had_embedding": bool(embedding),
             "fallback_label": fallback_label,
+            "preferred_label": preferred_label,
+            "excluded_labels": sorted(excluded_label_set),
             "live_speaker_count": len(live_speakers),
         }
         if score is not None:
             payload["score"] = round(score, 4)
+        if second_best_score is not None:
+            payload["second_best_score"] = round(second_best_score, 4)
+            payload["score_margin"] = round(float(score or 0.0) - second_best_score, 4)
         if global_score is not None:
             payload["global_score"] = round(global_score, 4)
         record_pipeline_metric(
@@ -881,6 +1014,8 @@ def _resolve_live_speaker(
         return label
 
     if not embedding:
+        if preferred_label and preferred_label in live_speaker_by_label:
+            return _record_resolution(preferred_label, "preferred_source_channel")
         if fallback_label and fallback_label in live_speaker_by_label:
             return _record_resolution(fallback_label, "fallback_last_label")
         if len(live_speakers) == 1:
@@ -895,15 +1030,50 @@ def _resolve_live_speaker(
             )
 
     if embedding:
-        best_speaker = None
-        best_score = 0.0
+        scored_speakers = []
         for speaker in live_speakers:
             if not speaker.embedding:
                 continue
             score = cosine_similarity(speaker.embedding, embedding)
-            if score > best_score:
-                best_score = score
-                best_speaker = speaker
+            scored_speakers.append((speaker, score))
+
+        scored_speakers.sort(key=lambda item: item[1], reverse=True)
+        best_speaker = scored_speakers[0][0] if scored_speakers else None
+        best_score = float(scored_speakers[0][1]) if scored_speakers else 0.0
+        second_best_score = float(scored_speakers[1][1]) if len(scored_speakers) > 1 else 0.0
+        score_margin = best_score - second_best_score
+        preferred_speaker = live_speaker_by_label.get(preferred_label or "")
+
+        if preferred_speaker:
+            if not preferred_speaker.embedding:
+                preferred_speaker.embedding = embedding
+                session.add(preferred_speaker)
+                session.flush()
+                return _record_resolution(
+                    preferred_speaker.diarization_label,
+                    "preferred_source_channel_claim_embedding",
+                )
+            preferred_score = cosine_similarity(preferred_speaker.embedding, embedding)
+            if (
+                preferred_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD
+                or best_score < LIVE_SPEAKER_MATCH_THRESHOLD
+                or score_margin < LIVE_SPEAKER_MATCH_MARGIN
+            ):
+                if preferred_score >= LIVE_SPEAKER_MATCH_THRESHOLD:
+                    preferred_speaker.embedding = merge_embeddings(
+                        preferred_speaker.embedding,
+                        embedding,
+                        alpha=0.15,
+                        drift_guard=True,
+                    )
+                    session.add(preferred_speaker)
+                    session.flush()
+                return _record_resolution(
+                    preferred_speaker.diarization_label,
+                    "preferred_source_channel",
+                    score=preferred_score,
+                    second_best_score=second_best_score if best_speaker else None,
+                )
 
         if not best_speaker and fallback_label and fallback_label in live_speaker_by_label:
             fallback_speaker = live_speaker_by_label[fallback_label]
@@ -915,12 +1085,16 @@ def _resolve_live_speaker(
                 "fallback_claim_embedding",
             )
 
-        if best_speaker and best_score >= LIVE_SPEAKER_MATCH_THRESHOLD:
+        if (
+            best_speaker
+            and best_score >= LIVE_SPEAKER_MATCH_THRESHOLD
+            and score_margin >= LIVE_SPEAKER_MATCH_MARGIN
+        ):
             best_speaker.embedding = merge_embeddings(
                 best_speaker.embedding,
                 embedding,
                 alpha=0.25,
-                drift_guard=False,
+                drift_guard=True,
             )
             session.add(best_speaker)
             session.flush()
@@ -928,21 +1102,19 @@ def _resolve_live_speaker(
                 best_speaker.diarization_label,
                 "local_embedding",
                 score=best_score,
+                second_best_score=second_best_score,
             )
 
-        if best_speaker and best_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD:
-            best_speaker.embedding = merge_embeddings(
-                best_speaker.embedding,
-                embedding,
-                alpha=0.10,
-                drift_guard=False,
-            )
-            session.add(best_speaker)
-            session.flush()
+        if (
+            best_speaker
+            and best_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD
+            and score_margin >= LIVE_SPEAKER_SOFT_MATCH_MARGIN
+        ):
             return _record_resolution(
                 best_speaker.diarization_label,
                 "local_embedding_soft",
                 score=best_score,
+                second_best_score=second_best_score,
             )
 
         if user_id:
@@ -973,7 +1145,7 @@ def _resolve_live_speaker(
                         linked_speaker.embedding or [],
                         embedding,
                         alpha=0.25,
-                        drift_guard=False,
+                        drift_guard=True,
                     )
                     session.add(linked_speaker)
                     session.flush()
@@ -1000,25 +1172,24 @@ def _resolve_live_speaker(
                 )
 
         if live_speakers:
-            if (
-                best_speaker
-                and best_score > LIVE_NEW_SPEAKER_THRESHOLD
-            ) or duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
-                if fallback_label and fallback_label in live_speaker_by_label:
-                    return _record_resolution(
-                        fallback_label,
-                        "low_confidence_fallback_label",
-                        score=best_score if best_speaker else None,
-                    )
+            if fallback_label and fallback_label in live_speaker_by_label:
+                return _record_resolution(
+                    fallback_label,
+                    "low_confidence_fallback_label",
+                    score=best_score if best_speaker else None,
+                    second_best_score=second_best_score if best_speaker else None,
+                )
+            if duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
                 if best_speaker:
                     return _record_resolution(
                         best_speaker.diarization_label,
-                        "low_confidence_best_speaker",
+                        "short_low_confidence_best_speaker",
                         score=best_score,
+                        second_best_score=second_best_score,
                     )
                 return _record_resolution(
                     live_speakers[-1].diarization_label,
-                    "low_confidence_latest_speaker",
+                    "short_low_confidence_latest_speaker",
                 )
 
     next_index = len(live_speakers) + 1
@@ -1329,6 +1500,7 @@ def _build_live_confidence_payload(
     region_segment_payloads: list[dict[str, Any]],
     region_start_ms: int,
     region_end_ms: int,
+    source_activity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     absolute_segments: list[dict[str, Any]] = []
     has_word_timestamps = False
@@ -1356,12 +1528,15 @@ def _build_live_confidence_payload(
             absolute_segment["words"] = words
         absolute_segments.append(absolute_segment)
 
-    return {
+    payload: dict[str, Any] = {
         "utterance_start_ms": int(region_start_ms),
         "utterance_end_ms": int(region_end_ms),
         "asr_segments": absolute_segments,
         "asr_word_timestamps_available": has_word_timestamps,
     }
+    if source_activity:
+        payload["source_channel_activity"] = source_activity
+    return payload
 
 
 def _strip_repetition(text: str) -> str:
@@ -1426,7 +1601,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording, RecordingStatus
     from backend.models.user import User
-    from backend.processing.vad import detect_speech_segments, safe_read_audio
+    from backend.processing.vad import detect_speech_segments
     from backend.processing.transcribe import transcribe_audio
     from backend.worker.tasks import resolve_llm_config
 
@@ -1478,6 +1653,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     live_dir.mkdir(parents=True, exist_ok=True)
 
     state = read_live_state(live_dir)
+    source_channel_labels = state.setdefault("source_channel_labels", {})
+    if not isinstance(source_channel_labels, dict):
+        source_channel_labels = {}
+        state["source_channel_labels"] = source_channel_labels
     session = get_sync_session()
     try:
         manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
@@ -1562,15 +1741,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             log=logger,
         )
         # --- Build combined buffer ---
-        parts = []
+        channel_parts = []
         if os.path.exists(buffer_path):
-            parts.append(safe_read_audio(buffer_path, sampling_rate=LIVE_SAMPLE_RATE))
+            channel_parts.append(_read_live_audio_channels(buffer_path))
         for seg_n in run:
-            parts.append(
-                safe_read_audio(str(temp_dir / f"{seg_n}.wav"), sampling_rate=LIVE_SAMPLE_RATE)
-            )
+            channel_parts.append(_read_live_audio_channels(str(temp_dir / f"{seg_n}.wav")))
 
-        combined = torch.cat(parts) if parts else torch.zeros(0)
+        combined_channels = _concat_live_audio_channels(channel_parts)
+        combined = _mix_live_audio_channels(combined_channels)
         combined_len = combined.numel() / LIVE_SAMPLE_RATE
         combined_abs_start = buffer_abs_start
 
@@ -1654,9 +1832,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         # --- Read the rolling left-context buffer (already-consumed audio) ---
         context_path = str(live_dir / _CONTEXT_FILENAME)
         if os.path.exists(context_path):
-            prev_context = safe_read_audio(context_path, sampling_rate=LIVE_SAMPLE_RATE)
+            prev_context_channels = _read_live_audio_channels(context_path)
         else:
-            prev_context = torch.zeros(0)
+            prev_context_channels = torch.zeros((combined_channels.size(0), 0))
+        prev_context_channels = _expand_audio_channels(
+            prev_context_channels,
+            int(combined_channels.size(0)),
+        )
+        prev_context = _mix_live_audio_channels(prev_context_channels)
 
         # --- Transcribe each completed speech region ---
         new_segments = []
@@ -1667,8 +1850,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             start_sample = int(sp["start"] * LIVE_SAMPLE_RATE)
             end_sample = int(sp["end"] * LIVE_SAMPLE_RATE)
             region = combined[start_sample:end_sample]
+            region_channels = combined_channels[:, start_sample:end_sample]
             if region.numel() == 0:
                 continue
+            source_activity = _analyze_live_source_channels(region_channels)
 
             # Prepend a rolling audio context window so the engine has run-up.
             left_context = torch.cat([prev_context, combined[:start_sample]])
@@ -1742,6 +1927,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         raise
                     metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
                 speaker_label = "UNKNOWN"
+                source_hint = source_activity.get("dominant_source")
+                preferred_label = None
+                excluded_labels = []
+                if source_hint == "microphone":
+                    preferred_label = source_channel_labels.get("microphone")
+                elif source_hint == "system" and source_channel_labels.get("microphone"):
+                    excluded_labels.append(str(source_channel_labels["microphone"]))
                 session = get_sync_session()
                 try:
                     speaker_label = _resolve_live_speaker(
@@ -1751,6 +1943,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         audio_path=region_path,
                         merged_config=merged_config,
                         fallback_label=state.get("last_speaker_label"),
+                        preferred_label=preferred_label,
+                        excluded_labels=excluded_labels,
                     )
                     session.commit()
                 except Exception as speaker_exc:
@@ -1833,10 +2027,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     "text": text,
                     "provisional": True,
                     "segment_source": "live",
+                    "speaker_state": "provisional",
+                    "speaker_confidence": _source_channel_speaker_confidence(source_activity),
                     "confidence_payload": _build_live_confidence_payload(
                         region_segment_payloads=region_segment_payloads,
                         region_start_ms=region_start_ms,
                         region_end_ms=region_end_ms,
+                        source_activity=source_activity,
                     ),
                 }
             )
@@ -1857,12 +2054,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             )
             if speaker_label != "UNKNOWN":
                 state["last_speaker_label"] = speaker_label
+                if source_activity.get("dominant_source") == "microphone":
+                    source_channel_labels.setdefault("microphone", speaker_label)
 
         # --- Carry over the unconsumed trailing audio ---
         cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
-        new_buffer = combined[cut_sample:]
-        if new_buffer.numel() > 0:
-            tensor = new_buffer if new_buffer.ndim > 1 else new_buffer.unsqueeze(0)
+        new_buffer_channels = combined_channels[:, cut_sample:]
+        if new_buffer_channels.numel() > 0:
+            tensor = new_buffer_channels if new_buffer_channels.ndim > 1 else new_buffer_channels.unsqueeze(0)
             import silero_vad
 
             silero_vad.save_audio(buffer_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
@@ -1876,13 +2075,15 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         # --- Update the rolling left-context buffer ---
         # consumed = the already-consumed audio immediately preceding the new
         # buffer; its last W samples become run-up for the next run.
-        consumed = torch.cat([prev_context, combined[:cut_sample]])
+        consumed_channels = _concat_live_audio_channels(
+            [prev_context_channels, combined_channels[:, :cut_sample]]
+        )
         if W > 0:
-            consumed = consumed[-W:]
+            consumed_channels = consumed_channels[:, -W:]
         else:
-            consumed = consumed[:0]
-        if consumed.numel() > 0:
-            tensor = consumed if consumed.ndim > 1 else consumed.unsqueeze(0)
+            consumed_channels = consumed_channels[:, :0]
+        if consumed_channels.numel() > 0:
+            tensor = consumed_channels if consumed_channels.ndim > 1 else consumed_channels.unsqueeze(0)
             import silero_vad
 
             silero_vad.save_audio(context_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)

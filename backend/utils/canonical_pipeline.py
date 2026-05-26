@@ -58,6 +58,7 @@ TOMBSTONE_UTTERANCE_STATES = {
 
 UNKNOWN_SPEAKER = "UNKNOWN"
 LABEL_PATTERN = re.compile(r"^(LIVE_\d+|SPEAKER_\d+|MANUAL_[A-Za-z0-9]+)$")
+GENERIC_SPEAKER_DISPLAY_PATTERN = re.compile(r"^Speaker\s+\d+$", re.IGNORECASE)
 
 ROLLING_DIARIZATION_MANUAL_WEIGHT = 6.0
 ROLLING_DIARIZATION_CONTINUITY_WEIGHT = 4.0
@@ -580,22 +581,56 @@ def merge_recording_speaker_aliases(
         existing_target_keys.add(alias_key)
 
 
-def _live_alias_values_for_speaker(session, recording_speaker: RecordingSpeaker) -> set[str]:
+def _generic_display_aliases_for_label(label: str | None) -> set[str]:
+    if not label:
+        return set()
+
+    live_match = re.match(r"^LIVE_(\d+)$", label)
+    if live_match:
+        return {f"Speaker {int(live_match.group(1))}"}
+
+    diarization_match = re.match(r"^SPEAKER_(\d+)$", label)
+    if diarization_match:
+        return {f"Speaker {int(diarization_match.group(1)) + 1}"}
+
+    return set()
+
+
+def _is_generic_speaker_display_alias(value: str | None) -> bool:
+    return bool(value and GENERIC_SPEAKER_DISPLAY_PATTERN.match(value.strip()))
+
+
+def _continuity_alias_values_for_speaker(session, recording_speaker: RecordingSpeaker) -> set[str]:
+    ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
+
     values: set[str] = set()
-    if recording_speaker.diarization_label and recording_speaker.diarization_label.startswith("LIVE_"):
+    if recording_speaker.diarization_label:
         values.add(recording_speaker.diarization_label)
+        values.update(_generic_display_aliases_for_label(recording_speaker.diarization_label))
 
     alias_rows = session.execute(
-        select(RecordingSpeakerAlias.alias_value)
+        select(RecordingSpeakerAlias.alias_type, RecordingSpeakerAlias.alias_value)
         .where(RecordingSpeakerAlias.recording_speaker_id == recording_speaker.id)
-        .where(RecordingSpeakerAlias.alias_type == RecordingSpeakerAliasType.LIVE_LABEL)
         .where(RecordingSpeakerAlias.active.is_(True))
     ).all()
-    values.update(str(alias_value) for (alias_value,) in alias_rows if alias_value)
+    machine_alias_types = {
+        RecordingSpeakerAliasType.DIARIZATION_LABEL.value,
+        RecordingSpeakerAliasType.LIVE_LABEL.value,
+        RecordingSpeakerAliasType.MANUAL_LABEL.value,
+        RecordingSpeakerAliasType.IMPORT_LABEL.value,
+    }
+    for alias_type, alias_value in alias_rows:
+        if not alias_value:
+            continue
+        alias_type_value = alias_type.value if hasattr(alias_type, "value") else str(alias_type)
+        alias_text = str(alias_value)
+        if alias_type_value in machine_alias_types or _is_generic_speaker_display_alias(alias_text):
+            values.add(alias_text)
+
     return values
 
 
-def _preserve_live_label_continuity(
+def _preserve_speaker_label_continuity(
     session,
     *,
     source_speaker: RecordingSpeaker | None,
@@ -609,11 +644,16 @@ def _preserve_live_label_continuity(
         return
 
     valid_from_ms = anchor_start_ms if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD else None
-    for alias_value in _live_alias_values_for_speaker(session, source_speaker):
+    for alias_value in _continuity_alias_values_for_speaker(session, source_speaker):
+        alias_type = (
+            RecordingSpeakerAliasType.DISPLAY_NAME
+            if _is_generic_speaker_display_alias(alias_value)
+            else _alias_type_for_value(alias_value)
+        )
         _ensure_recording_speaker_alias(
             session,
             recording_speaker_id=target_speaker.id,
-            alias_type=RecordingSpeakerAliasType.LIVE_LABEL,
+            alias_type=alias_type,
             alias_value=alias_value,
             source_run_id=target_speaker.processing_run_id or source_speaker.processing_run_id,
             active=True,
@@ -2009,7 +2049,7 @@ def update_utterance_speaker(
             updated_segments[projection_index]["state"] = target_utterance.state.value
             updated_segments[projection_index]["updated_at"] = target_utterance.updated_at.isoformat()
 
-    _preserve_live_label_continuity(
+    _preserve_speaker_label_continuity(
         session,
         source_speaker=source_speaker,
         target_speaker=target_speaker,
@@ -2449,6 +2489,7 @@ def serialize_canonical_utterances(
     session,
     recording_id: int,
     only_public_ids: set[str] | None = None,
+    include_confidence_payload: bool = False,
 ) -> list[dict[str, Any]]:
     transcript = _load_transcript(session, recording_id)
     recording_speakers = _load_recording_speakers(session, recording_id)
@@ -2465,33 +2506,34 @@ def serialize_canonical_utterances(
         if only_public_ids is not None and utterance.public_id not in only_public_ids:
             continue
         projection = projection_by_id.get(utterance.public_id, {})
-        payloads.append(
-            {
-                "id": utterance.public_id,
-                "start": utterance.start_ms / 1000.0,
-                "end": utterance.end_ms / 1000.0,
-                "start_ms": utterance.start_ms,
-                "end_ms": utterance.end_ms,
-                "text": utterance.text,
-                "speaker": utterance.speaker_label or projection.get("speaker") or UNKNOWN_SPEAKER,
-                "recording_speaker_id": utterance.recording_speaker_id,
-                "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
-                "revision": utterance.revision,
-                "segment_source": utterance.source_kind,
-                "provisional": (utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)) == TranscriptUtteranceState.PROVISIONAL.value,
-                "speaker_manually_edited": utterance.manual_speaker_locked,
-                "text_manually_edited": utterance.manual_text_locked,
-                "speaker_state": _speaker_state_for_utterance(utterance, projection=projection),
-                "speaker_confidence": utterance.speaker_confidence,
-                "text_confidence": utterance.text_confidence,
-                "updated_at": utterance.updated_at.isoformat(),
-                "overlapping_speakers": _rolling_overlap_labels_for_utterance(
-                    utterance,
-                    projection=projection,
-                    recording_speakers_by_id=recording_speakers_by_id,
-                ),
-            }
-        )
+        payload = {
+            "id": utterance.public_id,
+            "start": utterance.start_ms / 1000.0,
+            "end": utterance.end_ms / 1000.0,
+            "start_ms": utterance.start_ms,
+            "end_ms": utterance.end_ms,
+            "text": utterance.text,
+            "speaker": utterance.speaker_label or projection.get("speaker") or UNKNOWN_SPEAKER,
+            "recording_speaker_id": utterance.recording_speaker_id,
+            "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+            "revision": utterance.revision,
+            "segment_source": utterance.source_kind,
+            "provisional": (utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)) == TranscriptUtteranceState.PROVISIONAL.value,
+            "speaker_manually_edited": utterance.manual_speaker_locked,
+            "text_manually_edited": utterance.manual_text_locked,
+            "speaker_state": _speaker_state_for_utterance(utterance, projection=projection),
+            "speaker_confidence": utterance.speaker_confidence,
+            "text_confidence": utterance.text_confidence,
+            "updated_at": utterance.updated_at.isoformat(),
+            "overlapping_speakers": _rolling_overlap_labels_for_utterance(
+                utterance,
+                projection=projection,
+                recording_speakers_by_id=recording_speakers_by_id,
+            ),
+        }
+        if include_confidence_payload:
+            payload["confidence_payload"] = dict(utterance.confidence_payload or {})
+        payloads.append(payload)
     return payloads
 
 
@@ -2557,7 +2599,11 @@ def build_transcript_text_for_read(
 
 def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, Any]]:
     reusable_segments: list[dict[str, Any]] = []
-    for payload in serialize_canonical_utterances(session, recording_id):
+    for payload in serialize_canonical_utterances(
+        session,
+        recording_id,
+        include_confidence_payload=True,
+    ):
         source_kind = str(payload.get("segment_source") or "")
         if source_kind not in {"live", "catch_up"} and payload.get("provisional") is not True:
             continue

@@ -45,6 +45,8 @@ class FakeMediaStreamDestinationNode extends FakeAudioNode {
   stream = {} as MediaStream;
 }
 
+class FakeChannelMergerNode extends FakeAudioNode {}
+
 class FakeMediaStreamSourceNode extends FakeAudioNode {
   constructor(readonly stream: MediaStream) {
     super();
@@ -72,6 +74,10 @@ class FakeAudioContext {
 
   createGain() {
     return new FakeGainNode();
+  }
+
+  createChannelMerger() {
+    return new FakeChannelMergerNode();
   }
 
   async resume() {

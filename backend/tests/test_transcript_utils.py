@@ -1,5 +1,25 @@
 import pytest
-from backend.utils.transcript_utils import consolidate_diarized_transcript
+from pyannote.core import Segment
+
+from backend.utils.transcript_utils import (
+    combine_transcription_diarization,
+    consolidate_diarized_transcript,
+)
+
+
+class FakeDiarization:
+    def __init__(self, turns):
+        self.turns = turns
+
+    def __bool__(self):
+        return True
+
+    def itertracks(self, yield_label=False):
+        for start, end, label in self.turns:
+            if yield_label:
+                yield Segment(start, end), None, label
+            else:
+                yield Segment(start, end), None
 
 def test_consolidate_preserves_short_segments_if_only_one():
     """Test that a single short segment is NOT filtered out."""
@@ -115,3 +135,95 @@ def test_regression_giant_segment_split():
     last = result[-1]
     assert last['start'] == 30.0
     assert last['end'] == 35.0
+
+
+def test_word_level_combination_ignores_tiny_secondary_overlap():
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 0.5,
+                "text": " hello",
+                "words": [{"start": 0.0, "end": 0.5, "word": " hello"}],
+            }
+        ]
+    }
+    diarization = FakeDiarization(
+        [
+            (0.0, 0.5, "SPEAKER_00"),
+            (0.48, 0.5, "SPEAKER_01"),
+        ]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert result == [
+        {
+            "start": 0.0,
+            "end": 0.5,
+            "speaker": "SPEAKER_00",
+            "overlapping_speakers": [],
+            "text": "hello",
+            "words": [{"start": 0.0, "end": 0.5, "word": " hello"}],
+        }
+    ]
+
+
+def test_word_level_combination_smooths_isolated_speaker_flip():
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 0.9,
+                "text": " one two three",
+                "words": [
+                    {"start": 0.0, "end": 0.3, "word": " one"},
+                    {"start": 0.3, "end": 0.6, "word": " two"},
+                    {"start": 0.6, "end": 0.9, "word": " three"},
+                ],
+            }
+        ]
+    }
+    diarization = FakeDiarization(
+        [
+            (0.0, 0.3, "SPEAKER_00"),
+            (0.3, 0.6, "SPEAKER_01"),
+            (0.6, 0.9, "SPEAKER_00"),
+        ]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert len(result) == 1
+    assert result[0]["speaker"] == "SPEAKER_00"
+    assert result[0]["text"] == "one two three"
+
+
+def test_segment_level_combination_ignores_tiny_secondary_overlap():
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 2.0,
+                "text": "hello there",
+            }
+        ]
+    }
+    diarization = FakeDiarization(
+        [
+            (0.0, 2.0, "SPEAKER_00"),
+            (1.9, 2.0, "SPEAKER_01"),
+        ]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert result == [
+        {
+            "start": 0.0,
+            "end": 2.0,
+            "speaker": "SPEAKER_00",
+            "overlapping_speakers": [],
+            "text": "hello there",
+        }
+    ]

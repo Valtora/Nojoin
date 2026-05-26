@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import asyncio
 from pathlib import Path
 from typing import Any, List, Optional
 from datetime import UTC, datetime, timezone
@@ -38,7 +39,7 @@ from backend.celery_app import celery_app
 from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
 from backend.processing.llm_services import get_llm_backend
 from backend.processing.live_transcribe import transcribe_segment_live_task
-from backend.processing.segment_transcode import transcode_segment_task
+from backend.processing.segment_transcode import transcode_segment_task, transcode_staged_browser_segment
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now
@@ -329,6 +330,25 @@ def _find_pending_transcode_sequences(
         chunk_rows=chunk_rows,
         temp_dir=temp_dir,
     )
+
+
+async def _transcode_pending_browser_segments_for_finalize(
+    recording_id: int,
+    pending_sequences: list[int],
+) -> list[int]:
+    failed_sequences: list[int] = []
+    for sequence in pending_sequences:
+        try:
+            await asyncio.to_thread(transcode_staged_browser_segment, recording_id, sequence)
+        except Exception as exc:
+            failed_sequences.append(sequence)
+            logger.warning(
+                "Failed to transcode pending browser segment %s for recording %s during finalize: %s",
+                sequence,
+                recording_id,
+                exc,
+            )
+    return failed_sequences
 
 
 async def _mark_recording_audio_chunks_ready_for_cleanup(
@@ -870,6 +890,33 @@ async def finalize_upload(
         recording.id,
         chunk_rows=chunk_rows,
     )
+    if pending_transcode_sequences:
+        await _transcode_pending_browser_segments_for_finalize(
+            recording.id,
+            pending_transcode_sequences,
+        )
+        await _sync_recording_audio_chunks_from_directory(
+            db,
+            recording_id=recording.id,
+            source_kind="browser",
+            suffix=".wav",
+        )
+        await _sync_recording_audio_window_manifests(
+            db,
+            recording_id=recording.id,
+            source_kind="browser",
+            seal_tail=True,
+        )
+        chunk_rows = await _list_recording_audio_chunks(
+            db,
+            recording_id=recording.id,
+            source_kind="browser",
+        )
+        pending_transcode_sequences = _find_pending_transcode_sequences(
+            recording.id,
+            chunk_rows=chunk_rows,
+        )
+
     if pending_transcode_sequences:
         raise HTTPException(
             status_code=409,

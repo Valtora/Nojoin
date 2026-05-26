@@ -18,18 +18,54 @@ def is_live_segment(segment: dict[str, Any]) -> bool:
     )
 
 
+def _coerce_seconds_from_ms(value: Any) -> float | None:
+    try:
+        return float(value) / 1000.0
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_reusable_words(segment: dict[str, Any]) -> list[dict[str, Any]]:
+    confidence_payload = segment.get("confidence_payload")
+    if not isinstance(confidence_payload, dict):
+        return []
+
+    words: list[dict[str, Any]] = []
+    for asr_segment in confidence_payload.get("asr_segments") or []:
+        if not isinstance(asr_segment, dict):
+            continue
+        for word_payload in asr_segment.get("words") or []:
+            if not isinstance(word_payload, dict):
+                continue
+            word_text = str(word_payload.get("word") or "").strip()
+            start = _coerce_seconds_from_ms(word_payload.get("start_ms"))
+            end = _coerce_seconds_from_ms(word_payload.get("end_ms"))
+            if not word_text or start is None or end is None or end <= start:
+                continue
+            words.append({"start": start, "end": end, "word": word_text})
+
+    words.sort(key=lambda word: (float(word["start"]), float(word["end"])))
+    return words
+
+
 def build_transcription_result_from_segments(
     segments: list[dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    reusable_segments = [
-        {
+    reusable_segments: list[dict[str, Any]] = []
+    for segment in segments:
+        text = str(segment.get("text", "")).strip()
+        if not text:
+            continue
+
+        reusable_segment = {
             "start": float(segment.get("start", 0.0)),
             "end": float(segment.get("end", 0.0)),
-            "text": str(segment.get("text", "")).strip(),
+            "text": text,
         }
-        for segment in segments
-        if str(segment.get("text", "")).strip()
-    ]
+        words = _extract_reusable_words(segment)
+        if words:
+            reusable_segment["words"] = words
+        reusable_segments.append(reusable_segment)
 
     if not reusable_segments:
         return None, []
@@ -90,6 +126,13 @@ def apply_live_authority_to_segments(
         if live_label:
             next_segment["live_source_speaker"] = live_label
 
+        if live_label and _is_clear_microphone_source_segment(live_segment):
+            next_segment["speaker"] = live_label
+            if not _source_channel_activity(live_segment).get("source_overlap"):
+                next_segment["overlapping_speakers"] = []
+            next_segment["speaker_state"] = "stable"
+            next_segment["speaker_state_source"] = "source_channel"
+
         if live_segment.get("speaker_manually_edited") is True and live_label:
             next_segment["speaker"] = live_label
             next_segment["overlapping_speakers"] = []
@@ -103,37 +146,50 @@ def apply_live_authority_to_segments(
     return authoritative_segments
 
 
+def _source_channel_activity(segment: dict[str, Any]) -> dict[str, Any]:
+    confidence_payload = segment.get("confidence_payload")
+    if not isinstance(confidence_payload, dict):
+        return {}
+    source_activity = confidence_payload.get("source_channel_activity")
+    if not isinstance(source_activity, dict):
+        return {}
+    return source_activity
+
+
+def _is_clear_microphone_source_segment(segment: dict[str, Any]) -> bool:
+    source_activity = _source_channel_activity(segment)
+    if source_activity.get("dominant_source") != "microphone":
+        return False
+    try:
+        confidence = float(segment.get("speaker_confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return confidence >= 0.65
+
+
 def map_final_speakers_to_live_labels(
     live_segments: list[dict[str, Any]],
     combined_segments: list[dict[str, Any]],
 ) -> dict[str, str]:
     scores: dict[str, dict[str, float]] = {}
 
-    for index, combined_segment in enumerate(combined_segments):
-        if index >= len(live_segments):
-            break
-
-        live_segment = live_segments[index]
-        if live_segment.get("speaker_manually_edited") is True:
-            continue
-
+    for combined_segment in combined_segments:
         final_label = combined_segment.get("speaker")
-        live_label = live_segment.get("speaker") or combined_segment.get(
-            "live_source_speaker"
-        )
-        if not final_label or not live_label:
+        if not final_label:
             continue
 
-        duration = max(
-            0.0,
-            float(combined_segment.get("end", 0.0))
-            - float(combined_segment.get("start", 0.0)),
-        )
-        if duration <= 0.0:
-            duration = 1.0
+        for live_segment in live_segments:
+            if live_segment.get("speaker_manually_edited") is True:
+                continue
+            live_label = live_segment.get("speaker")
+            if not live_label or str(live_label).strip().upper() == "UNKNOWN":
+                continue
+            overlap = _segment_overlap_seconds(combined_segment, live_segment)
+            if overlap <= 0.0:
+                continue
 
-        label_scores = scores.setdefault(str(final_label), {})
-        label_scores[str(live_label)] = label_scores.get(str(live_label), 0.0) + duration
+            label_scores = scores.setdefault(str(final_label), {})
+            label_scores[str(live_label)] = label_scores.get(str(live_label), 0.0) + overlap
 
     mapping: dict[str, str] = {}
     for final_label, label_scores in scores.items():
@@ -141,6 +197,18 @@ def map_final_speakers_to_live_labels(
         mapping[final_label] = best_live_label
 
     return mapping
+
+
+def _segment_overlap_seconds(
+    first: dict[str, Any],
+    second: dict[str, Any],
+) -> float:
+    try:
+        start = max(float(first.get("start", 0.0)), float(second.get("start", 0.0)))
+        end = min(float(first.get("end", 0.0)), float(second.get("end", 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, end - start)
 
 
 def _segment_merge_key(segment: dict[str, Any]) -> tuple[float, float, str]:

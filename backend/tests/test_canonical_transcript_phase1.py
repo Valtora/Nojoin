@@ -1859,6 +1859,121 @@ async def test_live_label_alias_continuity_routes_future_live_segments_to_correc
 
 
 @pytest.mark.anyio
+async def test_whole_transcript_rename_routes_future_generic_live_labels_to_corrected_speaker(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import SpeakerCorrectionScope
+    from backend.models.speaker import RecordingSpeaker
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        serialize_canonical_utterances,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    1, :now, :now, 'speaker-public-1', 1,
+                    NULL, 'LIVE_01', NULL, 'Speaker 1',
+                    NULL, NULL, 'active', 'live',
+                    NULL, NULL, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    def apply_rename_and_append_future_label(sync_session):
+        append_utterances_from_segments(
+            sync_session,
+            recording_id=1,
+            segments=[
+                {
+                    "id": "live-utt-1",
+                    "start": 0.0,
+                    "end": 1.0,
+                    "speaker": "LIVE_01",
+                    "text": "rename me",
+                    "provisional": True,
+                    "segment_source": "live",
+                }
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.PROVISIONAL,
+            trigger_source="test",
+        )
+        update_utterance_speaker(
+            sync_session,
+            recording_id=1,
+            utterance_public_id="live-utt-1",
+            new_speaker_name="Ezra Klein",
+            scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+            actor_user_id=1,
+            source="test",
+        )
+        future_utterances = append_utterances_from_segments(
+            sync_session,
+            recording_id=1,
+            segments=[
+                {
+                    "id": "live-utt-2",
+                    "start": 1.0,
+                    "end": 2.0,
+                    "speaker": "Speaker 1",
+                    "text": "follow up",
+                    "provisional": True,
+                    "segment_source": "live",
+                }
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.PROVISIONAL,
+            trigger_source="test",
+        )
+        target_speaker = sync_session.execute(
+            select(RecordingSpeaker).where(RecordingSpeaker.local_name == "Ezra Klein")
+        ).scalar_one()
+
+        return future_utterances, target_speaker, serialize_canonical_utterances(sync_session, 1)
+
+    async with test_session_maker() as session:
+        future_utterances, target_speaker, transcript_segments = await session.run_sync(
+            apply_rename_and_append_future_label
+        )
+        await session.commit()
+
+    future_utterance = future_utterances[0]
+
+    assert future_utterance.recording_speaker_id == target_speaker.id
+    assert future_utterance.speaker_label == target_speaker.diarization_label
+    assert transcript_segments[-1]["speaker"] == target_speaker.diarization_label
+
+    async with test_session_maker() as session:
+        generic_alias_count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM recording_speaker_aliases "
+                    "WHERE recording_speaker_id = :target_id AND alias_value = 'Speaker 1' AND active = 1"
+                ),
+                {"target_id": target_speaker.id},
+            )
+        ).scalar_one()
+
+        assert generic_alias_count >= 1
+
+
+@pytest.mark.anyio
 async def test_recording_speaker_rename_records_correction_event_and_alias(
     client: AsyncClient,
     test_session_maker: sessionmaker,

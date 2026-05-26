@@ -647,13 +647,16 @@ class _FakeAudioStore:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"audio")
 
-    def read_audio(self, path: str, sampling_rate: int = 16000):
-        import torch
-
+    def read_audio(self, path: str, sampling_rate: int = 16000, preserve_channels: bool = False):
         tensor = self._audio_by_path.get(str(path))
         if tensor is None:
             raise FileNotFoundError(path)
-        return tensor.detach().clone()
+        cloned = tensor.detach().clone()
+        if preserve_channels and cloned.ndim == 1:
+            return cloned.unsqueeze(0)
+        if not preserve_channels and cloned.ndim > 1:
+            return cloned.mean(dim=0)
+        return cloned
 
     def make_segment(self, temp_dir, sequence: int, seconds: float):
         import torch
@@ -1147,8 +1150,8 @@ def test_resolve_live_speaker_reuses_fallback_without_embedding(monkeypatch):
     assert label == "LIVE_02"
 
 
-def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
-    """Medium-confidence live embeddings reuse an existing speaker label."""
+def test_resolve_live_speaker_soft_matches_existing_label_without_updating_embedding(monkeypatch):
+    """Medium-confidence live embeddings reuse a label without learning from it."""
     from types import SimpleNamespace
 
     from backend.processing.live_transcribe import _resolve_live_speaker
@@ -1186,7 +1189,7 @@ def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
     )
     monkeypatch.setattr(
         "backend.processing.embedding.cosine_similarity",
-        lambda *a, **k: 0.5,
+        lambda *a, **k: 0.66,
     )
     monkeypatch.setattr(
         "backend.processing.embedding.merge_embeddings",
@@ -1203,8 +1206,66 @@ def test_resolve_live_speaker_soft_matches_existing_label(monkeypatch):
     )
 
     assert label == "LIVE_01"
-    assert live_speaker.embedding == [0.2, 0.3]
-    assert session.added == [live_speaker]
+    assert live_speaker.embedding == [0.1, 0.2]
+    assert session.added == []
+
+
+def test_resolve_live_speaker_weak_match_creates_new_speaker(monkeypatch):
+    """Weak medium-length matches avoid false merges when no fallback exists."""
+    from types import SimpleNamespace
+
+    from backend.models.speaker import RecordingSpeaker
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    live_speaker = SimpleNamespace(
+        diarization_label="LIVE_01",
+        embedding=[0.1, 0.2],
+        global_speaker_id=None,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [live_speaker]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=48000, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding_core.extract_embedding_for_segments",
+        lambda *a, **k: [0.3, 0.4],
+    )
+    monkeypatch.setattr(
+        "backend.processing.embedding.cosine_similarity",
+        lambda *a, **k: 0.5,
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=None,
+        audio_path="/tmp/voice.wav",
+        merged_config={},
+    )
+
+    assert label == "LIVE_02"
+    assert len(session.added) == 1
+    assert isinstance(session.added[0], RecordingSpeaker)
+    assert session.added[0].diarization_label == "LIVE_02"
 
 
 def test_analyze_window_speakers_prefers_clean_non_overlapping_spans(monkeypatch):
@@ -1880,6 +1941,53 @@ def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timest
         ],
         "asr_word_timestamps_available": True,
     }
+
+
+def test_live_source_channel_analysis_detects_microphone_dominance():
+    import torch
+
+    from backend.processing.live_transcribe import (
+        _analyze_live_source_channels,
+        _source_channel_speaker_confidence,
+    )
+
+    audio = torch.stack(
+        [
+            torch.full((1600,), 0.05),
+            torch.full((1600,), 0.8),
+        ]
+    )
+
+    payload = _analyze_live_source_channels(audio)
+
+    assert payload["channel_count"] == 2
+    assert payload["primary_channel"] == 1
+    assert payload["primary_source"] == "microphone"
+    assert payload["dominant_source"] == "microphone"
+    assert payload["source_overlap"] is False
+    assert _source_channel_speaker_confidence(payload) >= 0.65
+
+
+def test_live_source_channel_analysis_marks_unclear_overlap_low_confidence():
+    import torch
+
+    from backend.processing.live_transcribe import (
+        _analyze_live_source_channels,
+        _source_channel_speaker_confidence,
+    )
+
+    audio = torch.stack(
+        [
+            torch.full((1600,), 0.6),
+            torch.full((1600,), 0.5),
+        ]
+    )
+
+    payload = _analyze_live_source_channels(audio)
+
+    assert payload["dominant_source"] is None
+    assert payload["source_overlap"] is True
+    assert _source_channel_speaker_confidence(payload) is None
 
 
 def test_extract_region_text_straddle_without_words_midpoint():

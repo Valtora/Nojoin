@@ -536,6 +536,27 @@ def _segment_requires_final_diarization_check(segment: dict) -> bool:
     return False
 
 
+def _is_unresolved_speaker_label(label: object) -> bool:
+    return str(label or "").strip().upper() in {"", "UNKNOWN"}
+
+
+def _collect_ordered_final_speaker_labels(final_segments: Sequence[dict]) -> list[str]:
+    ordered_speakers: list[str] = []
+    seen_speakers: set[str] = set()
+    for seg in final_segments:
+        speaker_label = str(seg.get("speaker") or "UNKNOWN")
+        if not _is_unresolved_speaker_label(speaker_label) and speaker_label not in seen_speakers:
+            ordered_speakers.append(speaker_label)
+            seen_speakers.add(speaker_label)
+        for overlapping_spk in seg.get("overlapping_speakers", []):
+            overlapping_label = str(overlapping_spk or "UNKNOWN")
+            if _is_unresolved_speaker_label(overlapping_label) or overlapping_label in seen_speakers:
+                continue
+            ordered_speakers.append(overlapping_label)
+            seen_speakers.add(overlapping_label)
+    return ordered_speakers
+
+
 def _collect_low_confidence_diarization_spans(
     live_segments_for_reuse: Sequence[dict],
 ) -> list[dict[str, int]]:
@@ -591,27 +612,18 @@ def _build_final_diarization_plan(
 
     low_confidence_spans = _collect_low_confidence_diarization_spans(live_segments_for_reuse)
     if low_confidence_spans:
-        has_live_identity_context = any(
-            str(segment.get("segment_source") or "") == "live"
-            and str(segment.get("speaker") or "").strip().upper() != "UNKNOWN"
-            for segment in live_segments_for_reuse
-        )
-        if completed_window_replay_available and has_live_identity_context:
-            return {
-                "should_run": False,
-                "reason": "completed_window_replay",
-                "low_confidence_spans": low_confidence_spans,
-            }
         return {
             "should_run": True,
             "reason": "low_confidence_spans",
             "low_confidence_spans": low_confidence_spans,
+            "completed_window_replay_available": bool(completed_window_replay_available),
         }
 
     return {
         "should_run": False,
         "reason": "confident_live_reuse",
         "low_confidence_spans": [],
+        "completed_window_replay_available": bool(completed_window_replay_available),
     }
 
 
@@ -2164,17 +2176,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         
         # Save Speakers & Embeddings
         # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
-        ordered_speakers = []
-        seen_speakers = set()
-        for seg in final_segments:
-            spk = seg['speaker']
-            if spk not in seen_speakers:
-                ordered_speakers.append(spk)
-                seen_speakers.add(spk)
-            for overlapping_spk in seg.get('overlapping_speakers', []):
-                if overlapping_spk not in seen_speakers:
-                    ordered_speakers.append(overlapping_spk)
-                    seen_speakers.add(overlapping_spk)
+        ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
         
         logger.info(f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}")
         
@@ -2366,9 +2368,16 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
 
             current_speaker_id = None
             if existing_speaker:
-                existing_speaker.embedding = embedding
+                if embedding is not None:
+                    existing_speaker.embedding = embedding
+                elif existing_speaker.embedding:
+                    logger.info(
+                        "Preserving existing voiceprint for %s because final diarization produced no embedding.",
+                        label,
+                    )
                 existing_speaker.name = resolved_name
-                existing_speaker.global_speaker_id = global_speaker_id
+                if global_speaker_id is not None or existing_speaker.global_speaker_id is None:
+                    existing_speaker.global_speaker_id = global_speaker_id
                 session.add(existing_speaker)
                 session.flush()
                 current_speaker_id = existing_speaker.id

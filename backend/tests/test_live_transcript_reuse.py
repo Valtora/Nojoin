@@ -31,6 +31,49 @@ def test_build_transcription_result_from_segments_strips_runtime_fields():
     assert segments == result["segments"]
 
 
+def test_build_transcription_result_from_segments_preserves_live_word_timestamps():
+    result, segments = build_transcription_result_from_segments(
+        [
+            {
+                "start": 10.0,
+                "end": 11.5,
+                "speaker": "LIVE_01",
+                "text": "Hello there",
+                "confidence_payload": {
+                    "asr_word_timestamps_available": True,
+                    "asr_segments": [
+                        {
+                            "start_ms": 10000,
+                            "end_ms": 11500,
+                            "text": "Hello there",
+                            "words": [
+                                {"start_ms": 10020, "end_ms": 10350, "word": "Hello"},
+                                {"start_ms": 10400, "end_ms": 10900, "word": "there"},
+                            ],
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    assert result == {
+        "text": "Hello there",
+        "segments": [
+            {
+                "start": 10.0,
+                "end": 11.5,
+                "text": "Hello there",
+                "words": [
+                    {"start": 10.02, "end": 10.35, "word": "Hello"},
+                    {"start": 10.4, "end": 10.9, "word": "there"},
+                ],
+            }
+        ],
+    }
+    assert segments == result["segments"]
+
+
 def test_apply_live_authority_preserves_manual_speaker_and_text_edits():
     live_segments = [
         {
@@ -68,6 +111,40 @@ def test_apply_live_authority_preserves_manual_speaker_and_text_edits():
     assert result[1]["speaker"] == "LIVE_02"
     assert result[1]["overlapping_speakers"] == []
     assert result[1]["speaker_manually_edited"] is True
+
+
+def test_apply_live_authority_preserves_clear_microphone_source_speaker():
+    live_segments = [
+        {
+            "start": 0,
+            "end": 2,
+            "speaker": "LIVE_01",
+            "speaker_confidence": 0.82,
+            "text": "local speaker",
+            "confidence_payload": {
+                "source_channel_activity": {
+                    "dominant_source": "microphone",
+                    "source_overlap": False,
+                }
+            },
+        }
+    ]
+    combined_segments = [
+        {
+            "start": 0,
+            "end": 2,
+            "speaker": "SPEAKER_00",
+            "overlapping_speakers": ["SPEAKER_01"],
+            "text": "local speaker",
+        }
+    ]
+
+    result = apply_live_authority_to_segments(live_segments, combined_segments)
+
+    assert result[0]["speaker"] == "LIVE_01"
+    assert result[0]["overlapping_speakers"] == []
+    assert result[0]["speaker_state"] == "stable"
+    assert result[0]["speaker_state_source"] == "source_channel"
 
 
 def test_map_final_speakers_to_live_labels_uses_duration_majority():

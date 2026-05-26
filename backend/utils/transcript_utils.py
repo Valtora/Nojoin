@@ -5,6 +5,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+WORD_OVERLAP_MIN_RATIO = 0.35
+WORD_OVERLAP_MIN_DURATION_S = 0.05
+SEGMENT_OVERLAP_MIN_RATIO = 0.25
+SEGMENT_OVERLAP_MIN_DURATION_S = 0.25
+ISOLATED_WORD_FLIP_MAX_DURATION_S = 0.45
+ISOLATED_WORD_FLIP_MAX_GAP_S = 0.25
+
 def render_transcript(transcript_path, label_to_name, output_format="plain"):
     """
     Render a diarized transcript with mapped speaker names/roles.
@@ -116,9 +123,19 @@ def _combine_segment_level(segments, speaker_turns):
         
         sorted_speakers = sorted(speaker_overlaps.items(), key=lambda x: x[1], reverse=True)
         
+        segment_duration = max(0.0, end - start)
         if sorted_speakers:
             dominant_speaker = sorted_speakers[0][0]
-            overlapping_speakers = [spk for spk, _ in sorted_speakers[1:]]
+            overlapping_speakers = [
+                spk
+                for spk, duration in sorted_speakers[1:]
+                if _speaker_overlap_is_significant(
+                    duration,
+                    segment_duration,
+                    min_duration_s=SEGMENT_OVERLAP_MIN_DURATION_S,
+                    min_ratio=SEGMENT_OVERLAP_MIN_RATIO,
+                )
+            ]
         else:
             dominant_speaker = "UNKNOWN"
             overlapping_speakers = []
@@ -166,16 +183,42 @@ def _combine_word_level(segments, speaker_turns):
         sorted_speakers = sorted(speaker_overlaps.items(), key=lambda x: x[1], reverse=True)
         if not sorted_speakers:
             return ["UNKNOWN"]
-        return [spk for spk, dur in sorted_speakers]
+        word_duration = max(0.0, end - start)
+        primary_speaker = sorted_speakers[0][0]
+        overlapping_speakers = [
+            spk
+            for spk, duration in sorted_speakers[1:]
+            if _speaker_overlap_is_significant(
+                duration,
+                word_duration,
+                min_duration_s=WORD_OVERLAP_MIN_DURATION_S,
+                min_ratio=WORD_OVERLAP_MIN_RATIO,
+            )
+        ]
+        return [primary_speaker, *overlapping_speakers]
 
-    for i, word_data in enumerate(all_words):
+    word_assignments = []
+    for word_data in all_words:
+        w_start = word_data['start']
+        w_end = word_data['end']
+        speakers = get_speakers_for_range(w_start, w_end)
+        word_assignments.append(
+            {
+                "word": word_data,
+                "speaker": speakers[0],
+                "overlapping_speakers": speakers[1:],
+            }
+        )
+
+    _smooth_isolated_word_speaker_flips(word_assignments)
+
+    for i, assignment in enumerate(word_assignments):
+        word_data = assignment["word"]
         w_start = word_data['start']
         w_end = word_data['end']
         w_text = word_data['word']
-        
-        speakers = get_speakers_for_range(w_start, w_end)
-        speaker = speakers[0]
-        overlapping_speakers = speakers[1:]
+        speaker = assignment["speaker"]
+        overlapping_speakers = assignment["overlapping_speakers"]
         
         if i == 0:
             current_segment["start"] = w_start
@@ -221,6 +264,52 @@ def _combine_word_level(segments, speaker_turns):
     logger.info(f"_combine_word_level: Created {len(final_segments)} segments with speaker distribution: {speaker_counts}")
     
     return final_segments 
+
+
+def _speaker_overlap_is_significant(
+    overlap_duration_s: float,
+    target_duration_s: float,
+    *,
+    min_duration_s: float,
+    min_ratio: float,
+) -> bool:
+    if overlap_duration_s < min_duration_s:
+        return False
+    if target_duration_s <= 0:
+        return False
+    return (overlap_duration_s / target_duration_s) >= min_ratio
+
+
+def _smooth_isolated_word_speaker_flips(word_assignments: list[dict]) -> None:
+    for index in range(1, len(word_assignments) - 1):
+        previous_assignment = word_assignments[index - 1]
+        assignment = word_assignments[index]
+        next_assignment = word_assignments[index + 1]
+
+        previous_speaker = previous_assignment["speaker"]
+        current_speaker = assignment["speaker"]
+        next_speaker = next_assignment["speaker"]
+
+        if current_speaker in {previous_speaker, next_speaker, "UNKNOWN"}:
+            continue
+        if previous_speaker != next_speaker or previous_speaker == "UNKNOWN":
+            continue
+        if assignment.get("overlapping_speakers"):
+            continue
+
+        current_word = assignment["word"]
+        previous_word = previous_assignment["word"]
+        next_word = next_assignment["word"]
+        current_duration = float(current_word["end"]) - float(current_word["start"])
+        previous_gap = float(current_word["start"]) - float(previous_word["end"])
+        next_gap = float(next_word["start"]) - float(current_word["end"])
+
+        if current_duration > ISOLATED_WORD_FLIP_MAX_DURATION_S:
+            continue
+        if previous_gap > ISOLATED_WORD_FLIP_MAX_GAP_S or next_gap > ISOLATED_WORD_FLIP_MAX_GAP_S:
+            continue
+
+        assignment["speaker"] = previous_speaker
 
 def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_duration_s: float = 10.0):
     """

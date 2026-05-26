@@ -151,6 +151,28 @@ def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000) -> byt
     return buffer.getvalue()
 
 
+def test_ffmpeg_transcode_preserves_browser_source_channels(monkeypatch, tmp_path):
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(segment_transcode_module.subprocess, "run", fake_run)
+
+    segment_transcode_module._run_ffmpeg_transcode(
+        tmp_path / "0.webm",
+        tmp_path / "0.wav",
+    )
+
+    command = captured["command"]
+    assert command[command.index("-ar") + 1] == "16000"
+    assert command[command.index("-ac") + 1] == "2"
+
+
 def _recording_temp_dir(root: Path, recording_id: int, *, create: bool) -> Path:
     path = root / f"upload-{recording_id}"
     if create:
@@ -402,6 +424,63 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
 
     chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
     assert chunk_rows == [(0, str(wav_path))]
+
+
+@pytest.mark.anyio
+async def test_finalize_upload_transcodes_pending_browser_segments(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Finalize browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.webm", b"webm-opus-segment", "audio/webm")},
+    )
+    assert upload_response.status_code == 200
+    assert transcode_dispatches == [(recording_id, 0)]
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(make_wav_bytes()),
+    )
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+    wav_path = upload_dir / "0.wav"
+
+    assert finalize_response.status_code == 200
+    assert finalize_response.json()["status"] == "QUEUED"
+    assert wav_path.exists()
+    assert not (upload_dir / "0.webm").exists()
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
+        (0, str(wav_path))
+    ]
 
 
 @pytest.mark.anyio

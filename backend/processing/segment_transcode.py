@@ -52,7 +52,7 @@ def _run_ffmpeg_transcode(input_path: Path, output_path: Path) -> None:
         "-ar",
         "16000",
         "-ac",
-        "1",
+        "2",
         "-f",
         "wav",
         "-y",
@@ -73,6 +73,41 @@ def _run_ffmpeg_transcode(input_path: Path, output_path: Path) -> None:
     raise RuntimeError(error_output)
 
 
+def transcode_staged_browser_segment(recording_id: int, sequence: int) -> Path:
+    failure_marker = _transcode_failed_marker_path(recording_id, sequence)
+    wav_path = _wav_segment_path(recording_id, sequence)
+    raw_segment_path = _locate_staged_browser_segment(recording_id, sequence)
+
+    if raw_segment_path is None:
+        if wav_path.exists():
+            return wav_path
+        raise FileNotFoundError(
+            f"No staged browser segment found for recording {recording_id} sequence {sequence}"
+        )
+
+    _run_ffmpeg_transcode(raw_segment_path, wav_path)
+    try:
+        raw_segment_path.unlink()
+    except OSError as exc:
+        logger.warning(
+            "Failed to remove source segment %s after transcode: %s",
+            raw_segment_path,
+            exc,
+        )
+    try:
+        failure_marker.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning(
+            "Failed to remove transcode marker %s: %s",
+            failure_marker,
+            exc,
+        )
+
+    return wav_path
+
+
 @celery_app.task
 def transcode_segment_task(recording_id: int, sequence: int):
     config_manager.reload()
@@ -82,54 +117,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
     raw_segment_path = _locate_staged_browser_segment(recording_id, sequence)
 
     try:
-        if raw_segment_path is None:
-            if wav_path.exists():
-                session = get_sync_session()
-                try:
-                    sync_recording_audio_chunks_from_directory(
-                        session,
-                        recording_id=recording_id,
-                        source_kind="browser",
-                        suffix=".wav",
-                        temp_dir=wav_path.parent,
-                    )
-                    sync_recording_audio_window_manifests(
-                        session,
-                        recording_id=recording_id,
-                        source_kind="browser",
-                        seal_tail=False,
-                    )
-                    session.commit()
-                except Exception:
-                    session.rollback()
-                    raise
-                finally:
-                    session.close()
-                return {"status": "received", "segment": sequence}
-
-            raise FileNotFoundError(
-                f"No staged browser segment found for recording {recording_id} sequence {sequence}"
-            )
-
-        _run_ffmpeg_transcode(raw_segment_path, wav_path)
-        try:
-            raw_segment_path.unlink()
-        except OSError as exc:
-            logger.warning(
-                "Failed to remove source segment %s after transcode: %s",
-                raw_segment_path,
-                exc,
-            )
-        try:
-            failure_marker.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.warning(
-                "Failed to remove transcode marker %s: %s",
-                failure_marker,
-                exc,
-            )
+        transcode_staged_browser_segment(recording_id, sequence)
 
         session = get_sync_session()
         try:

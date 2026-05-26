@@ -51,6 +51,7 @@ import { useNavigationStore } from "@/lib/store";
 import {
   buildMeetingSpeakerColors,
   buildGlobalSpeakerById,
+  buildRecordingSpeakerDisplayMap,
   getRecordingSpeakerDisplayName,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
@@ -1044,30 +1045,7 @@ export default function RecordingPage({ params }: PageProps) {
   };
 
   const speakerMap = useMemo(() => {
-    const map: Record<string, string> = {};
-
-    if (recording?.speakers) {
-      recording.speakers.forEach((s) => {
-        // Priority: local_name > global_speaker.name > deprecated name field
-        if (s.local_name) {
-          map[s.diarization_label] = s.local_name;
-        } else if (s.global_speaker?.name) {
-          map[s.diarization_label] = s.global_speaker.name;
-        } else if (
-          s.global_speaker_id &&
-          globalSpeakerById.has(s.global_speaker_id)
-        ) {
-          map[s.diarization_label] =
-            globalSpeakerById.get(s.global_speaker_id)?.name ||
-            s.diarization_label;
-        } else if (s.name) {
-          map[s.diarization_label] = s.name;
-        } else {
-          map[s.diarization_label] = s.diarization_label;
-        }
-      });
-    }
-    return map;
+    return buildRecordingSpeakerDisplayMap(recording?.speakers, globalSpeakerById);
   }, [globalSpeakerById, recording?.speakers]);
 
   const renderMobileHeaderActions = () => (

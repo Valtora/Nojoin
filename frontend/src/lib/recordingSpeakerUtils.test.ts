@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildMeetingSpeakerColors } from "./recordingSpeakerUtils";
+import {
+  buildMeetingSpeakerColors,
+  buildRecordingSpeakerDisplayMap,
+} from "./recordingSpeakerUtils";
 import type { RecordingSpeaker } from "@/types";
 
 function buildRecordingSpeaker(
@@ -93,5 +96,39 @@ describe("recordingSpeakerUtils", () => {
     expect(nextColors.LIVE_02).toBeDefined();
     expect(nextColors.LIVE_02).not.toBe(initialColors.LIVE_00);
     expect(nextColors.LIVE_02).not.toBe(initialColors.LIVE_01);
+  });
+
+  it("maps generic live labels to the renamed speaker display name", () => {
+    const speakerMap = buildRecordingSpeakerDisplayMap(
+      [
+        buildRecordingSpeaker({
+          id: 1,
+          recording_id: "rec-1",
+          diarization_label: "LIVE_01",
+          local_name: "Ezra Klein",
+        }),
+      ],
+      new Map(),
+    );
+
+    expect(speakerMap.LIVE_01).toBe("Ezra Klein");
+    expect(speakerMap["Speaker 1"]).toBe("Ezra Klein");
+  });
+
+  it("maps generic diarization labels to the renamed speaker display name", () => {
+    const speakerMap = buildRecordingSpeakerDisplayMap(
+      [
+        buildRecordingSpeaker({
+          id: 1,
+          recording_id: "rec-1",
+          diarization_label: "SPEAKER_00",
+          local_name: "Ezra Klein",
+        }),
+      ],
+      new Map(),
+    );
+
+    expect(speakerMap.SPEAKER_00).toBe("Ezra Klein");
+    expect(speakerMap["Speaker 1"]).toBe("Ezra Klein");
   });
 });
