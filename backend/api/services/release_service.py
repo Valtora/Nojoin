@@ -111,17 +111,6 @@ def get_release_by_version(releases: list[ReleaseInfo], version: str | None) -> 
     return None
 
 
-def get_windows_installer_asset(release: ReleaseInfo | None) -> ReleaseAssetInfo | None:
-    if not release:
-        return None
-
-    for asset in release.assets:
-        asset_name = asset.name.lower()
-        if asset_name.endswith(".exe") and "portable" not in asset_name:
-            return asset
-    return None
-
-
 def _parse_release_datetime(value: str | None) -> datetime | None:
     if not value:
         return None

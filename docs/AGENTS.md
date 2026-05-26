@@ -106,7 +106,7 @@ The project uses a single Git Tag (`vX.Y.Z`) to trigger the server and frontend 
 
   **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`. The API image also embeds the resolved server version for runtime display in Settings.
 
-  **Step 2: Release Metadata**: The pipeline publishes release metadata and notes for the tag. Browser capture compatibility belongs in release notes when capture behavior changes.
+  **Step 2: Release Metadata**: Publish or update the GitHub Release for the same tag so Settings can surface release notes. Browser capture compatibility belongs in those release notes when capture behavior changes. The current workflow does not create the GitHub Release automatically.
 
 **Important**:
 
