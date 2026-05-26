@@ -2577,6 +2577,15 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             log=logger,
         )
         logger.error(f"Audio processing error for {recording_id}: {e}", exc_info=True)
+        if hasattr(session, "rollback"):
+            try:
+                session.rollback()
+            except Exception as rollback_exc:
+                logger.warning(
+                    "Failed to rollback session after audio processing error for %s: %s",
+                    recording_id,
+                    rollback_exc,
+                )
         recording = session.get(Recording, recording_id)
         if recording:
             if catch_up_run is not None:
@@ -2600,6 +2609,15 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             log=logger,
         )
         logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
+        if hasattr(session, "rollback"):
+            try:
+                session.rollback()
+            except Exception as rollback_exc:
+                logger.warning(
+                    "Failed to rollback session after processing error for %s: %s",
+                    recording_id,
+                    rollback_exc,
+                )
         recording = session.get(Recording, recording_id)
         if recording:
             if catch_up_run is not None:

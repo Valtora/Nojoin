@@ -784,6 +784,197 @@ def test_process_recording_task_runs_catch_up_diarization_before_promotion(monke
     assert captured == {"processing_run_id": 91, "recording_id": 401}
 
 
+def test_process_recording_task_rolls_back_before_persisting_error_state(monkeypatch):
+    from backend.models.recording import RecordingStatus
+    from backend.worker import tasks as tasks_module
+
+    base_config = {
+        "transcription_backend": "whisper",
+        "whisper_model_size": "base",
+        "enable_vad": False,
+        "enable_diarization": False,
+    }
+
+    class _FakeLlmConfig:
+        merged_config = dict(base_config)
+
+    monkeypatch.setattr(
+        tasks_module, "resolve_llm_config", lambda *a, **k: _FakeLlmConfig()
+    )
+
+    class _FakeTranscript:
+        def __init__(self):
+            self.recording_id = 601
+            self.text = ""
+            self.segments = []
+            self.transcript_status = "pending"
+            self.error_message = None
+            self.notes_status = "pending"
+
+    class _ExecResult:
+        def first(self):
+            return None
+
+        def all(self):
+            return []
+
+    class _FakeRecording:
+        id = 601
+        status = RecordingStatus.PROCESSED
+        user_id = None
+        audio_path = "/tmp/recording.wav"
+        proxy_path = None
+        duration_seconds = 60.0
+        processing_started_at = None
+        processing_completed_at = None
+        processing_progress = 0
+        processing_step = ""
+
+    class _FakeSession:
+        def __init__(self):
+            self.recording = _FakeRecording()
+            self.rollback_called = False
+            self.needs_rollback = False
+            self.transcript = _FakeTranscript()
+
+        def get(self, model, recording_id):
+            return self.recording
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            if self.needs_rollback and not self.rollback_called:
+                raise RuntimeError("session still needs rollback")
+
+        def rollback(self):
+            self.rollback_called = True
+            self.needs_rollback = False
+
+        def refresh(self, obj):
+            pass
+
+        def flush(self):
+            pass
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True
+        if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
+        else default,
+    )
+
+    fake_session = _FakeSession()
+
+    import sys
+    import types
+
+    def _install(module_name: str, **attrs):
+        mod = types.ModuleType(module_name)
+        for name, value in attrs.items():
+            setattr(mod, name, value)
+        monkeypatch.setitem(sys.modules, module_name, mod)
+
+    _install(
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 10.0),
+    )
+    _install(
+        "backend.processing.audio_preprocessing",
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: "/tmp/recording_vad.wav",
+        validate_audio_file=lambda *a, **k: None,
+        cleanup_temp_file=lambda *a, **k: None,
+        repair_audio_file=lambda *a, **k: None,
+    )
+    _install(
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {
+            "text": "hello world",
+            "segments": [{"start": 0.0, "end": 1.0, "text": "hello world"}],
+        },
+        release_model_cache=lambda: None,
+    )
+    _install(
+        "backend.processing.diarize",
+        diarize_audio=lambda *a, **k: None,
+        release_pipeline_cache=lambda: None,
+    )
+    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: {})
+    _install(
+        "backend.processing.embedding",
+        cosine_similarity=lambda *a, **k: 0.0,
+        merge_embeddings=lambda *a, **k: None,
+        find_matching_global_speaker=lambda *a, **k: (None, 0.0),
+        AUTO_UPDATE_THRESHOLD=0.8,
+    )
+    _install(
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=lambda *a, **k: [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "UNKNOWN",
+                "text": "hello world",
+                "segment_source": "finalize",
+            }
+        ],
+    )
+    _install(
+        "backend.utils.audio",
+        get_audio_duration=lambda *a, **k: 60.0,
+        convert_to_mp3=lambda *a, **k: None,
+        convert_to_proxy_mp3=lambda *a, **k: None,
+    )
+    _install(
+        "backend.utils.live_transcript",
+        apply_live_authority_to_segments=lambda live, combined: combined,
+        build_transcription_result_from_segments=lambda segments: ({"text": "", "segments": []}, []),
+        merge_reusable_segments=lambda primary, additional: list(primary) + list(additional),
+        map_final_speakers_to_live_labels=lambda *a, **k: {},
+    )
+    _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
+    _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr(tasks_module, "build_reusable_live_segments", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_window_manifests", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "_recording_has_completed_diarization_windows", lambda *a, **k: False)
+    monkeypatch.setattr(tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "mark_recording_audio_chunks_ready_for_cleanup", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda *a, **k: {})
+    monkeypatch.setattr(tasks_module, "get_speakers_eligible_for_llm_renaming", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "_build_automatic_meeting_intelligence_transcript", lambda *a, **k: "")
+
+    def _explode_finalize(session, *args, **kwargs):
+        session.needs_rollback = True
+        raise RuntimeError("finalize exploded")
+
+    monkeypatch.setattr(tasks_module, "finalize_utterances_from_segments", _explode_finalize)
+
+    task = tasks_module.process_recording_task
+    monkeypatch.setattr(task, "_session", fake_session, raising=False)
+    monkeypatch.setattr(task, "update_state", lambda *a, **k: None, raising=False)
+
+    result = task.run(601, False, None)
+
+    assert result is None
+    assert fake_session.rollback_called is True
+    assert fake_session.recording.status == RecordingStatus.ERROR
+    assert fake_session.recording.processing_step == "System Error: finalize exploded"
+
+
 def test_process_recording_task_prefers_canonical_live_segments_for_reuse(monkeypatch):
     from backend.models.recording import RecordingStatus
     from backend.worker import tasks as tasks_module
