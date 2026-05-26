@@ -9,8 +9,8 @@ For product scope and longer-term feature intent, see [PRD.md](PRD.md).
 Nojoin has three major parts:
 
 1. A Dockerised backend that stores data and runs processing workloads.
-2. A Next.js web client for capture control, review, and administration.
-3. A Windows Companion app that captures audio locally and owns native pairing approval, local browser connectivity, and tray-side operational fallback.
+2. A Next.js web client for browser capture, review, and administration.
+3. Celery worker services that transcode live browser segments and run the transcription, diarisation, speaker, and AI processing pipeline.
 
 ## Core Components
 
@@ -36,35 +36,35 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
-- Browser-side Companion status, signed pairing request initiation, and support routing.
+- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, MediaRecorder segmenting, sequenced upload, live waveform state, pause/resume, and finalize controls.
 
-The web Companion page is a secondary support surface. It confirms state, starts signed pairing requests, and routes native-only disconnect or troubleshooting actions back to the Companion app.
+The web client is the only live capture surface. Unsupported browsers retain review, playback, admin, and settings capabilities, but cannot start live recording.
 
-### Companion App
+### Browser Capture Stack
 
-The Companion app is responsible for:
+The browser capture stack is responsible for:
 
-- Presenting the native launcher, Settings window, and tray fallback surfaces.
-- Capturing loopback system audio and microphone audio on Windows.
-- Owning OS-native approval for browser-initiated pairing requests, update, log, and disconnect actions.
-- Exposing local status and live metering to the web client.
-- Uploading recording segments to the backend.
+- Prompting for shared tab, window, or screen audio.
+- Prompting for microphone access.
+- Mixing shared audio and microphone audio in the browser.
+- Recording short WebM/Opus slices and uploading them with session-cookie authentication.
+- Exposing analyser output to the live waveform UI.
+- Moving recordings to `PAUSED` on real tab unload or app navigation away, then requiring resume or discard before another capture starts.
 
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The browser starts a signed pairing request from `Settings -> Companion`, launches the local Companion through `nojoin://pair`, and the Companion shows an OS-native approval prompt on that same machine. During completion, the Companion validates the backend-signed request fields, captures and pins the backend TLS certificate it first sees, stores a revocable companion credential plus local control secret in a Windows-protected secret store, and persists only backend metadata plus backend identity metadata in `config.json`.
-3. When the Companion needs backend access, it exchanges the stored companion credential for a short-lived companion access token.
-4. When a recording starts, `/recordings/init` returns a short-lived per-recording upload token.
-5. The Companion uploads audio segments using that recording-scoped token.
-6. Finalisation queues the recording for backend processing.
-7. The web client shows a live capture or processing status workspace while the job runs.
+2. The user starts **Meet Now** from a supported Chromium browser on Windows or Linux.
+3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
+4. The browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short WebM/Opus slices.
+5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing sequence numbers.
+6. The worker transcodes each browser segment to 16 kHz mono WAV and dispatches the live transcription lane.
+7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation.
+8. The web client shows a live capture or processing status workspace while the job runs.
 
-If the user cancels a recording while that per-recording upload session is still active, the backend closes the upload session immediately. Subsequent Companion segment, finalize, upload-token refresh, and client-status calls are rejected as terminal session-closure responses so the Companion can abandon stale retries and return to ready-state for the next meeting.
+If the user refreshes, closes, or navigates away from the Nojoin tab while recording, the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory resume-or-discard modal.
 
-Disconnecting the current backend from Companion Settings clears the stored backend trust state and local secret bundle, then attempts a best-effort revoke against the previously paired backend before returning the Companion to a clean first-pair state.
-
-If browser-side local control degrades, the web client reports coarse state and directs the user to relaunch Companion or inspect Companion Settings for status.
+Switching focus to another tab, window, or application does not pause capture. Only a real Nojoin tab unload or an intentional Nojoin route change away from the active recording invokes the guarded pause path.
 
 ## Processing Pipeline
 
@@ -181,9 +181,8 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **Companion pairing**: A short-lived signed pairing request created by the authenticated browser session, explicitly approved in the local Companion app, and completed against one backend target.
-- **Companion backend access**: Short-lived companion access tokens exchanged on demand by the Companion.
-- **Companion upload operations**: Short-lived per-recording tokens.
+- **Browser recording operations**: Session-authenticated init, segment, pause, resume, discard, and finalize calls owned by the current user.
+- **Legacy native-helper routes**: Retired routes return structured `410 Gone` responses that point operators to [CAPTURE.md](CAPTURE.md).
 
 Forced password rotation is enforced server-side. Flagged users can only reach their self-profile, password update flow, and logout until the rotation is complete.
 
@@ -200,12 +199,11 @@ Nojoin follows a unified release model:
 
 - Git tags in the form `vX.Y.Z` drive published releases.
 - Docker images are published to GHCR.
-- Windows Companion binaries are published alongside the server release.
 - The application surfaces release metadata primarily from GitHub Releases.
 
 ## Related Docs
 
-- [COMPANION.md](COMPANION.md)
+- [CAPTURE.md](CAPTURE.md)
 - [GETTING_STARTED.md](GETTING_STARTED.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [USAGE.md](USAGE.md)

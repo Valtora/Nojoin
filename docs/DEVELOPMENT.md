@@ -32,17 +32,11 @@ Windows:
 - Node.js 20 or newer
 - npm
 
-### Companion App
+### Browser Capture
 
-- Rust stable
-- CMake
-- Windows is the supported development platform for the Companion app today
-
-Linux package example for Tauri prerequisites:
-
-```bash
-sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-```
+- A supported Chromium browser on Windows or Linux for manual live-capture validation
+- Browser microphone permission for local smoke tests
+- PipeWire screen capture support when validating Linux shared-screen or system audio behavior
 
 ## Compose Files
 
@@ -186,59 +180,41 @@ Development guardrails:
 - The localhost dev compose template at the end of this document sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on the API service. If a local dev database is stamped to a revision that no longer exists in your checkout, startup will restamp it to the current checked-in head before running `alembic upgrade head`.
 - Keep that auto-repair flag limited to disposable local databases. For persistent deployments, fix the migration graph or reconcile the database revision manually instead of auto-stamping.
 
-## Companion Development
+## Browser Capture Development
 
-The Companion app currently targets Windows.
+Browser capture code lives under `frontend/src/lib/capture/` and is exercised by the recording page and capture settings surfaces.
 
-For development:
+When changing capture behavior, validate the relevant parts of this path:
+
+- Supported-browser gating for Chromium on Windows and Linux.
+- Unsupported-browser messaging for Firefox, Safari, mobile browsers, and Chromium browsers on macOS.
+- Browser share picker flow for tab, window, and screen sharing.
+- Shared-audio track detection and missing-audio messaging.
+- Microphone permission and selected-device behavior.
+- Per-source gain controls in **Settings > Capture**.
+- Segment creation, sequential upload, worker transcode, live transcript dispatch, stop/finalize, pause/resume, and discard.
+- The paused-recording lock after refresh, close, or in-app navigation away from the active recording.
+- Focus changes to another tab, window, or application; these should not pause capture.
+
+Useful focused checks:
 
 ```bash
-cd companion
-npm install
-npm run tauri dev
+cd frontend
+npm run test -- --run src/lib/capture
+npm run build
 ```
 
-For a release build on Windows:
+If you are validating through the containerised localhost stack, rebuild the frontend container after frontend changes:
 
 ```bash
-cd companion
-npm run tauri build
+docker compose up -d --build frontend
 ```
 
-On Windows, `companion/src-tauri/build.rs` gates out the Swift runtime linker flags (`-Wl,-rpath`, `/usr/lib/swift`), which are only valid for the Unix linker on macOS/Linux and would otherwise break the MSVC linker.
-
-If you are building signed updates locally, ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` are available in your environment.
-
-### Testing and Switching Deployments
-
-Because the Companion uses a strict one-backend pairing model, you cannot remain simultaneously paired to both a local development backend (e.g. `https://localhost:14443`) and a production or staging backend.
-
-The end-user source of truth for this workflow is [COMPANION.md](COMPANION.md). Keep [GETTING_STARTED.md](GETTING_STARTED.md) and [USAGE.md](USAGE.md) concise and point into that guide rather than duplicating detailed browser, repair, or tray walkthroughs.
-
-If you are testing changes and need to switch your Companion between a production instance and your local development stack:
-
-1. Open the Companion app Settings.
-2. Either select `Disconnect Current Backend` first, or open the target Nojoin site and start a fresh pairing request from `Settings -> Companion`.
-3. Let the browser launch the local Companion through `nojoin://pair`, then approve the OS-native prompt on that device.
-4. The current backend stays active until the new pairing succeeds.
-5. After success, the Companion cleanly replaces its previous trust state, clears any previous local secret bundle, and authenticates with the newly paired backend.
-
-After upgrading across the companion credential-storage security change, expect an initial forced re-pair. Older plaintext pairing state is intentionally discarded.
-
-### Companion UX Validation Expectations
-
-When changes touch the launcher, Settings, tray, or browser-side Companion support surfaces, manually validate at least the following flows:
-
-- Fresh browser path: install, start pairing from `Settings -> Companion`, approve the OS-native prompt, return to `Connected`, and start a recording.
-- Protocol handoff path: the browser launches `nojoin://pair` successfully when Companion is already running and when it has just been relaunched.
-- Degraded local-browser path: `Local browser connection unavailable` routes the user toward relaunching Companion rather than a privileged browser-triggered repair action.
-- Quiet degraded states: `Temporarily disconnected` and `Local browser connection recovering` remain informative but non-alarmist.
-- Replacement pairing: the previous backend remains active until the new pairing succeeds, and switching stays blocked while a recording or queued upload is still active.
-- Tray fallback: the top level remains limited to status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
+Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility behavior, or troubleshooting guidance.
 
 ## Related Docs
 
-- [COMPANION.md](COMPANION.md)
+- [CAPTURE.md](CAPTURE.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [AGENTS.md](AGENTS.md)

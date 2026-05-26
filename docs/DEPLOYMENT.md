@@ -9,7 +9,7 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 - **Recommended:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
 - **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
 - **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
-- **Companion app:** Currently Windows only.
+- **Capture browser:** Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux for live recording.
 
 ## Core Requirements
 
@@ -45,6 +45,7 @@ The repository does not ship a separate Docker Compose development override.
    ```
 
 8. Open `https://localhost:14443`.
+9. Use a supported Chromium browser on Windows or Linux for live recording. Other browsers can still review and administer Nojoin.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.
@@ -167,7 +168,7 @@ When fronting Nojoin with Nginx, Caddy, Traefik, or another reverse proxy:
 2. By default that means the host-facing port `14443`.
 3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.
 4. Keep `WEB_APP_URL` aligned with the public origin.
-5. If you replace or rotate the public TLS certificate presented to the Companion, users must re-pair the Companion so it can pin the new certificate.
+5. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
 
 ### Caddy Example
 
@@ -193,13 +194,12 @@ location / {
 
 ## Upgrading and Migration
 
-- Keep server and Companion app versions aligned.
 - When performing major upgrades, check release notes for breaking changes.
+- The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported Chromium browser.
+- Existing recordings remain viewable and process through the same backend pipeline. Existing native-helper installs are obsolete and should be removed from user machines.
 - Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.
 - During that startup cutover, existing recordings are classified entirely on the backend. Successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalized safely are marked for explicit reprocess instead of being edited in place.
 - The supported rollback model for this cutover is code rollback only. Canonical rows created during startup migration are additive and are not converted back into legacy-only transcript state.
-- **Companion Security Upgrade**: Upgrading to a version that implements the signed browser-initiated pairing model will automatically clear out any legacy code-based connection state in the Companion app. You will need to perform a clean first-pair workflow from `Settings -> Companion` in Nojoin and approve the native prompt to continue using the Companion.
-- **Companion TOFU TLS Pinning**: The Companion now pins the backend certificate it first sees during pairing. Disconnecting the current backend from Companion Settings clears that saved trust and leaves the app ready for a clean new pairing.
 
 ### Canonical Cutover Notes
 
@@ -247,7 +247,6 @@ Nojoin uses a unified lock-step release model:
 - A `vX.Y.Z` tag drives the published release.
 - Docker images are published to GHCR.
 - The API image embeds the resolved server version during the build, so the installed version shown in Settings does not depend on Docker daemon inspection at runtime.
-- Windows Companion binaries are published alongside the server release.
 - The application surfaces release metadata primarily from GitHub Releases.
 
 ## Related Docs

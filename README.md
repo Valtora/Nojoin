@@ -70,7 +70,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 7. Complete the first-run wizard.
 
-8. Open Nojoin in Chrome, Edge, Brave, or another Chromium-family browser on Windows or Linux, then start a short test meeting. See `docs/CAPTURE.md` for browser capture guidance.
+8. Open Nojoin in Chrome, Edge, Brave, or another Chromium-family browser on Windows or Linux, then start a short test meeting. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 
 Notes:
 
@@ -85,6 +85,7 @@ Notes:
 - [Documentation Index](docs/README.md)
 - [Getting Started](docs/GETTING_STARTED.md)
 - [Deployment & Configuration](docs/DEPLOYMENT.md)
+- [Browser Capture Guide](docs/CAPTURE.md)
 - [User Guide](docs/USAGE.md)
 - [Calendar Guide](docs/CALENDAR.md)
 - [Administration Guide](docs/ADMIN.md)

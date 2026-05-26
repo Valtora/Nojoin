@@ -82,27 +82,32 @@ Use **Settings > Updates** to see:
 - The installed server version from the current API build.
 - The latest stable published release.
 - Release history and release notes.
-- Companion installer links.
 
 ## Operational Notes
 
 - Back up the installation before upgrading.
-- Keep server and Companion versions aligned, especially around auth and upload flow changes.
+- Review release notes for browser capture, auth, and upload lifecycle changes.
 - For remote deployments, configure a trusted public origin with `WEB_APP_URL`.
 - Treat backup archives as sensitive material.
 
-### Companion Pairing and Security Resets
+### Browser Capture Support
 
-- The Companion app forms a strict 1-to-1 association with a single backend.
-- Users must explicitly re-pair the Companion from the target Nojoin site by starting a fresh pairing request in `Settings -> Companion` if they switch to a different deployment, or if the backend's identity or URL changes.
-- The Companion pins the backend TLS certificate it first sees during pairing. Replacing or rotating that backend certificate requires an explicit re-pair.
-- Companion secrets are no longer stored in plaintext config. On Windows, they are moved into a DPAPI-protected secret bundle tied to the active pairing.
-- Using Disconnect Current Backend in Companion Settings clears the saved backend certificate trust and local secret bundle, then attempts a best-effort remote revoke. Users can still switch backends even if the old backend is offline.
-- Major security upgrades to the Companion will drop legacy trust state. After such upgrades, users will be required to perform a clean first-pair workflow before they can record.
+- Live recording requires a supported Chromium browser on Windows or Linux.
+- Firefox, Safari, mobile browsers, and Chromium browsers on macOS can review and administer Nojoin but cannot start live capture.
+- Tab sharing with audio enabled is the recommended support path for browser-based meetings.
+- If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Capture**.
+- If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.
+- If a user has a paused recording, they must resume or discard it before starting another capture.
+- Review backend and worker logs for segment upload, transcode, live transcription, finalize, or discard failures.
+
+Paused recordings are retained indefinitely and are not cleaned up automatically. This protects uploaded meeting data and prevents overlapping segment streams for the same user.
+
+Read [CAPTURE.md](CAPTURE.md) for the support matrix, browser picker behavior, and troubleshooting steps.
 
 ## Related Docs
 
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [CALENDAR.md](CALENDAR.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [CAPTURE.md](CAPTURE.md)
 - [USAGE.md](USAGE.md)

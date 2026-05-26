@@ -7,7 +7,7 @@ Use the links below by task rather than treating the root README as the source o
 ## Start Here
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): First deployment, first admin account, and the shortest path to your first recording.
-- [COMPANION.md](COMPANION.md): Install, pair from the browser, reconnect, switch deployments, tray usage, and troubleshoot the Windows Companion app.
+- [CAPTURE.md](CAPTURE.md): Browser capture setup, supported browsers, sharing audio, pause/resume behavior, and capture troubleshooting.
 - [DEPLOYMENT.md](DEPLOYMENT.md): Hosting, Docker, environment variables, reverse proxy, and updating.
 - [USAGE.md](USAGE.md): Day-to-day product usage for normal users.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development prerequisites and main source-build commands.
@@ -18,7 +18,7 @@ Use the links below by task rather than treating the root README as the source o
 - [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, admin settings, and system operations.
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
-- [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and Companion work.
+- [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and browser capture work.
 
 ## Policies and Project References
 
@@ -34,12 +34,11 @@ Use the links below by task rather than treating the root README as the source o
 | I want to... | Read this |
 | --- | --- |
 | Bring up Nojoin for the first time | [GETTING_STARTED.md](GETTING_STARTED.md) |
-| Install, pair, reconnect, or troubleshoot the Companion | [COMPANION.md](COMPANION.md) |
+| Start, resume, or troubleshoot browser recording | [CAPTURE.md](CAPTURE.md) |
 | Deploy or upgrade a self-hosted instance | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Learn how to use the dashboard and recordings workspace | [USAGE.md](USAGE.md) |
 | Configure Google or Outlook calendar sync | [CALENDAR.md](CALENDAR.md) |
 | Manage users, invitations, and admin settings | [ADMIN.md](ADMIN.md) |
-| Pair the Companion app to a different deployment | [COMPANION.md](COMPANION.md) |
 | Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |

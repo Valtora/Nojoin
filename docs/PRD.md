@@ -3,7 +3,7 @@
 ## 1. Introduction
 
 **Application Name:** Nojoin
-**Purpose:** Nojoin is a distributed, containerized meeting intelligence platform. The system enables users to record system audio from client devices, process the data centrally on a GPU-enabled server, and access transcripts, diarization, and AI-generated insights via a web interface.
+**Purpose:** Nojoin is a distributed, containerized meeting intelligence platform. The system enables users to record meeting audio from a supported browser, process the data centrally on a GPU-enabled server, and access transcripts, diarization, and AI-generated insights via a web interface.
 
 **Core Philosophy:**
 
@@ -46,47 +46,52 @@ The primary user interface for interacting with the system.
   - **Task Capture:** The Task List is grouped directly beneath `Meet Now` on larger screens and supports inline entry with `Enter` to save, `Escape` to cancel, double-click title editing on tasks, optional date-time deadlines, and a live time-remaining badge beside each active deadline control.
 - **Workspace Split:** The recordings library now lives under `/recordings`, separating home-level navigation from recordings filtering state and making later dashboard expansion substantially cleaner.
 - **Live Capture Workspace:** Recordings that are still uploading, queued, or processing render a dedicated status view instead of the normal transcript layout.
-  - **Waveform Monitoring:** While the Companion is recording, the page shows a unified live audio activity waveform sourced from the local Companion service.
+  - **Waveform Monitoring:** While browser capture is active, the page shows a unified live audio activity waveform sourced from shared audio and microphone analyser taps.
   - **Meeting Edge Guidance:** The live workspace includes a Meeting Edge card that turns the recent transcript into a small set of tactful clarifying questions, overlooked points, and short concept explanations.
   - **Guidance Steering:** Users can provide a separate short Meeting Edge focus prompt during the meeting to steer the live guidance without editing their broader manual notes.
   - **Processing Notes:** Users can capture manual notes while a meeting is recording or processing. The notes panel remains visible until meeting-note generation begins, at which point editing is temporarily locked.
   - **ETA Messaging:** When enough prior processing samples exist for that installation, the UI shows an estimated time remaining. Otherwise it shows a learning message rather than a fabricated estimate.
   - **Shared Visual System:** The dashboard and in-flight meeting workspace share the same ambient layout treatment so the user experience remains coherent across active and idle states.
 - **Interactive Tour:** A guided tour for first-time users is implemented using `driver.js`.
-  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and where to manage Companion setup and recovery.
+  - **Dashboard Tour:** Highlights key features such as navigation, recording, importing, and capture settings.
   - **Transcript Tour:** A detailed walkthrough of the transcript view, triggered when viewing a recording for the first time.
   - **Demo Data:** A "Welcome to Nojoin" demo recording is automatically seeded for new installations to facilitate the transcript tour.
-- **Companion Status:** The frontend displays the current pairing and connection state across Settings, dashboard capture controls, alerts, and live recording surfaces. The web UI starts signed pairing requests, confirms state, and guides users back to native-owned actions such as disconnect or relaunching the Companion when local control is degraded.
-- **Companion Installer Links:** Windows Companion installer entry points remain available from the Updates area and GitHub Releases.
+- **Capture Status:** The frontend displays browser support, permission state, missing shared-audio guidance, upload state, paused-recording recovery, and finalization progress across Settings, dashboard capture controls, alerts, and live recording surfaces.
 
-### 2.3 The Companion App (Tauri + Rust)
+### 2.3 Browser Capture
 
-A lightweight system tray application responsible for audio capture on Windows.
+Live recording is owned by the web client through browser capture APIs.
 
-- **Directory:** `companion/`
-- **Framework:** Tauri v2.
-- **Language:** Rust (Backend) + HTML/JS (Frontend).
-- **Platforms:** Windows (macOS and Linux support is not currently available).
-- **Role:** Acts as the native control surface for local capture, pairing approval, browser support, and backend handoff. Captures system audio (loopback) and microphone input upon receiving commands from the Web Client.
-- **Live Metering Endpoint:** Exposes a non-destructive `GET /levels/live` endpoint for the Web Client so the recording page can poll live audio levels without consuming the destructive peak counters used elsewhere.
-- **Pairing Model:** Companion pairing is initiated from the authenticated Web Client, which creates a short-lived signed pairing request and launches the local app through `nojoin://pair`. The user approves that request through an OS-native prompt in the Companion app, after which the backend issues a revocable companion credential plus local control secret, stores only the credential hash, and the browser session itself remains in a Secure HttpOnly cookie and is never re-used directly by the desktop app.
-- **Per-Recording Upload Tokens:** Each recording initialisation returns a short-lived upload token bound to that recording ID. Segment upload, client-status updates, finalisation, and discard all use that narrower token.
-- **Launcher:** A compact first-run and steady-state native surface with one primary next action and a route into Nojoin or Settings.
-- **Settings:** The canonical native home for status, updates, logs, run-on-startup, and disconnect.
-- **Tray:** An operational fallback surface for status, active recording controls, `Open Nojoin`, `Settings`, and `Quit`.
-- **Support Model:** The browser can start signed pairing requests and show coarse state, but native approval and disconnect stay inside the Companion app.
-- **Local Server:** Runs on `localhost:12345`. Remote access requires configuration via a user-managed reverse proxy.
-- **Distribution:** The Windows installer (NSIS) is built via the unified CI/CD pipeline (`release.yml`) and hosted on GitHub Releases alongside the server Docker images, ensuring strict version parity.
-- **Auto-Update:** The app uses the built-in Tauri updater to check for new versions on GitHub matched to the server version.
+- **Supported capture browsers:** Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux.
+- **Unsupported capture browsers:** Firefox, Safari, mobile browsers, and Chromium browsers on macOS. These environments can still review, play back, edit, search, and administer recordings.
+- **Shared audio source:** `getDisplayMedia` captures tab, window, or screen audio when the user enables the browser's audio-sharing option.
+- **Microphone source:** `getUserMedia` captures the local microphone.
+- **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps.
+- **Transport:** The browser uploads short WebM/Opus segments during live recording. The worker transcodes each segment to 16 kHz mono WAV before live transcription and final concatenation.
+- **Lifecycle:** Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`. Uploaded segments remain available, the in-memory tail is dropped, and the user must resume or discard before starting another capture.
+- **Settings:** Capture settings cover microphone selection and per-source gain. Settings are browser-local for the initial cutover.
+- **Documentation:** [CAPTURE.md](CAPTURE.md) is the canonical browser capture guide.
+
+| Browser / OS | Live capture |
+| --- | --- |
+| Chrome / Windows | Supported |
+| Edge / Windows | Supported |
+| Brave / Windows | Supported |
+| Arc / Windows | Supported |
+| Chromium-family / Linux with PipeWire | Supported |
+| Firefox / any OS | Unsupported notice |
+| Safari / any OS | Unsupported notice |
+| Mobile browsers | Unsupported notice |
+| Chromium-family / macOS | Unsupported notice |
 
 ### 2.4 Security
 
-- **SSL/TLS:** All communication between components (Frontend, Backend, Companion) is encrypted via HTTPS using Nginx as a reverse proxy.
+- **SSL/TLS:** Browser and backend traffic is encrypted via HTTPS using Nginx as a reverse proxy.
 - **Automatic SSL Generation:** The system automatically generates self-signed SSL certificates on startup if they are missing, ensuring immediate secure access for local deployments.
 - **HTTPS Enforcement:** HTTP requests to port 14141 are automatically redirected to HTTPS on port 14443. The frontend is only accessible through the Nginx reverse proxy, preventing unencrypted access.
 - **Authentication:** JWT-based authentication is used for API access.
 - **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
-- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Companion pairing requires a short-lived signed pairing request plus native approval, followed by a revocable companion credential that the Companion exchanges for short-lived backend access tokens. Each recording initialisation returns a short-lived recording token bound to that recording ID for upload, status, finalisation, and discard operations.
+- **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Browser recording operations use the authenticated session cookie and strict ownership checks.
 - **Password Rotation Enforcement:** Users created manually by an Admin or Owner, and users whose password is reset by a superuser, must change their password before they can access other authenticated features. While the flag is set, only the self-profile, self-password update, and logout routes remain available.
 - **JWT Secret Key:** A secure JWT signing key is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts without requiring manual configuration.
 - **Authorization:** Role-based access control (Owner/Admin/User), privilege guardrails around Owner and superuser creation, and strict ownership checks ensure users can only access their own data.
@@ -94,9 +99,8 @@ A lightweight system tray application responsible for audio capture on Windows.
 - **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
 - **File & Storage Security:** Path traversal protection on all file uploads, temporary directory generation, and backup extraction (Zero-tolerance for Zip Slip vulnerabilities).
 - **Model Security:** Safe deserialization of Machine Learning models enforcing PyTorch `weights_only=True` with explicitly whitelisted global unpicklers.
-- **Companion IPC Security:** Strict Origin validation to prevent Cross-Site Request Forgery (CSRF) and unauthorized local scripts from interfacing with the local Companion server.
-- **Companion TOFU TLS Pinning:** During browser-initiated pairing, the Companion captures and pins the backend TLS certificate it first sees. Subsequent Companion traffic requires that pinned certificate until the user explicitly disconnects or re-pairs.
-- **Trusted Public Origin:** Invitation links and Companion pairing API targeting use the configured public web origin rather than trusting request Host headers.
+- **Browser Capture Permissions:** Screen, tab, system-audio, and microphone capture are gated by browser permission prompts. Nojoin cannot silently capture those sources without the user selecting a source in the browser picker.
+- **Trusted Public Origin:** Invitation links, OAuth callbacks, browser CORS, and unsafe cookie-authenticated requests use the configured public web origin rather than trusting request Host headers.
 - **CORS & Remote Access:**
   - **CORS:** Restricted to local development origins plus the configured `WEB_APP_URL` public origin.
   - **Remote Access:** Supports deployment behind reverse proxies (e.g., Cloudflare Tunnels, Caddy) by configuring `NEXT_PUBLIC_API_URL` and `WEB_APP_URL`.
@@ -149,8 +153,9 @@ A lightweight system tray application responsible for audio capture on Windows.
 
 The system provides the following core capabilities:
 
-- **Audio Recording:** Headless system tray app for dual-channel capture (System + Mic).
-  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows a calibrated live audio activity waveform derived from both capture channels.
+- **Audio Recording:** Browser-native live capture for shared tab/window/screen audio plus microphone input on supported Chromium browsers.
+  - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows live audio activity derived from the browser analyser taps.
+  - **Pause and Resume:** Paused recordings retain uploaded segments and block new capture until resumed or discarded.
 - **Import:** Support for importing existing audio files.
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
@@ -183,7 +188,7 @@ The system provides the following core capabilities:
   - **Task Flow:** Tasks are created inline in the dashboard Task List. Users can rename an existing task by double-clicking its title, then save with `Enter` or an outside click, or cancel with `Escape`. Optional deadlines store both date and time, while active tasks show a live time-remaining badge that prefers days first and then rounded-down whole hours once the remaining time drops below one day.
   - **Planned Expansion:** Future iterations are expected to connect external calendar data and derive richer agenda/task automation from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
-- **Updates & Releases:** Built-in Settings page for installed version visibility from the current API build, release history, release notes, and companion installer links sourced from GitHub Releases.
+- **Updates & Releases:** Built-in Settings page for installed version visibility from the current API build, release history, and release notes sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records, Task List items, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 
 ### 3.1 Processing Lifecycle Details
@@ -215,25 +220,14 @@ The system provides the following core capabilities:
 - **State Management:** Zustand
 - **Build:** Production optimized (`next build`) with multi-stage Docker build.
 
-### 4.3 Companion App Stack
+### 4.3 Browser Capture Stack
 
-- **Framework:** Tauri v2
-- **Language:** Rust (Core Logic)
-- **Audio:** cpal (Windows)
-- **Async Runtime:** Tokio
-- **HTTP Client:** Reqwest
-- **GUI/Tray:** Tauri System Tray
-- **Platforms:** Windows only (macOS and Linux support pending contributions)
-- **Installer:** Tauri Bundler (NSIS for Windows) with:
-  - Installation to `%LOCALAPPDATA%\Nojoin`
-  - Start Menu and Desktop shortcuts
-  - Run on Startup option (via `tauri-plugin-autostart`)
-  - Automatic termination of running instances during update
-  - Config file preservation during updates
-- **Signing:**
-  - Updates are signed using the built-in Tauri mechanism (Minisign).
-  - Private keys are stored in GitHub Secrets (`TAURI_PRIVATE_KEY`, `TAURI_KEY_PASSWORD`) for CI/CD.
-  - Local builds require these keys to be present in environment variables.
+- **Browser APIs:** `getDisplayMedia`, `getUserMedia`, Web Audio, and MediaRecorder.
+- **Frontend modules:** Capture logic lives under `frontend/src/lib/capture/`.
+- **Media transport:** WebM/Opus during live recording, transcoded by the worker to 16 kHz mono WAV segments.
+- **Supported capture platforms:** Chromium-family browsers on Windows and Linux.
+- **Unsupported capture platforms:** Firefox, Safari, mobile browsers, and Chromium browsers on macOS.
+- **Validation:** Manual browser matrix testing is required before release sign-off.
 
 ### 4.4 Deployment & Configuration
 

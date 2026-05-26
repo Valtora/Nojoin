@@ -11,7 +11,7 @@
 
 ## Project Context
 
-Nojoin is a distributed meeting intelligence platform. The system records system audio via a local Rust companion app, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
+Nojoin is a distributed meeting intelligence platform. The system records live meeting audio directly from supported Chromium browsers, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
 
 **Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Configurable Privacy (Self-hosted with optional local-only AI).
 
@@ -30,7 +30,7 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - **Manual AI Flows**: Automatic AI enhancement is provider-gated and no longer uses separate per-feature toggles. Manual `Generate Notes` remains notes-only, and manual `Retry Speaker Inference` remains speaker-only.
   - **Meeting Edge**: Live guidance is a separate worker path from end-of-processing meeting intelligence. It consumes recent live transcript context plus optional user focus text and user notes, expects a strict JSON contract, and may use a provider-specific Meeting Edge live model that falls back to the provider's main model when unset.
   - **Transcription Engine**: The Transcribe step dispatches to a pluggable engine (`backend/processing/engines/`), selected by the `transcription_backend` config key. The normal live and final recording flow uses the same selected engine so live transcription can be reused during final processing. Whisper is the default; Parakeet and Canary (both onnx-asr, sharing the `OnnxAsrEngine` base) are selectable. Parakeet is much faster on supported NVIDIA systems, but trades off some accuracy and language coverage compared with Whisper. Different-engine transcription belongs to explicit manual reprocessing after Settings are changed.
-  - **Live Transcription Latency**: The companion uploads about 2-second WAV segments. The backend live lane sequence-gates those uploads, carries trailing speech across segment boundaries, and force-emits continuous speech after about 8 seconds. The recording page should show the live transcript pane immediately for in-flight recordings, even before the first transcript segment exists.
+  - **Live Transcription Latency**: Browser capture uploads short WebM/Opus segments that the worker transcodes to WAV for the live lane. The backend live lane sequence-gates those uploads, carries trailing speech across segment boundaries, and force-emits continuous speech after about 8 seconds. The recording page should show the live transcript pane immediately for in-flight recordings, even before the first transcript segment exists.
   - **Live Speaker Assignment**: The live lane uses online voice embeddings to keep stable `LIVE_XX` speaker labels. Short or embedding-less regions should fall back to the most recent stable live label rather than creating a new speaker per fragment. Embedding extraction uses a centred window trimmed away from segment edges to reduce noise-pickup bias. Manual speaker edits and live text edits are authoritative and must survive final processing.
   - **Phantom Speaker Filter**: Post-diarization stage (`backend/processing/phantom_filter.py`) that detects and reassigns segments caused by non-speech sounds (notifications, background noise). Uses heuristic detection (duration/segment count) followed by embedding-based validation. Thresholds are defined as named constants in `phantom_filter.py` (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, `PHANTOM_MERGE_THRESHOLD`).
   - **Speaker Identification Constants**: All speaker matching thresholds are centralised in `backend/processing/embedding.py`. Do not hardcode threshold values elsewhere; import and reference the named constants (`IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, `UI_STRONG_MATCH_THRESHOLD`).
@@ -45,40 +45,29 @@ Nojoin is a distributed meeting intelligence platform. The system records system
 - **API Layer**: All API calls MUST go through `src/lib/api.ts`.
   - Browser authentication uses the Secure HttpOnly session cookie issued by `/api/v1/login/session`.
   - Explicit Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Companion pairing uses a manual code-based flow, establishing a single-backend association and receiving a revocable companion credential plus local control secret. The browser never receives a reusable Companion bearer token.
-  - `/api/v1/recordings/init` returns a short-lived upload token bound to the newly created recording. The Companion must use that token for segment uploads, client-status updates, finalisation, and discard flows.
+  - Browser recording operations use the authenticated session cookie with trusted-origin and ownership checks.
+  - `/api/v1/recordings/init` creates an uploading recording for the current user. Browser segment upload, pause, resume, discard, and finalisation must preserve monotonic segment sequencing and paused-recording lock behavior.
   - `force_password_change` is enforced server-side. Flagged users may only fetch `/api/v1/users/me`, update `/api/v1/users/me/password`, or log out until they rotate their password.
   - Never put bearer tokens into URL query strings or other browser-visible locations.
 - **Routing**: The App Router (`src/app/`) is utilized.
 - **Styling**: Tailwind CSS is the standard styling framework.
 - **Components**: Functional components in `src/components/` are preferred.
 
-### Companion App (Tauri + Rust)
+### Browser Capture
 
-- **Structure**:
-  - `src-tauri/`: Rust backend code.
-  - `src/`: Frontend assets (currently minimal).
-- **Platform Support**: Windows only. macOS and Linux support is not currently available (contributions are welcome).
-- **Concurrency**:
-  - **Audio Thread**: Captures audio using `cpal` and communicates via `crossbeam_channel`.
-  - **Server/Upload Thread**: Uses the `tokio` runtime.
-- **Upload Strategy**:
-  - Segments are numbered sequentially but uploaded concurrently (racing upload tasks plus retries) to `/recordings/{id}/segment`. The backend re-imposes order via a sequence-gated buffer in the live transcription task.
-  - **Retries**: Implemented in `src-tauri/src/uploader.rs` with exponential backoff.
-- **UI**: The system tray is managed by Tauri.
-- **Configuration** (`config.json`):
-  - **Location**: `%APPDATA%\Nojoin Companion` (Windows).
-  - `api_host`: Backend API hostname/IP (default: "localhost").
-  - `api_port`: Backend API port (default: 14443).
-  - `local_port`: Local server port (default: 12345).
-  - `api_token`: JWT token obtained via web-based authorization.
-- **Authorization**:
-  - The Companion app initiates pairing manually, displaying a single-use code.
-  - The web app sends the code and bootstrap Companion token to the Companion's pairing endpoint.
-  - The Companion local API has two classes of routes: the short-lived pairing route, and the authenticated steady-state routes that require a short-lived local control token and strict Host validation. Anonymous detection is explicitly blocked.
-  - Each `/recordings/init` response provides the per-recording upload token used for segment upload, status changes, finalisation, and discard.
-  - Manual configuration is available via System Tray > Settings.
-- **Installer**: Built via Tauri Bundler for Windows. Installs to `%LOCALAPPDATA%\Nojoin`.
+- **Structure**: Browser capture modules live under `frontend/src/lib/capture/`.
+- **Platform Support**: Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux. Firefox, Safari, mobile browsers, and Chromium browsers on macOS are not supported for live capture.
+- **Capture Strategy**:
+  - `getDisplayMedia` captures the user-selected tab, window, or screen and its shared audio track when the browser grants one.
+  - `getUserMedia` captures the local microphone.
+  - Web Audio mixes shared audio and microphone audio, applies gain, and feeds analyser state for the live waveform.
+  - MediaRecorder creates short WebM/Opus segments that upload sequentially to `/recordings/{id}/segment`.
+  - The worker transcodes each browser segment to 16 kHz mono WAV before live transcription and final concatenation.
+- **Lifecycle**:
+  - Refreshing, closing, or navigating away from the Nojoin tab during capture marks the recording `PAUSED`.
+  - A paused recording blocks new capture until the user resumes or discards it.
+  - Switching to another browser tab, window, or application must not pause capture.
+  - Retired native-helper routes should remain terminal and should not issue credentials or accept uploads.
 
 ## Critical Workflows
 
@@ -98,18 +87,13 @@ Nojoin is a distributed meeting intelligence platform. The system records system
   - Development: `cd frontend && npm install && npm run dev`
   - Verification: `cd frontend && npm run build`
   - Lint: `cd frontend && npm run lint`
-- **Companion (Windows)**:
-  - Development: `cd companion && npm run tauri dev`
-  - Release Build: `cd companion && npm run tauri build`
-  - **Note**: Build from a Windows environment. WSL2 may have UNC path issues.
-  - **Environment Variables**: Ensure `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` (if applicable) are set in the Windows environment variables or PowerShell session before building.
-- **Companion Installer (Windows)**:
-  - Build: `cd companion && npm run tauri build`
-  - Output: `companion/src-tauri/target/release/bundle/nsis/Nojoin Setup X.Y.Z.exe`
+- **Browser Capture Verification**:
+  - Unit tests: `cd frontend && npm run test -- --run src/lib/capture`
+  - Manual smoke: start Nojoin in a supported Chromium browser, share a meeting tab with audio enabled, verify waveform/live transcript, pause/resume, stop/finalize, and unsupported-browser messaging where practical.
 
 ### Release Workflow (Unified Lock-step)
 
-The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX.Y.Z`) triggers a unified release for both the Server (Docker) and the Companion App (Windows Installer).
+The project uses a single Git Tag (`vX.Y.Z`) to trigger the server and frontend release pipeline.
 
 1. **Update Version**: Update `docs/VERSION` to the new version (e.g., `0.6.0`).
 2. **Commit and Tag**:
@@ -122,14 +106,13 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
 
   **Step 1: Docker Build**: Builds and pushes API, Worker, and Frontend images to GHCR with tags `latest` and `v0.6.0`. The API image also embeds the resolved server version for runtime display in Settings.
 
-  **Step 2: Companion Build**: The CI pipeline automatically syncs the version from the Git Tag to all companion app files (`package.json`, `Cargo.toml`, `tauri.conf.json`). **Manual version updates in these files are NOT required.** It then compiles the Windows installer (`.exe`) and Portable build, and uploads those artifacts to the GitHub Release created by the tag.
+  **Step 2: Release Metadata**: The pipeline publishes release metadata and notes for the tag. Browser capture compatibility belongs in release notes when capture behavior changes.
 
 **Important**:
 
 - **Versioning**: Strict Semantic Versioning (`vX.Y.Z`).
-- **Source of Truth**: The Git Tag is the single source of truth for published releases. Local source builds use `docs/VERSION`. The API image embeds the resolved server version at build time, and the companion app files are transiently updated during the build process.
+- **Source of Truth**: The Git Tag is the single source of truth for published releases. Local source builds use `docs/VERSION`. The API image embeds the resolved server version at build time.
   - **Version Detection**: The API resolves the running version from build metadata embedded into the image (`NOJOIN_SERVER_VERSION` and `/app/.build-version`), falling back to bundled or local `docs/VERSION` in development and test contexts. User-facing release metadata is resolved from GitHub Releases first, with GHCR tags and the GitHub raw `docs/VERSION` file only used as version fallbacks if release metadata is unavailable.
-- **Platform**: Only Windows builds are currently supported for the Companion App.
 
 ## Code Style & Conventions
 
@@ -144,10 +127,11 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
 - **Interfaces**: Define shared types in `src/types/index.ts`.
 - **Strict Mode**: No `any`.
 
-### Rust (Companion)
+### Browser Capture (Frontend)
 
-- **Error Handling**: Use `anyhow::Result` for application code.
-- **Async**: Use `tokio` for I/O bound tasks.
+- Keep capture lifecycle, recorder, upload, and status behavior covered by focused Vitest tests.
+- Use browser feature detection for capture support instead of user-agent-only checks wherever possible.
+- Preserve the unsupported-browser review/admin path when changing capture gating.
 
 ## Quality Assurance & Build Safety
 
@@ -168,6 +152,7 @@ The project uses a **Lock-step Versioning** strategy where a single Git Tag (`vX
 - [USAGE.md](USAGE.md): End-user workflows and UI behavior.
 - [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, and admin operations.
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behavior, and sensitivity model.
+- [CAPTURE.md](CAPTURE.md): Browser capture setup, support matrix, and troubleshooting.
 - [PRD.md](PRD.md): Product intent and longer-term scope.
 - [README.md](README.md): Documentation index by task.
 
