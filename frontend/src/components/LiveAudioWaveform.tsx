@@ -12,15 +12,11 @@ const QUIET_HINT_DELAY_MS = 20000;
 const ACTIVITY_HINT_COPY = {
   title: "Audio has been quiet for a bit",
   message:
-    "That can be normal during a quiet stretch. If the meeting should be active, check the capture settings and the browser share picker.",
+    "That can be normal during a quiet stretch. If the meeting should be active, check the microphone selection and the browser share picker.",
 };
 
 const AUDIO_BAR_CLASS_NAME =
   "bg-gradient-to-t from-orange-600 via-orange-500 to-amber-300";
-
-function combineAudioLevel(inputLevel: number, outputLevel: number) {
-  return Math.max(inputLevel, outputLevel);
-}
 
 function smoothLevel(previousLevel: number, nextLevel: number) {
   const riseBlend = nextLevel > previousLevel ? 0.65 : 0.35;
@@ -114,7 +110,7 @@ export default function LiveAudioWaveform({
       lastAudioActivityAtRef.current = Date.now();
     }
 
-    const combinedLevel = combineAudioLevel(levels.system, levels.microphone);
+    const combinedLevel = levels.mixed;
     const now = Date.now();
 
     if (!paused) {
@@ -136,8 +132,7 @@ export default function LiveAudioWaveform({
     });
   }, [
     enabled,
-    levels.microphone,
-    levels.system,
+    levels.mixed,
     paused,
     runtimeActive,
   ]);

@@ -28,8 +28,6 @@ export interface CaptureLevels {
 
 export interface CaptureSettings {
   microphoneDeviceId: string | null;
-  systemGain: number;
-  microphoneGain: number;
 }
 
 export interface PausedCaptureContext {
@@ -70,28 +68,10 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   microphoneDeviceId: null,
-  systemGain: 1,
-  microphoneGain: 1,
 };
 
 const CAPTURE_SETTINGS_STORAGE_KEY = "nojoin.capture.settings";
 const PAUSED_CAPTURE_STORAGE_KEY = "nojoin.capture.paused-recording";
-
-const clampStorageGain = (value: unknown, fallback: number) => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return fallback;
-  }
-
-  if (value < 0) {
-    return 0;
-  }
-
-  if (value > 2) {
-    return 2;
-  }
-
-  return value;
-};
 
 export const readCaptureSettings = (): CaptureSettings => {
   if (typeof window === "undefined") {
@@ -110,14 +90,6 @@ export const readCaptureSettings = (): CaptureSettings => {
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
           : null,
-      systemGain: clampStorageGain(
-        parsed.systemGain,
-        DEFAULT_CAPTURE_SETTINGS.systemGain,
-      ),
-      microphoneGain: clampStorageGain(
-        parsed.microphoneGain,
-        DEFAULT_CAPTURE_SETTINGS.microphoneGain,
-      ),
     };
   } catch {
     return DEFAULT_CAPTURE_SETTINGS;

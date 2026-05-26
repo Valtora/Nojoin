@@ -27,6 +27,7 @@ export const createWaveformMonitor = (options: {
   systemAnalyser: AnalyserNode;
   microphoneAnalyser: AnalyserNode;
   mixedAnalyser: AnalyserNode;
+  onBeforeLevels?: () => void;
   onLevels: (levels: CaptureLevels) => void;
   requestAnimationFrameFn?: typeof requestAnimationFrame;
   cancelAnimationFrameFn?: typeof cancelAnimationFrame;
@@ -42,6 +43,7 @@ export const createWaveformMonitor = (options: {
       return;
     }
 
+    options.onBeforeLevels?.();
     options.onLevels({
       system: normaliseAnalyserLevel(options.systemAnalyser),
       microphone: normaliseAnalyserLevel(options.microphoneAnalyser),

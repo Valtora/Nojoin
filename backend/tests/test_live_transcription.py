@@ -927,6 +927,49 @@ def test_select_live_rolling_diarization_manifests_skips_active_claims_and_recla
     assert [row.window_index for row in selected_rows] == [1, 2]
 
 
+def test_select_live_rolling_diarization_manifests_claims_live_processed_without_window_result(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _select_live_rolling_diarization_manifests
+
+    manifest_rows = [
+        SimpleNamespace(
+            id=1,
+            window_index=0,
+            chunk_end_sequence=10,
+            is_partial=False,
+            is_sealed=False,
+            status="live_processed",
+            processing_run_id=None,
+        )
+    ]
+
+    class _ExecResult:
+        def all(self):
+            return []
+
+    class _Session:
+        def exec(self, *args, **kwargs):
+            return _ExecResult()
+
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._load_recording_audio_window_manifests",
+        lambda session, recording_id: manifest_rows,
+    )
+
+    selected_rows = _select_live_rolling_diarization_manifests(
+        _Session(),
+        recording_id=1,
+        up_to_sequence=10,
+        config_hash="rolling-cfg-1",
+        max_windows_per_pass=3,
+    )
+
+    assert [row.window_index for row in selected_rows] == [0]
+
+
 def test_claim_live_rolling_diarization_manifests_marks_rows_in_flight(monkeypatch):
     from types import SimpleNamespace
 
@@ -1006,6 +1049,25 @@ def test_count_active_live_rolling_diarization_runs_ignores_stale_rows():
             return _ExecResult([(1,), (2,)])
 
     assert _count_active_live_rolling_diarization_runs(_Session()) == 2
+
+
+def test_count_active_live_rolling_diarization_runs_rolls_back_failed_query():
+    from backend.processing.live_transcribe import _count_active_live_rolling_diarization_runs
+
+    class _Session:
+        def __init__(self):
+            self.rolled_back = False
+
+        def exec(self, *args, **kwargs):
+            raise RuntimeError("enum value missing")
+
+        def rollback(self):
+            self.rolled_back = True
+
+    session = _Session()
+
+    assert _count_active_live_rolling_diarization_runs(session) == 0
+    assert session.rolled_back is True
 
 
 def test_build_diarization_window_payload_offsets_turns_to_absolute_time():

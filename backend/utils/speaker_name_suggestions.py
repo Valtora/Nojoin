@@ -28,7 +28,10 @@ SELF_INTRO_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 DISALLOWED_NAME_TOKENS = {
+    "a",
+    "an",
     "agenda",
+    "best",
     "client",
     "company",
     "customer",
@@ -40,6 +43,12 @@ DISALLOWED_NAME_TOKENS = {
     "manager",
     "meeting",
     "morning",
+    "right",
+    "same",
+    "that",
+    "the",
+    "thing",
+    "this",
     "team",
     "thanks",
 }
@@ -296,19 +305,20 @@ def build_mapping_based_speaker_suggestions(
             deterministic_match.suggested_name,
             suggested_name,
         ):
-            if _normalize_name(deterministic_match.suggested_name) != _normalize_name(
-                suggested_name
-            ):
-                deterministic_match = SpeakerInferenceSuggestion(
+            suggestions.append(
+                SpeakerInferenceSuggestion(
                     diarization_label=deterministic_match.diarization_label,
                     suggested_name=suggested_name,
-                    confidence=deterministic_match.confidence,
-                    rationale=deterministic_match.rationale,
+                    confidence=max(0.78, min(deterministic_match.confidence, 0.95)),
+                    rationale=(
+                        "The model suggestion is supported by direct transcript "
+                        "self-identification evidence."
+                    ),
                     evidence_spans=deterministic_match.evidence_spans,
                     signals=deterministic_match.signals,
                     source=source,
                 )
-            suggestions.append(deterministic_match)
+            )
             continue
 
         evidence_spans = tuple(

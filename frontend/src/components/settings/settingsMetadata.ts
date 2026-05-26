@@ -57,7 +57,7 @@ export const SETTINGS_SECTION_METADATA: Record<
   capture: {
     id: "capture",
     label: "Capture",
-    description: "Browser recording devices, gain controls, quiet-audio reminders, and capture guidance.",
+    description: "Browser recording devices, automatic levels, quiet-audio reminders, and capture guidance.",
     icon: Mic,
     keywords: TAB_KEYWORDS.capture,
     roleRequirement: "all",

@@ -15,6 +15,7 @@ from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     SpeakerInferenceSuggestion,
     SpeakerSuggestionEvidenceSpan,
+    detect_rule_based_speaker_suggestions,
 )
 
 
@@ -229,6 +230,34 @@ def _run_infer_speakers_task(engine: Any) -> None:
         engine.dispose()
 
 
+def test_default_speaker_suggestion_prompt_template_is_available() -> None:
+    from backend.processing.llm_services import LLMBackend
+
+    prompt = LLMBackend.get_default_speaker_suggestion_prompt_template()
+
+    assert "evidence-backed speaker name suggestions" in prompt
+    assert "{eligible_labels_section}" in prompt
+
+
+def test_rule_based_speaker_suggestions_ignore_non_name_this_is_phrase() -> None:
+    result = detect_rule_based_speaker_suggestions(
+        [
+            {
+                "start": 0.0,
+                "end": 8.0,
+                "speaker": "SPEAKER_00",
+                "text": (
+                    "So this is the same thing that happened with Tesla's full "
+                    "self drive."
+                ),
+            }
+        ],
+        ["SPEAKER_00"],
+    )
+
+    assert result.suggestions == ()
+
+
 def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -326,6 +355,186 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         verification_engine.dispose()
 
 
+def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_infer_speakers_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "openai",
+            "openai_api_key": "sk-openai-valid",
+            "openai_model": "gpt-test",
+        },
+        transcript_segments=[
+            {
+                "start": 0.0,
+                "end": 2.2,
+                "speaker": "SPEAKER_00",
+                "text": "Hi everyone, I'm Alex from product.",
+            },
+        ],
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeLLM:
+        def infer_speaker_suggestions(
+            self,
+            transcript: str,
+            prompt_template: str | None = None,
+            timeout: int = 60,
+            user_notes: str | None = None,
+            meeting_context=None,
+            eligible_labels=None,
+        ) -> SpeakerInferenceResult:
+            captured["eligible_labels"] = tuple(eligible_labels or ())
+            return SpeakerInferenceResult(
+                (
+                    SpeakerInferenceSuggestion(
+                        diarization_label="SPEAKER_00",
+                        suggested_name="Alex",
+                        confidence=0.91,
+                        rationale="The model identified a self-introduction.",
+                        evidence_spans=(
+                            SpeakerSuggestionEvidenceSpan(
+                                quote="Hi everyone, I'm Alex from product.",
+                                reason="self_introduction",
+                                start_seconds=0.0,
+                                end_seconds=2.2,
+                            ),
+                        ),
+                        source="llm",
+                    ),
+                )
+            )
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
+
+        assert captured["eligible_labels"] == ("SPEAKER_00",)
+        assert len(suggestions) == 1
+        assert suggestions[0]["suggested_name"] == "Alex"
+        assert suggestions[0]["source"] == "llm"
+        assert suggestions[0]["provider"] == "openai"
+    finally:
+        verification_engine.dispose()
+
+
+def test_infer_speakers_task_supersedes_pending_suggestion_omitted_by_llm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_infer_speakers_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "openai",
+            "openai_api_key": "sk-openai-valid",
+            "openai_model": "gpt-test",
+        },
+        transcript_segments=[
+            {
+                "start": 0.0,
+                "end": 4.0,
+                "speaker": "SPEAKER_00",
+                "text": "So this is the same thing that happened before.",
+            },
+        ],
+    )
+    stale_suggestion = [
+        {
+            "id": "stale-suggestion-1",
+            "diarization_label": "SPEAKER_00",
+            "speaker_display_name": "Speaker 1",
+            "suggested_name": "The Same Thing",
+            "confidence": 0.97,
+            "rationale": "Detected a self-introduction in the transcript.",
+            "evidence_spans": [
+                {
+                    "quote": "So this is the same thing that happened before.",
+                    "reason": "self_introduction",
+                    "start_seconds": 0.0,
+                    "end_seconds": 4.0,
+                }
+            ],
+            "signals": ["self_introduction"],
+            "source": "deterministic_rule",
+            "origin": "automatic_meeting_intelligence",
+            "provider": None,
+            "recording_speaker_id": 1,
+            "status": "pending",
+            "created_at": "2026-05-26T12:01:00+00:00",
+            "updated_at": "2026-05-26T12:01:00+00:00",
+            "resolved_at": None,
+            "resolution_reason": None,
+            "resolution_actor_user_id": None,
+            "suggested_global_speaker_id": None,
+        }
+    ]
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE transcripts SET speaker_name_suggestions = :suggestions "
+                "WHERE recording_id = 1"
+            ),
+            {"suggestions": json.dumps(stale_suggestion)},
+        )
+
+    class FakeLLM:
+        def infer_speaker_suggestions(
+            self,
+            transcript: str,
+            prompt_template: str | None = None,
+            timeout: int = 60,
+            user_notes: str | None = None,
+            meeting_context=None,
+            eligible_labels=None,
+        ) -> SpeakerInferenceResult:
+            return SpeakerInferenceResult()
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            raw_suggestions = session.exec(
+                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
+
+        assert len(suggestions) == 1
+        assert suggestions[0]["suggested_name"] == "The Same Thing"
+        assert suggestions[0]["status"] == "superseded"
+        assert suggestions[0]["resolution_reason"] == "manual_retry_omitted_by_llm"
+    finally:
+        verification_engine.dispose()
+
+
 def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restores_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -407,7 +616,7 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
     )
 
     def fail_if_called(_config):
-        raise AssertionError("LLM backend should not be created when deterministic evidence is sufficient")
+        raise AssertionError("LLM backend should not be created when model configuration is missing")
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)

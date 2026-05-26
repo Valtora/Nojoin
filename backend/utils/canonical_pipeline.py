@@ -70,6 +70,8 @@ ROLLING_DIARIZATION_CONFIDENCE_FLOOR = 0.55
 ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN = 0.15
 ROLLING_DIARIZATION_STABLE_WINDOW_COUNT = 2
 ROLLING_DIARIZATION_MERGE_BOUNDARY_GAP_MS = 150
+ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_EMBEDDING_THRESHOLD = 0.72
+ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS = 1000
 # Diarization-boundary splitting (used when the word-level splitter cannot
 # split an utterance, e.g. because some words have no overlapping turn).
 ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_OVERLAP_MS = 250
@@ -2643,7 +2645,7 @@ def reconcile_diarization_window_result(
     for turn_row in turn_rows:
         turns_by_local_speaker[str(turn_row.local_speaker_key)].append(turn_row)
 
-    matched_turn_count = 0
+    local_speaker_matches: dict[str, dict[str, Any]] = {}
     for local_speaker_key, local_turn_rows in turns_by_local_speaker.items():
         matched_speaker, turn_confidence, evidence_payload = _match_window_local_speaker(
             session,
@@ -2653,6 +2655,29 @@ def reconcile_diarization_window_result(
             previous_turn_rows=previous_turn_rows,
             recording_speakers_by_id=recording_speakers_by_id,
         )
+        local_speaker_matches[local_speaker_key] = {
+            "matched_speaker": matched_speaker,
+            "confidence": turn_confidence,
+            "evidence": evidence_payload,
+        }
+
+    _enforce_distinct_window_local_speaker_matches(
+        session,
+        recording_id=recording_id,
+        processing_run_id=processing_run_id,
+        local_speaker_matches=local_speaker_matches,
+        turns_by_local_speaker=turns_by_local_speaker,
+        previous_turn_rows=previous_turn_rows,
+        speaker_metadata_by_key=speaker_metadata_by_key,
+        recording_speakers_by_id=recording_speakers_by_id,
+    )
+
+    matched_turn_count = 0
+    for local_speaker_key, local_turn_rows in turns_by_local_speaker.items():
+        match_payload = local_speaker_matches.get(local_speaker_key, {})
+        matched_speaker = match_payload.get("matched_speaker")
+        turn_confidence = float(match_payload.get("confidence") or 0.0)
+        evidence_payload = dict(match_payload.get("evidence") or {})
 
         metadata_payload = dict(speaker_metadata_by_key.get(local_speaker_key, {}))
         metadata_payload.update(
@@ -2956,6 +2981,293 @@ def reconcile_diarization_window_result(
         "updated_utterance_count": updated_utterance_count,
         "preserved_manual_lock_count": preserved_manual_lock_count,
     }
+
+
+def _enforce_distinct_window_local_speaker_matches(
+    session,
+    *,
+    recording_id: int,
+    processing_run_id: int | None,
+    local_speaker_matches: dict[str, dict[str, Any]],
+    turns_by_local_speaker: dict[str, list[DiarizationWindowTurn]],
+    previous_turn_rows: Sequence[DiarizationWindowTurn],
+    speaker_metadata_by_key: dict[str, dict[str, Any]],
+    recording_speakers_by_id: dict[int, RecordingSpeaker],
+) -> None:
+    matched_local_keys_by_speaker_id: dict[int, list[str]] = defaultdict(list)
+    for local_speaker_key, match_payload in local_speaker_matches.items():
+        matched_speaker = match_payload.get("matched_speaker")
+        if matched_speaker is None or getattr(matched_speaker, "id", None) is None:
+            continue
+        matched_local_keys_by_speaker_id[int(matched_speaker.id)].append(local_speaker_key)
+
+    for contested_speaker_id, local_speaker_keys in matched_local_keys_by_speaker_id.items():
+        if len(local_speaker_keys) < 2:
+            continue
+
+        primary_local_speaker_key = max(
+            local_speaker_keys,
+            key=lambda local_speaker_key: _window_local_speaker_contested_claim_score(
+                local_speaker_key,
+                contested_speaker_id=contested_speaker_id,
+                speaker_metadata_by_key=speaker_metadata_by_key,
+                turns_by_local_speaker=turns_by_local_speaker,
+            ),
+        )
+
+        for local_speaker_key in local_speaker_keys:
+            if local_speaker_key == primary_local_speaker_key:
+                continue
+
+            alternate_speaker, alternate_confidence, alternate_evidence = (
+                _select_distinct_alternate_window_speaker(
+                    session,
+                    local_turn_rows=turns_by_local_speaker.get(local_speaker_key, []),
+                    previous_turn_rows=previous_turn_rows,
+                    speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
+                    recording_speakers_by_id=recording_speakers_by_id,
+                    excluded_recording_speaker_ids={contested_speaker_id},
+                )
+            )
+
+            if alternate_speaker is None and _local_turn_total_duration_ms(
+                turns_by_local_speaker.get(local_speaker_key, [])
+            ) >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS:
+                alternate_speaker = _create_rolling_diarization_recording_speaker(
+                    session,
+                    recording_id=recording_id,
+                    processing_run_id=processing_run_id,
+                    local_turn_rows=turns_by_local_speaker.get(local_speaker_key, []),
+                )
+                recording_speakers_by_id[int(alternate_speaker.id)] = alternate_speaker
+                alternate_confidence = ROLLING_DIARIZATION_CONFIDENCE_FLOOR
+                alternate_evidence = {
+                    "reason": "distinct_local_speaker_new_recording_speaker",
+                    "provisional": False,
+                }
+
+            existing_evidence = dict(local_speaker_matches[local_speaker_key].get("evidence") or {})
+            if alternate_speaker is None:
+                existing_evidence.update(
+                    {
+                        "provisional": True,
+                        "reason": "distinct_local_speaker_conflict_unmatched",
+                        "original_recording_speaker_id": contested_speaker_id,
+                        "primary_local_speaker_key": primary_local_speaker_key,
+                    }
+                )
+                local_speaker_matches[local_speaker_key].update(
+                    {
+                        "matched_speaker": None,
+                        "confidence": min(
+                            float(local_speaker_matches[local_speaker_key].get("confidence") or 0.0),
+                            ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
+                        ),
+                        "evidence": existing_evidence,
+                    }
+                )
+                continue
+
+            existing_evidence.update(alternate_evidence)
+            existing_evidence.update(
+                {
+                    "provisional": False,
+                    "original_recording_speaker_id": contested_speaker_id,
+                    "primary_local_speaker_key": primary_local_speaker_key,
+                    "conflict_resolution": "distinct_local_speaker_alternate",
+                }
+            )
+            local_speaker_matches[local_speaker_key].update(
+                {
+                    "matched_speaker": alternate_speaker,
+                    "confidence": max(
+                        float(alternate_confidence),
+                        ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
+                    ),
+                    "evidence": existing_evidence,
+                }
+            )
+
+    assigned_recording_speaker_ids = {
+        int(match_payload["matched_speaker"].id)
+        for match_payload in local_speaker_matches.values()
+        if match_payload.get("matched_speaker") is not None
+        and getattr(match_payload["matched_speaker"], "id", None) is not None
+    }
+    for local_speaker_key, match_payload in local_speaker_matches.items():
+        if match_payload.get("matched_speaker") is not None:
+            continue
+        alternate_speaker, alternate_confidence, alternate_evidence = (
+            _select_distinct_alternate_window_speaker(
+                session,
+                local_turn_rows=turns_by_local_speaker.get(local_speaker_key, []),
+                previous_turn_rows=previous_turn_rows,
+                speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
+                recording_speakers_by_id=recording_speakers_by_id,
+                excluded_recording_speaker_ids=assigned_recording_speaker_ids,
+            )
+        )
+        if alternate_speaker is None:
+            continue
+        existing_evidence = dict(match_payload.get("evidence") or {})
+        existing_evidence.update(alternate_evidence)
+        existing_evidence.update(
+            {
+                "provisional": False,
+                "conflict_resolution": "distinct_unmatched_local_speaker_alternate",
+            }
+        )
+        match_payload.update(
+            {
+                "matched_speaker": alternate_speaker,
+                "confidence": max(
+                    float(alternate_confidence),
+                    ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
+                ),
+                "evidence": existing_evidence,
+            }
+        )
+        assigned_recording_speaker_ids.add(int(alternate_speaker.id))
+
+
+def _window_local_speaker_contested_claim_score(
+    local_speaker_key: str,
+    *,
+    contested_speaker_id: int,
+    speaker_metadata_by_key: dict[str, dict[str, Any]],
+    turns_by_local_speaker: dict[str, list[DiarizationWindowTurn]],
+) -> float:
+    metadata = dict(speaker_metadata_by_key.get(local_speaker_key, {}) or {})
+    score = float(_local_turn_total_duration_ms(turns_by_local_speaker.get(local_speaker_key, [])))
+    best_recording_speaker_id = _to_optional_int(metadata.get("best_recording_speaker_id"))
+    best_recording_speaker_score = _to_optional_float(metadata.get("best_recording_speaker_score"))
+    if best_recording_speaker_id == int(contested_speaker_id) and best_recording_speaker_score is not None:
+        score += float(best_recording_speaker_score) * 100_000.0
+    return score
+
+
+def _select_distinct_alternate_window_speaker(
+    session,
+    *,
+    local_turn_rows: Sequence[DiarizationWindowTurn],
+    previous_turn_rows: Sequence[DiarizationWindowTurn],
+    speaker_metadata: dict[str, Any],
+    recording_speakers_by_id: dict[int, RecordingSpeaker],
+    excluded_recording_speaker_ids: set[int],
+) -> tuple[RecordingSpeaker | None, float, dict[str, Any]]:
+    best_recording_speaker_id = _to_optional_int(speaker_metadata.get("best_recording_speaker_id"))
+    best_recording_speaker_score = _to_optional_float(
+        speaker_metadata.get("best_recording_speaker_score")
+    )
+    if (
+        best_recording_speaker_id is not None
+        and best_recording_speaker_id not in excluded_recording_speaker_ids
+        and best_recording_speaker_id in recording_speakers_by_id
+        and best_recording_speaker_score is not None
+        and best_recording_speaker_score >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_EMBEDDING_THRESHOLD
+    ):
+        return (
+            _resolve_active_recording_speaker(
+                session,
+                recording_speakers_by_id[int(best_recording_speaker_id)],
+            ),
+            float(best_recording_speaker_score),
+            {
+                "reason": "distinct_local_speaker_embedding_match",
+                "alternate_recording_speaker_score": round(float(best_recording_speaker_score), 4),
+            },
+        )
+
+    previous_overlap_by_speaker_id: dict[int, int] = defaultdict(int)
+    for local_turn_row in local_turn_rows:
+        for previous_turn_row in previous_turn_rows:
+            previous_speaker_id = previous_turn_row.matched_recording_speaker_id
+            if previous_speaker_id is None or int(previous_speaker_id) in excluded_recording_speaker_ids:
+                continue
+            overlap_ms = _range_overlap_ms(
+                local_turn_row.start_ms,
+                local_turn_row.end_ms,
+                previous_turn_row.start_ms,
+                previous_turn_row.end_ms,
+            )
+            if overlap_ms <= 0:
+                continue
+            previous_overlap_by_speaker_id[int(previous_speaker_id)] += int(overlap_ms)
+
+    if previous_overlap_by_speaker_id:
+        ranked_previous = sorted(
+            previous_overlap_by_speaker_id.items(),
+            key=lambda item: (int(item[1]), int(item[0])),
+            reverse=True,
+        )
+        top_speaker_id, top_overlap_ms = ranked_previous[0]
+        second_overlap_ms = ranked_previous[1][1] if len(ranked_previous) > 1 else 0
+        if top_overlap_ms >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
+            total_overlap_ms = sum(previous_overlap_by_speaker_id.values()) or top_overlap_ms
+            confidence = round(float(top_overlap_ms) / float(total_overlap_ms or 1.0), 4)
+            recording_speaker = recording_speakers_by_id.get(int(top_speaker_id))
+            if recording_speaker is not None:
+                return (
+                    _resolve_active_recording_speaker(session, recording_speaker),
+                    confidence,
+                    {
+                        "reason": "distinct_local_speaker_previous_window_match",
+                        "previous_window_overlap_ms": int(top_overlap_ms),
+                        "previous_window_second_overlap_ms": int(second_overlap_ms),
+                    },
+                )
+
+    return None, 0.0, {"reason": "distinct_local_speaker_no_alternate"}
+
+
+def _local_turn_total_duration_ms(turn_rows: Sequence[DiarizationWindowTurn]) -> int:
+    return sum(max(0, int(turn_row.end_ms) - int(turn_row.start_ms)) for turn_row in turn_rows)
+
+
+def _next_live_recording_speaker_index(recording_speakers_by_id: dict[int, RecordingSpeaker]) -> int:
+    indexes: list[int] = []
+    for recording_speaker in recording_speakers_by_id.values():
+        label = str(recording_speaker.diarization_label or "")
+        match = re.match(r"^LIVE_(\d+)$", label)
+        if not match:
+            continue
+        indexes.append(int(match.group(1)))
+    return (max(indexes) + 1) if indexes else 1
+
+
+def _create_rolling_diarization_recording_speaker(
+    session,
+    *,
+    recording_id: int,
+    processing_run_id: int | None,
+    local_turn_rows: Sequence[DiarizationWindowTurn],
+) -> RecordingSpeaker:
+    recording_speakers = _load_recording_speakers(session, recording_id)
+    recording_speakers_by_id = {
+        int(speaker.id): speaker for speaker in recording_speakers if speaker.id is not None
+    }
+    next_index = _next_live_recording_speaker_index(recording_speakers_by_id)
+    start_ms = min((int(turn_row.start_ms) for turn_row in local_turn_rows), default=None)
+    end_ms = max((int(turn_row.end_ms) for turn_row in local_turn_rows), default=None)
+    recording_speaker = RecordingSpeaker(
+        recording_id=recording_id,
+        diarization_label=f"LIVE_{next_index:02d}",
+        name=f"Speaker {next_index}",
+        speaker_kind="live",
+        speaker_status="active",
+        processing_run_id=processing_run_id,
+        first_seen_ms=start_ms,
+        last_seen_ms=end_ms,
+        identity_confidence=ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
+    )
+    session.add(recording_speaker)
+    session.flush()
+    ensure_recording_speaker_aliases_for_speaker(
+        session,
+        recording_speaker,
+        source_run_id=processing_run_id,
+    )
+    return recording_speaker
 
 
 def _match_window_local_speaker(

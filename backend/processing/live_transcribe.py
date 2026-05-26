@@ -261,8 +261,6 @@ def _live_rolling_manifest_is_claimable(
     processing_run_status_by_id: dict[int, str],
 ) -> bool:
     status_value = str(getattr(manifest_row, "status", "pending") or "pending")
-    if status_value == WINDOW_STATUS_LIVE_PROCESSED:
-        return False
     if status_value != WINDOW_STATUS_LIVE_PROCESSING:
         return True
 
@@ -383,6 +381,12 @@ def _count_active_live_rolling_diarization_runs(session) -> int:
             ).all()
         )
     except Exception:
+        if hasattr(session, "rollback"):
+            session.rollback()
+        logger.warning(
+            "Failed to count active live rolling diarization runs",
+            exc_info=True,
+        )
         return 0
 
 

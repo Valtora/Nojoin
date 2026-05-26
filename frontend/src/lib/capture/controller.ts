@@ -174,8 +174,6 @@ export class CaptureController {
     };
 
     writeCaptureSettings(nextSettings);
-    this.runtime?.mixer.setSystemGain(nextSettings.systemGain);
-    this.runtime?.mixer.setMicrophoneGain(nextSettings.microphoneGain);
     this.setState({ settings: nextSettings });
   };
 
@@ -433,8 +431,6 @@ export class CaptureController {
     const mixer = await createCaptureMixer({
       displayStream: options.sources.displayStream,
       microphoneStream: options.sources.microphoneStream,
-      systemGain: this.state.settings.systemGain,
-      microphoneGain: this.state.settings.microphoneGain,
     });
 
     const uploader = createSegmentUploader({
@@ -458,6 +454,7 @@ export class CaptureController {
       systemAnalyser: mixer.systemAnalyser,
       microphoneAnalyser: mixer.microphoneAnalyser,
       mixedAnalyser: mixer.mixedAnalyser,
+      onBeforeLevels: mixer.updateAutomaticGain,
       onLevels: (levels) => {
         this.setState({ levels });
       },

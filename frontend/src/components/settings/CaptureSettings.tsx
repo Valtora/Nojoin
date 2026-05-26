@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Mic, RefreshCw, SlidersHorizontal, Volume2 } from "lucide-react";
+import { Loader2, Mic, RefreshCw, Volume2 } from "lucide-react";
 
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { useCapture } from "@/lib/capture/CaptureProvider";
@@ -28,8 +28,6 @@ const CONTROL_STYLES =
 
 const SECONDARY_BUTTON_STYLES =
   "inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900";
-
-const formatGainLabel = (value: number) => `${Math.round(value * 100)}%`;
 
 export default function CaptureSettings({
   searchQuery = "",
@@ -147,7 +145,7 @@ export default function CaptureSettings({
       <SettingsCallout
         tone="neutral"
         title="No matching settings"
-        message="Try a broader search term for microphone selection, gain, or quiet audio warnings."
+        message="Try a broader search term for microphone selection, automatic levels, or quiet audio warnings."
       />
     );
   }
@@ -162,10 +160,10 @@ export default function CaptureSettings({
                 Browser capture
               </div>
               <h4 className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
-                Microphone and mix levels
+                Microphone and automatic levels
               </h4>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                Select the microphone the browser should add to the meeting mix, then tune the system and mic gain used for recording. System audio is chosen in the browser share picker when you start or resume capture.
+                Select the microphone added to shared audio. Nojoin balances system and microphone levels during recording.
               </p>
             </div>
             <button
@@ -214,53 +212,12 @@ export default function CaptureSettings({
             </SettingsField>
 
             <SettingsField
-              label="System gain"
+              label="Automatic levels"
               icon={<Volume2 className="h-4 w-4" />}
-              description="Adjusts the shared tab or system audio before it is uploaded."
+              description="Capture levels are balanced continuously while recording."
             >
-              <div className="space-y-3">
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.05"
-                  value={settings.systemGain}
-                  onChange={(event) =>
-                    updateSettings({
-                      systemGain: Number(event.target.value),
-                    })
-                  }
-                  className="w-full accent-orange-600"
-                />
-                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  {formatGainLabel(settings.systemGain)}
-                </div>
-              </div>
-            </SettingsField>
-
-            <SettingsField
-              label="Microphone gain"
-              icon={<SlidersHorizontal className="h-4 w-4" />}
-              description="Boost or trim your microphone level before it is mixed into the recording."
-              className="lg:col-span-2"
-            >
-              <div className="space-y-3">
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.05"
-                  value={settings.microphoneGain}
-                  onChange={(event) =>
-                    updateSettings({
-                      microphoneGain: Number(event.target.value),
-                    })
-                  }
-                  className="w-full accent-orange-600"
-                />
-                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  {formatGainLabel(settings.microphoneGain)}
-                </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100">
+                Enabled
               </div>
             </SettingsField>
           </div>

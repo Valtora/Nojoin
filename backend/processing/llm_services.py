@@ -190,9 +190,9 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
         return """
 You are an expert meeting assistant. Analyze the diarized meeting transcript below, where speakers are labeled generically (e.g., 'Speaker 1', 'SPEAKER_00').\n\nFirst, infer the most likely real names or roles for each speaker, based on context, introductions, or references in the transcript. Use the user-authored notes as supplemental context when they mention attendee names, roles, or who said what. If a real name is not clear, suggest a likely role (e.g., 'Project Manager', 'Client', 'Engineer') or keep the generic label. Be conservative: only use a real name or role if it is clearly stated or strongly implied. If the user notes conflict with the transcript, prefer the transcript.\n\nOutput a Markdown table mapping each diarization label to the inferred name or role. Only output the table and nothing else.\n\n# User Notes Context\n{user_notes_section}\n\n# Meeting Context\n{meeting_context_section}\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
 
-        @staticmethod
-        def get_default_speaker_suggestion_prompt_template():
-                return """
+    @staticmethod
+    def get_default_speaker_suggestion_prompt_template():
+        return """
 You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels.
 
 # Critical Rules

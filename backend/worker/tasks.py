@@ -8,7 +8,7 @@ import warnings
 import urllib.error
 import requests.exceptions
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 from celery import Task
 from celery.signals import worker_ready
 from sqlalchemy import inspect
@@ -69,6 +69,7 @@ from backend.utils.speaker_name_suggestions import (
     build_persisted_speaker_suggestion,
     detect_rule_based_speaker_suggestions,
     persist_transcript_speaker_suggestions,
+    supersede_pending_transcript_speaker_suggestions,
 )
 from backend.models.calendar import CalendarEvent
 from backend.utils.audio_windows import (
@@ -334,6 +335,25 @@ def _persist_generated_speaker_name_suggestions(
     flag_modified(transcript, "speaker_name_suggestions")
     session.add(transcript)
     return len(persisted)
+
+
+def _supersede_pending_speaker_name_suggestions_for_labels(
+    session,
+    *,
+    transcript: Transcript,
+    diarization_labels: Iterable[str],
+    reason: str,
+) -> int:
+    superseded = supersede_pending_transcript_speaker_suggestions(
+        transcript,
+        diarization_labels=diarization_labels,
+        reason=reason,
+    )
+    if not superseded:
+        return 0
+    flag_modified(transcript, "speaker_name_suggestions")
+    session.add(transcript)
+    return len(superseded)
 
 
 def _llm_backend_from_config(llm_config: ResolvedLLMConfig):
@@ -1081,18 +1101,8 @@ def _apply_automatic_meeting_intelligence_result(
         if isinstance(segment, dict)
     ]
     eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
-    rule_based_result = detect_rule_based_speaker_suggestions(
-        segments,
-        eligible_labels,
-        meeting_context,
-    )
-    llm_mapping = {
-        label: inferred_name
-        for label, inferred_name in result.speaker_mapping.items()
-        if label not in rule_based_result.mapping
-    }
     llm_result = build_mapping_based_speaker_suggestions(
-        llm_mapping,
+        result.speaker_mapping,
         segments=segments,
         eligible_labels=eligible_labels,
         meeting_context=meeting_context,
@@ -1105,20 +1115,18 @@ def _apply_automatic_meeting_intelligence_result(
         recording=recording,
         transcript=transcript,
         speakers=speakers,
-        inference_result=rule_based_result,
-        origin="automatic_meeting_intelligence",
-        provider=None,
-        replaced_reason="automatic_meeting_intelligence_refresh",
-    )
-    suggestion_count += _persist_generated_speaker_name_suggestions(
-        session,
-        recording=recording,
-        transcript=transcript,
-        speakers=speakers,
         inference_result=llm_result,
         origin="automatic_meeting_intelligence",
         provider=provider,
         replaced_reason="automatic_meeting_intelligence_refresh",
+    )
+    superseded_count = _supersede_pending_speaker_name_suggestions_for_labels(
+        session,
+        transcript=transcript,
+        diarization_labels=(
+            label for label in eligible_labels if label not in llm_result.mapping
+        ),
+        reason="automatic_meeting_intelligence_omitted_by_llm",
     )
 
     recording.name = result.title
@@ -1134,7 +1142,8 @@ def _apply_automatic_meeting_intelligence_result(
         payload={
             "origin": "automatic_meeting_intelligence",
             "suggestion_count": suggestion_count,
-            "rule_based_count": len(rule_based_result.suggestions),
+            "superseded_count": superseded_count,
+            "rule_based_count": 0,
             "llm_count": len(llm_result.suggestions),
         },
         log=logger,
@@ -2982,23 +2991,6 @@ def infer_speakers_task(self, recording_id: int):
         eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
         meeting_context = _resolve_meeting_event_context(session, recording)
 
-        suggestion_count = 0
-        rule_based_result = detect_rule_based_speaker_suggestions(
-            segments,
-            eligible_labels,
-            meeting_context,
-        )
-        suggestion_count += _persist_generated_speaker_name_suggestions(
-            session,
-            recording=recording,
-            transcript=transcript,
-            speakers=speakers,
-            inference_result=rule_based_result,
-            origin="manual_retry",
-            provider=None,
-            replaced_reason="manual_retry_refresh",
-        )
-
         # Fetch user settings for provider resolution.
         user_settings = {}
         if recording.user_id:
@@ -3007,10 +2999,25 @@ def infer_speakers_task(self, recording_id: int):
                 user_settings = user.settings
         llm_config = resolve_llm_config(session, user_settings)
         missing_llm_config = llm_config.missing_configuration_message()
-        remaining_labels = [
-            label for label in eligible_labels if label not in rule_based_result.mapping
-        ]
-        if missing_llm_config and remaining_labels:
+
+        suggestion_count = 0
+        rule_based_result = SpeakerInferenceResult()
+        if missing_llm_config:
+            rule_based_result = detect_rule_based_speaker_suggestions(
+                segments,
+                eligible_labels,
+                meeting_context,
+            )
+            suggestion_count += _persist_generated_speaker_name_suggestions(
+                session,
+                recording=recording,
+                transcript=transcript,
+                speakers=speakers,
+                inference_result=rule_based_result,
+                origin="manual_retry",
+                provider=None,
+                replaced_reason="manual_retry_refresh",
+            )
             logger.warning(
                 "Cannot infer speakers for recording %s: %s",
                 recording_id,
@@ -3037,7 +3044,7 @@ def infer_speakers_task(self, recording_id: int):
         logger.info(f"Starting independent speaker inference for recording {recording_id}")
 
         llm_result = SpeakerInferenceResult()
-        if remaining_labels and not missing_llm_config:
+        if eligible_labels:
             transcript_for_llm = ""
             for seg in segments:
                 start = seg.get("start", 0)
@@ -3060,7 +3067,7 @@ def infer_speakers_task(self, recording_id: int):
                 transcript_for_llm,
                 user_notes=transcript.user_notes,
                 meeting_context=meeting_context,
-                eligible_labels=remaining_labels,
+                eligible_labels=eligible_labels,
             )
             suggestion_count += _persist_generated_speaker_name_suggestions(
                 session,
@@ -3072,6 +3079,16 @@ def infer_speakers_task(self, recording_id: int):
                 provider=llm_config.provider,
                 replaced_reason="manual_retry_refresh",
             )
+            superseded_count = _supersede_pending_speaker_name_suggestions_for_labels(
+                session,
+                transcript=transcript,
+                diarization_labels=(
+                    label for label in eligible_labels if label not in llm_result.mapping
+                ),
+                reason="manual_retry_omitted_by_llm",
+            )
+        else:
+            superseded_count = 0
 
         session.commit()
         record_pipeline_metric(
@@ -3080,6 +3097,7 @@ def infer_speakers_task(self, recording_id: int):
             payload={
                 "origin": "manual_retry",
                 "suggestion_count": suggestion_count,
+                "superseded_count": superseded_count,
                 "rule_based_count": len(rule_based_result.suggestions),
                 "llm_count": len(llm_result.suggestions),
             },

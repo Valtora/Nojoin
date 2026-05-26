@@ -12,7 +12,7 @@ export const AUDIO_KEYWORDS = [
   'device', 'input', 'output', 'microphone', 'speaker', 'audio', 'capture', 'playback',
   'warning', 'warnings', 'dismiss', 'quiet', 'silence', 'reset warnings',
   'browser recording', 'browser capture', 'share audio', 'system audio',
-  'system gain', 'microphone gain', 'waveform', 'paused recording'
+  'automatic levels', 'automatic gain', 'gain', 'waveform', 'paused recording'
 ];
 
 export const CAPTURE_KEYWORDS = [
