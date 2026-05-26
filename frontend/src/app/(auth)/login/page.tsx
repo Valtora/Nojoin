@@ -1,11 +1,36 @@
 "use client";
 
+import axios from "axios";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { login, getCurrentUser } from "@/lib/api";
 import { Lock, User } from "lucide-react";
+
+function formatLoginError(error: unknown): string {
+  if (!axios.isAxiosError(error)) {
+    return "Sign-in failed. Please try again.";
+  }
+
+  const detail = error.response?.data?.detail;
+  if (typeof detail === "string" && detail.length > 0) {
+    if (detail === "Incorrect username or password") {
+      return "Invalid username or password";
+    }
+    return detail;
+  }
+
+  if (!error.response) {
+    return "Nojoin backend is unavailable. Check the API container logs and try again.";
+  }
+
+  if (error.response.status >= 500) {
+    return "Nojoin backend is unavailable. Check the API container logs and try again.";
+  }
+
+  return "Sign-in failed. Please try again.";
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -46,8 +71,8 @@ export default function LoginPage() {
       }
 
       router.push("/");
-    } catch {
-      setError("Invalid username or password");
+    } catch (error: unknown) {
+      setError(formatLoginError(error));
     } finally {
       setLoading(false);
     }
