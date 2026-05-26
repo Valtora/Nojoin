@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import asyncio
-from collections import Counter
 from pathlib import Path
 from typing import Any, List, Optional
 from datetime import UTC, datetime, timezone
@@ -31,8 +30,6 @@ from backend.models.recording import (
     RecordingUpdate,
 )
 from backend.models.recording_public import (
-    RecordingPipelineLaneStateRead,
-    RecordingPipelineStateRead,
     RecordingPublicRead,
     RecordingsCalendarRead,
     serialize_recording,
@@ -68,12 +65,6 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
     filter_recording_speakers_for_public_read,
-    get_canonical_transcript_revision,
-)
-from backend.utils.audio_windows import (
-    window_asr_is_processed,
-    window_diarization_is_processed,
-    window_diarization_status,
 )
 from backend.utils.recording_audio_sync import (
     BROWSER_AUDIO_SEGMENT_SUFFIXES,
@@ -104,6 +95,15 @@ SEGMENT_CONTENT_TYPE_SUFFIXES = {
 
 def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
+
+
+def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
+    return recording.status in {
+        RecordingStatus.PAUSED,
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
 
 
 async def _get_owned_recording(
@@ -167,67 +167,6 @@ def _build_active_recording_conflict(recording: Recording) -> dict[str, str]:
         "recording_id": recording.public_id,
         "status": recording.status.value,
     }
-
-
-def _window_asr_status(row: RecordingAudioWindowManifest) -> str:
-    return str(getattr(row, "asr_status", None) or getattr(row, "status", None) or "pending")
-
-
-def _build_pipeline_lane_state(
-    manifest_rows: list[RecordingAudioWindowManifest],
-    *,
-    status_getter,
-    processed_getter,
-) -> RecordingPipelineLaneStateRead:
-    status_counts = Counter(status_getter(row) for row in manifest_rows)
-    total_windows = len(manifest_rows)
-    processed_windows = sum(1 for row in manifest_rows if processed_getter(row))
-    processing_windows = sum(
-        count for status_value, count in status_counts.items() if "processing" in status_value
-    )
-    failed_windows = int(status_counts.get("failed", 0))
-    pending_windows = max(0, total_windows - processed_windows - processing_windows - failed_windows)
-
-    return RecordingPipelineLaneStateRead(
-        total_windows=total_windows,
-        processed_windows=processed_windows,
-        processing_windows=processing_windows,
-        failed_windows=failed_windows,
-        pending_windows=pending_windows,
-        coverage_ratio=(processed_windows / total_windows) if total_windows else 0.0,
-        status_counts=dict(sorted(status_counts.items())),
-    )
-
-
-def _build_recording_pipeline_state(
-    manifest_rows: list[RecordingAudioWindowManifest],
-    *,
-    transcript_revision: int = 0,
-) -> RecordingPipelineStateRead:
-    first_sequence = None
-    latest_sequence = None
-    if manifest_rows:
-        first_sequence = min(row.chunk_start_sequence for row in manifest_rows)
-        latest_sequence = max(row.chunk_end_sequence for row in manifest_rows)
-
-    return RecordingPipelineStateRead(
-        transcript_revision=transcript_revision,
-        total_window_count=len(manifest_rows),
-        sealed_window_count=sum(1 for row in manifest_rows if row.is_sealed),
-        partial_window_count=sum(1 for row in manifest_rows if row.is_partial),
-        first_sequence=first_sequence,
-        latest_sequence=latest_sequence,
-        asr=_build_pipeline_lane_state(
-            manifest_rows,
-            status_getter=_window_asr_status,
-            processed_getter=window_asr_is_processed,
-        ),
-        diarization=_build_pipeline_lane_state(
-            manifest_rows,
-            status_getter=window_diarization_status,
-            processed_getter=window_diarization_is_processed,
-        ),
-    )
 
 
 def get_initial_proxy_path(file_path: str) -> Optional[str]:
@@ -508,6 +447,7 @@ async def _requeue_for_processing(
 
     # Reset processing state while preserving recording metadata and documents.
     recording.status = RecordingStatus.QUEUED
+    recording.client_status = ClientStatus.IDLE
     recording.processing_progress = 0
     recording.processing_step = queued_step
     recording.processing_started_at = None
@@ -1057,6 +997,7 @@ async def finalize_upload(
 
     # Update recording status
     recording.status = RecordingStatus.QUEUED
+    recording.client_status = ClientStatus.IDLE
     recording.processing_started_at = None
     recording.processing_completed_at = None
     
@@ -1380,6 +1321,7 @@ async def finalize_chunked_import(
         
     # Update recording status
     recording.status = RecordingStatus.QUEUED
+    recording.client_status = ClientStatus.IDLE
     
     db.add(recording)
     await db.commit()
@@ -1855,7 +1797,6 @@ async def get_recording(
     transcript_segments_override: list[dict] | None = None
     transcript_text_override: str | None = None
     speakers_override = None
-    transcript_revision = 0
     if recording.transcript is not None:
         transcript_segments_override = await db.run_sync(
             lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
@@ -1874,19 +1815,10 @@ async def get_recording(
                 recording.speakers,
             )
         )
-        transcript_revision = await db.run_sync(
-            lambda sync_session: get_canonical_transcript_revision(sync_session, recording.id)
-        )
 
-    manifest_result = await db.execute(
-        select(RecordingAudioWindowManifest)
-        .where(RecordingAudioWindowManifest.recording_id == recording.id)
-        .order_by(RecordingAudioWindowManifest.window_index)
-    )
-    pipeline_state = _build_recording_pipeline_state(
-        list(manifest_result.scalars().all()),
-        transcript_revision=transcript_revision,
-    )
+        if _should_hide_in_flight_transcript_content(recording):
+            transcript_segments_override = []
+            transcript_text_override = ""
 
     return serialize_recording(
         recording,
@@ -1902,7 +1834,6 @@ async def get_recording(
         transcript_segments_override=transcript_segments_override,
         transcript_text_override=transcript_text_override,
         speakers_override=speakers_override,
-        pipeline_state=pipeline_state,
     )
 
 @router.get("/{recording_id}/info")

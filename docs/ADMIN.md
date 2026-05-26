@@ -87,7 +87,7 @@ Use **Settings > Updates** to see:
 
 - Back up the installation before upgrading.
 - Review release notes for browser capture, auth, and upload lifecycle changes.
-- After live-pipeline upgrades, use the recording page's collapsed processing details to compare live ASR coverage with speaker-window coverage before treating a meeting as stuck.
+- After live-pipeline upgrades, use the recording page's waveform, Meeting Edge status, and overall recording progress before treating a meeting as stuck.
 - For remote deployments, configure a trusted public origin with `WEB_APP_URL`.
 - Treat backup archives as sensitive material.
 

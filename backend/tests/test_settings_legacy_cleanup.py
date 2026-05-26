@@ -9,6 +9,7 @@ from backend.utils.config_manager import (
     LEGACY_AUTOMATIC_AI_SETTING_KEYS,
     config_manager,
     get_default_user_settings,
+    get_meeting_edge_context_level,
     is_meeting_edge_enabled,
 )
 from backend.utils.llm_config import _merge_llm_config
@@ -32,6 +33,7 @@ def test_default_user_settings_exclude_legacy_automatic_ai_keys() -> None:
     defaults = get_default_user_settings()
 
     assert defaults["prefer_short_titles"] is True
+    assert defaults["meeting_edge_context_level"] == 2
     for key in LEGACY_AUTOMATIC_AI_SETTING_KEYS:
         assert key not in defaults
 
@@ -142,6 +144,14 @@ def test_is_meeting_edge_enabled_falls_back_to_install_wide_config(
     )
 
     assert is_meeting_edge_enabled({}) is False
+
+
+def test_get_meeting_edge_context_level_defaults_and_clamps() -> None:
+    assert get_meeting_edge_context_level(None) == 2
+    assert get_meeting_edge_context_level({"meeting_edge_context_level": 5}) == 5
+    assert get_meeting_edge_context_level({"meeting_edge_context_level": 99}) == 5
+    assert get_meeting_edge_context_level({"meeting_edge_context_level": 0}) == 1
+    assert get_meeting_edge_context_level({"meeting_edge_context_level": "nope"}) == 2
 
 
 @pytest.mark.anyio

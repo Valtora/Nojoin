@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Settings, SystemModelStatus } from "@/types";
 import {
   Eye,
@@ -14,12 +14,13 @@ import {
   Info,
   RefreshCw,
   Cpu,
-  Key,
-  Layers,
-  HardDrive,
   Server,
 } from "lucide-react";
 import { fuzzyMatch } from "@/lib/searchUtils";
+import {
+  clampMeetingEdgeContextLevel,
+  MEETING_EDGE_CONTEXT_OPTIONS,
+} from "@/lib/meetingEdgeContext";
 import {
   validateLLM,
   validateHF,
@@ -119,21 +120,29 @@ export default function AISettings({
     });
   };
 
-  const getProviderConnectionDetails = (provider: string) => {
-    let rawKey = "";
-    let url = "";
+  const getProviderConnectionDetails = useCallback(
+    (provider: string) => {
+      let rawKey = "";
+      let url = "";
 
-    if (provider === "gemini") rawKey = settings.gemini_api_key || "";
-    else if (provider === "openai") rawKey = settings.openai_api_key || "";
-    else if (provider === "anthropic") rawKey = settings.anthropic_api_key || "";
-    else if (provider === "ollama") url = settings.ollama_api_url || "";
+      if (provider === "gemini") rawKey = settings.gemini_api_key || "";
+      else if (provider === "openai") rawKey = settings.openai_api_key || "";
+      else if (provider === "anthropic") rawKey = settings.anthropic_api_key || "";
+      else if (provider === "ollama") url = settings.ollama_api_url || "";
 
-    return {
-      rawKey,
-      key: isMaskedSecret(rawKey) ? "" : rawKey,
-      url,
-    };
-  };
+      return {
+        rawKey,
+        key: isMaskedSecret(rawKey) ? "" : rawKey,
+        url,
+      };
+    },
+    [
+      settings.anthropic_api_key,
+      settings.gemini_api_key,
+      settings.ollama_api_url,
+      settings.openai_api_key,
+    ],
+  );
 
   const getSelectedModelForProvider = (kind: "main" | "live") => {
     const provider = settings.llm_provider || "gemini";
@@ -230,6 +239,7 @@ export default function AISettings({
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
   }, [
+    getProviderConnectionDetails,
     settings.llm_provider,
     settings.gemini_api_key,
     settings.openai_api_key,
@@ -380,6 +390,11 @@ export default function AISettings({
     "openai",
     "anthropic",
     "meeting edge",
+    "technical context",
+    "glossary",
+    "verbosity",
+    "threshold",
+    "jargon",
     "live model",
     "live assistant",
     "api key",
@@ -419,6 +434,13 @@ export default function AISettings({
   const showDependenciesSection = isAdmin && (!hasSearch || showDependencies);
   const mainModelOptions = getModelOptionsForProvider("main");
   const liveModelOptions = getModelOptionsForProvider("live");
+  const meetingEdgeContextLevel = clampMeetingEdgeContextLevel(
+    settings.meeting_edge_context_level,
+  );
+  const selectedMeetingEdgeContextOption =
+    MEETING_EDGE_CONTEXT_OPTIONS.find(
+      (option) => option.value === meetingEdgeContextLevel,
+    ) ?? MEETING_EDGE_CONTEXT_OPTIONS[1];
 
   if (
     !showLLMSection &&
@@ -607,6 +629,49 @@ export default function AISettings({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="md:col-span-2 rounded-xl border border-orange-200/70 bg-orange-50/45 p-4 dark:border-orange-500/20 dark:bg-orange-500/5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Meeting Edge Technical Context
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                      Control how readily Meeting Edge explains terms in the Technical Context section.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:border-orange-500/20 dark:bg-gray-900 dark:text-orange-300">
+                    {selectedMeetingEdgeContextOption.label}
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  step={1}
+                  value={meetingEdgeContextLevel}
+                  onChange={(e) =>
+                    onUpdate({
+                      ...settings,
+                      meeting_edge_context_level: Number(e.target.value),
+                    })
+                  }
+                  disabled={settings.enable_meeting_edge === false}
+                  aria-label="Meeting Edge Technical Context sensitivity"
+                  className="mt-4 w-full accent-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+
+                <div className="mt-3 grid grid-cols-5 gap-2 text-center text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                  {MEETING_EDGE_CONTEXT_OPTIONS.map((option) => (
+                    <span key={option.value}>{option.label}</span>
+                  ))}
+                </div>
+
+                <p className="mt-3 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                  {selectedMeetingEdgeContextOption.description}
+                </p>
               </div>
             </div>
 

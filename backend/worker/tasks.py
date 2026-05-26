@@ -17,7 +17,7 @@ from sqlmodel import select
 
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
-from backend.models.recording import Recording, RecordingStatus
+from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.models.pipeline import (
     DiarizationWindowResult,
@@ -41,7 +41,12 @@ from backend.services.calendar_link_service import auto_link_recording
 # Heavy processing imports moved inside tasks to avoid loading torch in API
 from backend.models.document import Document, DocumentStatus
 from backend.models.context_chunk import ContextChunk
-from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.config_manager import (
+    MEETING_EDGE_CONTEXT_LEVEL_MAX,
+    config_manager,
+    get_meeting_edge_context_level,
+    is_meeting_edge_enabled,
+)
 from backend.utils.llm_config import (
     LLM_PURPOSE_MEETING_EDGE,
     ResolvedLLMConfig,
@@ -226,6 +231,7 @@ def _complete_speaker_inference_task(
         return
 
     recording.status = RecordingStatus.PROCESSED
+    recording.client_status = ClientStatus.IDLE
     recording.processing_step = "Completed"
     session.add(recording)
     session.commit()
@@ -1511,12 +1517,14 @@ def refresh_meeting_edge_task(self, recording_id: int):
         previous_payload = (
             transcript.meeting_edge_payload if isinstance(transcript.meeting_edge_payload, dict) else {}
         )
+        context_level = get_meeting_edge_context_level(user_settings)
         request = MeetingEdgeRequest(
             recent_transcript=recent_transcript,
             rolling_summary=(previous_payload or {}).get("summary"),
             focus_text=focus_text,
             user_notes=user_notes,
             meeting_context=_resolve_meeting_event_context(session, recording),
+            context_level=context_level,
         )
 
         _set_meeting_edge_state(
@@ -1541,11 +1549,21 @@ def refresh_meeting_edge_task(self, recording_id: int):
                 "source_last_end": float(segments[-1].get("end", 0.0)),
                 "focus_hash": _hash_meeting_edge_text(focus_text),
                 "user_notes_hash": _hash_meeting_edge_text(user_notes),
+                "context_level": context_level,
             }
         )
+        previous_context_level_value = previous_payload.get(
+            "context_level",
+            MEETING_EDGE_CONTEXT_LEVEL_MAX if previous_payload else None,
+        )
+        try:
+            previous_context_level = int(previous_context_level_value)
+        except (TypeError, ValueError):
+            previous_context_level = MEETING_EDGE_CONTEXT_LEVEL_MAX if previous_payload else None
         payload["concept_history"] = merge_meeting_edge_concept_history(
             previous_payload,
             payload,
+            reset_history=previous_context_level is not None and previous_context_level > context_level,
         )
         _set_meeting_edge_state(
             session,
@@ -1738,6 +1756,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             if speech_duration < 1.0:
                 logger.warning(f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)")
                 recording.status = RecordingStatus.PROCESSED
+                recording.client_status = ClientStatus.IDLE
                 recording.processing_step = "Completed (No speech detected)"
                 recording.processing_completed_at = utc_now()
 
@@ -2534,6 +2553,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             recording_id=recording.id,
             upload_status="finalized",
         )
+        recording.client_status = ClientStatus.IDLE
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         recording.processing_completed_at = utc_now()

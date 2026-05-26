@@ -65,7 +65,7 @@ Live recording is browser-native. Nojoin captures shared tab/window/screen audio
 
 Tab sharing is usually the best choice for browser-based meetings because it most reliably exposes meeting audio. Window and screen sharing can work, but audio availability depends on browser and operating-system support.
 
-While recording, Nojoin shows recording state, duration, upload state, a live waveform, live transcript regions as speech is detected, Meeting Edge guidance, and your live notes panel.
+While recording, Nojoin shows recording state, duration, upload state, a live waveform, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
 
 You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.
 
@@ -82,17 +82,15 @@ Paused recordings are retained indefinitely until you resume or discard them.
 
 ### Live Transcription
 
-While a meeting is recording, the live transcript pane appears immediately. It shows a listening state until speech is detected, then provisional transcript segments appear as live utterances complete.
+Nojoin still runs a live transcription lane during capture, but the recording page no longer shows provisional live transcript text while a meeting is in flight.
 
-Long continuous speech is force-emitted after roughly 8 seconds, so natural monologues do not wait for a 30-second cutoff. Live segments use per-speaker colours and can be edited while the recording is still in flight. Live speaker names and live transcript edits are carried into final processing.
-
-The normal stop-to-final workflow uses the same transcription engine for live and final transcription so Nojoin can reuse the live transcript rather than transcribing the meeting again from scratch. Final processing still performs diarisation, speaker reconciliation, voiceprint work when enabled, and meeting-intelligence generation.
+That live lane now works in the background to support Meeting Edge and to speed up later processing. The user-facing transcript appears after the recording has been finalized and the authoritative processing pass has produced review-ready output.
 
 ### Meeting Edge
 
 Meeting Edge uses the recent live transcript window, the latest saved live guidance summary, your optional focus text, your manual notes, and linked calendar context when available.
 
-It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI**, you can optionally choose a separate Meeting Edge model for the current provider. If that field is empty, Nojoin reuses your main AI model.
+It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI**, you can optionally choose a separate Meeting Edge model for the current provider and tune the **Meeting Edge Technical Context** slider to make concept explanations stricter or more detailed. If the model field is empty, Nojoin reuses your main AI model.
 
 ## Importing Recordings
 

@@ -106,6 +106,7 @@ def test_validate_config_value_rolling_diarization_window_settings():
 def test_default_user_settings_enable_meeting_edge_by_default():
     """Meeting Edge defaults to enabled for new users."""
     assert get_default_user_settings()["enable_meeting_edge"] is True
+    assert get_default_user_settings()["meeting_edge_context_level"] == 2
 
 
 def test_validate_config_value_enable_meeting_edge():
@@ -113,6 +114,15 @@ def test_validate_config_value_enable_meeting_edge():
     assert validate_config_value("enable_meeting_edge", True) is True
     assert validate_config_value("enable_meeting_edge", False) is True
     assert validate_config_value("enable_meeting_edge", "no") is False
+
+
+def test_validate_config_value_meeting_edge_context_level():
+    """Meeting Edge context level must be an integer in range."""
+    assert validate_config_value("meeting_edge_context_level", 1) is True
+    assert validate_config_value("meeting_edge_context_level", 5) is True
+    assert validate_config_value("meeting_edge_context_level", 0) is False
+    assert validate_config_value("meeting_edge_context_level", 6) is False
+    assert validate_config_value("meeting_edge_context_level", True) is False
 
 
 def test_validate_config_value_live_max_segment_s():
@@ -939,70 +949,6 @@ def test_collect_pending_chunk_spans_merges_overlapping_pending_windows():
     assert spans == [
         CatchUpChunkSpan(start_sequence=2, end_sequence=3, start_ms=1000, end_ms=3000)
     ]
-
-
-def test_build_recording_pipeline_state_separates_asr_and_diarization_visibility():
-    from types import SimpleNamespace
-
-    from backend.api.v1.endpoints.recordings import _build_recording_pipeline_state
-
-    pipeline_state = _build_recording_pipeline_state(
-        [
-            SimpleNamespace(
-                chunk_start_sequence=0,
-                chunk_end_sequence=1,
-                is_partial=False,
-                is_sealed=True,
-                status="live_processed",
-                asr_status="live_processed",
-                diarization_status="processed",
-            ),
-            SimpleNamespace(
-                chunk_start_sequence=1,
-                chunk_end_sequence=2,
-                is_partial=False,
-                is_sealed=False,
-                status="catch_up_processed",
-                asr_status="catch_up_processed",
-                diarization_status="pending",
-            ),
-            SimpleNamespace(
-                chunk_start_sequence=2,
-                chunk_end_sequence=3,
-                is_partial=True,
-                is_sealed=False,
-                status="failed",
-                asr_status="failed",
-                diarization_status="failed",
-            ),
-            SimpleNamespace(
-                chunk_start_sequence=3,
-                chunk_end_sequence=4,
-                is_partial=True,
-                is_sealed=False,
-                status="live_processing",
-                asr_status="pending",
-                diarization_status="processing",
-            ),
-        ],
-        transcript_revision=12,
-    )
-
-    assert pipeline_state.transcript_revision == 12
-    assert pipeline_state.total_window_count == 4
-    assert pipeline_state.sealed_window_count == 1
-    assert pipeline_state.partial_window_count == 2
-    assert pipeline_state.first_sequence == 0
-    assert pipeline_state.latest_sequence == 4
-    assert pipeline_state.asr.processed_windows == 2
-    assert pipeline_state.asr.failed_windows == 1
-    assert pipeline_state.asr.pending_windows == 1
-    assert pipeline_state.asr.coverage_ratio == 0.5
-    assert pipeline_state.diarization.processed_windows == 1
-    assert pipeline_state.diarization.processing_windows == 1
-    assert pipeline_state.diarization.failed_windows == 1
-    assert pipeline_state.diarization.pending_windows == 1
-
 
 def test_infer_resume_state_from_manifest_rows():
     from types import SimpleNamespace

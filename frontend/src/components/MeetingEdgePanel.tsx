@@ -10,6 +10,11 @@ import {
 import type { ChangeEvent } from "react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  clampMeetingEdgeContextLevel,
+  DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
+  MEETING_EDGE_CONTEXT_OPTIONS,
+} from "@/lib/meetingEdgeContext";
 import { MeetingEdgePayload } from "@/types";
 
 const SAVE_DEBOUNCE_MS = 1200;
@@ -22,6 +27,8 @@ interface MeetingEdgePanelProps {
   status?: string | null;
   errorMessage?: string | null;
   onSaveFocus: (focus: string) => Promise<void>;
+  contextLevel?: number;
+  onSaveContextLevel?: (level: number) => Promise<void>;
 }
 
 function MeetingEdgePanel({
@@ -30,26 +37,33 @@ function MeetingEdgePanel({
   status,
   errorMessage,
   onSaveFocus,
+  contextLevel,
+  onSaveContextLevel,
 }: MeetingEdgePanelProps) {
   const normalisedFocus = focusText ?? "";
+  const resolvedContextLevel = clampMeetingEdgeContextLevel(
+    contextLevel ?? payload?.context_level ?? DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
+  );
+  const contextStepCount = MEETING_EDGE_CONTEXT_OPTIONS.length - 1;
   const [draftFocus, setDraftFocus] = useState(normalisedFocus);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [focusSaveState, setFocusSaveState] = useState<SaveState>("idle");
+  const [draftContextLevel, setDraftContextLevel] = useState(resolvedContextLevel);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftFocusRef = useRef(normalisedFocus);
   const lastSavedRef = useRef(normalisedFocus);
   const lastPropValueRef = useRef(normalisedFocus);
-  const saveStateRef = useRef<SaveState>("idle");
+  const focusSaveStateRef = useRef<SaveState>("idle");
   const flushSaveRef = useRef<(valueToSave: string) => Promise<void>>(
     async () => {},
   );
 
-  const setVisibleSaveState = useCallback((nextState: SaveState) => {
-    if (saveStateRef.current === nextState) {
+  const setVisibleFocusSaveState = useCallback((nextState: SaveState) => {
+    if (focusSaveStateRef.current === nextState) {
       return;
     }
 
-    saveStateRef.current = nextState;
-    setSaveState(nextState);
+    focusSaveStateRef.current = nextState;
+    setFocusSaveState(nextState);
   }, []);
 
   const clearPendingSave = useCallback(() => {
@@ -67,19 +81,19 @@ function MeetingEdgePanel({
         return;
       }
 
-      setVisibleSaveState("saving");
+      setVisibleFocusSaveState("saving");
       try {
         await onSaveFocus(valueToSave);
         lastSavedRef.current = valueToSave;
         lastPropValueRef.current = valueToSave;
-        setVisibleSaveState(
+        setVisibleFocusSaveState(
           draftFocusRef.current === valueToSave ? "saved" : "idle",
         );
       } catch {
-        setVisibleSaveState("error");
+        setVisibleFocusSaveState("error");
       }
     },
-    [clearPendingSave, onSaveFocus, setVisibleSaveState],
+    [clearPendingSave, onSaveFocus, setVisibleFocusSaveState],
   );
 
   useEffect(() => {
@@ -108,13 +122,17 @@ function MeetingEdgePanel({
     };
   }, [clearPendingSave]);
 
+  useEffect(() => {
+    setDraftContextLevel(resolvedContextLevel);
+  }, [resolvedContextLevel]);
+
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
       const nextValue = event.target.value;
       draftFocusRef.current = nextValue;
       setDraftFocus(nextValue);
-      if (saveStateRef.current !== "idle") {
-        setVisibleSaveState("idle");
+      if (focusSaveStateRef.current !== "idle") {
+        setVisibleFocusSaveState("idle");
       }
 
       clearPendingSave();
@@ -127,12 +145,34 @@ function MeetingEdgePanel({
         void flushSaveRef.current(draftFocusRef.current);
       }, SAVE_DEBOUNCE_MS);
     },
-    [clearPendingSave, setVisibleSaveState],
+    [clearPendingSave, setVisibleFocusSaveState],
   );
 
   const handleBlur = useCallback(() => {
     void flushSaveRef.current(draftFocusRef.current);
   }, []);
+
+  const handleContextLevelChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      if (!onSaveContextLevel) {
+        return;
+      }
+
+      const nextLevel = clampMeetingEdgeContextLevel(Number(event.target.value));
+      setDraftContextLevel(nextLevel);
+
+      if (nextLevel === resolvedContextLevel) {
+        return;
+      }
+
+      try {
+        await onSaveContextLevel(nextLevel);
+      } catch {
+        setDraftContextLevel(resolvedContextLevel);
+      }
+    },
+    [onSaveContextLevel, resolvedContextLevel],
+  );
 
   const questions = payload?.questions ?? [];
   const points = payload?.points ?? [];
@@ -146,11 +186,11 @@ function MeetingEdgePanel({
   );
 
   const saveMessage =
-    saveState === "saving"
+    focusSaveState === "saving"
       ? "Saving"
-      : saveState === "saved"
+      : focusSaveState === "saved"
         ? "Saved"
-        : saveState === "error"
+        : focusSaveState === "error"
           ? "Save failed"
           : "Autosaves";
 
@@ -266,10 +306,58 @@ function MeetingEdgePanel({
       ) : (
         <div className="mt-5 rounded-[1.5rem] border border-dashed border-orange-200/80 bg-white/65 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-orange-500/20 dark:bg-gray-900/60 dark:text-gray-300">
           {status === "updating"
-            ? "Meeting Edge is building the first guidance pass from the live transcript."
-            : "Meeting Edge will start suggesting questions and overlooked points once the transcript has enough signal."}
+            ? "Meeting Edge is building the first guidance pass from the live meeting."
+            : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
         </div>
       )}
+
+      {onSaveContextLevel ? (
+        <div className="mt-5 rounded-[1.5rem] border border-orange-200/70 bg-orange-50/45 p-4 dark:border-orange-500/20 dark:bg-orange-500/5">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              Meeting Edge Technical Context
+            </div>
+            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+              Adjust how readily live guidance explains technical language on this recording page.
+            </p>
+          </div>
+
+          <input
+            type="range"
+            min={1}
+            max={5}
+            step={1}
+            value={draftContextLevel}
+            onChange={(event) => {
+              void handleContextLevelChange(event);
+            }}
+            aria-label="Meeting Edge Technical Context sensitivity"
+            className="mt-5 w-full accent-orange-500"
+          />
+
+          <div className="relative mt-5 h-4 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+            {MEETING_EDGE_CONTEXT_OPTIONS.map((option, index) => {
+              const position = `${(index / contextStepCount) * 100}%`;
+              const alignmentClass =
+                index === 0
+                  ? "-translate-x-0 text-left"
+                  : index === contextStepCount
+                    ? "-translate-x-full text-right"
+                    : "-translate-x-1/2 text-center";
+
+              return (
+                <span
+                  key={option.value}
+                  className={`absolute top-0 whitespace-nowrap ${alignmentClass}`}
+                  style={{ left: position }}
+                >
+                  {option.label}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-5 rounded-[1.5rem] border border-orange-200/70 bg-orange-50/75 p-4 dark:border-orange-500/20 dark:bg-orange-500/10">
         <div className="flex items-center justify-between gap-3">

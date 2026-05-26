@@ -116,27 +116,6 @@ class CalendarEventLinkRead(PublicModel):
     ends_at: Optional[datetime] = None
 
 
-class RecordingPipelineLaneStateRead(PublicModel):
-    total_windows: int = 0
-    processed_windows: int = 0
-    processing_windows: int = 0
-    failed_windows: int = 0
-    pending_windows: int = 0
-    coverage_ratio: float = 0.0
-    status_counts: dict[str, int] = Field(default_factory=dict)
-
-
-class RecordingPipelineStateRead(PublicModel):
-    transcript_revision: int = 0
-    total_window_count: int = 0
-    sealed_window_count: int = 0
-    partial_window_count: int = 0
-    first_sequence: Optional[int] = None
-    latest_sequence: Optional[int] = None
-    asr: RecordingPipelineLaneStateRead = Field(default_factory=RecordingPipelineLaneStateRead)
-    diarization: RecordingPipelineLaneStateRead = Field(default_factory=RecordingPipelineLaneStateRead)
-
-
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -161,7 +140,6 @@ class RecordingPublicRead(PublicModel):
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     calendar_event: Optional[CalendarEventLinkRead] = None
-    pipeline_state: Optional[RecordingPipelineStateRead] = None
 
 
 class RecordingsCalendarRead(BaseModel):
@@ -282,7 +260,6 @@ def serialize_recording(
     transcript_segments_override: Optional[list[dict]] = None,
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
-    pipeline_state: Optional[RecordingPipelineStateRead] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -344,5 +321,4 @@ def serialize_recording(
         speakers=speakers,
         tags=tags,
         calendar_event=calendar_event_link,
-        pipeline_state=pipeline_state,
     )

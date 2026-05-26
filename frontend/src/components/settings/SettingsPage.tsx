@@ -76,6 +76,13 @@ export default function SettingsPage() {
     if (settings.timezone && !isValidTimeZone(settings.timezone)) {
       return "Invalid timezone. Use a valid IANA timezone such as Europe/London.";
     }
+    if (
+      settings.meeting_edge_context_level !== undefined &&
+      (settings.meeting_edge_context_level < 1 ||
+        settings.meeting_edge_context_level > 5)
+    ) {
+      return "Meeting Edge Technical Context must be between 1 and 5.";
+    }
     return null;
   };
 

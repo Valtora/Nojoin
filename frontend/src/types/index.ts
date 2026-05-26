@@ -201,27 +201,6 @@ export interface TranscriptSegment {
   live_reuse_alignment?: Record<string, any>;
 }
 
-export interface RecordingPipelineLaneState {
-  total_windows: number;
-  processed_windows: number;
-  processing_windows: number;
-  failed_windows: number;
-  pending_windows: number;
-  coverage_ratio: number;
-  status_counts: Record<string, number>;
-}
-
-export interface RecordingPipelineState {
-  transcript_revision: number;
-  total_window_count: number;
-  sealed_window_count: number;
-  partial_window_count: number;
-  first_sequence?: number | null;
-  latest_sequence?: number | null;
-  asr: RecordingPipelineLaneState;
-  diarization: RecordingPipelineLaneState;
-}
-
 export interface MeetingEdgeConcept {
   term: string;
   explanation: string;
@@ -233,6 +212,7 @@ export interface MeetingEdgePayload {
   points: string[];
   concepts: MeetingEdgeConcept[];
   concept_history?: MeetingEdgeConcept[];
+  context_level?: number;
   generated_at?: string;
   source_segment_count?: number;
   source_word_count?: number;
@@ -297,7 +277,6 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
   calendar_event?: CalendarEventLink | null;
-  pipeline_state?: RecordingPipelineState | null;
 }
 
 export interface RecordingInitResponse {
@@ -326,6 +305,7 @@ export interface Settings {
   canary_model?: string;
   enable_live_transcription?: boolean;
   enable_meeting_edge?: boolean;
+  meeting_edge_context_level?: number;
   processing_device?: string;
   theme?: string;
   timezone?: string;

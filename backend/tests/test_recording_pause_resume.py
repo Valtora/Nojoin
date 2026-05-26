@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import wave
 from pathlib import Path
@@ -136,8 +137,22 @@ CREATE TABLE recording_speakers (
     diarization_label VARCHAR(255),
     name VARCHAR(255),
     local_name VARCHAR(255),
+    speaker_status VARCHAR(32) DEFAULT 'active',
+    speaker_kind VARCHAR(32) DEFAULT 'automated',
+    processing_run_id INTEGER,
+    last_speaker_correction_event_id INTEGER,
+    last_diarization_window_result_id INTEGER,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    identity_confidence FLOAT,
+    identity_locked BOOLEAN DEFAULT 0,
+    snippet_start FLOAT,
+    snippet_end FLOAT,
+    voice_snippet_path VARCHAR(1024),
+    embedding JSON,
     color VARCHAR(32),
     global_speaker_id INTEGER,
+    merged_into_id INTEGER,
     notes TEXT,
     is_voiceprint_locked BOOLEAN DEFAULT 0
 )
@@ -146,8 +161,24 @@ CREATE TABLE recording_speakers (
 RECORDING_TAGS_SCHEMA = """
 CREATE TABLE recording_tags (
     id INTEGER PRIMARY KEY,
+    created_at DATETIME,
+    updated_at DATETIME,
+    public_id VARCHAR(36),
     recording_id INTEGER,
     tag_id INTEGER
+)
+"""
+
+TAGS_SCHEMA = """
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME,
+    updated_at DATETIME,
+    public_id VARCHAR(36),
+    name VARCHAR(255),
+    color VARCHAR(32),
+    user_id INTEGER,
+    parent_id INTEGER
 )
 """
 
@@ -300,6 +331,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_TAGS_SCHEMA))
+        await connection.execute(text(TAGS_SCHEMA))
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(DOCUMENTS_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
@@ -443,6 +475,22 @@ async def test_session_init_pause_resume_finalize_round_trip(
     )
     assert finalize_response.status_code == 200
     assert finalize_response.json()["status"] == "QUEUED"
+    assert finalize_response.json()["client_status"] == "IDLE"
+
+    paused_after_finalize = await client.get(
+        "/api/v1/recordings",
+        params={"status": "PAUSED", "user": "me"},
+    )
+    assert paused_after_finalize.status_code == 200
+    assert paused_after_finalize.json() == []
+
+    second_init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Second browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert second_init_response.status_code == 200
+    assert second_init_response.json()["id"] != recording_id
 
 
 @pytest.mark.anyio
@@ -512,3 +560,92 @@ async def test_discard_allows_paused_recordings_and_cleans_temp_dir(
     upload_dirs = [path for path in tmp_path.iterdir() if path.is_dir()]
     assert upload_dirs == []
     assert not any(tmp_path.glob("*.wav"))
+
+
+@pytest.mark.anyio
+async def test_get_recording_hides_in_flight_transcript_content(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    monkeypatch.setattr(
+        recordings_module,
+        "get_canonical_transcript_revision",
+        lambda *args, **kwargs: 0,
+    )
+    monkeypatch.setattr(
+        recordings_module,
+        "filter_recording_speakers_for_public_read",
+        lambda *args, **kwargs: [],
+    )
+
+    set_session_cookie(client)
+    await insert_recording(
+        test_session_maker,
+        recording_id=10,
+        public_id="recording-live",
+        status="UPLOADING",
+    )
+    await insert_recording(
+        test_session_maker,
+        recording_id=11,
+        public_id="recording-final",
+        status="PROCESSED",
+    )
+
+    transcript_segments = [
+        {
+            "id": "seg-1",
+            "start": 0.0,
+            "end": 1.2,
+            "speaker": "SPEAKER_00",
+            "text": "Interim transcript text.",
+            "provisional": True,
+            "segment_source": "live",
+        }
+    ]
+    meeting_edge_payload = {"summary": "Ask about the missing owner."}
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                UPDATE transcripts
+                SET text = :text,
+                    segments = :segments,
+                    meeting_edge_payload = :meeting_edge_payload,
+                    meeting_edge_status = 'ready'
+                WHERE recording_id IN (10, 11)
+                """
+            ),
+            {
+                "text": "Interim transcript text.",
+                "segments": json.dumps(transcript_segments),
+                "meeting_edge_payload": json.dumps(meeting_edge_payload),
+            },
+        )
+        await session.commit()
+
+    live_response = await client.get(
+        "/api/v1/recordings/recording-live",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert live_response.status_code == 200
+    live_payload = live_response.json()
+    assert live_payload["status"] == "UPLOADING"
+    assert live_payload["transcript"]["text"] == ""
+    assert live_payload["transcript"]["segments"] == []
+    assert live_payload["transcript"]["meeting_edge_status"] == "ready"
+    assert live_payload["transcript"]["meeting_edge_payload"] == meeting_edge_payload
+
+    processed_response = await client.get(
+        "/api/v1/recordings/recording-final",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert processed_response.status_code == 200
+    processed_payload = processed_response.json()
+    assert processed_payload["status"] == "PROCESSED"
+    assert processed_payload["transcript"]["text"] == "Interim transcript text."
+    assert processed_payload["transcript"]["segments"][0]["text"] == "Interim transcript text."

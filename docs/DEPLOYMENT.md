@@ -206,9 +206,9 @@ location / {
 
 - Browser live capture now depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio and channel 1 is microphone audio.
 - Segment sequences start at `0`. Operators investigating upload or finalization failures should check for missing sequence numbers before assuming ASR or diarisation failure.
-- Recording detail pages expose collapsed processing details with separate live ASR coverage and speaker-window coverage. ASR coverage can be complete while diarisation is still pending or retrying.
+- Recording detail pages expose only high-level progress, waveform state, and Meeting Edge guidance during live capture.
 - Final processing reuses live transcript and source-channel speaker evidence only after stable-id or clear overlap alignment. Ambiguous live/final spans are intentionally left to final ASR and diarisation output.
-- A practical smoke after upgrade is: start a browser recording in supported Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and live transcript, pause, resume, finalize, then verify final transcript and speaker continuity.
+- A practical smoke after upgrade is: start a browser recording in supported Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and Meeting Edge or processing-state updates, pause, resume, finalize, then verify final transcript and speaker continuity.
 
 ### Canonical Cutover Notes
 

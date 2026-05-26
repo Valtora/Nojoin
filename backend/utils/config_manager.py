@@ -65,6 +65,10 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "ollama_api_url",
 )
 
+MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
+MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
+MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
+
 def _get_default_device():
     """Determine default processing device safely."""
     # Always default to 'auto' so the worker can decide at runtime based on availability.
@@ -127,6 +131,7 @@ DEFAULT_USER_SETTINGS = {
     "theme": "dark", # Default theme (dark, light)
     "llm_provider": "gemini",  # LLM provider selection
     "enable_meeting_edge": True,  # Enable the Meeting Edge live advisory card and model calls
+    "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
     "gemini_api_key": None,     # Google Gemini API key
     "openai_api_key": None,     # OpenAI API key
     "anthropic_api_key": None,  # Anthropic API key
@@ -200,6 +205,30 @@ def is_meeting_edge_enabled(settings: dict | None) -> bool:
             defaults.get("enable_meeting_edge", True),
         )
     )
+
+
+def get_meeting_edge_context_level(settings: dict | None) -> int:
+    """Returns the normalized Meeting Edge Technical Context sensitivity."""
+    defaults = get_default_user_settings()
+    sanitized = strip_legacy_automatic_ai_settings(settings)
+    user_value = sanitized.get("meeting_edge_context_level")
+    if user_value is None:
+        user_value = defaults.get(
+            "meeting_edge_context_level",
+            MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,
+        )
+
+    try:
+        level = int(user_value)
+    except (TypeError, ValueError):
+        level = int(
+            defaults.get(
+                "meeting_edge_context_level",
+                MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,
+            )
+        )
+
+    return max(MEETING_EDGE_CONTEXT_LEVEL_MIN, min(MEETING_EDGE_CONTEXT_LEVEL_MAX, level))
 
 
 class ConfigManager:
@@ -285,6 +314,12 @@ class ConfigManager:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
+        if key == "meeting_edge_context_level":
+            return (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and MEETING_EDGE_CONTEXT_LEVEL_MIN <= value <= MEETING_EDGE_CONTEXT_LEVEL_MAX
+            )
         if key in {"enable_live_transcription", "enable_meeting_edge", "enable_canonical_transcript_writes", "enable_asr_window_result_ledger", "enable_rolling_diarization"}:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:

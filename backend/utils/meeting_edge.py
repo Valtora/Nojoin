@@ -14,6 +14,18 @@ from backend.utils.meeting_notes import (
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
+MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
+MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
+MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
+
+MEETING_EDGE_CONTEXT_GUIDANCE = {
+    1: "Very selective. Only explain rare or highly specialized jargon, project-specific shorthand, or non-obvious acronyms that a strong generalist likely would not know. Do not explain common business, product, or mainstream software terms such as API, backend, frontend, sprint, rollout, owner, or blocker.",
+    2: "Selective. Explain only domain-specific, advanced, or project-specific terms that cross-functional attendees might not understand. Skip common workplace language and broadly known software terms.",
+    3: "Balanced. Explain terms when they are technical, domain-specific, or context-heavy enough that a general professional might miss the meaning. Skip widely known terms.",
+    4: "Helpful. Explain moderately technical or abbreviated terms when a short clarification would help a non-specialist follow along. Still skip plain-language terms and obvious basics.",
+    5: "Detailed. Be generous with clarifications for non-trivial technical, domain-specific, abbreviated, or project-specific terms, while still avoiding obvious plain-language words.",
+}
+
 DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE = """You are Meeting Edge, a live meeting assistant.
 
 Your task is to produce concise, high-signal, real-time guidance that helps the user participate more effectively in the current meeting.
@@ -22,7 +34,7 @@ Return one valid JSON object with these keys:
 - `summary`: 1-2 sentences on what matters right now.
 - `questions`: 0-3 smart clarifying or high-leverage questions the user could ask next.
 - `points`: 0-3 overlooked points, risks, or considerations the user could raise.
-- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion.
+- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion, but only when they meet the Technical Context Policy below.
 
 # Critical Rules
 - Be tactful, professional, constructive, and non-manipulative.
@@ -33,6 +45,9 @@ Return one valid JSON object with these keys:
 - Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
 - Keep each question, point, and explanation concise.
 - Return valid JSON only. Do not include prose before or after the JSON object.
+
+# Technical Context Policy
+{concept_guidance_section}
 
 # Required JSON Schema
 {{
@@ -75,6 +90,7 @@ class MeetingEdgeRequest:
     focus_text: str | None = None
     user_notes: str | None = None
     meeting_context: MeetingEventContext | None = None
+    context_level: int = MEETING_EDGE_CONTEXT_LEVEL_DEFAULT
 
     def __post_init__(self) -> None:
         transcript = self.recent_transcript.strip()
@@ -91,6 +107,7 @@ class MeetingEdgeRequest:
         )
         object.__setattr__(self, "focus_text", _normalize_optional_text(self.focus_text))
         object.__setattr__(self, "user_notes", _normalize_optional_text(self.user_notes))
+        object.__setattr__(self, "context_level", _normalize_context_level(self.context_level))
 
 
 @dataclass(frozen=True)
@@ -153,6 +170,7 @@ def build_meeting_edge_prompt(
         meeting_context_section=build_meeting_context_prompt_section(
             request.meeting_context
         ),
+        concept_guidance_section=build_concept_guidance_prompt_section(request.context_level),
     )
 
 
@@ -192,7 +210,12 @@ def serialize_meeting_edge_result(result: MeetingEdgeResult) -> dict[str, Any]:
 def merge_meeting_edge_concept_history(
     previous_payload: Mapping[str, Any] | None,
     current_payload: Mapping[str, Any] | None,
+    *,
+    reset_history: bool = False,
 ) -> list[dict[str, str]]:
+    if reset_history:
+        return _serialize_concepts(_read_serialized_concepts(current_payload, "concepts"))
+
     concepts_by_key: dict[str, MeetingEdgeConcept] = {}
     concept_order: list[str] = []
 
@@ -229,12 +252,26 @@ def build_focus_text_prompt_section(focus_text: str | None) -> str:
     return focus_text
 
 
+def build_concept_guidance_prompt_section(context_level: int) -> str:
+    level = _normalize_context_level(context_level)
+    return MEETING_EDGE_CONTEXT_GUIDANCE[level]
+
+
 def _normalize_optional_text(value: str | None) -> str | None:
     if value is None:
         return None
 
     cleaned = re.sub(r"\s+", " ", str(value).strip())
     return cleaned or None
+
+
+def _normalize_context_level(value: Any) -> int:
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        return MEETING_EDGE_CONTEXT_LEVEL_DEFAULT
+
+    return max(MEETING_EDGE_CONTEXT_LEVEL_MIN, min(MEETING_EDGE_CONTEXT_LEVEL_MAX, level))
 
 
 def _normalize_string_items(
@@ -362,6 +399,16 @@ def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]
         )
 
     return tuple(concepts)
+
+
+def _serialize_concepts(concepts: Sequence[MeetingEdgeConcept]) -> list[dict[str, str]]:
+    return [
+        {
+            "term": concept.term,
+            "explanation": concept.explanation,
+        }
+        for concept in concepts
+    ]
 
 
 def _read_concept_history_items(

@@ -11,6 +11,8 @@ from backend.models.user import User
 from backend.utils.config_manager import (
     APP_THEMES,
     INSTALL_WIDE_AI_SETTING_KEYS,
+    MEETING_EDGE_CONTEXT_LEVEL_MAX,
+    MEETING_EDGE_CONTEXT_LEVEL_MIN,
     SENSITIVE_KEYS,
     TRANSCRIPTION_BACKENDS,
     WHISPER_MODEL_SIZES,
@@ -29,6 +31,7 @@ class SettingsUpdate(BaseModel):
     gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
     enable_meeting_edge: Optional[bool] = None
+    meeting_edge_context_level: Optional[int] = None
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None
@@ -97,6 +100,17 @@ class SettingsUpdate(BaseModel):
     def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
         if value:
             return validate_timezone_name(value)
+        return value
+
+    @field_validator('meeting_edge_context_level')
+    @classmethod
+    def validate_meeting_edge_context_level(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+        if not MEETING_EDGE_CONTEXT_LEVEL_MIN <= value <= MEETING_EDGE_CONTEXT_LEVEL_MAX:
+            raise ValueError(
+                f"Invalid meeting_edge_context_level. Must be between {MEETING_EDGE_CONTEXT_LEVEL_MIN} and {MEETING_EDGE_CONTEXT_LEVEL_MAX}"
+            )
         return value
 
 

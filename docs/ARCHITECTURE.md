@@ -106,11 +106,11 @@ runs:
    context window (`live/context.wav`) so the engine has acoustic run-up and
    word edges are not clipped; the engine output is then sliced back to the
    region.
-3. The web client shows the live transcript pane as soon as the recording is in
-   flight and polls uploading recordings roughly every second. Completed live
-   utterances appear after VAD detects the end of speech, and long continuous
-   speech is force-emitted after about 8 seconds to avoid monologue-length
-   delays.
+3. The web client shows a single in-flight workspace with waveform, Meeting
+   Edge guidance, notes, and processing visibility as soon as the recording is
+   in flight. The page no longer exposes provisional live transcript text,
+   even though the backend live lane still emits it internally for Meeting
+   Edge and later processing reuse.
 4. Live speaker assignment uses online voice embeddings. Matching regions are
    merged into stable `LIVE_XX` speaker labels; short or embedding-less regions
    reuse the most recent stable label instead of creating new speaker churn.
@@ -142,9 +142,9 @@ ASR lane records whether live or catch-up ASR consumed the window audio. The
 diarisation lane records rolling or catch-up speaker-window work for the active
 diarisation configuration and completed window result. The legacy window
 `status` field remains a compatibility projection; new logic should inspect the
-lane-specific ASR and diarisation fields. Recording detail responses expose a
-collapsed `pipeline_state` summary so operators can compare live ASR coverage
-with speaker-window coverage while a recording is still in flight.
+lane-specific ASR and diarisation fields. Operator-facing recording pages now
+surface only high-level recording progress plus Meeting Edge guidance while a
+recording is still in flight.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`

@@ -83,7 +83,7 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 2. Use **Meet Now** to start a recording.
 3. Select the meeting tab, window, or screen in the browser share picker.
 4. Enable shared audio in the picker and allow microphone access if prompted.
-5. Speak briefly and confirm the live waveform or live transcript responds.
+5. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance should appear after enough speech accumulates.
 6. Stop the recording when finished.
 7. Open the recording in the `/recordings` workspace.
 8. Wait for transcription and diarisation to complete.

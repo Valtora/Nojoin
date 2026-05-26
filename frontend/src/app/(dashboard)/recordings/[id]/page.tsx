@@ -4,6 +4,7 @@ import {
   getRecording,
   getSettings,
   getTranscriptUtterances,
+  updateSettings,
   updateSpeaker,
   updateTranscriptSegmentSpeaker,
   updateTranscriptUtteranceSpeaker,
@@ -22,6 +23,10 @@ import {
   ExportContentType,
   ExportFormat,
 } from "@/lib/api";
+import {
+  clampMeetingEdgeContextLevel,
+  DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
+} from "@/lib/meetingEdgeContext";
 import ChatPanel from "@/components/ChatPanel";
 import AudioPlayer from "@/components/AudioPlayer";
 import SpeakerPanel from "@/components/SpeakerPanel";
@@ -91,6 +96,12 @@ const shouldPollRecordingUpdates = (recording: Recording) => {
   );
 };
 
+const isRecordingInFlight = (recording: Recording | null | undefined) =>
+  recording?.status === RecordingStatus.PAUSED ||
+  recording?.status === RecordingStatus.UPLOADING ||
+  recording?.status === RecordingStatus.PROCESSING ||
+  recording?.status === RecordingStatus.QUEUED;
+
 const getAutoSpeakerReplacementName = (speakerName: string) => {
   const trimmedName = speakerName.trim();
   const nameParts = trimmedName.split(/\s+/).filter(Boolean);
@@ -122,6 +133,9 @@ export default function RecordingPage({ params }: PageProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
+  const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
+    DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -171,6 +185,7 @@ export default function RecordingPage({ params }: PageProps) {
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
+  const isInFlightRecording = isRecordingInFlight(recording);
 
   const transcriptSegments = useMemo(
     () => transcriptState?.segments || recording?.transcript?.segments || [],
@@ -214,7 +229,7 @@ export default function RecordingPage({ params }: PageProps) {
 
       const nextState = createLocalTranscriptState(
         recording.id,
-        recording.transcript?.segments || [],
+        isRecordingInFlight(recording) ? [] : (recording.transcript?.segments || []),
         prev?.recordingId === recording.id ? prev.revision : 0,
         prev?.recordingId === recording.id ? prev.deferredById : {},
       );
@@ -347,37 +362,42 @@ export default function RecordingPage({ params }: PageProps) {
       setGlobalSpeakers(gsData);
       if (settingsData) {
         setMeetingEdgeEnabled(settingsData.enable_meeting_edge !== false);
+        setMeetingEdgeContextLevel(
+          clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level),
+        );
       }
       // Only set title if not editing, or on first load
       if (!isEditingTitle) {
         setTitleValue(recData.name);
       }
+      return recData;
     } catch (e) {
       console.error("Failed to fetch recording:", e);
       setError("Failed to load recording.");
+      return null;
     } finally {
       setLoading(false);
     }
   }, [params, isEditingTitle]);
 
   const refreshRecordingView = useCallback(async () => {
-    await fetchRecording();
+    const refreshedRecording = await fetchRecording();
 
-    if (!recording?.id) {
+    if (!refreshedRecording?.id || isRecordingInFlight(refreshedRecording)) {
       return;
     }
 
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
     });
-  }, [fetchRecording, recording?.id, syncTranscriptState]);
+  }, [fetchRecording, syncTranscriptState]);
 
   useEffect(() => {
     fetchRecording();
   }, [fetchRecording]);
 
   useEffect(() => {
-    if (!recording?.id) {
+    if (!recording?.id || isInFlightRecording) {
       return;
     }
 
@@ -387,7 +407,7 @@ export default function RecordingPage({ params }: PageProps) {
     // syncTranscriptState intentionally runs once per recording load; later
     // delta polling and explicit mutation refreshes keep this state current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.id]);
+  }, [recording?.id, isInFlightRecording]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -424,13 +444,6 @@ export default function RecordingPage({ params }: PageProps) {
         const { id } = await params;
         const data = await getRecording(id);
 
-        const segmentsSignature = (rec: Recording | null) => {
-          const segs = rec?.transcript?.segments;
-          if (!segs || segs.length === 0) return "0";
-          const last = segs[segs.length - 1];
-          return `${segs.length}|${last.end}|${last.text}`;
-        };
-
         const meetingEdgeSignature = (rec: Recording | null) =>
           JSON.stringify({
             focus: rec?.transcript?.meeting_edge_focus ?? null,
@@ -438,9 +451,6 @@ export default function RecordingPage({ params }: PageProps) {
             error: rec?.transcript?.meeting_edge_error_message ?? null,
             payload: rec?.transcript?.meeting_edge_payload ?? null,
           });
-
-        const pipelineStateSignature = (rec: Recording | null) =>
-          JSON.stringify(rec?.pipeline_state ?? null);
 
         if (
           data.status !== recording.status ||
@@ -456,8 +466,6 @@ export default function RecordingPage({ params }: PageProps) {
           data.transcript?.notes !== recording.transcript?.notes ||
           data.transcript?.user_notes !== recording.transcript?.user_notes ||
           meetingEdgeSignature(data) !== meetingEdgeSignature(recording) ||
-          pipelineStateSignature(data) !== pipelineStateSignature(recording) ||
-          segmentsSignature(data) !== segmentsSignature(recording) ||
           JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
         ) {
           setRecording(data);
@@ -479,7 +487,7 @@ export default function RecordingPage({ params }: PageProps) {
   }, [params, recording, isEditingTitle, addNotification, router]);
 
   useEffect(() => {
-    if (!recording || !shouldPollRecordingUpdates(recording)) {
+    if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
       return;
     }
 
@@ -496,7 +504,7 @@ export default function RecordingPage({ params }: PageProps) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [recording, syncTranscriptState]);
+  }, [isInFlightRecording, recording, syncTranscriptState]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {
@@ -1031,6 +1039,21 @@ export default function RecordingPage({ params }: PageProps) {
     await updateMeetingEdgeFocus(recording.id, focus);
   }, [recording?.id]);
 
+  const handleMeetingEdgeContextLevelChange = useCallback(
+    async (level: number) => {
+      const previousLevel = meetingEdgeContextLevel;
+      setMeetingEdgeContextLevel(level);
+
+      try {
+        await updateSettings({ meeting_edge_context_level: level });
+      } catch (error) {
+        setMeetingEdgeContextLevel(previousLevel);
+        throw error;
+      }
+    },
+    [meetingEdgeContextLevel],
+  );
+
   const handleExport = async (
     contentType: ExportContentType,
     format: ExportFormat,
@@ -1392,86 +1415,20 @@ export default function RecordingPage({ params }: PageProps) {
     );
   }
 
-  const isInFlightRecording =
-    recording.status === RecordingStatus.PAUSED ||
-    recording.status === RecordingStatus.UPLOADING ||
-    recording.status === RecordingStatus.PROCESSING ||
-    recording.status === RecordingStatus.QUEUED;
-  const hasLiveTranscriptSegments =
-    Boolean(transcriptSegments.length) &&
-    transcriptSegments.some(
-      (segment) => segment.provisional === true || segment.segment_source === "live",
-    );
-
   return (
     <div className="h-full flex flex-col">
       <div className="flex-1 flex min-h-0">
         {isInFlightRecording ? (
-          <PanelGroup
-            direction="horizontal"
-            autoSaveId="recording-live-layout-v2"
-            className="h-full flex-1 min-w-0"
-          >
-            <Panel defaultSize={60} minSize={32}>
-                <div className="h-full min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.34),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.26),_transparent_36%),linear-gradient(180deg,_#ffedd5_0%,_#fff7ed_45%,_#ffe4c4_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_34%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_50%,_#0b1220_100%)]">
-                  <RecordingStatusDisplay
-                    recording={recording}
-                    onSaveProcessingNotes={handleProcessingNotesChange}
-                    onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
-                    showMeetingEdge={meetingEdgeEnabled}
-                  />
-                </div>
-              </Panel>
-
-              <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
-                <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
-              </PanelResizeHandle>
-
-              <Panel defaultSize={40} minSize={32}>
-                <div className="flex flex-col h-full min-h-0 bg-white dark:bg-gray-800">
-                  <div className="px-4 py-3 border-b-2 border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-900">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Live Transcript
-                      </h2>
-                      <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-                        {hasLiveTranscriptSegments ? "Editable" : "Listening"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    <TranscriptView
-                      recordingId={recording.id}
-                      segments={transcriptSegments}
-                      currentTime={currentTime}
-                      onPlaySegment={handlePlaySegment}
-                      isPlaying={isPlaying}
-                      onPause={handlePause}
-                      onResume={handleResume}
-                      speakerMap={speakerMap}
-                      speakers={recording.speakers || []}
-                      globalSpeakers={globalSpeakers}
-                      onRenameSpeaker={handleRenameSpeaker}
-                      onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
-                      onUpdateSegmentText={handleUpdateSegmentText}
-                      onFindAndReplace={handleGlobalFindAndReplace}
-                      speakerColors={speakerColors}
-                      onUndo={handleUndo}
-                      onRedo={handleRedo}
-                      canUndo={history.length > 0 && !isUndoing}
-                      canRedo={future.length > 0 && !isUndoing}
-                      onExport={() => setShowExportModal(true)}
-                      allowProvisionalEdits
-                      disableSegmentPlayback
-                      emptyStateTitle="Listening for speech"
-                      emptyStateDescription="Live transcript text will appear as Nojoin detects speech."
-                      onActiveEditUtteranceChange={setActiveTranscriptEditId}
-                      pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
-                    />
-                  </div>
-                </div>
-              </Panel>
-          </PanelGroup>
+          <div className="h-full flex-1 min-w-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.34),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.26),_transparent_36%),linear-gradient(180deg,_#ffedd5_0%,_#fff7ed_45%,_#ffe4c4_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_34%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_50%,_#0b1220_100%)]">
+            <RecordingStatusDisplay
+              recording={recording}
+              onSaveProcessingNotes={handleProcessingNotesChange}
+              onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
+              meetingEdgeContextLevel={meetingEdgeContextLevel}
+              onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
+              showMeetingEdge={meetingEdgeEnabled}
+            />
+          </div>
         ) : isMobile ? (
           <div className="flex h-full flex-1 min-w-0 flex-col bg-white dark:bg-gray-900">
             <div className="min-h-0 flex-1">

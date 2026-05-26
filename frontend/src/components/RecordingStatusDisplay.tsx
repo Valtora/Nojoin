@@ -1,8 +1,8 @@
 "use client";
 
-import { Activity, AlertTriangle, CheckCircle2, Loader2, Mic, Pause } from "lucide-react";
+import { Loader2, Mic, Pause } from "lucide-react";
 
-import { ClientStatus, Recording, RecordingPipelineLaneState, RecordingPipelineState, RecordingStatus } from "@/types";
+import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
@@ -42,104 +42,12 @@ function formatEta(seconds: number) {
   return `${seconds}s remaining`;
 }
 
-function formatCoverage(ratio: number) {
-  return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
-}
-
-function formatWindowRange(pipelineState: RecordingPipelineState) {
-  if (
-    pipelineState.first_sequence == null ||
-    pipelineState.latest_sequence == null ||
-    pipelineState.total_window_count === 0
-  ) {
-    return "No windows yet";
-  }
-
-  return `Sequences ${pipelineState.first_sequence}-${pipelineState.latest_sequence}`;
-}
-
-function PipelineLaneMeter({
-  label,
-  lane,
-}: {
-  label: string;
-  lane: RecordingPipelineLaneState;
-}) {
-  const hasFailures = lane.failed_windows > 0;
-  const coverage = formatCoverage(lane.coverage_ratio);
-
-  return (
-    <div
-      data-testid={`pipeline-lane-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      className="min-w-0 rounded-xl border border-gray-200 bg-white/80 p-3 dark:border-gray-700 dark:bg-gray-900/70"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-            {label}
-          </div>
-          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            {lane.processed_windows}/{lane.total_windows} windows complete
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-700 dark:text-gray-200">
-          {hasFailures ? (
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-          ) : (
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-          )}
-          {coverage}
-        </div>
-      </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-        <div
-          className={hasFailures ? "h-full rounded-full bg-amber-500" : "h-full rounded-full bg-emerald-500"}
-          style={{ width: coverage }}
-        />
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-        <span>{lane.pending_windows} pending</span>
-        <span>{lane.processing_windows} active</span>
-        <span>{lane.failed_windows} failed</span>
-      </div>
-    </div>
-  );
-}
-
-function PipelineStateDetails({ pipelineState }: { pipelineState: RecordingPipelineState }) {
-  return (
-    <details
-      data-testid="pipeline-visibility"
-      className="rounded-[1.25rem] border border-gray-200 bg-white/70 p-4 dark:border-white/10 dark:bg-gray-900/55"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-gray-800 dark:text-gray-100">
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <Activity className="h-4 w-4 shrink-0 text-orange-500" />
-          <span className="truncate">Processing details</span>
-        </span>
-        <span className="shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
-          Rev {pipelineState.transcript_revision}
-        </span>
-      </summary>
-      <div className="mt-4 space-y-4">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-          <span>{formatWindowRange(pipelineState)}</span>
-          <span>{pipelineState.sealed_window_count} sealed</span>
-          <span>{pipelineState.partial_window_count} partial</span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <PipelineLaneMeter label="Live ASR" lane={pipelineState.asr} />
-          <PipelineLaneMeter label="Speaker windows" lane={pipelineState.diarization} />
-        </div>
-      </div>
-    </details>
-  );
-}
-
 interface RecordingStatusDisplayProps {
   recording: Recording;
   onSaveProcessingNotes: (notes: string) => Promise<void>;
   onSaveMeetingEdgeFocus: (focus: string) => Promise<void>;
+  meetingEdgeContextLevel?: number;
+  onSaveMeetingEdgeContextLevel?: (level: number) => Promise<void>;
   showMeetingEdge?: boolean;
 }
 
@@ -147,6 +55,8 @@ export default function RecordingStatusDisplay({
   recording,
   onSaveProcessingNotes,
   onSaveMeetingEdgeFocus,
+  meetingEdgeContextLevel,
+  onSaveMeetingEdgeContextLevel,
   showMeetingEdge = true,
 }: RecordingStatusDisplayProps) {
   const isActiveRecording =
@@ -189,11 +99,6 @@ export default function RecordingStatusDisplay({
       : recording.status === RecordingStatus.UPLOADING
         ? Math.max(10, recording.upload_progress || 0)
         : Math.max(20, recording.processing_progress || 20);
-  const pipelineState = recording.pipeline_state;
-  const showPipelineState = Boolean(
-    pipelineState &&
-      (pipelineState.total_window_count > 0 || pipelineState.transcript_revision > 0),
-  );
 
   return (
     <AmbientWorkspace
@@ -288,9 +193,6 @@ export default function RecordingStatusDisplay({
                 </>
               )}
 
-              {showPipelineState && pipelineState ? (
-                <PipelineStateDetails pipelineState={pipelineState} />
-              ) : null}
             </div>
       </section>
 
@@ -302,6 +204,8 @@ export default function RecordingStatusDisplay({
             status={recording.transcript?.meeting_edge_status}
             errorMessage={recording.transcript?.meeting_edge_error_message}
             onSaveFocus={onSaveMeetingEdgeFocus}
+            contextLevel={meetingEdgeContextLevel}
+            onSaveContextLevel={onSaveMeetingEdgeContextLevel}
           />
         ) : null}
         <ProcessingNotesPanel

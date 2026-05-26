@@ -18,6 +18,7 @@ def test_build_meeting_edge_prompt_includes_focus_and_recent_transcript() -> Non
         rolling_summary="The team is converging on launch readiness.",
         focus_text="Help me pressure-test timeline risk.",
         user_notes="Need a clear owner for follow-up.",
+        context_level=1,
     )
 
     prompt = build_meeting_edge_prompt(request)
@@ -26,6 +27,7 @@ def test_build_meeting_edge_prompt_includes_focus_and_recent_transcript() -> Non
     assert "The team is converging on launch readiness." in prompt
     assert "Speaker A: We need to lock the launch date this week." in prompt
     assert "Need a clear owner for follow-up." in prompt
+    assert "Do not explain common business, product, or mainstream software terms" in prompt
 
 
 def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
@@ -108,4 +110,34 @@ def test_merge_meeting_edge_concept_history_preserves_prior_terms() -> None:
             "term": "Accumulator",
             "explanation": "The higher-precision running sum of partial products.",
         },
+    ]
+
+
+def test_merge_meeting_edge_concept_history_can_reset_history() -> None:
+    previous_payload = {
+        "concepts": [
+            {
+                "term": "API",
+                "explanation": "A common software interface term.",
+            }
+        ]
+    }
+    current_payload = {
+        "concepts": [
+            {
+                "term": "Consensus protocol",
+                "explanation": "The coordination rules distributed nodes use to agree on state.",
+            }
+        ]
+    }
+
+    assert merge_meeting_edge_concept_history(
+        previous_payload,
+        current_payload,
+        reset_history=True,
+    ) == [
+        {
+            "term": "Consensus protocol",
+            "explanation": "The coordination rules distributed nodes use to agree on state.",
+        }
     ]

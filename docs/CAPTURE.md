@@ -39,7 +39,7 @@ For support and debugging, browser recording segments are numbered from `0` and 
 2. Confirm your meeting platform is open in a browser tab if you want reliable tab audio capture.
 3. Check that your microphone is available to the browser.
 4. Open **Settings > Capture** if you need to choose a microphone or adjust system and microphone gain.
-5. Start a short test meeting and verify that the live waveform and live transcript respond before relying on Nojoin for an important meeting.
+5. Start a short test meeting and verify that the live waveform responds before relying on Nojoin for an important meeting. If AI is configured, Meeting Edge guidance should begin updating once enough speech has accumulated.
 
 ## Starting A Recording
 
@@ -124,9 +124,9 @@ The browser granted screen or tab visibility but no audio track. Start again and
 
 Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Capture**. If only your microphone appears, the shared tab/window/screen audio was not granted.
 
-### Live transcript does not appear
+### Meeting Edge is still empty during capture
 
-Confirm the waveform shows speech activity. Live transcription appears after Nojoin detects completed speech regions. Very short tests with no speech may remain in the listening state.
+Confirm the waveform shows speech activity. Meeting Edge only updates after Nojoin has enough completed speech to build guidance, so very short tests may show waveform activity before any live guidance appears. The user-facing transcript is expected to appear after final processing rather than during capture.
 
 ### Linux screen audio does not work
 
