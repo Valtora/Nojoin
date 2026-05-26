@@ -200,6 +200,15 @@ location / {
 - Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.
 - During that startup cutover, existing recordings are classified entirely on the backend. Successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalized safely are marked for explicit reprocess instead of being edited in place.
 - The supported rollback model for this cutover is code rollback only. Canonical rows created during startup migration are additive and are not converted back into legacy-only transcript state.
+- The live pipeline lane-state migration adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during the normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
+
+### Live Pipeline Readiness Notes
+
+- Browser live capture now depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio and channel 1 is microphone audio.
+- Segment sequences start at `0`. Operators investigating upload or finalization failures should check for missing sequence numbers before assuming ASR or diarisation failure.
+- Recording detail pages expose collapsed processing details with separate live ASR coverage and speaker-window coverage. ASR coverage can be complete while diarisation is still pending or retrying.
+- Final processing reuses live transcript and source-channel speaker evidence only after stable-id or clear overlap alignment. Ambiguous live/final spans are intentionally left to final ASR and diarisation output.
+- A practical smoke after upgrade is: start a browser recording in supported Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and live transcript, pause, resume, finalize, then verify final transcript and speaker continuity.
 
 ### Canonical Cutover Notes
 

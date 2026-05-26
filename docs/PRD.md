@@ -67,7 +67,7 @@ Live recording is owned by the web client through browser capture APIs.
 - **Shared audio source:** `getDisplayMedia` captures tab, window, or screen audio when the user enables the browser's audio-sharing option.
 - **Microphone source:** `getUserMedia` captures the local microphone.
 - **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps.
-- **Transport:** The browser uploads short WebM/Opus segments during live recording. The worker transcodes each segment to 16 kHz mono WAV before live transcription and final concatenation.
+- **Transport:** The browser uploads short WebM/Opus segments during live recording. The worker transcodes each segment to 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 carries shared/system audio and channel 1 carries microphone audio.
 - **Lifecycle:** Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`. Uploaded segments remain available, the in-memory tail is dropped, and the user must resume or discard before starting another capture.
 - **Settings:** Capture settings cover microphone selection and per-source gain. Settings are browser-local for the initial cutover.
 - **Documentation:** [CAPTURE.md](CAPTURE.md) is the canonical browser capture guide.
@@ -160,6 +160,8 @@ The system provides the following core capabilities:
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
   - **Transcription Engine Choices:** Whisper remains the broad-coverage default. Parakeet provides much faster transcription on supported NVIDIA systems, with a tradeoff of slightly lower accuracy and fewer supported languages. Normal live and final transcription use the same selected engine so live transcript work can be reused; different-engine transcription is handled through manual reprocessing.
+  - **Live Pipeline Coverage:** Browser-live ASR coverage and rolling speaker-window diarization coverage are tracked independently, so live transcript availability does not imply every speaker-window pass has completed.
+  - **Live/Final Reuse:** Final processing may reuse live text and speaker decisions only after stable-id or clear overlap alignment. Manual transcript and speaker edits remain authoritative.
   - **Phantom Speaker Filter:** Post-diarization stage that detects and reassigns segments caused by non-speech audio (notification sounds, background noise) to prevent phantom "UNKNOWN" speaker assignments. Uses heuristic detection validated by embedding similarity analysis.
 - **Processing Telemetry & ETA:** New processing runs persist `processing_started_at` and `processing_completed_at` on the recording and use those samples to estimate remaining processing time for future meetings.
   - **Learning Threshold:** ETA is only shown once at least three prior processed meetings with timing data exist.
@@ -224,7 +226,7 @@ The system provides the following core capabilities:
 
 - **Browser APIs:** `getDisplayMedia`, `getUserMedia`, Web Audio, and MediaRecorder.
 - **Frontend modules:** Capture logic lives under `frontend/src/lib/capture/`.
-- **Media transport:** WebM/Opus during live recording, transcoded by the worker to 16 kHz mono WAV segments.
+- **Media transport:** WebM/Opus during live recording, transcoded by the worker to 16 kHz, two-channel WAV segments with shared/system audio on channel 0 and microphone audio on channel 1.
 - **Supported capture platforms:** Chromium-family browsers on Windows and Linux.
 - **Unsupported capture platforms:** Firefox, Safari, mobile browsers, and Chromium browsers on macOS.
 - **Validation:** Manual browser matrix testing is required before release sign-off.

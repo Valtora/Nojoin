@@ -115,6 +115,87 @@ describe("transcriptState", () => {
     expect(nextState.deferredById["utt-1"]?.text).toBe("remote update");
   });
 
+  it("does not apply stale delta revisions", () => {
+    const currentState = createLocalTranscriptState(
+      "rec-1",
+      [
+        {
+          id: "utt-1",
+          start: 1,
+          end: 2,
+          text: "newer local state",
+          speaker: "SPEAKER_00",
+          revision: 5,
+        },
+      ],
+      9,
+    );
+
+    const nextState = applyTranscriptDelta({
+      currentState,
+      recordingId: "rec-1",
+      fallbackSegments: [],
+      delta: {
+        recording_id: "rec-1",
+        revision: 8,
+        utterances: [
+          {
+            id: "utt-1",
+            start: 1,
+            end: 2,
+            text: "stale remote state",
+            speaker: "SPEAKER_01",
+            revision: 4,
+          },
+        ],
+        tombstones: [],
+        speakers: [],
+      },
+    });
+
+    expect(nextState).toBe(currentState);
+    expect(nextState.revision).toBe(9);
+    expect(nextState.segments[0]?.text).toBe("newer local state");
+  });
+
+  it("defers tombstones for the utterance currently being edited", () => {
+    const currentState = createLocalTranscriptState("rec-1", [
+      {
+        id: "utt-1",
+        start: 1,
+        end: 2,
+        text: "local edit",
+        speaker: "SPEAKER_00",
+        revision: 2,
+      },
+      {
+        id: "utt-2",
+        start: 3,
+        end: 4,
+        text: "remove now",
+        speaker: "SPEAKER_01",
+        revision: 1,
+      },
+    ]);
+
+    const nextState = applyTranscriptDelta({
+      currentState,
+      recordingId: "rec-1",
+      fallbackSegments: currentState.segments,
+      activeEditUtteranceId: "utt-1",
+      delta: {
+        recording_id: "rec-1",
+        revision: 5,
+        utterances: [],
+        tombstones: ["utt-1", "utt-2"],
+        speakers: [],
+      },
+    });
+
+    expect(nextState.segments.map((segment) => segment.id)).toEqual(["utt-1"]);
+    expect(nextState.deferredById["utt-1"]).toBeNull();
+  });
+
   it("flushes deferred remote updates once editing ends", () => {
     const flushed = flushDeferredTranscriptState({
       recordingId: "rec-1",

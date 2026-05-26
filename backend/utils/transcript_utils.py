@@ -11,6 +11,49 @@ SEGMENT_OVERLAP_MIN_RATIO = 0.25
 SEGMENT_OVERLAP_MIN_DURATION_S = 0.25
 ISOLATED_WORD_FLIP_MAX_DURATION_S = 0.45
 ISOLATED_WORD_FLIP_MAX_GAP_S = 0.25
+_PUNCTUATION_ONLY_RE = re.compile(r"^[\.,!?;:%)\]\}]+$")
+_CONTRACTION_SUFFIXES = {
+    "'d",
+    "'ll",
+    "'m",
+    "'re",
+    "'s",
+    "'ve",
+    "n't",
+    "’d",
+    "’ll",
+    "’m",
+    "’re",
+    "’s",
+    "’ve",
+}
+
+
+def _reconstruct_text_from_words(words: list[dict]) -> str:
+    text_parts: list[str] = []
+    for index, word in enumerate(words):
+        token = str(word.get("word") or "")
+        if not token:
+            continue
+        if index == 0:
+            text_parts.append(token.lstrip())
+            continue
+        if token[:1].isspace():
+            text_parts.append(token)
+            continue
+
+        stripped_token = token.strip()
+        if not stripped_token:
+            continue
+        if stripped_token in _CONTRACTION_SUFFIXES or stripped_token.startswith(("'", "’")):
+            text_parts.append(stripped_token)
+            continue
+        if _PUNCTUATION_ONLY_RE.match(stripped_token):
+            text_parts.append(stripped_token)
+            continue
+        text_parts.append(f" {stripped_token}")
+
+    return "".join(text_parts).strip()
 
 def render_transcript(transcript_path, label_to_name, output_format="plain"):
     """
@@ -140,13 +183,16 @@ def _combine_segment_level(segments, speaker_turns):
             dominant_speaker = "UNKNOWN"
             overlapping_speakers = []
         
-        final_segments.append({
+        final_segment = {
             "start": start,
             "end": end,
             "speaker": dominant_speaker,
             "overlapping_speakers": overlapping_speakers,
             "text": text
-        })
+        }
+        if seg.get("id"):
+            final_segment["id"] = seg["id"]
+        final_segments.append(final_segment)
     return final_segments
 
 def _combine_word_level(segments, speaker_turns):
@@ -234,7 +280,7 @@ def _combine_word_level(segments, speaker_turns):
         
         # Split if speaker changes OR gap > 1.0s
         if speaker != current_segment["speaker"] or gap > 1.0 or set(overlapping_speakers) != set(current_segment.get("overlapping_speakers", [])):
-            final_segments.append(current_segment)
+            final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
                 "start": w_start,
                 "end": w_end,
@@ -254,7 +300,7 @@ def _combine_word_level(segments, speaker_turns):
             current_segment["end"] = w_end
             current_segment["words"].append(word_data)
             
-    final_segments.append(current_segment)
+    final_segments.append(_with_word_source_public_ids(current_segment))
     
     # Log speaker distribution
     speaker_counts = {}
@@ -264,6 +310,92 @@ def _combine_word_level(segments, speaker_turns):
     logger.info(f"_combine_word_level: Created {len(final_segments)} segments with speaker distribution: {speaker_counts}")
     
     return final_segments 
+
+
+def _with_word_source_public_ids(segment: dict) -> dict:
+    next_segment = dict(segment)
+    source_ids = sorted(
+        {
+            str(word.get("source_public_id") or "").strip()
+            for word in next_segment.get("words", [])
+            if str(word.get("source_public_id") or "").strip()
+        }
+    )
+    if len(source_ids) == 1:
+        next_segment["id"] = source_ids[0]
+    elif len(source_ids) > 1:
+        next_segment["live_utterance_ids"] = source_ids
+    return next_segment
+
+
+def _copy_consolidation_metadata(source_segment: dict, target_segment: dict) -> dict:
+    next_segment = dict(target_segment)
+    next_segment.update(_merge_consolidation_metadata([source_segment]))
+    return next_segment
+
+
+def _merge_consolidation_metadata(source_segments: list[dict]) -> dict:
+    metadata: dict = {}
+    if not source_segments:
+        return metadata
+
+    for key in ("speaker_manually_edited", "text_manually_edited"):
+        if any(segment.get(key) is True for segment in source_segments):
+            metadata[key] = True
+
+    for key in ("speaker_state", "speaker_state_source", "live_source_speaker"):
+        values = _ordered_metadata_values(segment.get(key) for segment in source_segments)
+        if len(values) == 1:
+            metadata[key] = values[0]
+        elif key == "live_source_speaker" and values:
+            metadata["live_source_speakers"] = values
+
+    public_ids = _ordered_metadata_values(segment.get("id") for segment in source_segments)
+    for segment in source_segments:
+        for public_id in segment.get("live_utterance_ids") or []:
+            public_id_value = str(public_id or "").strip()
+            if public_id_value and public_id_value not in public_ids:
+                public_ids.append(public_id_value)
+    if len(public_ids) == 1:
+        metadata["id"] = public_ids[0]
+    elif public_ids:
+        metadata["source_public_ids"] = public_ids
+
+    alignments = [
+        segment.get("live_reuse_alignment")
+        for segment in source_segments
+        if isinstance(segment.get("live_reuse_alignment"), dict)
+    ]
+    if len(alignments) == 1:
+        metadata["live_reuse_alignment"] = alignments[0]
+    elif alignments:
+        matched_ids: list[str] = []
+        rejection_reasons: list[str] = []
+        for alignment in alignments:
+            for public_id in alignment.get("matched_live_utterance_ids") or []:
+                public_id_value = str(public_id or "").strip()
+                if public_id_value and public_id_value not in matched_ids:
+                    matched_ids.append(public_id_value)
+            if alignment.get("status") == "rejected" and alignment.get("reason"):
+                reason = str(alignment["reason"])
+                if reason not in rejection_reasons:
+                    rejection_reasons.append(reason)
+        metadata["live_reuse_alignment"] = {
+            "status": "merged",
+            "matched_live_utterance_ids": matched_ids,
+            "rejection_reasons": rejection_reasons,
+            "source_alignments": alignments,
+        }
+    return metadata
+
+
+def _ordered_metadata_values(values) -> list[str]:
+    ordered_values: list[str] = []
+    for value in values:
+        value_text = str(value or "").strip()
+        if value_text and value_text not in ordered_values:
+            ordered_values.append(value_text)
+    return ordered_values
 
 
 def _speaker_overlap_is_significant(
@@ -411,27 +543,23 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_d
                      # Edge case: first word is already super long? Force split at 1 word.
                      first_chunk_words = curr_words[:1]
                      remainder_words = curr_words[1:]
-                
-                # Reconstruct Text
-                # Whisper words have leading spaces often. Join carefully.
-                def reconstruct_text(words):
-                    return "".join([w['word'] for w in words]).strip()
 
-                chunk_text = reconstruct_text(first_chunk_words)
-                remainder_text = reconstruct_text(remainder_words)
+                chunk_text = _reconstruct_text_from_words(first_chunk_words)
+                remainder_text = _reconstruct_text_from_words(remainder_words)
                 
                 split_end_time = first_chunk_words[-1]['end']
                 
-                consolidated.append({
+                split_segment = {
                     'start': curr_start,
                     'end': split_end_time,
                     'speaker': curr_speaker,
                     'overlapping_speakers': list(curr_overlapping),
                     'text': chunk_text,
                     'words': first_chunk_words
-                })
+                }
+                consolidated.append(_copy_consolidation_metadata(curr, split_segment))
                 
-                segments[i] = {
+                remainder_segment = {
                     'start': split_end_time,
                     'end': curr_end, 
                     'speaker': curr_speaker,
@@ -439,6 +567,7 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_d
                     'text': remainder_text,
                     'words': remainder_words
                 }
+                segments[i] = _copy_consolidation_metadata(curr, remainder_segment)
                 logger.debug(f"Smart split at {split_end_time:.2f}s (Target: {max_duration_s}s). Sentence break: {best_sentence_idx != -1}")
                 continue
             
@@ -475,13 +604,14 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_d
                 chunk_text = curr_text[:split_idx].strip()
                 remainder_text = curr_text[split_idx:].strip()
                 
-                consolidated.append({
+                split_segment = {
                     'start': curr_start,
                     'end': split_end,
                     'speaker': curr_speaker,
                     'overlapping_speakers': list(curr_overlapping),
                     'text': chunk_text
-                })
+                }
+                consolidated.append(_copy_consolidation_metadata(curr, split_segment))
                 
                 # Now we set up the remainder as the new 'curr' for the next iteration of the loop
                 # But we can't easily modify `segments` list in place safely or insert.
@@ -489,13 +619,14 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_d
                 # Infinite-loop safety: split_end > curr_start is guaranteed by max_duration_s > 0,
                 # so the remainder shrinks on each iteration.
                 
-                segments[i] = {
+                remainder_segment = {
                     'start': split_end,
                     'end': curr_end, # Original end
                     'speaker': curr_speaker,
                     'overlapping_speakers': list(curr_overlapping),
                     'text': remainder_text
                 }
+                segments[i] = _copy_consolidation_metadata(curr, remainder_segment)
                 # Continue loop WITHOUT incrementing `i` to process the remainder
                 continue
 
@@ -543,14 +674,16 @@ def consolidate_diarized_transcript(segments, min_duration_s: float = 0.1, max_d
         # OR if it's the only segment we have (to avoid dropping data for short recordings)
         # ... OR (end of stream AND no prepared segments).
         if (curr_end - curr_start) >= min_duration_s or (len(consolidated) == 0 and j == n):
-            consolidated.append({
+            consolidated_segment = {
                 'start': curr_start,
                 'end': curr_end,
                 'speaker': curr_speaker,
                 'overlapping_speakers': overlapping_list,
                 'text': curr_text.strip(),
                 'words': curr_words
-            })
+            }
+            consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
+            consolidated.append(consolidated_segment)
         else:
             ov_str = f" (Overlap: {', '.join(overlapping_list)})" if overlapping_list else ""
             logger.info(f"Filtering out short consolidated segment: "

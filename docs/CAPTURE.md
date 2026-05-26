@@ -29,7 +29,9 @@ Nojoin combines two browser-granted audio sources:
 - **Shared tab, window, or screen audio** for meeting participants and other system output.
 - **Microphone audio** for the local speaker.
 
-The browser mixes those sources in the Nojoin tab, uploads short WebM/Opus segments to the backend, and the worker transcodes each segment to the canonical 16 kHz mono WAV path used by live transcription and final processing.
+The browser mixes those sources in the Nojoin tab, uploads short WebM/Opus segments to the backend, and the worker transcodes each segment to the canonical 16 kHz, two-channel WAV path used by live transcription and final processing. Channel 0 carries shared/system audio and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+
+For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps. Live ASR and rolling speaker-window diarization are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
 
 ## Before Your First Recording
 
@@ -83,7 +85,7 @@ If the share button is disabled, select a source first and confirm that any requ
 ## Pause, Resume, Stop, And Cancel
 
 - **Pause** keeps uploaded segments and stops new segment capture until you resume.
-- **Resume** reopens the browser share picker and continues with the next segment sequence.
+- **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
 - **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing.
 - **Cancel** discards an uploading or paused recording and clears the capture lock.
 

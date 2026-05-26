@@ -162,6 +162,35 @@ class RecordingAudioWindowManifest(BaseDBModel, table=True):
     chunk_start_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
     chunk_end_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
     status: str = Field(default="pending")
+    asr_status: str = Field(default="pending", sa_column=Column(String(32), nullable=False, default="pending"))
+    asr_processing_run_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("processing_runs.id", ondelete="SET NULL"),
+            index=True,
+        ),
+    )
+    asr_last_error: Optional[str] = Field(default=None, sa_column=Column(Text))
+    diarization_status: str = Field(default="pending", sa_column=Column(String(32), nullable=False, default="pending"))
+    diarization_processing_run_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("processing_runs.id", ondelete="SET NULL"),
+            index=True,
+        ),
+    )
+    diarization_config_hash: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    diarization_window_result_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("diarization_window_results.id", ondelete="SET NULL"),
+            index=True,
+        ),
+    )
+    diarization_last_error: Optional[str] = Field(default=None, sa_column=Column(Text))
     is_partial: bool = Field(default=False)
     is_sealed: bool = Field(default=False)
     processing_run_id: Optional[int] = Field(

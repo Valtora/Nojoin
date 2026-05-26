@@ -439,6 +439,9 @@ export default function RecordingPage({ params }: PageProps) {
             payload: rec?.transcript?.meeting_edge_payload ?? null,
           });
 
+        const pipelineStateSignature = (rec: Recording | null) =>
+          JSON.stringify(rec?.pipeline_state ?? null);
+
         if (
           data.status !== recording.status ||
           data.client_status !== recording.client_status ||
@@ -453,6 +456,7 @@ export default function RecordingPage({ params }: PageProps) {
           data.transcript?.notes !== recording.transcript?.notes ||
           data.transcript?.user_notes !== recording.transcript?.user_notes ||
           meetingEdgeSignature(data) !== meetingEdgeSignature(recording) ||
+          pipelineStateSignature(data) !== pipelineStateSignature(recording) ||
           segmentsSignature(data) !== segmentsSignature(recording) ||
           JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
         ) {

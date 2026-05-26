@@ -191,6 +191,7 @@ def build_window_speaker_metadata(
     recording_speakers: list[Any],
     global_speakers: list[Any],
     window_start_ms: int | None = None,
+    enable_embedding_matching: bool = True,
 ) -> dict[str, dict[str, Any]]:
     metadata_by_key, _ = analyze_window_speakers(
         diarization_result=diarization_result,
@@ -200,6 +201,7 @@ def build_window_speaker_metadata(
         recording_speakers=recording_speakers,
         global_speakers=global_speakers,
         window_start_ms=window_start_ms,
+        enable_embedding_matching=enable_embedding_matching,
     )
     return metadata_by_key
 
@@ -256,16 +258,18 @@ def analyze_window_speakers(
     recording_speakers: list[Any],
     global_speakers: list[Any],
     window_start_ms: int | None = None,
+    enable_embedding_matching: bool = True,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, list[float]]]:
     if diarization_result is None:
         return {}, {}
 
-    from backend.processing.embedding import (
-        IDENTIFICATION_THRESHOLD,
-        MARGIN_OF_VICTORY,
-        cosine_similarity,
-    )
-    from backend.processing.embedding_core import extract_embedding_for_segments
+    if enable_embedding_matching:
+        from backend.processing.embedding import (
+            IDENTIFICATION_THRESHOLD,
+            MARGIN_OF_VICTORY,
+            cosine_similarity,
+        )
+        from backend.processing.embedding_core import extract_embedding_for_segments
 
     spans_by_speaker: dict[str, list[tuple[float, float]]] = {}
     for turn, _track, label in diarization_result.itertracks(yield_label=True):
@@ -301,6 +305,10 @@ def analyze_window_speakers(
             "embedding_available": False,
         }
         if clean_duration_s < MIN_ROLLING_DIARIZATION_EMBEDDING_DURATION_S:
+            metadata_by_key[local_speaker_key] = metadata
+            continue
+
+        if not enable_embedding_matching:
             metadata_by_key[local_speaker_key] = metadata
             continue
 

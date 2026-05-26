@@ -187,6 +187,11 @@ export const transcriptSegmentFromUtterance = (
     speaker_confidence: utterance.speaker_confidence,
     text_confidence: utterance.text_confidence,
     updated_at: utterance.updated_at,
+    speaker_state_source: utterance.speaker_state_source,
+    live_source_speaker: utterance.live_source_speaker,
+    live_source_speakers: utterance.live_source_speakers,
+    source_public_ids: utterance.source_public_ids,
+    live_reuse_alignment: utterance.live_reuse_alignment,
   };
 };
 

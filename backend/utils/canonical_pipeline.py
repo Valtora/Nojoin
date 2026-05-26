@@ -1418,6 +1418,42 @@ def finalize_utterances_from_segments(
     utterances: list[TranscriptUtterance] = []
     new_boundary_utterances: list[TranscriptUtterance] = []
     matched_utterance_ids: set[int] = set()
+    reserved_public_ids: set[str] = {
+        str(public_id)
+        for public_id in session.execute(
+            select(TranscriptUtterance.public_id).where(
+                TranscriptUtterance.recording_id == recording_id
+            )
+        ).scalars().all()
+        if str(public_id or "").strip()
+    }
+
+    def reserve_finalize_public_id(segment_payload: dict[str, Any]) -> str:
+        requested_public_id = str(segment_payload.get("id") or "").strip()
+        if requested_public_id and requested_public_id not in reserved_public_ids:
+            reserved_public_ids.add(requested_public_id)
+            return requested_public_id
+
+        if requested_public_id:
+            confidence_payload = dict(segment_payload.get("confidence_payload") or {})
+            source_public_ids = [
+                str(public_id or "").strip()
+                for public_id in confidence_payload.get("source_public_ids")
+                or segment_payload.get("source_public_ids")
+                or []
+                if str(public_id or "").strip()
+            ]
+            if requested_public_id not in source_public_ids:
+                source_public_ids.append(requested_public_id)
+            if source_public_ids:
+                confidence_payload["source_public_ids"] = source_public_ids
+                segment_payload["confidence_payload"] = confidence_payload
+
+        public_id = str(uuid4())
+        while public_id in reserved_public_ids:
+            public_id = str(uuid4())
+        reserved_public_ids.add(public_id)
+        return public_id
 
     def inherit_manual_speaker_for_range(
         *,
@@ -1649,7 +1685,7 @@ def finalize_utterances_from_segments(
         else:
             recording_speaker = resolved_speaker
         utterance = TranscriptUtterance(
-            public_id=str(effective_segment.get("id") or uuid4()),
+            public_id=reserve_finalize_public_id(effective_segment),
             recording_id=recording_id,
             sort_key=_sort_key_for_index(index),
             start_ms=start_ms,
@@ -1971,6 +2007,9 @@ def update_utterance_speaker(
     if transcript is None or recording is None:
         raise LookupError("Transcript not found")
 
+    source_recording_speaker_id = utterance.recording_speaker_id
+    source_speaker = session.get(RecordingSpeaker, source_recording_speaker_id) if source_recording_speaker_id else None
+
     target_speaker = resolve_assignment_target(
         session,
         recording_id=recording_id,
@@ -1978,12 +2017,12 @@ def update_utterance_speaker(
         new_speaker_name=new_speaker_name,
         global_speaker_id=global_speaker_id,
         diarization_label=diarization_label,
+        source_speaker=source_speaker,
+        scope=scope,
     )
 
     current_key = utterance.recording_speaker_id or utterance.speaker_label
     target_key = target_speaker.id
-    source_recording_speaker_id = utterance.recording_speaker_id
-    source_speaker = session.get(RecordingSpeaker, source_recording_speaker_id) if source_recording_speaker_id else None
     target_utterances = _select_utterances_for_scope(
         session,
         recording_id=recording_id,
@@ -2638,6 +2677,8 @@ def reconcile_diarization_window_result(
     window_result_id: int,
     processing_run_id: int | None = None,
     source: str = "rolling_diarization",
+    effective_from_ms: int | None = None,
+    allow_speaker_reassignment: bool = True,
 ) -> dict[str, int]:
     window_result = session.get(DiarizationWindowResult, window_result_id)
     if window_result is None or window_result.recording_id != recording_id:
@@ -2655,13 +2696,16 @@ def reconcile_diarization_window_result(
 
     recording_speakers = _load_recording_speakers(session, recording_id)
     recording_speakers_by_id = {speaker.id: speaker for speaker in recording_speakers if speaker.id is not None}
+    overlap_start_ms = int(window_result.window_start_ms)
+    if effective_from_ms is not None:
+        overlap_start_ms = max(overlap_start_ms, int(effective_from_ms))
     overlapping_utterances = list(
         session.execute(
             select(TranscriptUtterance)
             .where(TranscriptUtterance.recording_id == recording_id)
             .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
             .where(TranscriptUtterance.start_ms < int(window_result.window_end_ms))
-            .where(TranscriptUtterance.end_ms > int(window_result.window_start_ms))
+            .where(TranscriptUtterance.end_ms > overlap_start_ms)
             .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
         ).scalars().all()
     )
@@ -2933,6 +2977,27 @@ def reconcile_diarization_window_result(
             projection_dirty = True
             continue
 
+        if not allow_speaker_reassignment:
+            if current_state_payload is not None:
+                rolling_payload.update(current_state_payload)
+            rolling_payload["applied_recording_speaker_id"] = (
+                int(current_speaker_id) if current_speaker_id is not None else None
+            )
+            rolling_payload["candidate_recording_speaker_id"] = int(candidate_speaker.id)
+            rolling_payload["candidate_confidence"] = round(float(candidate_confidence), 4)
+            rolling_payload["candidate_rejected"] = True
+            rolling_payload["rejection_reason"] = "boundary_only_live_tail_reconciliation"
+            _merge_overlap_payload_into_rolling(
+                rolling_payload,
+                overlap_payload_for(int(current_speaker_id) if current_speaker_id is not None else None),
+            )
+            existing_payload["rolling_diarization"] = rolling_payload
+            utterance.confidence_payload = existing_payload
+            utterance.last_diarization_window_result_id = window_result.id
+            session.add(utterance)
+            projection_dirty = True
+            continue
+
         if (
             current_speaker_id is not None
             and current_state_payload is not None
@@ -3143,10 +3208,11 @@ def _enforce_distinct_window_local_speaker_matches(
     for local_speaker_key, match_payload in local_speaker_matches.items():
         if match_payload.get("matched_speaker") is not None:
             continue
+        local_turn_rows = turns_by_local_speaker.get(local_speaker_key, [])
         alternate_speaker, alternate_confidence, alternate_evidence = (
             _select_distinct_alternate_window_speaker(
                 session,
-                local_turn_rows=turns_by_local_speaker.get(local_speaker_key, []),
+                local_turn_rows=local_turn_rows,
                 previous_turn_rows=previous_turn_rows,
                 speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
                 recording_speakers_by_id=recording_speakers_by_id,
@@ -3154,7 +3220,24 @@ def _enforce_distinct_window_local_speaker_matches(
             )
         )
         if alternate_speaker is None:
-            continue
+            if (
+                len(turns_by_local_speaker) < 2
+                or _local_turn_total_duration_ms(local_turn_rows)
+                < ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS
+            ):
+                continue
+            alternate_speaker = _create_rolling_diarization_recording_speaker(
+                session,
+                recording_id=recording_id,
+                processing_run_id=processing_run_id,
+                local_turn_rows=local_turn_rows,
+            )
+            recording_speakers_by_id[int(alternate_speaker.id)] = alternate_speaker
+            alternate_confidence = ROLLING_DIARIZATION_CONFIDENCE_FLOOR
+            alternate_evidence = {
+                "reason": "distinct_unmatched_local_speaker_new_recording_speaker",
+                "provisional": False,
+            }
         existing_evidence = dict(match_payload.get("evidence") or {})
         existing_evidence.update(alternate_evidence)
         existing_evidence.update(
@@ -4918,7 +5001,10 @@ def resolve_assignment_target(
     new_speaker_name: str,
     global_speaker_id: int | None,
     diarization_label: str | None,
+    source_speaker: RecordingSpeaker | None = None,
+    scope: SpeakerCorrectionScope = SpeakerCorrectionScope.UTTERANCE_ONLY,
 ) -> RecordingSpeaker:
+    cleaned_name = new_speaker_name.strip()
     recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
 
     if diarization_label:
@@ -4964,17 +5050,36 @@ def resolve_assignment_target(
         session,
         recording_id=recording_id,
         recording_speakers=recording_speakers,
-        value=new_speaker_name.strip(),
+        value=cleaned_name,
         source_run_id=None,
     )
     if recording_speaker is not None:
         return recording_speaker
 
+    if (
+        source_speaker is not None
+        and source_speaker.merged_into_id is None
+        and scope in {
+            SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD,
+            SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+        }
+        and str(source_speaker.diarization_label or "").startswith("LIVE_")
+    ):
+        source_speaker.global_speaker_id = None
+        source_speaker.global_speaker = None
+        source_speaker.local_name = cleaned_name
+        source_speaker.name = None
+        source_speaker.identity_confidence = 1.0
+        source_speaker.identity_locked = True
+        ensure_recording_speaker_aliases_for_speaker(session, source_speaker)
+        session.add(source_speaker)
+        return source_speaker
+
     label = f"MANUAL_{uuid4().hex[:8]}"
     recording_speaker = RecordingSpeaker(
         recording_id=recording_id,
         diarization_label=label,
-        local_name=new_speaker_name,
+        local_name=cleaned_name,
         name=None,
         speaker_kind="manual",
     )

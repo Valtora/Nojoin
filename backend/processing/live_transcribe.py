@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -25,6 +26,12 @@ from backend.models.pipeline import (
     RecordingAudioWindowManifest,
     TranscriptUtteranceState,
 )
+from backend.processing.browser_live_audio import (
+    BROWSER_LIVE_MICROPHONE_SOURCE,
+    BROWSER_LIVE_SAMPLE_RATE_HZ,
+    BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL,
+    BROWSER_LIVE_SYSTEM_SOURCE,
+)
 from backend.processing.pipeline_metrics import (
     pipeline_metric_timer,
     record_pipeline_metric,
@@ -38,11 +45,16 @@ from backend.utils.asr_window_results import (
     start_recording_asr_window_result,
 )
 from backend.utils.audio_windows import (
+    WINDOW_DIARIZATION_STATUS_FAILED,
+    WINDOW_DIARIZATION_STATUS_PROCESSED,
+    WINDOW_DIARIZATION_STATUS_PROCESSING,
     WINDOW_STATUS_FAILED,
     WINDOW_STATUS_LIVE_PROCESSING,
     WINDOW_STATUS_LIVE_PROCESSED,
     infer_resume_state_from_manifests,
     mark_audio_windows_processed,
+    window_asr_is_processed,
+    window_diarization_status,
 )
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
@@ -66,8 +78,8 @@ TRAIL_EPS = 0.20
 DEFAULT_FORCED_MAX = 8.0
 # Absolute maximum length (seconds) of any emitted provisional live segment.
 DEFAULT_MAX_SEGMENT_S = 20.0
-# Sample rate of the live audio buffer.
-LIVE_SAMPLE_RATE = 16000
+# Sample rate of the canonical browser live-capture WAV.
+LIVE_SAMPLE_RATE = BROWSER_LIVE_SAMPLE_RATE_HZ
 # Silence threshold (ms) for the live lane. Set tight enough that natural
 # Q&A handovers (e.g. a host's question followed immediately by a guest's
 # answer with a < 500 ms pause) cleave into separate live utterances rather
@@ -80,6 +92,8 @@ LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
 LIVE_SPEAKER_MATCH_MARGIN = 0.05
 LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.62
 LIVE_SPEAKER_SOFT_MATCH_MARGIN = 0.12
+LIVE_SYSTEM_SOURCE_SOFT_MATCH_THRESHOLD = 0.67
+LIVE_SYSTEM_SOURCE_SOFT_MATCH_MARGIN = 0.16
 LIVE_NEW_SPEAKER_THRESHOLD = 0.35
 LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
 LIVE_MIN_EMBEDDING_DURATION_S = 0.5
@@ -92,10 +106,53 @@ LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S = 2.0
 LIVE_EMBEDDING_CENTER_TRIM_RATIO = 0.15
 LIVE_GLOBAL_SPEAKER_VOICEPRINT_ALPHA = 0.10
 LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
+LIVE_TAIL_RECONCILIATION_WINDOW_MS = 12_000
+LIVE_INITIAL_SEQUENCE = 0
+LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD = 0.65
+LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD = 1.5
+LIVE_SOURCE_OVERLAP_SHARE_THRESHOLD = 0.25
+LIVE_SOURCE_AUTHORITY_CLEAR = "clear"
+LIVE_SOURCE_AUTHORITY_OVERLAP = "overlap"
+LIVE_SOURCE_AUTHORITY_NONE = "none"
 
 _STATE_FILENAME = "state.json"
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
+_STATE_SOURCE_CHANNEL_LABELS_KEY = "source_channel_labels"
+_STATE_SEQUENCE_OUTCOMES_KEY = "sequence_outcomes"
+_MAX_LIVE_SEQUENCE_OUTCOMES = 200
+_LIVE_SEQUENCE_OUTCOMES = {"consumed", "skipped", "deferred", "failed"}
+
+
+@dataclass(frozen=True)
+class LiveSourceChannelEvidence:
+    dominant_source: str | None = None
+    primary_source: str | None = None
+    primary_share: float | None = None
+    secondary_share: float | None = None
+    source_overlap: bool = False
+    authority: str = LIVE_SOURCE_AUTHORITY_NONE
+    reason: str = "no_source_activity"
+    preferred_label: str | None = None
+    excluded_labels: tuple[str, ...] = ()
+    speaker_confidence: float | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "authority": self.authority,
+            "reason": self.reason,
+            "dominant_source": self.dominant_source,
+            "primary_source": self.primary_source,
+            "source_overlap": self.source_overlap,
+            "preferred_label": self.preferred_label,
+            "excluded_labels": list(self.excluded_labels),
+            "speaker_confidence": self.speaker_confidence,
+        }
+        if self.primary_share is not None:
+            payload["primary_share"] = round(float(self.primary_share), 4)
+        if self.secondary_share is not None:
+            payload["secondary_share"] = round(float(self.secondary_share), 4)
+        return payload
 
 
 def _persist_asr_window_result_best_effort(mutator) -> None:
@@ -244,10 +301,12 @@ def _analyze_live_source_channels(audio) -> dict[str, Any]:
     sorted_shares = sorted(shares, reverse=True)
     primary_share = sorted_shares[0]
     secondary_share = sorted_shares[1] if len(sorted_shares) > 1 else 0.0
-    source_name_by_channel = {0: "system", 1: "microphone"}
-    primary_source = source_name_by_channel.get(primary_channel, f"channel_{primary_channel}")
+    primary_source = BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL.get(primary_channel, f"channel_{primary_channel}")
     dominant_source = None
-    if primary_share >= 0.65 and (secondary_share <= 0.0 or primary_share / secondary_share >= 1.5):
+    if primary_share >= LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD and (
+        secondary_share <= 0.0
+        or primary_share / secondary_share >= LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD
+    ):
         dominant_source = primary_source
 
     payload.update(
@@ -259,7 +318,7 @@ def _analyze_live_source_channels(audio) -> dict[str, Any]:
             "primary_share": round(primary_share, 4),
             "secondary_share": round(secondary_share, 4),
             "dominant_source": dominant_source,
-            "source_overlap": bool(secondary_share >= 0.25),
+            "source_overlap": bool(secondary_share >= LIVE_SOURCE_OVERLAP_SHARE_THRESHOLD),
         }
     )
     return payload
@@ -271,7 +330,117 @@ def _source_channel_speaker_confidence(source_activity: dict[str, Any]) -> float
     primary_share = float(source_activity.get("primary_share") or 0.0)
     if source_activity.get("source_overlap"):
         return round(min(primary_share, 0.54), 4)
-    return round(max(primary_share, 0.65), 4)
+    return round(max(primary_share, LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD), 4)
+
+
+def _coerce_live_source_channel_evidence(
+    source_channel_evidence: LiveSourceChannelEvidence | dict[str, Any] | None,
+) -> LiveSourceChannelEvidence | None:
+    if source_channel_evidence is None:
+        return None
+    if isinstance(source_channel_evidence, LiveSourceChannelEvidence):
+        return source_channel_evidence
+    if not isinstance(source_channel_evidence, dict):
+        return None
+    return LiveSourceChannelEvidence(
+        dominant_source=source_channel_evidence.get("dominant_source"),
+        primary_source=source_channel_evidence.get("primary_source"),
+        primary_share=_coerce_float(source_channel_evidence.get("primary_share")),
+        secondary_share=_coerce_float(source_channel_evidence.get("secondary_share")),
+        source_overlap=bool(source_channel_evidence.get("source_overlap", False)),
+        authority=str(source_channel_evidence.get("authority") or LIVE_SOURCE_AUTHORITY_NONE),
+        reason=str(source_channel_evidence.get("reason") or "source_channel_payload"),
+        preferred_label=source_channel_evidence.get("preferred_label"),
+        excluded_labels=tuple(
+            str(label)
+            for label in source_channel_evidence.get("excluded_labels", [])
+            if label
+        ),
+        speaker_confidence=_coerce_float(source_channel_evidence.get("speaker_confidence")),
+    )
+
+
+def _build_live_source_channel_evidence(
+    source_activity: dict[str, Any],
+    source_channel_labels: dict[str, str],
+) -> LiveSourceChannelEvidence:
+    dominant_source = source_activity.get("dominant_source")
+    primary_source = source_activity.get("primary_source")
+    primary_share = _coerce_float(source_activity.get("primary_share"))
+    secondary_share = _coerce_float(source_activity.get("secondary_share"))
+    source_overlap = bool(source_activity.get("source_overlap", False))
+    speaker_confidence = _source_channel_speaker_confidence(source_activity)
+
+    if source_overlap:
+        return LiveSourceChannelEvidence(
+            dominant_source=dominant_source,
+            primary_source=primary_source,
+            primary_share=primary_share,
+            secondary_share=secondary_share,
+            source_overlap=True,
+            authority=LIVE_SOURCE_AUTHORITY_OVERLAP,
+            reason="overlap_reduces_source_authority",
+            speaker_confidence=speaker_confidence,
+        )
+
+    if not dominant_source:
+        return LiveSourceChannelEvidence(
+            dominant_source=None,
+            primary_source=primary_source,
+            primary_share=primary_share,
+            secondary_share=secondary_share,
+            source_overlap=False,
+            authority=LIVE_SOURCE_AUTHORITY_NONE,
+            reason="no_clear_source_dominance",
+            speaker_confidence=None,
+        )
+
+    if dominant_source == BROWSER_LIVE_MICROPHONE_SOURCE:
+        preferred_label = source_channel_labels.get(BROWSER_LIVE_MICROPHONE_SOURCE)
+        return LiveSourceChannelEvidence(
+            dominant_source=dominant_source,
+            primary_source=primary_source,
+            primary_share=primary_share,
+            secondary_share=secondary_share,
+            source_overlap=False,
+            authority=LIVE_SOURCE_AUTHORITY_CLEAR,
+            reason=(
+                "microphone_dominant_preferred_label"
+                if preferred_label
+                else "microphone_dominant_assignable"
+            ),
+            preferred_label=preferred_label,
+            speaker_confidence=speaker_confidence,
+        )
+
+    if dominant_source == BROWSER_LIVE_SYSTEM_SOURCE:
+        microphone_label = source_channel_labels.get(BROWSER_LIVE_MICROPHONE_SOURCE)
+        return LiveSourceChannelEvidence(
+            dominant_source=dominant_source,
+            primary_source=primary_source,
+            primary_share=primary_share,
+            secondary_share=secondary_share,
+            source_overlap=False,
+            authority=LIVE_SOURCE_AUTHORITY_CLEAR,
+            reason=(
+                "system_dominant_excludes_microphone"
+                if microphone_label
+                else "system_dominant_no_known_microphone"
+            ),
+            excluded_labels=(str(microphone_label),) if microphone_label else (),
+            speaker_confidence=speaker_confidence,
+        )
+
+    return LiveSourceChannelEvidence(
+        dominant_source=dominant_source,
+        primary_source=primary_source,
+        primary_share=primary_share,
+        secondary_share=secondary_share,
+        source_overlap=False,
+        authority=LIVE_SOURCE_AUTHORITY_CLEAR,
+        reason="source_dominant",
+        speaker_confidence=speaker_confidence,
+    )
 
 
 def _build_audio_window_clip(
@@ -348,9 +517,9 @@ def _select_live_rolling_diarization_manifests(
     processing_run_status_by_id = dict(processing_run_status_by_id or {})
     if not processing_run_status_by_id:
         processing_run_ids = {
-            int(row.processing_run_id)
+            int(row.diarization_processing_run_id)
             for row in manifest_rows
-            if getattr(row, "processing_run_id", None) is not None
+            if getattr(row, "diarization_processing_run_id", None) is not None
         }
         processing_run_status_by_id = _load_live_rolling_processing_run_statuses(
             session,
@@ -363,6 +532,7 @@ def _select_live_rolling_diarization_manifests(
         if row.id is not None
         and int(row.chunk_end_sequence) <= int(up_to_sequence)
         and (not bool(row.is_partial) or bool(row.is_sealed))
+        and window_asr_is_processed(row)
         and int(row.window_index) not in completed_window_indexes
         and _live_rolling_manifest_is_claimable(
             row,
@@ -378,11 +548,11 @@ def _live_rolling_manifest_is_claimable(
     *,
     processing_run_status_by_id: dict[int, str],
 ) -> bool:
-    status_value = str(getattr(manifest_row, "status", "pending") or "pending")
-    if status_value != WINDOW_STATUS_LIVE_PROCESSING:
+    status_value = window_diarization_status(manifest_row)
+    if status_value != WINDOW_DIARIZATION_STATUS_PROCESSING:
         return True
 
-    processing_run_id = getattr(manifest_row, "processing_run_id", None)
+    processing_run_id = getattr(manifest_row, "diarization_processing_run_id", None)
     if processing_run_id is None:
         return True
 
@@ -453,9 +623,9 @@ def _claim_live_rolling_diarization_manifests(
     processing_run_status_by_id = _load_live_rolling_processing_run_statuses(
         session,
         processing_run_ids={
-            int(row.processing_run_id)
+                int(row.diarization_processing_run_id)
             for row in manifest_rows
-            if getattr(row, "processing_run_id", None) is not None
+                if getattr(row, "diarization_processing_run_id", None) is not None
         },
     )
     claimed_rows = _select_live_rolling_diarization_manifests(
@@ -469,6 +639,11 @@ def _claim_live_rolling_diarization_manifests(
     )
 
     for manifest_row in claimed_rows:
+        manifest_row.diarization_status = WINDOW_DIARIZATION_STATUS_PROCESSING
+        manifest_row.diarization_processing_run_id = processing_run_id
+        manifest_row.diarization_config_hash = config_hash
+        manifest_row.diarization_window_result_id = None
+        manifest_row.diarization_last_error = None
         manifest_row.status = WINDOW_STATUS_LIVE_PROCESSING
         manifest_row.processing_run_id = processing_run_id
         manifest_row.last_error = None
@@ -655,6 +830,7 @@ def _run_live_rolling_diarization_pass(
                             recording_speakers=recording_speakers,
                             global_speakers=global_speakers,
                             window_start_ms=int(manifest_row.window_start_ms),
+                            enable_embedding_matching=False,
                         )
                         metric["payload"]["speaker_count"] = len(speaker_metadata_by_key)
 
@@ -671,19 +847,33 @@ def _run_live_rolling_diarization_pass(
                     speaker_metadata_by_key=speaker_metadata_by_key,
                 )
                 if error_message is None:
+                    manifest_row.diarization_status = WINDOW_DIARIZATION_STATUS_PROCESSED
+                    manifest_row.diarization_processing_run_id = rolling_run.id
+                    manifest_row.diarization_config_hash = config_hash
+                    manifest_row.diarization_window_result_id = window_result.id
+                    manifest_row.diarization_last_error = None
                     manifest_row.status = WINDOW_STATUS_LIVE_PROCESSED
                     manifest_row.last_error = None
+                    tail_effective_from_ms = max(
+                        int(window_result.window_start_ms),
+                        int(window_result.window_end_ms) - LIVE_TAIL_RECONCILIATION_WINDOW_MS,
+                    )
                     reconciliation_summary = reconcile_diarization_window_result(
                         session,
                         recording_id=recording_id,
                         window_result_id=window_result.id,
                         processing_run_id=rolling_run.id,
+                        source="rolling_diarization_live_tail",
+                        effective_from_ms=tail_effective_from_ms,
+                        allow_speaker_reassignment=True,
                     )
                     summary["matched_turn_count"] += reconciliation_summary["matched_turn_count"]
                     summary["updated_utterance_count"] += reconciliation_summary["updated_utterance_count"]
                     summary["preserved_manual_lock_count"] += reconciliation_summary[
                         "preserved_manual_lock_count"
                     ]
+                    metric["payload"]["tail_effective_from_ms"] = tail_effective_from_ms
+                    metric["payload"]["reconciliation_mode"] = "speaker_reassignment_tail"
                     metric["payload"]["matched_turn_count"] = reconciliation_summary[
                         "matched_turn_count"
                     ]
@@ -693,25 +883,14 @@ def _run_live_rolling_diarization_pass(
                     metric["payload"]["preserved_manual_lock_count"] = reconciliation_summary[
                         "preserved_manual_lock_count"
                     ]
-                    voiceprint_summary = _apply_live_voiceprint_learning(
-                        session=session,
-                        recording_id=recording_id,
-                        window_result=window_result,
-                        speaker_embeddings_by_key=speaker_embeddings_by_key,
-                    )
-                    summary["voiceprint_update_count"] += voiceprint_summary[
-                        "recording_speaker_update_count"
-                    ]
-                    summary["global_voiceprint_update_count"] += voiceprint_summary[
-                        "global_speaker_update_count"
-                    ]
-                    metric["payload"]["voiceprint_update_count"] = voiceprint_summary[
-                        "recording_speaker_update_count"
-                    ]
-                    metric["payload"]["global_voiceprint_update_count"] = voiceprint_summary[
-                        "global_speaker_update_count"
-                    ]
+                    metric["payload"]["voiceprint_update_count"] = 0
+                    metric["payload"]["global_voiceprint_update_count"] = 0
                 else:
+                    manifest_row.diarization_status = WINDOW_DIARIZATION_STATUS_FAILED
+                    manifest_row.diarization_processing_run_id = rolling_run.id
+                    manifest_row.diarization_config_hash = config_hash
+                    manifest_row.diarization_window_result_id = window_result.id
+                    manifest_row.diarization_last_error = error_message
                     manifest_row.status = WINDOW_STATUS_FAILED
                     manifest_row.last_error = error_message
                 manifest_row.processing_run_id = rolling_run.id
@@ -752,31 +931,184 @@ def _run_live_rolling_diarization_pass(
         session.close()
 
 
+def _default_live_state() -> dict:
+    return {
+        "next_expected": LIVE_INITIAL_SEQUENCE,
+        "buffer_abs_start": 0.0,
+        "last_speaker_label": None,
+        _STATE_SOURCE_CHANNEL_LABELS_KEY: {},
+        _STATE_SEQUENCE_OUTCOMES_KEY: {},
+    }
+
+
+def _sanitize_source_channel_labels(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    labels: dict[str, str] = {}
+    for key, label in value.items():
+        source_name = str(key or "").strip()
+        speaker_label = str(label or "").strip()
+        if source_name and speaker_label:
+            labels[source_name] = speaker_label
+    return labels
+
+
+def _sanitize_sequence_outcomes(value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+
+    outcomes: dict[str, dict[str, Any]] = {}
+    for raw_sequence, raw_payload in value.items():
+        try:
+            sequence = int(raw_sequence)
+        except (TypeError, ValueError):
+            continue
+        if sequence < LIVE_INITIAL_SEQUENCE or not isinstance(raw_payload, dict):
+            continue
+        outcome = str(raw_payload.get("outcome") or "").strip()
+        if outcome not in _LIVE_SEQUENCE_OUTCOMES:
+            continue
+        payload: dict[str, Any] = {"outcome": outcome}
+        reason = str(raw_payload.get("reason") or "").strip()
+        if reason:
+            payload["reason"] = reason
+        run = raw_payload.get("run")
+        if isinstance(run, list):
+            cleaned_run = []
+            for item in run:
+                try:
+                    cleaned_run.append(int(item))
+                except (TypeError, ValueError):
+                    continue
+            if cleaned_run:
+                payload["run"] = cleaned_run
+        error = str(raw_payload.get("error") or "").strip()
+        if error:
+            payload["error"] = error[:500]
+        outcomes[str(sequence)] = payload
+
+    if len(outcomes) <= _MAX_LIVE_SEQUENCE_OUTCOMES:
+        return outcomes
+
+    ordered_keys = sorted(outcomes, key=lambda key: int(key))[-_MAX_LIVE_SEQUENCE_OUTCOMES:]
+    return {key: outcomes[key] for key in ordered_keys}
+
+
+def _normalize_live_state(raw_state: dict | None) -> dict:
+    default = _default_live_state()
+    if not isinstance(raw_state, dict):
+        return default
+
+    try:
+        next_expected = int(raw_state.get("next_expected", LIVE_INITIAL_SEQUENCE))
+    except (TypeError, ValueError):
+        next_expected = LIVE_INITIAL_SEQUENCE
+    try:
+        buffer_abs_start = float(raw_state.get("buffer_abs_start", 0.0))
+    except (TypeError, ValueError):
+        buffer_abs_start = 0.0
+
+    default.update(
+        {
+            "next_expected": max(LIVE_INITIAL_SEQUENCE, next_expected),
+            "buffer_abs_start": max(0.0, buffer_abs_start),
+            "last_speaker_label": raw_state.get("last_speaker_label") or None,
+            _STATE_SOURCE_CHANNEL_LABELS_KEY: _sanitize_source_channel_labels(
+                raw_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY)
+            ),
+            _STATE_SEQUENCE_OUTCOMES_KEY: _sanitize_sequence_outcomes(
+                raw_state.get(_STATE_SEQUENCE_OUTCOMES_KEY)
+            ),
+        }
+    )
+    return default
+
+
+def _record_live_sequence_outcome(
+    state: dict,
+    *,
+    sequence: int,
+    outcome: str,
+    reason: str,
+    run: list[int] | None = None,
+    error: str | None = None,
+) -> None:
+    if outcome not in _LIVE_SEQUENCE_OUTCOMES:
+        return
+    outcomes = _sanitize_sequence_outcomes(state.get(_STATE_SEQUENCE_OUTCOMES_KEY))
+    payload: dict[str, Any] = {"outcome": outcome, "reason": reason}
+    if run:
+        payload["run"] = [int(item) for item in run]
+    if error:
+        payload["error"] = str(error).strip()[:500]
+    outcomes[str(int(sequence))] = payload
+    state[_STATE_SEQUENCE_OUTCOMES_KEY] = _sanitize_sequence_outcomes(outcomes)
+
+
+def _record_live_sequence_outcome_metric(
+    *,
+    recording_id: int,
+    sequence: int,
+    outcome: str,
+    reason: str,
+    run: list[int] | None = None,
+    extra_payload: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "sequence": int(sequence),
+        "outcome": outcome,
+        "reason": reason,
+        "is_first_sequence": int(sequence) == LIVE_INITIAL_SEQUENCE,
+    }
+    if run:
+        payload["run"] = [int(item) for item in run]
+    if extra_payload:
+        payload.update(extra_payload)
+    record_pipeline_metric(
+        stage="live_sequence_outcome",
+        recording_id=recording_id,
+        payload=payload,
+        status="error" if outcome == "failed" else outcome,
+        log=logger,
+    )
+
+
+def _write_live_state_best_effort(live_dir, state: dict) -> None:
+    try:
+        write_live_state(live_dir, state)
+    except OSError:
+        logger.warning("Failed to persist live state", exc_info=True)
+
+
 def read_live_state(live_dir) -> dict:
     """Read the live lane state, returning defaults when absent or unreadable."""
     state_path = os.path.join(str(live_dir), _STATE_FILENAME)
-    default = {"next_expected": 1, "buffer_abs_start": 0.0, "last_speaker_label": None}
     try:
         with open(state_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return {
-            "next_expected": int(data.get("next_expected", 1)),
-            "buffer_abs_start": float(data.get("buffer_abs_start", 0.0)),
-            "last_speaker_label": data.get("last_speaker_label"),
-        }
-    except (FileNotFoundError, ValueError, OSError):
-        return default
+        return _normalize_live_state(data)
+    except (FileNotFoundError, TypeError, ValueError, OSError):
+        return _default_live_state()
 
 
 def write_live_state(live_dir, state: dict) -> None:
     """Persist the live lane state to disk."""
     state_path = os.path.join(str(live_dir), _STATE_FILENAME)
+    normalized_state = _normalize_live_state(state)
     state_payload = {
-        "next_expected": int(state["next_expected"]),
-        "buffer_abs_start": float(state["buffer_abs_start"]),
+        "next_expected": int(normalized_state["next_expected"]),
+        "buffer_abs_start": float(normalized_state["buffer_abs_start"]),
     }
-    if state.get("last_speaker_label"):
-        state_payload["last_speaker_label"] = state["last_speaker_label"]
+    if normalized_state.get("last_speaker_label"):
+        state_payload["last_speaker_label"] = normalized_state["last_speaker_label"]
+    if normalized_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY):
+        state_payload[_STATE_SOURCE_CHANNEL_LABELS_KEY] = normalized_state[
+            _STATE_SOURCE_CHANNEL_LABELS_KEY
+        ]
+    if normalized_state.get(_STATE_SEQUENCE_OUTCOMES_KEY):
+        state_payload[_STATE_SEQUENCE_OUTCOMES_KEY] = normalized_state[
+            _STATE_SEQUENCE_OUTCOMES_KEY
+        ]
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state_payload, f)
 
@@ -874,6 +1206,16 @@ def _get_live_speaker_label(index: int) -> str:
     return f"LIVE_{index:02d}"
 
 
+def _next_live_speaker_index(existing_speakers: list[Any]) -> int:
+    max_index = 0
+    for speaker in existing_speakers:
+        label = str(getattr(speaker, "diarization_label", "") or "")
+        match = re.fullmatch(r"LIVE_(\d+)", label)
+        if match:
+            max_index = max(max_index, int(match.group(1)))
+    return max_index + 1
+
+
 def _get_speaker_display_name(speaker: Any) -> str:
     global_speaker = getattr(speaker, "global_speaker", None)
     return (
@@ -894,12 +1236,17 @@ def _resolve_live_speaker(
     fallback_label: str | None = None,
     preferred_label: str | None = None,
     excluded_labels: list[str] | None = None,
+    source_channel_evidence: LiveSourceChannelEvidence | dict[str, Any] | None = None,
 ) -> str:
     from sqlmodel import select
 
-    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-    from backend.processing.embedding import cosine_similarity, merge_embeddings
-    from backend.processing.embedding_core import extract_embedding_for_segments
+    from backend.models.speaker import RecordingSpeaker
+
+    source_evidence = _coerce_live_source_channel_evidence(source_channel_evidence)
+    if source_evidence:
+        if preferred_label is None and source_evidence.preferred_label:
+            preferred_label = source_evidence.preferred_label
+        excluded_labels = list(excluded_labels or []) + list(source_evidence.excluded_labels)
 
     excluded_label_set = {str(label) for label in (excluded_labels or []) if label}
     if fallback_label in excluded_label_set:
@@ -918,7 +1265,6 @@ def _resolve_live_speaker(
     ]
     live_speaker_by_label = {speaker.diarization_label: speaker for speaker in live_speakers}
 
-    embedding = None
     duration = 0.0
     try:
         import soundfile as sf
@@ -928,83 +1274,37 @@ def _resolve_live_speaker(
     except Exception:
         duration = 0.0
 
-    if duration >= LIVE_MIN_EMBEDDING_DURATION_S:
-        # For utterances long enough to safely trim, extract the embedding
-        # from a centered sub-window. This avoids feeding cross-speaker
-        # audio from boundary regions into recording-speaker voiceprints
-        # when the utterance straddles a speaker change.
-        if duration >= LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S:
-            trim_ratio = LIVE_EMBEDDING_CENTER_TRIM_RATIO
-            embedding_start = max(0.0, duration * trim_ratio)
-            embedding_end = max(embedding_start + LIVE_MIN_EMBEDDING_DURATION_S, duration * (1.0 - trim_ratio))
-            embedding_end = min(embedding_end, duration)
-        else:
-            embedding_start = 0.0
-            embedding_end = duration
-        try:
-            embedding = extract_embedding_for_segments(
-                audio_path,
-                [(embedding_start, embedding_end)],
-                device_str=merged_config.get("processing_device", "auto"),
-                hf_token=merged_config.get("hf_token"),
-            )
-        except Exception as exc:
-            record_pipeline_metric(
-                stage="live_speaker_embedding_error",
-                recording_id=recording_id,
-                payload={
-                    "duration_s": round(duration, 3),
-                    "embedding_window_start_s": round(embedding_start, 3),
-                    "embedding_window_end_s": round(embedding_end, 3),
-                    "error": str(exc),
-                },
-                status="error",
-                log=logger,
-            )
-            logger.warning(
-                "Live embedding extraction failed for recording %s: %s",
-                recording_id,
-                exc,
-                exc_info=True,
-            )
-        else:
-            record_pipeline_metric(
-                stage="live_speaker_embedding_window",
-                recording_id=recording_id,
-                payload={
-                    "duration_s": round(duration, 3),
-                    "embedding_window_start_s": round(embedding_start, 3),
-                    "embedding_window_end_s": round(embedding_end, 3),
-                    "centered": bool(duration >= LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S),
-                },
-                log=logger,
-            )
-
     def _record_resolution(
         label: str,
         match_kind: str,
         *,
-        score: float | None = None,
-        second_best_score: float | None = None,
-        global_score: float | None = None,
+        extra_payload: dict[str, Any] | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "label": label,
             "match_kind": match_kind,
             "duration_s": round(duration, 3),
-            "had_embedding": bool(embedding),
+            "had_embedding": False,
             "fallback_label": fallback_label,
             "preferred_label": preferred_label,
             "excluded_labels": sorted(excluded_label_set),
             "live_speaker_count": len(live_speakers),
+            "created_new_speaker": match_kind in {"new_live_speaker", "global_embedding_new"},
+            "used_source_channel_authority": match_kind.startswith("preferred_source_channel"),
+            "source_channel_evidence": source_evidence.to_payload() if source_evidence else None,
+            "preferred_live_label_evidence": {
+                "label": preferred_label,
+                "available": bool(preferred_label),
+                "applied": match_kind.startswith("preferred_source_channel"),
+            },
+            "last_stable_speaker_evidence": {
+                "label": fallback_label,
+                "available": bool(fallback_label),
+                "applied": "fallback" in match_kind,
+            },
         }
-        if score is not None:
-            payload["score"] = round(score, 4)
-        if second_best_score is not None:
-            payload["second_best_score"] = round(second_best_score, 4)
-            payload["score_margin"] = round(float(score or 0.0) - second_best_score, 4)
-        if global_score is not None:
-            payload["global_score"] = round(global_score, 4)
+        if extra_payload:
+            payload.update(extra_payload)
         record_pipeline_metric(
             stage="live_speaker_resolved",
             recording_id=recording_id,
@@ -1013,195 +1313,39 @@ def _resolve_live_speaker(
         )
         return label
 
-    if not embedding:
-        if preferred_label and preferred_label in live_speaker_by_label:
-            return _record_resolution(preferred_label, "preferred_source_channel")
-        if fallback_label and fallback_label in live_speaker_by_label:
-            return _record_resolution(fallback_label, "fallback_last_label")
-        if len(live_speakers) == 1:
-            return _record_resolution(
-                live_speakers[0].diarization_label,
-                "single_live_speaker_fallback",
-            )
-        if live_speakers:
-            return _record_resolution(
-                live_speakers[-1].diarization_label,
-                "latest_live_speaker_fallback",
-            )
+    if preferred_label and preferred_label in live_speaker_by_label:
+        return _record_resolution(preferred_label, "preferred_source_channel")
 
-    if embedding:
-        scored_speakers = []
-        for speaker in live_speakers:
-            if not speaker.embedding:
-                continue
-            score = cosine_similarity(speaker.embedding, embedding)
-            scored_speakers.append((speaker, score))
+    if fallback_label and fallback_label in live_speaker_by_label and duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
+        return _record_resolution(fallback_label, "fallback_last_label")
 
-        scored_speakers.sort(key=lambda item: item[1], reverse=True)
-        best_speaker = scored_speakers[0][0] if scored_speakers else None
-        best_score = float(scored_speakers[0][1]) if scored_speakers else 0.0
-        second_best_score = float(scored_speakers[1][1]) if len(scored_speakers) > 1 else 0.0
-        score_margin = best_score - second_best_score
-        preferred_speaker = live_speaker_by_label.get(preferred_label or "")
+    if len(live_speakers) == 1:
+        return _record_resolution(
+            live_speakers[0].diarization_label,
+            "single_live_speaker_fallback",
+        )
 
-        if preferred_speaker:
-            if not preferred_speaker.embedding:
-                preferred_speaker.embedding = embedding
-                session.add(preferred_speaker)
-                session.flush()
-                return _record_resolution(
-                    preferred_speaker.diarization_label,
-                    "preferred_source_channel_claim_embedding",
-                )
-            preferred_score = cosine_similarity(preferred_speaker.embedding, embedding)
-            if (
-                preferred_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD
-                or best_score < LIVE_SPEAKER_MATCH_THRESHOLD
-                or score_margin < LIVE_SPEAKER_MATCH_MARGIN
-            ):
-                if preferred_score >= LIVE_SPEAKER_MATCH_THRESHOLD:
-                    preferred_speaker.embedding = merge_embeddings(
-                        preferred_speaker.embedding,
-                        embedding,
-                        alpha=0.15,
-                        drift_guard=True,
-                    )
-                    session.add(preferred_speaker)
-                    session.flush()
-                return _record_resolution(
-                    preferred_speaker.diarization_label,
-                    "preferred_source_channel",
-                    score=preferred_score,
-                    second_best_score=second_best_score if best_speaker else None,
-                )
+    if live_speakers and duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
+        return _record_resolution(
+            live_speakers[-1].diarization_label,
+            "short_pyannote_pending_latest_speaker",
+        )
 
-        if not best_speaker and fallback_label and fallback_label in live_speaker_by_label:
-            fallback_speaker = live_speaker_by_label[fallback_label]
-            fallback_speaker.embedding = embedding
-            session.add(fallback_speaker)
-            session.flush()
-            return _record_resolution(
-                fallback_speaker.diarization_label,
-                "fallback_claim_embedding",
-            )
-
-        if (
-            best_speaker
-            and best_score >= LIVE_SPEAKER_MATCH_THRESHOLD
-            and score_margin >= LIVE_SPEAKER_MATCH_MARGIN
-        ):
-            best_speaker.embedding = merge_embeddings(
-                best_speaker.embedding,
-                embedding,
-                alpha=0.25,
-                drift_guard=True,
-            )
-            session.add(best_speaker)
-            session.flush()
-            return _record_resolution(
-                best_speaker.diarization_label,
-                "local_embedding",
-                score=best_score,
-                second_best_score=second_best_score,
-            )
-
-        if (
-            best_speaker
-            and best_score >= LIVE_SPEAKER_SOFT_MATCH_THRESHOLD
-            and score_margin >= LIVE_SPEAKER_SOFT_MATCH_MARGIN
-        ):
-            return _record_resolution(
-                best_speaker.diarization_label,
-                "local_embedding_soft",
-                score=best_score,
-                second_best_score=second_best_score,
-            )
-
-        if user_id:
-            global_speakers = session.exec(
-                select(GlobalSpeaker)
-                .where(GlobalSpeaker.user_id == user_id)
-                .where(GlobalSpeaker.embedding != None)
-            ).all()
-            best_global = None
-            best_global_score = 0.0
-            for global_speaker in global_speakers:
-                score = cosine_similarity(global_speaker.embedding, embedding)
-                if score > best_global_score:
-                    best_global_score = score
-                    best_global = global_speaker
-
-            if best_global and best_global_score >= LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD:
-                linked_speaker = next(
-                    (
-                        speaker
-                        for speaker in live_speakers
-                        if speaker.global_speaker_id == best_global.id
-                    ),
-                    None,
-                )
-                if linked_speaker:
-                    linked_speaker.embedding = merge_embeddings(
-                        linked_speaker.embedding or [],
-                        embedding,
-                        alpha=0.25,
-                        drift_guard=True,
-                    )
-                    session.add(linked_speaker)
-                    session.flush()
-                    return _record_resolution(
-                        linked_speaker.diarization_label,
-                        "global_embedding_existing",
-                        global_score=best_global_score,
-                    )
-
-                next_index = len(live_speakers) + 1
-                live_speaker = RecordingSpeaker(
-                    recording_id=recording_id,
-                    diarization_label=_get_live_speaker_label(next_index),
-                    name=None,
-                    global_speaker_id=best_global.id,
-                    embedding=embedding,
-                )
-                session.add(live_speaker)
-                session.flush()
-                return _record_resolution(
-                    live_speaker.diarization_label,
-                    "global_embedding_new",
-                    global_score=best_global_score,
-                )
-
-        if live_speakers:
-            if fallback_label and fallback_label in live_speaker_by_label:
-                return _record_resolution(
-                    fallback_label,
-                    "low_confidence_fallback_label",
-                    score=best_score if best_speaker else None,
-                    second_best_score=second_best_score if best_speaker else None,
-                )
-            if duration < LIVE_MIN_NEW_SPEAKER_DURATION_S:
-                if best_speaker:
-                    return _record_resolution(
-                        best_speaker.diarization_label,
-                        "short_low_confidence_best_speaker",
-                        score=best_score,
-                        second_best_score=second_best_score,
-                    )
-                return _record_resolution(
-                    live_speakers[-1].diarization_label,
-                    "short_low_confidence_latest_speaker",
-                )
-
-    next_index = len(live_speakers) + 1
+    next_index = _next_live_speaker_index(existing_speakers)
     live_speaker = RecordingSpeaker(
         recording_id=recording_id,
         diarization_label=_get_live_speaker_label(next_index),
         name=_get_live_speaker_display_name(next_index),
-        embedding=embedding,
     )
     session.add(live_speaker)
     session.flush()
-    return _record_resolution(live_speaker.diarization_label, "new_live_speaker")
+    return _record_resolution(
+        live_speaker.diarization_label,
+        "new_live_speaker",
+        extra_payload={
+            "speaker_assignment_strategy": "pyannote_pending_reconciliation",
+        },
+    )
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -1501,6 +1645,7 @@ def _build_live_confidence_payload(
     region_start_ms: int,
     region_end_ms: int,
     source_activity: dict[str, Any] | None = None,
+    source_channel_evidence: LiveSourceChannelEvidence | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     absolute_segments: list[dict[str, Any]] = []
     has_word_timestamps = False
@@ -1536,6 +1681,9 @@ def _build_live_confidence_payload(
     }
     if source_activity:
         payload["source_channel_activity"] = source_activity
+    evidence = _coerce_live_source_channel_evidence(source_channel_evidence)
+    if evidence:
+        payload["source_channel_evidence"] = evidence.to_payload()
     return payload
 
 
@@ -1632,6 +1780,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 status="skipped",
                 log=logger,
             )
+            _record_live_sequence_outcome_metric(
+                recording_id=recording_id,
+                sequence=sequence,
+                outcome="skipped",
+                reason="not_uploading",
+                extra_payload={"status": getattr(recording, "status", None)},
+            )
             return
     finally:
         session.close()
@@ -1648,15 +1803,18 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             status="skipped",
             log=logger,
         )
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=sequence,
+            outcome="skipped",
+            reason="upload_buffer_missing",
+        )
         return
     live_dir = temp_dir / "live"
     live_dir.mkdir(parents=True, exist_ok=True)
 
     state = read_live_state(live_dir)
-    source_channel_labels = state.setdefault("source_channel_labels", {})
-    if not isinstance(source_channel_labels, dict):
-        source_channel_labels = {}
-        state["source_channel_labels"] = source_channel_labels
+    source_channel_labels = state[_STATE_SOURCE_CHANNEL_LABELS_KEY]
     session = get_sync_session()
     try:
         manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
@@ -1683,6 +1841,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     # --- Gating ---
     if sequence < next_expected:
         # Already consumed by an earlier run.
+        _record_live_sequence_outcome(
+            state,
+            sequence=sequence,
+            outcome="skipped",
+            reason="already_consumed",
+        )
+        _write_live_state_best_effort(live_dir, state)
         record_pipeline_metric(
             stage="live_sequence_skipped",
             recording_id=recording_id,
@@ -1694,9 +1859,23 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             status="skipped",
             log=logger,
         )
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=sequence,
+            outcome="skipped",
+            reason="already_consumed",
+            extra_payload={"next_expected": next_expected},
+        )
         return
     if sequence > next_expected:
         # Gap: this segment waits on disk until the run reaches it.
+        _record_live_sequence_outcome(
+            state,
+            sequence=sequence,
+            outcome="deferred",
+            reason="waiting_for_gap",
+        )
+        _write_live_state_best_effort(live_dir, state)
         record_pipeline_metric(
             stage="live_sequence_skipped",
             recording_id=recording_id,
@@ -1708,6 +1887,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             status="skipped",
             log=logger,
         )
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=sequence,
+            outcome="deferred",
+            reason="waiting_for_gap",
+            extra_payload={"next_expected": next_expected},
+        )
         return
 
     # --- Drain: contiguous run starting at next_expected ---
@@ -1718,6 +1904,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         n += 1
     if not run:
         # Defensive: the triggering segment should exist; nothing to do.
+        _record_live_sequence_outcome(
+            state,
+            sequence=sequence,
+            outcome="skipped",
+            reason="triggering_segment_missing",
+        )
+        _write_live_state_best_effort(live_dir, state)
         record_pipeline_metric(
             stage="live_sequence_skipped",
             recording_id=recording_id,
@@ -1728,6 +1921,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             },
             status="skipped",
             log=logger,
+        )
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=sequence,
+            outcome="skipped",
+            reason="triggering_segment_missing",
+            extra_payload={"next_expected": next_expected},
         )
         return
 
@@ -1854,6 +2054,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             if region.numel() == 0:
                 continue
             source_activity = _analyze_live_source_channels(region_channels)
+            source_channel_evidence = _build_live_source_channel_evidence(
+                source_activity,
+                source_channel_labels,
+            )
 
             # Prepend a rolling audio context window so the engine has run-up.
             left_context = torch.cat([prev_context, combined[:start_sample]])
@@ -1927,13 +2131,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         raise
                     metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
                 speaker_label = "UNKNOWN"
-                source_hint = source_activity.get("dominant_source")
-                preferred_label = None
-                excluded_labels = []
-                if source_hint == "microphone":
-                    preferred_label = source_channel_labels.get("microphone")
-                elif source_hint == "system" and source_channel_labels.get("microphone"):
-                    excluded_labels.append(str(source_channel_labels["microphone"]))
+                preferred_label = source_channel_evidence.preferred_label
+                excluded_labels = list(source_channel_evidence.excluded_labels)
                 session = get_sync_session()
                 try:
                     speaker_label = _resolve_live_speaker(
@@ -1945,6 +2144,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         fallback_label=state.get("last_speaker_label"),
                         preferred_label=preferred_label,
                         excluded_labels=excluded_labels,
+                        source_channel_evidence=source_channel_evidence,
                     )
                     session.commit()
                 except Exception as speaker_exc:
@@ -1960,6 +2160,21 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     )
                 finally:
                     session.close()
+
+                record_pipeline_metric(
+                    stage="live_source_channel_authority",
+                    recording_id=recording_id,
+                    payload={
+                        "sequence": sequence,
+                        "run": list(run),
+                        "region_start_ms": region_start_ms,
+                        "region_end_ms": region_end_ms,
+                        **source_channel_evidence.to_payload(),
+                        "resolved_label": speaker_label,
+                        "known_source_channel_labels": dict(source_channel_labels),
+                    },
+                    log=logger,
+                )
 
             finally:
                 if os.path.exists(clip_path):
@@ -2028,12 +2243,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     "provisional": True,
                     "segment_source": "live",
                     "speaker_state": "provisional",
-                    "speaker_confidence": _source_channel_speaker_confidence(source_activity),
+                    "speaker_confidence": source_channel_evidence.speaker_confidence,
                     "confidence_payload": _build_live_confidence_payload(
                         region_segment_payloads=region_segment_payloads,
                         region_start_ms=region_start_ms,
                         region_end_ms=region_end_ms,
                         source_activity=source_activity,
+                        source_channel_evidence=source_channel_evidence,
                     ),
                 }
             )
@@ -2054,8 +2270,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             )
             if speaker_label != "UNKNOWN":
                 state["last_speaker_label"] = speaker_label
-                if source_activity.get("dominant_source") == "microphone":
-                    source_channel_labels.setdefault("microphone", speaker_label)
+                if (
+                    source_channel_evidence.authority == LIVE_SOURCE_AUTHORITY_CLEAR
+                    and source_channel_evidence.dominant_source == BROWSER_LIVE_MICROPHONE_SOURCE
+                ):
+                    source_channel_labels.setdefault(BROWSER_LIVE_MICROPHONE_SOURCE, speaker_label)
 
         # --- Carry over the unconsumed trailing audio ---
         cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
@@ -2228,9 +2447,25 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     )
 
         # --- Advance the lane ---
+        for consumed_sequence in run:
+            _record_live_sequence_outcome(
+                state,
+                sequence=consumed_sequence,
+                outcome="consumed",
+                reason="live_run_completed",
+                run=run,
+            )
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
         write_live_state(live_dir, state)
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=sequence,
+            outcome="consumed",
+            reason="live_run_completed",
+            run=run,
+            extra_payload={"next_expected": state["next_expected"]},
+        )
         record_pipeline_metric(
             stage="live_run_completed",
             recording_id=recording_id,
@@ -2248,12 +2483,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         record_pipeline_metric(
             stage="live_run_failed",
             recording_id=recording_id,
-            payload={"sequence": sequence, "run": run, "error": str(exc)},
+            payload={
+                "sequence": sequence,
+                "run": run,
+                "error": str(exc),
+                "catch_up_recoverable": bool(run),
+            },
             status="error",
             log=logger,
         )
-        # Non-fatal: log, advance past the run, do not re-raise. The final
-        # processing pipeline re-transcribes everything from the source audio.
+        # Non-fatal: log and keep the source windows discoverable for final
+        # catch-up through their pending ASR coverage.
         logger.error(
             "Live transcription failed for recording %s run %s: %s",
             recording_id,
@@ -2277,11 +2517,27 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         error_payload={"error_type": exc.__class__.__name__},
                     )
                 )
-        # Best-effort advance: if the live dir vanished (recording finalized
-        # mid-run) there is nothing left to advance — the final pipeline owns
-        # the transcript now.
-        try:
+        if run:
+            for failed_sequence in run:
+                _record_live_sequence_outcome(
+                    state,
+                    sequence=failed_sequence,
+                    outcome="failed",
+                    reason="live_run_failed",
+                    run=run,
+                    error=str(exc),
+                )
             state["next_expected"] = run[-1] + 1
-            write_live_state(live_dir, state)
-        except OSError:
-            pass
+            _write_live_state_best_effort(live_dir, state)
+            _record_live_sequence_outcome_metric(
+                recording_id=recording_id,
+                sequence=sequence,
+                outcome="failed",
+                reason="live_run_failed",
+                run=run,
+                extra_payload={
+                    "error": str(exc),
+                    "next_expected": state["next_expected"],
+                    "catch_up_recoverable": True,
+                },
+            )

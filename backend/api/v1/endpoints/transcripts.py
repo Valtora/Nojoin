@@ -193,6 +193,7 @@ class TranscriptUtteranceRead(BaseModel):
     recording_speaker_id: Optional[int] = None
     state: str
     revision: int
+    speaker_state: Optional[str] = None
     segment_source: str
     provisional: bool = False
     speaker_manually_edited: bool = False

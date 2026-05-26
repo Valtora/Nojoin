@@ -15,9 +15,24 @@ WINDOW_STATUS_LIVE_PROCESSED = "live_processed"
 WINDOW_STATUS_CATCH_UP_PROCESSED = "catch_up_processed"
 WINDOW_STATUS_FAILED = "failed"
 
+WINDOW_ASR_STATUS_PENDING = WINDOW_STATUS_PENDING
+WINDOW_ASR_STATUS_LIVE_PROCESSED = WINDOW_STATUS_LIVE_PROCESSED
+WINDOW_ASR_STATUS_CATCH_UP_PROCESSED = WINDOW_STATUS_CATCH_UP_PROCESSED
+WINDOW_ASR_STATUS_FAILED = WINDOW_STATUS_FAILED
+
+WINDOW_DIARIZATION_STATUS_PENDING = "pending"
+WINDOW_DIARIZATION_STATUS_PROCESSING = "processing"
+WINDOW_DIARIZATION_STATUS_PROCESSED = "processed"
+WINDOW_DIARIZATION_STATUS_FAILED = "failed"
+
 PROCESSED_WINDOW_STATUSES = {
     WINDOW_STATUS_LIVE_PROCESSED,
     WINDOW_STATUS_CATCH_UP_PROCESSED,
+}
+
+PROCESSED_ASR_WINDOW_STATUSES = {
+    WINDOW_ASR_STATUS_LIVE_PROCESSED,
+    WINDOW_ASR_STATUS_CATCH_UP_PROCESSED,
 }
 
 
@@ -138,6 +153,8 @@ def apply_audio_window_specs(
                 chunk_start_sequence=spec.chunk_start_sequence,
                 chunk_end_sequence=spec.chunk_end_sequence,
                 status=WINDOW_STATUS_PENDING,
+                asr_status=WINDOW_ASR_STATUS_PENDING,
+                diarization_status=WINDOW_DIARIZATION_STATUS_PENDING,
                 is_partial=spec.is_partial,
                 is_sealed=spec.is_sealed,
             )
@@ -158,6 +175,14 @@ def apply_audio_window_specs(
             row.status = WINDOW_STATUS_PENDING
             row.processing_run_id = None
             row.last_error = None
+            row.asr_status = WINDOW_ASR_STATUS_PENDING
+            row.asr_processing_run_id = None
+            row.asr_last_error = None
+            row.diarization_status = WINDOW_DIARIZATION_STATUS_PENDING
+            row.diarization_processing_run_id = None
+            row.diarization_config_hash = None
+            row.diarization_window_result_id = None
+            row.diarization_last_error = None
         applied_rows.append(row)
 
     return applied_rows
@@ -184,9 +209,15 @@ def mark_audio_windows_processed(
             matches = True
         if not matches:
             continue
-        row.status = status
-        row.processing_run_id = processing_run_id
-        row.last_error = None
+        if status in PROCESSED_ASR_WINDOW_STATUSES:
+            row.asr_status = status
+            row.asr_processing_run_id = processing_run_id
+            row.asr_last_error = None
+        _project_legacy_status_after_asr_update(
+            row,
+            asr_status=status,
+            processing_run_id=processing_run_id,
+        )
         updated_rows.append(row)
 
     return updated_rows
@@ -198,7 +229,7 @@ def infer_resume_state_from_manifests(
     processed_rows = [
         row
         for row in manifest_rows
-        if str(row.status or "") == WINDOW_STATUS_LIVE_PROCESSED
+        if _get_asr_status(row) in PROCESSED_ASR_WINDOW_STATUSES
     ]
     if not processed_rows:
         return None
@@ -221,7 +252,7 @@ def collect_pending_chunk_spans(
     pending_ranges = [
         (int(row.chunk_start_sequence), int(row.chunk_end_sequence))
         for row in manifest_rows
-        if str(row.status or "") not in PROCESSED_WINDOW_STATUSES
+        if _get_asr_status(row) not in PROCESSED_ASR_WINDOW_STATUSES
     ]
     if not pending_ranges:
         return []
@@ -253,6 +284,69 @@ def count_manifest_statuses(
         status = str(row.status or WINDOW_STATUS_PENDING)
         counts[status] = counts.get(status, 0) + 1
     return counts
+
+
+def _get_asr_status(row: Any) -> str:
+    asr_status = getattr(row, "asr_status", None)
+    if asr_status:
+        return str(asr_status)
+
+    legacy_status = str(getattr(row, "status", "") or "")
+    if legacy_status in PROCESSED_ASR_WINDOW_STATUSES:
+        return legacy_status
+    return WINDOW_ASR_STATUS_PENDING
+
+
+def _get_diarization_status(row: Any) -> str:
+    diarization_status = getattr(row, "diarization_status", None)
+    if diarization_status:
+        return str(diarization_status)
+
+    legacy_status = str(getattr(row, "status", "") or "")
+    if legacy_status == WINDOW_STATUS_LIVE_PROCESSING:
+        return WINDOW_DIARIZATION_STATUS_PROCESSING
+    if legacy_status == WINDOW_STATUS_FAILED:
+        return WINDOW_DIARIZATION_STATUS_FAILED
+    return WINDOW_DIARIZATION_STATUS_PENDING
+
+
+def _project_legacy_status_after_asr_update(
+    row: Any,
+    *,
+    asr_status: str,
+    processing_run_id: int | None,
+) -> None:
+    diarization_status = _get_diarization_status(row)
+    if diarization_status == WINDOW_DIARIZATION_STATUS_PROCESSING:
+        row.status = WINDOW_STATUS_LIVE_PROCESSING
+        row.processing_run_id = getattr(row, "diarization_processing_run_id", None)
+        row.last_error = None
+        return
+    if diarization_status == WINDOW_DIARIZATION_STATUS_FAILED:
+        row.status = WINDOW_STATUS_FAILED
+        row.processing_run_id = getattr(row, "diarization_processing_run_id", None)
+        row.last_error = getattr(row, "diarization_last_error", None)
+        return
+
+    row.status = asr_status
+    row.processing_run_id = processing_run_id
+    row.last_error = None
+
+
+def window_asr_is_processed(row: Any) -> bool:
+    return _get_asr_status(row) in PROCESSED_ASR_WINDOW_STATUSES
+
+
+def window_diarization_status(row: Any) -> str:
+    return _get_diarization_status(row)
+
+
+def window_diarization_is_processed(row: Any, *, config_hash: str | None = None) -> bool:
+    if _get_diarization_status(row) != WINDOW_DIARIZATION_STATUS_PROCESSED:
+        return False
+    if config_hash is None:
+        return True
+    return str(getattr(row, "diarization_config_hash", "") or "") == str(config_hash)
 
 
 def _group_contiguous_chunks(chunk_rows: Sequence[Any]) -> list[list[Any]]:

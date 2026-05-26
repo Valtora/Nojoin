@@ -87,6 +87,7 @@ Use **Settings > Updates** to see:
 
 - Back up the installation before upgrading.
 - Review release notes for browser capture, auth, and upload lifecycle changes.
+- After live-pipeline upgrades, use the recording page's collapsed processing details to compare live ASR coverage with speaker-window coverage before treating a meeting as stuck.
 - For remote deployments, configure a trusted public origin with `WEB_APP_URL`.
 - Treat backup archives as sensitive material.
 
@@ -99,6 +100,8 @@ Use **Settings > Updates** to see:
 - If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.
 - If a user has a paused recording, they must resume or discard it before starting another capture.
 - Review backend and worker logs for segment upload, transcode, live transcription, finalize, or discard failures.
+- Browser-live segment numbering starts at `0`; upload or finalize support cases should confirm the sequence is contiguous.
+- The worker keeps browser-live audio as 16 kHz, two-channel WAV after transcode. Channel 0 is shared/system audio and channel 1 is microphone audio.
 
 Paused recordings are retained indefinitely and are not cleaned up automatically. This protects uploaded meeting data and prevents overlapping segment streams for the same user.
 

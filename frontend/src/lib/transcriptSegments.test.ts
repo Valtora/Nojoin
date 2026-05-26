@@ -27,6 +27,14 @@ describe("transcriptSegments", () => {
         speaker_confidence: 0.91,
         text_confidence: 0.84,
         updated_at: "2026-05-21T10:00:00Z",
+        speaker_state_source: "source_channel",
+        live_source_speaker: "LIVE_01",
+        live_source_speakers: ["LIVE_01", "LIVE_02"],
+        source_public_ids: ["utt-live-1"],
+        live_reuse_alignment: {
+          status: "matched",
+          matched_live_utterance_ids: ["utt-live-1"],
+        },
       }),
     ).toEqual({
       id: "utt-1",
@@ -46,6 +54,14 @@ describe("transcriptSegments", () => {
       speaker_confidence: 0.91,
       text_confidence: 0.84,
       updated_at: "2026-05-21T10:00:00Z",
+      speaker_state_source: "source_channel",
+      live_source_speaker: "LIVE_01",
+      live_source_speakers: ["LIVE_01", "LIVE_02"],
+      source_public_ids: ["utt-live-1"],
+      live_reuse_alignment: {
+        status: "matched",
+        matched_live_utterance_ids: ["utt-live-1"],
+      },
     });
   });
 
@@ -109,6 +125,11 @@ describe("transcriptSegments", () => {
         speaker_confidence: undefined,
         text_confidence: undefined,
         updated_at: undefined,
+        speaker_state_source: undefined,
+        live_source_speaker: undefined,
+        live_source_speakers: undefined,
+        source_public_ids: undefined,
+        live_reuse_alignment: undefined,
       },
       {
         id: "utt-3",
@@ -128,6 +149,11 @@ describe("transcriptSegments", () => {
         speaker_confidence: undefined,
         text_confidence: undefined,
         updated_at: undefined,
+        speaker_state_source: undefined,
+        live_source_speaker: undefined,
+        live_source_speakers: undefined,
+        source_public_ids: undefined,
+        live_reuse_alignment: undefined,
       },
     ]);
   });

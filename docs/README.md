@@ -19,6 +19,7 @@ Use the links below by task rather than treating the root README as the source o
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and browser capture work.
+- [LIVE_PIPELINE_OVERHAUL.md](LIVE_PIPELINE_OVERHAUL.md): Tracking plan and implementation record for the browser live transcription and diarization overhaul.
 
 ## Policies and Project References
 

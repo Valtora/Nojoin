@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 from pathlib import Path
 import wave
 
@@ -214,6 +215,14 @@ CREATE TABLE recording_audio_window_manifests (
     chunk_start_sequence INTEGER NOT NULL,
     chunk_end_sequence INTEGER NOT NULL,
     status VARCHAR(32) NOT NULL,
+    asr_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    asr_processing_run_id INTEGER,
+    asr_last_error TEXT,
+    diarization_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    diarization_processing_run_id INTEGER,
+    diarization_config_hash VARCHAR(255),
+    diarization_window_result_id INTEGER,
+    diarization_last_error TEXT,
     is_partial BOOLEAN NOT NULL,
     is_sealed BOOLEAN NOT NULL,
     processing_run_id INTEGER,
@@ -762,6 +771,116 @@ def test_live_state_preserves_last_speaker_label(tmp_path):
     assert state["last_speaker_label"] == "LIVE_02"
 
 
+def test_live_state_persists_source_channel_labels_and_sequence_outcomes(tmp_path):
+    """Source-channel labels and live sequence outcomes survive state round trip."""
+    from backend.processing.live_transcribe import read_live_state, write_live_state
+
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+
+    write_live_state(
+        live_dir,
+        {
+            "next_expected": 4,
+            "buffer_abs_start": 6.25,
+            "source_channel_labels": {
+                "microphone": "LIVE_01",
+                "system": "LIVE_02",
+                "ignored": "",
+            },
+            "sequence_outcomes": {
+                "2": {"outcome": "consumed", "reason": "live_run_completed", "run": [2, 3]},
+                "3": {"outcome": "failed", "reason": "live_run_failed", "error": "boom"},
+                "bad": {"outcome": "consumed"},
+            },
+        },
+    )
+
+    state = read_live_state(live_dir)
+
+    assert state["source_channel_labels"] == {
+        "microphone": "LIVE_01",
+        "system": "LIVE_02",
+    }
+    assert state["sequence_outcomes"] == {
+        "2": {"outcome": "consumed", "reason": "live_run_completed", "run": [2, 3]},
+        "3": {"outcome": "failed", "reason": "live_run_failed", "error": "boom"},
+    }
+
+
+def test_live_state_defaults_to_sequence_zero(tmp_path):
+    """A new browser live lane consumes the first uploaded segment, sequence 0."""
+    from backend.processing import live_transcribe as lt
+
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+
+    assert lt.read_live_state(live_dir)["next_expected"] == 0
+
+    (live_dir / lt._STATE_FILENAME).write_text(
+        json.dumps({"buffer_abs_start": 2.5}),
+        encoding="utf-8",
+    )
+
+    state = lt.read_live_state(live_dir)
+
+    assert state["next_expected"] == 0
+    assert state["buffer_abs_start"] == 2.5
+    assert state["source_channel_labels"] == {}
+    assert state["sequence_outcomes"] == {}
+
+
+def test_live_state_corrupt_file_falls_back_to_sequence_zero(tmp_path):
+    from backend.processing import live_transcribe as lt
+
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+    (live_dir / lt._STATE_FILENAME).write_text("{not-json", encoding="utf-8")
+
+    state = lt.read_live_state(live_dir)
+
+    assert state["next_expected"] == 0
+    assert state["buffer_abs_start"] == 0.0
+    assert state["source_channel_labels"] == {}
+    assert state["sequence_outcomes"] == {}
+
+
+def test_analyze_live_source_channels_detects_browser_channel_dominance():
+    import torch
+
+    from backend.processing.browser_live_audio import (
+        BROWSER_LIVE_CHANNEL_COUNT,
+        BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX,
+        BROWSER_LIVE_MICROPHONE_SOURCE,
+        BROWSER_LIVE_SYSTEM_CHANNEL_INDEX,
+        BROWSER_LIVE_SYSTEM_SOURCE,
+    )
+    from backend.processing.live_transcribe import _analyze_live_source_channels
+
+    audio = torch.zeros((BROWSER_LIVE_CHANNEL_COUNT, 1600))
+    audio[BROWSER_LIVE_SYSTEM_CHANNEL_INDEX].fill_(0.1)
+    audio[BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX].fill_(0.8)
+
+    microphone_activity = _analyze_live_source_channels(audio)
+
+    assert microphone_activity["channel_count"] == BROWSER_LIVE_CHANNEL_COUNT
+    assert microphone_activity["primary_channel"] == BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX
+    assert microphone_activity["primary_source"] == BROWSER_LIVE_MICROPHONE_SOURCE
+    assert microphone_activity["dominant_source"] == BROWSER_LIVE_MICROPHONE_SOURCE
+    assert microphone_activity["source_overlap"] is False
+
+    audio[BROWSER_LIVE_SYSTEM_CHANNEL_INDEX].fill_(0.9)
+    audio[BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX].fill_(0.1)
+
+    system_activity = _analyze_live_source_channels(audio)
+
+    assert system_activity["channel_count"] == BROWSER_LIVE_CHANNEL_COUNT
+    assert system_activity["primary_channel"] == BROWSER_LIVE_SYSTEM_CHANNEL_INDEX
+    assert system_activity["primary_source"] == BROWSER_LIVE_SYSTEM_SOURCE
+    assert system_activity["dominant_source"] == BROWSER_LIVE_SYSTEM_SOURCE
+    assert system_activity["source_overlap"] is False
+
+
 def test_build_audio_window_specs_tracks_overlap_independent_of_chunk_cadence():
     from types import SimpleNamespace
 
@@ -805,7 +924,14 @@ def test_collect_pending_chunk_spans_merges_overlapping_pending_windows():
     manifest_rows = [
         SimpleNamespace(id=1, chunk_start_sequence=1, chunk_end_sequence=2, status="live_processed"),
         SimpleNamespace(id=2, chunk_start_sequence=2, chunk_end_sequence=3, status="pending"),
-        SimpleNamespace(id=3, chunk_start_sequence=3, chunk_end_sequence=3, status="pending"),
+        SimpleNamespace(
+            id=3,
+            chunk_start_sequence=3,
+            chunk_end_sequence=3,
+            status="failed",
+            asr_status="live_processed",
+            diarization_status="failed",
+        ),
     ]
 
     spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
@@ -813,6 +939,69 @@ def test_collect_pending_chunk_spans_merges_overlapping_pending_windows():
     assert spans == [
         CatchUpChunkSpan(start_sequence=2, end_sequence=3, start_ms=1000, end_ms=3000)
     ]
+
+
+def test_build_recording_pipeline_state_separates_asr_and_diarization_visibility():
+    from types import SimpleNamespace
+
+    from backend.api.v1.endpoints.recordings import _build_recording_pipeline_state
+
+    pipeline_state = _build_recording_pipeline_state(
+        [
+            SimpleNamespace(
+                chunk_start_sequence=0,
+                chunk_end_sequence=1,
+                is_partial=False,
+                is_sealed=True,
+                status="live_processed",
+                asr_status="live_processed",
+                diarization_status="processed",
+            ),
+            SimpleNamespace(
+                chunk_start_sequence=1,
+                chunk_end_sequence=2,
+                is_partial=False,
+                is_sealed=False,
+                status="catch_up_processed",
+                asr_status="catch_up_processed",
+                diarization_status="pending",
+            ),
+            SimpleNamespace(
+                chunk_start_sequence=2,
+                chunk_end_sequence=3,
+                is_partial=True,
+                is_sealed=False,
+                status="failed",
+                asr_status="failed",
+                diarization_status="failed",
+            ),
+            SimpleNamespace(
+                chunk_start_sequence=3,
+                chunk_end_sequence=4,
+                is_partial=True,
+                is_sealed=False,
+                status="live_processing",
+                asr_status="pending",
+                diarization_status="processing",
+            ),
+        ],
+        transcript_revision=12,
+    )
+
+    assert pipeline_state.transcript_revision == 12
+    assert pipeline_state.total_window_count == 4
+    assert pipeline_state.sealed_window_count == 1
+    assert pipeline_state.partial_window_count == 2
+    assert pipeline_state.first_sequence == 0
+    assert pipeline_state.latest_sequence == 4
+    assert pipeline_state.asr.processed_windows == 2
+    assert pipeline_state.asr.failed_windows == 1
+    assert pipeline_state.asr.pending_windows == 1
+    assert pipeline_state.asr.coverage_ratio == 0.5
+    assert pipeline_state.diarization.processed_windows == 1
+    assert pipeline_state.diarization.processing_windows == 1
+    assert pipeline_state.diarization.failed_windows == 1
+    assert pipeline_state.diarization.pending_windows == 1
 
 
 def test_infer_resume_state_from_manifest_rows():
@@ -823,7 +1012,13 @@ def test_infer_resume_state_from_manifest_rows():
     resumed_state = infer_resume_state_from_manifests(
         [
             SimpleNamespace(chunk_end_sequence=2, window_end_ms=3000, status="pending"),
-            SimpleNamespace(chunk_end_sequence=4, window_end_ms=5500, status="live_processed"),
+            SimpleNamespace(
+                chunk_end_sequence=4,
+                window_end_ms=5500,
+                status="failed",
+                asr_status="live_processed",
+                diarization_status="failed",
+            ),
         ]
     )
 
@@ -838,10 +1033,10 @@ def test_select_live_rolling_diarization_manifests_skips_completed_windows_and_u
     from backend.processing.live_transcribe import _select_live_rolling_diarization_manifests
 
     manifest_rows = [
-        SimpleNamespace(id=1, window_index=0, chunk_end_sequence=4, is_partial=False, is_sealed=False),
-        SimpleNamespace(id=2, window_index=1, chunk_end_sequence=5, is_partial=False, is_sealed=False),
-        SimpleNamespace(id=3, window_index=2, chunk_end_sequence=6, is_partial=True, is_sealed=False),
-        SimpleNamespace(id=4, window_index=3, chunk_end_sequence=6, is_partial=True, is_sealed=True),
+        SimpleNamespace(id=1, window_index=0, chunk_end_sequence=4, is_partial=False, is_sealed=False, asr_status="live_processed"),
+        SimpleNamespace(id=2, window_index=1, chunk_end_sequence=5, is_partial=False, is_sealed=False, asr_status="live_processed"),
+        SimpleNamespace(id=3, window_index=2, chunk_end_sequence=6, is_partial=True, is_sealed=False, asr_status="live_processed"),
+        SimpleNamespace(id=4, window_index=3, chunk_end_sequence=6, is_partial=True, is_sealed=True, asr_status="live_processed"),
     ]
 
     class _ExecResult:
@@ -883,6 +1078,9 @@ def test_select_live_rolling_diarization_manifests_skips_active_claims_and_recla
             is_partial=False,
             is_sealed=False,
             status="live_processing",
+            asr_status="live_processed",
+            diarization_status="processing",
+            diarization_processing_run_id=11,
             processing_run_id=11,
         ),
         SimpleNamespace(
@@ -892,6 +1090,9 @@ def test_select_live_rolling_diarization_manifests_skips_active_claims_and_recla
             is_partial=False,
             is_sealed=False,
             status="live_processing",
+            asr_status="live_processed",
+            diarization_status="processing",
+            diarization_processing_run_id=12,
             processing_run_id=12,
         ),
         SimpleNamespace(
@@ -901,6 +1102,9 @@ def test_select_live_rolling_diarization_manifests_skips_active_claims_and_recla
             is_partial=False,
             is_sealed=False,
             status="failed",
+            asr_status="live_processed",
+            diarization_status="failed",
+            diarization_processing_run_id=None,
             processing_run_id=None,
         ),
     ]
@@ -986,6 +1190,9 @@ def test_claim_live_rolling_diarization_manifests_marks_rows_in_flight(monkeypat
             is_partial=False,
             is_sealed=False,
             status="pending",
+            asr_status="live_processed",
+            diarization_status="pending",
+            diarization_processing_run_id=None,
             processing_run_id=None,
             last_error="old",
         ),
@@ -996,6 +1203,9 @@ def test_claim_live_rolling_diarization_manifests_marks_rows_in_flight(monkeypat
             is_partial=False,
             is_sealed=False,
             status="pending",
+            asr_status="live_processed",
+            diarization_status="pending",
+            diarization_processing_run_id=None,
             processing_run_id=None,
             last_error=None,
         ),
@@ -1034,7 +1244,83 @@ def test_claim_live_rolling_diarization_manifests_marks_rows_in_flight(monkeypat
     assert manifest_rows[0].status == "live_processing"
     assert manifest_rows[0].processing_run_id == 77
     assert manifest_rows[0].last_error is None
+    assert manifest_rows[0].diarization_status == "processing"
+    assert manifest_rows[0].diarization_processing_run_id == 77
+    assert manifest_rows[0].diarization_config_hash == "rolling-cfg-1"
     assert manifest_rows[1].status == "pending"
+
+
+def test_catch_up_diarization_marks_diarization_lane_without_changing_asr(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.worker import tasks as worker_tasks
+
+    manifest_rows = [
+        SimpleNamespace(
+            id=10,
+            recording_id=1,
+            window_index=0,
+            window_start_ms=0,
+            window_end_ms=20_000,
+            chunk_start_sequence=0,
+            chunk_end_sequence=2,
+            status="live_processed",
+            asr_status="live_processed",
+            asr_processing_run_id=41,
+            asr_last_error=None,
+            diarization_status="pending",
+            diarization_processing_run_id=None,
+            diarization_config_hash=None,
+            diarization_window_result_id=None,
+            diarization_last_error=None,
+        )
+    ]
+
+    class _ExecResult:
+        def all(self):
+            return []
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *args, **kwargs):
+            return _ExecResult()
+
+        def add(self, row):
+            self.added.append(row)
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_recording_audio_window_manifests",
+        lambda session, recording_id: manifest_rows,
+    )
+    monkeypatch.setattr(
+        worker_tasks,
+        "_persist_catch_up_diarization_window",
+        lambda *args, **kwargs: SimpleNamespace(id=99),
+    )
+
+    completed_ids, failed_ids = worker_tasks._run_catch_up_diarization_windows(
+        session=_Session(),
+        recording=SimpleNamespace(id=1),
+        processed_audio_path="/tmp/recording.wav",
+        merged_config={"processing_device": "cpu", "enable_diarization": True},
+        diarize_audio=lambda path, config: object(),
+        extract_audio_clip=lambda *args, **kwargs: None,
+        processing_run_id=77,
+        temp_files=[],
+        log=logging.getLogger("test"),
+    )
+
+    assert completed_ids == {10}
+    assert failed_ids == set()
+    assert manifest_rows[0].asr_status == "live_processed"
+    assert manifest_rows[0].asr_processing_run_id == 41
+    assert manifest_rows[0].diarization_status == "processed"
+    assert manifest_rows[0].diarization_processing_run_id == 77
+    assert manifest_rows[0].diarization_window_result_id == 99
+    assert manifest_rows[0].status == "live_processed"
 
 
 def test_count_active_live_rolling_diarization_runs_ignores_stale_rows():
@@ -1150,8 +1436,8 @@ def test_resolve_live_speaker_reuses_fallback_without_embedding(monkeypatch):
     assert label == "LIVE_02"
 
 
-def test_resolve_live_speaker_soft_matches_existing_label_without_updating_embedding(monkeypatch):
-    """Medium-confidence live embeddings reuse a label without learning from it."""
+def test_resolve_live_speaker_single_live_speaker_reuses_existing_label_without_embeddings(monkeypatch):
+    """A lone live speaker stays assigned until pyannote has contrary evidence."""
     from types import SimpleNamespace
 
     from backend.processing.live_transcribe import _resolve_live_speaker
@@ -1182,18 +1468,6 @@ def test_resolve_live_speaker_soft_matches_existing_label_without_updating_embed
     monkeypatch.setattr(
         "soundfile.info",
         lambda path: SimpleNamespace(frames=48000, samplerate=16000),
-    )
-    monkeypatch.setattr(
-        "backend.processing.embedding_core.extract_embedding_for_segments",
-        lambda *a, **k: [0.3, 0.4],
-    )
-    monkeypatch.setattr(
-        "backend.processing.embedding.cosine_similarity",
-        lambda *a, **k: 0.66,
-    )
-    monkeypatch.setattr(
-        "backend.processing.embedding.merge_embeddings",
-        lambda *a, **k: [0.2, 0.3],
     )
 
     session = _Session()
@@ -1210,22 +1484,19 @@ def test_resolve_live_speaker_soft_matches_existing_label_without_updating_embed
     assert session.added == []
 
 
-def test_resolve_live_speaker_weak_match_creates_new_speaker(monkeypatch):
-    """Weak medium-length matches avoid false merges when no fallback exists."""
+def test_resolve_live_speaker_multi_speaker_long_turn_creates_new_provisional_speaker(monkeypatch):
+    """Long multi-speaker turns stay provisional until pyannote reconciles them."""
     from types import SimpleNamespace
 
     from backend.models.speaker import RecordingSpeaker
     from backend.processing.live_transcribe import _resolve_live_speaker
 
-    live_speaker = SimpleNamespace(
-        diarization_label="LIVE_01",
-        embedding=[0.1, 0.2],
-        global_speaker_id=None,
-    )
+    live_speaker_one = SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1], global_speaker_id=None)
+    live_speaker_two = SimpleNamespace(diarization_label="LIVE_02", embedding=[0.2], global_speaker_id=None)
 
     class _ExecResult:
         def all(self):
-            return [live_speaker]
+            return [live_speaker_one, live_speaker_two]
 
     class _Session:
         def __init__(self):
@@ -1244,14 +1515,6 @@ def test_resolve_live_speaker_weak_match_creates_new_speaker(monkeypatch):
         "soundfile.info",
         lambda path: SimpleNamespace(frames=48000, samplerate=16000),
     )
-    monkeypatch.setattr(
-        "backend.processing.embedding_core.extract_embedding_for_segments",
-        lambda *a, **k: [0.3, 0.4],
-    )
-    monkeypatch.setattr(
-        "backend.processing.embedding.cosine_similarity",
-        lambda *a, **k: 0.5,
-    )
 
     session = _Session()
     label = _resolve_live_speaker(
@@ -1262,10 +1525,119 @@ def test_resolve_live_speaker_weak_match_creates_new_speaker(monkeypatch):
         merged_config={},
     )
 
-    assert label == "LIVE_02"
+    assert label == "LIVE_03"
     assert len(session.added) == 1
     assert isinstance(session.added[0], RecordingSpeaker)
-    assert session.added[0].diarization_label == "LIVE_02"
+    assert session.added[0].diarization_label == "LIVE_03"
+
+
+def test_resolve_live_speaker_short_turn_reuses_fallback_while_waiting_for_pyannote(monkeypatch):
+    """Short multi-speaker turns reuse the last stable label until pyannote catches up."""
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    live_speaker_one = SimpleNamespace(
+        diarization_label="LIVE_01",
+        embedding=[0.1, 0.2],
+        global_speaker_id=None,
+    )
+    live_speaker_two = SimpleNamespace(
+        diarization_label="LIVE_02",
+        embedding=[0.8, 0.9],
+        global_speaker_id=None,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [live_speaker_one, live_speaker_two]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=7,
+        audio_path="/tmp/voice.wav",
+        merged_config={},
+        fallback_label="LIVE_01",
+    )
+
+    assert label == "LIVE_01"
+    assert session.added == []
+
+
+def test_resolve_live_speaker_long_ambiguous_multi_speaker_match_avoids_last_label(monkeypatch):
+    """Long ambiguous spans in multi-speaker meetings create a fresh session speaker."""
+    from types import SimpleNamespace
+
+    from backend.models.speaker import RecordingSpeaker
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    live_speaker_one = SimpleNamespace(
+        diarization_label="LIVE_01",
+        embedding=[0.1, 0.2],
+        global_speaker_id=None,
+    )
+    live_speaker_two = SimpleNamespace(
+        diarization_label="LIVE_02",
+        embedding=[0.3, 0.4],
+        global_speaker_id=None,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [live_speaker_one, live_speaker_two]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=48000, samplerate=16000),
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=7,
+        audio_path="/tmp/voice.wav",
+        merged_config={},
+        fallback_label="LIVE_01",
+    )
+
+    assert label == "LIVE_03"
+    assert len(session.added) == 1
+    assert isinstance(session.added[0], RecordingSpeaker)
+    assert session.added[0].diarization_label == "LIVE_03"
 
 
 def test_analyze_window_speakers_prefers_clean_non_overlapping_spans(monkeypatch):
@@ -1309,6 +1681,201 @@ def test_analyze_window_speakers_prefers_clean_non_overlapping_spans(monkeypatch
     ]
     assert metadata_by_key["SPEAKER_01"]["embedding_available"] is False
     assert metadata_by_key["SPEAKER_01"]["clean_segment_count"] == 0
+
+
+def test_analyze_window_speakers_can_skip_embedding_matching(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.utils.rolling_diarization import analyze_window_speakers
+
+    class _DiarizationResult:
+        def itertracks(self, yield_label=False):
+            turns = [
+                (SimpleNamespace(start=0.0, end=0.8), "A", "SPEAKER_00"),
+                (SimpleNamespace(start=1.0, end=2.2), "A", "SPEAKER_00"),
+            ]
+            return iter(turns)
+
+    def _unexpected_extract(*args, **kwargs):
+        raise AssertionError("live rolling should not extract speaker embeddings")
+
+    monkeypatch.setattr(
+        "backend.processing.embedding_core.extract_embedding_for_segments",
+        _unexpected_extract,
+    )
+
+    metadata_by_key, embeddings_by_key = analyze_window_speakers(
+        diarization_result=_DiarizationResult(),
+        audio_path="/tmp/window.wav",
+        device_str="cpu",
+        hf_token=None,
+        recording_speakers=[SimpleNamespace(id=7, embedding=[0.1, 0.2])],
+        global_speakers=[SimpleNamespace(id=9, embedding=[0.3, 0.4])],
+        window_start_ms=5_000,
+        enable_embedding_matching=False,
+    )
+
+    assert embeddings_by_key == {}
+    assert metadata_by_key["SPEAKER_00"]["embedding_available"] is False
+    assert metadata_by_key["SPEAKER_00"]["clean_segment_count"] == 2
+    assert "best_recording_speaker_id" not in metadata_by_key["SPEAKER_00"]
+    assert "best_global_speaker_id" not in metadata_by_key["SPEAKER_00"]
+
+
+def test_run_live_rolling_diarization_pass_uses_pyannote_reassignment_without_embedding_matching(
+    monkeypatch,
+    tmp_path,
+):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _run_live_rolling_diarization_pass
+
+    manifest_row = SimpleNamespace(
+        window_index=0,
+        window_start_ms=0,
+        window_end_ms=20_000,
+        chunk_start_sequence=0,
+        chunk_end_sequence=3,
+        processing_run_id=None,
+        diarization_status=None,
+        diarization_processing_run_id=None,
+        diarization_config_hash=None,
+        diarization_window_result_id=None,
+        diarization_last_error=None,
+        status=None,
+        last_error=None,
+    )
+    rolling_run = SimpleNamespace(
+        id=99,
+        status=None,
+        completed_at=None,
+        error_summary=None,
+        metrics=None,
+    )
+    captured: dict[str, object] = {}
+
+    class _ExecResult:
+        def __init__(self, items):
+            self._items = list(items)
+
+        def all(self):
+            return list(self._items)
+
+    class _Session:
+        def __init__(self):
+            self.exec_calls = 0
+
+        def exec(self, *args, **kwargs):
+            self.exec_calls += 1
+            if self.exec_calls == 1:
+                return _ExecResult([SimpleNamespace(id=1, diarization_label="LIVE_01")])
+            return _ExecResult([])
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    @contextmanager
+    def _fake_timer(*args, **kwargs):
+        yield {"payload": {}}
+
+    session = _Session()
+    monkeypatch.setattr(
+        "backend.core.db.get_sync_session",
+        lambda: session,
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.config_manager",
+        SimpleNamespace(
+            get=lambda key, default=None: {
+                "enable_rolling_diarization": True,
+                "rolling_diarization_window_ms": 20_000,
+                "rolling_diarization_hop_ms": 5_000,
+                "rolling_diarization_max_windows_per_pass": 2,
+                "rolling_diarization_max_active_runs": 1,
+            }.get(key, default)
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._count_active_live_rolling_diarization_runs",
+        lambda session: 0,
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._claim_live_rolling_diarization_manifests",
+        lambda *args, **kwargs: [manifest_row],
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._load_recording_audio_chunks",
+        lambda *args, **kwargs: [SimpleNamespace(sequence=0)],
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.ensure_processing_run",
+        lambda *args, **kwargs: rolling_run,
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe._build_audio_window_clip",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "backend.processing.diarize.diarize_audio",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.analyze_window_speakers",
+        lambda **kwargs: (
+            captured.update({"enable_embedding_matching": kwargs.get("enable_embedding_matching")}) or {},
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.persist_diarization_window_result",
+        lambda *args, **kwargs: SimpleNamespace(id=7, window_start_ms=0, window_end_ms=20_000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.reconcile_diarization_window_result",
+        lambda *args, **kwargs: (
+            captured.update({"allow_speaker_reassignment": kwargs.get("allow_speaker_reassignment")})
+            or {
+                "matched_turn_count": 1,
+                "updated_utterance_count": 2,
+                "preserved_manual_lock_count": 0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.rolling_diarization_window_timer",
+        _fake_timer,
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.build_rolling_diarization_config_hash",
+        lambda *args, **kwargs: "cfg",
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.get_rolling_diarization_model_name",
+        lambda: "pyannote/speaker-diarization-community-1",
+    )
+
+    summary = _run_live_rolling_diarization_pass(
+        recording_id=42,
+        up_to_sequence=3,
+        user_id=None,
+        merged_config={"enable_diarization": True, "processing_device": "cpu"},
+        live_dir=tmp_path,
+    )
+
+    assert summary["processed_window_count"] == 1
+    assert summary["matched_turn_count"] == 1
+    assert captured["enable_embedding_matching"] is False
+    assert captured["allow_speaker_reassignment"] is True
 
 
 def test_apply_live_voiceprint_learning_respects_locked_global_voiceprints(monkeypatch):
@@ -1546,7 +2113,7 @@ def _run_live_task(monkeypatch, recording_id, sequence, fake_session):
 
 
 def test_live_in_order_run(monkeypatch, tmp_path):
-    """Segments 1,2,3 dispatched in order append provisional segments in order."""
+    """Segments 0,1,2 dispatched in order append provisional segments in order."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
 
@@ -1566,7 +2133,7 @@ def test_live_in_order_run(monkeypatch, tmp_path):
     session = _FakeSession(recording)
 
     # Create each segment just-in-time so each run drains a single segment.
-    for seq in (1, 2, 3):
+    for seq in (0, 1, 2):
         _make_segment_wav(temp_dir, seq, 2.0, audio_store)
         _run_live_task(monkeypatch, 42, seq, session)
 
@@ -1576,11 +2143,11 @@ def test_live_in_order_run(monkeypatch, tmp_path):
     assert starts == [0.0, 1.0, 2.0]
     assert all(s["provisional"] is True for s in transcript.segments)
     state = lt.read_live_state(temp_dir / "live")
-    assert state["next_expected"] == 4
+    assert state["next_expected"] == 3
 
 
 def test_live_out_of_order_arrival(monkeypatch, tmp_path):
-    """seq=2 first returns without advancing; seq=1 drains the run [1,2]."""
+    """seq=1 first returns without advancing; seq=0 drains the run [0,1]."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
 
@@ -1598,19 +2165,27 @@ def test_live_out_of_order_arrival(monkeypatch, tmp_path):
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
     session = _FakeSession(recording)
 
-    # seq=2 arrives first; only its file exists.
-    _make_segment_wav(temp_dir, 2, 2.0, audio_store)
-    _run_live_task(monkeypatch, 7, 2, session)
-    assert transcript.segments == []
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
-
-    # seq=1 arrives; both files now present -> drains [1, 2].
+    # seq=1 arrives first; only its file exists.
     _make_segment_wav(temp_dir, 1, 2.0, audio_store)
     _run_live_task(monkeypatch, 7, 1, session)
+    assert transcript.segments == []
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 0
+    assert state["sequence_outcomes"]["1"] == {
+        "outcome": "deferred",
+        "reason": "waiting_for_gap",
+    }
+
+    # seq=0 arrives; both files now present -> drains [0, 1].
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+    _run_live_task(monkeypatch, 7, 0, session)
 
     assert len(transcript.segments) == 1
     assert transcript.segments[0]["start"] == 0.0
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 3
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 2
+    assert state["sequence_outcomes"]["0"]["outcome"] == "consumed"
+    assert state["sequence_outcomes"]["1"]["outcome"] == "consumed"
 
 
 def test_live_carry_over_across_seam(monkeypatch, tmp_path):
@@ -1639,14 +2214,14 @@ def test_live_carry_over_across_seam(monkeypatch, tmp_path):
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
     session = _FakeSession(recording)
 
-    _make_segment_wav(temp_dir, 1, 3.0, audio_store)
-    _run_live_task(monkeypatch, 9, 1, session)
+    _make_segment_wav(temp_dir, 0, 3.0, audio_store)
+    _run_live_task(monkeypatch, 9, 0, session)
     # Run 1 carried the trailing utterance: no completed segment yet.
     assert transcript.segments == []
     assert (temp_dir / "live" / "buffer.wav").exists()
 
-    _make_segment_wav(temp_dir, 2, 3.0, audio_store)
-    _run_live_task(monkeypatch, 9, 2, session)
+    _make_segment_wav(temp_dir, 1, 3.0, audio_store)
+    _run_live_task(monkeypatch, 9, 1, session)
     # Run 2 completes exactly one provisional segment.
     assert len(transcript.segments) == 1
     assert transcript.segments[0]["provisional"] is True
@@ -1660,7 +2235,7 @@ def test_live_forced_cut(monkeypatch, tmp_path):
     temp_dir = tmp_path / "11"
     temp_dir.mkdir()
     audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 31.0}])
-    _make_segment_wav(temp_dir, 1, 31.0, audio_store)
+    _make_segment_wav(temp_dir, 0, 31.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
 
@@ -1668,7 +2243,7 @@ def test_live_forced_cut(monkeypatch, tmp_path):
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
     session = _FakeSession(recording)
 
-    _run_live_task(monkeypatch, 11, 1, session)
+    _run_live_task(monkeypatch, 11, 0, session)
 
     assert len(transcript.segments) == 2
     assert transcript.segments[0]["start"] == 0.0
@@ -1707,8 +2282,8 @@ def test_live_task_skips_meeting_edge_dispatch_when_disabled(monkeypatch, tmp_pa
     recording.user = SimpleNamespace(settings={"enable_meeting_edge": False})
     session = _FakeSession(recording)
 
-    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
-    _run_live_task(monkeypatch, 15, 1, session)
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+    _run_live_task(monkeypatch, 15, 0, session)
 
     assert len(transcript.segments) == 1
     assert dispatched == []
@@ -1723,7 +2298,7 @@ def test_live_entry_guard_bails_when_not_uploading(monkeypatch, tmp_path):
     temp_dir = tmp_path / "13"
     temp_dir.mkdir()
     audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
-    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
 
@@ -1731,7 +2306,7 @@ def test_live_entry_guard_bails_when_not_uploading(monkeypatch, tmp_path):
     recording = _FakeRecording(RecordingStatus.PROCESSING, transcript)
     session = _FakeSession(recording)
 
-    _run_live_task(monkeypatch, 13, 1, session)
+    _run_live_task(monkeypatch, 13, 0, session)
 
     assert transcript.segments == []
     assert session.committed is False
@@ -1748,7 +2323,7 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
     temp_dir = tmp_path / "14"
     temp_dir.mkdir()
     audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
-    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
 
@@ -1772,15 +2347,15 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
     recording = _FlipToProcessingRecording(transcript)
     session = _FakeSession(recording)
 
-    _run_live_task(monkeypatch, 14, 1, session)
+    _run_live_task(monkeypatch, 14, 0, session)
 
     assert transcript.segments == []
     # The run completed normally; only the DB write was guarded.
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 2
+    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
 
 
-def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
-    """transcribe_audio raising is logged; the lane advances; no re-raise."""
+def test_live_failure_path_records_recoverable_outcome(monkeypatch, tmp_path):
+    """transcribe_audio raising is logged and recorded for final catch-up."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
     from backend.processing import vad as vad_module
@@ -1789,7 +2364,7 @@ def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
     temp_dir = tmp_path / "15"
     temp_dir.mkdir()
     audio_store = _FakeAudioStore()
-    _make_segment_wav(temp_dir, 1, 2.0, audio_store)
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
 
     monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
     monkeypatch.setattr(
@@ -1812,10 +2387,14 @@ def test_live_failure_path_advances_without_raising(monkeypatch, tmp_path):
     session = _FakeSession(recording)
 
     # Must not raise.
-    _run_live_task(monkeypatch, 15, 1, session)
+    _run_live_task(monkeypatch, 15, 0, session)
 
     assert transcript.segments == []
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 2
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 1
+    assert state["sequence_outcomes"]["0"]["outcome"] == "failed"
+    assert state["sequence_outcomes"]["0"]["reason"] == "live_run_failed"
+    assert state["sequence_outcomes"]["0"]["run"] == [0]
 
 
 # --- _extract_region_text unit tests ----------------------------------------
@@ -1990,6 +2569,300 @@ def test_live_source_channel_analysis_marks_unclear_overlap_low_confidence():
     assert _source_channel_speaker_confidence(payload) is None
 
 
+def test_live_source_channel_evidence_prefers_microphone_label():
+    from backend.processing.live_transcribe import (
+        LIVE_SOURCE_AUTHORITY_CLEAR,
+        _build_live_source_channel_evidence,
+    )
+
+    evidence = _build_live_source_channel_evidence(
+        {
+            "dominant_source": "microphone",
+            "primary_source": "microphone",
+            "primary_share": 0.92,
+            "secondary_share": 0.08,
+            "source_overlap": False,
+        },
+        {"microphone": "LIVE_01"},
+    )
+
+    assert evidence.authority == LIVE_SOURCE_AUTHORITY_CLEAR
+    assert evidence.preferred_label == "LIVE_01"
+    assert evidence.excluded_labels == ()
+    assert evidence.to_payload()["reason"] == "microphone_dominant_preferred_label"
+
+
+def test_live_source_channel_evidence_excludes_microphone_for_system_audio():
+    from backend.processing.live_transcribe import (
+        LIVE_SOURCE_AUTHORITY_CLEAR,
+        _build_live_source_channel_evidence,
+    )
+
+    evidence = _build_live_source_channel_evidence(
+        {
+            "dominant_source": "system",
+            "primary_source": "system",
+            "primary_share": 0.88,
+            "secondary_share": 0.12,
+            "source_overlap": False,
+        },
+        {"microphone": "LIVE_01"},
+    )
+
+    assert evidence.authority == LIVE_SOURCE_AUTHORITY_CLEAR
+    assert evidence.preferred_label is None
+    assert evidence.excluded_labels == ("LIVE_01",)
+    assert evidence.to_payload()["reason"] == "system_dominant_excludes_microphone"
+
+
+def test_live_source_channel_evidence_overlap_reduces_authority():
+    from backend.processing.live_transcribe import (
+        LIVE_SOURCE_AUTHORITY_OVERLAP,
+        _build_live_confidence_payload,
+        _build_live_source_channel_evidence,
+    )
+
+    source_activity = {
+        "dominant_source": "microphone",
+        "primary_source": "microphone",
+        "primary_share": 0.74,
+        "secondary_share": 0.26,
+        "source_overlap": True,
+    }
+    evidence = _build_live_source_channel_evidence(
+        source_activity,
+        {"microphone": "LIVE_01"},
+    )
+    payload = _build_live_confidence_payload(
+        region_segment_payloads=[],
+        region_start_ms=100,
+        region_end_ms=800,
+        source_activity=source_activity,
+        source_channel_evidence=evidence,
+    )
+
+    assert evidence.authority == LIVE_SOURCE_AUTHORITY_OVERLAP
+    assert evidence.preferred_label is None
+    assert evidence.excluded_labels == ()
+    assert evidence.speaker_confidence <= 0.54
+    assert payload["source_channel_evidence"]["authority"] == LIVE_SOURCE_AUTHORITY_OVERLAP
+
+
+def test_resolve_live_speaker_uses_microphone_source_authority_for_short_utterance(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import (
+        LIVE_SOURCE_AUTHORITY_CLEAR,
+        LiveSourceChannelEvidence,
+        _resolve_live_speaker,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [
+                SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1]),
+                SimpleNamespace(diarization_label="LIVE_02", embedding=[0.2]),
+            ]
+
+    class _Session:
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+    recorded_metrics = []
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda **kwargs: recorded_metrics.append(kwargs),
+    )
+
+    label = _resolve_live_speaker(
+        session=_Session(),
+        recording_id=42,
+        user_id=None,
+        audio_path="/tmp/short.wav",
+        merged_config={},
+        fallback_label="LIVE_02",
+        source_channel_evidence=LiveSourceChannelEvidence(
+            dominant_source="microphone",
+            authority=LIVE_SOURCE_AUTHORITY_CLEAR,
+            reason="microphone_dominant_preferred_label",
+            preferred_label="LIVE_01",
+            speaker_confidence=0.9,
+        ),
+    )
+
+    assert label == "LIVE_01"
+    assert recorded_metrics[-1]["payload"]["match_kind"] == "preferred_source_channel"
+    assert recorded_metrics[-1]["payload"]["used_source_channel_authority"] is True
+
+
+def test_resolve_live_speaker_system_source_does_not_reuse_microphone_label(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.models.speaker import RecordingSpeaker
+    from backend.processing.live_transcribe import (
+        LIVE_SOURCE_AUTHORITY_CLEAR,
+        LiveSourceChannelEvidence,
+        _resolve_live_speaker,
+    )
+
+    class _ExecResult:
+        def all(self):
+            return [SimpleNamespace(diarization_label="LIVE_01", embedding=None)]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda **kwargs: None,
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=None,
+        audio_path="/tmp/system-short.wav",
+        merged_config={},
+        source_channel_evidence=LiveSourceChannelEvidence(
+            dominant_source="system",
+            authority=LIVE_SOURCE_AUTHORITY_CLEAR,
+            reason="system_dominant_excludes_microphone",
+            excluded_labels=("LIVE_01",),
+            speaker_confidence=0.88,
+        ),
+    )
+
+    assert label == "LIVE_02"
+    assert len(session.added) == 1
+    assert isinstance(session.added[0], RecordingSpeaker)
+    assert session.added[0].diarization_label == "LIVE_02"
+
+
+def test_resolve_live_speaker_new_speaker_metric_marks_pyannote_pending_strategy(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    class _ExecResult:
+        def all(self):
+            return [
+                SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1, 0.2]),
+                SimpleNamespace(diarization_label="LIVE_02", embedding=[0.8, 0.9]),
+            ]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    recorded_metrics = []
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=48000, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda **kwargs: recorded_metrics.append(kwargs),
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=7,
+        audio_path="/tmp/system-soft.wav",
+        merged_config={},
+        fallback_label="LIVE_01",
+    )
+
+    assert label == "LIVE_03"
+    assert len(session.added) == 1
+    assert recorded_metrics[-1]["payload"]["match_kind"] == "new_live_speaker"
+    assert recorded_metrics[-1]["payload"]["had_embedding"] is False
+    assert (
+        recorded_metrics[-1]["payload"]["speaker_assignment_strategy"]
+        == "pyannote_pending_reconciliation"
+    )
+
+
+def test_resolve_live_speaker_short_turn_metric_stays_embedding_free(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.processing.live_transcribe import _resolve_live_speaker
+
+    class _ExecResult:
+        def all(self):
+            return [
+                SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1, 0.2]),
+                SimpleNamespace(diarization_label="LIVE_02", embedding=[0.8, 0.9]),
+            ]
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def exec(self, *a, **k):
+            return _ExecResult()
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            pass
+
+    recorded_metrics = []
+    monkeypatch.setattr(
+        "soundfile.info",
+        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
+    )
+    monkeypatch.setattr(
+        "backend.processing.live_transcribe.record_pipeline_metric",
+        lambda **kwargs: recorded_metrics.append(kwargs),
+    )
+
+    session = _Session()
+    label = _resolve_live_speaker(
+        session=session,
+        recording_id=42,
+        user_id=7,
+        audio_path="/tmp/system-soft-ambiguous.wav",
+        merged_config={},
+        fallback_label="LIVE_01",
+    )
+
+    assert label == "LIVE_01"
+    assert session.added == []
+    assert recorded_metrics[-1]["payload"]["match_kind"] == "fallback_last_label"
+    assert recorded_metrics[-1]["payload"]["had_embedding"] is False
+
+
 def test_extract_region_text_straddle_without_words_midpoint():
     """A boundary-straddling segment without words uses the midpoint heuristic."""
     from backend.processing.live_transcribe import _extract_region_text
@@ -2092,7 +2965,7 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
     monkeypatch.setattr(transcribe_module, "transcribe_audio", fake_transcribe_audio)
 
     audio_store = _FakeAudioStore()
-    _make_segment_wav(temp_dir, 1, 3.0, audio_store)
+    _make_segment_wav(temp_dir, 0, 3.0, audio_store)
 
     transcript = _FakeTranscript()
     recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
@@ -2114,7 +2987,7 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
     monkeypatch.setattr(lt, "_resolve_live_speaker", lambda **kwargs: "LIVE_01")
     monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
 
-    _run_live_task(monkeypatch, 21, 1, session)
+    _run_live_task(monkeypatch, 21, 0, session)
 
     # context.wav was rewritten with the consumed audio's tail.
     assert (temp_dir / "live" / "context.wav").exists()
@@ -2195,14 +3068,14 @@ async def test_segment_upload_dispatches_live_task_when_enabled(
 
     response = await client.post(
         "/api/v1/recordings/live-rec-public-id/segment",
-        params={"sequence": 3},
-        files={"file": ("3.wav", b"fake-wav-bytes", "audio/wav")},
+        params={"sequence": 0},
+        files={"file": ("0.wav", b"fake-wav-bytes", "audio/wav")},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "received", "segment": 3}
+    assert response.json() == {"status": "received", "segment": 0}
     assert len(calls) == 1
-    assert calls[0][0] == (101, 3)
+    assert calls[0][0] == (101, 0)
 
     async with test_session_maker() as session:
         chunk_row = (
@@ -2212,10 +3085,10 @@ async def test_segment_upload_dispatches_live_task_when_enabled(
                 )
             )
         ).one()
-        assert chunk_row[0] == 3
+        assert chunk_row[0] == 0
         assert chunk_row[1] == "received"
         assert chunk_row[2] == len(b"fake-wav-bytes")
-        assert chunk_row[3] == str(tmp_path / "3.wav")
+        assert chunk_row[3] == str(tmp_path / "0.wav")
 
 
 @pytest.mark.anyio

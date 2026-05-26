@@ -41,6 +41,49 @@ def test_consolidate_merges_consecutive_speakers():
     assert result[0]['text'] == 'Hello World'
     assert result[0]['end'] == 4.0
 
+
+def test_consolidate_preserves_live_reuse_alignment_metadata():
+    segments = [
+        {
+            'id': 'live-1',
+            'start': 0.0,
+            'end': 1.0,
+            'speaker': 'LIVE_01',
+            'text': 'Hello',
+            'live_reuse_alignment': {
+                'status': 'matched',
+                'reason': 'time_overlap',
+                'matched_live_utterance_ids': ['live-1'],
+            },
+        },
+        {
+            'id': 'live-2',
+            'start': 1.0,
+            'end': 2.0,
+            'speaker': 'LIVE_01',
+            'text': 'World',
+            'text_manually_edited': True,
+            'live_reuse_alignment': {
+                'status': 'matched',
+                'reason': 'time_overlap',
+                'matched_live_utterance_ids': ['live-2'],
+                'manual_override_reasons': ['manual_text_locked'],
+            },
+        },
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert len(result) == 1
+    assert result[0]['text'] == 'Hello World'
+    assert result[0]['text_manually_edited'] is True
+    assert result[0]['source_public_ids'] == ['live-1', 'live-2']
+    assert result[0]['live_reuse_alignment']['status'] == 'merged'
+    assert result[0]['live_reuse_alignment']['matched_live_utterance_ids'] == [
+        'live-1',
+        'live-2',
+    ]
+
 def test_consolidate_splits_long_segments():
     """Test that segments are split if they exceed max_duration_s."""
     # Assume max_duration_s=10.0 (default)
@@ -135,6 +178,37 @@ def test_regression_giant_segment_split():
     last = result[-1]
     assert last['start'] == 30.0
     assert last['end'] == 35.0
+
+
+def test_long_word_split_reconstructs_spaces_without_leading_space_tokens():
+    segments = [
+        {
+            'start': 0.0,
+            'end': 12.0,
+            'speaker': 'A',
+            'text': 'one two three four five six seven eight nine ten eleven twelve',
+            'words': [
+                {'start': 0.0, 'end': 1.0, 'word': 'one'},
+                {'start': 1.0, 'end': 2.0, 'word': 'two'},
+                {'start': 2.0, 'end': 3.0, 'word': 'three'},
+                {'start': 3.0, 'end': 4.0, 'word': 'four'},
+                {'start': 4.0, 'end': 5.0, 'word': 'five'},
+                {'start': 5.0, 'end': 6.0, 'word': 'six'},
+                {'start': 6.0, 'end': 7.0, 'word': 'seven'},
+                {'start': 7.0, 'end': 8.0, 'word': 'eight'},
+                {'start': 8.0, 'end': 9.0, 'word': 'nine'},
+                {'start': 9.0, 'end': 10.0, 'word': 'ten'},
+                {'start': 10.0, 'end': 11.0, 'word': 'eleven'},
+                {'start': 11.0, 'end': 12.0, 'word': 'twelve'},
+            ],
+        }
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert len(result) == 2
+    assert result[0]['text'] == 'one two three four five six seven eight nine ten'
+    assert result[1]['text'] == 'eleven twelve'
 
 
 def test_word_level_combination_ignores_tiny_secondary_overlap():

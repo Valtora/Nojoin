@@ -1079,7 +1079,7 @@ export const importAudio = async (
     const formData = new FormData();
     formData.append("file", chunk);
 
-    // Sequence is 1-based for consistency with backend logic
+    // Chunked imports keep their existing import-part sequence; browser live capture uses 0-based segments.
     await api.post(
       `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
       formData,

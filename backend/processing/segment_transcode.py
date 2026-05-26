@@ -6,6 +6,10 @@ from pathlib import Path
 
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
+from backend.processing.browser_live_audio import (
+    BROWSER_LIVE_CHANNEL_COUNT,
+    BROWSER_LIVE_SAMPLE_RATE_HZ,
+)
 from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.config_manager import config_manager
@@ -42,6 +46,7 @@ def _locate_staged_browser_segment(recording_id: int, sequence: int) -> Path | N
 
 
 def _run_ffmpeg_transcode(input_path: Path, output_path: Path) -> None:
+    """Transcode browser WebM/Ogg into canonical stereo live-capture WAV."""
     command = [
         "ffmpeg",
         "-nostdin",
@@ -50,9 +55,9 @@ def _run_ffmpeg_transcode(input_path: Path, output_path: Path) -> None:
         "-i",
         str(input_path),
         "-ar",
-        "16000",
+        str(BROWSER_LIVE_SAMPLE_RATE_HZ),
         "-ac",
-        "2",
+        str(BROWSER_LIVE_CHANNEL_COUNT),
         "-f",
         "wav",
         "-y",

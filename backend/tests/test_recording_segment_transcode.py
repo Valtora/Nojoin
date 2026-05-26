@@ -109,6 +109,14 @@ CREATE TABLE recording_audio_window_manifests (
     chunk_start_sequence INTEGER NOT NULL,
     chunk_end_sequence INTEGER NOT NULL,
     status VARCHAR(32) NOT NULL,
+    asr_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    asr_processing_run_id INTEGER,
+    asr_last_error TEXT,
+    diarization_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    diarization_processing_run_id INTEGER,
+    diarization_config_hash VARCHAR(255),
+    diarization_window_result_id INTEGER,
+    diarization_last_error TEXT,
     is_partial BOOLEAN NOT NULL,
     is_sealed BOOLEAN NOT NULL,
     processing_run_id INTEGER,
@@ -139,12 +147,12 @@ def set_session_cookie(client: AsyncClient) -> None:
     )
 
 
-def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000) -> bytes:
+def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000, channels: int = 1) -> bytes:
     frame_count = int(duration_s * sample_rate)
-    pcm_frames = b"\x00\x00" * frame_count
+    pcm_frames = b"\x00\x00" * frame_count * channels
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
+        wav_file.setnchannels(channels)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(pcm_frames)
@@ -152,6 +160,10 @@ def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000) -> byt
 
 
 def test_ffmpeg_transcode_preserves_browser_source_channels(monkeypatch, tmp_path):
+    from backend.processing.browser_live_audio import (
+        BROWSER_LIVE_CHANNEL_COUNT,
+        BROWSER_LIVE_SAMPLE_RATE_HZ,
+    )
     from backend.processing import segment_transcode as segment_transcode_module
 
     captured = {}
@@ -169,8 +181,8 @@ def test_ffmpeg_transcode_preserves_browser_source_channels(monkeypatch, tmp_pat
     )
 
     command = captured["command"]
-    assert command[command.index("-ar") + 1] == "16000"
-    assert command[command.index("-ac") + 1] == "2"
+    assert command[command.index("-ar") + 1] == str(BROWSER_LIVE_SAMPLE_RATE_HZ)
+    assert command[command.index("-ac") + 1] == str(BROWSER_LIVE_CHANNEL_COUNT)
 
 
 def _recording_temp_dir(root: Path, recording_id: int, *, create: bool) -> Path:
@@ -364,6 +376,24 @@ async def _chunk_rows_for_recording(
         return [(int(sequence_no), str(storage_path)) for sequence_no, storage_path in rows.all()]
 
 
+async def _chunk_metadata_rows_for_recording(
+    session_maker: sessionmaker,
+    *,
+    recording_id: int,
+) -> list[tuple[int, int, int, str]]:
+    async with session_maker() as session:
+        rows = await session.execute(
+            text(
+                "SELECT sequence_no, sample_rate_hz, channel_count, storage_path FROM recording_audio_chunks WHERE recording_id = :recording_id ORDER BY sequence_no"
+            ),
+            {"recording_id": recording_id},
+        )
+        return [
+            (int(sequence_no), int(sample_rate_hz), int(channel_count), str(storage_path))
+            for sequence_no, sample_rate_hz, channel_count, storage_path in rows.all()
+        ]
+
+
 @pytest.mark.anyio
 async def test_webm_upload_defers_live_sync_until_transcode_task(
     client: AsyncClient,
@@ -373,6 +403,11 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
     monkeypatch,
     tmp_path,
 ) -> None:
+    from backend.processing.browser_live_audio import (
+        BROWSER_LIVE_CHANNEL_COUNT,
+        BROWSER_LIVE_SAMPLE_RATE_HZ,
+    )
+
     set_session_cookie(client)
 
     init_response = await client.post(
@@ -406,7 +441,9 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
     monkeypatch.setattr(
         segment_transcode_module,
         "_run_ffmpeg_transcode",
-        lambda input_path, output_path: output_path.write_bytes(make_wav_bytes()),
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
     )
 
     result = segment_transcode_module.transcode_segment_task.run(recording_id, 0)
@@ -418,12 +455,15 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
     assert wav_path.exists()
     assert not webm_path.exists()
     with wave.open(str(wav_path), "rb") as wav_file:
-        assert wav_file.getframerate() == 16000
-        assert wav_file.getnchannels() == 1
+        assert wav_file.getframerate() == BROWSER_LIVE_SAMPLE_RATE_HZ
+        assert wav_file.getnchannels() == BROWSER_LIVE_CHANNEL_COUNT
     assert live_dispatches == [(recording_id, 0)]
 
     chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
     assert chunk_rows == [(0, str(wav_path))]
+    assert await _chunk_metadata_rows_for_recording(test_session_maker, recording_id=recording_id) == [
+        (0, BROWSER_LIVE_SAMPLE_RATE_HZ, BROWSER_LIVE_CHANNEL_COUNT, str(wav_path))
+    ]
 
 
 @pytest.mark.anyio
@@ -434,6 +474,8 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     monkeypatch,
     tmp_path,
 ) -> None:
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+
     set_session_cookie(client)
 
     init_response = await client.post(
@@ -463,7 +505,9 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     monkeypatch.setattr(
         segment_transcode_module,
         "_run_ffmpeg_transcode",
-        lambda input_path, output_path: output_path.write_bytes(make_wav_bytes()),
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
     )
 
     finalize_response = await client.post(

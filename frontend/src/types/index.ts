@@ -161,6 +161,11 @@ export interface TranscriptUtterance {
   speaker_confidence?: number | null;
   text_confidence?: number | null;
   updated_at?: string | null;
+  speaker_state_source?: string;
+  live_source_speaker?: string | null;
+  live_source_speakers?: string[];
+  source_public_ids?: string[];
+  live_reuse_alignment?: Record<string, any>;
 }
 
 export interface TranscriptUtteranceList {
@@ -189,6 +194,32 @@ export interface TranscriptSegment {
   speaker_confidence?: number | null;
   text_confidence?: number | null;
   updated_at?: string | null;
+  speaker_state_source?: string;
+  live_source_speaker?: string | null;
+  live_source_speakers?: string[];
+  source_public_ids?: string[];
+  live_reuse_alignment?: Record<string, any>;
+}
+
+export interface RecordingPipelineLaneState {
+  total_windows: number;
+  processed_windows: number;
+  processing_windows: number;
+  failed_windows: number;
+  pending_windows: number;
+  coverage_ratio: number;
+  status_counts: Record<string, number>;
+}
+
+export interface RecordingPipelineState {
+  transcript_revision: number;
+  total_window_count: number;
+  sealed_window_count: number;
+  partial_window_count: number;
+  first_sequence?: number | null;
+  latest_sequence?: number | null;
+  asr: RecordingPipelineLaneState;
+  diarization: RecordingPipelineLaneState;
 }
 
 export interface MeetingEdgeConcept {
@@ -266,6 +297,7 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
   calendar_event?: CalendarEventLink | null;
+  pipeline_state?: RecordingPipelineState | null;
 }
 
 export interface RecordingInitResponse {

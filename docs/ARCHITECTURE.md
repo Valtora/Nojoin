@@ -48,6 +48,7 @@ The browser capture stack is responsible for:
 - Prompting for microphone access.
 - Mixing shared audio and microphone audio in the browser.
 - Recording short WebM/Opus slices and uploading them with session-cookie authentication.
+- Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio and channel 1 is microphone audio.
 - Exposing analyser output to the live waveform UI.
 - Moving recordings to `PAUSED` on real tab unload or app navigation away, then requiring resume or discard before another capture starts.
 
@@ -57,8 +58,8 @@ The browser capture stack is responsible for:
 2. The user starts **Meet Now** from a supported Chromium browser on Windows or Linux.
 3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
 4. The browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short WebM/Opus slices.
-5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing sequence numbers.
-6. The worker transcodes each browser segment to 16 kHz mono WAV and dispatches the live transcription lane.
+5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.
+6. The worker transcodes each browser segment to 16 kHz, two-channel WAV and dispatches the live transcription lane. Channel 0 is shared/system audio and channel 1 is microphone audio.
 7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation.
 8. The web client shows a live capture or processing status workspace while the job runs.
 
@@ -126,7 +127,7 @@ runs:
    Meeting Edge model is configured for that provider, the worker falls back to
    the provider's main model instead of failing the live guidance path.
 
-Segments are numbered sequentially but uploaded concurrently, so the lane uses
+Segments are numbered sequentially starting at 0 but uploaded concurrently, so the lane uses
 a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording
 `live/state.json`; a task whose segment is ahead of `next_expected` returns
 immediately (its WAV waits on disk), and only the task holding `next_expected`
@@ -135,6 +136,15 @@ not-yet-complete utterance is **carried over** in `live/buffer.wav` and joined
 to the next run, so an utterance split across a segment boundary is normally
 transcribed once as a whole. If speech continues past the live forced-emission
 window, the lane emits the current speech region and starts a new live segment.
+
+Browser-live audio window manifests track two independent processing lanes. The
+ASR lane records whether live or catch-up ASR consumed the window audio. The
+diarisation lane records rolling or catch-up speaker-window work for the active
+diarisation configuration and completed window result. The legacy window
+`status` field remains a compatibility projection; new logic should inspect the
+lane-specific ASR and diarisation fields. Recording detail responses expose a
+collapsed `pipeline_state` summary so operators can compare live ASR coverage
+with speaker-window coverage while a recording is still in flight.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
@@ -145,6 +155,14 @@ whole-recording ASR or diarisation rerun when coverage is missing,
 confidence remains too low, or the user explicitly requests reprocessing with a
 different engine. A different transcription engine is reserved for explicit
 manual reprocessing after the user changes the transcription engine in Settings.
+
+Final processing may reuse live transcript text and source-channel speaker
+authority only after a stable utterance id match or a clear one-to-one time
+overlap match. It must not align live and final segments by array index. When a
+merged, split, or low-confidence span is ambiguous, final processing keeps the
+final ASR/diarisation output and records live evidence in alignment metadata
+instead of silently applying it to the wrong time span. Manual text and speaker
+locks remain authoritative.
 
 ### Startup Canonical Cutover
 

@@ -47,7 +47,19 @@ const sequenceToElapsedSeconds = (lastSequence: number) =>
 const FINALIZE_UPLOAD_IN_PROGRESS_DETAIL =
   "Recording upload is still in progress; finalize after all segment uploads complete.";
 
-const FINALIZE_RETRY_DELAYS_MS = [250, 500, 1_000, 1_500, 2_500, 4_000];
+const FINALIZE_RETRY_DELAYS_MS = [
+  250,
+  500,
+  1_000,
+  1_500,
+  2_500,
+  4_000,
+  6_000,
+  8_000,
+  10_000,
+  12_000,
+  15_000,
+];
 
 const wait = (ms: number) =>
   new Promise((resolve) => {
@@ -263,6 +275,7 @@ export class CaptureController {
     }
 
     await this.runtime.recorder.pause();
+    await this.runtime.uploader.waitForIdle();
     this.stopElapsedTimer();
     const response = await pauseRecordingCapture(this.state.recordingId);
     writePausedCaptureContext({
@@ -387,8 +400,9 @@ export class CaptureController {
       this.lifecycle.updateRecordingId(null);
       return recording;
     } catch (error) {
-      this.setState({ status: "error", error: formatCaptureError(error) });
-      throw error;
+      const message = formatCaptureError(error);
+      this.setState({ status: "error", error: message });
+      throw new Error(message);
     }
   };
 
@@ -499,6 +513,7 @@ export class CaptureController {
 
     try {
       await this.runtime.recorder.pause();
+      await this.runtime.uploader.waitForIdle();
       const response = await pauseRecordingCapture(recordingId);
       writePausedCaptureContext({
         recordingId,

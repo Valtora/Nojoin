@@ -52,6 +52,9 @@ export const applyTranscriptDelta = ({
     currentState && currentState.recordingId === recordingId
       ? currentState
       : createLocalTranscriptState(recordingId, fallbackSegments);
+  if (mode === "delta" && delta.revision < baseState.revision) {
+    return baseState;
+  }
   const nextDeferred = { ...baseState.deferredById };
   let utterancesToApply = delta.utterances;
   let tombstonesToApply = delta.tombstones;
